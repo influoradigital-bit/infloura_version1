@@ -58,7 +58,7 @@ export default function BrandLoginPage() {
       heroTitle="Collaborate with creators at scale"
       heroSubtitle="Fund campaigns, manage deal rooms, and release payments — all in one workspace."
       heroBullets={[
-        'Escrow-protected brand budgets',
+        'Payment-protected brand budgets',
         'End-to-end deal room & contracts',
         'Creator discovery built for India',
       ]}

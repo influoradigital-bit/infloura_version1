@@ -12,6 +12,9 @@ import com.influora.service.IdempotencyService;
 import com.influora.service.tracking.RedemptionService;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -83,15 +86,19 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p><b>Idempotency [standing rule, {@code REMAINING_WORK_PLAN.md} line ~20].</b> Every webhook
  * delivery is wrapped in {@link IdempotencyService#executeOnce} keyed by a SHA-256 digest of {@code
- * siteUrl|topic|orderId} -- WooCommerce, like Shopify, retries webhook deliveries on a non-2xx (or
+ * siteUrl|orderId} -- WooCommerce, like Shopify, retries webhook deliveries on a non-2xx (or
  * slow) response, so the same delivery can arrive more than once even before considering {@code
- * RedemptionService#redeem}'s OWN required-idempotency-key mechanism. Same deliberate two-layer
- * dedup as {@code ShopifyWebhookController}: this key guards the whole webhook-handling operation
- * (site resolution + payload parsing + the call into {@code RedemptionService}) as one unit, while
- * {@code RedemptionService#redeem}'s internal dedup -- keyed by the SAME derived key, passed through
- * as {@code idempotencyKey} -- guards the coupon-redemption row itself against a double-counted
- * usage-count increment. Both layers agreeing on the same key means a replayed delivery is a clean
- * no-op at either layer, whichever one a retry happens to race against.
+ * RedemptionService#redeem}'s OWN required-idempotency-key mechanism. Deliberately topic-agnostic
+ * [fix ledger F-0521]: {@code order.created} and {@code order.updated} are both acted-on topics and
+ * WooCommerce routinely delivers both for the SAME order, so the dedup identity is the order, not
+ * the delivery -- topic is still logged (see the replay/duplicate {@code log.info} below) but is not
+ * part of the key. Same deliberate two-layer dedup as {@code ShopifyWebhookController}: this key
+ * guards the whole webhook-handling operation (site resolution + payload parsing + the call into
+ * {@code RedemptionService}) as one unit, while {@code RedemptionService#redeem}'s internal dedup --
+ * keyed by the SAME derived key, passed through as {@code idempotencyKey} -- guards the
+ * coupon-redemption row itself against a double-counted usage-count increment. Both layers agreeing
+ * on the same key means a replayed delivery is a clean no-op at either layer, whichever one a retry
+ * happens to race against.
  *
  * <p><b>Rate limiting.</b> {@code POST /webhooks/woocommerce} joins the SAME {@code "tracking"}
  * bucket as {@code /webhooks/shopify}/{@code /webhooks/redemption} in {@code AuthRateLimitFilter}
@@ -123,11 +130,51 @@ public class WooCommerceWebhookController {
 
     private static final String TOPIC_ORDER_UPDATED = "order.updated";
 
+    /**
+     * [Fix ledger F-0521] Bound on {@link #redemptionByIdempotencyKey} below -- see that field's
+     * javadoc for what it's for. This is a defense-in-depth memoization, not the dedup source of
+     * truth, so a small bound is fine: an evicted entry just means the next duplicate for that
+     * (already long-since-redeemed) order falls back to relying on {@link IdempotencyService}'s
+     * DB-backed reservation alone, which is what enforces dedup for every OTHER replay window
+     * (e.g. a retry hours later) regardless of whether this map still remembers it.
+     */
+    private static final int MAX_MEMOIZED_REDEMPTIONS = 4096;
+
     private final WooCommerceWebhookSignatureVerifier signatureVerifier;
     private final WooCommerceIntegrationRepository integrationRepository;
     private final WooCommerceIntegrationService integrationService;
     private final RedemptionService redemptionService;
     private final IdempotencyService idempotencyService;
+
+    /**
+     * [Fix ledger F-0521] Local, in-process memoization of the {@link RedemptionService#redeem}
+     * result, keyed by the SAME derived idempotency key {@link #deriveIdempotencyKey} produces for
+     * {@link IdempotencyService#executeOnce} below -- NOT a second source of truth, {@link
+     * IdempotencyService}'s DB-backed reservation still owns dedup correctness (a second {@code
+     * tryReserve} for the same composite key fails the row's own UNIQUE constraint and the caller is
+     * short-circuited with {@link IdempotencyService.AlreadyCompletedException} or {@link
+     * IdempotencyService.AlreadyInProgressException} before its supplied action ever runs -- see
+     * that class's javadoc). This map closes a narrower gap: {@code executeOnce} guarantees the
+     * ACTION isn't invoked twice for a key that is ALREADY reserved and settled in the database, but
+     * says nothing about two callers racing to be the one that reserves it in the first place -- one
+     * of {@code order.created}/{@code order.updated} for the same order can still end up invoking
+     * this controller's supplied action for the identical key before the other's reservation is
+     * visible. Wrapping the action in {@code computeIfAbsent} on this map means the SAME key can
+     * never run {@link #redeemViaWooCommerceOrder} more than once from this instance, regardless of
+     * how many times {@code executeOnce} ends up calling the action for it. Bounded (see {@link
+     * #MAX_MEMOIZED_REDEMPTIONS}) so a long-lived instance handling many distinct orders cannot grow
+     * this without bound; wrapped with {@link Collections#synchronizedMap} so the eviction-tracking
+     * {@link LinkedHashMap} (not thread-safe on its own) and {@code computeIfAbsent}'s
+     * check-then-act are both safe under concurrent deliveries.
+     */
+    private final Map<String, CouponRedemption> redemptionByIdempotencyKey =
+            Collections.synchronizedMap(
+                    new LinkedHashMap<>(16, 0.75f, false) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, CouponRedemption> eldest) {
+                            return size() > MAX_MEMOIZED_REDEMPTIONS;
+                        }
+                    });
 
     public WooCommerceWebhookController(
             WooCommerceWebhookSignatureVerifier signatureVerifier,
@@ -195,7 +242,7 @@ public class WooCommerceWebhookController {
             return ResponseEntity.ok().build();
         }
 
-        String idempotencyKey = deriveIdempotencyKey(integration.getSiteUrl(), effectiveTopic, order.orderId());
+        String idempotencyKey = deriveIdempotencyKey(integration.getSiteUrl(), order.orderId());
 
         try {
             idempotencyService.executeOnce(
@@ -203,12 +250,15 @@ public class WooCommerceWebhookController {
                     integration.getWorkspaceId(),
                     IDEMPOTENCY_SCOPE,
                     () ->
-                            redeemViaWooCommerceOrder(
-                                    integration.getWorkspaceId(),
-                                    order.couponCode(),
-                                    order.orderId(),
-                                    order.total(),
-                                    idempotencyKey));
+                            redemptionByIdempotencyKey.computeIfAbsent(
+                                    idempotencyKey,
+                                    key ->
+                                            redeemViaWooCommerceOrder(
+                                                    integration.getWorkspaceId(),
+                                                    order.couponCode(),
+                                                    order.orderId(),
+                                                    order.total(),
+                                                    idempotencyKey)));
         } catch (IdempotencyService.AlreadyCompletedException | IdempotencyService.AlreadyInProgressException replay) {
             // Clean, idempotent no-op -- this exact webhook delivery (or a concurrent duplicate of
             // it) was already handled.
@@ -247,16 +297,23 @@ public class WooCommerceWebhookController {
     }
 
     /**
-     * Derives a stable idempotency key for one webhook delivery from fields WooCommerce itself
-     * guarantees are stable across retries of the SAME delivery: the site url, the topic, and the
-     * order id. Hashed (not a plain concatenation) purely to keep the key within {@code
+     * Derives a stable idempotency key for one COMMERCIAL EVENT (an order), not one delivery. [Fix
+     * ledger F-0521, see {@code WooCommerceWebhookIdempotencyTest}] {@code topic} is deliberately
+     * NOT part of this key: {@code order.created} and {@code order.updated} are both in this
+     * controller's acted-on topic set (see the topic-routing check in {@code receive}) and WooCommerce
+     * routinely delivers both for the SAME order (created on checkout, updated moments later on a
+     * payment-status change) -- carrying topic in the key produced two different reservations for one
+     * order and double-counted the redemption. The topic stays out of the dedup identity but is still
+     * captured in the audit trail via the {@code log.info} replay/duplicate line in {@code receive},
+     * which logs {@code effectiveTopic} on every call. Keyed on site url + order id only, hashed (not
+     * a plain concatenation) purely to keep the key within {@code
      * idempotency_keys.idempotency_key}'s column bound, same defensive-length reasoning as {@code
      * ShopifyWebhookController#deriveIdempotencyKey} -- this key is never attacker-suppliable (no
      * caller-supplied idempotency key on this endpoint at all), so there is no squatting vector to
      * defend against, only a length bound to satisfy.
      */
-    private static String deriveIdempotencyKey(String siteUrl, String topic, String orderId) {
-        String canonical = siteUrl + "|" + topic + "|" + orderId;
+    private static String deriveIdempotencyKey(String siteUrl, String orderId) {
+        String canonical = siteUrl + "|" + orderId;
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(canonical.getBytes(StandardCharsets.UTF_8));

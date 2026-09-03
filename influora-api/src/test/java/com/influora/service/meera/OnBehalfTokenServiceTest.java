@@ -142,7 +142,7 @@ class OnBehalfTokenServiceTest {
     void testVerifyRejectsWrongAudience() {
         StreamTokenService streamTokenService =
                 new StreamTokenService(new com.influora.config.MeeraStreamProperties(), jwksKeyService);
-        String streamToken = streamTokenService.mint(WORKSPACE_ID, CONVERSATION_ID, TURN_ID, USER_ID);
+        String streamToken = streamTokenService.mint(WORKSPACE_ID, CONVERSATION_ID, TURN_ID, USER_ID, UserType.BRAND);
 
         // aud is present (meera-stream) but wrong -- jjwt's requireAudience rejects it
         // (IncorrectClaimException, a JwtException subtype); asserting the JwtException supertype

@@ -416,7 +416,7 @@ const mockTimelineEvents: ChatTimelineEvent[] = [
     type: 'payment',
     sender: 'system',
     timestamp: '2024-01-16 10:05',
-    content: 'Escrow funded',
+    content: 'Funds secured',
     metadata: {
       type: 'escrow_funded',
       amount: 50000,
@@ -427,7 +427,7 @@ const mockTimelineEvents: ChatTimelineEvent[] = [
     type: 'message',
     sender: 'brand',
     timestamp: '2024-01-18 09:00',
-    content: 'Contract is signed and escrow is funded. You can start working on the deliverables now!',
+    content: 'Contract is signed and the funds are secured. You can start working on the deliverables now!',
   },
   {
     id: '10',
@@ -1338,7 +1338,7 @@ export default function CreatorChatPage() {
       setDisputeReason('');
       toast({
         title: 'Dispute opened',
-        description: 'An admin will review this deal. Escrow stays frozen until it is resolved.',
+        description: 'An admin will review this deal. Secured funds stay frozen until it is resolved.',
       });
     } catch (err) {
       setDisputeError(
@@ -2121,7 +2121,7 @@ export default function CreatorChatPage() {
                   </DropdownMenuItem>
                 ) : (
                   <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    A dispute can only be raised once escrow is funded — there is no money
+                    A dispute can only be raised once the funds are secured — there is no money
                     on hold for this deal yet.
                   </div>
                 )}
@@ -2643,7 +2643,7 @@ export default function CreatorChatPage() {
                       <IndianRupee className="h-4 w-4 text-stage-approved-fg" />
                       <span className="text-sm text-stage-approved-fg font-medium">
                         {event.metadata?.type === 'escrow_funded' 
-                          ? `Escrow funded: ${formatINR(Number(event.metadata?.amount))}` 
+                          ? `Funds secured: ${formatINR(Number(event.metadata?.amount))}` 
                           : `Payment received: ${formatINR(Number(event.metadata?.amount))}`
                         }
                       </span>
@@ -3043,7 +3043,7 @@ export default function CreatorChatPage() {
           <DialogHeader>
             <DialogTitle>Report a problem with this deal</DialogTitle>
             <DialogDescription>
-              This opens a formal dispute. The escrow held for this deal is frozen while an
+              This opens a formal dispute. The secured funds for this deal are frozen while an
               admin reviews it, and {selectedDeal?.brandName ?? 'the brand'} is notified.
             </DialogDescription>
           </DialogHeader>

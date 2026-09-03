@@ -1,5 +1,6 @@
 package com.influora.job;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -19,6 +20,8 @@ import com.influora.integration.meta.oauth.MetaOAuthService;
 import com.influora.integration.meta.oauth.MetaTokenStorage;
 import com.influora.service.AuditLogService;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
@@ -222,6 +225,7 @@ class MetaTokenRefreshServiceTest {
                         eq(List.of("instagram_basic")),
                         eq(igBusinessAccountId),
                         eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull(),
                         isNull());
         // The regression this guards against: the shared workspace-scoped writer, which would
         // silently mint a duplicate non-revoked creator row on every refresh (self-DoS).
@@ -262,6 +266,7 @@ class MetaTokenRefreshServiceTest {
                         eq(List.of("instagram_basic")),
                         eq(igUserId),
                         eq(MetaAuthPath.INSTAGRAM_LOGIN),
+                        isNull(),
                         isNull());
         verify(tokenStorage, never())
                 .storeCreatorToken(anyString(), anyString(), any(), any(), any());
@@ -301,7 +306,8 @@ class MetaTokenRefreshServiceTest {
                         eq(List.of("instagram_basic")),
                         isNull(),
                         eq(MetaAuthPath.FACEBOOK_LOGIN),
-                        eq(metaUserId));
+                        eq(metaUserId),
+                        isNull());
     }
 
     @Test
@@ -373,9 +379,11 @@ class MetaTokenRefreshServiceTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID, null);
         when(tokenStorage.findTokensExpiringSoon(props.getTokenRefreshDaysBeforeExpiry()))
                 .thenReturn(List.of(token));
+        CountDownLatch inGuardedSection = new CountDownLatch(1);
         when(tokenStorage.getValidToken(WORKSPACE_ID, CREATOR_ID))
                 .thenAnswer(
                         invocation -> {
+                            inGuardedSection.countDown();
                             Thread.sleep(100);
                             return Optional.of(CURRENT_TOKEN);
                         });
@@ -384,7 +392,9 @@ class MetaTokenRefreshServiceTest {
 
         Thread thread1 = new Thread(() -> refreshService.refreshExpiringTokens());
         thread1.start();
-        Thread.sleep(10);
+        assertTrue(
+                inGuardedSection.await(5, TimeUnit.SECONDS),
+                "the first run never entered the guarded section - the overlap guard was not exercised");
 
         refreshService.refreshExpiringTokens();
 

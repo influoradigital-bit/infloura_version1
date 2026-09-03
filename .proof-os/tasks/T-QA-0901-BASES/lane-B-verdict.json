@@ -1,0 +1,22 @@
+{
+ "verdict": "broken",
+ "oracle": "model",
+ "isolation": "fresh-context",
+ "done_when": "backend P0 findings fixed, checked by kabir, approved by priya",
+ "not_checked": [
+  "runtime behaviour of anything: mvn compile and mvn test both exit 0, but no test covers the new budget gate, the held-release surfacing, or the unsubscribe link",
+  "whether kabir missed a partial fix in the one finding he cleared - F-0462 was verified by me independently, the others rest on his read",
+  "vikram's remaining 21 backend findings - not dispatched",
+  "F-0443 workspace invites - deliberately held out of the batch for concurrent-write risk"
+ ],
+ "skipped": [
+  {
+   "step": "F-0415 TDS implementation",
+   "reason": "scoped as an assessment on purpose - rate, threshold, PAN-less treatment and certificate obligations are legal policy nobody has decided, and an invented constant that looks sourced is worse than an open ticket"
+  },
+  {
+   "step": "promotion of any ledger row",
+   "reason": "only F-0462 is closed and no gate exists that can declare it done; promote.py requires one"
+  }
+ ]
+}

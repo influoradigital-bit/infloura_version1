@@ -1,0 +1,12 @@
+{
+  "text": "F-0451: admin suspend writes is_suspended but no auth path reads it, so a suspended brand/creator keeps logging in and keeps minting tokens.",
+  "verb": "FIX",
+  "resolution": "matched",
+  "scope": ["influora-api/src/main/java/com/influora/service/AuthService.java", "influora-api/src/test/java/com/influora/service/"],
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "oracles": [],
+  "dispatch": "agents",
+  "done_when": "a test asserts brandLogin refuses a suspended workspace, creatorLogin refuses a suspended creator profile, and refresh refuses both, and gates/build.mvn.sh exits 0",
+  "ask": null
+}

@@ -1147,7 +1147,7 @@ export function ContractsAndDeliverables() {
                       <p className="text-lg font-bold mt-1">{formatCurrency(selectedContract.value, selectedContract.currency)}</p>
                     </div>
                     <div className="bg-card rounded-lg p-3 border border-border">
-                      <p className="text-xs text-muted-foreground">Escrow Status</p>
+                      <p className="text-xs text-muted-foreground">Secured Funds</p>
                       <div className="flex items-center gap-2 mt-1">
                         {/*
                           F-0273: FROZEN is checked before the generic `escrowLocked` branch —
@@ -1289,7 +1289,7 @@ export function ContractsAndDeliverables() {
                           <Separator />
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">IF DISPUTE</span>
-                            <span className="font-medium">Platform mediates, escrow held</span>
+                            <span className="font-medium">Platform mediates, funds held securely</span>
                           </div>
                         </div>
                       </Card>
@@ -1600,16 +1600,16 @@ export function ContractsAndDeliverables() {
                                 <div>
                                   <p className="font-medium text-sm">
                                     {selectedContract.escrowFrozen
-                                      ? 'Escrow held — frozen'
+                                      ? 'Funds secured — frozen'
                                       : selectedContract.escrowLocked
-                                        ? 'Escrow held'
-                                        : 'No escrow held'}
+                                        ? 'Funds secured'
+                                        : 'No funds secured'}
                                   </p>
                                   <p className="text-xs text-muted-foreground">
                                     {selectedContract.escrowFrozen
                                       ? 'Frozen — under dispute, not releasable'
                                       : selectedContract.escrowLocked
-                                        ? 'Held in escrow'
+                                        ? 'Held securely'
                                         : 'Nothing is currently funded for this contract'}
                                   </p>
                                 </div>
@@ -1653,7 +1653,7 @@ export function ContractsAndDeliverables() {
                                 const subtext = isReleased
                                   ? 'Released to creator'
                                   : isFunded
-                                    ? 'Held in escrow'
+                                    ? 'Held securely'
                                     : isRefunded
                                       ? 'Refunded to brand'
                                       : isFrozen
@@ -1662,7 +1662,7 @@ export function ContractsAndDeliverables() {
                                 const statusLabel = isReleased
                                   ? 'Paid'
                                   : isFunded
-                                    ? 'In Escrow'
+                                    ? 'Secured'
                                     : isRefunded
                                       ? 'Refunded'
                                       : isFrozen

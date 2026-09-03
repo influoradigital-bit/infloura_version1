@@ -147,12 +147,17 @@ class ClaudeProvider:
             # this service builds them dynamically as plain dicts (Block A/B/C
             # assembly). cast is the narrow, explicit acknowledgement of that
             # boundary rather than an untyped call.
+            # Meera for Creators Phase A: a CREATOR turn carries NO tools.
+            # An absent `tools` kwarg is the unambiguous "no tool use" shape
+            # for the Messages API, so an empty list omits the kwarg entirely
+            # rather than sending `tools: []`.
+            tools_kwargs: dict[str, Any] = {"tools": cast("Any", tools)} if tools else {}
             async with self._client.messages.stream(
                 model=CLAUDE_MODEL,
                 max_tokens=max_tokens,
                 system=cast("Any", system_blocks),
                 messages=cast("Any", messages),
-                tools=cast("Any", tools),
+                **tools_kwargs,
             ) as stream:
                 current_tool: dict[str, Any] | None = None
                 # F-02: usage was emitted ONLY at message_stop, so a cancelled

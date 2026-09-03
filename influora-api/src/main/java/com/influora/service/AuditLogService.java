@@ -81,6 +81,30 @@ public class AuditLogService {
                         .build());
     }
 
+    /**
+     * Records a general admin-panel action that isn't a Meera tool call, an auth rejection, or a
+     * money-mutation event — e.g. T-ADMINMAIL-0903's admin custom email send (control #4: "who
+     * sent what to how many" must be answerable from the database after a restart). Not
+     * workspace-scoped ({@code workspaceId} left null) since a custom send targets a
+     * cross-workspace audience, not one workspace. {@code detail} follows the same redaction
+     * discipline as every other write here — shapes/ids/counts only (e.g. {@code campaignId},
+     * {@code recipientCount}), never the admin-authored subject/body text itself; that content's
+     * source-of-truth record is the dedicated {@code admin_email_campaigns} row, not this table.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordAdminAction(
+            String actorId, String eventType, String outcome, Map<String, Object> detail) {
+        repository.save(
+                AuditLogEntry.builder()
+                        .id(Ulids.newUlid())
+                        .actorType(ACTOR_HUMAN)
+                        .actorId(actorId)
+                        .eventType(eventType)
+                        .outcome(outcome)
+                        .detailJson(JsonLists.toJsonObject(detail))
+                        .build());
+    }
+
     /** Records a money-mutation event with before/after balances (escrow, wallet, payout state changes). */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordMoneyEvent(

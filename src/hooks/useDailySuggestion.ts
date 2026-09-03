@@ -13,21 +13,31 @@
  * `error: string | null` and leaves toast-firing to the component, mirroring
  * `useEscrowFund.ts`'s hook/component boundary).
  *
- * IG connect is deliberately NOT surfaced here (no `isConnected`/`connect()`/
- * `accountType`): "not connected yet" collapses into the public `idle` status,
- * and the component that renders `idle` (Ananya's `IGConnectPrompt`) calls
- * `api.metaOAuth.authorize()` directly — see API-CONTRACT.md §5 / datalayer
- * plan §1.5. `isConnected` is read fresh from
- * `api.metaOAuth.getLocalConnectionState()` on every render (a plain function
- * call in the hook body, not memoized across renders) so a post-OAuth-redirect
- * remount picks up the new connection state with zero callback plumbing
- * (API-CONTRACT.md §5, "no `onConnected` callback" ruling).
+ * IG connect is deliberately NOT surfaced here (no `connect()` method): "not connected
+ * yet" collapses into the public `idle` status, and the component that renders `idle`
+ * (Ananya's `IGConnectPrompt`) calls `api.metaOAuth.authorize()` directly — see
+ * API-CONTRACT.md §5 / datalayer plan §1.5.
+ *
+ * F-0480 — `isConnected` used to be read ONLY from the localStorage mirror
+ * (`api.metaOAuth.getLocalConnectionState()`), which is written by the OAuth callback page
+ * in THIS browser and wiped by every logout (auth-session.ts F-0165). A creator who
+ * connected Instagram on another device, or simply logged out and back in, therefore saw
+ * the "Connect Instagram" prompt on Co-pilot forever — the backend had a live token, the
+ * mirror said `connected: false`, and nothing here ever asked the backend. Settings already
+ * re-verified against `GET /meta/oauth/status` (CR-107, `useMetaConnection`); Co-pilot did
+ * not. The mirror is now only the synchronous first-paint seed; the backend answer (run
+ * through the same `reconcileMetaConnectionStatus` rule as Settings, via react-query so the
+ * page's two hook instances share one request) is what actually gates the suggestion.
+ * While that first verification is in flight and the seed says "not connected", the hook
+ * reports `loading` + `verifyingConnection: true` rather than `idle`, so a connected creator
+ * never flashes the connect prompt before the answer lands.
  */
 
 import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
-import type { DailySuggestion } from '@/lib/api';
+import type { DailySuggestion, MetaConnectionState } from '@/lib/api';
+import { reconcileMetaConnectionStatus } from '@/hooks/creator/useMetaConnection';
 
 export type { DailySuggestion } from '@/lib/api';
 
@@ -46,6 +56,11 @@ export interface UseDailySuggestionResult {
    *  "never connected" (renders `IGConnectPrompt`) from "connected but wrong account type"
    *  (renders `BusinessAccountRequired`) within the same `idle` status. */
   requiresBusinessAccount: boolean;
+  /** F-0480 — true while the first backend `GET /meta/oauth/status` re-verification is still
+   *  in flight AND the local seed says "not connected". `status` is `'loading'` in that window
+   *  (never `'idle'`), so the component can show a neutral "checking your connection" row
+   *  instead of either the connect prompt or the "usually ready within a day" copy. */
+  verifyingConnection: boolean;
   /** Human-readable message for the `'error'` state. The hook never toasts this itself — the
    *  component's own `useEffect(() => { if (error) toast(...) }, [error])` does. */
   error: string | null;
@@ -68,6 +83,10 @@ function todayKey(): string {
 }
 
 export const dailySuggestionQueryKey = (day: string) => ['creator', 'copilot', 'suggestion', day] as const;
+/** F-0480 — shared by every `useDailySuggestion` mount on a page (creator-copilot.tsx +
+ *  DailySuggestionSection.tsx both call the hook), so the status re-verification is ONE
+ *  request, not one per instance. */
+export const metaConnectionStatusQueryKey = ['creator', 'meta', 'connection-status'] as const;
 
 type CreatorSuggestionInteraction = 'dismissed' | 'acted';
 
@@ -110,10 +129,24 @@ export function useDailySuggestion(): UseDailySuggestionResult {
   const queryClient = useQueryClient();
   const day = todayKey();
 
-  // Read fresh every render — no onConnected callback, per API-CONTRACT.md §5 ruling. A
-  // post-OAuth-redirect remount re-evaluates this from scratch and picks up the new state.
-  const connectionState = api.metaOAuth.getLocalConnectionState();
+  // F-0480 — the backend is the source of truth for "is Instagram connected"; the localStorage
+  // mirror is only the synchronous seed for first paint (and the fallback if the status call
+  // fails, matching useMetaConnection's "keep last-known state on a network hiccup" rule).
+  // `reconcileMetaConnectionStatus` also writes the verified answer back into the mirror, so
+  // the next mount anywhere in the app seeds from truth.
+  const statusQuery = useQuery({
+    queryKey: metaConnectionStatusQueryKey,
+    queryFn: async () => reconcileMetaConnectionStatus(await api.metaOAuth.status()),
+    staleTime: 30_000,
+    retry: 1,
+  });
+  const localSeed = api.metaOAuth.getLocalConnectionState();
+  const connectionState: MetaConnectionState = statusQuery.data ?? localSeed;
   const isConnected = connectionState.connected;
+  // Only the very first verification (no data yet) can leave us not knowing; an error falls
+  // back to the seed and is NOT "verifying" — otherwise a creator with the backend down would
+  // spin forever instead of seeing the connect prompt / last-known state.
+  const verifyingConnection = statusQuery.isPending && !isConnected;
   // A personal IG account never completes a usable "connected" transition (spec §3.3) — this
   // stays a sub-branch of `idle`, not a 6th status value (API-CONTRACT.md §4.2 / datalayer plan §1.3).
   const requiresBusinessAccount = !connectionState.connected && connectionState.accountType === 'personal';
@@ -146,6 +179,7 @@ export function useDailySuggestion(): UseDailySuggestionResult {
   const localInteraction = suggestion ? getSessionInteraction(day, suggestion.id) : null;
 
   const status: SuggestionStatus = useMemo(() => {
+    if (verifyingConnection) return 'loading';
     if (!isConnected) return 'idle';
     if (query.isError) return 'error';
     if (query.isLoading || !query.data) return 'loading';
@@ -153,7 +187,7 @@ export function useDailySuggestion(): UseDailySuggestionResult {
     if (query.data.status === 'no_suggestion_today') return 'dismissed';
     // query.data.status === 'ready'
     return localInteraction ? 'dismissed' : 'ready';
-  }, [isConnected, query.isError, query.isLoading, query.data, localInteraction]);
+  }, [verifyingConnection, isConnected, query.isError, query.isLoading, query.data, localInteraction]);
 
   const error = useMemo(() => {
     if (!query.isError) return null;
@@ -180,12 +214,13 @@ export function useDailySuggestion(): UseDailySuggestionResult {
       suggestion,
       status,
       requiresBusinessAccount,
+      verifyingConnection,
       error,
       dismiss,
       markActed,
       retry,
     }),
-    [suggestion, status, requiresBusinessAccount, error, dismiss, markActed, retry],
+    [suggestion, status, requiresBusinessAccount, verifyingConnection, error, dismiss, markActed, retry],
   );
 }
 

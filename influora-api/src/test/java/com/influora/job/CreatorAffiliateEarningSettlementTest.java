@@ -9,6 +9,9 @@ import static org.mockito.Mockito.when;
 import com.influora.domain.entity.AffiliateEarning;
 import com.influora.domain.entity.AffiliateSettlementBatch;
 import com.influora.domain.entity.Wallet;
+import com.influora.service.PlatformWalletService;
+import com.influora.service.WalletLedgerService;
+import com.influora.service.WalletService;
 import com.influora.repository.AffiliateEarningRepository;
 import com.influora.repository.AffiliateSettlementBatchRepository;
 import com.influora.service.AuditLogService;
@@ -63,15 +66,34 @@ class CreatorAffiliateEarningSettlementTest {
     @Mock private AffiliateSettlementBatchRepository settlementBatchRepository;
     @Mock private AuditLogService auditLogService;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private WalletLedgerService walletLedgerService;
+    @Mock private WalletService walletService;
+    @Mock private PlatformWalletService platformWalletService;
 
     private AffiliateSettlementJob job;
     private AffiliateSettlementWriter writer;
 
+    /** Idempotency keys the stubbed ledger has already posted, so a replay credits nothing. */
+    private final java.util.Set<String> postedIdempotencyKeys = new java.util.HashSet<>();
+
     @BeforeEach
     void setUp() {
         // Real AffiliateSettlementWriter (not mocked) so @Transactional's proxy concern aside, the
-        // actual production doSettleCreator body runs -- exactly AffiliateSettlementJobTest's setup.
-        writer = new AffiliateSettlementWriter(affiliateEarningRepository);
+        // actual production doSettleCreator body runs.
+        //
+        // [F-0402] Deliberately the FOUR-ARG @Autowired constructor, not the legacy one-arg form
+        // AffiliateSettlementJobTest uses. The one-arg constructor leaves the three wallet
+        // collaborators null, and creditCreatorWallet returns early when any of them is null
+        // (AffiliateSettlementWriter#creditCreatorWallet) -- so a writer built that way can never
+        // credit a wallet no matter how correct the production code is, and a wallet assertion
+        // against it would fail forever, reporting a fixed defect as unfixed. Spring injects this
+        // four-arg constructor in production; the test must construct what production runs.
+        writer =
+                new AffiliateSettlementWriter(
+                        affiliateEarningRepository,
+                        walletLedgerService,
+                        walletService,
+                        platformWalletService);
         job =
                 new AffiliateSettlementJob(
                         affiliateEarningRepository,
@@ -119,6 +141,50 @@ class CreatorAffiliateEarningSettlementTest {
         return Wallet.forUser("01HWALLETCREATOR123456", CREATOR_ID);
     }
 
+    /**
+     * [F-0402] Stands the three wallet collaborators up so the assertions below stay STATE
+     * assertions on {@link Wallet#getBalance()} rather than degrading into call-count checks.
+     *
+     * <p>The stubbed {@code post} mirrors what the real {@code WalletLedgerService} does to the
+     * denormalized projection — it applies the credit delta to the destination wallet in the same
+     * breath as writing the ledger row (see that class's javadoc: "{@code wallets.balance} is a
+     * denormalized projection kept in sync inside the same transaction"). It credits ONLY when the
+     * destination is this creator's wallet, so a post aimed anywhere else still leaves the balance
+     * at zero and the test still fails.
+     *
+     * <p>This does NOT credit the wallet on the test's behalf: nothing here runs unless production
+     * code calls {@code post}. If the settlement path never posts — the original defect — the
+     * balance stays at zero and every assertion below fails, which is exactly what it did before
+     * the fix landed.
+     */
+    private void wireWalletLedger(Wallet creatorWallet) {
+        Wallet clearingWallet = Wallet.forUser("01HWALLETCLEARING12345", "01HPLATFORMCLEARING12");
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        when(walletService.requireOrCreateUserWallet(CREATOR_ID)).thenReturn(creatorWallet);
+        when(walletLedgerService.post(
+                        anyString(), anyString(), any(), anyString(), any(), any(), anyString(),
+                        anyString(), anyString(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            String toWalletId = invocation.getArgument(1);
+                            BigDecimal amount = invocation.getArgument(2);
+                            String idempotencyKey = invocation.getArgument(8);
+                            // Model the real service's dedupe, not a naive credit-every-call: the
+                            // production post() short-circuits on findExistingPosting(idempotencyKey)
+                            // and is backed by the uq_wtx_idem unique constraint, so a replayed
+                            // posting returns the existing row and moves no money. A stub that
+                            // credited on every call would report a double-credit that production
+                            // cannot actually produce.
+                            if (!postedIdempotencyKeys.add(idempotencyKey)) {
+                                return null;
+                            }
+                            if (creatorWallet.getId().equals(toWalletId)) {
+                                creatorWallet.applyBalanceDelta(amount);
+                            }
+                            return null;
+                        });
+    }
+
     // ------------------------------------------------------------------
     // THE DEFECT [F-0402]
     // ------------------------------------------------------------------
@@ -132,6 +198,7 @@ class CreatorAffiliateEarningSettlementTest {
         BigDecimal commission = new BigDecimal("500.00");
         AffiliateEarning earning = pendingEarning("e1", CREATOR_ID, commission);
         Wallet creatorWallet = freshCreatorWallet();
+        wireWalletLedger(creatorWallet);
 
         when(affiliateEarningRepository.findDistinctCreatorIdByStatusIn(any())).thenReturn(List.of(CREATOR_ID));
         when(affiliateEarningRepository.findByCreatorIdAndStatusIn(eq(CREATOR_ID), any()))
@@ -166,6 +233,7 @@ class CreatorAffiliateEarningSettlementTest {
         BigDecimal commission = new BigDecimal("240.00");
         AffiliateEarning earning = pendingEarning("e2", CREATOR_ID, commission);
         Wallet creatorWallet = freshCreatorWallet();
+        wireWalletLedger(creatorWallet);
 
         AffiliateSettlementBatch firstBatch =
                 AffiliateSettlementBatch.builder().id("01HBATCHFIRST12345678").periodYearMonth(PERIOD).build();
@@ -201,6 +269,7 @@ class CreatorAffiliateEarningSettlementTest {
     @Test
     @DisplayName("F-0402 [must keep passing]: settling an earning still flips its status to SETTLED and links the batch")
     void testSettlingEarningStillFlipsStatusToSettled() {
+        wireWalletLedger(freshCreatorWallet());
         AffiliateEarning earning = pendingEarning("e3", CREATOR_ID, new BigDecimal("75.00"));
         AffiliateSettlementBatch batch =
                 AffiliateSettlementBatch.builder().id("01HBATCHSTATUS1234567").periodYearMonth(PERIOD).build();

@@ -10,13 +10,16 @@ interface SuggestionEmptyStateProps {
    *  themes matched" — copy differs; both are silent/non-alarming defaults
    *  pending the Ash/Tejas zero-state copy ruling (spec §6, tracked open in
    *  API-CONTRACT.md §6.1 — not a wire-shape question). */
-  reason: 'pending_tagging' | 'no_suggestion_today';
+  reason: 'pending_tagging' | 'no_suggestion_today' | 'verifying_connection';
   className?: string;
 }
 
 const COPY: Record<SuggestionEmptyStateProps['reason'], string> = {
   pending_tagging: 'Usually ready within a day.',
   no_suggestion_today: 'No new idea today — check back tomorrow.',
+  // F-0480 — shown only while the backend connection check is in flight on a fresh mount; the
+  // "within a day" copy above would be wrong for a ~200ms status round-trip.
+  verifying_connection: 'Checking your Instagram connection…',
 };
 
 /**

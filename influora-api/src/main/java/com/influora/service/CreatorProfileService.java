@@ -32,16 +32,19 @@ public class CreatorProfileService {
     private final CreatorProfileRepository creatorProfileRepository;
     private final PlatformStatRepository platformStatRepository;
     private final UserRepository userRepository;
+    private final ExternalCreatorLinkService externalCreatorLinkService;
 
     public CreatorProfileService(
             CreatorContextService creatorContext,
             CreatorProfileRepository creatorProfileRepository,
             PlatformStatRepository platformStatRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            ExternalCreatorLinkService externalCreatorLinkService) {
         this.creatorContext = creatorContext;
         this.creatorProfileRepository = creatorProfileRepository;
         this.platformStatRepository = platformStatRepository;
         this.userRepository = userRepository;
+        this.externalCreatorLinkService = externalCreatorLinkService;
     }
 
     /**
@@ -170,6 +173,16 @@ public class CreatorProfileService {
             throw new ApiException("USERNAME_TAKEN", "This username is already taken", HttpStatus.CONFLICT);
         }
         profile.applyUsername(username);
+        // Q5.4 (T-CREATORCONNECT-0902, Critical, fixed 2026-09-03) — do NOT call
+        // externalCreatorLinkService.onCreatorIdentified here. An Influora vanity handle claimed
+        // via this endpoint is not a verified Instagram identity: any authenticated creator can
+        // set it to any string with no proof of controlling that Instagram account. Feeding it
+        // into the JOINED-hook matcher (keyed on external_creators.ig_username) let an attacker
+        // land-grab a targeted external creator row, flip it to JOINED under the impostor's own
+        // creatorProfileId, and get the brand emailed to hire them. The hook now fires only from
+        // Meta-verified sources: MetaTokenStorage#storeCreatorToken (id+username from the OAuth
+        // token exchange) and PortfolioService#upsertPlatformStat (handle+ig_account_id from a
+        // real Meta Graph sync). See ExternalCreatorLinkServiceTest for the regression test.
     }
 
     /**

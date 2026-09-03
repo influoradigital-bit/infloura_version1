@@ -48,6 +48,7 @@ import { clearCreatorSession } from '@/lib/auth-session';
 import { TaxIdentityForm } from '@/components/creator/TaxIdentityForm';
 import { KycIdentityForm } from '@/components/creator/KycIdentityForm';
 import { ConnectedAccounts } from '@/components/creator/connected-accounts';
+import { MeeraSettingsSection } from '@/components/creator/MeeraSettingsSection';
 import { api, isApiLive, ApiError, type CreatorProfileSelfResponse } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 import { COMPANY } from '@/lib/company';
@@ -447,6 +448,10 @@ export default function CreatorSettingsPage() {
             src/. A creator visiting Settings had no Connected Accounts card, no connection
             status, and no way to see what's linked at all. */}
         <ConnectedAccounts />
+
+        {/* T-MEERA-CREATOR-PHASE-A (A3/A6) — rate floors, filters, automation level,
+            language/tone, working hours, representation, and DPDP conversations list. */}
+        <MeeraSettingsSection />
 
         {/* Notifications */}
         <Card className="mb-6">

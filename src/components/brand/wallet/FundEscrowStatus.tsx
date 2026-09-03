@@ -36,7 +36,7 @@ export function fundEscrowAnnouncement(p: FundEscrowStatusProps): string {
       : 'Every active campaign already has funds locked.';
   }
   if (p.selectedId) {
-    return `Ready to lock funds for ${p.selectedTitle ?? 'the selected campaign'}. Continue to fund escrow.`;
+    return `Ready to secure funds for ${p.selectedTitle ?? 'the selected campaign'}. Continue to secure funds.`;
   }
   return 'Select a campaign to fund.';
 }

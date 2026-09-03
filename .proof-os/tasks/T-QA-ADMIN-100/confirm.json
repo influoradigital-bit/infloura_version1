@@ -1,0 +1,12 @@
+{
+  "text": "Swapnil asks Priya 100 questions about the admin surface (admin features working, marketing/Tejas data needs stored and shown in UI) across feature/user/brand/creator/admin bases; Priya answers each from code.",
+  "verb": "EXPLAIN",
+  "resolution": "matched",
+  "scope": ["influora-api/src/main/java/com/influora/**", "src/admin/**", "src/lib/api.ts", "influora-api/src/main/resources/db/**"],
+  "owner": "priya",
+  "reviewer": "kavya",
+  "oracles": [],
+  "dispatch": "agents",
+  "done_when": ".proof-os/tasks/T-QA-ADMIN-100/ADMIN-QA-100.md contains 100 numbered questions and 100 answers, and each answer cites file:line",
+  "ask": null
+}

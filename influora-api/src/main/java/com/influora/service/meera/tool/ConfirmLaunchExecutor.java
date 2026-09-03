@@ -272,7 +272,7 @@ public class ConfirmLaunchExecutor {
                     Map.of("campaignId", campaignId));
             throw new ApiException(
                     "ESCROW_NOT_FUNDED",
-                    "Campaign has no FUNDED escrow hold — cannot confirm launch",
+                    "Campaign has no secured payment in FUNDED status — cannot confirm launch",
                     HttpStatus.CONFLICT);
         }
 

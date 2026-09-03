@@ -1,0 +1,72 @@
+[
+ {
+  "rank": 1,
+  "id": "F-0382",
+  "class": "two-api-layers",
+  "where": "src/lib/meera-api.ts",
+  "missed_by": "a check that every client function POSTing to a money endpoint carries the gate \u2014 grepping api.ts alone reports the work as complete"
+ },
+ {
+  "rank": 2,
+  "id": "F-0437",
+  "class": "fabricated-data-in-ui",
+  "where": "src/components/brand/deal-room/deal-payments-tab.tsx",
+  "missed_by": "a test asserting the payments tab renders an empty state when the server returns no milestones"
+ },
+ {
+  "rank": 8,
+  "id": "F-0141",
+  "class": "incomplete-doc-correction",
+  "where": "influora-api/src/main/java/com/influora/service/billing/SubscriptionService.java:45-66",
+  "missed_by": "Kavya's QA pass verified the 3 named paths were correctly scoped but didn't check the enumeration was exhaustive"
+ },
+ {
+  "rank": 10,
+  "id": "F-0158",
+  "class": "one-way-flag-latch-in-money-path",
+  "where": "influora-api/src/main/java/com/influora/service/billing/SubscriptionService.java (applySubscriptionWebhookUpdate ~L512, cancelAtPeriodEnd never cleared on re-activation)",
+  "missed_by": "a re-subscribe -> missed-webhook regression test; also 2 vacuous test assertions found by mutation testing (unstubbed planRepository.findById masking done_when clause 4, missing period fields masking the no-side-effects assertion on the webhook cancel case)"
+ },
+ {
+  "rank": 11,
+  "id": "F-0159",
+  "class": "delayed-charge-clears-pending-cancel",
+  "where": "influora-api/src/main/java/com/influora/service/billing/SubscriptionService.java:512-526 (applySubscriptionWebhookUpdate, targetStatus==ACTIVE guard)",
+  "missed_by": "a test for a late 'charged' webhook landing on an already-cancel-pending row"
+ },
+ {
+  "rank": 12,
+  "id": "F-0162",
+  "class": "reclaim-op-outside-ops-bean-deadlocks",
+  "where": "influora-api/src/main/java/com/influora/service/IdempotencyService.java:131,261 (reclaimFailedForRetry called on repository directly, not via IdempotencyReservationOps)",
+  "missed_by": "an ambient-transaction x FAILED-row test case in IdempotencyServicePersistenceTest (existing FAILED-reclaim test runs under NOT_SUPPORTED, no ambient tx to contend with)"
+ },
+ {
+  "rank": 13,
+  "id": "F-0177",
+  "class": "content-consistency",
+  "where": "index.html:6,18 vs src/pages/landing.tsx:165",
+  "missed_by": "no automated check compares the static index.html head to each page's <Seo> title output; would need a small script that renders each route and diffs title strings"
+ },
+ {
+  "rank": 14,
+  "id": "F-0184",
+  "class": "content-integrity",
+  "where": "public/llms.txt:14,29,30 and :38-39 (references /tds, /kyc, /refund-policy, /guidelines/creators, /guidelines/brands)",
+  "missed_by": "a CI check that HEADs (or route-matches) every URL listed in llms.txt and sitemap.xml and fails the build on any that don't resolve to real content"
+ },
+ {
+  "rank": 15,
+  "id": "F-0232",
+  "class": "revive-ignores-attached-artifacts",
+  "where": "influora-api/src/main/java/com/influora/service/CollaborationReviveService.java:1",
+  "missed_by": "no test asserted what may be ATTACHED to a row being revived; the behavioural tests mocked the repository and could not see it"
+ },
+ {
+  "rank": 16,
+  "id": "F-0288",
+  "class": "thin-event-log",
+  "where": "influora-api/src/main/java/com/influora/service/DealService.java:401,693",
+  "missed_by": "a test asserting each lifecycle transition appends a system message to the deal thread"
+ }
+]

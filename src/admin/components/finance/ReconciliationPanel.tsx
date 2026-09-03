@@ -25,6 +25,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+// F-0486 — the same single predicate api.ts and meera-api.ts read, so the control and the
+// network layer cannot disagree about whether a payout can be sent.
+import { isMoneyActionBlocked } from '@/lib/api';
 import { financeApi } from '../../services/api-contracts';
 import type { ReconciliationItem } from '../../types/admin.types';
 
@@ -96,6 +99,10 @@ export default function ReconciliationPanel() {
   const [error, setError] = useState<string | null>(null);
   const [hasQueried, setHasQueried] = useState(false);
   const [retryState, setRetryState] = useState<Record<string, RetryState>>({});
+  // F-0486. Retrying a payout re-drives the live RazorpayX rail, which is money OUT — the same
+  // 'withdraw' operation PAYOUTS_ENABLED holds closed by default. Read once per render rather
+  // than per row: it is a build-time flag, identical for every row in the table.
+  const payoutsBlocked = isMoneyActionBlocked('withdraw');
 
   function runReconciliation(forDate: string) {
     setIsLoading(true);
@@ -256,16 +263,30 @@ export default function ReconciliationPanel() {
                       <TableCell className="min-w-40">
                         {row.status === 'MISMATCH' ? (
                           <div className="flex flex-col gap-1">
+                            {/* F-0486 — when payouts are off this control cannot do the one thing
+                                it names, so it is disabled and SAYS WHY rather than staying live
+                                and failing on click. An always-failing money button is the
+                                dead-control class F-0264 exists for. */}
                             <Button
                               type="button"
                               size="sm"
                               variant="destructive"
-                              disabled={retry?.status === 'in-flight'}
+                              disabled={retry?.status === 'in-flight' || payoutsBlocked}
+                              title={
+                                payoutsBlocked
+                                  ? 'Payouts are disabled on this environment'
+                                  : undefined
+                              }
                               onClick={() => handleRetryPayout(row)}
                             >
                               <RefreshCw className="size-3.5" aria-hidden="true" />
                               {retry?.status === 'in-flight' ? 'Retrying…' : 'Retry payout'}
                             </Button>
+                            {payoutsBlocked && (
+                              <span className="text-xs text-muted-foreground">
+                                Payouts disabled on this environment
+                              </span>
+                            )}
                             {retry?.status === 'success' && (
                               <span className="text-xs text-success-foreground">{retry.message}</span>
                             )}

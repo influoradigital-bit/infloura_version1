@@ -1,5 +1,6 @@
 package com.influora.job;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -18,6 +19,8 @@ import com.influora.service.BrandContextService.BillingRecipient;
 import com.influora.service.billing.SubscriptionService;
 import com.influora.service.notification.event.SubscriptionHaltedEvent;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -128,16 +131,20 @@ class SubscriptionDunningJobTest {
     @Test
     @DisplayName("overlap guard blocks concurrent runs via AtomicBoolean")
     void testOverlapGuardPreventsConcurrentRuns() throws InterruptedException {
+        CountDownLatch inGuardedSection = new CountDownLatch(1);
         when(subscriptionRepository.findByStatus(SubscriptionStatus.PAST_DUE))
                 .thenAnswer(
                         inv -> {
+                            inGuardedSection.countDown();
                             Thread.sleep(100);
                             return List.of();
                         });
 
         Thread t1 = new Thread(job::runDunning);
         t1.start();
-        Thread.sleep(10);
+        assertTrue(
+                inGuardedSection.await(5, TimeUnit.SECONDS),
+                "the first run never entered the guarded section - the overlap guard was not exercised");
         job.runDunning();
         t1.join();
 

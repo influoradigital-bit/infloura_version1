@@ -136,7 +136,7 @@ export function CreatorDealContractTab({
         // when the brand funds a milestone — a separate action. Submit control is gated on in_progress.
         toast({
           title: 'Contract signed',
-          description: 'Waiting for the brand to fund escrow. You’ll be notified when you can start work.',
+          description: 'Waiting for the brand to secure the funds. You’ll be notified when you can start work.',
         });
         setSignerName('');
       }

@@ -1,0 +1,72 @@
+[
+ {
+  "id": "F-0382",
+  "class": "two-api-layers",
+  "where": "src/lib/meera-api.ts",
+  "symptom": "the payments gate was first added only to api.ts payments.fundEscrow; useEscrowFund (the hook behind the real Fund Escrow control) calls meeraApi.fundEscrow instead, so the guarded path was not the path users take",
+  "missed_by": "a check that every client function POSTing to a money endpoint carries the gate \u2014 grepping api.ts alone reports the work as complete"
+ },
+ {
+  "id": "F-0437",
+  "class": "fabricated-data-in-ui",
+  "where": "src/components/brand/deal-room/deal-payments-tab.tsx",
+  "symptom": "When the server sends no milestones the payments tab replaces the empty list with a fabricated schedule derived from the deal value and maps over it unconditionally, so a brand sees an invented payment plan; the sibling contract tab has a real empty state.",
+  "missed_by": "a test asserting the payments tab renders an empty state when the server returns no milestones"
+ },
+ {
+  "id": "F-0388",
+  "class": "empty-state-misleads-repair",
+  "where": "src/ (23 sites)",
+  "symptom": "gates/empty_state_honesty.py now DETECTS this class and the coupon surface is repaired, but 23 unbacked availability claims remain live in src/ - including brand-notifications.tsx:48 and creator-notifications.tsx:47 ('All caught up' on an empty list) and brand-wallet.tsx:1443. F-0278 and F-0349 are still open instances. Run: python .proof-os/gates/empty_state_honesty.py src",
+  "missed_by": "nothing - this is the known remainder after gating detection; it needs repair work, not a new gate"
+ },
+ {
+  "id": "F-0051",
+  "class": "unverified-at-runtime",
+  "where": "commit 066e7de (frontend lint fix, 13 files)",
+  "symptom": "changes proven by tsc + eslint + vite build only; no dev-server click-through and vitest suite not run, so runtime behaviour of touched screens is believed, not proved",
+  "missed_by": "no E2E/live-UI run (neha) and npm run test not executed against the touched files"
+ },
+ {
+  "id": "F-0064",
+  "class": "admin-endpoint-epics",
+  "where": "influora-api (5 deferred admin features)",
+  "symptom": "5 admin features hidden via unavailable() pending real backend: escrow hold/release/refund (Tier B: security-reviewed direct-vs-dispute design), payouts/retry (Razorpay Route epic), tds/26q (TDS engine), reconciliation admin read+resolve model (service is webhook-only), moderation appeal subsystem",
+  "missed_by": "no epic tracking existed; SCOPE.md tiered them but the FE still called them. Now surfaced via unavailable() + this record; each needs its own security-reviewed build"
+ },
+ {
+  "id": "F-0104",
+  "class": "tracker-evidence-conflation",
+  "where": "wiki/errors/BRAND-BUG-TRACKER.md:P-1 row",
+  "symptom": "tracker's false-alarm evidence note for P-1 (/wallet/escrow/release + /payout 'reachable via 2nd API layer') actually describes a DIFFERENT endpoint (GET /wallet/escrow/{id} via meera-api.ts getEscrowStatus) -- /release and /payout genuinely have zero frontend callers, LOW severity still correct but the cited evidence is wrong",
+  "missed_by": "the original audit's own re-check of its false-alarm correction; a grep of the exact endpoint string against api.ts+meera-api.ts before writing the tracker row"
+ },
+ {
+  "id": "F-0130",
+  "class": "ambiguous-pooled-hold",
+  "where": "influora-api/.../EscrowService.java:262-264 (null-collaboration branch); src/pages/brand-wallet.tsx Fund Campaign Escrow card",
+  "symptom": "wallet-page funding has no milestoneId, so it's a second UI generator of collaboration-less pool holds; copy doesn't disclose this is pool funding rather than a per-milestone hold, and it's unconfirmed whether downstream dispute-settlement lookups are exercised for wallet-originated (vs Meera-originated) null-collaboration holds",
+  "missed_by": "needs a Vikram confirmation, not a frontend-only fix"
+ },
+ {
+  "id": "F-0141",
+  "class": "incomplete-doc-correction",
+  "where": "influora-api/src/main/java/com/influora/service/billing/SubscriptionService.java:45-66",
+  "symptom": "BL-5's fix replaced a false 'webhook-only' javadoc with a new enumeration of non-webhook writers that itself omits a third one: cancel(String workspaceId), reachable from POST /billing/cancel -- same defect class the ticket was filed for",
+  "missed_by": "Kavya's QA pass verified the 3 named paths were correctly scoped but didn't check the enumeration was exhaustive"
+ },
+ {
+  "id": "F-0143",
+  "class": "verification-only-ticket-left-undocumented",
+  "where": "wiki/errors/BRAND-BUG-TRACKER.md P-1 row",
+  "symptom": "P-1 required only a tracker evidence-note correction (no code change) but the tracker was not yet edited when independently reviewed -- /wallet/escrow/release has a client method (releasePayout) with zero callers, /wallet/escrow/payout has no client method in either API layer at all; tracker still cites the wrong endpoint (GET /wallet/escrow/{id}) as the false-alarm one",
+  "missed_by": "this task's own tracker-edit step, which was sequenced after sign-off rather than before"
+ },
+ {
+  "id": "F-0158",
+  "class": "one-way-flag-latch-in-money-path",
+  "where": "influora-api/src/main/java/com/influora/service/billing/SubscriptionService.java (applySubscriptionWebhookUpdate ~L512, cancelAtPeriodEnd never cleared on re-activation)",
+  "symptom": "BL-2's fix makes cancelAtPeriodEnd load-bearing for SubscriptionRenewalResetJob's routing, but the flag is a one-way latch never cleared when a cancelled subscription re-activates \u2014 a paying, re-subscribed customer whose webhook is later delayed/missed gets their ACTIVE Pro subscription wrongly finalized to CANCELLED while Razorpay keeps charging them",
+  "missed_by": "a re-subscribe -> missed-webhook regression test; also 2 vacuous test assertions found by mutation testing (unstubbed planRepository.findById masking done_when clause 4, missing period fields masking the no-side-effects assertion on the webhook cancel case)"
+ }
+]

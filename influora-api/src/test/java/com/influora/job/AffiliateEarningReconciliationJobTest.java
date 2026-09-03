@@ -14,6 +14,8 @@ import com.influora.service.AffiliateEarningsService;
 import com.influora.service.AuditLogService;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
@@ -130,16 +132,20 @@ class AffiliateEarningReconciliationJobTest {
     @Test
     @DisplayName("overlap guard blocks concurrent runs via AtomicBoolean")
     void testOverlapGuardPreventsConcurrentRuns() throws InterruptedException {
+        CountDownLatch inGuardedSection = new CountDownLatch(1);
         when(redemptionRepository.findOrphanedWithoutAffiliateEarning(any(Instant.class)))
                 .thenAnswer(
                         invocation -> {
+                            inGuardedSection.countDown();
                             Thread.sleep(100);
                             return Collections.emptyList();
                         });
 
         Thread thread1 = new Thread(() -> job.reconcileMissingAffiliateEarnings());
         thread1.start();
-        Thread.sleep(10);
+        assertTrue(
+                inGuardedSection.await(5, TimeUnit.SECONDS),
+                "the first run never entered the guarded section - the overlap guard was not exercised");
 
         job.reconcileMissingAffiliateEarnings();
 

@@ -73,7 +73,7 @@ async def test_fetch_brand_context_maps_spring_response_into_assembler_shape():
         }
     )
 
-    ctx = await _fetch_brand_context(
+    ctx, _error = await _fetch_brand_context(
         spring=spring,
         workspace_id=WORKSPACE_ID,
         onbehalf_jwt="jwt-abc",
@@ -126,7 +126,7 @@ async def test_fetch_brand_context_carries_outcome_digest_into_assembled_block_b
         }
     )
 
-    ctx = await _fetch_brand_context(
+    ctx, _error = await _fetch_brand_context(
         spring=spring,
         workspace_id=WORKSPACE_ID,
         onbehalf_jwt="jwt-abc",
@@ -152,7 +152,7 @@ async def test_fetch_brand_context_degrades_to_empty_on_spring_call_error():
     spring = MagicMock()
     spring.get_meera_context = AsyncMock(side_effect=SpringCallError(503, "spring_error", "down"))
 
-    ctx = await _fetch_brand_context(
+    ctx, _error = await _fetch_brand_context(
         spring=spring,
         workspace_id=WORKSPACE_ID,
         onbehalf_jwt="jwt-abc",
@@ -172,7 +172,7 @@ async def test_fetch_brand_context_degrades_to_empty_on_unexpected_exception():
     spring = MagicMock()
     spring.get_meera_context = AsyncMock(side_effect=TimeoutError("network hiccup"))
 
-    ctx = await _fetch_brand_context(
+    ctx, _error = await _fetch_brand_context(
         spring=spring,
         workspace_id=WORKSPACE_ID,
         onbehalf_jwt="jwt-abc",
@@ -195,3 +195,24 @@ async def test_fetch_brand_context_never_reads_client_brand_or_prompt_version():
 
     params = set(inspect.signature(_fetch_brand_context).parameters)
     assert params == {"spring", "workspace_id", "onbehalf_jwt", "request_id", "conversation"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_brand_context_fails_closed_on_spring_401_and_403():
+    """Fix round 1 (BLOCKING, item 2): an auth rejection from Spring is a
+    structured error, never an empty Block B. 5xx/network stay fail-open
+    (covered above)."""
+    for status_code in (401, 403):
+        spring = MagicMock()
+        spring.get_meera_context = AsyncMock(
+            side_effect=SpringCallError(status_code, "ON_BEHALF_JWT_INVALID", "rejected")
+        )
+        ctx, error = await _fetch_brand_context(
+            spring=spring,
+            workspace_id=WORKSPACE_ID,
+            onbehalf_jwt="stream-token-forwarded-as-onbehalf",
+            request_id="req-auth",
+            conversation=[],
+        )
+        assert ctx is None, status_code
+        assert error == "context_unauthorized"

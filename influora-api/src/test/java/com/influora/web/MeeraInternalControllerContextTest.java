@@ -125,4 +125,70 @@ class MeeraInternalControllerContextTest {
 
         org.mockito.Mockito.verifyNoInteractions(contextService);
     }
+
+    /**
+     * Fix round 1, item 3: a BRAND on-behalf token requesting {@code audience=CREATOR} used to be
+     * silently honored — Spring echoed back whatever audience Python asked for without ever
+     * comparing it to the JWT-verified principal's real {@code userType}. Now rejected with 403
+     * {@code AUDIENCE_PRINCIPAL_MISMATCH} before {@link MeeraContextService} is ever called.
+     */
+    @Test
+    @DisplayName(
+            "BRAND on-behalf token + audience=CREATOR in the body -> 403 AUDIENCE_PRINCIPAL_MISMATCH,"
+                    + " contextService never called")
+    void testContextRejectsAudiencePrincipalMismatchBrandTokenClaimingCreator() {
+        when(onBehalfAuthResolver.resolveForWorkspace(ON_BEHALF_JWT, WORKSPACE_ID))
+                .thenReturn(new OnBehalfContext("user1", WORKSPACE_ID, UserType.BRAND, "conv-1"));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> controller.context(ON_BEHALF_JWT, new ContextRequest(WORKSPACE_ID, "CREATOR")));
+
+        assertEquals("AUDIENCE_PRINCIPAL_MISMATCH", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        org.mockito.Mockito.verifyNoInteractions(contextService);
+    }
+
+    /**
+     * The mirror case: a CREATOR on-behalf token can never claim {@code audience=BRAND} either.
+     */
+    @Test
+    @DisplayName(
+            "CREATOR on-behalf token + audience=BRAND in the body -> 403 AUDIENCE_PRINCIPAL_MISMATCH,"
+                    + " contextService never called")
+    void testContextRejectsAudiencePrincipalMismatchCreatorTokenClaimingBrand() {
+        String creatorUserId = "01HCREATORUSERID12345";
+        when(onBehalfAuthResolver.resolveForWorkspace(ON_BEHALF_JWT, creatorUserId))
+                .thenReturn(new OnBehalfContext("user1", creatorUserId, UserType.CREATOR, "conv-1"));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> controller.context(ON_BEHALF_JWT, new ContextRequest(creatorUserId, "BRAND")));
+
+        assertEquals("AUDIENCE_PRINCIPAL_MISMATCH", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        org.mockito.Mockito.verifyNoInteractions(contextService);
+    }
+
+    /**
+     * The actual branch taken must be derived from {@code ctx.userType()} (the JWT-verified
+     * principal), never from {@code body.audience()} — proven here by a body that already agrees
+     * with the principal (so no mismatch is thrown) but is passed through {@link
+     * MeeraContextService#assemble} as the CONSTANT {@code "CREATOR"}, not whatever exact string
+     * casing/value the body carried.
+     */
+    @Test
+    @DisplayName("CREATOR on-behalf token + audience=CREATOR -> assemble is called with ctx.userType(), i.e. \"CREATOR\"")
+    void testContextDerivesBranchFromPrincipalNotBody() {
+        String creatorUserId = "01HCREATORUSERID12345";
+        when(onBehalfAuthResolver.resolveForWorkspace(ON_BEHALF_JWT, creatorUserId))
+                .thenReturn(new OnBehalfContext("user1", creatorUserId, UserType.CREATOR, "conv-1"));
+        when(contextService.assemble(creatorUserId, "CREATOR")).thenReturn(new Object());
+
+        controller.context(ON_BEHALF_JWT, new ContextRequest(creatorUserId, "CREATOR"));
+
+        verify(contextService).assemble(creatorUserId, "CREATOR");
+    }
 }

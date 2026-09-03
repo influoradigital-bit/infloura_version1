@@ -610,7 +610,7 @@ export default function CreatorPortfolioPublicPage() {
                 Ready to collaborate with {firstName(page.displayName)}?
               </h2>
               <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
-                Brands using Influora get verified deliverables, escrow protection, and a built-in deal room.
+                Brands using Influora get verified deliverables, payment protection, and a built-in deal room.
               </p>
               <div className="mt-5 flex flex-col sm:flex-row gap-2.5 justify-center">
                 <Button asChild size="lg" className="gap-2">
@@ -1022,7 +1022,7 @@ function ContactDialog({ open, onOpenChange, username, displayName }: ContactDia
               />
             </div>
             <p className="text-[11px] text-muted-foreground">
-              For paid collaborations on Influora, use <span className="font-medium">Invite to Campaign</span> instead — payments are escrow-protected.
+              For paid collaborations on Influora, use <span className="font-medium">Invite to Campaign</span> instead — payments are payment-protected.
             </p>
             <DialogFooter className="mt-2">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>

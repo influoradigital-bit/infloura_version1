@@ -31,8 +31,16 @@ interface DailySuggestionSectionProps {
  */
 export function DailySuggestionSection({ className }: DailySuggestionSectionProps) {
   const { toast } = useToast();
-  const { suggestion, status, requiresBusinessAccount, error, dismiss, markActed, retry } =
-    useDailySuggestion();
+  const {
+    suggestion,
+    status,
+    requiresBusinessAccount,
+    verifyingConnection,
+    error,
+    dismiss,
+    markActed,
+    retry,
+  } = useDailySuggestion();
   const [businessPromptSkipped, setBusinessPromptSkipped] = React.useState(false);
 
   React.useEffect(() => {
@@ -59,7 +67,14 @@ export function DailySuggestionSection({ className }: DailySuggestionSectionProp
   }
 
   if (status === 'loading') {
-    return <SuggestionEmptyState reason="pending_tagging" className={className} />;
+    // F-0480 — first backend connection check still in flight: neither the connect prompt
+    // nor "usually ready within a day" is true yet.
+    return (
+      <SuggestionEmptyState
+        reason={verifyingConnection ? 'verifying_connection' : 'pending_tagging'}
+        className={className}
+      />
+    );
   }
 
   if (status === 'error') {

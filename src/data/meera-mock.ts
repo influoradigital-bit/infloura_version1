@@ -182,7 +182,7 @@ export const MEERA_CONVERSATION_SCRIPT: MeeraTurn[] = [
   },
   {
     id: 't4-funding',
-    meeraResponses: ['Locking your funds into escrow now.'],
+    meeraResponses: ['Securing your funds now.'],
     suggestedReplies: [],
   },
 ]

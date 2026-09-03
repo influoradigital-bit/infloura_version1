@@ -1,0 +1,766 @@
+<title>Brand Onboarding Field Trace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+
+<style>
+  :root {
+    --ground:      #FBFCFD;
+    --surface:     #FFFFFF;
+    --surface-sub: #F3F5F8;
+    --line:        #DFE4EB;
+    --line-soft:   #EAEEF3;
+    --ink:         #14181F;
+    --ink-mid:     #4C5665;
+    --ink-soft:    #6E7889;
+    --accent:      #3B6EA5;
+    --accent-soft: #E8EFF7;
+    --saved:       #2E7D5B;
+    --saved-bg:    #E6F2EC;
+    --risk:        #A8721A;
+    --risk-bg:     #FAF0DC;
+    --lost:        #C0392F;
+    --lost-bg:     #FBE9E7;
+    --shadow:      0 1px 2px rgba(20, 24, 31, .05), 0 1px 8px rgba(20, 24, 31, .04);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0E1116;
+      --surface:     #161A21;
+      --surface-sub: #1C212A;
+      --line:        #2A313C;
+      --line-soft:   #232932;
+      --ink:         #E6EAF0;
+      --ink-mid:     #A6B0BF;
+      --ink-soft:    #7C8697;
+      --accent:      #7EA9D8;
+      --accent-soft: #1B2733;
+      --saved:       #5FBF92;
+      --saved-bg:    #16281F;
+      --risk:        #D9A648;
+      --risk-bg:     #2A2113;
+      --lost:        #E8776B;
+      --lost-bg:     #2C1917;
+      --shadow:      0 1px 2px rgba(0, 0, 0, .4), 0 1px 10px rgba(0, 0, 0, .25);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:      #0E1116;
+    --surface:     #161A21;
+    --surface-sub: #1C212A;
+    --line:        #2A313C;
+    --line-soft:   #232932;
+    --ink:         #E6EAF0;
+    --ink-mid:     #A6B0BF;
+    --ink-soft:    #7C8697;
+    --accent:      #7EA9D8;
+    --accent-soft: #1B2733;
+    --saved:       #5FBF92;
+    --saved-bg:    #16281F;
+    --risk:        #D9A648;
+    --risk-bg:     #2A2113;
+    --lost:        #E8776B;
+    --lost-bg:     #2C1917;
+    --shadow:      0 1px 2px rgba(0, 0, 0, .4), 0 1px 10px rgba(0, 0, 0, .25);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 48px 28px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead { display: flex; flex-direction: column; gap: 14px; }
+
+  h1 {
+    margin: 0;
+    font-size: clamp(28px, 4.2vw, 40px);
+    font-weight: 700;
+    letter-spacing: -.021em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+
+  .standfirst {
+    margin: 0;
+    max-width: 64ch;
+    font-size: 17px;
+    line-height: 1.6;
+    color: var(--ink-mid);
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    padding-top: 6px;
+    border-top: 1px solid var(--line-soft);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+
+  /* ---------- verdict banner ---------- */
+  .verdict {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    border: 1px solid var(--saved);
+    border-left-width: 4px;
+    border-radius: 6px;
+    background: var(--saved-bg);
+  }
+  .verdict-tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .1em;
+    color: var(--saved);
+  }
+  .verdict-text { margin: 0; font-size: 15px; color: var(--ink); }
+
+  /* ---------- stat tiles ---------- */
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+    gap: 14px;
+  }
+  .tile {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 18px 18px 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .tile::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--bar, var(--line));
+  }
+  .tile-num {
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+    color: var(--bar, var(--ink));
+    line-height: 1.1;
+  }
+  .tile-label { font-size: 13px; color: var(--ink-mid); }
+  .t-saved { --bar: var(--saved); }
+  .t-risk  { --bar: var(--risk); }
+  .t-lost  { --bar: var(--lost); }
+  .t-total { --bar: var(--accent); }
+
+  /* ---------- sections ---------- */
+  section { display: flex; flex-direction: column; gap: 20px; }
+  h2 {
+    margin: 0;
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: -.012em;
+  }
+  .sec-head { display: flex; flex-direction: column; gap: 6px; }
+  .sec-note { margin: 0; max-width: 68ch; color: var(--ink-mid); font-size: 14.5px; }
+
+  /* ---------- trace ---------- */
+  .traces { display: flex; flex-direction: column; gap: 18px; }
+  .trace {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .trace-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--surface-sub);
+  }
+  .trace-field {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .trace-verdict {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--lost);
+  }
+  .trace-body { padding: 18px; overflow-x: auto; }
+  .stages {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    min-width: 620px;
+  }
+  .stage {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .stage:first-child { border-radius: 5px 0 0 5px; }
+  .stage:last-child  { border-radius: 0 5px 5px 0; }
+  .stage + .stage { border-left: none; }
+  .stage-n {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .stage-val {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12.5px;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+  .stage.ok    { background: var(--saved-bg); border-color: var(--saved); color: var(--ink); }
+  .stage.ok .stage-n { color: var(--saved); }
+  .stage.dead  { background: var(--lost-bg); border-color: var(--lost); }
+  .stage.dead .stage-n { color: var(--lost); }
+  .stage.gone  { background: var(--surface-sub); color: var(--ink-soft); }
+  .break-note {
+    margin: 12px 0 0;
+    font-size: 13.5px;
+    color: var(--ink-mid);
+    border-left: 2px solid var(--lost);
+    padding-left: 12px;
+  }
+  .break-note b { color: var(--ink); font-weight: 600; }
+
+  /* ---------- table ---------- */
+  .table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; }
+  caption {
+    text-align: left;
+    padding: 14px 18px 12px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--surface-sub);
+  }
+  th {
+    text-align: left;
+    padding: 10px 16px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td {
+    padding: 11px 16px;
+    font-size: 13.5px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.f { font-family: "IBM Plex Mono", monospace; font-weight: 500; white-space: nowrap; }
+  td.c { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--ink-mid); }
+  tr.row-lost td.f { color: var(--lost); }
+  tr.row-risk td.f { color: var(--risk); }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 3px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    white-space: nowrap;
+  }
+  .p-saved { background: var(--saved-bg); color: var(--saved); }
+  .p-risk  { background: var(--risk-bg);  color: var(--risk); }
+  .p-lost  { background: var(--lost-bg);  color: var(--lost); }
+  .p-na    { background: var(--surface-sub); color: var(--ink-soft); }
+
+  /* ---------- findings ---------- */
+  .findings { display: flex; flex-direction: column; gap: 14px; }
+  .finding {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px 20px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--sev, var(--line));
+    border-radius: 5px;
+    box-shadow: var(--shadow);
+  }
+  .f-high { --sev: var(--lost); }
+  .f-med  { --sev: var(--risk); }
+  .f-low  { --sev: var(--ink-soft); }
+  .f-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .f-sev {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    color: var(--sev);
+  }
+  .f-title { font-size: 15.5px; font-weight: 600; letter-spacing: -.005em; }
+  .f-where {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-soft);
+    word-break: break-word;
+  }
+  .f-body { margin: 0; font-size: 14px; color: var(--ink-mid); max-width: 78ch; }
+  .f-fix {
+    margin: 0;
+    font-size: 13.5px;
+    padding: 10px 12px;
+    background: var(--accent-soft);
+    border-radius: 4px;
+    color: var(--ink);
+  }
+  .f-fix b { color: var(--accent); font-weight: 600; }
+
+  /* ---------- ran ---------- */
+  .ran { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .ran-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+  }
+  .ran-cmd {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--ink-mid);
+    word-break: break-all;
+  }
+  .ran-res { font-size: 13px; font-weight: 600; }
+  .ok-t   { color: var(--saved); }
+  .bad-t  { color: var(--lost); }
+
+  footer {
+    border-top: 1px solid var(--line-soft);
+    padding-top: 18px;
+    font-size: 13px;
+    color: var(--ink-soft);
+    max-width: 72ch;
+  }
+
+  a { color: var(--accent); }
+  a:focus-visible, .stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 640px) {
+    .wrap { padding: 32px 18px 72px; gap: 44px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Persistence audit · Influora</div>
+    <h1>Which onboarding fields actually reach the database</h1>
+    <p class="standfirst">
+      Every brand-onboarding input traced end to end — rendered field, request payload, server DTO,
+      entity mutator, column. Audited 2026-09-01, then fixed and gated the same day. One field is
+      still collected without being stored: Terms consent has no column to land in.
+    </p>
+    <div class="meta">
+      <span>2026-09-01</span>
+      <span>branch fix/f0390-money-flags-build-pipeline</span>
+      <span>16 fields traced · 6 records closed · 1 open</span>
+    </div>
+  </header>
+
+  <div class="verdict">
+    <span class="verdict-tag">VERDICT · RESOLVED (believed)</span>
+    <p class="verdict-text">
+      All 6 records closed onto a gate that runs the real suites. F-0392/F-0393 were fixed by the
+      concurrent backend track and re-verified here; F-0394/F-0395/F-0396/F-0397 were fixed in this run.
+      One residual stays open: consent is collected but still stored in no column (F-0398).
+    </p>
+  </div>
+
+  <section>
+    <div class="tiles">
+      <div class="tile t-saved">
+        <div class="tile-num">15</div>
+        <div class="tile-label">Fields saved cleanly</div>
+      </div>
+      <div class="tile t-saved">
+        <div class="tile-num">0</div>
+        <div class="tile-label">Saved but at risk</div>
+      </div>
+      <div class="tile t-risk">
+        <div class="tile-num">1</div>
+        <div class="tile-label">Collected, never stored</div>
+      </div>
+      <div class="tile t-total">
+        <div class="tile-num">94%</div>
+        <div class="tile-label">Fully verified clean</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Where the two lost values died</h2>
+      <p class="sec-note">
+        Both traces below are the <em>found</em> state, kept because the failure shape is the point:
+        a value survives only if every stage accepts it, and the deserialization boundary is silent —
+        Jackson's unknown-property failure is not configured, so Spring Boot's default of
+        <code>false</code> drops unrecognized keys with no 400 and no log line. <code>phone</code> now
+        reaches <code>users.phone_number</code>; <code>acceptedTerms</code> is now genuinely asked for,
+        though it still has no column to land in (F-0398).
+      </p>
+    </div>
+
+    <div class="traces">
+
+      <article class="trace">
+        <div class="trace-head">
+          <span class="trace-field">phone</span>
+          <span class="trace-verdict">Required in the UI · never stored</span>
+        </div>
+        <div class="trace-body">
+          <div class="stages">
+            <div class="stage ok">
+              <span class="stage-n">1 · Input</span>
+              <span class="stage-val">Mobile number<br>Required, /^[6-9]\d{9}$/</span>
+            </div>
+            <div class="stage ok">
+              <span class="stage-n">2 · Payload</span>
+              <span class="stage-val">phone: data.phone<br>brand-onboarding.tsx:76</span>
+            </div>
+            <div class="stage dead">
+              <span class="stage-n">3 · Server DTO</span>
+              <span class="stage-val">BrandRegisterRequest<br>8 components, no phone</span>
+            </div>
+            <div class="stage gone">
+              <span class="stage-n">4 · Column</span>
+              <span class="stage-val">— nothing written</span>
+            </div>
+          </div>
+          <p class="break-note">
+            <b>Breaks at stage 3.</b> Confirmed by reflecting over the compiled
+            <code>target/classes</code>, not just the source. <code>BrandCompanyRequest</code> has no
+            phone either, and <code>AuthService.brandRegister</code> never calls
+            <code>Workspace.updatePhone</code> or <code>User.setPhoneNumber</code>. Both destination
+            columns already exist and already work from other screens.
+          </p>
+        </div>
+      </article>
+
+      <article class="trace">
+        <div class="trace-head">
+          <span class="trace-field">acceptedTerms</span>
+          <span class="trace-verdict">Asserted true · never asked, never stored</span>
+        </div>
+        <div class="trace-body">
+          <div class="stages">
+            <div class="stage dead">
+              <span class="stage-n">1 · Input</span>
+              <span class="stage-val">no checkbox rendered<br>zero readers in either step</span>
+            </div>
+            <div class="stage ok">
+              <span class="stage-n">2 · Payload</span>
+              <span class="stage-val">acceptedTerms: true<br>hardcoded, :73</span>
+            </div>
+            <div class="stage ok">
+              <span class="stage-n">3 · Server DTO</span>
+              <span class="stage-val">@AssertTrue<br>can never fail</span>
+            </div>
+            <div class="stage gone">
+              <span class="stage-n">4 · Column</span>
+              <span class="stage-val">— no consent column exists</span>
+            </div>
+          </div>
+          <p class="break-note">
+            <b>Breaks at stage 1, and again at stage 4.</b> The wizard records agreement the user was
+            never shown, and the server's validation gate is vacuous because the client always sends
+            <code>true</code>. Nothing persists the consent — no column, no timestamp, no policy
+            version. The separate <code>brand-register.tsx</code> and
+            <code>creator-register.tsx</code> pages do render real checkboxes; only this wizard skips it.
+          </p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Full field matrix</h2>
+      <p class="sec-note">
+        Grouped by wizard step. “Saved” means the value was traced to a specific column through a
+        specific entity mutator.
+      </p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Step 1 — Account</caption>
+        <thead>
+          <tr><th>Field</th><th>Server DTO</th><th>Column</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="f">firstName</td><td class="c">BrandRegisterRequest</td><td class="c">users.first_name</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">lastName</td><td class="c">BrandRegisterRequest</td><td class="c">users.last_name</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">email</td><td class="c">BrandRegisterRequest</td><td class="c">users.email (UNIQUE)</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">password</td><td class="c">BrandRegisterRequest</td><td class="c">users.password_hash</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">confirmPassword</td><td class="c">—</td><td class="c">client-side check only</td><td><span class="pill p-na">BY DESIGN</span></td></tr>
+          <tr><td class="f">emailOtpCode</td><td class="c">verifyBrandEmail</td><td class="c">users.email_verified</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">phone</td><td class="c">BrandRegisterRequest.phone</td><td class="c">users.phone_number (UNIQUE)</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr class="row-risk"><td class="f">acceptTerms</td><td class="c">acceptedTerms — real value, @AssertTrue can now fail</td><td class="c">none — F-0398 open</td><td><span class="pill p-risk">COLLECTED, NOT STORED</span></td></tr>
+          <tr><td class="f">acceptPrivacy</td><td class="c">merged into the single Terms + Privacy control</td><td class="c">n/a</td><td><span class="pill p-na">MERGED</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Step 2 — Company</caption>
+        <thead>
+          <tr><th>Field</th><th>Server DTO</th><th>Column</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="f">companyName</td><td class="c">BrandCompanyRequest</td><td class="c">workspaces.name</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">companySlug</td><td class="c">+ ensureSlugAvailable</td><td class="c">workspaces.slug (UNIQUE)</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">workspaceType</td><td class="c">BrandCompanyRequest</td><td class="c">workspaces.type</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">industry</td><td class="c">BrandCompanyRequest</td><td class="c">workspaces.industry</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">companySize</td><td class="c">BrandCompanyRequest</td><td class="c">workspaces.company_size — STARTUP/SMB/ENTERPRISE</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">websiteUrl</td><td class="c">BrandCompanyRequest</td><td class="c">workspaces.website_url</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">description</td><td class="c">BrandCompanyRequest</td><td class="c">workspaces.description</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">logoUrl</td><td class="c">BrandCompanyRequest</td><td class="c">workspaces.logo_url — Continue gated on upload</td><td><span class="pill p-saved">SAVED</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <caption>Step 3 and deferred collection</caption>
+        <thead>
+          <tr><th>Field</th><th>Where it is captured</th><th>Column</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="f">onboarding complete</td><td class="c">completeBrand</td><td class="c">users.onboarding_completed</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">gstin / pan / docs</td><td class="c">brand-kyc-prompt.tsx</td><td class="c">workspaces.gstin, pan, kyc_*_doc_url</td><td><span class="pill p-saved">SAVED</span></td></tr>
+          <tr><td class="f">wallet funding</td><td class="c">first deal acceptance</td><td class="c">wallet top-up</td><td><span class="pill p-na">BY DESIGN</span></td></tr>
+          <tr><td class="f">team invites</td><td class="c">/brand/settings</td><td class="c">workspace_members</td><td><span class="pill p-na">BY DESIGN</span></td></tr>
+          <tr><td class="f">teamMembers, walletAmount</td><td class="c">removed from OnboardingData</td><td class="c">—</td><td><span class="pill p-saved">CLEANED</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>PHONE-0829 across all three phone columns</h2>
+      <p class="sec-note">
+        The ticket splits into P1 creator capture, P2 brand onboarding persist, P3 admin display.
+        Only P1 is complete. P2 and P3 each shipped their frontend half.
+      </p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Path</th><th>Write / read path</th><th>State</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="f">users.phone_number</td><td class="c">CreatorProfileService.applyPhone — normalize, validate, UNIQUE check</td><td><span class="pill p-saved">P1 DONE</span></td></tr>
+          <tr><td class="f">workspaces.phone</td><td class="c">WorkspaceService.updateMyWorkspace — brand settings, post-onboarding</td><td><span class="pill p-saved">WORKS</span></td></tr>
+          <tr><td class="f">brand signup → users.phone_number</td><td class="c">AuthService.brandRegister — normalize, validate, UNIQUE, clean 409 on race</td><td><span class="pill p-saved">P2 DONE</span></td></tr>
+          <tr><td class="f">admin reads creator phone</td><td class="c">both DTOs carry it; AdminCreatorServiceTest asserts round-trip incl. the null case</td><td><span class="pill p-saved">P3 DONE</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Findings — all closed onto one gate</h2>
+      <p class="sec-note">
+        Each finding below is stated as it was found on 2026-09-01. All six are now closed against
+        <code>.proof-os/gates/F-0392-F-0397-onboarding-field-persistence.sh</code>, which runs the real
+        suites rather than grepping for the fix — so a differently-spelled reintroduction still turns it
+        red. The gate was falsified before being trusted: run against deliberately reverted source, four
+        of its seven frontend assertions failed on the exact pre-fix symptoms. The one thing not fixed is
+        consent persistence, tracked as F-0398.
+      </p>
+    </div>
+    <div class="findings">
+
+      <article class="finding f-high">
+        <div class="f-top"><span class="f-sev">HIGH</span><span class="f-title">Brand onboarding phone is still discarded</span></div>
+        <div class="f-where">influora-api/.../dto/auth/BrandRegisterRequest.java:9 · src/pages/brand-onboarding.tsx:76</div>
+        <p class="f-body">
+          The wizard marks Mobile number Required and validates it, and the page now sends it. No server
+          DTO accepts it, and no service writes it. The in-code comment claims this was fixed; the data
+          loss is unchanged.
+        </p>
+        <p class="f-fix"><b>Fix ·</b> Add a phone component to BrandRegisterRequest, normalize through IndianPhoneUtils in AuthService.brandRegister, and call workspace.updatePhone before save.</p>
+      </article>
+
+      <article class="finding f-high">
+        <div class="f-top"><span class="f-sev">HIGH</span><span class="f-title">Admin still cannot see creator phone numbers</span></div>
+        <div class="f-where">influora-api/.../dto/admin/AdminCreatorDtos.java:20</div>
+        <p class="f-body">
+          The originating complaint of the ticket. Neither admin creator DTO carries phone, so the panel
+          renders its “not provided” fallback for every creator even after one saves a number in settings.
+          The frontend was written against an assumed contract and says so in its own comment.
+        </p>
+        <p class="f-fix"><b>Fix ·</b> Add phone to CreatorSummaryDto and CreatorDetailDto, populate from User.getPhoneNumber() in the mappers, then drop the FLAG FOR CONFIRMATION notes in admin.types.ts.</p>
+      </article>
+
+      <article class="finding f-high">
+        <div class="f-top"><span class="f-sev">HIGH</span><span class="f-title">Consent is asserted but never asked for, and never stored</span></div>
+        <div class="f-where">src/pages/brand-onboarding.tsx:73</div>
+        <p class="f-body">
+          No terms checkbox is rendered in either live step, the payload hardcodes true, and the server's
+          @AssertTrue therefore can never fail. No column, timestamp, or policy version records the
+          agreement.
+        </p>
+        <p class="f-fix"><b>Fix ·</b> Render a real Terms and Privacy checkbox, gate the submit on it, send the real value, and persist accepted_at plus policy version.</p>
+      </article>
+
+      <article class="finding f-med">
+        <div class="f-top"><span class="f-sev">MEDIUM</span><span class="f-title">companySize writes values the admin API rejects</span></div>
+        <div class="f-where">onboarding-steps.tsx:145 · AdminBrandService.java:775</div>
+        <p class="f-body">
+          Onboarding writes twelve display strings; admin accepts only STARTUP, SMB and ENTERPRISE and
+          throws INVALID_BRAND_SIZE otherwise, so an onboarded brand's size can never be re-saved through
+          admin. The unknown value passes through raw into a frontend type declared as that closed union.
+        </p>
+        <p class="f-fix"><b>Fix ·</b> Pick one vocabulary — map at write time, or widen the union and backfill.</p>
+      </article>
+
+      <article class="finding f-med">
+        <div class="f-top"><span class="f-sev">MEDIUM</span><span class="f-title">Logo lost if the user advances mid-upload</span></div>
+        <div class="f-where">src/components/brand/onboarding/onboarding-steps.tsx:884</div>
+        <p class="f-body">
+          Continue is not disabled while the R2 upload is in flight and validate() does not check it, so
+          logoUrl resolves to undefined and the entity writes null — with the preview still on screen and
+          no error shown.
+        </p>
+        <p class="f-fix"><b>Fix ·</b> Pass the disabled prop StepFooter already accepts while isUploadingLogo is true.</p>
+      </article>
+
+      <article class="finding f-med">
+        <div class="f-top"><span class="f-sev">MEDIUM</span><span class="f-title">Every automated gate greens on a half-applied feature</span></div>
+        <div class="f-where">influora-api/src/test/java/com/influora/service/CreatorProfileServiceTest.java</div>
+        <p class="f-body">
+          Compile, typecheck and 21 backend tests all pass. None asserts that a brand's phone reaches the
+          database, and none covers the admin phone DTO — so CI cannot tell “done” from “frontend done,
+          backend missing”.
+        </p>
+        <p class="f-fix"><b>Fix ·</b> Add the two tests that fail today: brand-register persists phone, and CreatorSummaryDto exposes it.</p>
+      </article>
+
+      <article class="finding f-low">
+        <div class="f-top"><span class="f-sev">LOW</span><span class="f-title">Dead members left in OnboardingData</span></div>
+        <div class="f-where">src/components/brand/onboarding/onboarding-steps.tsx:84</div>
+        <p class="f-body">
+          teamMembers, walletAmount, gstin, pan and the four KYC document members have had no readers
+          since the wizard went from six steps to three. Harmless, but the type reads as though the wizard
+          still collects them.
+        </p>
+        <p class="f-fix"><b>Fix ·</b> Delete them; the deferred-collection comment already documents where they moved.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>What was actually run</h2>
+      <p class="sec-note">Commands executed against this working tree, not predicted results.</p>
+    </div>
+    <div class="ran">
+      <div class="ran-item">
+        <span class="eyebrow">The gate itself</span>
+        <span class="ran-cmd">bash .proof-os/gates/F-0392-F-0397-onboarding-field-persistence.sh</span>
+        <span class="ran-res ok-t">exit 0</span>
+      </div>
+      <div class="ran-item">
+        <span class="eyebrow">Frontend types</span>
+        <span class="ran-cmd">npm run typecheck</span>
+        <span class="ran-res ok-t">exit 0, clean</span>
+      </div>
+      <div class="ran-item">
+        <span class="eyebrow">Touched backend tests</span>
+        <span class="ran-cmd">mvn -o test -Dtest=AuthServiceTest,AdminCreatorServiceTest,CreatorProfileServiceTest</span>
+        <span class="ran-res ok-t">48/48 pass</span>
+      </div>
+      <div class="ran-item">
+        <span class="eyebrow">Falsification</span>
+        <span class="ran-cmd">new suite run against deliberately reverted source</span>
+        <span class="ran-res bad-t">4 of 7 red — the gate catches the real bug</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Traced by reading each path end to end and running the checks above. No live database was queried —
+    persistence verdicts are traced through entity mutators and column mappings, which is what determines
+    whether a write can happen at all. The Markdown companion is at
+    <code>wiki/reports/test-report-field-persistence-brand-onboarding-2026-09-01.md</code>.
+  </footer>
+
+</div>

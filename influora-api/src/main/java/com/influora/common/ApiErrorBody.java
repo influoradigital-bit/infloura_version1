@@ -22,16 +22,20 @@ public record ApiErrorBody(
         BigDecimal requiredAmount,
         BigDecimal walletBalance,
         BigDecimal shortfallAmount,
-        String currency) {
+        String currency,
+        // T-CREATORCONNECT-0902 — additive, nullable-by-default (same pattern as the
+        // insufficient-funds quartet above): only CreatorAlreadyOnInfluoraException's 409 ever
+        // sets this, every other error path leaves it null and NON_NULL drops it from the wire.
+        String linkedCreatorProfileId) {
 
     public record FieldError(String field, String message) {}
 
     public static ApiErrorBody of(String code, String message) {
-        return new ApiErrorBody(code, message, null, null, null, null, null, null);
+        return new ApiErrorBody(code, message, null, null, null, null, null, null, null);
     }
 
     public static ApiErrorBody validation(String message, List<FieldError> fields) {
-        return new ApiErrorBody("VALIDATION_ERROR", message, null, fields, null, null, null, null);
+        return new ApiErrorBody("VALIDATION_ERROR", message, null, fields, null, null, null, null, null);
     }
 
     /**
@@ -47,6 +51,16 @@ public record ApiErrorBody(
             BigDecimal shortfallAmount,
             String currency) {
         return new ApiErrorBody(
-                code, message, null, null, requiredAmount, walletBalance, shortfallAmount, currency);
+                code, message, null, null, requiredAmount, walletBalance, shortfallAmount, currency, null);
+    }
+
+    /**
+     * T-CREATORCONNECT-0902 — {@code POST /creators/external/{id}/connect} 409 when the target is
+     * already a real Influora creator. {@code linkedCreatorProfileId} lets the frontend offer the
+     * create-campaign link straight from the error instead of re-fetching.
+     */
+    public static ApiErrorBody creatorAlreadyOnInfluora(String message, String linkedCreatorProfileId) {
+        return new ApiErrorBody(
+                "CREATOR_ALREADY_ON_INFLUORA", message, null, null, null, null, null, null, linkedCreatorProfileId);
     }
 }

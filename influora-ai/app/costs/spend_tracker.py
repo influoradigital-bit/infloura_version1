@@ -65,8 +65,64 @@ except ImportError:  # pragma: no cover
 
 _GLOBAL_KEY_PREFIX = "influora:ai:spend:global"
 _WORKSPACE_KEY_PREFIX = "influora:ai:spend:ws"
+# Meera for Creators Phase A (A8): per-creator MONTHLY counter, keyed by
+# UTC calendar month -- `influora:ai:spend:creator:{creator_id}:{YYYY-MM}`.
+_CREATOR_MONTH_KEY_PREFIX = "influora:ai:spend:creator"
 _KEY_TTL_SECONDS = 3 * 24 * 60 * 60  # 3 days -- comfortably outlives one UTC day + clock skew
+# A month key must outlive its month plus skew; 40 days covers the longest
+# month with room to spare and lets old months self-expire.
+_MONTH_KEY_TTL_SECONDS = 40 * 24 * 60 * 60
 _MICROS_PER_DOLLAR = Decimal(1000000)
+
+# A8 default: USD 0.75/creator/month (~INR 60). The live value comes from
+# `Settings.ai_creator_monthly_cap_usd` (env AI_CREATOR_MONTHLY_CAP_USD); this
+# constant documents the spec default and backs the settings default.
+CREATOR_MONTHLY_CAP_USD = Decimal("0.75")
+
+# Friendly, persona-consistent over-cap message (A8). Spoken-safe: no symbols,
+# no jargon. Deliberately does NOT mention dollars, tokens or "spend" -- the
+# creator never bought anything, this is a usage allowance.
+CREATOR_CAP_MESSAGE = (
+    "You've reached your monthly Meera usage limit. It resets on the 1st of next month. "
+    "If you need more before then, message support and we'll sort it out."
+)
+
+
+# Structured error code the routes return when the creator cap trips
+# (chat: HTTP 429 body; voice: the 200 "fallback" envelope's `code` field).
+CREATOR_CAP_CODE = "CREATOR_MONTHLY_CAP_REACHED"
+
+# Gate fix round 1 (Q7): the CREATOR context payload key Spring uses to carry
+# a per-creator cap override (USD, string-rendered like every other number in
+# that payload, or a bare number). Set by support through the admin override
+# endpoint; absent/null means "use the process-wide default".
+CREATOR_CAP_OVERRIDE_CONTEXT_KEY = "ai_monthly_cap_usd"
+
+
+def creator_cap_override_from_context(creator_context: dict | None) -> str | None:
+    """Reads the per-creator cap override off a CREATOR context payload.
+    Returns the raw value as a string (parsed by `creator_monthly_cap_usd`),
+    or None when the payload carries no override. Strings are stripped of the
+    thousands separators Java's NumberFormat inserts ("1,000.00")."""
+    if not isinstance(creator_context, dict):
+        return None
+    value = creator_context.get(CREATOR_CAP_OVERRIDE_CONTEXT_KEY)
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value).strip().replace(",", "")
+    return text or None
+
+
+class SpendCapExceeded(Exception):
+    """Raised by `check_creator_spend_gate` when a creator is at/over their
+    monthly cap. `message` is safe to show to the creator verbatim."""
+
+    def __init__(self, message: str = CREATOR_CAP_MESSAGE, *, creator_id: str | None = None):
+        self.message = message
+        self.creator_id = creator_id
+        super().__init__(message)
 
 
 def _today_utc() -> dt.date:
@@ -83,8 +139,17 @@ def _from_micros(micros: int | str | None) -> Decimal:
     return Decimal(int(micros)) / _MICROS_PER_DOLLAR
 
 
+def _current_month_utc() -> str:
+    """'YYYY-MM' for the current UTC month -- the per-creator cap's period."""
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m")
+
+
 def _global_key(day: dt.date) -> str:
     return f"{_GLOBAL_KEY_PREFIX}:{day.isoformat()}"
+
+
+def _creator_month_key(creator_id: str, month: str) -> str:
+    return f"{_CREATOR_MONTH_KEY_PREFIX}:{creator_id}:{month}"
 
 
 def _workspace_key(workspace_id: str, day: dt.date) -> str:
@@ -105,6 +170,11 @@ class _DailySpendState:
 
 _state = _DailySpendState()
 _lock = asyncio.Lock()
+
+# In-memory per-creator monthly totals: {(creator_id, "YYYY-MM"): Decimal}.
+# Same fallback contract as the daily counters (per-process when Redis is
+# absent or failing). Old months are pruned lazily on write.
+_creator_month_totals: dict[tuple[str, str], Decimal] = {}
 
 
 def _roll_if_new_day_locked() -> None:
@@ -140,6 +210,22 @@ async def _get_workspace_total_memory(workspace_id: str) -> Decimal:
     async with _lock:
         _roll_if_new_day_locked()
         return _state.per_workspace.get(workspace_id, Decimal(0))
+
+
+async def _record_creator_spend_memory(cost_usd: Decimal, creator_id: str) -> Decimal:
+    month = _current_month_utc()
+    async with _lock:
+        stale = [key for key in _creator_month_totals if key[1] != month]
+        for key in stale:
+            del _creator_month_totals[key]
+        total = _creator_month_totals.get((creator_id, month), Decimal(0)) + cost_usd
+        _creator_month_totals[(creator_id, month)] = total
+        return total
+
+
+async def _get_creator_month_total_memory(creator_id: str) -> Decimal:
+    async with _lock:
+        return _creator_month_totals.get((creator_id, _current_month_utc()), Decimal(0))
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +318,40 @@ async def _get_global_total_redis() -> Decimal | None:
         return None
 
 
+async def _record_creator_spend_redis(cost_usd: Decimal, creator_id: str) -> Decimal | None:
+    try:
+        client = await _get_redis_client()
+        if client is None:
+            return None
+        key = _creator_month_key(creator_id, _current_month_utc())
+        async with client.pipeline(transaction=True) as pipe:
+            pipe.incrby(key, _to_micros(cost_usd))
+            pipe.expire(key, _MONTH_KEY_TTL_SECONDS)
+            results = await pipe.execute()
+        return _from_micros(results[0])
+    except Exception:
+        logger.warning(
+            "spend_tracker: Redis record_creator_spend failed, falling back to in-memory counter",
+            exc_info=True,
+        )
+        return None
+
+
+async def _get_creator_month_total_redis(creator_id: str) -> Decimal | None:
+    try:
+        client = await _get_redis_client()
+        if client is None:
+            return None
+        value = await client.get(_creator_month_key(creator_id, _current_month_utc()))
+        return _from_micros(value)
+    except Exception:
+        logger.warning(
+            "spend_tracker: Redis get_creator_month_total failed, falling back to in-memory counter",
+            exc_info=True,
+        )
+        return None
+
+
 async def _get_workspace_total_redis(workspace_id: str) -> Decimal | None:
     try:
         client = await _get_redis_client()
@@ -313,6 +433,124 @@ async def get_workspace_total_today(workspace_id: str) -> Decimal:
         if redis_total is not None:
             return max(redis_total, memory_total)
     return memory_total
+
+
+# ---------------------------------------------------------------------------
+# Meera for Creators Phase A (A8) -- per-creator MONTHLY cap.
+#
+# CREATOR-audience chat turns are metered per creator per UTC calendar month,
+# on top of (not instead of) the daily global/workspace counters above: the
+# route still calls `record_spend` for the daily ledger AND
+# `record_creator_spend` for this monthly one. Same Redis-with-in-memory-
+# fallback contract and the same F-03 "whichever store saw more" read.
+# ---------------------------------------------------------------------------
+
+
+async def record_creator_spend(
+    cost_usd: Decimal,
+    creator_id: str,
+    reservation: CreatorReservation | None = None,
+) -> Decimal:
+    """Adds `cost_usd` to this creator's running total for the current UTC
+    month. Returns the new monthly total.
+
+    Gate fix round 1 (Q7): `reservation` is the hold taken by
+    `check_creator_spend_gate`; it is released FIRST (same F-05 shape as
+    `record_spend`) so the real number replaces the estimate instead of
+    stacking on top of it, and a Redis failure below can never leave it in
+    place."""
+    await release_creator(reservation)
+    memory_total = await _record_creator_spend_memory(cost_usd, creator_id)
+    if _redis_configured():
+        redis_total = await _record_creator_spend_redis(cost_usd, creator_id)
+        if redis_total is not None:
+            return max(redis_total, memory_total)
+    return memory_total
+
+
+async def get_creator_month_total(creator_id: str) -> Decimal:
+    memory_total = await _get_creator_month_total_memory(creator_id)
+    if _redis_configured():
+        redis_total = await _get_creator_month_total_redis(creator_id)
+        if redis_total is not None:
+            return max(redis_total, memory_total)
+    return memory_total
+
+
+def creator_monthly_cap_usd(override: Decimal | str | float | int | None = None) -> Decimal:
+    """The cap that applies to one creator.
+
+    `override` is the per-creator allowance Spring carries in the CREATOR
+    context payload (`ai_monthly_cap_usd`, set by support through the admin
+    override endpoint -- gate fix round 1, Q7: "who can raise it" used to be
+    "nobody without a redeploy"). When present and parseable it wins over the
+    process-wide default (env AI_CREATOR_MONTHLY_CAP_USD, default 0.75); an
+    unparseable value is logged and ignored so a bad row can never disable the
+    cap by accident. `<= 0` disables the cap (either source).
+    """
+    if override is not None:
+        try:
+            return Decimal(str(override))
+        except (ArithmeticError, ValueError, TypeError):
+            logger.warning(
+                "spend_tracker: ignoring unparseable per-creator cap override %r", override
+            )
+    return Decimal(str(get_settings().ai_creator_monthly_cap_usd))
+
+
+async def check_creator_spend_gate(
+    creator_id: str | None,
+    audience: str | None,
+    *,
+    reserve_usd: Decimal | str | float | None = None,
+    reserve_ttl_seconds: float | None = None,
+    cap_usd: Decimal | str | float | int | None = None,
+) -> CreatorReservation | None:
+    """Enforce the per-creator monthly cap for CREATOR-audience turns (A8).
+
+    No-op for any other audience (brand turns are governed by the daily
+    counters + `app.costs.gate.check_spend_gate`). Raises `SpendCapExceeded`
+    -- carrying a creator-safe friendly message -- when this creator's
+    month-to-date total PLUS in-flight reservations is at or over the cap.
+    Call it in the route AFTER audience derivation and BEFORE any provider
+    call; the route turns the exception into a structured non-5xx response.
+
+    Gate fix round 1 (Q7): this used to be a plain read-then-compare that
+    held nothing between the check and `record_creator_spend`, so two
+    concurrent turns at cap-minus-one both passed. Pass `reserve_usd` (a
+    pessimistic per-turn estimate) and the gate takes a hold under the same
+    lock as the comparison -- no await in between -- so concurrent callers
+    see each other's in-flight cost. The caller MUST settle the returned
+    reservation with `record_creator_spend(..., reservation=r)` on success or
+    `release_creator(r)` on any other exit; an unsettled hold expires on its
+    own after `reserve_ttl_seconds`.
+
+    `cap_usd` is the per-creator override from the creator's context payload
+    (see `creator_monthly_cap_usd`).
+    """
+    if (audience or "").upper() != "CREATOR" or not creator_id:
+        return None
+    cap = creator_monthly_cap_usd(cap_usd)
+    if cap <= 0:
+        return None
+    reserve_amount = Decimal(str(reserve_usd)) if reserve_usd is not None else Decimal(0)
+    # Every blocking read happens HERE, before the atomic section (same shape
+    # as app.costs.gate.check_spend_gate / try_reserve).
+    total = await get_creator_month_total(creator_id)
+    reservation, exceeded = await try_reserve_creator(
+        reserve_amount,
+        creator_id,
+        month_total=total,
+        cap=cap,
+        **({} if reserve_ttl_seconds is None else {"ttl_seconds": reserve_ttl_seconds}),
+    )
+    if exceeded:
+        logger.warning(
+            "spend_tracker: creator %s at monthly cap (%s + in-flight >= %s USD)",
+            creator_id, total, cap,
+        )
+        raise SpendCapExceeded(creator_id=creator_id)
+    return reservation
 
 
 # ---------------------------------------------------------------------------
@@ -493,6 +731,113 @@ async def get_reserved_workspace(workspace_id: str) -> Decimal:
 async def reset_reservations_for_testing() -> None:
     async with _lock:
         _reservations.clear()
+        _creator_reservations.clear()
+
+
+# ---------------------------------------------------------------------------
+# Gate fix round 1 (Q7) -- per-creator MONTHLY reservations.
+#
+# Same F-05 reasoning as the daily reservations above, applied to the creator
+# cap: `check_creator_spend_gate` was read-then-compare and held nothing until
+# `record_creator_spend` ran after the provider call, so two concurrent turns
+# at cap-minus-one both passed. A `CreatorReservation` is budget held against
+# ONE creator's monthly allowance between the gate and the recorded spend; the
+# gate counts it, so concurrent callers see each other's in-flight cost.
+# Kept in a separate table from the daily reservations because the two
+# ledgers are independent (a creator turn holds one of EACH, settled
+# separately) and because a creator hold must never count against the global
+# daily ceiling twice.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CreatorReservation:
+    """Budget held against one creator's monthly allowance for one in-flight
+    turn (chat) or provider call (voice)."""
+
+    reservation_id: int
+    creator_id: str
+    amount: Decimal
+    created_at: float
+    ttl_seconds: float = _RESERVATION_TTL_SECONDS
+
+
+_creator_reservations: dict[int, CreatorReservation] = {}
+
+
+def _prune_expired_creator_reservations_locked(now: float) -> None:
+    """Must hold `_lock`."""
+    stale = [
+        rid for rid, r in _creator_reservations.items()
+        if now - r.created_at > r.ttl_seconds
+    ]
+    for rid in stale:
+        logger.warning(
+            "spend_tracker: releasing expired creator reservation %s ($%s, creator %s) "
+            "— its owner never settled",
+            rid, _creator_reservations[rid].amount, _creator_reservations[rid].creator_id,
+        )
+        del _creator_reservations[rid]
+
+
+async def try_reserve_creator(
+    amount: Decimal,
+    creator_id: str,
+    *,
+    month_total: Decimal,
+    cap: Decimal,
+    ttl_seconds: float = _RESERVATION_TTL_SECONDS,
+) -> tuple[CreatorReservation | None, bool]:
+    """Check the creator's cap and take the reservation ATOMICALLY.
+
+    `month_total` is passed IN, already read (that read may be Redis I/O);
+    the comparison `month_total + held >= cap` and the insert happen under one
+    lock with no await in between, so N concurrent callers serialise and each
+    sees the holds the callers before it already took.
+
+    Returns `(reservation, False)` when admitted (`reservation` is None when
+    `amount <= 0`, i.e. the caller asked for no hold), or `(None, True)` when
+    the cap would be breached.
+    """
+    global _reservation_seq
+    async with _lock:
+        now = _monotonic()
+        _prune_expired_creator_reservations_locked(now)
+        held = sum(
+            (r.amount for r in _creator_reservations.values() if r.creator_id == creator_id),
+            Decimal(0),
+        )
+        if month_total + held >= cap:
+            return None, True
+        if amount <= 0:
+            return None, False
+        _reservation_seq += 1
+        reservation = CreatorReservation(
+            reservation_id=_reservation_seq,
+            creator_id=creator_id,
+            amount=amount,
+            created_at=now,
+            ttl_seconds=ttl_seconds,
+        )
+        _creator_reservations[reservation.reservation_id] = reservation
+        return reservation, False
+
+
+async def release_creator(reservation: CreatorReservation | None) -> None:
+    """Release a creator reservation. Idempotent — releasing twice is a no-op."""
+    if reservation is None:
+        return
+    async with _lock:
+        _creator_reservations.pop(reservation.reservation_id, None)
+
+
+async def get_reserved_creator(creator_id: str) -> Decimal:
+    async with _lock:
+        _prune_expired_creator_reservations_locked(_monotonic())
+        return sum(
+            (r.amount for r in _creator_reservations.values() if r.creator_id == creator_id),
+            Decimal(0),
+        )
 
 
 async def reset_for_testing() -> None:
@@ -502,6 +847,13 @@ async def reset_for_testing() -> None:
     global _state
     async with _lock:
         _state = _DailySpendState()
+        _creator_month_totals.clear()
+        # Holds are per-process state too: a StreamingResponse a test never
+        # drained would otherwise leave its daily hold on the ceiling for the
+        # next test file (Q7 round: surfaced as an order-dependent failure in
+        # tests/costs/test_gate.py).
+        _reservations.clear()
+        _creator_reservations.clear()
     if _redis_configured():
         try:
             client = await _get_redis_client()

@@ -101,7 +101,12 @@ class MeeraInternalControllerCreateCampaignTest {
         when(toolCallValidator.validateAndResolve(MeeraToolName.create_campaign.name(), WORKSPACE_ID))
                 .thenReturn(MeeraToolName.create_campaign);
         when(createCampaignExecutor.execute(
-                        eq(WORKSPACE_ID), anyString(), eq(USER_ID), eq(IDEMPOTENCY_KEY), any()))
+                        eq(WORKSPACE_ID),
+                        anyString(),
+                        eq(USER_ID),
+                        eq(UserType.BRAND),
+                        eq(IDEMPOTENCY_KEY),
+                        any()))
                 .thenReturn(new CreateCampaignResult("campaign-1", "intent-1", "DRAFT", false));
 
         // Deliberately no "conversation_id" entry -- matches spring.py's real wire contract for
@@ -113,7 +118,7 @@ class MeeraInternalControllerCreateCampaignTest {
 
         assertEquals(201, response.getStatusCode().value());
         verify(createCampaignExecutor)
-                .execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, body);
+                .execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, body);
     }
 
     @Test
@@ -129,7 +134,12 @@ class MeeraInternalControllerCreateCampaignTest {
         when(toolCallValidator.validateAndResolve(MeeraToolName.create_campaign.name(), WORKSPACE_ID))
                 .thenReturn(MeeraToolName.create_campaign);
         when(createCampaignExecutor.execute(
-                        eq(WORKSPACE_ID), anyString(), eq(USER_ID), eq(IDEMPOTENCY_KEY), any()))
+                        eq(WORKSPACE_ID),
+                        anyString(),
+                        eq(USER_ID),
+                        eq(UserType.BRAND),
+                        eq(IDEMPOTENCY_KEY),
+                        any()))
                 .thenReturn(new CreateCampaignResult("campaign-1", "intent-1", "DRAFT", false));
 
         Map<String, Object> body =
@@ -141,6 +151,6 @@ class MeeraInternalControllerCreateCampaignTest {
         controller.createCampaign(ON_BEHALF_JWT, IDEMPOTENCY_KEY, body);
 
         verify(createCampaignExecutor)
-                .execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, body);
+                .execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, body);
     }
 }

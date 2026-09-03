@@ -4,8 +4,11 @@ import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
+import com.influora.domain.enums.ExclusivityScope;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -58,7 +61,25 @@ public final class DealDtos {
             Instant nextDeadline,
             String contractId,
             ContractStatus contractStatus,
-            boolean escrowFunded) {}
+            boolean escrowFunded,
+            /** T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1, A2) — null when no structured terms were ever set. */
+            @JsonInclude(JsonInclude.Include.NON_NULL) DealTermsDto dealTerms) {}
+
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1/4.2, A2) — structured usage/exclusivity/revision terms,
+     * separate from the free-text {@code usageRights} field above (which predates this and stays
+     * for the raw-string case). {@code usageChannels} are {@link
+     * com.influora.domain.enums.UsageChannel} names; {@code exclusivityBrands} is populated only
+     * when {@code exclusivityScope == NAMED_BRANDS}.
+     */
+    public record DealTermsDto(
+            Integer usageMonths,
+            boolean usagePerpetual,
+            List<String> usageChannels,
+            Integer exclusivityDays,
+            ExclusivityScope exclusivityScope,
+            List<String> exclusivityBrands,
+            @Min(0) Integer maxRevisions) {}
 
     /**
      * Brand-initiated priced offer. {@code creatorId} is a CreatorProfile id (a userId is also
@@ -82,7 +103,9 @@ public final class DealDtos {
             @NotEmpty(message = "At least one deliverable is required") @Valid List<DeliverableSlot> deliverables,
             String deadline,
             String usageRights,
-            @Size(max = 2000) String message) {}
+            @Size(max = 2000) String message,
+            /** T-MEERA-CREATOR-PHASE-A (SPEC.md 4.2, A2) — optional; null means "no structured terms set". */
+            @Valid DealTermsDto dealTerms) {}
 
     public record DeliverableSlot(@NotBlank String type, @NotNull @Positive Integer qty) {}
 
@@ -107,7 +130,9 @@ public final class DealDtos {
             // omitted, so the contract generator always sees a full set of terms.
             @Valid List<DeliverableSlot> deliverables,
             String deadline,
-            String usageRights) {}
+            String usageRights,
+            /** T-MEERA-CREATOR-PHASE-A (SPEC.md 4.2, A2) — same shape/semantics as {@link CreateDealRequest#dealTerms}. */
+            @Valid DealTermsDto dealTerms) {}
 
     public record RejectRequest(@Size(max = 500) String reason) {}
 

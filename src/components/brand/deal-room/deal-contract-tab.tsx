@@ -356,7 +356,7 @@ export function DealContractTab({
           <CardContent className="pt-4 flex gap-2">
             <Lock className="h-4 w-4 text-warning shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-medium">Escrow</p>
+              <p className="text-sm font-medium">Secure Payments</p>
               <p className="text-xs text-muted-foreground mt-1">
                 {isActive
                   ? `${formatINR(dealValue)} is locked and will release on approved deliverables.`

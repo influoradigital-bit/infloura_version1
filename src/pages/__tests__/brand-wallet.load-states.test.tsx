@@ -178,10 +178,10 @@ describe('BrandWalletPage — F-0324 loading/error/empty are three distinct stat
       renderWallet();
 
       await waitFor(() => expect(screen.getByText('₹10,000')).toBeInTheDocument());
-      await user.click(screen.getByRole('tab', { name: /escrow/i }));
+      await user.click(screen.getByRole('tab', { name: /secure payments/i }));
 
-      expect(await screen.findByRole('status', { name: 'Loading escrow holdings' })).toBeInTheDocument();
-      expect(screen.queryByText('No escrow holdings yet. Funds locked for a campaign will show up here.')).not.toBeInTheDocument();
+      expect(await screen.findByRole('status', { name: 'Loading secured funds' })).toBeInTheDocument();
+      expect(screen.queryByText('No secured funds yet. Funds secured for a campaign will show up here.')).not.toBeInTheDocument();
     });
 
     it('rejected escrow fetch renders an error with a working retry', async () => {
@@ -190,12 +190,12 @@ describe('BrandWalletPage — F-0324 loading/error/empty are three distinct stat
       renderWallet();
 
       await waitFor(() => expect(screen.getByText('₹10,000')).toBeInTheDocument());
-      await user.click(screen.getByRole('tab', { name: /escrow/i }));
+      await user.click(screen.getByRole('tab', { name: /secure payments/i }));
 
       const escrowErrors = await screen.findAllByText('escrow down');
       expect(escrowErrors.length).toBeGreaterThan(0);
       expect(
-        screen.queryByText('No escrow holdings yet. Funds locked for a campaign will show up here.'),
+        screen.queryByText('No secured funds yet. Funds secured for a campaign will show up here.'),
       ).not.toBeInTheDocument();
 
       const callsBefore = escrowListMock.mock.calls.length;
@@ -206,7 +206,7 @@ describe('BrandWalletPage — F-0324 loading/error/empty are three distinct stat
       await waitFor(() => expect(escrowListMock.mock.calls.length).toBeGreaterThan(callsBefore));
       await waitFor(() =>
         expect(
-          screen.getByText('No escrow holdings yet. Funds locked for a campaign will show up here.'),
+          screen.getByText('No secured funds yet. Funds secured for a campaign will show up here.'),
         ).toBeInTheDocument(),
       );
     });
@@ -217,14 +217,14 @@ describe('BrandWalletPage — F-0324 loading/error/empty are three distinct stat
       renderWallet();
 
       await waitFor(() => expect(screen.getByText('₹10,000')).toBeInTheDocument());
-      await user.click(screen.getByRole('tab', { name: /escrow/i }));
+      await user.click(screen.getByRole('tab', { name: /secure payments/i }));
 
       await waitFor(() =>
         expect(
-          screen.getByText('No escrow holdings yet. Funds locked for a campaign will show up here.'),
+          screen.getByText('No secured funds yet. Funds secured for a campaign will show up here.'),
         ).toBeInTheDocument(),
       );
-      expect(screen.queryByRole('status', { name: 'Loading escrow holdings' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('status', { name: 'Loading secured funds' })).not.toBeInTheDocument();
     });
   });
 
@@ -246,7 +246,7 @@ describe('BrandWalletPage — F-0324 loading/error/empty are three distinct stat
       renderWallet();
 
       await waitFor(() => expect(screen.getByText('₹10,000')).toBeInTheDocument());
-      await user.click(screen.getByRole('tab', { name: /escrow/i }));
+      await user.click(screen.getByRole('tab', { name: /secure payments/i }));
 
       expect(await screen.findByRole('status', { name: 'Loading your campaigns' })).toBeInTheDocument();
       expect(screen.queryAllByText('No active campaigns to fund right now.')).toHaveLength(0);
@@ -258,7 +258,7 @@ describe('BrandWalletPage — F-0324 loading/error/empty are three distinct stat
       renderWallet();
 
       await waitFor(() => expect(screen.getByText('₹10,000')).toBeInTheDocument());
-      await user.click(screen.getByRole('tab', { name: /escrow/i }));
+      await user.click(screen.getByRole('tab', { name: /secure payments/i }));
 
       const campaignErrors = await screen.findAllByText('campaigns down');
       expect(campaignErrors.length).toBeGreaterThan(0);
@@ -281,7 +281,7 @@ describe('BrandWalletPage — F-0324 loading/error/empty are three distinct stat
       renderWallet();
 
       await waitFor(() => expect(screen.getByText('₹10,000')).toBeInTheDocument());
-      await user.click(screen.getByRole('tab', { name: /escrow/i }));
+      await user.click(screen.getByRole('tab', { name: /secure payments/i }));
 
       await waitFor(() =>
         expect(screen.getAllByText('No active campaigns to fund right now.').length).toBeGreaterThan(0),

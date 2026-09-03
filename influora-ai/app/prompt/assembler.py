@@ -27,9 +27,10 @@ logic — see `app/prompt/untrusted.py`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
+from app.prompt.creator_persona import get_creator_directives, get_creator_persona_block
 from app.prompt.persona import get_persona_block, stamp_prompt_version
 from app.prompt.untrusted import neutralize_angle_brackets, wrap_untrusted
 from app.tools.schemas import get_tool_schemas
@@ -82,7 +83,79 @@ _FORBIDDEN_BRAND_FIELDS = {
     "full_name",
     "phone",
     "email",
+    # Meera for Creators Phase A (A7 info barrier): creator-side fields that
+    # must never reach a BRAND prompt even if a contaminated payload carries
+    # them. `floors` is the one that matters most (a creator's private
+    # minimums); the rest are creator-preference internals.
+    "floors",
+    "reel_floor",
+    "story_set_floor",
+    "post_floor",
+    "identity",
+    "approval_level",
+    "represented",
+    "creator_language",
+    "excluded_categories",
+    "blocked_brands",
 }
+
+# Canonical snake_case field set for POST /internal/meera/context's response
+# body when `audience=CREATOR` (`MeeraContextDtos.CreatorContextResponse` on
+# the Spring side, spec §2.9). Sibling of CONTEXT_PAYLOAD_FIELDS above for the
+# same Python<->Java drift check. `consent_accepted` is READ by
+# app/routes/chat.py (A6 consent gate) and is expected on this payload even
+# though the spec's record listing omits it -- a missing key fails CLOSED
+# (403 CONSENT_REQUIRED), never open.
+#
+# Gate fix round 1 (Priya Q8): this tuple is ALSO the allow-list
+# `build_block_b_creator` filters on, so a Java field missing here is
+# silently dropped from the prompt -- exactly what happened to the six
+# settings fields (`excluded_categories` .. `weekly_sponsored_limit`): Spring
+# was fixed to emit them and the creator saved them, but Meera never saw them.
+# `tests/prompt/test_creator_context_drift.py` now parses the Java record's
+# @JsonProperty names and fails on ANY difference in either direction, so
+# the next widening cannot land without a matching line here AND a render
+# line in `build_block_b_creator` (which its sibling test asserts).
+CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
+    "approval_level",
+    "audience",
+    "blocked_brands",
+    "brand_tone",
+    "categories",
+    "city",
+    "consent_accepted",
+    "creator_language",
+    "deals_summary",
+    "display_name",
+    "excluded_categories",
+    "first_name",
+    "floors",
+    "identity",
+    "metrics_summary",
+    "represented",
+    "tier",
+    "weekly_sponsored_limit",
+    "working_days",
+    "working_hours_end",
+    "working_hours_start",
+    "workspace_id",
+)
+
+# ISO weekday numbers as the settings UI and Spring store them
+# (`WORKING_DAY_OPTIONS` in MeeraSettingsSection.tsx: 1 = Mon .. 7 = Sun).
+_WEEKDAY_NAMES: dict[int, str] = {
+    1: "Mon", 2: "Tue", 3: "Wed", 4: "Thu", 5: "Fri", 6: "Sat", 7: "Sun",
+}
+
+# A7 info barrier, creator side: Block B for a creator is built from an
+# ALLOW-list, not a deny-list. Spring's `CreatorContextResponse` is already
+# field-limited (only two identity booleans, never PAN/GSTIN/Aadhaar/dispute
+# text), but if a wider payload ever reaches this module -- a DTO widening, a
+# debug field, a contaminated fixture -- nothing outside this set is rendered.
+# `identity` is rendered ONLY via its two documented booleans below, never by
+# iterating its keys.
+_CREATOR_ALLOWED_FIELDS = frozenset(CREATOR_CONTEXT_PAYLOAD_FIELDS)
+_CREATOR_IDENTITY_BOOLEANS = ("kyc_done", "gstin_present")
 
 
 @dataclass(frozen=True)
@@ -91,6 +164,12 @@ class AssembledPrompt:
     messages: list[dict[str, Any]]
     prompt_version: str
     cache_key: str
+    # Meera for Creators Phase A: the audience this prompt was assembled for
+    # and the tool set that goes with it. BRAND = the full schema set from
+    # `get_tool_schemas()`; CREATOR = [] (no money tools, no brand tools).
+    # Defaults keep every existing positional construction valid.
+    audience: str = "BRAND"
+    tools: list[dict[str, Any]] = field(default_factory=get_tool_schemas)
 
 
 def _strip_forbidden_fields(brand: dict[str, Any]) -> dict[str, Any]:
@@ -324,6 +403,211 @@ def build_block_b(brand_context: dict[str, Any]) -> dict[str, Any]:
     return {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
 
 
+def build_block_a_creator() -> dict[str, Any]:
+    """Stable, tenant-agnostic prefix for CREATOR turns: the creator persona
+    and NOTHING else. Phase A creator turns carry an empty tool set (no money
+    tools, no brand tools -- `assemble_prompt` returns `tools=[]` for the
+    loop), so no tool names are listed here either. Marked ephemeral for
+    Anthropic prompt caching, cached globally across every creator.
+    """
+    return {
+        "type": "text",
+        "text": get_creator_persona_block() + "\n\nAvailable tools: none in this phase.\n",
+        "cache_control": {"type": "ephemeral"},
+    }
+
+
+def _creator_str(context: dict[str, Any], key: str, default: str = "not available") -> str:
+    value = context.get(key)
+    if value is None or value == "":
+        return default
+    return _safe(value)
+
+
+def _creator_str_list(value: Any) -> list[str]:
+    """Non-empty string entries of a JSON list, escaped; anything else -> []."""
+    if not isinstance(value, list):
+        return []
+    return [_safe(v) for v in value if isinstance(v, str) and v.strip()]
+
+
+def _creator_hour(value: Any) -> str | None:
+    """`working_hours_start/end` arrive as an int (Java `Integer`, 0-23) or,
+    per the A8 "every number is a string" rule, a numeric string."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and 0 <= value <= 24:
+        return f"{value:02d}:00"
+    if isinstance(value, str) and value.strip().isdigit():
+        hour = int(value.strip())
+        if 0 <= hour <= 24:
+            return f"{hour:02d}:00"
+    return None
+
+
+def _creator_rules_lines(ctx: dict[str, Any], first_name: str) -> list[str]:
+    """Q8: blocklist / excluded categories / working hours + days / weekly
+    limit, from the allow-listed context only."""
+    lines: list[str] = []
+
+    blocked = _creator_str_list(ctx.get("blocked_brands"))
+    if blocked:
+        lines.append(
+            "- BLOCKED brands (" + ", ".join(blocked) + "): "
+            f"{first_name} will not work with these. If one comes up, say plainly "
+            "that it is on their blocklist; never pitch, draft for, or accept them."
+        )
+    else:
+        lines.append("- Blocked brands: none set")
+
+    excluded = _creator_str_list(ctx.get("excluded_categories"))
+    if excluded:
+        lines.append(
+            "- EXCLUDED categories (" + ", ".join(excluded) + "): "
+            f"{first_name} does not take sponsored work in these; decline them."
+        )
+    else:
+        lines.append("- Excluded categories: none set")
+
+    start = _creator_hour(ctx.get("working_hours_start"))
+    end = _creator_hour(ctx.get("working_hours_end"))
+    days_raw = ctx.get("working_days")
+    day_names: list[str] = []
+    if isinstance(days_raw, list):
+        for d in days_raw:
+            n = d if isinstance(d, int) and not isinstance(d, bool) else (
+                int(d) if isinstance(d, str) and d.strip().isdigit() else None
+            )
+            if n in _WEEKDAY_NAMES and _WEEKDAY_NAMES[n] not in day_names:
+                day_names.append(_WEEKDAY_NAMES[n])
+    if start or end or day_names:
+        hours = f"{start or '?'}-{end or '?'} IST" if (start or end) else "hours not set"
+        days = ", ".join(day_names) if day_names else "days not set"
+        lines.append(
+            f"- Working hours: {hours}; working days: {days}. "
+            "Outside these, remind brands (and yourself) that replies wait for the next working slot."
+        )
+    else:
+        lines.append("- Working hours/days: not set")
+
+    limit = ctx.get("weekly_sponsored_limit")
+    if limit not in (None, "") and not isinstance(limit, bool):
+        lines.append(
+            f"- Weekly sponsored limit: {_safe(limit)} sponsored posts per week. "
+            "Do not encourage taking on more than this in one week."
+        )
+    else:
+        lines.append("- Weekly sponsored limit: not set")
+    return lines
+
+
+def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
+    """Per-creator cached block for the CREATOR audience (spec §3.2), keyed by
+    (prompt_version, "CREATOR", workspace_id, session_id) via `cache_key_for`.
+
+    Every number in here is a pre-formatted STRING from Java (A8: Spring
+    renders "12,400 followers", "1,200" etc. with NumberFormat for the
+    creator's locale) -- this function never formats, sums or converts a
+    number. Every string value is passed through `_safe` (creator-authored
+    text like display_name/city reaches a *system* block, exactly the same
+    untrusted-input rule as brand fields in `build_block_b`).
+
+    A7 info barrier: built from `_CREATOR_ALLOWED_FIELDS` only. PAN, GSTIN
+    values, Aadhaar digits and dispute text cannot be rendered because they
+    are never read; `identity` contributes only its two booleans, rendered as
+    words ("KYC: done") so not even the key names leak into the prompt.
+    """
+    ctx = {k: v for k, v in context.items() if k in _CREATOR_ALLOWED_FIELDS}
+    workspace_id = ctx.get("workspace_id", "unknown")
+
+    display_name = _creator_str(ctx, "display_name", "the creator")
+    first_name = _creator_str(ctx, "first_name", display_name)
+
+    directives = get_creator_directives(
+        {
+            "first_name": first_name,
+            "display_name": display_name,
+            "brand_tone": _creator_str(ctx, "brand_tone", "FRIENDLY"),
+            "creator_language": _creator_str(ctx, "creator_language", "hi-IN"),
+        }
+    )
+
+    lines = [directives, "", f"Creator context for {_safe(workspace_id)}:"]
+    lines.append(f"- Creator: {display_name} (first name: {first_name})")
+    lines.append(f"- City: {_creator_str(ctx, 'city')}, Tier: {_creator_str(ctx, 'tier')}")
+    categories = ctx.get("categories")
+    if isinstance(categories, list) and categories:
+        lines.append(f"- Categories: {', '.join(_safe(c) for c in categories)}")
+    else:
+        lines.append("- Categories: not set")
+
+    metrics = ctx.get("metrics_summary")
+    if isinstance(metrics, dict) and metrics:
+        lines.append("- Followers: " + _safe(metrics.get("followers") or "not connected"))
+        lines.append("- Reach (30 days): " + _safe(metrics.get("reach_30d") or "not available"))
+        lines.append("- Engagement: " + _safe(metrics.get("engagement_rate") or "not available"))
+    else:
+        lines.append("- Metrics: Instagram not connected yet (no verified numbers)")
+
+    deals = ctx.get("deals_summary")
+    if isinstance(deals, dict) and deals:
+        lines.append(
+            f"- Deals: {_safe(deals.get('active_count', '0'))} active, "
+            f"{_safe(deals.get('completed_count', '0'))} completed"
+        )
+        earned = deals.get("total_earned_inr")
+        if earned not in (None, ""):
+            lines.append(f"- Total earned on Influora: INR {_safe(earned)}")
+    else:
+        lines.append("- Deals: none on Influora yet")
+
+    floors = ctx.get("floors")
+    if isinstance(floors, dict) and floors:
+        lines.append(
+            "- PRIVATE rate floors (for your reasoning only, never shown to a brand): "
+            f"Reel INR {_safe(floors.get('reel_floor') or 'not set')}, "
+            f"Story set INR {_safe(floors.get('story_set_floor') or 'not set')}, "
+            f"Post INR {_safe(floors.get('post_floor') or 'not set')}"
+        )
+
+    approval_level = ctx.get("approval_level")
+    if approval_level is not None:
+        lines.append(
+            f"- Approval level: {_safe(approval_level)} "
+            "(0 = draft-only, 1 = routine replies, 2 = auto-decline)"
+        )
+    if ctx.get("represented"):
+        agency_name = ctx.get("agency_name")
+        agency = (
+            f" ({_safe(agency_name)})"
+            if isinstance(agency_name, str) and agency_name.strip()
+            else ""
+        )
+        lines.append(
+            f"- REPRESENTED by an agency{agency}: warn-only mode, "
+            "never draft anything addressed to a brand"
+        )
+
+    # Q8: the creator's own rules -- what they saved on the Meera settings
+    # page. Rendered as explicit rules so Meera can act on them
+    # conversationally (name a blocked brand AS blocked, decline an excluded
+    # category, keep the weekly limit in view). Absent/empty -> stated as
+    # "none" so the model never guesses a rule the creator did not set.
+    lines.extend(_creator_rules_lines(ctx, first_name))
+
+    identity = ctx.get("identity")
+    if isinstance(identity, dict):
+        kyc_done = bool(identity.get("kyc_done"))
+        gstin_present = bool(identity.get("gstin_present"))
+        lines.append(
+            f"- KYC: {'done' if kyc_done else 'not done'}, "
+            f"GST: {'registered' if gstin_present else 'not registered'}"
+        )
+
+    text = "\n".join(lines)
+    return {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
+
+
 # F-08/F-15 (Priya round 6): `_tool_call_content_block` and
 # `_tool_result_content_block` used to live here. They built the native
 # Anthropic `tool_use` / `tool_result` blocks from CLIENT-SUPPLIED history —
@@ -485,11 +769,24 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
     `brand_context` so callers can pass it explicitly once CREATOR ships.
     """
     workspace_id = brand_context.get("workspace_id", "unknown")
-    audience = brand_context.get("audience") or "BRAND"
+    audience = str(brand_context.get("audience") or "BRAND").upper()
     prompt_version = brand_context.get("prompt_version") or stamp_prompt_version()
 
-    block_a = build_block_a()
-    block_b = build_block_b(brand_context)
+    # Meera for Creators Phase A (A4): CREATOR routes to the creator persona +
+    # creator Block B (fed from `brand_context["creator"]`) and an EMPTY tool
+    # set -- no money tools, no brand tools in this phase. Anything else is the
+    # BRAND path, unchanged. `audience` comes from the ROUTE (derived from the
+    # verified token / on-behalf JWT), never from the client body.
+    if audience == "CREATOR":
+        creator = dict(brand_context.get("creator") or {})
+        creator.setdefault("workspace_id", workspace_id)
+        block_a = build_block_a_creator()
+        block_b = build_block_b_creator(creator)
+        tools: list[dict[str, Any]] = []
+    else:
+        block_a = build_block_a()
+        block_b = build_block_b(brand_context)
+        tools = get_tool_schemas()
     messages = build_block_c_messages(brand_context.get("conversation") or [])
 
     return AssembledPrompt(
@@ -497,6 +794,8 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
         messages=messages,
         prompt_version=prompt_version,
         cache_key=cache_key_for(prompt_version, audience, workspace_id, session_id),
+        audience=audience,
+        tools=tools,
     )
 
 

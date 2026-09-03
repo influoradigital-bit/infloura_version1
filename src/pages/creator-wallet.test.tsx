@@ -52,7 +52,7 @@ describe('CreatorWalletPage', () => {
       expect(screen.getByText(/Platform fee:\s*15%/i)).toBeInTheDocument();
     });
     expect(
-      screen.getByText(/Deducted when campaign earnings are released from escrow/i),
+      screen.getByText(/Deducted when campaign earnings are released from secured funds/i),
     ).toBeInTheDocument();
   });
 
@@ -85,10 +85,10 @@ describe('CreatorWalletPage', () => {
       expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('In Escrow is distinguished from Available Balance as brand-locked, not-yet-released funds', async () => {
+    it('Secured is distinguished from Available Balance as brand-locked, not-yet-released funds', async () => {
       renderPage();
 
-      const trigger = await screen.findByRole('button', { name: 'What is In Escrow?' });
+      const trigger = await screen.findByRole('button', { name: 'What is Secured?' });
       fireEvent.focus(trigger);
 
       const [definition] = await screen.findAllByText(
@@ -100,7 +100,7 @@ describe('CreatorWalletPage', () => {
       expect(definition.textContent).toMatch(/not withdrawable yet/i);
     });
 
-    it('Pending Payouts explains itself as a withdrawal already in flight to the bank — distinct from In Escrow', async () => {
+    it('Pending Payouts explains itself as a withdrawal already in flight to the bank — distinct from Secured', async () => {
       renderPage();
 
       const trigger = await screen.findByRole('button', { name: 'What is Pending Payouts?' });

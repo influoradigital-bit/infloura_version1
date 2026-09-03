@@ -95,7 +95,7 @@ const STATES: StateConfig[] = [
     id: 'CONTRACTED',
     label: 'Contracted',
     shortLabel: 'Contract',
-    description: 'Contracts signed, escrow locked',
+    description: 'Contracts signed, funds secured',
     icon: FileText,
     color: 'text-stage-contracted-fg',
     bgColor: 'bg-stage-contracted',
@@ -342,7 +342,7 @@ export function CampaignStateMachine({
       {showEscrowIndicator && escrowLocked > 0 && (
         <div className="mt-6 flex items-center justify-center gap-2 text-sm">
           <Lock className="h-4 w-4 text-stage-negotiating-fg" />
-          <span className="text-muted-foreground">Escrow Locked:</span>
+          <span className="text-muted-foreground">Funds Secured:</span>
           <span className="font-semibold text-stage-negotiating-fg">
             {escrowLocked >= 100000 
               ? `₹${(escrowLocked / 100000).toFixed(1)}L`

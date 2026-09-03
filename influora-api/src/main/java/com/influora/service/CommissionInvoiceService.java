@@ -169,7 +169,7 @@ public class CommissionInvoiceService {
                         .orElseThrow(
                                 () ->
                                         new ApiException(
-                                                "ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.CONFLICT));
+                                                "ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.CONFLICT));
         Campaign campaign =
                 campaignRepository
                         .findById(hold.getCampaignId())

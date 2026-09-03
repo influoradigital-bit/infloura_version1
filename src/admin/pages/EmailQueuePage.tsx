@@ -10,10 +10,15 @@
  * Bulk-send is rendered as a disabled control with an explanatory tooltip —
  * the backend (`emailApi.sendBulk`) returns 501 pending abuse controls, so
  * this page never calls it (see useEmailQueue.ts doc comment).
+ *
+ * "Compose" links to EmailComposePage (/admin/emails/compose, T-ADMINMAIL-0903) — a distinct,
+ * newer path with its own preview/confirm/rate-limit/cap/unsubscribe controls, not the disabled
+ * bulk-send above.
  */
 
 import { useState, type ReactNode } from 'react';
-import { Mail, Loader2, RotateCw, Ban } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Mail, Loader2, RotateCw, Ban, PenSquare } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -216,19 +221,28 @@ export default function EmailQueuePage() {
           </p>
         </div>
 
-        {/* Bulk-send — disabled pending abuse controls (backend returns 501).
-            Never wired to emailApi.sendBulk(). */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span tabIndex={0}>
-              <Button type="button" variant="outline" disabled aria-disabled="true">
-                <Ban aria-hidden="true" />
-                Bulk Send
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>Disabled — pending abuse controls</TooltipContent>
-        </Tooltip>
+        <div className="flex items-center gap-2">
+          <Button type="button" asChild>
+            <Link to="/admin/emails/compose">
+              <PenSquare aria-hidden="true" />
+              Compose
+            </Link>
+          </Button>
+
+          {/* Bulk-send — disabled pending abuse controls (backend returns 501).
+              Never wired to emailApi.sendBulk(). Distinct from "Compose" above. */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0}>
+                <Button type="button" variant="outline" disabled aria-disabled="true">
+                  <Ban aria-hidden="true" />
+                  Bulk Send
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Disabled — pending abuse controls</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       {error && (

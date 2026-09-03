@@ -17,6 +17,7 @@ import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
+import com.influora.service.ExternalCreatorLinkService;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
@@ -48,6 +49,7 @@ class MetaTokenStorageTest {
 
     @Mock private MetaOAuthTokenRepository repository;
     @Mock private AuditLogService auditLog;
+    @Mock private ExternalCreatorLinkService externalCreatorLinkService;
 
     @Captor private ArgumentCaptor<MetaOAuthToken> tokenCaptor;
     @Captor private ArgumentCaptor<Map<String, Object>> detailCaptor;
@@ -57,7 +59,7 @@ class MetaTokenStorageTest {
     @BeforeEach
     void setUp() {
         MetaApiProperties props = createTestProperties();
-        storage = new MetaTokenStorage(repository, auditLog, props);
+        storage = new MetaTokenStorage(repository, auditLog, externalCreatorLinkService, props);
     }
 
     private MetaApiProperties createTestProperties() {
@@ -333,7 +335,7 @@ class MetaTokenStorageTest {
         MetaApiProperties propsInvalidKey = createTestProperties();
         propsInvalidKey.setTokenEncryptionKey(Base64.getEncoder().encodeToString(new byte[16])); // Only 16 bytes (128-bit)
 
-        assertThrows(IllegalStateException.class, () -> new MetaTokenStorage(repository, auditLog, propsInvalidKey));
+        assertThrows(IllegalStateException.class, () -> new MetaTokenStorage(repository, auditLog, externalCreatorLinkService, propsInvalidKey));
     }
 
     @Test
@@ -342,7 +344,7 @@ class MetaTokenStorageTest {
         MetaApiProperties propsNoKey = createTestProperties();
         propsNoKey.setTokenEncryptionKey(null);
 
-        assertThrows(IllegalStateException.class, () -> new MetaTokenStorage(repository, auditLog, propsNoKey));
+        assertThrows(IllegalStateException.class, () -> new MetaTokenStorage(repository, auditLog, externalCreatorLinkService, propsNoKey));
     }
 
     // ===========================================================================================
@@ -616,7 +618,8 @@ class MetaTokenStorageTest {
                 scopes,
                 null,
                 MetaAuthPath.FACEBOOK_LOGIN,
-                metaUserId);
+                metaUserId,
+                null);
 
         verify(repository).save(tokenCaptor.capture());
         MetaOAuthToken saved = tokenCaptor.getValue();

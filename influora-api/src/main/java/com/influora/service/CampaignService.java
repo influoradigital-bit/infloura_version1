@@ -144,11 +144,27 @@ public class CampaignService {
     @Transactional
     public CampaignResponse create(AuthPrincipal principal, CampaignWriteRequest req) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
-        brandContext.requireMember(principal, workspace.getId());
+        // F-0530: create() must gate on role like every sibling write path (update() below,
+        // publish, delete) — without this a MEMBER/VIEWER could create a campaign they are then
+        // refused to update, publish, or delete.
+        var member = brandContext.requireMember(principal, workspace.getId());
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN, MemberRole.MANAGER);
 
         validator.validateBudget(req.budget());
         validator.validateTimeline(req.timeline(), req.applicationDeadline());
         validateMaxCollaborators(req.maxCollaborators());
+        // T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1/4.1, A2) — required for every NEW campaign; legacy
+        // rows created before V72 keep NULL (see the migration's own comment). Enforced here rather
+        // than via bean validation on the DTO so CampaignPatchRequest can keep reusing the same
+        // record shape as an optional-everything partial update.
+        if (req.endBrandName() == null || req.endBrandName().isBlank()) {
+            throw new ApiException(
+                    "END_BRAND_NAME_REQUIRED", "End brand name is required", HttpStatus.BAD_REQUEST);
+        }
+        if (req.endBrandCategory() == null || req.endBrandCategory().isBlank()) {
+            throw new ApiException(
+                    "END_BRAND_CATEGORY_REQUIRED", "End brand category is required", HttpStatus.BAD_REQUEST);
+        }
 
         CampaignStatus status = req.status() != null ? req.status() : CampaignStatus.DRAFT;
         validator.validateStatusForWorkspace(status, workspace);
@@ -206,6 +222,8 @@ public class CampaignService {
                         .isPrivate(req.isPrivate() != null && req.isPrivate())
                         .maxCollaborators(req.maxCollaborators())
                         .createdBy(principal.getUserId())
+                        .endBrandName(req.endBrandName().trim())
+                        .endBrandCategory(req.endBrandCategory().trim())
                         .build();
 
         campaignRepository.save(campaign);
@@ -323,7 +341,9 @@ public class CampaignService {
                 req.brandGuidelines(),
                 req.isPrivate(),
                 req.maxCollaborators(),
-                hypeConfigJson);
+                hypeConfigJson,
+                req.endBrandName(),
+                req.endBrandCategory());
 
         // [B1] Same @Transactional method as the status flip above — if this throws (insufficient
         // wallet balance, missing fee config), the whole PATCH rolls back and the campaign never

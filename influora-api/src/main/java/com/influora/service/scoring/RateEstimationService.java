@@ -66,7 +66,9 @@ public class RateEstimationService {
      * Estimates a fair-market rate range for a creator.
      *
      * @param metric latest creator metrics snapshot, or empty if none is available
-     * @param qualityScore the creator's already-computed {@link QualityScoreResult}
+     * @param qualityScore the creator's already-computed {@link QualityScoreResult}. May be {@link
+     *     QualityScoreResult#absent()}, in which case it contributes neither a rate multiplier nor
+     *     a confidence bump rather than being read as a low score.
      * @param categories the creator's content categories (case-insensitive); the highest-multiplier
      *     match across all provided categories is used. Unknown or empty categories default to a
      *     neutral 1.0 multiplier.
@@ -109,10 +111,15 @@ public class RateEstimationService {
         maxRate *= categoryMultiplier;
 
         // === Quality score adjustment ===
-        // Quality > 80 = +20%, Quality < 40 = -20%
+        // Quality > 80 = +20%, Quality < 40 = -20%.
+        // An ABSENT quality score is not a low one. Dereferencing it would NPE, and treating it as
+        // a number would discount an unmeasured creator by 20% — the exact harm that made the old
+        // fabricated 20.00 composite dangerous rather than merely wrong. Leave the rate neutral.
         double qualityMultiplier = 1.0;
-        if (qualityScore.overall().doubleValue() > 80) qualityMultiplier = 1.2;
-        else if (qualityScore.overall().doubleValue() < 40) qualityMultiplier = 0.8;
+        if (!qualityScore.isAbsent()) {
+            if (qualityScore.overall().doubleValue() > 80) qualityMultiplier = 1.2;
+            else if (qualityScore.overall().doubleValue() < 40) qualityMultiplier = 0.8;
+        }
 
         minRate *= qualityMultiplier;
         maxRate *= qualityMultiplier;
@@ -122,7 +129,9 @@ public class RateEstimationService {
         double confidence = 50.0;
         // CR-119 — same predicate that decides PlatformStat.verified, via the canonical constant.
         if (metric.get().isPlatformVerified()) confidence += 30;
-        if (qualityScore.overall().doubleValue() > 0) confidence += 20;
+        // An absent quality score adds no confidence — there is no measurement behind it to be
+        // confident about. Only a genuinely computed, non-zero score earns the bump.
+        if (!qualityScore.isAbsent() && qualityScore.overall().doubleValue() > 0) confidence += 20;
         confidence = Math.min(100, confidence);
 
         Map<String, Object> factors =

@@ -1,0 +1,219 @@
+{
+ "byfile": {
+  "influora-api/src/main/java/com/influora/web/EscrowController.java": [
+   {
+    "id": "F-0416",
+    "cls": "unreachable-endpoint",
+    "other_files": [],
+    "symptom": "POST /wallet/escrow/refund is real, authorised and returns funds to the brand wallet, but no frontend anywhere calls it, so no brand can ever trigger a refund through the product"
+   },
+   {
+    "id": "F-0445",
+    "cls": "unreachable-endpoint",
+    "other_files": [],
+    "symptom": "POST /wallet/escrow/payout has no frontend caller, so the direct payout route is unreachable from the product and money can only move by the release path."
+   }
+  ],
+  "influora-api/src/main/java/com/influora/web/WorkspaceMemberController.java": [
+   {
+    "id": "F-0443",
+    "cls": "unreachable-endpoint",
+    "other_files": [],
+    "symptom": "Workspace team management is backend-complete and has no UI at all: accept invite, remove member, list invites, revoke invite and switch workspace are five routes no shipped frontend reaches. A brand cannot invite a colleague through the product."
+   }
+  ],
+  "influora-api/src/main/java/com/influora/web/NotificationController.java": [
+   {
+    "id": "F-0444",
+    "cls": "unreachable-endpoint",
+    "other_files": [],
+    "symptom": "Email unsubscribe is unreachable: POST /notifications/unsubscribe and GET /notifications/unsubscribe-link have no frontend caller, so a recipient has no way to stop notification email. This is a compliance exposure, not only a gap."
+   }
+  ],
+  "influora-api/src/main/java/com/influora/web/CreatorController.java": [
+   {
+    "id": "F-0446",
+    "cls": "unreachable-endpoint",
+    "other_files": [],
+    "symptom": "GET /creators/search, the endpoint that computes discovery facets, has no consumer anywhere in src while the discover page renders hardcoded city and language arrays instead."
+   }
+  ],
+  "influora-api/src/main/java/com/influora/web/ContractController.java": [
+   {
+    "id": "F-0447",
+    "cls": "unreachable-endpoint",
+    "other_files": [],
+    "symptom": "GET /contracts/unsigned has no frontend caller, and a stale comment in the client claims the endpoint does not exist, so a creator has no pending-signature list."
+   },
+   {
+    "id": "F-0414",
+    "cls": "missing-feature",
+    "other_files": [],
+    "symptom": "ContractController exposes only generate, list, get, sign and pdf-download-url; there is no PUT, PATCH or amend route at any stage, so a signed contract can never be amended"
+   }
+  ],
+  "influora-api/src/main/java/com/influora/web/UserController.java": [
+   {
+    "id": "F-0448",
+    "cls": "unreachable-endpoint",
+    "other_files": [],
+    "symptom": "GET and PATCH /users/me have no frontend caller; the client reads and writes profile through the separate /me/creator-profile routes, leaving the canonical user profile endpoints dead."
+   }
+  ],
+  "influora-api/src/main/java/com/influora/web/DeliverableMetricController.java": [
+   {
+    "id": "F-0449",
+    "cls": "unreachable-endpoint",
+    "other_files": [],
+    "symptom": "PUT /deliverables/id/metrics has no frontend caller; the UI posts to the different creator route POST /creator/deliverables/id/metrics, so this one is orphaned."
+   }
+  ],
+  "influora-api/src/main/java/com/influora/web/CreatorOnboardingController.java": [
+   {
+    "id": "F-0450",
+    "cls": "unreachable-endpoint",
+    "other_files": [],
+    "symptom": "POST /onboarding/creator/payout has no frontend caller; the client comment records saveCreatorPayout as removed, so creator payout details cannot be set during onboarding."
+   }
+  ],
+  "src/components/brand/dashboard/dashboard-page.tsx": [
+   {
+    "id": "F-0278",
+    "cls": "empty-state-misleads",
+    "other_files": [],
+    "symptom": "A brand-new brand with zero campaigns sees 'You are all caught up.' and a green tick 'All caught up! No pending actions right now.' on day one - the reassurance signal is inverted for an account that has done nothing yet; the creator dashboard gets a proper 'N"
+   }
+  ],
+  "src/pages/creator-chat.tsx": [
+   {
+    "id": "F-0349",
+    "cls": "empty-state-misleads",
+    "other_files": [],
+    "symptom": "Panel reads 'No deliverables yet. They appear here once the creator submits content' on a 0/0 CONTRACTED deal where no Submit control renders and slots can never appear from creator action \u2014 slots are materialized at contract-generation from the accepted propo"
+   }
+  ],
+  "src/components/brand/discover/creator-discovery.tsx": [
+   {
+    "id": "F-0410",
+    "cls": "empty-state-misleads",
+    "other_files": [],
+    "symptom": "The 'Showing N creators' count is the length of the client-filtered current page, not the server total, so a brand reads a filtered 20-row page as the size of the whole creator base"
+   },
+   {
+    "id": "F-0409",
+    "cls": "contract-drift",
+    "other_files": [],
+    "symptom": "Server rateOverlap deliberately keeps unpriced creators by ORing an isNull check, but the client price filter drops them, so the two layers disagree on the same query"
+   },
+   {
+    "id": "F-0405",
+    "cls": "dead-control",
+    "other_files": [],
+    "symptom": "Four of eight brand discovery filters (language, engagement rate, verified-only, sort order) never leave the browser; they re-filter only the 20 rows already fetched, and the result count shown is the client-filtered page length rather than the server total"
+   },
+   {
+    "id": "F-0411",
+    "cls": "dead-control",
+    "other_files": [],
+    "symptom": "Discovery facets (cities, languages) are module-level hardcoded arrays while the backend buildAvailableFacets endpoint GET /creators/search has no consumer anywhere in src"
+   }
+  ],
+  "src/hooks/useNotifications.ts": [
+   {
+    "id": "F-0436",
+    "cls": "empty-state-misleads",
+    "other_files": [],
+    "symptom": "The server sends an authoritative unread total on the response envelope and the api wrapper returns it, but the hook destructures only items and recomputes the count from the fetched page, so the bell badge undercounts past the first page."
+   }
+  ],
+  "influora-api/src/main/java/com/influora/service/DealService.java": [
+   {
+    "id": "F-0399",
+    "cls": "unenforced-limit",
+    "other_files": [],
+    "symptom": "Campaign budget is checked per-offer only, never summed across the campaign, so N creators can each be offered the full budgetMax and the campaign can be committed to N x budget"
+   }
+  ],
+  "influora-api/src/main/java/com/influora/service/CampaignService.java": [
+   {
+    "id": "F-0400",
+    "cls": "unenforced-limit",
+    "other_files": [],
+    "symptom": "maxCollaborators is persisted and echoed back to the client but read by no enforcement path, so the cap is decorative"
+   }
+  ],
+  "influora-api/src/main/java/com/influora/service/DeliverableService.java": [
+   {
+    "id": "F-0417",
+    "cls": "unenforced-limit",
+    "other_files": [],
+    "symptom": "requestRevision increments revisionCount unconditionally and gates only on canReview, so a brand can demand revisions without limit and a creator has no ceiling on unpaid rework"
+   },
+   {
+    "id": "F-0418",
+    "cls": "unenforced-limit",
+    "other_files": [],
+    "symptom": "The deliverables deadline column is returned on the creator DTO but no scheduled job, auto-fail, penalty or status transition ever reads getDeadline to act on a miss; the only readers are admin reporting counters"
+   }
+  ],
+  "src/lib/api.ts": [
+   {
+    "id": "F-0408",
+    "cls": "contract-drift",
+    "other_files": [],
+    "symptom": "Server accepts sortBy with engagement/rate/price_low/price_high/rating/relevance but creatorSearchQuery never sends it; separately the server treats 'relevance' and 'rating' as plain totalFollowers descending, so two advertised sort orders do not sort by what "
+   },
+   {
+    "id": "F-0431",
+    "cls": "contract-drift",
+    "other_files": [],
+    "symptom": "CreatorController.search reads sixteen params; creatorSearchQuery emits exactly ten. The six never sent are categories, languages, minEngagementRate, maxEngagementRate, isVerified and sortBy, all of which the server implements."
+   }
+  ],
+  "influora-api/src/main/java/com/influora/service/CreatorCampaignService.java": [
+   {
+    "id": "F-0412",
+    "cls": "dead-control",
+    "other_files": [],
+    "symptom": "Creator-side campaign filters niche and platform are applied in memory after the page has already been fetched, so they prune only the current page rather than the campaign base"
+   }
+  ],
+  "influora-api/src/main/java/com/influora/domain/entity/Contract.java": [
+   {
+    "id": "F-0403",
+    "cls": "missing-feature",
+    "other_files": [],
+    "symptom": "Contract.setStatus has zero call sites in main, so no contract can ever reach CANCELLED; a contract signed by one party only is permanently frozen and post-contract cancellation does not exist"
+   },
+   {
+    "id": "F-0413",
+    "cls": "missing-feature",
+    "other_files": [],
+    "symptom": "Contract.expirationDate exists but nothing ever populates it, and there is no scheduled job touching collaborations, so an unanswered offer stays INVITED or IN_NEGOTIATION forever with no expiry or auto-decline"
+   }
+  ],
+  ".proof-os/gates/registry_render.py": [
+   {
+    "id": "F-0053",
+    "cls": "stale-runtime-copy",
+    "other_files": [],
+    "symptom": "the project-local copy of registry_render.py is proof-os 0.3.x and rejects may_claim 'echo' for 7 services; registry.json declares 0.4.1 and the 0.4.2 plugin copy of the same gate exits 0 on the same file \u2014 the project gate reports a false red"
+   }
+  ],
+  ".proof-os/gates/citations.py": [
+   {
+    "id": "F-0426",
+    "cls": "stale-runtime-copy",
+    "other_files": [],
+    "symptom": "In-project citations gate is a superseded stub that never verifies a quotation and exits 0 on a document with zero citations, so agents running it get a meaningless pass."
+   }
+  ]
+ },
+ "nofile": [
+  [
+   "stale-runtime-copy",
+   "F-0428",
+   ".proof-os/gates/"
+  ]
+ ]
+}

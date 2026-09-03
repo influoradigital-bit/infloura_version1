@@ -44,18 +44,26 @@ import org.springframework.transaction.annotation.Transactional;
  * ("money/state changes are server-derived from the payment processor's callback, never a client
  * request").
  *
- * <p><b>BL-5 correction (BrandF.md §101, re-corrected after Priya's review):</b> this class has
- * FIVE other {@code Subscription} writers, none of which goes through the webhook, and the
- * sentence above must not be read as "only ever written from a verified webhook" — that
- * generalization is false and was the load-bearing (and incorrect) claim of an earlier audit
- * pass. (The first correction pass here undercounted this list as "two" and omitted {@link
- * #cancel(String)} entirely; the second added the missing {@code cancel} bullet but left the
- * count word reading "FOUR" against a five-item list, so the enumeration still under-reported a
- * controller-reachable writer to anyone who trusted the count instead of counting the bullets.
- * Both the count and the list below are re-derived from every {@code
- * subscriptionRepository.save(...)}/{@code saveAndFlush(...)} call site in this class — five
- * non-webhook, plus the two inside {@link #applySubscriptionWebhookUpdate} — so they cannot
- * drift apart again without a save call site being added or removed.)
+ * <p><b>BL-5 correction (BrandF.md §101, re-corrected after Priya's review; scope widened for
+ * F-0141):</b> the system has SIX other {@code Subscription} writers, none of which goes through
+ * the webhook, and the sentence above must not be read as "only ever written from a verified
+ * webhook" — that generalization is false and was the load-bearing (and incorrect) claim of an
+ * earlier audit pass.
+ *
+ * <p>This enumeration has now been wrong three times in the same direction, each time by
+ * under-reporting: first as "two" (omitting {@link #cancel(String)} entirely), then as "FOUR"
+ * against a five-item list, and then as "FIVE" while {@code SubscriptionDunningJob#haltOne} wrote
+ * the table from outside this class and appeared in no bullet.
+ *
+ * <p>That third miss is why the scope changed. The list used to be derived from save call sites
+ * <em>in this class</em>, which made it accurate about itself and misleading about the table: the
+ * invariant stated at the bottom is about who can write a {@code Subscription} row at all, so a
+ * writer in another class falsifies it just as effectively as one in this file. The list below is
+ * re-derived from every writer of a {@code Subscription} row anywhere in the codebase — six
+ * non-webhook, plus the two save sites inside {@link #applySubscriptionWebhookUpdate}. {@code
+ * gates/F-0141-writer-enumeration-exhaustive.py} re-derives the same set and fails on any bullet
+ * this list is missing or any count word that disagrees with it, so the two cannot drift apart
+ * again silently.
  *
  * <ul>
  *   <li>{@link #createFreeSubscription} — writes a {@code FREE}/{@code ACTIVE} row, reached from
@@ -79,6 +87,12 @@ import org.springframework.transaction.annotation.Transactional;
  *       from any controller; called only by {@link com.influora.job.SubscriptionRenewalResetJob},
  *       same trust boundary as {@link #applyRenewalSafetyNet}. No plan/status escalation and no
  *       payment risk: this path can only move a row DOWN to the terminal cancelled state.
+ *   <li>{@link com.influora.job.SubscriptionDunningJob}{@code #haltOne} — the one writer OUTSIDE
+ *       this class, and the one the earlier "in this class" derivation could not see. Flips a
+ *       {@code PAST_DUE} row to {@code HALTED} once the grace period has elapsed. Not reachable
+ *       from any controller; called only by that scheduled job, same trust boundary as {@link
+ *       #applyRenewalSafetyNet}. No plan/status escalation and no payment risk: {@code HALTED} is
+ *       strictly downward from {@code PAST_DUE}, and it reconciles AI credits on the way.
  * </ul>
  *
  * <p>The actual invariant this class enforces is narrower than "webhook-only": <b>no path other

@@ -51,12 +51,33 @@ from typing import Any
 from fastapi import APIRouter, Header, Request, status
 from fastapi.responses import StreamingResponse
 
-from app.auth.service_token import AuthError, auth_error_to_http, verify_token_async
+from app.auth.audience import AUDIENCE_BRAND, AUDIENCE_CREATOR, derive_audience
+from app.auth.consent import (
+    CONSENT_REQUIRED_CODE as _CONSENT_REQUIRED_CODE,
+    CONSENT_REQUIRED_MESSAGE as _CONSENT_REQUIRED_MESSAGE,
+    consent_accepted as _consent_accepted,
+    consent_required_response,
+)
+from app.auth.service_token import (
+    SCOPE_CHAT_STREAM,
+    AuthError,
+    auth_error_to_http,
+    verify_token_async,
+)
 from app.clients.spring import SpringCallError, SpringInternalClient
 from app.config import CLAUDE_MODEL, get_settings
 from app.costs.gate import check_spend_gate
 from app.costs.pricing import estimate_cost_usd
-from app.costs.spend_tracker import get_workspace_total_today, record_spend, release
+from app.costs.spend_tracker import (
+    SpendCapExceeded,
+    check_creator_spend_gate,
+    creator_cap_override_from_context,
+    get_workspace_total_today,
+    record_creator_spend,
+    record_spend,
+    release,
+    release_creator,
+)
 from app.prompt.assembler import assemble_prompt
 from app.providers.claude import ClaudeProvider
 from app.security.redaction import log_event, shape_of
@@ -122,6 +143,24 @@ def sse_event(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+# Spring statuses on POST /internal/meera/context that mean "this caller is
+# not who the on-behalf token says" -- the OnBehalfAuthResolver rejected the
+# forwarded token (401) or the principal may not read this workspace (403).
+# Fix round 1 (BLOCKING): these are FAIL-CLOSED for BOTH audiences. The old
+# brand path degraded them to an empty Block B, which is exactly how a creator
+# who omitted `onbehalf_jwt` (so the stream token got forwarded and rejected)
+# still reached the brand persona with the brand tool set.
+CONTEXT_UNAUTHORIZED_STATUSES = frozenset({401, 403})
+CONTEXT_UNAUTHORIZED_CODE = "context_unauthorized"
+CONTEXT_UNAUTHORIZED_MESSAGE = (
+    "Meera couldn't verify this session. Please refresh the page and try again."
+)
+
+
+def _is_context_unauthorized(exc: SpringCallError) -> bool:
+    return exc.status_code in CONTEXT_UNAUTHORIZED_STATUSES
+
+
 async def _fetch_brand_context(
     *,
     spring: SpringInternalClient,
@@ -129,7 +168,7 @@ async def _fetch_brand_context(
     onbehalf_jwt: str,
     request_id: str,
     conversation: list[dict[str, Any]],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any] | None, str | None]:
     """Server-sources Block B via `POST /internal/meera/context` (Priya A2).
 
     Builds the shape `app.prompt.assembler.assemble_prompt` expects (a nested
@@ -140,12 +179,17 @@ async def _fetch_brand_context(
     does NOT read `brand` or `prompt_version` from the client body anywhere --
     those keys are ignored entirely now that Block B is server-sourced.
 
-    Never raises: a context-fetch failure (Spring down, brand not yet
-    analyzed, transient network error) degrades to an EMPTY Block B rather
-    than 500ing the whole chat turn -- Meera still replies, just without brand
-    personalization for that one turn.
+    Returns `(context, None)` or `(None, error_code)`.
+
+    Fail-OPEN only for availability failures: Spring down (5xx), brand not
+    yet analyzed, transient network error -> an EMPTY Block B rather than
+    500ing the whole chat turn (Meera still replies, just without brand
+    personalization for that one turn). Fail-CLOSED for AUTH failures: a 401
+    or 403 from Spring means the forwarded on-behalf token was rejected, so
+    no prompt is built at all (fix round 1, BLOCKING -- see
+    CONTEXT_UNAUTHORIZED_STATUSES).
     """
-    audience = "BRAND"
+    audience = AUDIENCE_BRAND
     try:
         response = await spring.get_meera_context(
             workspace_id=workspace_id, audience=audience, onbehalf_jwt=onbehalf_jwt
@@ -157,6 +201,8 @@ async def _fetch_brand_context(
             workspace_id=workspace_id, request_id=request_id,
             fields={"error_code": exc.code, "status_code": exc.status_code},
         )
+        if _is_context_unauthorized(exc):
+            return None, CONTEXT_UNAUTHORIZED_CODE
         context_data = {}
     except Exception as exc:  # noqa: BLE001 - network/timeout/unexpected; never 500 the turn
         log_event(
@@ -190,7 +236,102 @@ async def _fetch_brand_context(
         "brand": brand,
         "credit_state": context_data.get("credit_state") or {},
         "conversation": conversation,
+    }, None
+
+
+# ---------------------------------------------------------------------------
+# Meera for Creators Phase A (A4/A6) -- CREATOR audience context + consent.
+# ---------------------------------------------------------------------------
+
+# Gate fix round 1 (Priya Q3): the consent helpers now live in
+# app/auth/consent.py so /voice/* shares the SAME gate + 403 body. The names
+# are re-exported here because the route module is the documented seam
+# (tests and the frontend spec reference `chat.consent_accepted` and the
+# CONSENT_REQUIRED body shape).
+CONSENT_REQUIRED_CODE = _CONSENT_REQUIRED_CODE
+CONSENT_REQUIRED_MESSAGE = _CONSENT_REQUIRED_MESSAGE
+CREATOR_CAP_CODE = "CREATOR_MONTHLY_CAP_REACHED"
+
+consent_accepted = _consent_accepted
+
+
+def _consent_required_response():
+    """403 CONSENT_REQUIRED -- shared body, see app/auth/consent.py."""
+    return consent_required_response()
+
+
+def _creator_cap_response(message: str):
+    """A8 over-cap reply: a friendly, creator-readable message, never a raw
+    5xx. 429 so clients can distinguish it from the 503 daily-ceiling block
+    (which is a platform-wide condition, not this creator's allowance)."""
+    from fastapi.responses import JSONResponse
+
+    payload = {
+        "code": CREATOR_CAP_CODE,
+        "message": message,
+        "error": {"code": CREATOR_CAP_CODE, "message": message},
     }
+    return JSONResponse(status_code=status.HTTP_429_TOO_MANY_REQUESTS, content=payload)
+
+
+async def _fetch_creator_context(
+    *,
+    spring: SpringInternalClient,
+    workspace_id: str,
+    onbehalf_jwt: str,
+    request_id: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Server-sources the CREATOR Block B via `POST /internal/meera/context`
+    with `audience=CREATOR` (spec §2.9). `workspace_id` is the creator's user
+    id on this path (the stream token bound the caller to it).
+
+    Unlike `_fetch_brand_context`, this FAILS CLOSED on EVERY failure: a
+    creator turn without its context cannot verify consent (A6) and would run
+    the creator persona with no facts, so the route returns a structured
+    error instead of degrading to an empty Block B. Also fails closed on an
+    audience disagreement -- if Spring re-derived the principal as anything
+    other than CREATOR, the verified stream token and Spring's own view of the
+    on-behalf token disagree, and no creator prompt is built.
+
+    Returns `(context, None)` on success or `(None, error_code)`; a 401/403
+    from Spring maps to `CONTEXT_UNAUTHORIZED_CODE` (the caller answers 403,
+    not the 503 "try again" used for availability failures).
+    """
+    try:
+        response = await spring.get_meera_context(
+            workspace_id=workspace_id, audience=AUDIENCE_CREATOR, onbehalf_jwt=onbehalf_jwt
+        )
+        context_data = response.data if isinstance(response.data, dict) else None
+    except SpringCallError as exc:
+        log_event(
+            logger, logging.WARNING, "meera_creator_context_fetch_failed",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"error_code": exc.code, "status_code": exc.status_code},
+        )
+        if _is_context_unauthorized(exc):
+            return None, CONTEXT_UNAUTHORIZED_CODE
+        return None, "creator_context_unavailable"
+    except Exception as exc:  # noqa: BLE001 - network/timeout/unexpected; structured error, never 500
+        log_event(
+            logger, logging.WARNING, "meera_creator_context_fetch_failed",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"error_type": type(exc).__name__},
+        )
+        return None, "creator_context_unavailable"
+
+    if not context_data:
+        return None, "creator_context_unavailable"
+
+    returned_audience = context_data.get("audience")
+    if isinstance(returned_audience, str) and returned_audience.upper() != AUDIENCE_CREATOR:
+        log_event(
+            logger, logging.WARNING, "meera_audience_mismatch",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"requested": AUDIENCE_CREATOR, "returned": returned_audience},
+        )
+        return None, "audience_mismatch"
+
+    return context_data, None
 
 
 @router.post("/chat")
@@ -243,6 +384,35 @@ async def chat(request: Request, authorization: str | None = Header(default=None
 
     settings = get_settings()
 
+    # Meera for Creators Phase A (A4), fix round 1 (BLOCKING): audience is
+    # derived from the VERIFIED token's claims ONLY -- never from the request
+    # body and never from the unverifiable on-behalf JWT (see
+    # app/auth/audience.py). StreamTokenService.mint (Spring) writes `userType`
+    # into every stream token, so a `chat:stream` token WITHOUT the claim is a
+    # stale or forged shape and is refused outright: the old BRAND fallback
+    # was the exact downgrade that let an unconsented, over-cap creator run
+    # the brand persona with the brand tool set. A Spring-only `service`
+    # token (no browser can hold one) keeps the pre-Phase-A brand default.
+    audience = derive_audience(verified.claims)
+    if audience is None:
+        if verified.scope == SCOPE_CHAT_STREAM:
+            log_event(
+                logger, logging.WARNING, "chat_turn_blocked_audience_unverified",
+                workspace_id=workspace_id, request_id=request_id,
+                fields={"scope": verified.scope},
+            )
+            return _error_response(
+                status.HTTP_403_FORBIDDEN,
+                "audience_unverified",
+                "this stream token carries no userType claim; refresh and try again",
+            )
+        log_event(
+            logger, logging.WARNING, "chat_turn_audience_defaulted_brand",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"scope": verified.scope},
+        )
+        audience = AUDIENCE_BRAND
+
     # P2-17 spend gate: checked before any provider call, mirrors the
     # auth-first pattern above ("any failure -> structured error, zero
     # provider calls, no token spend"). chat.py is one of the 3 in-scope
@@ -278,6 +448,11 @@ async def chat(request: Request, authorization: str | None = Header(default=None
             503, gate.error_code or "AI_SPEND_BLOCKED", gate.error_message or "spend gate blocked this call"
         )
     spend_reservation = gate.reservation
+    # A8 / gate fix round 1 (Q7): the creator's monthly hold, taken AFTER the
+    # context fetch below so the per-creator cap override Spring carries in
+    # the context (`ai_monthly_cap_usd`) applies. Settled or released inside
+    # the stream generator exactly like `spend_reservation`.
+    creator_reservation = None
 
     log_event(
         logger,
@@ -285,24 +460,114 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         "chat_turn_started",
         workspace_id=workspace_id,
         request_id=request_id,
-        fields={"conversation_len": shape_of(body.get("conversation"))},
+        fields={"conversation_len": shape_of(body.get("conversation")), "audience": audience},
     )
 
     # Platform-AI Phase 1 (W2a, Priya A2): Block B is now server-sourced from
     # Spring's POST /internal/meera/context, never from the browser body.
-    # Any client-supplied `brand`/`prompt_version` key in `body` is IGNORED
-    # below -- `brand_context` is built ONLY from this fetch + server-derived
-    # fields, so a spoofed client body cannot inject or override the system
-    # prompt's brand block. On fetch failure, degrade gracefully: empty Block
-    # B, log, never 500 the turn (voice/text chat must still work while a
-    # brand's profile is still analyzing, or Spring is briefly unavailable).
-    brand_context = await _fetch_brand_context(
-        spring=_get_spring(),
-        workspace_id=workspace_id,
-        onbehalf_jwt=onbehalf_jwt,
-        request_id=request_id,
-        conversation=body.get("conversation") or [],
-    )
+    # Any client-supplied `brand`/`prompt_version`/`audience` key in `body` is
+    # IGNORED below -- `brand_context` is built ONLY from this fetch +
+    # server-derived fields, so a spoofed client body cannot inject or
+    # override the system prompt's context block.
+    #
+    # BRAND: on an AVAILABILITY failure (5xx/network/not-yet-analyzed),
+    # degrade gracefully -- empty Block B, log, never 500 the turn (voice/text
+    # chat must still work while a brand's profile is still analyzing, or
+    # Spring is briefly unavailable). On an AUTH failure (401/403: Spring
+    # rejected the forwarded on-behalf token) fail CLOSED -- fix round 1.
+    # CREATOR (Phase A, A4/A6): fail CLOSED on every failure -- no context
+    # means consent cannot be verified, so the turn is refused with a
+    # structured error; and the very first creator turn is blocked with 403
+    # CONSENT_REQUIRED until `POST /api/creator/agent-preferences/consent`
+    # has been recorded.
+    if audience == AUDIENCE_CREATOR:
+        creator_context, context_error = await _fetch_creator_context(
+            spring=_get_spring(),
+            workspace_id=workspace_id,
+            onbehalf_jwt=onbehalf_jwt,
+            request_id=request_id,
+        )
+        if creator_context is None:
+            # F-05: no provider call will happen -- give the daily hold back
+            # now instead of letting it sit on the ceiling until it expires.
+            await release(spend_reservation)
+            spend_reservation = None
+            if context_error == "audience_mismatch":
+                return _error_response(
+                    status.HTTP_403_FORBIDDEN,
+                    "audience_mismatch",
+                    "this token is not a creator session",
+                )
+            if context_error == CONTEXT_UNAUTHORIZED_CODE:
+                return _error_response(
+                    status.HTTP_403_FORBIDDEN,
+                    CONTEXT_UNAUTHORIZED_CODE,
+                    CONTEXT_UNAUTHORIZED_MESSAGE,
+                )
+            return _error_response(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                context_error or "creator_context_unavailable",
+                "Meera can't reach your profile right now. Please try again in a moment.",
+            )
+        if not consent_accepted(creator_context):
+            await release(spend_reservation)
+            spend_reservation = None
+            log_event(
+                logger, logging.INFO, "chat_turn_blocked_consent_required",
+                workspace_id=workspace_id, request_id=request_id,
+            )
+            return _consent_required_response()
+        # A8: per-creator MONTHLY cap, checked before any provider call.
+        # No-op for BRAND. The over-cap reply is a friendly message the
+        # creator can read, not a 5xx. Gate fix round 1 (Q7): the gate now
+        # RESERVES a pessimistic per-turn estimate under the same lock as the
+        # comparison, so two concurrent turns at cap-minus-one cannot both
+        # pass; and it honours the per-creator override support can set
+        # through the admin endpoint (carried in the context payload).
+        try:
+            creator_reservation = await check_creator_spend_gate(
+                workspace_id,
+                audience,
+                reserve_usd=settings.ai_reservation_per_call_usd or None,
+                reserve_ttl_seconds=settings.ai_reservation_chat_ttl_seconds,
+                cap_usd=creator_cap_override_from_context(creator_context),
+            )
+        except SpendCapExceeded as exc:
+            await release(spend_reservation)
+            spend_reservation = None
+            log_event(
+                logger, logging.WARNING, "chat_turn_blocked_creator_monthly_cap",
+                workspace_id=workspace_id, request_id=request_id,
+                fields={"audience": audience},
+            )
+            return _creator_cap_response(exc.message)
+        brand_context = {
+            "workspace_id": workspace_id,
+            "audience": AUDIENCE_CREATOR,
+            "creator": creator_context,
+            "conversation": body.get("conversation") or [],
+        }
+    else:
+        brand_context, context_error = await _fetch_brand_context(
+            spring=_get_spring(),
+            workspace_id=workspace_id,
+            onbehalf_jwt=onbehalf_jwt,
+            request_id=request_id,
+            conversation=body.get("conversation") or [],
+        )
+        if brand_context is None:
+            await release(spend_reservation)
+            spend_reservation = None
+            log_event(
+                logger, logging.WARNING, "chat_turn_blocked_context_unauthorized",
+                workspace_id=workspace_id, request_id=request_id,
+                fields={"audience": audience, "error_code": context_error},
+            )
+            return _error_response(
+                status.HTTP_403_FORBIDDEN,
+                context_error or CONTEXT_UNAUTHORIZED_CODE,
+                CONTEXT_UNAUTHORIZED_MESSAGE,
+            )
     prompt = assemble_prompt(brand_context, session_id=body.get("conversation_id"))
     claude = _get_claude()
     spring = _get_spring()
@@ -316,7 +581,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
 
     async def event_stream():
         # F-05: the reservation is settled or released inside this generator.
-        nonlocal spend_reservation
+        nonlocal spend_reservation, creator_reservation
         disconnected = False
         # SECURITY FIX (Kabir FAILs #1/#2): tracks a genuine PROVIDER failure, as opposed to a
         # client disconnect -- the two are deliberately never conflated. Only `provider_failed`
@@ -379,6 +644,10 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                 initial_messages=prompt.messages,
                 ctx=loop_ctx,
                 is_cancelled=is_cancelled,
+                # A4: CREATOR turns carry an EMPTY tool set (no money tools,
+                # no brand tools); BRAND turns the full schema set. Decided
+                # once, in `assemble_prompt`, never here.
+                tools=prompt.tools,
             ).__aiter__()
 
             while True:
@@ -528,14 +797,26 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                     cost_usd, workspace_id, reservation=spend_reservation
                 )
                 spend_reservation = None  # F-05: settled
+                # A8: CREATOR turns also accrue against the creator's monthly
+                # allowance (the daily ledger above is unchanged).
+                creator_month_total = None
+                if audience == AUDIENCE_CREATOR:
+                    creator_month_total = await record_creator_spend(
+                        cost_usd, workspace_id, reservation=creator_reservation
+                    )
+                    creator_reservation = None  # Q7: settled
                 log_event(
                     logger, logging.INFO, "ai_spend",
                     workspace_id=workspace_id, request_id=request_id,
                     fields={
                         "route": "chat",
                         "model": CLAUDE_MODEL,
+                        "audience": audience,
                         "cost_usd": str(cost_usd),
                         "spend_today_usd": str(spend_today),
+                        "creator_month_usd": (
+                            str(creator_month_total) if creator_month_total is not None else None
+                        ),
                         # P1 BLANK TURN fix (F6): stop_reason + output_tokens
                         # per turn -- previously invisible, which is why a 28%
                         # blank-turn rate on max_tokens cuts shipped unnoticed.
@@ -568,6 +849,9 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         if spend_reservation is not None:
             await release(spend_reservation)
             spend_reservation = None
+        if creator_reservation is not None:
+            await release_creator(creator_reservation)
+            creator_reservation = None
 
         if disconnected:
             # Kabir FAIL 1 fix: the client already received every `token` event it read before

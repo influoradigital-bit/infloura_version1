@@ -741,7 +741,7 @@ export default function BrandSettingsPage() {
                     not be able to switch off a payment-failed or contract-signed email, so this
                     is disclosure copy, not a control. */}
                 <p className="text-xs text-muted-foreground">
-                  Essential contract, escrow, and billing emails are always sent and can&apos;t be
+                  Essential contract, payment, and billing emails are always sent and can&apos;t be
                   turned off individually — only the Email Notifications switch above affects them.
                 </p>
 

@@ -41,7 +41,12 @@ public sealed interface NotificationEvent permits
         InvoiceReadyEvent,
         PortfolioContactEvent,
         SubscriptionHaltedEvent,
-        SubscriptionPaymentFailedEvent {
+        SubscriptionPaymentFailedEvent,
+        // Meta-sourced creator connection events (32-33, T-CREATORCONNECT-0902)
+        CreatorConnectionRequestedEvent,
+        ConnectedCreatorJoinedEvent,
+        // Lifecycle activation (34) — raised by a scheduled job, never by a user action
+        CreatorNotConnectedEvent {
 
     /** The event type string for routing (e.g., "campaign.created"). */
     String eventType();

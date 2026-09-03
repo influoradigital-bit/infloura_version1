@@ -45,6 +45,22 @@ export const PRERENDER_ONLY_ROUTES = [
   { path: '/terms', reason: 'noindex — v0 legal draft pending counsel review' },
   { path: '/privacy', reason: 'noindex — v0 legal draft pending counsel review' },
   { path: '/support', reason: 'placeholder stub, no content yet' },
+  // F-0184 — public/llms.txt:67 advertises these six to AI systems, and F-0338 already registered
+  // them as real routes backed by real policy documents in src/content/legal/. What was missing was
+  // the SNAPSHOT: absent from this list, public/_redirects served each one dist/app-shell.html —
+  // an empty #root. So a JS-less crawler (which is what llms.txt exists to serve) followed a URL we
+  // published and got a blank page, while a human with JS saw the full policy.
+  //
+  // PRERENDER_ONLY rather than INDEXABLE deliberately: this fixes the contradiction between what
+  // llms.txt advertises and what the tree serves, which is a correctness question. Whether these
+  // belong in the sitemap is a separate SEO judgement (aditya's), and adding them to
+  // INDEXABLE_ROUTES would silently change sitemap.xml as a side effect of a content fix.
+  { path: '/tds', reason: 'F-0184 — advertised in llms.txt; sitemap inclusion is a separate SEO call' },
+  { path: '/kyc', reason: 'F-0184 — advertised in llms.txt; sitemap inclusion is a separate SEO call' },
+  { path: '/refund-policy', reason: 'F-0184 — advertised in llms.txt; sitemap inclusion is a separate SEO call' },
+  { path: '/disclosure', reason: 'F-0184 — advertised in llms.txt; sitemap inclusion is a separate SEO call' },
+  { path: '/disputes', reason: 'F-0184 — advertised in llms.txt; sitemap inclusion is a separate SEO call' },
+  { path: '/grievance', reason: 'F-0184 — advertised in llms.txt; sitemap inclusion is a separate SEO call' },
 ];
 
 /** Every route the prerenderer should snapshot (blog posts are added separately). */

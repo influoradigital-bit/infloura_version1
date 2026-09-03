@@ -14,6 +14,30 @@ export type MemberRole = 'OWNER' | 'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER';
 
 export type CampaignType = 'OPEN' | 'DIRECT' | 'HYPE';
 
+/** T-MEERA-CREATOR-PHASE-A (A2) — collaboration usage-rights channel, matches
+ *  com.influora.domain.enums.UsageChannel one-for-one. */
+export type UsageChannel = 'ORGANIC' | 'PAID_ADS' | 'WHITELISTING' | 'WEBSITE' | 'OFFLINE';
+
+/** T-MEERA-CREATOR-PHASE-A (A2) — collaboration exclusivity scope, matches
+ *  com.influora.domain.enums.ExclusivityScope one-for-one. */
+export type ExclusivityScope = 'NONE' | 'NAMED_BRANDS' | 'CATEGORY';
+
+/**
+ * T-MEERA-CREATOR-PHASE-A (A2, SPEC.md §1.1/§4.2) — structured deal terms captured on a
+ * Collaboration (V72 migration: usage_months, usage_perpetual, usage_channels, exclusivity_days,
+ * exclusivity_scope, exclusivity_brands, max_revisions). `usageChannels` and `exclusivityBrands`
+ * are JSON/comma-separated on the wire; this is the FE's already-parsed array shape.
+ */
+export interface DealTerms {
+  usageMonths: number | null;
+  usagePerpetual: boolean;
+  usageChannels: UsageChannel[];
+  exclusivityDays: number | null;
+  exclusivityScope: ExclusivityScope;
+  exclusivityBrands: string[];
+  maxRevisions: number;
+}
+
 export type CampaignStatus =
   | 'DRAFT' 
   | 'PENDING_APPROVAL' 
@@ -237,6 +261,14 @@ export interface Campaign {
   isPrivate: boolean;
   maxCollaborators?: number;
   applicationDeadline?: Date;
+  /**
+   * T-MEERA-CREATOR-PHASE-A (A2) — end-brand identity for the campaign (CampaignDtos, V72
+   * migration `end_brand_name`/`end_brand_category`). Required for NEW campaigns (enforced
+   * client-side in campaign-form.tsx); nullable only on legacy rows created before this field
+   * existed.
+   */
+  endBrandName?: string | null;
+  endBrandCategory?: string | null;
   createdBy: string;
   createdAt: Date;
   updatedAt: Date;

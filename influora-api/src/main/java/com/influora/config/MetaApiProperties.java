@@ -31,6 +31,94 @@ public class MetaApiProperties {
     private int rateLimitAlertThreshold = 80;
     private int rateLimitThrottleThreshold = 90;
 
+    /**
+     * F-0479 — whether {@code MetricsPollingJob} also fetches recent media + per-post insights and
+     * writes {@code media_metrics}. On by default: with it off, that table has no writer at all and
+     * every creator stays permanently UNSCORED (see F-0478), which is the state this flag exists to
+     * end rather than preserve.
+     *
+     * <p>It exists because turning this on is the one change here with a real per-account cost —
+     * roughly {@code 1 + mediaLimit} extra Graph calls per creator per 6-hour cycle, which is
+     * exactly the rate-limit spend the original TODO cited as its reason to defer. This is the kill
+     * switch for that, not a rollout gate: flip it off if Meta usage spikes, and accept that scores
+     * go absent again while it is off.
+     */
+    private boolean mediaMetricsEnabled = true;
+
+    /**
+     * T-CREATORCONNECT-0902 — {@code influora.meta.creator-marketplace.enabled}. Gates {@code
+     * CreatorMarketplaceClient}: OFF by default, same "blank/false stays off" convention as every
+     * other Meta flag in this file. wiki/decisions/2026-09-02-what-we-need.md §4.2 — the
+     * {@code instagram_creator_marketplace_discovery} scope needed to make real Marketplace calls
+     * cannot even be App-Reviewed yet, so this ships dark; {@code ExternalCreatorService} falls
+     * back to the {@code external_creators} table (Business Discovery + admin import) regardless
+     * of this flag.
+     */
+    private CreatorMarketplace creatorMarketplace = new CreatorMarketplace();
+
+    /**
+     * Q1.3 (T-CREATORCONNECT-0902) — an Influora-OWNED IG Business system caller for Business
+     * Discovery lookups, preferred ahead of borrowing an arbitrary connected creator's
+     * FACEBOOK_LOGIN token. Without this, {@code ExternalCreatorService.resolveBusinessDiscoveryCaller}
+     * falls back to a live creator's own token, and {@code MetaGraphApiClient} rate-limits on that
+     * creator's {@code igBusinessAccountId} — the SAME key {@code MetricsPollingJob} throttles on
+     * — so brand Discover volume can silently stall an unrelated creator's own metrics polling.
+     * Blank by default, same "off means degrade, never fake" convention as every other Meta
+     * property here. Cross-user token reuse (the creator-fallback path this exists to reduce
+     * reliance on) still needs a platform-terms ruling from Swapnil before it is relied on in
+     * production — this property does not resolve that, only gives the system caller priority
+     * once one is provisioned.
+     */
+    private String systemIgUserId = "";
+
+    private String systemIgAccessToken = "";
+
+    public static class CreatorMarketplace {
+        private Boolean enabled = Boolean.FALSE;
+
+        public boolean isEnabled() {
+            return Boolean.TRUE.equals(enabled);
+        }
+
+        /**
+         * Q7.4 (T-CREATORCONNECT-0902, Critical) — {@code Boolean} (not primitive {@code boolean})
+         * so a resolved-but-EMPTY env var (docker-compose passing {@code META_CREATOR_MARKETPLACE_ENABLED=}
+         * with no shell-side value set, distinct from the var being absent) converts to {@code null}
+         * here instead of throwing a {@code ConversionFailedException} out of Spring's relaxed
+         * binder — which primitive {@code boolean} cannot survive, and which crashed API boot on
+         * the live Hostinger VPS. Coalesces {@code null} to {@code false}, matching the documented
+         * off-by-default convention; never lets a blank env var reach this field as anything but
+         * "off".
+         */
+        public void setEnabled(Boolean enabled) {
+            this.enabled = enabled == null ? Boolean.FALSE : enabled;
+        }
+    }
+
+    public CreatorMarketplace getCreatorMarketplace() {
+        return creatorMarketplace;
+    }
+
+    public void setCreatorMarketplace(CreatorMarketplace creatorMarketplace) {
+        this.creatorMarketplace = creatorMarketplace == null ? new CreatorMarketplace() : creatorMarketplace;
+    }
+
+    public String getSystemIgUserId() {
+        return systemIgUserId;
+    }
+
+    public void setSystemIgUserId(String systemIgUserId) {
+        this.systemIgUserId = systemIgUserId == null ? "" : systemIgUserId;
+    }
+
+    public String getSystemIgAccessToken() {
+        return systemIgAccessToken;
+    }
+
+    public void setSystemIgAccessToken(String systemIgAccessToken) {
+        this.systemIgAccessToken = systemIgAccessToken == null ? "" : systemIgAccessToken;
+    }
+
     public boolean isConfigured() {
         return appId != null && !appId.isBlank() && appSecret != null && !appSecret.isBlank();
     }
@@ -46,6 +134,14 @@ public class MetaApiProperties {
                 && !instagramAppId.isBlank()
                 && instagramAppSecret != null
                 && !instagramAppSecret.isBlank();
+    }
+
+    public boolean isMediaMetricsEnabled() {
+        return mediaMetricsEnabled;
+    }
+
+    public void setMediaMetricsEnabled(boolean mediaMetricsEnabled) {
+        this.mediaMetricsEnabled = mediaMetricsEnabled;
     }
 
     public String getInstagramAppId() {

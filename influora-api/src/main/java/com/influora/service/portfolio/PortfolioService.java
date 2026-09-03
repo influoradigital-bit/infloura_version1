@@ -44,6 +44,7 @@ import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorContextService;
 import com.influora.service.CreatorProfileService;
+import com.influora.service.ExternalCreatorLinkService;
 import com.influora.web.dto.creator.CreatorDtos.PlatformStatResponse;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioAnalyticsResponse;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioCollab;
@@ -105,6 +106,7 @@ public class PortfolioService {
     private final MetaTokenStorage metaTokenStorage;
     private final InstagramInsightsClient instagramInsightsClient;
     private final CreatorMetricsRepository creatorMetricsRepository;
+    private final ExternalCreatorLinkService externalCreatorLinkService;
 
     /** Trailing window for the "Page views (30d)" analytics number and its period-over-period delta. */
     private static final Duration ANALYTICS_WINDOW = Duration.ofDays(30);
@@ -129,7 +131,8 @@ public class PortfolioService {
             MetaOAuthTokenRepository metaOAuthTokenRepository,
             MetaTokenStorage metaTokenStorage,
             InstagramInsightsClient instagramInsightsClient,
-            CreatorMetricsRepository creatorMetricsRepository) {
+            CreatorMetricsRepository creatorMetricsRepository,
+            ExternalCreatorLinkService externalCreatorLinkService) {
         this.creatorContext = creatorContext;
         this.creatorProfileService = creatorProfileService;
         this.creatorProfileRepository = creatorProfileRepository;
@@ -150,6 +153,7 @@ public class PortfolioService {
         this.metaTokenStorage = metaTokenStorage;
         this.instagramInsightsClient = instagramInsightsClient;
         this.creatorMetricsRepository = creatorMetricsRepository;
+        this.externalCreatorLinkService = externalCreatorLinkService;
     }
 
     @Transactional(readOnly = true)
@@ -306,7 +310,10 @@ public class PortfolioService {
                         .build();
         creatorMetricsRepository.save(metric);
 
-        upsertPlatformStat(profile, "INSTAGRAM", metric);
+        // Q5.3 (T-CREATORCONNECT-0902) — thread the already-resolved igBusinessAccountId through
+        // so the JOINED hook can match on the exact id instead of falling back to the weaker
+        // case-insensitive username branch.
+        upsertPlatformStat(profile, "INSTAGRAM", metric, igBusinessAccountId);
 
         log.info("Portfolio platform sync completed for creator={}", profile.getId());
         return new SyncPlatformsResponse(Instant.now().toString());
@@ -320,7 +327,8 @@ public class PortfolioService {
      * also performs, so a manual sync and the nightly aggregation leave the portfolio in the same
      * state.
      */
-    private void upsertPlatformStat(CreatorProfile profile, String platform, CreatorMetric metric) {
+    private void upsertPlatformStat(
+            CreatorProfile profile, String platform, CreatorMetric metric, String igAccountId) {
         Optional<PlatformStat> existing =
                 platformStatRepository.findByCreatorProfileIdAndPlatform(profile.getId(), platform);
         if (existing.isPresent()) {
@@ -356,6 +364,30 @@ public class PortfolioService {
                         .sum();
         profile.applyAggregatedStats(totalFollowers, metric.getAvgEngagementRate());
         creatorProfileRepository.save(profile);
+
+        // T-CREATORCONNECT-0902 — the JOINED hook. A real Instagram handle from a Meta sync, not
+        // the auto-generated Influora-username fallback. Q5.3: pass the igAccountId already
+        // resolved by the caller (syncPlatforms) so the hook takes the exact ig_account_id match
+        // branch instead of the weaker case-insensitive username fallback — igAccountId is null
+        // only for callers of this method that never had one (there are none left after Q5.3, but
+        // the parameter stays honest rather than silently required).
+        // Q5.5 — try/catch at the call site, matching MetaTokenStorage#storeCreatorToken: REQUIRES_NEW
+        // on onCreatorIdentified isolates the DATABASE transaction, but a deferred-flush failure
+        // inside it still re-surfaces as an exception from THIS call when its own commit fails,
+        // even though the hook's internal try/catch already logged it. Without this, that would
+        // still fail the surrounding syncPlatforms() request (and its own already-good writes to
+        // platform_stats/creator_profiles above) over a best-effort cross-link.
+        if ("INSTAGRAM".equals(platform)) {
+            try {
+                externalCreatorLinkService.onCreatorIdentified(profile.getId(), metric.getUsername(), igAccountId);
+            } catch (RuntimeException e) {
+                log.error(
+                        "upsertPlatformStat: JOINED hook failed for creatorProfileId={} (swallowed —"
+                                + " the platform sync above already succeeded and is unaffected)",
+                        profile.getId(),
+                        e);
+            }
+        }
     }
 
     @Transactional(readOnly = true)
@@ -545,7 +577,7 @@ public class PortfolioService {
                 publicView && !settings.getVisibility().customLinks()
                         ? List.of()
                         : settings.getCustomLinks(),
-                buildRateCard(profile, settings),
+                buildRateCard(profile, settings, publicView),
                 JsonLists.stringListFromJson(profile.getLanguagesJson()),
                 topCities,
                 settings.getVisibility());
@@ -677,8 +709,19 @@ public class PortfolioService {
         return badges;
     }
 
-    private List<PortfolioRateRow> buildRateCard(CreatorProfile profile, PortfolioSettings settings) {
-        if ("hidden".equals(settings.getVisibility().rateCard())) {
+    /**
+     * Rate-card visibility is enforced here, server-side. {@code brands_only} (the default) must
+     * strip the numbers from the unauthenticated {@code GET /portfolio/{username}} payload, not
+     * just hide them in the UI: the public page previously rendered a "sign in as a brand" card
+     * while the values still sat in the JSON.
+     */
+    private List<PortfolioRateRow> buildRateCard(
+            CreatorProfile profile, PortfolioSettings settings, boolean publicView) {
+        String rateCardVisibility = settings.getVisibility().rateCard();
+        if ("hidden".equals(rateCardVisibility)) {
+            return List.of();
+        }
+        if (publicView && !"public".equals(rateCardVisibility)) {
             return List.of();
         }
         List<PortfolioRateRow> rows = new ArrayList<>();

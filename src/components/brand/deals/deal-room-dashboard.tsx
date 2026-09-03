@@ -1169,7 +1169,7 @@ export function DealRoomDashboard() {
           </DialogHeader>
           <div className="py-8 space-y-6">
             {[
-              { step: 1, label: 'Locking escrow funds', icon: Lock },
+              { step: 1, label: 'Securing funds', icon: Lock },
               { step: 2, label: 'Generating contract from proposal', icon: FileText },
               { step: 3, label: 'Setting up e-signature', icon: PenTool },
               { step: 4, label: 'Contract ready', icon: CheckCircle2 },

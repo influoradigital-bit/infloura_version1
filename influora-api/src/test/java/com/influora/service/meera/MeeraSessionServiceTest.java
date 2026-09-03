@@ -30,6 +30,7 @@ import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.BrandProfileRepository;
 import com.influora.repository.WorkspaceRepository;
+import com.influora.service.CreatorAgentConversationService;
 import com.influora.service.IdempotencyService;
 import java.time.LocalDate;
 import java.util.List;
@@ -70,6 +71,7 @@ class MeeraSessionServiceTest {
     @Mock private StreamTokenService streamTokenService;
     @Mock private OnBehalfTokenService onBehalfTokenService;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private CreatorAgentConversationService creatorAgentConversationService;
 
     private MeeraSessionService service;
 
@@ -85,7 +87,8 @@ class MeeraSessionServiceTest {
                         contextAssembler,
                         streamTokenService,
                         onBehalfTokenService,
-                        idempotencyService);
+                        idempotencyService,
+                        creatorAgentConversationService);
     }
 
     private BrandAiCredit creditStatus() {
@@ -431,7 +434,7 @@ class MeeraSessionServiceTest {
         when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace()));
         when(brandProfileRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.empty());
         when(contextAssembler.assemble(any(), any())).thenReturn(Map.of());
-        when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString()))
+        when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.BRAND)))
                 .thenReturn("stream-token-1");
         when(onBehalfTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.BRAND)))
                 .thenReturn("onbehalf-token-1");
@@ -465,7 +468,7 @@ class MeeraSessionServiceTest {
         // token, and the on-behalf token -- never a client-supplied value (Kabir FAIL 2 fix).
         String messageId = chargeTurnIdCaptor.getValue();
         assertEquals(messageId, saved.getId());
-        verify(streamTokenService, times(1)).mint(WORKSPACE_ID, CONVERSATION_ID, messageId, USER_ID);
+        verify(streamTokenService, times(1)).mint(WORKSPACE_ID, CONVERSATION_ID, messageId, USER_ID, UserType.BRAND);
         verify(onBehalfTokenService, times(1))
                 .mint(WORKSPACE_ID, CONVERSATION_ID, messageId, USER_ID, UserType.BRAND);
     }
@@ -494,7 +497,7 @@ class MeeraSessionServiceTest {
         assertEquals("CREDITS_EXHAUSTED", ex.getCode());
         assertEquals(402, ex.getStatus().value());
         verify(messageRepository, never()).save(any());
-        verify(streamTokenService, never()).mint(any(), any(), any(), any());
+        verify(streamTokenService, never()).mint(any(), any(), any(), any(), any());
         verify(onBehalfTokenService, never()).mint(any(), any(), any(), any(), any());
         verify(creditService, never()).tryConsume(any(), anyInt());
     }
@@ -626,5 +629,168 @@ class MeeraSessionServiceTest {
                         () -> service.listMessages(WORKSPACE_ID, CONVERSATION_ID, null));
 
         assertEquals("CONVERSATION_NOT_FOUND", ex.getCode());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // T-MEERA-CREATOR-PHASE-A (fix round 1, item 2) -- a CREATOR turn never touches the brand
+    // AI-credit ledger or the brand workspace/profile lookup, and both minted tokens carry
+    // workspaceId == the creator's own userId (see MeeraContextService#assembleCreatorContext
+    // javadoc for why workspaceId is reused to carry a creator's user id on this audience).
+    // ------------------------------------------------------------------------------------------
+
+    private static final String CREATOR_USER_ID = "01HCREATORUSER1234567A";
+
+    private AiConversation creatorConversation() {
+        return AiConversation.builder()
+                .id(CONVERSATION_ID)
+                .workspaceId(CREATOR_USER_ID)
+                .startedBy(CREATOR_USER_ID)
+                .status(ConversationStatus.ACTIVE)
+                .build();
+    }
+
+    @Test
+    @DisplayName(
+            "sendTurn: a CREATOR principal's minted stream token and on-behalf token both carry"
+                    + " workspaceId == the creator's own userId, never touches the brand AI-credit"
+                    + " ledger or the brand workspace/profile repositories, and does NOT record the"
+                    + " turn via CreatorAgentConversationService (fix round 2, item 2 -- that only"
+                    + " happens once the assistant reply actually persists, in"
+                    + " persistAssistantWriteback, so a turn that never completes is never counted)")
+    void testSendTurnCreatorPrincipalMintsTokensWithWorkspaceIdEqualToUserId() {
+        when(conversationRepository.findByIdAndWorkspaceId(CONVERSATION_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(creatorConversation()));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.CREATOR)))
+                .thenReturn("creator-stream-token-1");
+        when(onBehalfTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.CREATOR)))
+                .thenReturn("creator-onbehalf-token-1");
+        mockIdempotencyExecuteOnceWithResultRef();
+
+        MeeraSessionService.TurnResult result =
+                service.sendTurn(
+                        CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY);
+
+        assertEquals("creator-stream-token-1", result.streamToken());
+        assertEquals("creator-onbehalf-token-1", result.onBehalfToken());
+
+        // Never touches the brand AI-credit ledger for a CREATOR turn.
+        verify(creditService, never()).tryConsumeForTurn(any(), anyInt(), any());
+        verify(creditService, never()).tryConsume(any(), anyInt());
+        // Never resolves a brand Workspace/BrandProfile for a CREATOR turn.
+        verify(workspaceRepository, never()).findById(any());
+        verify(brandProfileRepository, never()).findByWorkspaceId(any());
+
+        // Both tokens are minted with workspaceId == the creator's own userId.
+        verify(streamTokenService)
+                .mint(eq(CREATOR_USER_ID), eq(CONVERSATION_ID), anyString(), eq(CREATOR_USER_ID), eq(UserType.CREATOR));
+        verify(onBehalfTokenService)
+                .mint(eq(CREATOR_USER_ID), eq(CONVERSATION_ID), anyString(), eq(CREATOR_USER_ID), eq(UserType.CREATOR));
+
+        // Fix round 2, item 2 -- the USER-message-persist step (doSendTurn) must NOT record the
+        // turn any more; a turn whose provider call never completes would otherwise leave a
+        // dangling MeeraCreatorConversation row with an inflated message_count. Recording now
+        // happens exclusively from persistAssistantWriteback (see the next test).
+        verify(creatorAgentConversationService, never())
+                .recordTurnForUser(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "persistAssistantWriteback(userType=CREATOR): never touches the brand AI-credit ledger"
+                    + " (creditsCharged is always 0) and is the SOLE call site that records the turn"
+                    + " via CreatorAgentConversationService (fix round 2, item 2)")
+    void testPersistAssistantWritebackCreatorNeverChargesAndRecordsTurn() {
+        when(conversationRepository.findById(CONVERSATION_ID)).thenReturn(Optional.of(creatorConversation()));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyService.executeOnce(
+                        anyString(), eq(CREATOR_USER_ID), eq("meera.persist_writeback"), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            Supplier<AiMessage> supplier = invocation.getArgument(3);
+                            return supplier.get();
+                        });
+
+        AiMessage result =
+                service.persistAssistantWriteback(
+                        CREATOR_USER_ID, CONVERSATION_ID, CONTENT, Map.of(), IDEMPOTENCY_KEY, UserType.CREATOR);
+
+        assertEquals(0, result.getCreditsCharged());
+        verify(creditService, never()).wasCharged(any(), any());
+        verify(creditService, never()).tryConsume(any(), anyInt());
+        verify(creatorAgentConversationService)
+                .recordTurnForUser(eq(CREATOR_USER_ID), eq(CONVERSATION_ID), any());
+    }
+
+    @Test
+    @DisplayName(
+            "Gate fix round 1 (Priya Q1, SPEC.md 4.7/A10): startOrResumeForCreator on a BRAND-NEW"
+                    + " conversation persists the day-one onboarding greeting as a real ASSISTANT"
+                    + " ai_messages row -- previously no message was ever written on session start,"
+                    + " so the client-only greeting the creator read never appeared in the DPDP"
+                    + " conversation export")
+    void testStartOrResumeForCreatorPersistsOnboardingGreetingOnNewConversation() {
+        when(conversationRepository.findFirstByWorkspaceIdAndStatusOrderByLastMessageAtDesc(
+                        CREATOR_USER_ID, ConversationStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(conversationRepository.save(any(AiConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AiConversation result = service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, "Priya Shah");
+
+        ArgumentCaptor<AiMessage> messageCaptor = ArgumentCaptor.forClass(AiMessage.class);
+        verify(messageRepository).save(messageCaptor.capture());
+        AiMessage greeting = messageCaptor.getValue();
+        assertEquals(MessageRole.ASSISTANT, greeting.getRole());
+        assertEquals(result.getId(), greeting.getConversationId());
+        assertEquals(0, greeting.getCreditsCharged());
+        assertEquals(
+                "Hi Priya! I'm Meera, your manager here on Influora. I can help you track your"
+                        + " deals, understand your earnings, and answer questions about the"
+                        + " platform. What would you like to know?",
+                greeting.getContent());
+        verify(creatorAgentConversationService)
+                .recordTurnForUser(eq(CREATOR_USER_ID), eq(result.getId()), any());
+    }
+
+    @Test
+    @DisplayName(
+            "Gate fix round 1 (Priya Q1): startOrResumeForCreator on an EXISTING active conversation"
+                    + " never re-sends the greeting -- it is a one-time, first-session-only event")
+    void testStartOrResumeForCreatorDoesNotRepeatGreetingOnResume() {
+        AiConversation existing = creatorConversation();
+        when(conversationRepository.findFirstByWorkspaceIdAndStatusOrderByLastMessageAtDesc(
+                        CREATOR_USER_ID, ConversationStatus.ACTIVE))
+                .thenReturn(Optional.of(existing));
+
+        AiConversation result = service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, "Priya Shah");
+
+        assertSame(existing, result);
+        verifyNoInteractions(messageRepository);
+        verify(conversationRepository, never()).save(any());
+        verify(creatorAgentConversationService, never()).recordTurnForUser(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "Gate fix round 1 (Priya Q1): startOrResumeForCreator falls back to a grammatical"
+                    + " greeting ('Hi there!') when the creator has no display name set yet, rather"
+                    + " than 'Hi null!'")
+    void testStartOrResumeForCreatorFallsBackToThereWhenNoDisplayName() {
+        when(conversationRepository.findFirstByWorkspaceIdAndStatusOrderByLastMessageAtDesc(
+                        CREATOR_USER_ID, ConversationStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(conversationRepository.save(any(AiConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, null);
+
+        ArgumentCaptor<AiMessage> messageCaptor = ArgumentCaptor.forClass(AiMessage.class);
+        verify(messageRepository).save(messageCaptor.capture());
+        assertEquals(
+                "Hi there! I'm Meera, your manager here on Influora. I can help you track your"
+                        + " deals, understand your earnings, and answer questions about the"
+                        + " platform. What would you like to know?",
+                messageCaptor.getValue().getContent());
     }
 }

@@ -20,6 +20,8 @@ import com.influora.service.AuditLogService;
 import com.influora.service.IdempotencyService;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -159,16 +161,20 @@ class AffiliateSettlementJobTest {
     @DisplayName("settlement: overlap guard blocks concurrent runSettlementForPeriod calls on the SAME JVM via AtomicBoolean")
     void testOverlapGuardPreventsConcurrentRunsOnSameJvm() throws InterruptedException {
         mockBatchSaveReturnsArgument();
+        CountDownLatch inGuardedSection = new CountDownLatch(1);
         when(affiliateEarningRepository.findDistinctCreatorIdByStatusIn(any()))
                 .thenAnswer(
                         invocation -> {
+                            inGuardedSection.countDown();
                             Thread.sleep(100);
                             return List.<String>of();
                         });
 
         Thread thread1 = new Thread(() -> job.runSettlementForPeriod(PERIOD));
         thread1.start();
-        Thread.sleep(10);
+        assertTrue(
+                inGuardedSection.await(5, TimeUnit.SECONDS),
+                "the first run never entered the guarded section - the overlap guard was not exercised");
 
         job.runSettlementForPeriod(PERIOD);
 

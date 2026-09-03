@@ -428,7 +428,7 @@ export default function CreatorDashboardPage() {
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {wallet.escrowLocked > 0
-                        ? `${formatINR(wallet.escrowLocked)} in escrow`
+                        ? `${formatINR(wallet.escrowLocked)} secured`
                         : 'Ready to withdraw'}
                     </p>
                   </>

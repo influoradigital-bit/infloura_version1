@@ -1,7 +1,9 @@
 package com.influora.job;
 
 import com.influora.common.Ulids;
+import com.influora.config.MetaApiProperties;
 import com.influora.domain.entity.CreatorMetric;
+import com.influora.domain.entity.MediaMetric;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.client.InstagramInsightsClient;
@@ -10,11 +12,15 @@ import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.exception.MetaRateLimitException;
 import com.influora.integration.meta.exception.MetaTokenExpiredException;
 import com.influora.integration.meta.oauth.MetaTokenStorage;
+import com.influora.integration.meta.service.InstagramMetricsFetcher;
+import com.influora.integration.meta.service.MediaMetricMapper;
 import com.influora.integration.meta.service.MetaRateLimitTracker;
 import com.influora.repository.CreatorMetricsRepository;
+import com.influora.repository.MediaMetricsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -40,14 +46,22 @@ import org.springframework.stereotype.Component;
  * design (same as {@code MetaTokenRefreshService}'s expiring-soon sweep); it does not need
  * per-request workspace scoping since it is not serving a single tenant's request.
  *
- * <p><b>Per-post media insights (spec §3.1's inner loop over {@code InstagramInsightsClient
- * .getMediaInsights}) are intentionally NOT wired up yet</b> — TODO, tracked below — because {@code
- * media_metrics} persistence needs a mapping from Meta's insight metric-name/value shape
- * ({@link com.influora.integration.meta.dto.InstagramInsightsResponse}) to {@code MediaMetric}
- * fields, and that mapping wasn't specced with enough precision (e.g. which Instagram media types
- * support which metrics — the client's own javadoc notes Meta 400s on unsupported metric/type
- * combinations) to hardcode confidently without over-scoping this pass. The storage layer
- * ({@code MediaMetricsRepository}/{@code MediaMetric}) is complete and ready for that follow-up.
+ * <p><b>Per-post media insights (spec §3.1's inner loop) are now wired — F-0479.</b> They were
+ * deferred for a long time on the grounds that the mapping from Meta's insight metric-name/value
+ * shape ({@link com.influora.integration.meta.dto.InstagramInsightsResponse}) to {@code MediaMetric}
+ * fields "wasn't specced with enough precision", particularly which media types support which
+ * metrics. That reasoning is resolved in {@link
+ * com.influora.integration.meta.service.MediaMetricMapper}: Meta omits what it does not support and
+ * the fetcher degrades its 400s to a null insights response, so unsupported metrics simply stay
+ * {@code null} — no media-type compatibility table is required, and building one would have been
+ * the wrong shape.
+ *
+ * <p>While it stayed deferred, {@code media_metrics} had a reader ({@code ScoreCalculationJob},
+ * {@code BrandSafetyScoreService}) and no writer, so every creator scored off an empty list — see
+ * F-0478 for what that produced. The fetch is delegated to {@link
+ * com.influora.integration.meta.service.InstagramMetricsFetcher}; this job owns only the
+ * persistence, and it is gated by {@code influora.meta.media-metrics-enabled} because it costs
+ * roughly {@code 1 + RECENT_MEDIA_LIMIT} extra Graph calls per creator per cycle.
  */
 @Component
 public class MetricsPollingJob {
@@ -58,9 +72,10 @@ public class MetricsPollingJob {
     // string now decides PlatformStat.verified via CreatorMetric#isPlatformVerified(), so a
     // drifted local copy would mislabel real Meta data as creator-reported.
     private static final String DATA_SOURCE_META_API = CreatorMetric.DATA_SOURCE_META_API;
-    // Spec §3.1's recent-media fetch limit — currently referenced only in the class javadoc TODO
-    // for the not-yet-implemented media_metrics polling; kept here so that follow-up work has the
-    // agreed cap in one place rather than re-deriving it from the spec.
+    // Spec §3.1's recent-media fetch limit. F-0479 — this is now live rather than reserved for a
+    // follow-up: it caps both the Graph spend per creator per cycle and the number of media_metrics
+    // rows one poll appends. ScoreCalculationJob reads back the same count, so raising it here
+    // without raising its RECENT_MEDIA_LIMIT just writes rows nothing scores over.
     private static final int RECENT_MEDIA_LIMIT = 25;
 
     private final MetaOAuthTokenRepository tokenRepository;
@@ -69,6 +84,12 @@ public class MetricsPollingJob {
     private final CreatorMetricsRepository creatorMetricsRepository;
     private final MetaRateLimitTracker rateLimitTracker;
     private final AuditLogService auditLog;
+    // F-0479. The fetch half is delegated rather than re-implemented: InstagramMetricsFetcher
+    // already owns the media-list + per-item insights orchestration and its degradation rules, and
+    // is tested. This job keeps the persistence half, which is what its class javadoc says it owns.
+    private final InstagramMetricsFetcher metricsFetcher;
+    private final MediaMetricsRepository mediaMetricsRepository;
+    private final MetaApiProperties metaProperties;
 
     /** In-memory overlap guard — matches the per-instance style already used by MetaRateLimitTracker. */
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -79,13 +100,19 @@ public class MetricsPollingJob {
             InstagramInsightsClient instagramClient,
             CreatorMetricsRepository creatorMetricsRepository,
             MetaRateLimitTracker rateLimitTracker,
-            AuditLogService auditLog) {
+            AuditLogService auditLog,
+            InstagramMetricsFetcher metricsFetcher,
+            MediaMetricsRepository mediaMetricsRepository,
+            MetaApiProperties metaProperties) {
         this.tokenRepository = tokenRepository;
         this.tokenStorage = tokenStorage;
         this.instagramClient = instagramClient;
         this.creatorMetricsRepository = creatorMetricsRepository;
         this.rateLimitTracker = rateLimitTracker;
         this.auditLog = auditLog;
+        this.metricsFetcher = metricsFetcher;
+        this.mediaMetricsRepository = mediaMetricsRepository;
+        this.metaProperties = metaProperties;
     }
 
     /**
@@ -183,15 +210,15 @@ public class MetricsPollingJob {
             return false;
         }
 
+        // T-IGLOGIN-0820: host follows the token, never a default. Hoisted out of the getProfile
+        // call because the media/insights fetch below must use the SAME auth path — resolving it
+        // twice invites the two calls drifting apart.
+        MetaAuthPath authPath =
+                tokenStorage.getCreatorAuthPath(creatorProfileId).orElse(MetaAuthPath.FACEBOOK_LOGIN);
+
         try {
             InstagramUserResponse profile =
-                    instagramClient.getProfile(
-                            igBusinessAccountId,
-                            token.get(),
-                            // T-IGLOGIN-0820: host follows the token, never a default.
-                            tokenStorage
-                                    .getCreatorAuthPath(creatorProfileId)
-                                    .orElse(MetaAuthPath.FACEBOOK_LOGIN));
+                    instagramClient.getProfile(igBusinessAccountId, token.get(), authPath);
 
             CreatorMetric metric =
                     CreatorMetric.builder()
@@ -212,13 +239,12 @@ public class MetricsPollingJob {
 
             creatorMetricsRepository.save(metric);
 
-            // TODO(media_metrics): spec §3.1 also fetches recent media (limit RECENT_MEDIA_LIMIT)
-            // and per-post insights here, mapping InstagramInsightsResponse -> MediaMetric and
-            // saving via MediaMetricsRepository. Deferred — see class javadoc for why (the metric
-            // name/value -> field mapping, and which metrics apply to which media_type, wasn't
-            // specced with enough precision to hardcode confidently). Intentionally not fetching
-            // the media list either, since that would burn rate-limit budget for data we don't yet
-            // persist. The storage layer (MediaMetric/MediaMetricsRepository) is ready for this.
+            // F-0479 — media_metrics now has a writer. Deliberately AFTER the CreatorMetric save
+            // and inside its own try/catch: the profile poll is the row this method's contract is
+            // about, and a media/insights failure must never roll it back or flip this creator to
+            // "failed". Degrading here costs per-post detail; failing here would cost the follower
+            // snapshot too.
+            pollRecentMedia(creatorProfileId, igBusinessAccountId, token.get(), authPath);
 
             return true;
         } catch (MetaRateLimitException e) {
@@ -233,6 +259,73 @@ public class MetricsPollingJob {
         } catch (MetaApiException e) {
             log.error("MetricsPollingJob: Meta API error polling creator {}: {}", creatorProfileId, e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * F-0479 — fetches this creator's recent media with per-post insights and writes one immutable
+     * {@code media_metrics} row per post (spec §3.1's inner loop).
+     *
+     * <p>Never throws and never returns a verdict. {@code InstagramMetricsFetcher} already degrades
+     * a rate-limited or unsupported per-item insights call to {@code insights == null} rather than
+     * failing the batch, and this method additionally swallows anything it did not anticipate — the
+     * caller has already persisted the creator's profile snapshot and must not lose it here.
+     *
+     * <p>Rows are immutable snapshots (one per poll per post, per the {@code MediaMetric} javadoc),
+     * so this appends rather than upserting. {@code ScoreCalculationJob} reads the newest
+     * {@code RECENT_MEDIA_LIMIT} rows, which is exactly one poll's worth.
+     */
+    private void pollRecentMedia(
+            String creatorProfileId, String igBusinessAccountId, String token, MetaAuthPath authPath) {
+        if (!metaProperties.isMediaMetricsEnabled()) {
+            log.debug(
+                    "MetricsPollingJob: media_metrics disabled (influora.meta.media-metrics-enabled=false),"
+                            + " skipping per-post poll for creator {}",
+                    creatorProfileId);
+            return;
+        }
+
+        try {
+            List<InstagramMetricsFetcher.MediaWithInsights> media =
+                    metricsFetcher.fetchMediaWithInsights(
+                            igBusinessAccountId, token, RECENT_MEDIA_LIMIT, authPath);
+
+            if (media.isEmpty()) {
+                // Either the creator has posted nothing, or the fetcher declined on rate limit. Both
+                // legitimately produce no rows; writing a placeholder would be F-0478 all over again.
+                log.debug("MetricsPollingJob: no media returned for creator {}", creatorProfileId);
+                return;
+            }
+
+            Instant fetchedAt = Instant.now();
+            List<MediaMetric> rows = new ArrayList<>(media.size());
+            int degraded = 0;
+            for (InstagramMetricsFetcher.MediaWithInsights item : media) {
+                if (item.insights() == null) {
+                    degraded++;
+                }
+                rows.add(
+                        MediaMetricMapper.toMediaMetric(
+                                creatorProfileId,
+                                PLATFORM_INSTAGRAM,
+                                item.mediaItem(),
+                                item.insights(),
+                                fetchedAt));
+            }
+
+            mediaMetricsRepository.saveAll(rows);
+            log.info(
+                    "MetricsPollingJob: wrote {} media_metrics row(s) for creator {} ({} without insights)",
+                    rows.size(),
+                    creatorProfileId,
+                    degraded);
+        } catch (Exception e) {
+            // Includes anything the fetcher did not already absorb. The creator's CreatorMetric row
+            // is already committed; per-post detail is the only thing lost.
+            log.error(
+                    "MetricsPollingJob: media_metrics poll failed for creator {} (profile snapshot kept)",
+                    creatorProfileId,
+                    e);
         }
     }
 }

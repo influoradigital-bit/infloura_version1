@@ -34,13 +34,13 @@ const COPY: Record<
   'escrow-fund': {
     heading: 'Funding opens shortly',
     body:
-      'Your campaign and its terms are saved. Payment collection is being switched on — once it is, you can fund this deal and the creator will see the money held in escrow before they start work.',
+      'Your campaign and its terms are saved. Payment collection is being switched on — once it is, you can fund this deal and the creator will see the money held securely before they start work.',
     waitingAt: 'fund',
   },
   topup: {
     heading: 'Wallet top-up opens shortly',
     body:
-      'Your workspace and balance are ready. Adding funds is being switched on — everything downstream of it, from escrow to invoicing, is already in place.',
+      'Your workspace and balance are ready. Adding funds is being switched on — everything downstream of it, from securing funds to invoicing, is already in place.',
     waitingAt: 'fund',
   },
   withdraw: {

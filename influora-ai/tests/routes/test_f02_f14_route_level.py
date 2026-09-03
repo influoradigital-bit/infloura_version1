@@ -57,7 +57,7 @@ def _body() -> dict:
 def _verified() -> VerifiedToken:
     return VerifiedToken(
         workspace_id=WORKSPACE_ID, scope="chat:stream", subject="user-1",
-        conversation_id=CONVERSATION_ID, claims={"messageId": STREAM_MESSAGE_ID},
+        conversation_id=CONVERSATION_ID, claims={"messageId": STREAM_MESSAGE_ID, "userType": "BRAND"},
     )
 
 

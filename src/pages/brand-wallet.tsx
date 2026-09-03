@@ -167,7 +167,7 @@ const mockTransactions: Transaction[] = [
     type: 'escrow_lock',
     amount: 25000,
     currency: 'INR',
-    description: 'Escrow locked for campaign',
+    description: 'Funds secured for campaign',
     status: 'completed',
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 4),
     campaign: { id: 'c1', name: 'Summer Collection Launch' },
@@ -196,7 +196,7 @@ const mockTransactions: Transaction[] = [
     type: 'escrow_lock',
     amount: 20000,
     currency: 'INR',
-    description: 'Escrow locked for campaign',
+    description: 'Funds secured for campaign',
     status: 'completed',
     createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 1),
     campaign: { id: 'c3', name: 'Holiday Season Promo' },
@@ -460,7 +460,7 @@ export default function BrandWalletPage() {
       setEscrowRows(Array.isArray(rows) ? rows : []);
       setEscrowStatus('ready');
     } catch (err) {
-      setEscrowError(err instanceof ApiError ? err.message : 'Could not load escrow holdings.');
+      setEscrowError(err instanceof ApiError ? err.message : 'Could not load secured funds.');
       setEscrowStatus('error');
     }
   }, []);
@@ -741,7 +741,7 @@ export default function BrandWalletPage() {
           <div>
             <h1 className="text-2xl font-bold">Wallet</h1>
             <p className="text-muted-foreground">
-              Manage your funds, view transactions, and track escrow
+              Manage your funds, view transactions, and track secured funds
             </p>
             {loadError && (
               <p className="mt-1 flex items-center gap-1 text-sm text-stage-disputed-fg">
@@ -1069,7 +1069,7 @@ export default function BrandWalletPage() {
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-1.5">
                 <Lock className="h-3.5 w-3.5" />
-                Escrow Locked
+                Funds Secured
               </CardDescription>
               <CardTitle className="text-2xl text-amber-500">
                 {formatCurrency(wallet.escrowLocked)}
@@ -1229,7 +1229,7 @@ export default function BrandWalletPage() {
             </TabsTrigger>
             <TabsTrigger value="escrow" className="gap-2">
               <Lock className="h-4 w-4" />
-              Escrow
+              Secure Payments
             </TabsTrigger>
             <TabsTrigger value="payouts" className="gap-2">
               <ArrowUpRight className="h-4 w-4" />
@@ -1260,7 +1260,7 @@ export default function BrandWalletPage() {
                     <SelectItem value="all">All Types</SelectItem>
                     <SelectItem value="credit">Credits</SelectItem>
                     <SelectItem value="debit">Debits</SelectItem>
-                    <SelectItem value="escrow_lock">Escrow Locks</SelectItem>
+                    <SelectItem value="escrow_lock">Funds Secured</SelectItem>
                     <SelectItem value="escrow_release">Releases</SelectItem>
                   </SelectContent>
                 </Select>
@@ -1405,10 +1405,10 @@ export default function BrandWalletPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <IndianRupee className="h-5 w-5 text-primary" />
-                    Fund Campaign Escrow
+                    Secure Campaign Funds
                   </CardTitle>
                   <CardDescription>
-                    Lock funds for one of your active campaigns directly from here — the same
+                    Secure funds for one of your active campaigns directly from here — the same
                     server-authoritative flow Meera's chat uses, no chat detour required.
                   </CardDescription>
                 </CardHeader>
@@ -1501,7 +1501,7 @@ export default function BrandWalletPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Lock className="h-5 w-5 text-amber-500" />
-                  Active Escrow Holdings
+                  Active Secured Funds
                 </CardTitle>
                 <CardDescription>
                   Funds secured for ongoing campaigns. Released upon deliverable approval.
@@ -1514,20 +1514,20 @@ export default function BrandWalletPage() {
                         visually distinct states; a still-loading or failed fetch must never
                         render the same "No escrow holdings yet" copy a real empty account sees. */}
                     {escrowStatus === 'loading' && (
-                      <div className="space-y-3" role="status" aria-label="Loading escrow holdings">
+                      <div className="space-y-3" role="status" aria-label="Loading secured funds">
                         <Skeleton className="h-20 w-full rounded-lg" />
                         <Skeleton className="h-20 w-full rounded-lg" />
                       </div>
                     )}
                     {escrowStatus === 'error' && (
                       <DashboardCardError
-                        message={escrowError ?? 'Could not load escrow holdings.'}
+                        message={escrowError ?? 'Could not load secured funds.'}
                         onRetry={loadEscrow}
                       />
                     )}
                     {escrowStatus === 'ready' && escrowRows.length === 0 && (
                       <p className="py-6 text-sm text-muted-foreground">
-                        No escrow holdings yet. Funds locked for a campaign will show up here.
+                        No secured funds yet. Funds secured for a campaign will show up here.
                       </p>
                     )}
                     {escrowStatus === 'ready' && escrowRows.length > 0 &&
@@ -1622,7 +1622,7 @@ export default function BrandWalletPage() {
                 <Separator className="my-6" />
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Total Locked in Escrow</p>
+                    <p className="text-sm text-muted-foreground">Total Funds Secured</p>
                     <p className="text-2xl font-bold text-amber-500">
                       {/* F-0324 — this figure reads wallet.escrowLocked (loadWallet's region)
                           but renders unconditionally regardless of the Escrow tab's own
@@ -1639,7 +1639,7 @@ export default function BrandWalletPage() {
                     <p className="text-sm text-muted-foreground">Protected by</p>
                     <p className="flex items-center gap-1.5 font-medium text-green-500">
                       <CheckCircle2 className="h-4 w-4" />
-                      Secure Escrow
+                      Secure Payments
                     </p>
                   </div>
                 </div>
@@ -1653,9 +1653,9 @@ export default function BrandWalletPage() {
                   <AlertCircle className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <p className="font-medium">How Escrow Works</p>
+                  <p className="font-medium">How Secure Payments Work</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    When you start a campaign, funds are locked in escrow to guarantee payment to creators.
+                    When you start a campaign, funds are secured to guarantee payment to creators.
                     Once you approve the deliverables, funds are automatically released to the creator.
                     If there is a dispute, our team will mediate and ensure fair resolution.
                   </p>

@@ -1,0 +1,23 @@
+{
+ "verdict": "believed",
+ "oracle": "model",
+ "isolation": "fresh-context",
+ "done_when": "5 frontend P0 findings fixed and 4 gates written for the blocked recurrence classes; kabir checks, priya approves",
+ "not_checked": [
+  "runtime behaviour of every fix - tsc and vite build both exit 0 but neither executes the code; no browser or e2e run was made",
+  "F-0465 admin token in URL and F-0461 logo upload were verified by reading the diff, not by observing a real websocket handshake or a real uploaded object being retrievable",
+  "the 4 new gates were run once each and all exit 1 on real findings; none has been observed going green on a fixed tree, so none is falsified against a known-good state",
+  "the stale-runtime-copy gate compares against a 0.4.1 runtime tree, not the 0.4.2 plugin, so some of its DRIFT rows may be baseline skew rather than project drift",
+  "vikram's 26 backend findings - held, untouched"
+ ],
+ "skipped": [
+  {
+   "step": "backend lane (vikram, 26 findings)",
+   "reason": "a concurrent session was writing influora-api/** during the run; parallel writes there would clobber"
+  },
+  {
+   "step": "promotion of any ledger row",
+   "reason": "the 4 new gates all exit 1 on open findings; promote.py requires a gate that can declare a row done, and none is green yet"
+  }
+ ]
+}

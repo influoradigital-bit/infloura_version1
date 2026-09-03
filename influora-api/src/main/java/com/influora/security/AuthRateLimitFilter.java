@@ -95,8 +95,22 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private static final Pattern DISCOVERY_INVITE = Pattern.compile("^/creators/[^/]+/invite$");
     private static final Pattern CAMPAIGN_APPLY =
             Pattern.compile("^/creator/campaigns/[^/]+/apply$");
+    /**
+     * Fix round 2, item 4 (Priya Q10) — was {@code ^/meera/sessions/[^/]+/messages$}, matching only
+     * the BRAND-audience route ({@link com.influora.web.MeeraController}). It never matched {@code
+     * POST /creator/meera/sessions/{id}/messages} ({@link com.influora.web.CreatorMeeraController}),
+     * so every creator Meera turn — the exact same per-call LLM-cost surface this bucket exists to
+     * throttle — was completely unthrottled. The optional {@code (/creator)?} prefix now covers both.
+     */
     private static final Pattern MEERA_TURN =
-            Pattern.compile("^/meera/sessions/[^/]+/messages$");
+            Pattern.compile("^(/creator)?/meera/sessions/[^/]+/messages$");
+    /**
+     * Fix round 2, item 4 (Priya Q10) — {@code GET /public/creators/{username}/verified} (A9) is
+     * {@code permitAll} and had NO throttle at all: usernames are public/guessable, so without this
+     * the entire discoverable creator base could be scraped as fast as the server could answer.
+     */
+    private static final Pattern PUBLIC_CREATOR_VERIFIED =
+            Pattern.compile("^/public/creators/[^/]+/verified$");
 
     private final JwtService jwtService;
 
@@ -168,6 +182,15 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     /** Requests per window, per user, for creator-discovery search/suggestions (M-K6-5). */
     @Value("${influora.discovery.search-rate-limit-per-window:60}")
     private int discoverySearchLimit;
+
+    /**
+     * Requests per window, per IP, for the public unauthenticated verified-metrics page ({@code GET
+     * /public/creators/{username}/verified}, A9) — fix round 2, item 4 (Priya Q10). IP-keyed like
+     * {@code tracking}/{@code discovery-search}'s unauthenticated fallback, since this route is
+     * {@code permitAll} and has no principal at all.
+     */
+    @Value("${influora.public.creator-verified-rate-limit-per-window:30}")
+    private int publicCreatorVerifiedLimit;
 
     /** Requests per window, per user, for campaign apply. */
     @Value("${influora.campaign.apply-rate-limit-per-window:20}")
@@ -287,6 +310,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             if (path.equals("/creators") || path.equals("/creators/search")) {
                 return "discovery-search";
             }
+            if (PUBLIC_CREATOR_VERIFIED.matcher(path).matches()) {
+                return "public-creator-verified";
+            }
             return null;
         }
 
@@ -384,6 +410,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "dispute-open" -> disputeOpenLimit;
             case "discovery-invite" -> discoveryInviteLimit;
             case "discovery-search" -> discoverySearchLimit;
+            case "public-creator-verified" -> publicCreatorVerifiedLimit;
             case "campaign-apply" -> campaignApplyLimit;
             case "creator-withdraw" -> creatorWithdrawLimit;
             case "meera-turn" -> meeraTurnLimit;

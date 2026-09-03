@@ -1,0 +1,268 @@
+{
+ "rows": [
+  {
+   "subject": ".proof-os/tasks/T-QA-0901-BASES/A1-features.answers.md",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "gates/citations.py",
+    "command": "python gates/citations.py A1-features.answers.md . --min 100",
+    "result": "exit 0 - 295 citations checked and 295 quotations verified; 100 of 100 answers present",
+    "where": ".proof-os/tasks/T-QA-0901-BASES/A1-features.answers.md:1"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-QA-0901-BASES/R2-A1-features.answers.md",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "gates/citations.py",
+    "command": "python .proof-os/gates/citations.py R2-A1-features.answers.md . --min 100",
+    "result": "exit 0 - 187 citations checked and 187 quotations verified; 100 of 100 answers present",
+    "where": ".proof-os/tasks/T-QA-0901-BASES/R2-A1-features.answers.md:1"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-QA-0901-BASES/R2-A2-user.answers.md",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "gates/citations.py",
+    "command": "python .proof-os/gates/citations.py R2-A2-user.answers.md . --min 100",
+    "result": "exit 0 - 100 citations checked and 100 quotations verified; 100 of 100 answers present",
+    "where": ".proof-os/tasks/T-QA-0901-BASES/R2-A2-user.answers.md:1"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-QA-0901-BASES/R2-A3-brand.answers.md",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "gates/citations.py",
+    "command": "python .proof-os/gates/citations.py R2-A3-brand.answers.md . --min 100",
+    "result": "exit 0 - 178 citations checked and 178 quotations verified; 100 of 100 answers present",
+    "where": ".proof-os/tasks/T-QA-0901-BASES/R2-A3-brand.answers.md:1"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-QA-0901-BASES/R2-A4-creator.answers.md",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "gates/citations.py",
+    "command": "python .proof-os/gates/citations.py R2-A4-creator.answers.md . --min 100",
+    "result": "exit 0 - 100 citations checked and 100 quotations verified; 100 of 100 answers present",
+    "where": ".proof-os/tasks/T-QA-0901-BASES/R2-A4-creator.answers.md:1"
+   }
+  },
+  {
+   "subject": ".proof-os/tasks/T-QA-0901-BASES/R2-A5-admin.answers.md",
+   "owner": "priya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "gates/citations.py",
+    "command": "python .proof-os/gates/citations.py R2-A5-admin.answers.md . --min 100",
+    "result": "exit 0 - 100 citations checked and 100 quotations verified; 100 of 100 answers present",
+    "where": ".proof-os/tasks/T-QA-0901-BASES/R2-A5-admin.answers.md:1"
+   }
+  },
+  {
+   "subject": ".proof-os/gates/endpoint_reachability.py",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python .proof-os/gates/endpoint_reachability.py",
+    "result": "five blind spots fixed; recognised FE call sites 261 -> 328, false orphans 29 -> 16, each remaining one hand-verified",
+    "where": ".proof-os/gates/endpoint_reachability.py:56"
+   }
+  },
+  {
+   "subject": ".proof-os/gates/citations.py",
+   "owner": "dev",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python .proof-os/gates/citations.py <known-good> . --min 100 ; python .proof-os/gates/citations.py <empty> . --min 1",
+    "result": "850-byte stub replaced with the 11697-byte canonical; three falsification checks all behaved as required - a known-good artifact still passes at 295 of 295, an artifact with drifted citations still returns code 1, and an empty document now returns code 2 where the stub had passed it",
+    "where": ".proof-os/gates/citations.py:1"
+   }
+  },
+  {
+   "subject": "src/pages/brand-settings.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit ; mvn -o -Dmaven.test.skip=true compile ; npx vitest run brand-settings",
+    "result": "F-0462 closed on all four fields; tsc 0, backend compile 0, 16/16 frontend tests pass; kabir re-verified cold",
+    "where": "src/pages/brand-settings.tsx:202"
+   }
+  },
+  {
+   "subject": "src/App.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit ; npm run build",
+    "result": "F-0459 closed - both brand and creator guards read either storage; tsc 0, build 0; kabir cleared",
+    "where": "src/App.tsx:88"
+   }
+  },
+  {
+   "subject": "src/lib/upload.ts",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit ; npm run build",
+    "result": "F-0461 closed - mock replaced with the real uploads endpoint; tsc 0, build 0; kabir cleared",
+    "where": "src/lib/upload.ts:63"
+   }
+  },
+  {
+   "subject": "src/components/brand/brand-layout.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit ; npm run build",
+    "result": "F-0460 closed - logout now calls the server and clears every brand key; tsc 0, build 0; kabir cleared",
+    "where": "src/components/brand/brand-layout.tsx:216"
+   }
+  },
+  {
+   "subject": "src/admin/services/websocket.ts",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit ; npm run build",
+    "result": "F-0465 closed - credential removed from the URL; tsc 0, build 0; kabir cleared",
+    "where": "src/admin/services/websocket.ts:269"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/job/AffiliateSettlementWriter.java",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o -Dtest=CreatorAffiliateEarningSettlementTest test",
+    "result": "F-0402 closed - settlement posts to the wallet ledger, deduped on the earning idempotency key; 3 run, 0 failures",
+    "where": "influora-api/src/main/java/com/influora/job/AffiliateSettlementWriter.java:101"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/DealService.java",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o -Dtest=DealServiceTest test ; mvn -o -Dtest=DealServiceBudgetTest test",
+    "result": "F-0399 cumulative gate proved - budget test 3/3 green with the fix and 3/3 red with it reverted; DealServiceTest 62/62. Residual F-0476 open: a rate-less collaboration still contributes nothing to the committed sum",
+    "where": "influora-api/src/main/java/com/influora/service/DealService.java:1656"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/EscrowService.java",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "kabir cold review of F-0406",
+    "result": "backend and one of three brand approval surfaces fixed; the two most-used surfaces still discard the held-release outcome",
+    "where": "influora-api/src/main/java/com/influora/service/EscrowService.java:1"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/web/NotificationController.java",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "kabir cold review of F-0444",
+    "result": "in-app path improved; an email recipient still has no reachable unsubscribe link, which is the case the finding names",
+    "where": "influora-api/src/main/java/com/influora/web/NotificationController.java:138"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/CampaignServiceInvoiceService.java",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "shared-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "read of EscrowService.adminSplitForDispute and CampaignServiceInvoiceService.createAtRelease",
+    "result": "F-0487 open - a dispute split pays the creator a fraction but invoices the full hold",
+    "where": "influora-api/src/main/java/com/influora/service/CampaignServiceInvoiceService.java:158"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/PayoutService.java",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "F-0415 assessment only, implementation deliberately not attempted",
+    "result": "TDS unimplemented on every automatic payout path; blocked on policy decisions nobody has made",
+    "where": "influora-api/src/main/java/com/influora/service/EscrowService.java:1"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/web/WorkspaceMemberController.java",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python .proof-os/gates/endpoint_reachability.py",
+    "result": "F-0443 open - five workspace invitation routes have no UI at all; a brand cannot invite a colleague through the product",
+    "where": "influora-api/src/main/java/com/influora/web/WorkspaceMemberController.java:59"
+   }
+  },
+  {
+   "subject": ".proof-os/ledger/failures.jsonl",
+   "owner": "arjun",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python scripts/promote.py --recurrence",
+    "result": "BLOCKED - 8 classes recurred with no single promoted gate; 0 of 90+ findings closed",
+    "where": ".proof-os/ledger/failures.jsonl:1"
+   }
+  },
+  {
+   "subject": ".proof-os/gates/",
+   "owner": "dev",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python .proof-os/gates/stale_runtime_copy.py ; ls -la .proof-os/gates",
+    "result": "F-0482 open - six ledger classes now have two competing gates each, written hours apart by two sessions; promote.py must name exactly one",
+    "where": ".proof-os/gates/stale_runtime_copy.py:1"
+   }
+  }
+ ]
+}

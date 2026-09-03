@@ -2,11 +2,13 @@ package com.influora.repository;
 
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.enums.DeliverableStatus;
+import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -47,7 +49,16 @@ public interface DeliverableRepository extends JpaRepository<Deliverable, String
    * Brand-scoped lookup — workspace trust boundary via collaboration → campaign join-through
    * (mirrors {@code CollaborationRepository#findByIdAndWorkspaceId} / {@code DealService} brand
    * paths).
+   *
+   * <p>[F-0580] {@code PESSIMISTIC_WRITE} — {@code Deliverable} carries no {@code @Version}, and
+   * this is the only lookup {@code BrandDeliverableService#approve} uses to resolve the row it is
+   * about to read-modify-write on the money path (an approval attempts an escrow release). Same
+   * {@code SELECT ... FOR UPDATE} pattern already used to serialize a concurrent read-modify-write
+   * elsewhere in this codebase — see {@code EscrowHoldRepository#findByIdForUpdate} (via {@code
+   * EscrowService#requireHoldForUpdate}) and {@code CollaborationRepository#findByIdForUpdate}.
+   * Also taken by {@code getDetail}/{@code reject}, which never write through it — harmless.
    */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query(
       "SELECT d FROM Deliverable d WHERE d.id = :id AND d.collaborationId IN "
           + "(SELECT c.id FROM Collaboration c WHERE c.campaignId IN "

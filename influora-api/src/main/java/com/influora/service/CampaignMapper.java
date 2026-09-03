@@ -52,7 +52,9 @@ public final class CampaignMapper {
                 metrics.collaboratorsCount(),
                 metrics.activeCollaborations(),
                 metrics.completedCollaborations(),
-                metrics.totalSpend());
+                metrics.totalSpend(),
+                c.getEndBrandName(),
+                c.getEndBrandCategory());
     }
 
     public record CampaignMetrics(

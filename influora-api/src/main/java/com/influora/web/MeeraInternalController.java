@@ -5,6 +5,7 @@ import com.influora.common.ApiResponse;
 import com.influora.domain.entity.AiConversation;
 import com.influora.domain.enums.MeeraInteractionEventType;
 import com.influora.domain.enums.MeeraToolName;
+import com.influora.domain.enums.UserType;
 import com.influora.security.OnBehalfAuthResolver;
 import com.influora.security.OnBehalfAuthResolver.OnBehalfContext;
 import com.influora.service.brand.AnalyzeSiteTriggerService;
@@ -130,12 +131,58 @@ public class MeeraInternalController {
      * {@code /messages} and {@code /turns/release}), not the scope-gated variants — there is no
      * new auth here, per Priya's ruling.
      */
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 2.9, A4) — {@code audience=CREATOR} now returns a {@code
+     * MeeraContextDtos.CreatorContextResponse} instead of the BRAND-only {@link ContextResponse};
+     * {@link MeeraContextService#assemble} returns {@code Object} and Jackson serializes whichever
+     * concrete record it resolved to, so this route needs no per-audience branch of its own — the
+     * dual-credential mesh gate above (on-behalf JWT re-validated against {@code
+     * body.workspaceId()}) is audience-agnostic already.
+     */
+    /**
+     * SECURITY FIX (fix round 1, item 3): {@code OnBehalfAuthResolver#resolveForWorkspace}'s
+     * result used to be discarded here, so Spring simply echoed back whatever {@code audience}
+     * Python asked for without ever comparing it to the JWT-verified principal's real {@code
+     * userType} — the audience.py docstring's trust model ("Spring re-verifies the same JWT and
+     * re-derives the real principal; chat.py fails closed on any disagreement") was not actually
+     * implemented; Python's own mismatch check could only ever trip on {@code
+     * AUDIENCE_NOT_SUPPORTED}. Now: (a) a REQUESTED audience of literally CREATOR or BRAND that
+     * disagrees with {@code ctx.userType()} is rejected with 403 {@code
+     * AUDIENCE_PRINCIPAL_MISMATCH} before {@link MeeraContextService} is ever called, and (b) the
+     * branch {@link MeeraContextService#assemble} takes is derived from {@code ctx.userType()}
+     * (the JWT-verified principal), never from {@code body.audience()} — so even a request that
+     * somehow slips past (a) can never cross the CREATOR/BRAND floor/PAN boundary via this route.
+     */
     @PostMapping("/context")
-    public ResponseEntity<ApiResponse<ContextResponse>> context(
+    public ResponseEntity<ApiResponse<Object>> context(
             @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt, @Valid @RequestBody ContextRequest body) {
-        onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, body.workspaceId());
-        ContextResponse result = contextService.assemble(body.workspaceId(), body.audience());
+        OnBehalfContext ctx = onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, body.workspaceId());
+        requireAudiencePrincipalMatch(body.audience(), ctx.userType());
+        Object result = contextService.assemble(body.workspaceId(), ctx.userType().name());
         return ResponseEntity.ok(ApiResponse.ok(result));
+    }
+
+    /**
+     * Rejects with 403 {@code AUDIENCE_PRINCIPAL_MISMATCH} when the REQUESTED audience explicitly
+     * claims CREATOR or BRAND and the on-behalf JWT's own {@code userType} disagrees. A requested
+     * audience that is neither literal value (or is null/blank) is deliberately not rejected here
+     * — {@link MeeraContextService#assemble} still derives its branch from {@code
+     * ctx.userType()}, never from this value, so an unrecognized audience string can never widen
+     * access; it is simply ignored, same as before this fix, and the caller gets whatever context
+     * shape the REAL principal type produces.
+     */
+    private static void requireAudiencePrincipalMatch(String requestedAudience, UserType actualUserType) {
+        boolean claimsCreator = "CREATOR".equalsIgnoreCase(requestedAudience);
+        boolean claimsBrand = "BRAND".equalsIgnoreCase(requestedAudience);
+        boolean mismatch =
+                (claimsCreator && actualUserType != UserType.CREATOR)
+                        || (claimsBrand && actualUserType != UserType.BRAND);
+        if (mismatch) {
+            throw new ApiException(
+                    "AUDIENCE_PRINCIPAL_MISMATCH",
+                    "Requested audience does not match the on-behalf principal's user type",
+                    HttpStatus.FORBIDDEN);
+        }
     }
 
     @PostMapping("/show_creators")
@@ -182,9 +229,16 @@ public class MeeraInternalController {
         // failed on insert. ctx.conversationId() is the JWT-verified, server-minted claim (see
         // OnBehalfAuthResolver.OnBehalfContext javadoc) — tenant-safe and always the real
         // conversation for this turn, unlike a client-body value.
+        // F-0530: ctx.userType() is the JWT-verified principal type (never the client body) — the
+        // executor's brandContext.requireRole gate needs it to build the AuthPrincipal it checks.
         var result =
                 createCampaignExecutor.execute(
-                        ctx.workspaceId(), ctx.conversationId(), ctx.userId(), idempotencyKey, body);
+                        ctx.workspaceId(),
+                        ctx.conversationId(),
+                        ctx.userId(),
+                        ctx.userType(),
+                        idempotencyKey,
+                        body);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(result));
     }
 
@@ -268,15 +322,19 @@ public class MeeraInternalController {
             @RequestHeader(IDEMPOTENCY_HEADER) String idempotencyKey,
             @Valid @RequestBody MessageWriteback body) {
         AiConversation conversation = sessionService.resolveConversation(body.conversationId());
-        onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, conversation.getWorkspaceId());
+        OnBehalfContext ctx = onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, conversation.getWorkspaceId());
 
+        // Fix round 1, item 4: thread the JWT-verified userType through so a CREATOR write-back
+        // records the turn on CreatorAgentConversationService (A6) instead of touching the brand
+        // AI-credit ledger.
         var message =
                 sessionService.persistAssistantWriteback(
                         conversation.getWorkspaceId(),
                         body.conversationId(),
                         body.content(),
                         body.metadata(),
-                        idempotencyKey);
+                        idempotencyKey,
+                        ctx.userType());
         return ResponseEntity.ok(ApiResponse.ok(new MessageWritebackResult(message.getId())));
     }
 

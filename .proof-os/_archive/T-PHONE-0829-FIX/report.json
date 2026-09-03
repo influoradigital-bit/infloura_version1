@@ -1,0 +1,76 @@
+{
+  "rows": [
+    {
+      "subject": "src/components/brand/onboarding/onboarding-steps.tsx",
+      "owner": "ananya",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "vitest",
+        "command": "npx vitest run src/components/brand/onboarding/__tests__/",
+        "result": "9 passed (9)",
+        "where": "src/components/brand/onboarding/onboarding-steps.tsx:458"
+      }
+    },
+    {
+      "subject": "src/pages/brand-onboarding.tsx",
+      "owner": "ananya",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npm run typecheck",
+        "result": "0 errors",
+        "where": "src/pages/brand-onboarding.tsx:73"
+      }
+    },
+    {
+      "subject": "src/components/brand/onboarding/__tests__/onboarding-steps.persistence.test.tsx",
+      "owner": "ananya",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "vitest",
+        "command": "npx vitest run src/components/brand/onboarding/__tests__/onboarding-steps.persistence.test.tsx",
+        "result": "7 passed (7) on current source; falsification run recorded in the verdict",
+        "where": "src/components/brand/onboarding/__tests__/onboarding-steps.persistence.test.tsx:1"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/java/com/influora/service/AuthService.java",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "mvn -o test -Dtest=AuthServiceTest",
+        "result": "Tests run: 31 \u2014 all green, BUILD SUCCESS",
+        "where": "influora-api/src/main/java/com/influora/service/AuthService.java:130"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/java/com/influora/web/dto/admin/AdminCreatorDtos.java",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "mvn -o -DskipTests compile",
+        "result": "exit 0 \u2014 AdminCreatorService constructs both records with the phone argument",
+        "where": "influora-api/src/main/java/com/influora/web/dto/admin/AdminCreatorDtos.java:27"
+      }
+    },
+    {
+      "subject": "src/pages/creator-disputes.test.tsx",
+      "owner": "ananya",
+      "status": "broken",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "vitest",
+        "command": "npx vitest run src/pages/creator-disputes.test.tsx",
+        "result": "2 failed \u2014 Radix pointer-events: none; file unmodified at HEAD, pre-existing and unrelated to this task",
+        "where": "src/pages/creator-disputes.test.tsx:1"
+      }
+    }
+  ]
+}

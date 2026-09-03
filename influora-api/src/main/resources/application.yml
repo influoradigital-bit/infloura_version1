@@ -275,6 +275,38 @@ influora:
     # dev default that SecretsStartupValidator.KNOWN_DEV_DEFAULT_ADMIN_MFA_ENCRYPTION_KEY refuses to
     # boot on outside the dev profile — a real deploy MUST override it via ADMIN_MFA_SECRET_ENCRYPTION_KEY.
     mfa-secret-encryption-key: ${ADMIN_MFA_SECRET_ENCRYPTION_KEY:1FTwBvGuJmF6Q07xw3sMPX0CZEdRWxZx9cIC54HVfUU=}
+    # T-CREATORCONNECT-0902 — recipient for admin.creator_connection_requested. Blank (the
+    # default) means NotificationListener logs a WARN and skips sending rather than erroring —
+    # nothing here ever throws for a missing address, same fail-open-for-notification discipline
+    # as every other optional recipient config in this file.
+    notification-email: ${ADMIN_NOTIFICATION_EMAIL:}
+  # Q3.5 (T-CREATORCONNECT-0902) -- per-workspace daily cap on NEW/reopened
+  # POST /creators/external/{id}/connect requests (ExternalCreatorService#enforceDailyConnectCap);
+  # each one fires an admin.creator_connection_requested email, so this bounds how many a single
+  # workspace can trigger in a rolling 24h window. <= 0 disables the cap.
+  creator-connect:
+    daily-cap-per-workspace: ${CREATOR_CONNECT_DAILY_CAP_PER_WORKSPACE:50}
+  # CreatorConnectNudgeJob -- lifecycle email to creators who registered but never connected a
+  # Meta account. Disabled by default ON PURPOSE: it mails real people on a schedule, so enabling
+  # it is a deliberate deployment act, not a side effect of shipping the code.
+  creator-connect-nudge:
+    enabled: ${CREATOR_CONNECT_NUDGE_ENABLED:false}
+    # Floors the eligibility query. Without it the first enabled run selects every un-connected
+    # creator ever registered and mails the whole back catalogue in one batch.
+    registered-within-days: ${CREATOR_CONNECT_NUDGE_REGISTERED_WITHIN_DAYS:30}
+    batch-limit: ${CREATOR_CONNECT_NUDGE_BATCH_LIMIT:200}
+    # Cron is evaluated in Asia/Kolkata (see the job) -- this one lands in a person's inbox.
+    cron: ${CREATOR_CONNECT_NUDGE_CRON:0 30 9 * * *}
+  # T-ADMINMAIL-0903 -- admin custom email send abuse controls #1/#2. Both are persisted
+  # (admin_email_campaigns), not in-memory, so a restart never resets them -- see
+  # AdminCustomEmailService class javadoc.
+  admin-custom-email:
+    recipient-cap: ${ADMIN_CUSTOM_EMAIL_RECIPIENT_CAP:5000}
+    min-interval-minutes: ${ADMIN_CUSTOM_EMAIL_MIN_INTERVAL_MINUTES:10}
+    # A5 fix (round 5, REVIEW-R4.md): preview() rate limit -- deliberately in-memory, NOT
+    # persisted like the two above (see AdminCustomEmailService#enforcePreviewRateLimit's
+    # javadoc for why that's fine for this one). Resets on restart; that's acceptable here.
+    preview-min-interval-millis: ${ADMIN_CUSTOM_EMAIL_PREVIEW_MIN_INTERVAL_MILLIS:2000}
   msg91:
     enabled: ${MSG91_ENABLED:true}
     auth-key: ${MSG91_AUTH_KEY:REPLACE_WITH_YOUR_MSG91_AUTH_KEY}
@@ -354,10 +386,31 @@ influora:
     instagram-app-secret: ${META_INSTAGRAM_APP_SECRET:}
     instagram-redirect-uri: ${META_INSTAGRAM_REDIRECT_URI:}
     graph-api-version: ${META_GRAPH_API_VERSION:v25.0}
+    # F-0479 — MetricsPollingJob's per-post leg: fetch recent media + insights and write
+    # media_metrics. ON by default; with it off that table has NO writer and every creator stays
+    # permanently unscored (F-0478), which is the state this exists to end, not to preserve.
+    # It is a kill switch for the one real cost — roughly 1 + 25 extra Graph calls per creator per
+    # 6-hour cycle — not a rollout gate. Bound here rather than left to relaxed binding so the env
+    # var name actually appears in this file; a name that appears only in javadoc binds to nothing.
+    media-metrics-enabled: ${META_MEDIA_METRICS_ENABLED:true}
     # [SEC: Kabir sign-off gate] DISTINCT AES-256 secret from every other key; must decode to
     # exactly 32 bytes (enforced in MetaTokenStorage). No committed default here — application-dev.yml
     # supplies a throwaway dev value; a real deploy MUST set META_TOKEN_ENCRYPTION_KEY.
     token-encryption-key: ${META_TOKEN_ENCRYPTION_KEY:}
+    # T-CREATORCONNECT-0902 — CreatorMarketplaceClient gate. OFF by default: the
+    # instagram_creator_marketplace_discovery scope this needs cannot even be submitted for App
+    # Review yet (wiki/decisions/2026-09-02-what-we-need.md §1.2/§4.2), so a real deploy leaves
+    # this false and ExternalCreatorService serves the external_creators table (Business Discovery
+    # + admin import) instead. Flipping it true with no usable Page token still degrades cleanly —
+    # ExternalCreatorService logs at INFO and falls back, never fakes Marketplace data.
+    creator-marketplace:
+      enabled: ${META_CREATOR_MARKETPLACE_ENABLED:false}
+    # Q1.3 (T-CREATORCONNECT-0902) — Influora-owned IG Business system caller for Business
+    # Discovery, preferred ahead of borrowing a live creator's own token (see MetaApiProperties
+    # javadoc). Blank by default; ExternalCreatorService falls back to the creator-token path
+    # exactly as before when either is unset.
+    system-ig-user-id: ${META_SYSTEM_IG_USER_ID:}
+    system-ig-access-token: ${META_SYSTEM_IG_ACCESS_TOKEN:}
   # AES-256 token/PII encryption keys that had NO entry in this file at all, so the only way to
   # supply them was Spring's relaxed binding on the @ConfigurationProperties prefix — the env var
   # name appeared in no yaml, no .env.example and no deploy doc. Each of these beans is an

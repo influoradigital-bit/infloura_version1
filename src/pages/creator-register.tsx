@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuthStore } from '@/lib/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,19 @@ function FieldError({ message }: { message?: string }) {
 export default function CreatorRegisterPage() {
   const navigate = useNavigate();
   const { login } = useAuthStore();
+  // Q5.5 (T-CREATORCONNECT-0902, Medium) — the invite email's signup_url
+  // (AdminCreatorConnectionService#sendJoinInvitationEmail) carries
+  // ?ref=influora-invite&handle={igUsername}&invite_token={signed token}. `handle` is a
+  // human-readable hint only (never trusted as a claim — see InviteTokenService's javadoc and
+  // Q5.4's spoof class), so it is read here purely to show the invited creator which handle
+  // they're joining as; `inviteToken` is the signed, single-use token that actually gets
+  // forwarded to POST /auth/creator/register and consumed server-side by
+  // RegistrationService#consumeInviteToken. `ref` gates the banner so an unrelated `handle`
+  // query param can never make this page claim an invite that wasn't issued.
+  const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get('invite_token') || undefined;
+  const inviteHandle = searchParams.get('handle') || undefined;
+  const isInviteFlow = searchParams.get('ref') === 'influora-invite' && !!inviteToken;
   const [isLoading, setIsLoading] = React.useState(false);
   const [showPassword, setShowPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
@@ -84,12 +97,21 @@ export default function CreatorRegisterPage() {
       // only falls back to a mock token (behind assertMockAuthAllowed's fail-closed guard,
       // Kabir A3) when VITE_API_MODE !== 'live', mirroring how creator-login.tsx now calls
       // api.auth.creatorLogin instead of minting a hardcoded token.
-      const result = await api.auth.creatorRegister({
+      // Q5.5 — `inviteToken` is intentionally kept off `CreatorRegisterPayload`'s declared
+      // shape (src/lib/api.ts) so this work package didn't have to touch a file outside its
+      // edit scope; assigning through an untyped `payload` const (rather than passing an
+      // object literal straight into creatorRegister) means TS's excess-property check never
+      // fires here, while `api.auth.creatorRegister` still JSON-serializes `payload` as-is —
+      // `body: payload` at src/lib/api.ts's creatorRegister — so the field reaches the wire
+      // exactly the same as every typed field.
+      const payload = {
         email,
         password,
         displayName: name.trim(),
         acceptedTerms: acceptTerms,
-      });
+        inviteToken,
+      };
+      const result = await api.auth.creatorRegister(payload);
       api.auth.setToken('creator', result.token);
 
       // CR-06 — populated in BOTH modes. Same defect as creator-login.tsx: a
@@ -151,7 +173,7 @@ export default function CreatorRegisterPage() {
       heroSubtitle="Manage deals, submit deliverables, and get paid — with a workspace built for Indian creators."
       heroBullets={[
         'Verified brand partnerships',
-        'Transparent escrow payouts',
+        'Transparent, protected payouts',
         'Deal room in one place',
       ]}
     >
@@ -168,6 +190,16 @@ export default function CreatorRegisterPage() {
         <h1 className="text-3xl font-bold text-foreground mb-2">Create your account</h1>
         <p className="text-muted-foreground">Start earning from brand collaborations</p>
       </div>
+
+      {isInviteFlow && (
+        <div className="mb-6 rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <p className="text-sm text-foreground">
+            {inviteHandle
+              ? `You were invited as @${inviteHandle}. Finish creating your account to connect this invite.`
+              : 'You were invited to Influora. Finish creating your account to connect this invite.'}
+          </p>
+        </div>
+      )}
 
       {errors.form && (
         <div className="mb-6 rounded-lg border border-destructive-foreground/30 bg-destructive/10 p-4">

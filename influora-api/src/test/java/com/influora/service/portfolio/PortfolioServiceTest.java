@@ -36,6 +36,7 @@ import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorContextService;
 import com.influora.service.CreatorProfileService;
+import com.influora.service.ExternalCreatorLinkService;
 import com.influora.service.security.NoOpMalwareScanService;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioAnalyticsResponse;
 import com.influora.web.dto.portfolio.PortfolioDtos.SyncPlatformsResponse;
@@ -76,6 +77,7 @@ class PortfolioServiceTest {
     @Mock private MetaTokenStorage metaTokenStorage;
     @Mock private InstagramInsightsClient instagramInsightsClient;
     @Mock private CreatorMetricsRepository creatorMetricsRepository;
+    @Mock private ExternalCreatorLinkService externalCreatorLinkService;
 
     private PortfolioService service;
 
@@ -102,7 +104,8 @@ class PortfolioServiceTest {
                         metaOAuthTokenRepository,
                         metaTokenStorage,
                         instagramInsightsClient,
-                        creatorMetricsRepository);
+                        creatorMetricsRepository,
+                        externalCreatorLinkService);
     }
 
     @Test
@@ -124,6 +127,69 @@ class PortfolioServiceTest {
 
         assertEquals("PORTFOLIO_NOT_FOUND", ex.getCode());
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+    }
+
+    // ------------------------------------------------------------------
+    // Rate-card visibility must be enforced server-side (F-0497). The public
+    // page used to render a "sign in as a brand" card while the numbers still
+    // sat in the unauthenticated GET /portfolio/{username} JSON.
+    // ------------------------------------------------------------------
+
+    private static String rateCardSettingsJson(String rateCardVisibility) {
+        return "{\"visibility\":{\"trustBar\":true,\"badges\":true,\"platformStats\":true,"
+                + "\"pastCollabs\":true,\"contentPortfolio\":true,\"customLinks\":true,"
+                + "\"rateCard\":\""
+                + rateCardVisibility
+                + "\",\"languages\":true,\"contactForm\":true},\"pinnedPosts\":[]}";
+    }
+
+    private static CreatorProfile discoverableProfileWithRates(String rateCardVisibility) {
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Riya Sharma");
+        profile.applyUsername("riya");
+        profile.applySelfEdit(
+                null, null, null, null, null, null, null, null,
+                new java.math.BigDecimal("5000"), new java.math.BigDecimal("15000"), Boolean.TRUE);
+        profile.applyPortfolioSettingsJson(rateCardSettingsJson(rateCardVisibility));
+        return profile;
+    }
+
+    @Test
+    @DisplayName("getPublic: brands_only rate card (the default) is stripped from the anonymous payload")
+    void getPublic_brandsOnlyRateCard_isNotInAnonymousPayload() {
+        CreatorProfile profile = discoverableProfileWithRates("brands_only");
+        when(creatorProfileService.requireProfileByUsername("riya")).thenReturn(profile);
+
+        var page = service.getPublic("riya");
+
+        assertEquals("brands_only", page.visibility().rateCard());
+        assertEquals(
+                0,
+                page.rateCard().size(),
+                "brands_only must be enforced on the server, not just hidden by the public page");
+    }
+
+    @Test
+    @DisplayName("getPublic: public rate card is still returned to anonymous visitors")
+    void getPublic_publicRateCard_isReturned() {
+        CreatorProfile profile = discoverableProfileWithRates("public");
+        when(creatorProfileService.requireProfileByUsername("riya")).thenReturn(profile);
+
+        var page = service.getPublic("riya");
+
+        assertEquals(2, page.rateCard().size());
+        assertEquals(new java.math.BigDecimal("5000"), page.rateCard().get(0).min());
+    }
+
+    @Test
+    @DisplayName("getMine: the creator still sees their own brands_only rate card")
+    void getMine_brandsOnlyRateCard_visibleToOwner() {
+        CreatorProfile profile = discoverableProfileWithRates("brands_only");
+        AuthPrincipal principal = new AuthPrincipal(USER_ID, "creator", null, null);
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+
+        var page = service.getMine(principal);
+
+        assertEquals(2, page.rateCard().size(), "owner view is not a public view");
     }
 
     @Test

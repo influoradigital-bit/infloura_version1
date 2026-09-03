@@ -189,7 +189,7 @@ class DealServiceTest {
 
     private CreateDealRequest proposalRequest() {
         return new CreateDealRequest(
-                CAMPAIGN_ID, CREATOR_PROFILE_ID, new BigDecimal("25000"), null, null, null, "Work with us");
+                CAMPAIGN_ID, CREATOR_PROFILE_ID, new BigDecimal("25000"), null, null, null, "Work with us", null);
     }
 
     /**
@@ -323,7 +323,8 @@ class DealServiceTest {
                         null,
                         null,
                         null,
-                        "Work with us");
+                        "Work with us",
+                        null);
 
         ApiException ex =
                 assertThrows(ApiException.class, () -> service.createProposal(brandPrincipal, body));
@@ -331,6 +332,75 @@ class DealServiceTest {
         assertEquals("AMOUNT_EXCEEDS_BUDGET", ex.getCode());
         assertEquals(400, ex.getStatus().value());
         verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Gate fix round 1 (Priya Q2.3, T-MEERA-CREATOR-PHASE-A) — structured deal terms are
+    // write-only per Priya's Q2 trace ("no Java test mentions dealTerms — grep over
+    // influora-api/src/test returns nothing"). The happy path through createProposal was
+    // previously deliberately left unasserted (see this file's comment above
+    // testBrandCreateProposalRequiresManagerRole: "Cover it when the suite can actually be
+    // executed") — it now can be.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "createProposal: a present dealTerms block is applied onto the persisted Collaboration"
+                    + " — usageMonths/usagePerpetual/usageChannels/exclusivity*/maxRevisions all"
+                    + " land, not silently dropped")
+    void testCreateProposalPersistsDealTerms() {
+        stubProposalCampaign();
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(
+                        Optional.of(
+                                CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+
+        com.influora.web.dto.deal.DealDtos.DealTermsDto terms =
+                new com.influora.web.dto.deal.DealDtos.DealTermsDto(
+                        6,
+                        false,
+                        List.of("ORGANIC", "PAID_ADS"),
+                        30,
+                        com.influora.domain.enums.ExclusivityScope.NAMED_BRANDS,
+                        List.of("RivalCo"),
+                        3);
+        CreateDealRequest body =
+                new CreateDealRequest(
+                        CAMPAIGN_ID, CREATOR_PROFILE_ID, new BigDecimal("25000"), null, null, null, "Work with us", terms);
+
+        service.createProposal(brandPrincipal, body);
+
+        ArgumentCaptor<Collaboration> captor = ArgumentCaptor.forClass(Collaboration.class);
+        verify(collaborationRepository).save(captor.capture());
+        Collaboration saved = captor.getValue();
+        assertEquals(6, saved.getUsageMonths());
+        assertFalse(saved.isUsagePerpetual());
+        assertEquals("ORGANIC,PAID_ADS", saved.getUsageChannels());
+        assertEquals(30, saved.getExclusivityDays());
+        assertEquals(com.influora.domain.enums.ExclusivityScope.NAMED_BRANDS, saved.getExclusivityScope());
+        assertTrue(saved.getExclusivityBrands().contains("RivalCo"));
+        assertEquals(3, saved.getMaxRevisions());
+    }
+
+    @Test
+    @DisplayName("createProposal: a null dealTerms leaves the Collaboration's deal-terms fields at their unset defaults")
+    void testCreateProposalWithoutDealTermsLeavesFieldsUnset() {
+        stubProposalCampaign();
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(
+                        Optional.of(
+                                CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+
+        service.createProposal(brandPrincipal, proposalRequest());
+
+        ArgumentCaptor<Collaboration> captor = ArgumentCaptor.forClass(Collaboration.class);
+        verify(collaborationRepository).save(captor.capture());
+        Collaboration saved = captor.getValue();
+        assertEquals(null, saved.getUsageMonths());
+        assertEquals(com.influora.domain.enums.ExclusivityScope.NONE, saved.getExclusivityScope());
+        assertEquals(2, saved.getMaxRevisions()); // Collaboration's own construction default
     }
 
     @Test
@@ -530,7 +600,7 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null);
         DealResponse response = service.counter(brandPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
@@ -575,7 +645,8 @@ class DealServiceTest {
                         "Revised terms",
                         List.of(new DeliverableSlot("REEL", 2)),
                         "2026-08-15",
-                        "6 months");
+                        "6 months",
+                        null);
         service.counter(brandPrincipal, DEAL_ID, body, null);
 
         // usageRights is now a real column update, exactly as createProposal does it — before the
@@ -632,7 +703,7 @@ class DealServiceTest {
                         });
 
         // activeCampaign()'s budgetMax is 50000. Pre-fix this 400'd with AMOUNT_EXCEEDS_BUDGET.
-        CounterRequest body = new CounterRequest(new BigDecimal("75000"), "Let's do 75k", null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("75000"), "Let's do 75k", null, null, null, null);
         DealResponse response = service.counter(creatorPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
@@ -673,7 +744,7 @@ class DealServiceTest {
 
         // Above budgetMax(50000) but below the creator's hypothetical prior ask — a genuine
         // meet-in-the-middle compromise, which the symmetric fix must also allow.
-        CounterRequest body = new CounterRequest(new BigDecimal("60000"), "Let's meet at 60k", null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("60000"), "Let's meet at 60k", null, null, null, null);
         DealResponse response = service.counter(brandPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
@@ -692,7 +763,7 @@ class DealServiceTest {
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
 
         // activeCampaign()'s budgetMin is 10000.
-        CounterRequest body = new CounterRequest(new BigDecimal("5000"), "Lowball counter", null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("5000"), "Lowball counter", null, null, null, null);
 
         ApiException ex =
                 assertThrows(
@@ -907,7 +978,7 @@ class DealServiceTest {
                                         brandPrincipal,
                                         DEAL_ID,
                                         new CounterRequest(
-                                                new BigDecimal("25000"), "no", null, null, null),
+                                                new BigDecimal("25000"), "no", null, null, null, null),
                                         null));
 
         assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
@@ -1578,7 +1649,7 @@ class DealServiceTest {
         service.counter(
                 brandPrincipal,
                 DEAL_ID,
-                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null),
+                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null),
                 null);
 
         ArgumentCaptor<DealMessageResponse> published =
@@ -2127,7 +2198,7 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null);
         service.counter(brandPrincipal, DEAL_ID, body, null);
 
         // doCounter records no ApplicationHistoryEvent of its own (there is no COUNTER value in
@@ -2240,7 +2311,7 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Let's do 25k", null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Let's do 25k", null, null, null, null);
         service.counter(creatorPrincipal, DEAL_ID, body, null);
 
         verify(applicationHistoryService, never())

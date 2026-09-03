@@ -61,10 +61,18 @@ import org.springframework.stereotype.Service;
  *       #doRecordConversion}) is now wrapped in {@link IdempotencyService#executeOnce}, keyed on a
  *       WORKSPACE-NAMESPACED, order-derived key -- {@code workspaceId + ":conv:" + utmCampaignId +
  *       ":" + orderId} (see {@link #recordConversion(String, String, String, BigDecimal, String)})
- *       -- not the caller-supplied {@code idempotencyKey} itself, so this closes the hole even if a
- *       replaying caller varies (or omits) that field: the same order can never be attributed twice
- *       for the same workspace+link. A losing/duplicate delivery is treated as an idempotent no-op
- *       (the first delivery already recorded the conversion), never a 500 or a silent double count.
+ *       -- as a FALLBACK for callers that send no {@code idempotencyKey}, so a replaying caller that
+ *       omits that field still can never have the same order attributed twice for the same
+ *       workspace+link. <b>[SEC: Vikram, F-0523 fix]</b> That order-derived key used to be the ONLY
+ *       key, full stop -- the caller-supplied {@code idempotencyKey} played no part in the dedup
+ *       decision at all, so two genuinely distinct conversions sharing workspace+UTM+orderId
+ *       silently collapsed into one and a caller could not disambiguate them even with two different
+ *       {@code idempotencyKey} values. The caller-supplied key now HAS authority when present: the
+ *       reservation key IS the caller's own token in that case, so distinct caller keys are always
+ *       distinct reservations, while the same caller key replayed twice still dedupes to one
+ *       recorded conversion. A losing/duplicate delivery (same effective key) is treated as an
+ *       idempotent no-op (the first delivery already recorded the conversion), never a 500 or a
+ *       silent double count.
  * </ul>
  */
 @Service
@@ -138,9 +146,15 @@ public class ConversionTrackingService {
      * @param orderId the brand's own external order identifier
      * @param orderAmount the order's total revenue attributed to this link; must be non-null and
      *     non-negative
-     * @param idempotencyKey the brand-supplied token from {@code ConversionWebhookController},
-     *     recorded as the audit-log entry's own idempotency label (traceability only -- the actual
-     *     dedupe guarantee comes from the order-derived reservation key above, not this field)
+     * @param idempotencyKey the brand-supplied token from {@code ConversionWebhookController}.
+     *     [SEC: Vikram, F-0523 fix] When present (non-null, non-blank) this now HAS authority over
+     *     the dedup decision -- the reservation key is the caller's own token, so two callers that
+     *     share workspace+UTM+order but send genuinely distinct {@code idempotencyKey} values are
+     *     two distinct conversions, not one collapsed into the other (the order-derived key below
+     *     could never distinguish them). Sending the SAME key twice still dedupes to one recorded
+     *     conversion, same as before. Only when the caller sends no key at all does this fall back
+     *     to the order-derived {@code workspaceId + ":conv:" + utmCampaignId + ":" + orderId} key,
+     *     preserving the original protection for that no-key case.
      * @throws ApiException {@code UTM_NOT_FOUND} (404) if {@code utmCampaignId} does not exist
      * @throws ApiException {@code ORDER_AMOUNT_INVALID} (400) if {@code orderAmount} is null or
      *     negative
@@ -152,7 +166,9 @@ public class ConversionTrackingService {
             BigDecimal orderAmount,
             String idempotencyKey) {
         String reservationKey =
-                (workspaceId == null ? "" : workspaceId) + ":conv:" + utmCampaignId + ":" + orderId;
+                (idempotencyKey != null && !idempotencyKey.isBlank())
+                        ? idempotencyKey
+                        : (workspaceId == null ? "" : workspaceId) + ":conv:" + utmCampaignId + ":" + orderId;
         try {
             idempotencyService.executeOnce(
                     reservationKey,

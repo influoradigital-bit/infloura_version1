@@ -43,7 +43,7 @@ export function EscrowPill({ state, amount, className }: EscrowPillProps) {
         className,
       )}
       role="status"
-      aria-label={`Escrow status: ${label}`}
+      aria-label={`Secure Payments status: ${label}`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       {label}

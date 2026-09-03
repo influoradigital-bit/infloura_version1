@@ -204,7 +204,10 @@ export interface Creator {
   engagementRate: number;
   applicationStatus: CreatorApplicationStatus;
   instagramVerified: boolean;
-  qualityScore: number;
+  /** `null` = never scored (no CreatorScore row, or a NULL quality_score because
+   *  QualityScoreService had no media to measure). A real `0` is a genuine reading —
+   *  same distinction `KpiCard.change` draws. Render absence as "—", never as 0. */
+  qualityScore: number | null;
   tier: 'NANO' | 'MICRO' | 'MID' | 'MACRO';
   isSuspended: boolean;
   createdAt: string;
@@ -595,6 +598,76 @@ export interface ModerationAction {
 }
 
 // ============================================
+// CREATOR CONNECTIONS (T-CREATORCONNECT-0902) — AdminCreatorConnectionController
+// @ /admin/creator-connections. Mirrors `AdminConnectionDto` / `AdminExternalCreatorDto`
+// (Java records, .proof-os/tasks/T-CREATORCONNECT-0902/TASKS.md) field-for-field, same
+// nullability. Never coerce a nullable numeric field to 0 — render "—".
+// ============================================
+
+export type CreatorConnectionRequestStatus = 'PENDING' | 'CONTACTED' | 'JOINED' | 'DECLINED';
+export type ExternalCreatorSourceStatus = 'UNVERIFIED' | 'INVITED' | 'JOINED';
+
+/** Mirrors `AdminConnectionDto` field-for-field, same nullability. */
+export interface AdminConnection {
+  id: string;
+  status: CreatorConnectionRequestStatus;
+  message: string | null;
+  adminNotes: string | null;
+  workspaceId: string;
+  brandName: string | null;
+  requestedByUserId: string;
+  requestedByEmail: string | null;
+  externalCreatorId: string;
+  igUsername: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  followers: number | null;
+  creatorEmail: string | null;
+  creatorStatus: ExternalCreatorSourceStatus | null;
+  linkedCreatorProfileId: string | null;
+  createdAt: string;
+  handledAt: string | null;
+  joinedNotifiedAt: string | null;
+}
+
+/** Mirrors the `AdminExternalCreatorDto[]` rows returned by `GET /admin/external-creators`. */
+export interface AdminExternalCreator {
+  id: string;
+  source: string; // META_MARKETPLACE | BUSINESS_DISCOVERY | ADMIN_IMPORT
+  igUsername: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  followers: number | null;
+  engagementRate: number | null;
+  country: string | null;
+  email: string | null;
+  status: ExternalCreatorSourceStatus;
+  linkedCreatorProfileId: string | null;
+  invitedAt: string | null;
+  joinedAt: string | null;
+  lastSyncedAt: string | null;
+  createdAt: string;
+}
+
+/**
+ * `PagedConnectionsDto` shape — deliberately distinct from `PaginatedResponse<T>` below
+ * (`items`, not `data`; no `totalPages`) because that is exactly what the Java record sends.
+ */
+export interface PagedConnections<T> {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+/** `POST /admin/external-creators/import` response. */
+export interface ImportExternalCreatorsResult {
+  imported: number;
+  enriched: number;
+  skipped: string[];
+}
+
+// ============================================
 // DISPUTES
 // ============================================
 
@@ -724,6 +797,54 @@ export interface EmailQueueItem {
   scheduledAt: string;
   sentAt?: string;
   errorMessage?: string;
+}
+
+// ============================================
+// CUSTOM EMAIL COMPOSE (T-ADMINMAIL-0903)
+// Reference: .proof-os/tasks/T-ADMINMAIL-0903/SPEC.md — fixed contract, do not diverge.
+// POST /admin/emails/custom/preview and /admin/emails/custom/send.
+// ============================================
+
+/** `audience` shape shared by both preview and send requests. */
+export interface AdminCustomEmailAudience {
+  userType: 'CREATOR' | 'BRAND' | 'ALL';
+  onlyVerified: boolean;
+  /** Registered within the last N days, or null/omitted for "any time". */
+  registeredWithinDays: number | null;
+}
+
+export interface AdminCustomEmailPreviewRequest {
+  subject: string;
+  bodyText: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  audience: AdminCustomEmailAudience;
+  sampleUserId?: string;
+}
+
+export interface AdminCustomEmailPreviewResponse {
+  subject: string;
+  html: string;
+  recipientCount: number;
+  capped: boolean;
+  cap: number;
+  sampleRecipientEmail?: string;
+}
+
+export interface AdminCustomEmailSendRequest {
+  subject: string;
+  bodyText: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  audience: AdminCustomEmailAudience;
+  /** Must equal the `recipientCount` the most recent preview returned — control #3 (SPEC). */
+  confirmRecipientCount: number;
+}
+
+export interface AdminCustomEmailSendResponse {
+  campaignId: string;
+  queued: number;
+  skippedUnsubscribed: number;
 }
 
 // ============================================
@@ -935,4 +1056,38 @@ export interface AdminSubscriptionActionResult {
   isComp: boolean;
   compReason: string | null;
   compExpiresAt: string | null;
+}
+
+// ============================================
+// CREATOR AGENT BASELINES (T-MEERA-CREATOR-PHASE-A, A1, fix round 1 item 2)
+// ============================================
+
+/**
+ * `GET /admin/creator-agent/baselines` — response from `AdminCreatorAgentController`,
+ * matching `AdminCreatorAgentDtos.BaselinesResponse` field-for-field. This endpoint returns a
+ * raw DTO, not the `{ success, data }` envelope every other admin route uses — `apiRequest`
+ * doesn't care (it JSON-parses the body as `T` either way), but it means there is no
+ * `envelope.error` to read on a non-2xx response beyond `apiRequest`'s own generic fallback.
+ */
+export interface CreatorAgentBaselines {
+  creators_by_tier: Record<string, number>;
+  briefs_per_creator_per_month: {
+    median: number;
+    p75: number;
+    p90: number;
+  };
+  meta_connect_rate: number;
+  /** Nullable — no CREATOR->BRAND deal messages to compute a median from yet. */
+  median_creator_reply_hours: number | null;
+  /**
+   * `sample_label_compliance` — Priya's audit found `CreatorAgentBaselineService.java:43`
+   * hardcodes this as a constant, not a real computed rate. Render it, but don't imply it's
+   * live-measured (the page below labels it explicitly).
+   */
+  sample_label_compliance: {
+    sample_size: number;
+    labelled_count: number;
+    compliance_rate: number;
+  };
+  computed_at: string;
 }

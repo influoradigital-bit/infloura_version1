@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Wire DTOs for {@code POST /internal/meera/context} (Platform-AI Phase 1, Wave 1a — Priya
@@ -134,4 +135,60 @@ public final class MeeraContextDtos {
             @JsonProperty("past_campaign_summary") List<PastCampaignEntry> pastCampaignSummary,
             @JsonProperty("credit_state") CreditState creditState,
             @JsonProperty("outcome_digest") OutcomeDigest outcomeDigest) {}
+
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 2.9, A4) — the CREATOR-audience allow-listed context
+     * payload. Mirrors {@link ContextResponse}'s role for BRAND: this is the ONE field shape a
+     * CREATOR turn's Block B may see.
+     *
+     * <p><b>Info barrier (A7):</b> {@code identity} carries ONLY {@code kyc_done}/{@code
+     * gstin_present} booleans — NEVER a PAN, GSTIN value, Aadhaar digit, or dispute text. Every
+     * number in {@code floors}/{@code metricsSummary} is a Java-formatted STRING (A8,
+     * {@code MeeraContextService#formatNumber}), never a raw numeric type, so nothing downstream
+     * can re-derive precision Python never asked for. {@code floors} is real money data a BRAND
+     * context must never carry — see {@code InfoBarrierRuntimeTest}.
+     *
+     * <p><b>Fix round 2, item 3 (Priya Q8):</b> {@code excluded_categories}, {@code
+     * blocked_brands}, {@code working_hours_start}/{@code working_hours_end}, {@code
+     * working_days}, and {@code weekly_sponsored_limit} were previously stored via {@code
+     * CreatorAgentPreferences} and round-tripped correctly through the settings API, but never
+     * reached this response at all — Meera had no way to know a brand was blocklisted, so a
+     * transcript proving "a blocklisted brand visibly changes the AI's answer" could never be
+     * produced. They are added here now. {@code agency_name} stays deliberately PRIVATE — never
+     * added — {@code represented} (the boolean) is the only agency-adjacent fact Meera needs.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record CreatorContextResponse(
+            @JsonProperty("workspace_id") String workspaceId,
+            @JsonProperty("audience") String audience,
+            @JsonProperty("display_name") String displayName,
+            @JsonProperty("first_name") String firstName,
+            @JsonProperty("city") String city,
+            @JsonProperty("tier") String tier,
+            @JsonProperty("categories") List<String> categories,
+            @JsonProperty("creator_language") String creatorLanguage,
+            @JsonProperty("brand_tone") String brandTone,
+            @JsonProperty("floors") Map<String, String> floors,
+            @JsonProperty("metrics_summary") Map<String, String> metricsSummary,
+            @JsonProperty("deals_summary") Map<String, Object> dealsSummary,
+            @JsonProperty("approval_level") int approvalLevel,
+            @JsonProperty("represented") boolean represented,
+            @JsonProperty("excluded_categories") List<String> excludedCategories,
+            @JsonProperty("blocked_brands") List<String> blockedBrands,
+            @JsonProperty("working_hours_start") Integer workingHoursStart,
+            @JsonProperty("working_hours_end") Integer workingHoursEnd,
+            @JsonProperty("working_days") List<Integer> workingDays,
+            @JsonProperty("weekly_sponsored_limit") Integer weeklySponsoredLimit,
+            @JsonProperty("identity") Map<String, Boolean> identity,
+            /** A6 — the Python side's consent gate reads this to decide CONSENT_REQUIRED (SPEC.md 3.4). */
+            @JsonProperty("consent_accepted") boolean consentAccepted,
+            /**
+             * Gate fix round 1 (Priya Q7) — the admin-settable per-creator monthly AI-spend cap
+             * override. Omitted entirely (NON_NULL on the class) when the creator has no override
+             * set, so influora-ai's {@code spend_tracker.creator_cap_override_from_context}
+             * correctly falls through to the process-wide default — never rendered as a bare
+             * numeric type, same "every number leaves this class as a string" discipline as
+             * {@code floors} (A8), even though the Python reader also accepts a bare number.
+             */
+            @JsonProperty("ai_monthly_cap_usd") String aiMonthlyCapUsd) {}
 }

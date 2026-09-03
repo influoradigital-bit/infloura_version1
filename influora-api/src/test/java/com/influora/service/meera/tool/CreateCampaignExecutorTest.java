@@ -19,10 +19,18 @@ import com.influora.domain.enums.CampaignIntentType;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CampaignTemplateCategory;
 import com.influora.domain.enums.CampaignTemplateScope;
+import com.influora.domain.enums.MemberRole;
+import com.influora.domain.enums.UserType;
+import com.influora.domain.entity.Workspace;
+import com.influora.domain.entity.WorkspaceMember;
 import com.influora.repository.CampaignIntentRepository;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.MeeraToolCallRepository;
+import com.influora.repository.UserRepository;
+import com.influora.repository.WorkspaceMemberRepository;
+import com.influora.repository.WorkspaceRepository;
 import com.influora.service.AuditLogService;
+import com.influora.service.BrandContextService;
 import com.influora.service.CampaignTemplateService;
 import com.influora.service.IdempotencyService;
 import com.influora.service.IntegrationHealthService;
@@ -61,6 +69,13 @@ class CreateCampaignExecutorTest {
     @Mock private IdempotencyService idempotencyService;
     @Mock private CampaignTemplateService campaignTemplateService;
     @Mock private com.influora.service.meera.MeeraInteractionLogService meeraInteractionLogService;
+    @Mock private WorkspaceRepository workspaceRepository;
+    // [F-0530 concurrent fix] CreateCampaignExecutor now requires BrandContextService (checks
+    // OWNER/ADMIN/MANAGER before doing anything else). Left unstubbed on purpose:
+    // requireMember(...) unstubbed returns null (default Mockito answer for an object return
+    // type) and requireRole(...) is void so an unstubbed call is a no-op -- every existing test
+    // below still exercises the happy (role-permitted) path with zero extra stubbing needed.
+    @Mock private BrandContextService brandContext;
 
     private CreateCampaignExecutor executor;
 
@@ -74,7 +89,9 @@ class CreateCampaignExecutorTest {
                         auditLogService,
                         idempotencyService,
                         campaignTemplateService,
-                        meeraInteractionLogService);
+                        meeraInteractionLogService,
+                        workspaceRepository,
+                        brandContext);
     }
 
     // testDirectCampaignRejectedWithoutStoreIntegration removed (P3-20 Vikram fix): the
@@ -105,7 +122,7 @@ class CreateCampaignExecutorTest {
                         "creator_count", 3);
 
         CreateCampaignResult result =
-                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, input);
+                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
 
         assertNotNull(result);
         assertEquals(CampaignStatus.DRAFT.name(), result.status());
@@ -142,7 +159,7 @@ class CreateCampaignExecutorTest {
                         "creator_count", 3);
 
         CreateCampaignResult result =
-                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, input);
+                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
 
         assertNotNull(result);
         assertEquals(CampaignStatus.DRAFT.name(), result.status());
@@ -174,7 +191,7 @@ class CreateCampaignExecutorTest {
                         "creator_count", 3);
 
         CreateCampaignResult result =
-                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, input);
+                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
 
         assertNotNull(result);
         assertEquals(true, result.replay());
@@ -218,7 +235,7 @@ class CreateCampaignExecutorTest {
                         "creator_count", 3);
 
         CreateCampaignResult result =
-                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, input);
+                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
 
         assertNotNull(result);
         assertEquals(CampaignStatus.DRAFT.name(), result.status());
@@ -256,7 +273,7 @@ class CreateCampaignExecutorTest {
         ApiException ex =
                 assertThrows(
                         ApiException.class,
-                        () -> executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, input));
+                        () -> executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input));
         assertEquals("TEMPLATE_NOT_FOUND", ex.getCode());
         verify(campaignRepository, never()).save(any(Campaign.class));
     }
@@ -273,7 +290,7 @@ class CreateCampaignExecutorTest {
                 Map.of("product_name", "Widget", "campaign_type", "HYPE", "creator_count", 3);
 
         CreateCampaignResult result =
-                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, IDEMPOTENCY_KEY, input);
+                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
 
         assertNotNull(result);
         org.mockito.ArgumentCaptor<Campaign> campaignCaptor = org.mockito.ArgumentCaptor.forClass(Campaign.class);
@@ -285,6 +302,86 @@ class CreateCampaignExecutorTest {
         assertEquals(null, saved.getBudgetMin());
         assertEquals(null, saved.getBudgetMax());
         org.mockito.Mockito.verifyNoInteractions(campaignTemplateService);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Gate fix round 1 (Priya Q2.4/Q9.6, T-MEERA-CREATOR-PHASE-A): end_brand_name/category are
+    // required for every NEW campaign on the human write path (CampaignService#create) -- this
+    // AI-drafted path must never leave them NULL either.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "no AI-supplied end_brand_name/category -> defaults from the workspace's own"
+                    + " name/industry, never left NULL like a pre-V72 legacy row")
+    void testEndBrandFieldsDefaultFromWorkspaceWhenAiOmitsThem() {
+        mockIdempotencyExecuteOnce();
+        when(campaignIntentRepository.save(any(CampaignIntent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Workspace workspace = mockWorkspace("Glow Cosmetics", "Beauty");
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace));
+
+        Map<String, Object> input = Map.of("product_name", "Widget", "campaign_type", "STANDARD");
+        executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
+
+        org.mockito.ArgumentCaptor<Campaign> campaignCaptor = org.mockito.ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(campaignCaptor.capture());
+        Campaign saved = campaignCaptor.getValue();
+        assertEquals("Glow Cosmetics", saved.getEndBrandName());
+        assertEquals("Beauty", saved.getEndBrandCategory());
+    }
+
+    @Test
+    @DisplayName("AI-supplied end_brand_name/category (forward-compatible schema field) wins over the workspace default")
+    void testEndBrandFieldsAiSuppliedValueWinsOverWorkspaceDefault() {
+        mockIdempotencyExecuteOnce();
+        when(campaignIntentRepository.save(any(CampaignIntent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Workspace workspace = mockWorkspace("Glow Cosmetics", "Beauty");
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace));
+
+        Map<String, Object> input =
+                Map.of(
+                        "product_name", "Widget",
+                        "campaign_type", "STANDARD",
+                        "end_brand_name", "Client Co",
+                        "end_brand_category", "Fashion");
+        executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
+
+        org.mockito.ArgumentCaptor<Campaign> campaignCaptor = org.mockito.ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(campaignCaptor.capture());
+        Campaign saved = campaignCaptor.getValue();
+        assertEquals("Client Co", saved.getEndBrandName());
+        assertEquals("Fashion", saved.getEndBrandCategory());
+    }
+
+    @Test
+    @DisplayName(
+            "workspace has no industry set and AI supplies nothing -> falls back to the"
+                    + " 'Unspecified' constant rather than leaving endBrandCategory NULL")
+    void testEndBrandCategoryFallsBackToUnspecifiedWhenWorkspaceHasNoIndustry() {
+        mockIdempotencyExecuteOnce();
+        when(campaignIntentRepository.save(any(CampaignIntent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        Workspace workspace = mockWorkspace("Glow Cosmetics", null);
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace));
+
+        Map<String, Object> input = Map.of("product_name", "Widget", "campaign_type", "STANDARD");
+        executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
+
+        org.mockito.ArgumentCaptor<Campaign> campaignCaptor = org.mockito.ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(campaignCaptor.capture());
+        assertEquals("Unspecified", campaignCaptor.getValue().getEndBrandCategory());
+    }
+
+    private static Workspace mockWorkspace(String name, String industry) {
+        Workspace workspace = org.mockito.Mockito.mock(Workspace.class);
+        org.mockito.Mockito.lenient().when(workspace.getName()).thenReturn(name);
+        org.mockito.Mockito.lenient().when(workspace.getIndustry()).thenReturn(industry);
+        return workspace;
     }
 
     @SuppressWarnings("unchecked")

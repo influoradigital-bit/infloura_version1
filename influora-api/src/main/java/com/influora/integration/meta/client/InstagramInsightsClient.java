@@ -106,6 +106,28 @@ public class InstagramInsightsClient {
     }
 
     /**
+     * T-CREATORCONNECT-0902 — Business Discovery: reads ANOTHER professional Instagram account's
+     * public profile, keyed off the CALLER's own connected IG business account
+     * ({@code callerIgUserId}). No permission needed from the target account. Required
+     * permission: {@code instagram_basic}. Always FACEBOOK_LOGIN — Business Discovery is not
+     * available on the {@code graph.instagram.com} host.
+     */
+    public com.influora.integration.meta.dto.BusinessDiscoveryResponse businessDiscovery(
+            String callerIgUserId, String targetUsername, String accessToken) {
+        String path =
+                "/"
+                        + callerIgUserId
+                        + "?fields=business_discovery.username("
+                        + targetUsername
+                        + "){id,username,name,biography,profile_picture_url,followers_count,media_count}";
+        return apiClient.get(
+                path,
+                accessToken,
+                com.influora.integration.meta.dto.BusinessDiscoveryResponse.class,
+                callerIgUserId);
+    }
+
+    /**
      * Fetches account-level insights over a date range.
      * Required permission: {@code instagram_manage_insights}.
      *

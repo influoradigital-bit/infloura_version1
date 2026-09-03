@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
+import { formatDistanceToNow } from 'date-fns';
 import {
   Search,
   X,
@@ -15,12 +16,27 @@ import {
   BookmarkCheck,
   Plus,
   Loader2,
+  ShieldAlert,
+  ShieldCheck,
+  Instagram as InstagramIcon,
+  AtSign,
+  Inbox,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { cssVars } from '@/lib/css-vars';
 import type { Platform, CreatorProfile } from '@/lib/types';
-import { api, isApiLive, ApiError, type FeaturedCreatorSection } from '@/lib/api';
+import {
+  api,
+  isApiLive,
+  ApiError,
+  type CreatorSortOrder,
+  type FeaturedCreatorSection,
+  type ExternalCreator,
+  type ConnectionRequest,
+} from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,6 +85,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 // Platform pills shown in the discover hero — brand colors from the 2026-07-17 palette.
 const HERO_PILLS = [
   { label: 'Instagram', color: '#E1306C', className: 'left-[8%] top-[22%]', delay: 0 },
@@ -410,6 +427,8 @@ export function CreatorDiscovery() {
   const [apiLoadingMore, setApiLoadingMore] = React.useState(false);
   const [apiPage, setApiPage] = React.useState(1);
   const [apiHasMore, setApiHasMore] = React.useState(false);
+  /** F-0410 — server total for the current filter set; `undefined` when the envelope omits it. */
+  const [apiTotal, setApiTotal] = React.useState<number | undefined>(undefined);
   // F-0256 — the mock fixture used to seed this as unconditional initial state, so in live mode
   // a brand could pick one of three fabricated campaigns (fake ids `c1`/`c2`/`c3`) before
   // `GET /campaigns` had a chance to resolve, and submit an invite/offer against a campaignId
@@ -431,9 +450,20 @@ export function CreatorDiscovery() {
   const [priceRange, setPriceRange] = React.useState<[number, number]>([5000, 200000]);
   const [engagementRange, setEngagementRange] = React.useState<[number, number]>([0, 15]);
   const [verifiedOnly, setVerifiedOnly] = React.useState(false);
-  const [sortBy, setSortBy] = React.useState<'relevance' | 'followers' | 'engagement' | 'price_low' | 'price_high'>('relevance');
+  // F-0408 — was `'relevance'`, and a "Relevance" item sat at the top of the Sort menu. The
+  // server has no relevance ranking: CreatorDiscoveryService#toSort maps `relevance` to plain
+  // totalFollowers DESC, which is exactly what "Most Followers" already does, and it is also the
+  // controller's own default. So the option named a ranking that did not exist and was
+  // indistinguishable from the one below it. Removed, same call as `exclusivity`/`revisionCap`
+  // below: a control that does not do what it says is worse than an absent one. `followers` is
+  // now the default here, which matches the server default the page already got.
+  const [sortBy, setSortBy] = React.useState<CreatorSortOrder>('followers');
   const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid');
-  
+
+  // T-CREATORCONNECT-0902 — Influora creators (existing behaviour, untouched below) vs
+  // Instagram creators (Meta-sourced, not yet on Influora — see InstagramCreatorsTab).
+  const [sourceTab, setSourceTab] = React.useState<'influora' | 'instagram'>('influora');
+
   // UI state
   const [savedCreators, setSavedCreators] = React.useState<string[]>([]);
   const [isFilterOpen, setIsFilterOpen] = React.useState(false);
@@ -624,6 +654,12 @@ export function CreatorDiscovery() {
         setApiLoading(true);
       }
       try {
+        // F-0405/F-0431 — every enabled control on this screen is a query param. Language,
+        // engagement rate, verified-only and sort order used to stop at the browser: they
+        // re-filtered the 20 rows this call had already returned, so a brand narrowing by
+        // language was really narrowing the current page, not the creator base. Each `undefined`
+        // below is the "untouched" sentinel — the server treats an absent param as no filter, so
+        // an untouched slider must not be sent as its own default bounds.
         const result = await api.creators.search({
           q: searchQuery || undefined,
           city: selectedCities.length ? selectedCities.join(',') : undefined,
@@ -631,15 +667,23 @@ export function CreatorDiscovery() {
           verticals: selectedCategories.length
             ? selectedCategories.map((c) => c.toLowerCase())
             : undefined,
+          languages: selectedLanguages.length ? selectedLanguages : undefined,
           minFollowers: followerRange[0] > 0 ? followerRange[0] : undefined,
           maxFollowers: followerRange[1] < 10000000 ? followerRange[1] : undefined,
           minRate: priceRange[0] > 5000 ? priceRange[0] : undefined,
           maxRate: priceRange[1] < 200000 ? priceRange[1] : undefined,
+          minEngagementRate: engagementRange[0] > 0 ? engagementRange[0] : undefined,
+          maxEngagementRate: engagementRange[1] < 15 ? engagementRange[1] : undefined,
+          isVerified: verifiedOnly || undefined,
+          sortBy,
           page: pageNum,
           limit: DISCOVER_PAGE_SIZE,
         });
         setApiCreators((prev) => (append ? [...prev, ...result.creators] : result.creators));
         setApiHasMore(result.meta.hasMore);
+        // F-0410 — the server's total for this filter set, so the count below can say how many
+        // creators actually match rather than how many rows this page happened to return.
+        setApiTotal(result.meta.total);
         setApiPage(pageNum);
         const saved = result.creators
           .filter((c) => (c as CreatorProfile & { saved?: boolean }).saved)
@@ -659,7 +703,18 @@ export function CreatorDiscovery() {
         setApiLoadingMore(false);
       }
     },
-    [searchQuery, selectedCities, selectedPlatforms, selectedCategories, followerRange, priceRange],
+    [
+      searchQuery,
+      selectedCities,
+      selectedPlatforms,
+      selectedCategories,
+      selectedLanguages,
+      followerRange,
+      priceRange,
+      engagementRange,
+      verifiedOnly,
+      sortBy,
+    ],
   );
 
   React.useEffect(() => {
@@ -720,9 +775,22 @@ export function CreatorDiscovery() {
     setVerifiedOnly(false);
   };
 
-  // Filter creators
+  // Filter creators.
+  //
+  // F-0405/F-0409/F-0410 — this whole block is MOCK-MODE ONLY now. In live mode the server has
+  // already applied every one of these predicates and the sort (see fetchCreators above), over
+  // the entire creator base rather than the 20 rows this page fetched. Re-running them here was
+  // not a harmless double-check:
+  //   - it silently disagreed with the server on unpriced creators. `rateOverlap` deliberately
+  //     ORs an isNull check so a creator with no rate set still matches a price filter; the
+  //     predicate below required `averageRate != null` and dropped exactly those rows (F-0409).
+  //   - it made the result count a page length rather than a match count (F-0410).
+  //   - it made language/engagement/verified/sort look like they worked while they only ever
+  //     touched the current page (F-0405).
   const filteredCreators = React.useMemo(() => {
-    let result = liveApi ? [...apiCreators] : [...mockCreators];
+    if (liveApi) return apiCreators;
+
+    let result = [...mockCreators];
 
     // Search filter
     if (searchQuery) {
@@ -774,10 +842,12 @@ export function CreatorDiscovery() {
     // 5000 floor, so every unpriced creator was silently excluded even though the brand never
     // touched this slider. Only enforce the range once the brand has actually moved it; a
     // creator with no rate is a legitimate match at the untouched default.
+    // F-0409 — and once it IS touched, an unpriced creator still matches, mirroring the server's
+    // `rateOverlap` spec, which ORs an isNull check into both bounds for exactly this reason.
     const priceFilterTouched = priceRange[0] > 5000 || priceRange[1] < 200000;
     if (priceFilterTouched) {
       result = result.filter(
-        (c) => c.averageRate != null && c.averageRate >= priceRange[0] && c.averageRate <= priceRange[1]
+        (c) => c.averageRate == null || (c.averageRate >= priceRange[0] && c.averageRate <= priceRange[1])
       );
     }
 
@@ -791,7 +861,7 @@ export function CreatorDiscovery() {
       result = result.filter((c) => c.isVerified);
     }
 
-    // Sort
+    // Sort — same four orders the server honours by name (CreatorSortOrder in api.ts).
     switch (sortBy) {
       case 'followers':
         result.sort((a, b) => b.totalFollowers - a.totalFollowers);
@@ -804,9 +874,6 @@ export function CreatorDiscovery() {
         break;
       case 'price_high':
         result.sort((a, b) => (b.averageRate ?? 0) - (a.averageRate ?? 0));
-        break;
-      default:
-        // relevance - keep original order
         break;
     }
 
@@ -859,7 +926,25 @@ export function CreatorDiscovery() {
             </p>
           </div>
 
-          {/* Search and Filter Bar */}
+          {/* Source toggle — T-CREATORCONNECT-0902. Influora creators is the existing search/
+              filter/grid below, completely untouched; Instagram creators is new. */}
+          <Tabs value={sourceTab} onValueChange={(v) => setSourceTab(v as 'influora' | 'instagram')}>
+            <TabsList>
+              <TabsTrigger value="influora">Influora creators</TabsTrigger>
+              <TabsTrigger value="instagram" className="gap-1.5">
+                <InstagramIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                Instagram creators
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="instagram" className="pt-4">
+              <InstagramCreatorsTab />
+            </TabsContent>
+          </Tabs>
+
+          {/* Search and Filter Bar — Influora creators tab only. */}
+          {sourceTab === 'influora' && (
+          <>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1072,10 +1157,9 @@ export function CreatorDiscovery() {
                     <ChevronDown className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
+                {/* F-0408 — "Relevance" removed: the server has no relevance ranking, it maps
+                    `relevance` onto totalFollowers DESC, i.e. the item directly below. */}
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => setSortBy('relevance')}>
-                    Relevance
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setSortBy('followers')}>
                     Most Followers
                   </DropdownMenuItem>
@@ -1176,11 +1260,13 @@ export function CreatorDiscovery() {
               </Button>
             </div>
           )}
+          </>
+          )}
         </div>
 
         {/* Featured Creators — D-14. Hidden as soon as the brand starts searching/filtering, so
-            it never competes with an active query's results. */}
-        {featuredSections.length > 0 && !searchQuery && activeFilterCount === 0 && (
+            it never competes with an active query's results. Influora creators tab only. */}
+        {sourceTab === 'influora' && featuredSections.length > 0 && !searchQuery && activeFilterCount === 0 && (
           <div className="flex flex-col gap-6">
             {featuredSections.map((section) => (
               <div key={section.category}>
@@ -1213,10 +1299,21 @@ export function CreatorDiscovery() {
           </div>
         )}
 
-        {/* Results Count */}
+        {/* Results Count, Creator Grid/List, Load more — Influora creators tab only. F-0410:
+            this used to read `Showing ${filteredCreators.length} creators`, which in live mode
+            is the length of the current page (20 at most), not the number of creators matching
+            the filters. A brand who filtered down to 20 rows out of 4,000 matches read it as
+            "there are 20 such creators". Say both numbers when the server reports a total, and
+            fall back to the honest page count when it doesn't. */}
+        {sourceTab === 'influora' && (
+        <>
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            {isInitialLoading ? 'Loading creators…' : `Showing ${filteredCreators.length} creators`}
+            {isInitialLoading
+              ? 'Loading creators…'
+              : liveApi && apiTotal != null
+                ? `Showing ${filteredCreators.length} of ${apiTotal} creators`
+                : `Showing ${filteredCreators.length} creators`}
           </p>
         </div>
 
@@ -1471,6 +1568,8 @@ export function CreatorDiscovery() {
               )}
             </Button>
           </div>
+        )}
+        </>
         )}
 
         {/* Invite Dialog - Multi-Step Proposal */}
@@ -1790,5 +1889,637 @@ export function CreatorDiscovery() {
         </Dialog>
       </div>
     </TooltipProvider>
+  );
+}
+
+// =============================================================================
+// Instagram creators tab — T-CREATORCONNECT-0902.
+//
+// Meta-sourced creators (Business Discovery lookup + the admin-imported/Marketplace table) who
+// are NOT yet Influora members. Self-contained: its own state, its own fetches, mounted fresh by
+// Radix Tabs each time the brand selects this tab. Never invents a creator or coerces a missing
+// metric to 0 — a 503 (Meta off / no usable token) renders an honest "unavailable" state with no
+// cards, distinct from "loading" and from "zero results" (F-0259/F-0260).
+// =============================================================================
+
+const IG_PAGE_SIZE = 20;
+
+/** JOINED → green "Verified with Influora"; INVITED → amber "Invited to Influora" with the date
+ * (Q2.5 — split out of the generic UNVERIFIED copy so an admin's outreach is visible); UNVERIFIED
+ * → amber "Unverified with Influora". */
+function ExternalCreatorBadge({
+  status,
+  invitedAt,
+}: {
+  status: ExternalCreator['status'];
+  invitedAt?: string | null;
+}) {
+  if (status === 'JOINED') {
+    return (
+      <Badge className="gap-1 border-transparent bg-stage-approved text-stage-approved-fg hover:bg-stage-approved">
+        <ShieldCheck className="h-3 w-3" aria-hidden="true" />
+        Verified with Influora
+      </Badge>
+    );
+  }
+  if (status === 'INVITED') {
+    return (
+      <Badge className="gap-1 border-transparent bg-stage-negotiating text-stage-negotiating-fg hover:bg-stage-negotiating">
+        <ShieldAlert className="h-3 w-3" aria-hidden="true" />
+        Invited to Influora{invitedAt ? ` · ${formatDistanceToNow(new Date(invitedAt), { addSuffix: true })}` : ''}
+      </Badge>
+    );
+  }
+  return (
+    <Badge className="gap-1 border-transparent bg-stage-negotiating text-stage-negotiating-fg hover:bg-stage-negotiating">
+      <ShieldAlert className="h-3 w-3" aria-hidden="true" />
+      Unverified with Influora
+    </Badge>
+  );
+}
+
+function externalFollowers(n: number | null): string {
+  return n == null ? '—' : formatFollowers(n);
+}
+
+/** Q2.5/formerly-relative-date helper — used by the connection-requests panel to render
+ * createdAt/handledAt so a brand can tell a 3-week-stale request from yesterday's. */
+function relativeDate(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return formatDistanceToNow(d, { addSuffix: true });
+}
+
+function connectionRequestStatusLabel(status: ConnectionRequest['status']): string {
+  switch (status) {
+    case 'PENDING':
+      return 'Request sent';
+    case 'CONTACTED':
+      return 'Team reached out';
+    case 'JOINED':
+      return 'Joined Influora';
+    case 'DECLINED':
+    default:
+      return 'Not available';
+  }
+}
+
+/** One external-creator card — used both for the lookup result and the browse list. */
+function ExternalCreatorCard({
+  creator,
+  onConnect,
+}: {
+  creator: ExternalCreator;
+  onConnect: (creator: ExternalCreator) => void;
+}) {
+  // Q2.2 — trust the server's own computed flag (status === 'JOINED' && linkedCreatorProfileId
+  // != null) rather than OR-ing in a redundant client-side status check. The OR admitted a
+  // JOINED-but-unlinked state the server flag deliberately excludes, which the "Create campaign"
+  // button already guarded against but "View profile" did not — dropping the OR removes the
+  // inconsistency at its source instead of patching the symptom.
+  const verified = creator.verifiedWithInfluora;
+  // Q6.5 — every upstream surface (this card, the connect dialog, the toasts below) refers to
+  // this creator as `@igUsername`; the handoff must carry that same handle rather than let the
+  // campaign wizard resolve and show a possibly-different Influora username.
+  const handoffParams = new URLSearchParams({ creatorId: creator.linkedCreatorProfileId ?? '' });
+  handoffParams.set('ig', creator.igUsername);
+  if (creator.connectionRequestId) handoffParams.set('crq', creator.connectionRequestId);
+
+  return (
+    <Card className="overflow-hidden">
+      <CardContent className="flex flex-col gap-3 pt-5">
+        <div className="flex items-start gap-3">
+          <Avatar className="h-12 w-12 shrink-0">
+            <AvatarImage src={creator.avatarUrl || undefined} />
+            <AvatarFallback>{creator.igUsername.charAt(0).toUpperCase()}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-semibold">@{creator.igUsername}</p>
+            {creator.displayName && (
+              <p className="truncate text-sm text-muted-foreground">{creator.displayName}</p>
+            )}
+          </div>
+        </div>
+
+        <ExternalCreatorBadge status={creator.status} invitedAt={creator.invitedAt} />
+
+        {creator.bio && <p className="line-clamp-2 text-sm text-muted-foreground">{creator.bio}</p>}
+
+        {/* Q2.1 — engagementRate is write-never on every creation path (Marketplace/Business
+            Discovery/admin import all pass null), so this tile could only ever render "—". Dropped
+            rather than shipped as permanently dead weight; re-add alongside a real writer (e.g. a
+            future Marketplace `insights` mapping) if one lands. */}
+        <div className="grid grid-cols-2 gap-2 text-center">
+          <div className="rounded-lg bg-muted/50 p-2">
+            <p className="text-sm font-semibold">{externalFollowers(creator.followers)}</p>
+            <p className="text-xs text-muted-foreground">Followers</p>
+          </div>
+          <div className="rounded-lg bg-muted/50 p-2">
+            <p className="truncate text-sm font-semibold">{creator.country ?? '—'}</p>
+            <p className="text-xs text-muted-foreground">Country</p>
+          </div>
+        </div>
+      </CardContent>
+      <CardFooter className="flex gap-2 border-t pt-4">
+        {verified ? (
+          <>
+            <Button variant="outline" size="sm" className="flex-1" asChild>
+              <Link to={`/brand/creators/${creator.linkedCreatorProfileId ?? ''}`}>View profile</Link>
+            </Button>
+            <Button size="sm" className="flex-1" disabled={!creator.linkedCreatorProfileId} asChild={Boolean(creator.linkedCreatorProfileId)}>
+              {creator.linkedCreatorProfileId ? (
+                <Link to={`/brand/campaigns/new?${handoffParams.toString()}`}>Create campaign</Link>
+              ) : (
+                <span>Create campaign</span>
+              )}
+            </Button>
+          </>
+        ) : creator.connectionStatus == null ? (
+          <Button size="sm" className="flex-1 gap-1.5" onClick={() => onConnect(creator)}>
+            <AtSign className="h-3.5 w-3.5" aria-hidden="true" />
+            Connect this creator
+          </Button>
+        ) : creator.connectionStatus === 'DECLINED' ? (
+          <Button size="sm" variant="ghost" className="flex-1 text-muted-foreground" disabled>
+            Not available
+          </Button>
+        ) : (
+          <Button size="sm" variant="secondary" className="flex-1" disabled>
+            {connectionRequestStatusLabel(creator.connectionStatus)}
+          </Button>
+        )}
+      </CardFooter>
+    </Card>
+  );
+}
+
+function InstagramCreatorsTab() {
+  const { toast } = useToast();
+  const liveApi = isApiLive();
+
+  // Handle lookup (GET /creators/external/lookup)
+  const [lookupInput, setLookupInput] = React.useState('');
+  const [lookupResult, setLookupResult] = React.useState<ExternalCreator | null>(null);
+  const [lookupLoading, setLookupLoading] = React.useState(false);
+  const [lookupError, setLookupError] = React.useState<{ code: string; message: string } | null>(null);
+
+  // Browse list (GET /creators/external)
+  const [listCreators, setListCreators] = React.useState<ExternalCreator[]>([]);
+  const [listLoading, setListLoading] = React.useState(false);
+  const [listLoadingMore, setListLoadingMore] = React.useState(false);
+  const [listPage, setListPage] = React.useState(1);
+  const [listHasMore, setListHasMore] = React.useState(false);
+  // Q1.5 (T-CREATORCONNECT-0902) — the browse list shipped with no way to narrow it (contract
+  // TASKS.md §157: "the existing follower filters where they apply"); the backend half
+  // (ExternalCreatorSpecs) already ORs a NULL followers value into every follower predicate so an
+  // un-enriched row is never hidden by these filters — see externalFollowers below for the
+  // matching FE display convention (never coerce an unknown follower count to 0).
+  const [listQuery, setListQuery] = React.useState('');
+  const [listFollowerRange, setListFollowerRange] = React.useState<[number, number]>([0, 10000000]);
+  const [listUnavailable, setListUnavailable] = React.useState(false);
+  // Q2.4 — distinct from listUnavailable: a real outage (502/503/504/SERVER_UNAVAILABLE, or a
+  // rejected fetch that never reached an ApiError at all) must render an error state with Retry,
+  // never the honest "no data yet" empty copy — see showEmpty below.
+  const [listFailed, setListFailed] = React.useState(false);
+  const [listError, setListError] = React.useState<string | null>(null);
+
+  // My connection requests (GET /creators/external/connection-requests)
+  const [requests, setRequests] = React.useState<ConnectionRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = React.useState(false);
+
+  // Connect dialog
+  const [connectTarget, setConnectTarget] = React.useState<ExternalCreator | null>(null);
+  const [connectMessage, setConnectMessage] = React.useState('');
+  const [connectSubmitting, setConnectSubmitting] = React.useState(false);
+
+  const fetchList = React.useCallback(
+    async (
+      pageNum: number,
+      append: boolean,
+      // Q1.5 — explicit overrides for the follower range only: the Slider's onValueCommit fires
+      // with the just-committed value in the SAME gesture that also calls setListFollowerRange,
+      // so reading listFollowerRange from this closure risks acting on the previous render's
+      // value. `q` has no such race (the search form's onSubmit runs after the controlled
+      // input's own onChange already committed listQuery) so it always reads current state.
+      followerOverride?: { minFollowers?: number; maxFollowers?: number },
+    ) => {
+      if (append) setListLoadingMore(true);
+      else setListLoading(true);
+      setListUnavailable(false);
+      setListFailed(false);
+      if (!append) setListError(null);
+      try {
+        const trimmedQuery = listQuery.trim();
+        const result = await api.externalCreators.list({
+          page: pageNum,
+          limit: IG_PAGE_SIZE,
+          q: trimmedQuery || undefined,
+          minFollowers:
+            followerOverride && 'minFollowers' in followerOverride
+              ? followerOverride.minFollowers
+              : listFollowerRange[0] > 0
+                ? listFollowerRange[0]
+                : undefined,
+          maxFollowers:
+            followerOverride && 'maxFollowers' in followerOverride
+              ? followerOverride.maxFollowers
+              : listFollowerRange[1] < 10000000
+                ? listFollowerRange[1]
+                : undefined,
+        });
+        setListCreators((prev) => (append ? [...prev, ...result.creators] : result.creators));
+        setListHasMore(result.meta.hasMore);
+        setListPage(pageNum);
+      } catch (err) {
+        if (!append) setListCreators([]);
+        // Q2.4 — GET /creators/external never actually returns the honest business-logic 503
+        // (`INSTAGRAM_LOOKUP_UNAVAILABLE`; that's `lookup()`'s error, not list()'s), so the ONLY
+        // way this call ever reports 503 is via `parseEnvelope`'s outage detection — the same
+        // 502/504/`SERVER_UNAVAILABLE` bucket. That bucket, and a network error that never
+        // produced an ApiError at all (a rejected fetch — dropped connection, CORS failure,
+        // offline), both mean "the server could not be reached", never "there is no data" —
+        // rendering the honest-empty state for either was mistaking an outage for a fact about
+        // the data (F-0259/F-0260 class). Reserve `listUnavailable` for a genuine
+        // `INSTAGRAM_LOOKUP_UNAVAILABLE` code, defensively, in case a future change ever does
+        // route it through this call.
+        if (err instanceof ApiError && err.code === 'INSTAGRAM_LOOKUP_UNAVAILABLE') {
+          setListUnavailable(true);
+        } else {
+          const message =
+            err instanceof ApiError ? err.message : 'The server was briefly unavailable. Please try again.';
+          setListFailed(true);
+          setListError(message);
+          toast({
+            title: append ? "Couldn't load more creators" : "Couldn't load Instagram creators",
+            description: message,
+            variant: 'destructive',
+          });
+        }
+      } finally {
+        setListLoading(false);
+        setListLoadingMore(false);
+      }
+    },
+    [toast, listQuery, listFollowerRange],
+  );
+
+  const fetchRequests = React.useCallback(async () => {
+    setRequestsLoading(true);
+    try {
+      const rows = await api.externalCreators.connectionRequests();
+      setRequests(rows);
+    } catch {
+      setRequests([]);
+    } finally {
+      setRequestsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (!liveApi) return;
+    void fetchList(1, false);
+    void fetchRequests();
+    // Fetch once on mount — this component remounts fresh every time the tab is selected
+    // (Radix Tabs unmounts inactive content), so no dependency-driven refetch is needed here.
+    // `fetchList`/`fetchRequests` deliberately omitted from deps (react-hooks v7 policy —
+    // exhaustive-deps is 'warn', not fixed here; same as the pre-existing warnings elsewhere).
+  }, [liveApi]);
+
+  async function handleLookup(e: React.FormEvent) {
+    e.preventDefault();
+    const username = lookupInput.trim().replace(/^@/, '');
+    if (!username) return;
+    setLookupLoading(true);
+    setLookupError(null);
+    setLookupResult(null);
+    try {
+      const creator = await api.externalCreators.lookup(username);
+      setLookupResult(creator);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setLookupError({ code: err.code, message: err.message });
+      } else {
+        setLookupError({ code: 'UNKNOWN', message: 'Could not look up that handle. Try again.' });
+      }
+    } finally {
+      setLookupLoading(false);
+    }
+  }
+
+  function openConnect(creator: ExternalCreator) {
+    setConnectTarget(creator);
+    setConnectMessage('');
+  }
+
+  function applyConnectionResult(creatorId: string, request: ConnectionRequest) {
+    const patch = (c: ExternalCreator) =>
+      c.id === creatorId
+        ? { ...c, connectionStatus: request.status, connectionRequestId: request.id }
+        : c;
+    setListCreators((prev) => prev.map(patch));
+    setLookupResult((prev) => (prev ? patch(prev) : prev));
+  }
+
+  async function submitConnect() {
+    if (!connectTarget) return;
+    setConnectSubmitting(true);
+    try {
+      const request = await api.externalCreators.connect(connectTarget.id, {
+        message: connectMessage.trim() || undefined,
+      });
+      applyConnectionResult(connectTarget.id, request);
+      setRequests((prev) => [request, ...prev.filter((r) => r.id !== request.id)]);
+      toast({
+        title: 'Request sent',
+        description: `The Influora team will reach out to @${connectTarget.igUsername} and email you when they join.`,
+      });
+      setConnectTarget(null);
+      setConnectMessage('');
+    } catch (err) {
+      // Q2.3 — the 409 carries linkedCreatorProfileId (ApiErrorBody.creatorAlreadyOnInfluora),
+      // now surfaced on ApiError. Rather than a dead-end generic toast, flip the card to JOINED
+      // right here so its own "Create campaign" button becomes available immediately — no refetch
+      // needed, and no more disagreement between the toast and what the card still offers.
+      if (err instanceof ApiError && err.code === 'CREATOR_ALREADY_ON_INFLUORA' && err.linkedCreatorProfileId) {
+        const linkedId = err.linkedCreatorProfileId;
+        const patch = (c: ExternalCreator) =>
+          c.id === connectTarget.id
+            ? { ...c, status: 'JOINED' as const, verifiedWithInfluora: true, linkedCreatorProfileId: linkedId }
+            : c;
+        setListCreators((prev) => prev.map(patch));
+        setLookupResult((prev) => (prev ? patch(prev) : prev));
+        toast({
+          title: 'Already on Influora',
+          description: `@${connectTarget.igUsername} is already verified on Influora — use Create campaign on their card to work with them.`,
+        });
+        setConnectTarget(null);
+        setConnectMessage('');
+        return;
+      }
+      toast({
+        title: 'Could not send request',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setConnectSubmitting(false);
+    }
+  }
+
+  const showUnavailable = listUnavailable && listCreators.length === 0;
+  // Q2.4 — a failed load must render its own error+Retry state, in front of loading/empty, and
+  // showEmpty must exclude it: a first-load outage is not the same fact as "no creators sourced
+  // yet" and must never render as if it were.
+  const showFailed = listFailed && listCreators.length === 0;
+  const showInitialLoading = listLoading && listCreators.length === 0 && !showUnavailable && !showFailed;
+  const showEmpty = !showInitialLoading && !showUnavailable && !showFailed && listCreators.length === 0;
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Handle lookup */}
+      <form onSubmit={handleLookup} className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <AtSign className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search an Instagram handle, e.g. @foodie.mumbai"
+            value={lookupInput}
+            onChange={(e) => setLookupInput(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <Button type="submit" disabled={lookupLoading || !lookupInput.trim()}>
+          {lookupLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+          Look up
+        </Button>
+      </form>
+
+      {lookupError && (
+        <div
+          data-testid={lookupError.code === 'INSTAGRAM_LOOKUP_UNAVAILABLE' ? 'instagram-lookup-unavailable' : undefined}
+          className="rounded-lg border border-dashed p-4 text-sm text-destructive-foreground"
+        >
+          {lookupError.code === 'INSTAGRAM_LOOKUP_UNAVAILABLE'
+            ? "Instagram lookup isn't connected yet. Try browsing the list below, or ask an admin to import this handle."
+            : lookupError.message}
+        </div>
+      )}
+
+      {lookupResult && (
+        <div className="max-w-sm">
+          <ExternalCreatorCard creator={lookupResult} onConnect={openConnect} />
+        </div>
+      )}
+
+      {/* My connection requests */}
+      {requests.length > 0 && (
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Inbox className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            <h2 className="text-sm font-semibold">My connection requests</h2>
+          </div>
+          <div className="flex flex-col divide-y">
+            {requests.map((r) => (
+              <div key={r.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">@{r.igUsername}</p>
+                  {/* Q2.5 — createdAt/handledAt were on the wire and unused; a brand had no way
+                      to tell a 3-week-stale CONTACTED from yesterday's. */}
+                  <p className="truncate text-xs text-muted-foreground">
+                    Sent {relativeDate(r.createdAt)}
+                    {r.handledAt ? ` · Updated ${relativeDate(r.handledAt)}` : ''}
+                  </p>
+                </div>
+                <Badge variant="outline" className="shrink-0 text-xs">
+                  {connectionRequestStatusLabel(r.status)}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {requestsLoading && requests.length === 0 && (
+        <p className="text-sm text-muted-foreground">Loading your connection requests…</p>
+      )}
+
+      {/* Browse list */}
+      <div>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground uppercase tracking-wider">
+          Instagram creators
+        </h2>
+
+        {/* Q1.5 (T-CREATORCONNECT-0902) — search + follower-range narrow the BROWSE list (GET
+            /creators/external?q=&minFollowers=&maxFollowers=), distinct from the exact-handle
+            lookup form above. ExternalCreatorSpecs ORs a NULL followers value into both bounds, so
+            an un-enriched row (externalFollowers renders it "—", never 0) is never hidden by
+            these — narrowing the range only ever excludes rows with a KNOWN, out-of-range value. */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void fetchList(1, false);
+          }}
+          className="mb-4 flex flex-col gap-4 rounded-lg border border-border bg-card p-4"
+        >
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search Instagram creators by name or handle"
+              value={listQuery}
+              onChange={(e) => setListQuery(e.target.value)}
+              className="pl-10"
+              aria-label="Search Instagram creators"
+            />
+          </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Followers</Label>
+              <span className="text-sm text-muted-foreground">
+                {formatFollowers(listFollowerRange[0])} - {formatFollowers(listFollowerRange[1])}
+              </span>
+            </div>
+            <Slider
+              value={listFollowerRange}
+              onValueChange={(value) => setListFollowerRange(value as [number, number])}
+              onValueCommit={(value) => {
+                const range = value as [number, number];
+                void fetchList(1, false, {
+                  minFollowers: range[0] > 0 ? range[0] : undefined,
+                  maxFollowers: range[1] < 10000000 ? range[1] : undefined,
+                });
+              }}
+              min={0}
+              max={10000000}
+              step={10000}
+              className="py-2"
+              aria-label="Follower range"
+            />
+          </div>
+          <div>
+            <Button type="submit" variant="outline" size="sm" disabled={listLoading}>
+              {listLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              Search
+            </Button>
+          </div>
+        </form>
+
+        {showUnavailable ? (
+          <div
+            data-testid="instagram-unavailable"
+            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-16 text-center"
+          >
+            <p className="text-sm font-medium">Instagram lookup isn&apos;t connected yet</p>
+            <p className="text-sm text-muted-foreground">
+              We can&apos;t reach Instagram right now — try again shortly, or ask an admin to import
+              handles directly.
+            </p>
+          </div>
+        ) : showFailed ? (
+          <div
+            data-testid="instagram-error"
+            className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-16 text-center"
+          >
+            <AlertTriangle className="h-6 w-6 text-destructive-foreground" aria-hidden="true" />
+            <p className="text-sm font-medium">Couldn&apos;t load Instagram creators</p>
+            <p className="max-w-sm text-sm text-destructive-foreground">
+              {listError ?? 'The server was briefly unavailable.'}
+            </p>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void fetchList(1, false)}>
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              Retry
+            </Button>
+          </div>
+        ) : showInitialLoading ? (
+          <div
+            data-testid="instagram-loading"
+            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            aria-busy="true"
+            aria-live="polite"
+          >
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className="overflow-hidden">
+                <CardContent className="space-y-3 pt-5">
+                  <div className="h-12 w-12 animate-pulse rounded-full bg-muted" />
+                  <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+                  <div className="h-16 w-full animate-pulse rounded bg-muted" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : showEmpty ? (
+          <div
+            data-testid="instagram-empty"
+            className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-16 text-center"
+          >
+            <p className="text-sm font-medium">No Instagram creators sourced yet</p>
+            <p className="text-sm text-muted-foreground">
+              Look up a handle above, or ask an admin to import one.
+            </p>
+          </div>
+        ) : (
+          <>
+            {listError && (
+              <p className="mb-3 text-sm text-destructive-foreground">{listError}</p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {listCreators.map((creator) => (
+                <ExternalCreatorCard key={creator.id} creator={creator} onConnect={openConnect} />
+              ))}
+            </div>
+            {listHasMore && !listLoading && (
+              <div className="flex justify-center pt-4">
+                <Button
+                  variant="outline"
+                  disabled={listLoadingMore}
+                  onClick={() => void fetchList(listPage + 1, true)}
+                >
+                  {listLoadingMore ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                      Loading...
+                    </>
+                  ) : (
+                    'Load more'
+                  )}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Connect dialog */}
+      <Dialog open={Boolean(connectTarget)} onOpenChange={(open) => !open && setConnectTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connect with @{connectTarget?.igUsername}</DialogTitle>
+            <DialogDescription>
+              We&apos;ll send this to the Influora team, who will reach out to the creator and invite
+              them to join. You&apos;ll be emailed when they do.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="ig-connect-message">Message (optional)</Label>
+            <Textarea
+              id="ig-connect-message"
+              value={connectMessage}
+              onChange={(e) => setConnectMessage(e.target.value.slice(0, 1000))}
+              placeholder="Tell us why you'd like to work with this creator…"
+              rows={3}
+              maxLength={1000}
+            />
+            <p className="text-right text-xs text-muted-foreground">{connectMessage.length}/1000</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConnectTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void submitConnect()} disabled={connectSubmitting}>
+              {connectSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
+              Send request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

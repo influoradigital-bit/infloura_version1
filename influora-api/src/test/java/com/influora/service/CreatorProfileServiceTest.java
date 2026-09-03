@@ -38,6 +38,7 @@ class CreatorProfileServiceTest {
     @Mock private CreatorProfileRepository creatorProfileRepository;
     @Mock private PlatformStatRepository platformStatRepository;
     @Mock private UserRepository userRepository;
+    @Mock private ExternalCreatorLinkService externalCreatorLinkService;
     @Mock private AuthPrincipal principal;
 
     private CreatorProfileService service;
@@ -49,7 +50,8 @@ class CreatorProfileServiceTest {
                         creatorContext,
                         creatorProfileRepository,
                         platformStatRepository,
-                        userRepository);
+                        userRepository,
+                        externalCreatorLinkService);
     }
 
     @Test

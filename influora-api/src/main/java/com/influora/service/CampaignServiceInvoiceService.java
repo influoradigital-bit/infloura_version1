@@ -189,7 +189,7 @@ public class CampaignServiceInvoiceService {
                                 () ->
                                         new ApiException(
                                                 "CAMPAIGN_NOT_FOUND",
-                                                "Campaign not found for escrow hold " + hold.getId(),
+                                                "Campaign not found for secured payment " + hold.getId(),
                                                 HttpStatus.CONFLICT));
         Workspace brandWorkspace =
                 workspaceRepository
@@ -198,7 +198,7 @@ public class CampaignServiceInvoiceService {
                                 () ->
                                         new ApiException(
                                                 "WORKSPACE_NOT_FOUND",
-                                                "Brand workspace not found for escrow hold " + hold.getId(),
+                                                "Brand workspace not found for secured payment " + hold.getId(),
                                                 HttpStatus.CONFLICT));
 
         String invoiceNumber =

@@ -85,7 +85,7 @@ beforeEach(() => {
 });
 
 describe('CreatorWalletPage — F-0336 escrow figure is no longer a permanent zero', () => {
-  it('renders a non-zero "In Escrow" figure for a creator with FUNDED milestone money', async () => {
+  it('renders a non-zero "Secured" figure for a creator with FUNDED milestone money', async () => {
     walletGetMock.mockResolvedValue({
       availableBalance: 5000,
       escrowLocked: 15000, // the creator's FUNDED milestone sum — the F-0336 figure
@@ -96,7 +96,7 @@ describe('CreatorWalletPage — F-0336 escrow figure is no longer a permanent ze
     renderWallet();
 
     await waitFor(() => {
-      expect(screen.getByLabelText('In escrow')).toHaveTextContent('₹15,000');
+      expect(screen.getByLabelText('Secured')).toHaveTextContent('₹15,000');
     });
     // The three tiles must be numerically distinct, not the same figure duplicated under two
     // labels (which is what the pre-fix code effectively did once F-0336 fed dead-column zero
@@ -107,7 +107,7 @@ describe('CreatorWalletPage — F-0336 escrow figure is no longer a permanent ze
 });
 
 describe('CreatorWalletPage — F-0281 each label matches the bucket beside it', () => {
-  it('"In Escrow" is defined as brand-funded, not-yet-approved money — not a withdrawal in flight', async () => {
+  it('"Secured" is defined as brand-funded, not-yet-approved money — not a withdrawal in flight', async () => {
     walletGetMock.mockResolvedValue({
       availableBalance: 5000,
       escrowLocked: 15000,
@@ -115,9 +115,9 @@ describe('CreatorWalletPage — F-0281 each label matches the bucket beside it',
       runwayDays: null,
     });
     renderWallet();
-    await waitFor(() => expect(screen.getByLabelText('In escrow')).toHaveTextContent('₹15,000'));
+    await waitFor(() => expect(screen.getByLabelText('Secured')).toHaveTextContent('₹15,000'));
 
-    const tooltip = await openDefinition('In Escrow');
+    const tooltip = await openDefinition('Secured');
     expect(within(tooltip).getByText(/locked for a deal/i)).toBeInTheDocument();
     expect(within(tooltip).getByText(/not withdrawable yet/i)).toBeInTheDocument();
     // Must NOT describe the OTHER bucket (a withdrawal already headed to the bank) — the exact
@@ -169,11 +169,11 @@ describe('CreatorWalletPage — absent is not zero (F-0260 class)', () => {
       expect(screen.getByText(/could not refresh wallet balance/i)).toBeInTheDocument();
     });
     expect(screen.getByLabelText('Available balance')).toHaveTextContent('—');
-    expect(screen.getByLabelText('In escrow')).toHaveTextContent('—');
+    expect(screen.getByLabelText('Secured')).toHaveTextContent('—');
     expect(screen.getByLabelText('Pending payouts')).toHaveTextContent('—');
     // None of the three may render a bare "0"/"₹0" while the fetch is known to have failed.
     expect(screen.getByLabelText('Available balance')).not.toHaveTextContent('₹0');
-    expect(screen.getByLabelText('In escrow')).not.toHaveTextContent('₹0');
+    expect(screen.getByLabelText('Secured')).not.toHaveTextContent('₹0');
     expect(screen.getByLabelText('Pending payouts')).not.toHaveTextContent('₹0');
   });
 
@@ -190,7 +190,7 @@ describe('CreatorWalletPage — absent is not zero (F-0260 class)', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Available balance')).toHaveTextContent('₹0');
     });
-    expect(screen.getByLabelText('In escrow')).toHaveTextContent('₹0');
+    expect(screen.getByLabelText('Secured')).toHaveTextContent('₹0');
     expect(screen.getByLabelText('Pending payouts')).toHaveTextContent('₹0');
     expect(screen.queryByText(/could not refresh wallet balance/i)).not.toBeInTheDocument();
   });

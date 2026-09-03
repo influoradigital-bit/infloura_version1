@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 import com.influora.config.MeeraInteractionLogRetentionProperties;
 import com.influora.repository.MeeraInteractionLogRepository;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.time.temporal.ChronoUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -107,16 +109,20 @@ class MeeraInteractionLogRetentionPurgeJobTest {
     @DisplayName("overlap guard blocks concurrent runs via AtomicBoolean")
     void testOverlapGuardPreventsConcurrentRuns() throws InterruptedException {
         properties.setEnabled(true);
+        CountDownLatch inGuardedSection = new CountDownLatch(1);
         when(repository.deleteByCreatedAtBefore(any(Instant.class)))
                 .thenAnswer(
                         invocation -> {
+                            inGuardedSection.countDown();
                             Thread.sleep(100);
                             return 0;
                         });
 
         Thread thread1 = new Thread(job::purgeExpiredInteractionLogs);
         thread1.start();
-        Thread.sleep(10);
+        assertTrue(
+                inGuardedSection.await(5, TimeUnit.SECONDS),
+                "the first run never entered the guarded section - the overlap guard was not exercised");
 
         job.purgeExpiredInteractionLogs();
 

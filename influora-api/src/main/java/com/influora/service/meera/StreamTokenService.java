@@ -1,12 +1,14 @@
 package com.influora.service.meera;
 
 import com.influora.config.MeeraStreamProperties;
+import com.influora.domain.enums.UserType;
 import com.influora.security.SpringJwksKeyService;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import java.security.PrivateKey;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 
@@ -41,6 +43,16 @@ import org.springframework.stereotype.Service;
  * {@code settings.spring_expected_iss}'s default ({@code SPRING_JWT_ISSUER} env, default {@code
  * "influora-api"}) — the SAME issuer value {@code BrandSafetyServiceTokenProperties} already uses,
  * since both directions share one Spring identity / one published JWKS (ADR binding condition #2).
+ *
+ * <p><b>T-MEERA-CREATOR-PHASE-A fix round 1 (BLOCKING):</b> {@code mint} now also writes a {@code
+ * userType} claim ({@link #USER_TYPE_CLAIM}, value {@link UserType#name()}). influora-ai's {@code
+ * app/auth/audience.py::derive_audience} reads the Meera audience (BRAND vs CREATOR -- which
+ * persona, which Block B, which tool set, whether the DPDP consent gate and the per-creator
+ * monthly cap apply) from the VERIFIED stream token's claims ONLY. It previously fell back to the
+ * on-behalf JWT's {@code userType}, which Python cannot verify (HS256, Spring-only secret) and
+ * which a creator could simply omit from the body to be downgraded to the brand persona with the
+ * brand tool set. A stream token WITHOUT this claim is now refused 403 {@code audience_unverified}
+ * by {@code app/routes/chat.py}, so the claim is mandatory here, not optional.
  */
 @Service
 public class StreamTokenService {
@@ -54,6 +66,12 @@ public class StreamTokenService {
 
     /** Must equal influora-ai's {@code SCOPE_CHAT_STREAM} ({@code service_token.py}, {@code "chat:stream"}). */
     public static final String SCOPE_CHAT_STREAM = "chat:stream";
+
+    /**
+     * Must equal one of influora-ai's {@code AUDIENCE_CLAIM_KEYS} ({@code app/auth/audience.py}) --
+     * the same claim name {@code OnBehalfTokenService} already uses, so both per-turn tokens agree.
+     */
+    public static final String USER_TYPE_CLAIM = "userType";
 
     private final MeeraStreamProperties props;
     private final SpringJwksKeyService jwksKeyService;
@@ -69,8 +87,14 @@ public class StreamTokenService {
      * replays for an already-streamed message (tracked server-side per the contract) — this
      * method only mints; it does not track consumption. Signed with Spring's asymmetric EC/ES256
      * private key — see {@link SpringJwksKeyService}.
+     *
+     * @param userType the caller's verified principal type, minted as the {@link #USER_TYPE_CLAIM}
+     *     claim; influora-ai derives the Meera audience from it (see class javadoc). Never null --
+     *     there is no safe default, because a missing claim is exactly the downgrade this closes.
      */
-    public String mint(String workspaceId, String conversationId, String messageId, String userId) {
+    public String mint(
+            String workspaceId, String conversationId, String messageId, String userId, UserType userType) {
+        Objects.requireNonNull(userType, "userType is required on a stream token (audience claim)");
         long ttl = Math.min(props.getStreamTokenTtlSeconds(), MAX_TTL_SECONDS);
         Instant now = Instant.now();
         Instant exp = now.plusSeconds(ttl);
@@ -89,6 +113,7 @@ public class StreamTokenService {
                 .claim("conversationId", conversationId)
                 .claim("messageId", messageId)
                 .claim("scope", SCOPE_CHAT_STREAM)
+                .claim(USER_TYPE_CLAIM, userType.name())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
                 .signWith(signingKey, Jwts.SIG.ES256)

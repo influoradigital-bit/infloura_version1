@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 
 import com.influora.domain.entity.MetaAuthPath;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -27,7 +29,14 @@ import com.influora.integration.meta.service.MetaRateLimitTracker;
 import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
+import com.influora.config.MetaApiProperties;
+import com.influora.domain.entity.MediaMetric;
+import com.influora.integration.meta.dto.InstagramMediaResponse;
+import com.influora.integration.meta.service.InstagramMetricsFetcher;
+import com.influora.repository.MediaMetricsRepository;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
@@ -60,11 +69,18 @@ class MetricsPollingJobTest {
     @Mock private CreatorMetricsRepository creatorMetricsRepository;
     @Mock private MetaRateLimitTracker rateLimitTracker;
     @Mock private AuditLogService auditLog;
+    // F-0479. metricsFetcher is a lenient mock returning an empty media list by default, so the 13
+    // pre-existing tests below still assert exactly what they always asserted about the profile
+    // poll — the per-post leg is exercised by its own dedicated tests rather than perturbing theirs.
+    @Mock private InstagramMetricsFetcher metricsFetcher;
+    @Mock private MediaMetricsRepository mediaMetricsRepository;
 
     private MetricsPollingJob pollingJob;
+    private MetaApiProperties metaProperties;
 
     @BeforeEach
     void setUp() {
+        metaProperties = new MetaApiProperties();
         pollingJob =
                 new MetricsPollingJob(
                         tokenRepository,
@@ -72,7 +88,10 @@ class MetricsPollingJobTest {
                         instagramClient,
                         creatorMetricsRepository,
                         rateLimitTracker,
-                        auditLog);
+                        auditLog,
+                        metricsFetcher,
+                        mediaMetricsRepository,
+                        metaProperties);
     }
 
     @Test
@@ -114,6 +133,96 @@ class MetricsPollingJobTest {
                         eq(null),
                         eq(null),
                         any());
+    }
+
+    // ---- F-0479: media_metrics persistence ----
+
+    @Test
+    @DisplayName("pollMetrics: writes one media_metrics row per fetched post (F-0479 regression)")
+    void testPollMetricsWritesMediaMetrics() {
+        // Before F-0479 this job fetched no media and wrote no media_metrics rows at all, so the
+        // table had a reader and no writer and every creator scored off an empty list (F-0478).
+        arrangeHappyPath();
+        when(metricsFetcher.fetchMediaWithInsights(
+                        eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(List.of(mediaWithInsights("m1"), mediaWithInsights("m2")));
+
+        pollingJob.pollMetrics();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<MediaMetric>> captor = ArgumentCaptor.forClass(List.class);
+        verify(mediaMetricsRepository).saveAll(captor.capture());
+
+        List<MediaMetric> rows = captor.getValue();
+        assertEquals(2, rows.size());
+        assertEquals(CREATOR_ID, rows.get(0).getCreatorProfileId());
+        assertEquals("INSTAGRAM", rows.get(0).getPlatform());
+        assertEquals("m1", rows.get(0).getMediaId());
+        assertEquals("META_API", rows.get(0).getDataSource());
+    }
+
+    @Test
+    @DisplayName("pollMetrics: media-metrics kill switch off means no fetch and no rows")
+    void testPollMetricsRespectsKillSwitch() {
+        metaProperties.setMediaMetricsEnabled(false);
+        arrangeHappyPath();
+
+        pollingJob.pollMetrics();
+
+        verify(metricsFetcher, never())
+                .fetchMediaWithInsights(anyString(), anyString(), anyInt(), any(MetaAuthPath.class));
+        verify(mediaMetricsRepository, never()).saveAll(anyList());
+        // The profile snapshot is unaffected by the switch.
+        verify(creatorMetricsRepository).save(any(CreatorMetric.class));
+    }
+
+    @Test
+    @DisplayName("pollMetrics: a media/insights failure never loses the creator's profile snapshot")
+    void testMediaFailureDoesNotLoseProfileSnapshot() {
+        arrangeHappyPath();
+        when(metricsFetcher.fetchMediaWithInsights(
+                        anyString(), anyString(), anyInt(), any(MetaAuthPath.class)))
+                .thenThrow(new RuntimeException("Meta exploded"));
+
+        pollingJob.pollMetrics();
+
+        // The CreatorMetric row is committed before the media leg and must survive its failure.
+        verify(creatorMetricsRepository).save(any(CreatorMetric.class));
+        verify(mediaMetricsRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    @DisplayName("pollMetrics: an empty media list writes nothing rather than a placeholder row")
+    void testEmptyMediaWritesNothing() {
+        arrangeHappyPath();
+        when(metricsFetcher.fetchMediaWithInsights(
+                        anyString(), anyString(), anyInt(), any(MetaAuthPath.class)))
+                .thenReturn(List.of());
+
+        pollingJob.pollMetrics();
+
+        verify(mediaMetricsRepository, never()).saveAll(anyList());
+    }
+
+    private void arrangeHappyPath() {
+        MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
+        when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
+                .thenReturn(List.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN_VALUE));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
+        when(instagramClient.getProfile(
+                        IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(
+                        new InstagramUserResponse(
+                                "ig_12345", "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null));
+    }
+
+    private InstagramMetricsFetcher.MediaWithInsights mediaWithInsights(String mediaId) {
+        return new InstagramMetricsFetcher.MediaWithInsights(
+                new InstagramMediaResponse.MediaItem(
+                        mediaId, "caption", "IMAGE", null, "https://instagram.com/p/" + mediaId,
+                        "2026-08-20T10:30:00+0000", 10L, 2L),
+                null);
     }
 
     @Test
@@ -233,9 +342,11 @@ class MetricsPollingJobTest {
 
         InstagramUserResponse profile =
                 new InstagramUserResponse("ig_12345", "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null);
+        CountDownLatch inGuardedSection = new CountDownLatch(1);
         when(instagramClient.getProfile(eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenAnswer(
                         invocation -> {
+                            inGuardedSection.countDown();
                             Thread.sleep(100); // Simulate slow Meta API call
                             return profile;
                         });
@@ -248,8 +359,9 @@ class MetricsPollingJobTest {
                         });
         thread1.start();
 
-        // Give thread1 time to acquire the lock
-        Thread.sleep(10);
+        assertTrue(
+                inGuardedSection.await(5, TimeUnit.SECONDS),
+                "the first run never entered the guarded section - the overlap guard was not exercised");
 
         // Attempt second poll on main thread (should be blocked by overlap guard)
         pollingJob.pollMetrics();

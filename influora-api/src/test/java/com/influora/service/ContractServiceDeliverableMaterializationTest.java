@@ -212,7 +212,8 @@ class ContractServiceDeliverableMaterializationTest {
                         List.of(new DeliverableSlot("REEL", 1)),
                         null,
                         null,
-                        "Let's work together");
+                        "Let's work together",
+                        null);
 
         dealService.createProposal(brandPrincipal, proposalRequest);
 

@@ -28,7 +28,7 @@ import api from '@/lib/api';
 
 describe('api facade shape', () => {
   const EXPECTED_NAMESPACES = [
-    'auth', 'workspaces', 'onboarding', 'campaigns', 'creators', 'deals',
+    'auth', 'workspaces', 'onboarding', 'campaigns', 'creators', 'externalCreators', 'deals',
     'messages', 'contracts', 'deliverables', 'wallet', 'payments', 'dashboard',
     'notifications', 'uploads', 'portfolio', 'analytics', 'creatorAnalytics',
     'contentPerformance', 'campaignTracking', 'storeIntegrations', 'creatorReviews',
@@ -163,6 +163,25 @@ const KNOWN_PHANTOM_PATHS = new Set<string>([
   // nothing imports them. Deferred, not deleted, for the same reason.
   '/notifications/preferences',
   '/analytics/creators/{}/media',
+
+  // -------------------------------------------------------------------------
+  // T-CREATORCONNECT-0902 (2026-09-02) — FE built against the task contract
+  // (.proof-os/tasks/T-CREATORCONNECT-0902/TASKS.md) in parallel with Vikram's backend
+  // (ExternalCreatorController, AdminCreatorConnectionController). Real callers exist
+  // (creator-discovery.tsx Instagram tab, CreatorConnectionsPage.tsx) — these are NOT dead
+  // code, just ahead of the Java controllers landing. Remove once the backend PR merges.
+  // -------------------------------------------------------------------------
+  '/creators/external',
+  '/creators/external/lookup',
+  '/creators/external/{}/connect',
+  '/creators/external/connection-requests',
+  '/admin/creator-connections',
+  '/admin/creator-connections/{}',
+  '/admin/creator-connections/{}/contacted',
+  '/admin/creator-connections/{}/decline',
+  '/admin/creator-connections/{}/invite',
+  '/admin/external-creators',
+  '/admin/external-creators/import',
 ]);
 
 const API_TS = resolve(__dirname, '../api.ts');

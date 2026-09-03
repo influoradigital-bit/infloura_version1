@@ -19,6 +19,7 @@ import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.entity.Review;
 import com.influora.domain.entity.SavedCreator;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ReviewerType;
@@ -462,6 +463,19 @@ public class CreatorDiscoveryService {
                                                 "CAMPAIGN_NOT_FOUND",
                                                 "Campaign not found",
                                                 HttpStatus.NOT_FOUND));
+        // Q6.2 (T-CREATORCONNECT-0902) — the Discover handoff's post-create invite
+        // (campaign-form.tsx) is gated on the FE now sending this only when the campaign is
+        // published, but the server must not trust that: a DRAFT campaign has not been shown to
+        // anyone, and inviting a creator to it exposes an unpublished campaign and (via the
+        // COLLABORATION_EXISTS unique-row semantics above) makes that draft undeletable. Typed,
+        // not a generic 409, so the FE handoff flow can distinguish this from
+        // COLLABORATION_EXISTS below.
+        if (campaign.getStatus() == CampaignStatus.DRAFT) {
+            throw new ApiException(
+                    "CAMPAIGN_NOT_PUBLISHED",
+                    "Publish this campaign before inviting creators",
+                    HttpStatus.CONFLICT);
+        }
         // F-0225 — brand mirror of the creator-side apply guard. This was status-blind, so once a
         // collaboration with this creator had been withdrawn (CANCELLED, row retained) the brand
         // could never invite them to this campaign again — the "already on this campaign" toast

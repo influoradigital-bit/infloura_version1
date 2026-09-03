@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { ArrowLeft, Hash, IndianRupee, Link2, Loader2, Music2, Plus, Users, X, Zap } from 'lucide-react';
 
 import { api, ApiError } from '@/lib/api';
@@ -16,6 +16,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { HypeLiveIndicator } from '@/components/ui/hype-live-indicator';
 import { SlotProgressBar } from '@/components/ui/slot-progress-bar';
 
@@ -38,6 +45,26 @@ import { SlotProgressBar } from '@/components/ui/slot-progress-bar';
 const SUGGESTED_LANES = ['Remix the hook', 'Duet reaction', 'Original spin', 'Voiceover take', 'Tutorial angle'];
 const WINDOW_HOURS = 72;
 
+/**
+ * T-MEERA-CREATOR-PHASE-A (A2) — same vocabulary as `campaign-form.tsx`'s
+ * `endBrandCategoryOptions` so a category reads as the same word on both sides of a deal
+ * regardless of which campaign type created it.
+ */
+const endBrandCategoryOptions = [
+  'Fashion',
+  'Beauty',
+  'Food & Beverage',
+  'Tech & Gadgets',
+  'Travel',
+  'Fitness & Wellness',
+  'Home & Lifestyle',
+  'Finance',
+  'Alcohol',
+  'Tobacco',
+  'Gambling',
+  'Other',
+];
+
 interface HypeFormState {
   title: string;
   description: string;
@@ -47,6 +74,8 @@ interface HypeFormState {
   formatLanes: string[];
   perReelRate: string;
   slotCap: string;
+  endBrandName: string;
+  endBrandCategory: string;
 }
 
 const initialForm: HypeFormState = {
@@ -58,11 +87,23 @@ const initialForm: HypeFormState = {
   formatLanes: ['Remix the hook'],
   perReelRate: '',
   slotCap: '100',
+  endBrandName: '',
+  endBrandCategory: '',
 };
 
 export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: string } = {}) {
   const navigate = useNavigate();
   const { toast } = useToast();
+  // T-CREATORCONNECT-0902 Q6.4 — brand-new-campaign.tsx forwards `?creatorId=`/`?ig=` here when
+  // the brand picks Hype after seeing Discover's "they'll be invited when you publish" banner.
+  // Hype has no per-creator invite concept at all (flat rate x slots, first-come accept — see
+  // the file javadoc above), so rather than silently drop the handoff (the original bug) or fake
+  // an invite that doesn't fit the model, this shows an honest banner instead of repeating a
+  // promise this flow cannot keep. Only read on create — an edit's draft was never mid-handoff.
+  const [searchParams] = useSearchParams();
+  const handoffCreatorId = !campaignId ? searchParams.get('creatorId') : null;
+  const handoffIg = !campaignId ? searchParams.get('ig') : null;
+  const [handoffBannerDismissed, setHandoffBannerDismissed] = React.useState(false);
   const [form, setForm] = React.useState<HypeFormState>(initialForm);
   const [errors, setErrors] = React.useState<Partial<Record<keyof HypeFormState, string>>>({});
   const [submitting, setSubmitting] = React.useState(false);
@@ -106,6 +147,8 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
             // slotCap is half of the escrow multiply (rate x slots), so reviewing a Meera
             // draft must not inherit a silent 100-slot commitment the human never typed.
             slotCap: c.hype?.slotCap ? String(c.hype.slotCap) : '',
+            endBrandName: c.endBrandName ?? '',
+            endBrandCategory: c.endBrandCategory ?? '',
           });
         }
         setIsLoading(false);
@@ -161,6 +204,12 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
     if (form.formatLanes.length === 0) next.formatLanes = 'Pick at least one format lane';
     if (rate <= 0) next.perReelRate = 'Set the flat rate creators earn per reel';
     if (slots <= 0) next.slotCap = 'Set how many creator slots are available';
+    // T-MEERA-CREATOR-PHASE-A (A2) — required for new campaigns; CampaignService.create hard-
+    // 400s without both (END_BRAND_NAME_REQUIRED). Same "only required on create" discipline
+    // as campaign-form.tsx: a legacy Hype campaign being edited (isEditing, pre-existing null)
+    // isn't retroactively blocked from being saved.
+    if (!isEditing && !form.endBrandName.trim()) next.endBrandName = 'End brand name is required';
+    if (!isEditing && !form.endBrandCategory.trim()) next.endBrandCategory = 'End brand category is required';
     // Backend budget.min is @DecimalMin("0.01"); guard the computed rate × slots
     // product so a fractional rate can't yield 0 < total < 0.01 and 400. Independent
     // `if` (not chained off the slots check) so it always runs when rate > 0.
@@ -196,6 +245,11 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
         isPrivate: false,
         maxCollaborators: slots,
         hashtags: [hashtag],
+        // T-MEERA-CREATOR-PHASE-A (fix round 1, item 2) — this create path 400'd
+        // (END_BRAND_NAME_REQUIRED) on every launch until these two were wired through;
+        // `campaignToPayload` (api.ts) forwards them verbatim when present.
+        endBrandName: form.endBrandName.trim() || undefined,
+        endBrandCategory: form.endBrandCategory.trim() || undefined,
         hype: {
           sourceReelUrl: form.sourceReelUrl.trim(),
           audioTrack: form.audioTrack.trim() || undefined,
@@ -284,6 +338,27 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
           <ArrowLeft className="h-4 w-4" aria-hidden="true" /> {isEditing ? 'Campaigns' : 'Campaign types'}
         </Link>
       </Button>
+
+      {handoffCreatorId && !handoffBannerDismissed && (
+        <div
+          data-testid="hype-handoff-banner"
+          className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm"
+        >
+          <p className="text-foreground">
+            Hype campaigns don&apos;t support inviting {handoffIg ? `@${handoffIg}` : 'this creator'} directly
+            — creators join by claiming a slot. To send them a direct invite instead, start an Open
+            or Direct campaign from Discover.
+          </p>
+          <button
+            type="button"
+            onClick={() => setHandoffBannerDismissed(true)}
+            aria-label="Dismiss"
+            className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      )}
 
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
@@ -376,6 +451,50 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
                     />
                   </div>
                   {errors.hashtag && <p className="text-xs text-destructive-foreground">{errors.hashtag}</p>}
+                </div>
+              </div>
+
+              {/* T-MEERA-CREATOR-PHASE-A (A2) — the brand the creator is actually producing
+                  content for. Required going forward so a creator's Meera
+                  (excluded_categories/blocked_brands) has something real to match against;
+                  legacy Hype campaigns keep null until re-saved. */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="hype-end-brand-name">End Brand Name</Label>
+                  <Input
+                    id="hype-end-brand-name"
+                    placeholder="e.g., Kavala Skincare"
+                    value={form.endBrandName}
+                    onChange={(e) => update({ endBrandName: e.target.value })}
+                    className={cn(errors.endBrandName && 'border-destructive-foreground')}
+                  />
+                  {errors.endBrandName && (
+                    <p className="text-xs text-destructive-foreground">{errors.endBrandName}</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="hype-end-brand-category">End Brand Category</Label>
+                  <Select
+                    value={form.endBrandCategory || undefined}
+                    onValueChange={(value) => update({ endBrandCategory: value })}
+                  >
+                    <SelectTrigger
+                      id="hype-end-brand-category"
+                      className={cn(errors.endBrandCategory && 'border-destructive-foreground')}
+                    >
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {endBrandCategoryOptions.map((category) => (
+                        <SelectItem key={category} value={category}>
+                          {category}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.endBrandCategory && (
+                    <p className="text-xs text-destructive-foreground">{errors.endBrandCategory}</p>
+                  )}
                 </div>
               </div>
 
@@ -496,12 +615,12 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
               {slots > 0 && (
                 <div className="rounded-lg border border-hype-border bg-hype/40 p-4">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Escrow required (rate × slots)</span>
+                    <span className="text-muted-foreground">Funds to secure (rate × slots)</span>
                     <span className="font-semibold">{formatINR(totalBudget)}</span>
                   </div>
                   <SlotProgressBar filled={0} total={slots} className="mt-3" />
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Full budget is locked in escrow at launch. Unfilled slots are refunded when the
+                    Full budget is secured at launch. Unfilled slots are refunded when the
                     {' '}{WINDOW_HOURS}-hour window closes.
                   </p>
                 </div>

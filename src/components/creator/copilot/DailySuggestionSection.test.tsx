@@ -40,6 +40,7 @@ const BASE: UseDailySuggestionResult = {
   suggestion: null,
   status: 'idle',
   requiresBusinessAccount: false,
+  verifyingConnection: false,
   error: null,
   dismiss: vi.fn(),
   markActed: vi.fn(),

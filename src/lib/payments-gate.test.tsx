@@ -147,7 +147,7 @@ describe('PaymentsUnavailableNotice', () => {
     expect(screen.getByText(/nothing has been deducted/i)).toBeInTheDocument();
     // The whole lifecycle is listed, so "not switched on yet" is legible as distinct
     // from "this product cannot do it".
-    expect(screen.getByText('Money is held in escrow')).toBeInTheDocument();
+    expect(screen.getByText('Money is held securely')).toBeInTheDocument();
     expect(screen.getByText('Creator withdraws')).toBeInTheDocument();
     expect(screen.getByText('Waiting')).toBeInTheDocument();
   });

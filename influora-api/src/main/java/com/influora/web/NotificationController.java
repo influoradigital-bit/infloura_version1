@@ -17,8 +17,6 @@ import com.influora.web.dto.notification.NotificationDtos.NotificationResponse;
 import com.influora.web.dto.notification.NotificationDtos.PreferencesResponse;
 import com.influora.web.dto.notification.NotificationDtos.SetPreferenceRequest;
 import com.influora.web.dto.notification.NotificationDtos.SetPreferenceResponse;
-import com.influora.web.dto.notification.NotificationDtos.UnsubscribeRequest;
-import com.influora.web.dto.notification.NotificationDtos.UnsubscribeResponse;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +39,13 @@ import org.springframework.web.bind.annotation.RestController;
  * Most queries are scoped to the authenticated user — the exception is {@link
  * #unsubscribeViaLink}, which a recipient reaches straight from an email with no session at all
  * (see {@code SecurityConfig}'s {@code permitAll} for this exact path).
+ *
+ * <p>[F-0444] The authenticated {@code POST /notifications/unsubscribe} was removed: it was a
+ * one-way, write-only subset of {@link #setPreference} ({@code POST /notifications/preferences}
+ * with {@code subscribed:false}) against the same {@code (userId, eventType)} row, and no client
+ * ever called it — the settings screens use the two-way preferences route, and recipients use
+ * {@link #unsubscribeViaLink}. Nothing is lost; there is no third way to write an
+ * {@code EmailPreference}.
  */
 @RestController
 @RequestMapping("/notifications")
@@ -131,32 +136,6 @@ public class NotificationController {
         notificationRepository.markAllReadForUser(user.getUserId());
         long newUnreadCount = notificationRepository.countByUserIdAndIsReadFalse(user.getUserId());
         return ResponseEntity.ok(new MarkReadResponse(true, newUnreadCount));
-    }
-
-    /**
-     * POST /notifications/unsubscribe - unsubscribe from email notifications for an event type.
-     */
-    @PostMapping("/unsubscribe")
-    public ResponseEntity<UnsubscribeResponse> unsubscribe(
-            @AuthenticationPrincipal AuthPrincipal user,
-            @Valid @RequestBody UnsubscribeRequest request) {
-
-        EmailPreference preference =
-                emailPreferenceRepository
-                        .findByUserIdAndEventType(user.getUserId(), request.eventType())
-                        .orElseGet(
-                                () ->
-                                        EmailPreference.builder()
-                                                .id(Ulids.newUlid())
-                                                .userId(user.getUserId())
-                                                .eventType(request.eventType())
-                                                .unsubscribed(false)
-                                                .build());
-
-        preference.setUnsubscribed(true);
-        emailPreferenceRepository.save(preference);
-
-        return ResponseEntity.ok(new UnsubscribeResponse(true, request.eventType()));
     }
 
     /**

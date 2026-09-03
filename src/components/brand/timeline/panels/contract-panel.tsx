@@ -192,12 +192,12 @@ export function ContractPanel({
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <Lock className="h-4 w-4 text-yellow-500" />
-              <h3 className="font-semibold text-sm">Escrow Status</h3>
+              <h3 className="font-semibold text-sm">Secured Funds</h3>
             </div>
             <Card className="border-yellow-200/50 bg-yellow-50/30">
               <CardContent className="pt-4">
                 <p className="text-sm text-muted-foreground">
-                  {hasAmount ? `${formatINR(amount)} is locked in escrow` : 'Escrow amount not yet available'}
+                  {hasAmount ? `${formatINR(amount)} secured` : 'Secured amount not yet available'}
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
                   Funds will be released when all deliverables are approved

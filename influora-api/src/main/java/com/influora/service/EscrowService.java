@@ -196,7 +196,7 @@ public class EscrowService {
 
         if (amount == null || amount.signum() <= 0) {
             throw new ApiException(
-                    "INVALID_ESCROW_AMOUNT", "Escrow amount must be positive", HttpStatus.BAD_REQUEST);
+                    "INVALID_ESCROW_AMOUNT", "Secured amount must be positive", HttpStatus.BAD_REQUEST);
         }
 
         // [BE-2: Vikram, contract-flow-architecture-2026-07-23 §6.5 — escrow gated on ACTIVE]
@@ -225,7 +225,7 @@ public class EscrowService {
             // there is no honest way to guess which of its milestones they meant.
             throw new ApiException(
                     "CAMPAIGN_HAS_UNFUNDED_MILESTONES",
-                    "This campaign has signed deals waiting on escrow. Fund those from the deal room's"
+                    "This campaign has signed deals waiting on secured funds. Secure those from the deal room's"
                             + " Payments panel so the money reaches the creator's milestone — a"
                             + " campaign-level top-up cannot be released to them.",
                     HttpStatus.CONFLICT);
@@ -254,7 +254,7 @@ public class EscrowService {
             // shortfallAmount straight to POST /wallet/topup. All three figures come from this same
             // balance read (`wallet`) and the already-derived `amount`, never re-fetched or guessed.
             throw new InsufficientFundsException(
-                    "Wallet balance is insufficient for this escrow amount",
+                    "Wallet balance is insufficient to secure this amount",
                     amount,
                     wallet.getBalance(),
                     amount.subtract(wallet.getBalance()),
@@ -339,7 +339,7 @@ public class EscrowService {
         if (campaign.getBudgetMax() == null) {
             throw new ApiException(
                     "CAMPAIGN_BUDGET_MISSING",
-                    "Campaign has no budget set — cannot derive an escrow amount",
+                    "Campaign has no budget set — cannot derive the amount to secure",
                     HttpStatus.CONFLICT);
         }
         return campaign.getBudgetMax();
@@ -376,7 +376,7 @@ public class EscrowService {
         if (contract.getBrandSignedAt() == null || contract.getCreatorSignedAt() == null) {
             throw new ApiException(
                     "CONTRACT_NOT_ACTIVE",
-                    "Escrow cannot be funded until the contract is fully signed by both parties",
+                    "Funds cannot be secured until the contract is fully signed by both parties",
                     HttpStatus.CONFLICT);
         }
 
@@ -399,7 +399,7 @@ public class EscrowService {
         if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
             throw new ApiException(
                     "COLLABORATION_CANCELLED",
-                    "This deal was cancelled and its escrow can no longer be funded",
+                    "This deal was cancelled and its funds can no longer be secured",
                     HttpStatus.CONFLICT);
         }
 
@@ -458,7 +458,7 @@ public class EscrowService {
                                 hold.getId(),
                                 hold.getAmount(),
                                 hold.getCurrency(),
-                                "Escrow fund for campaign " + hold.getCampaignId(),
+                                "Funds secured for campaign " + hold.getCampaignId(),
                                 ledgerIdempotencyKey,
                                 gatewayRef));
 
@@ -532,7 +532,7 @@ public class EscrowService {
                     collaboration.getStatus(),
                     ApplicationHistoryActorType.SYSTEM,
                     "system",
-                    "Escrow was funded — work can begin",
+                    "Funds secured — work can begin",
                     // Sign-off review follow-on (#3) — no raw entity id in the human-readable
                     // metadata slot (rendered as error-styled text on the frontend); targetId
                     // (below) already carries the correlation id.
@@ -604,14 +604,14 @@ public class EscrowService {
     private EscrowStatusResponse releaseByHoldIdInternal(String workspaceId, String escrowHoldId) {
         EscrowHold hold = requireHoldForUpdate(escrowHoldId);
         if (!hold.getWorkspaceId().equals(workspaceId)) {
-            throw new ApiException("ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND);
+            throw new ApiException("ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND);
         }
         if (hold.getMilestoneId() != null) {
             // Milestone-backed hold — must go through release(milestoneId) so the B5
             // release_condition gate is never bypassed by addressing the hold directly.
             throw new ApiException(
                     "ESCROW_HOLD_HAS_MILESTONE",
-                    "This escrow hold is tied to milestone "
+                    "This secured payment is tied to milestone "
                             + hold.getMilestoneId()
                             + " — release it via POST /wallet/escrow/release with that milestoneId"
                             + " instead of escrowHoldId",
@@ -625,7 +625,7 @@ public class EscrowService {
             // not a bug; refund() remains available to send the money back to the brand.
             throw new ApiException(
                     "ESCROW_HOLD_NOT_LINKED",
-                    "This escrow hold is not yet linked to a creator collaboration — nothing to"
+                    "This secured payment is not yet linked to a creator collaboration — nothing to"
                             + " release to",
                     HttpStatus.CONFLICT);
         }
@@ -664,7 +664,7 @@ public class EscrowService {
                                 referenceIdFor(hold),
                                 TxnReferenceType.ESCROW_HOLD,
                                 hold.getId(),
-                                "Escrow hold release for campaign " + hold.getCampaignId(),
+                                "Secured funds released for campaign " + hold.getCampaignId(),
                                 idempotencyKey));
 
         hold.markReleased(outcome.releaseTxnId());
@@ -786,7 +786,7 @@ public class EscrowService {
                                                 "MILESTONE_NOT_FOUND", "Milestone not found", HttpStatus.NOT_FOUND));
         if (milestone.getEscrowHoldId() == null) {
             throw new ApiException(
-                    "MILESTONE_NOT_FUNDED", "Milestone has no funded escrow hold", HttpStatus.CONFLICT);
+                    "MILESTONE_NOT_FUNDED", "Milestone has no secured payment", HttpStatus.CONFLICT);
         }
         // [CR-47] Hold-level tenant check retained as defense-in-depth. By this point the milestone
         // lookup above has already proven workspaceId ownership via the campaign join, so this should
@@ -795,7 +795,7 @@ public class EscrowService {
         // than a live cross-tenant probe, and ESCROW_NOT_FOUND is still the right uniform response.
         EscrowHold hold = requireHoldForUpdate(milestone.getEscrowHoldId());
         if (!hold.getWorkspaceId().equals(workspaceId)) {
-            throw new ApiException("ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND);
+            throw new ApiException("ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND);
         }
 
         Collaboration collaboration =
@@ -864,7 +864,7 @@ public class EscrowService {
 
         EscrowHold hold = requireHoldForUpdate(escrowHoldId);
         if (!hold.getWorkspaceId().equals(workspaceId)) {
-            throw new ApiException("ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND);
+            throw new ApiException("ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND);
         }
         if (hold.getStatus() == EscrowStatus.REFUNDED) {
             return toStatusResponse(hold); // idempotent no-op
@@ -887,7 +887,7 @@ public class EscrowService {
                                 hold.getId(),
                                 hold.getAmount(),
                                 hold.getCurrency(),
-                                "Escrow refund for campaign " + hold.getCampaignId(),
+                                "Secured funds refunded for campaign " + hold.getCampaignId(),
                                 idempotencyKey));
 
         hold.markRefunded(outcome.refundTxnId());
@@ -967,7 +967,7 @@ public class EscrowService {
                                     () ->
                                             new ApiException(
                                                     "ESCROW_NOT_FOUND",
-                                                    "Escrow hold not found",
+                                                    "Secured payment not found",
                                                     HttpStatus.NOT_FOUND));
             if (hold.getStatus() == EscrowStatus.FUNDED) {
                 hold.markFrozen();
@@ -1348,7 +1348,7 @@ public class EscrowService {
                     milestone.getCreatedAt());
             throw new ApiException(
                     "RELEASE_CONDITION_NOT_MET",
-                    "Escrow cannot release: collaboration "
+                    "Secured funds cannot be released: collaboration "
                             + milestone.getCollaborationId()
                             + " has no deliverables to satisfy the release condition.",
                     HttpStatus.CONFLICT);
@@ -1529,7 +1529,7 @@ public class EscrowService {
                 .orElseThrow(
                         () ->
                                 new ApiException(
-                                        "ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND));
+                                        "ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND));
     }
 
     private EscrowHold requireHoldForCreator(String escrowHoldId, String creatorUserId) {
@@ -1538,7 +1538,7 @@ public class EscrowService {
                 .orElseThrow(
                         () ->
                                 new ApiException(
-                                        "ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND));
+                                        "ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND));
     }
 
     private EscrowHold requireHold(String escrowHoldId) {
@@ -1547,7 +1547,7 @@ public class EscrowService {
                 .orElseThrow(
                         () ->
                                 new ApiException(
-                                        "ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND));
+                                        "ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND));
     }
 
     private EscrowHold requireHoldForUpdate(String escrowHoldId) {
@@ -1556,7 +1556,7 @@ public class EscrowService {
                 .orElseThrow(
                         () ->
                                 new ApiException(
-                                        "ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND));
+                                        "ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND));
     }
 
     /**
@@ -1579,7 +1579,7 @@ public class EscrowService {
         if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
             throw new ApiException(
                     "COLLABORATION_CANCELLED",
-                    "This deal was cancelled and its escrow can no longer be released to the creator",
+                    "This deal was cancelled and its secured funds can no longer be released to the creator",
                     HttpStatus.CONFLICT);
         }
     }
@@ -1597,7 +1597,7 @@ public class EscrowService {
     private static ApiException escrowBlockedByDispute() {
         return new ApiException(
                 "ESCROW_BLOCKED_BY_DISPUTE",
-                "Escrow release and refund are blocked while a dispute is active on this collaboration",
+                "Secured funds cannot be released or refunded while a dispute is active on this collaboration",
                 HttpStatus.CONFLICT);
     }
 
@@ -1654,7 +1654,7 @@ public class EscrowService {
                     webhookCurrency);
             throw new ApiException(
                     "ESCROW_AMOUNT_MISMATCH",
-                    "Webhook-reported payment amount/currency does not match the expected escrow hold",
+                    "Webhook-reported payment amount/currency does not match the expected secured payment",
                     HttpStatus.CONFLICT);
         }
     }
@@ -1663,7 +1663,7 @@ public class EscrowService {
         if (hold.getStatus() != expected) {
             throw new ApiException(
                     "INVALID_ESCROW_STATE",
-                    "Cannot " + action + " escrow hold in status " + hold.getStatus(),
+                    "Cannot " + action + " secured payment in status " + hold.getStatus(),
                     HttpStatus.CONFLICT);
         }
     }

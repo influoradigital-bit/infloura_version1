@@ -187,4 +187,35 @@ class CollaborationReviveServiceTest {
                 assertThrows(ApiException.class, this::call).getCode());
         verify(collaborationRepository, never()).save(any(Collaboration.class));
     }
+
+    @Test
+    @DisplayName(
+            "CANCELLED with a CANCELLED contract -> still refuse; voiding a contract does not"
+                    + " reverse its milestones or deliverables")
+    void testRefusesWhenCancelledContractRowsRemain() {
+        priorRow(CollaborationStatus.CANCELLED);
+        // The FIRST probe must be false here, or it would short-circuit and mask the one under
+        // test: existsByCollaborationIdAndStatusNot answers ContractService#generate's duplicate
+        // question, under which a CANCELLED contract counts as "clean".
+        when(contractRepository.existsByCollaborationIdAndStatusNot(
+                        COLLAB_ID, ContractStatus.CANCELLED))
+                .thenReturn(false);
+        // F-0232 — the status-blind probe, and until this test the ONLY one no test stubbed
+        // positive. Because contractRepository is a mock, an unstubbed call returned Mockito's
+        // empty-list default and read as clean, so deleting the probe outright would not have
+        // turned a single test red. That invisibility is how F-0232 shipped.
+        //
+        // Why the probe has to be status-blind: cancelling a contract leaves its PaymentMilestone
+        // and Deliverable rows keyed on this collaboration and nothing deletes them, so reviving
+        // the row would re-arm EscrowService's status-based funding and release guards against
+        // artifacts that are still live.
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(COLLAB_ID))
+                .thenReturn(java.util.List.of(org.mockito.Mockito.mock(com.influora.domain.entity.Contract.class)));
+
+        ApiException ex = assertThrows(ApiException.class, this::call);
+
+        assertEquals("COLLABORATION_NOT_REVIVABLE", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
 }

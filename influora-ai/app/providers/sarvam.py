@@ -27,6 +27,59 @@ logger = logging.getLogger(__name__)
 
 SARVAM_BASE_URL = "https://api.sarvam.ai"
 
+# Meera for Creators Phase A (A5): languages this client will pass through to
+# Sarvam as-is (BCP-47, Sarvam's documented `language_code` /
+# `target_language_code` set for saarika STT + bulbul TTS). Hindi and English
+# first; anything not listed falls back to `VOICE_FALLBACK_LANGUAGE` rather
+# than 400ing the provider call (spec §9 risk row: "Sarvam doesn't support
+# en-IN yet -> fallback").
+SUPPORTED_VOICE_LANGUAGES: frozenset[str] = frozenset(
+    {
+        "hi-IN",
+        "en-IN",
+        "bn-IN",
+        "gu-IN",
+        "kn-IN",
+        "ml-IN",
+        "mr-IN",
+        "od-IN",
+        "pa-IN",
+        "ta-IN",
+        "te-IN",
+    }
+)
+VOICE_FALLBACK_LANGUAGE = "hi-IN"
+
+_LANGUAGE_ALIASES = {
+    "hi": "hi-IN",
+    "en": "en-IN",
+    "hinglish": "hi-IN",
+    "hindi": "hi-IN",
+    "english": "en-IN",
+}
+
+
+def normalize_voice_language(language: str | None, default: str = VOICE_FALLBACK_LANGUAGE) -> str:
+    """Maps any caller-supplied language hint onto a Sarvam-supported BCP-47
+    code. `None`/blank -> `default`; a bare 'hi'/'en' or a case variant is
+    canonicalised; anything unsupported -> `default` (then the fallback
+    constant if `default` itself is unsupported). Never raises.
+    """
+    fallback = default if default in SUPPORTED_VOICE_LANGUAGES else VOICE_FALLBACK_LANGUAGE
+    if not language or not isinstance(language, str):
+        return fallback
+    raw = language.strip()
+    if not raw:
+        return fallback
+    alias = _LANGUAGE_ALIASES.get(raw.lower())
+    if alias:
+        return alias
+    parts = raw.replace("_", "-").split("-", 1)
+    canonical = parts[0].lower() + ("-" + parts[1].upper() if len(parts) == 2 else "")
+    if canonical in SUPPORTED_VOICE_LANGUAGES:
+        return canonical
+    return fallback
+
 
 @dataclass
 class TranscribeResult:
@@ -322,10 +375,24 @@ class SarvamProvider:
             recovery_seconds=settings.breaker.recovery_seconds,
         )
 
-    async def transcribe(self, audio_bytes: bytes, *, content_type: str = "audio/wav") -> TranscribeResult:
+    async def transcribe(
+        self,
+        audio_bytes: bytes,
+        *,
+        content_type: str = "audio/wav",
+        language: str | None = None,
+    ) -> TranscribeResult:
         """Hinglish-aware STT. Returns ok=False (never raises) on timeout/error so
         the route can respond with "Didn't catch that - type it instead?".
+
+        `language` (A5): the BCP-47 code posted as Sarvam's `language_code`.
+        `None` falls back to `Settings.voice_default_stt_language` (env
+        VOICE_DEFAULT_STT_LANGUAGE, default hi-IN) -- CREATOR turns always pass
+        the creator's `creator_language` explicitly (see app/routes/voice.py).
         """
+        language_code = normalize_voice_language(
+            language, default=getattr(self._settings, "voice_default_stt_language", "hi-IN")
+        )
         try:
             self._breaker_stt.before_call()
         except CircuitOpenError as exc:
@@ -346,7 +413,7 @@ class SarvamProvider:
                     "/speech-to-text",
                     headers={"api-subscription-key": settings.sarvam_api_key},
                     files={"file": ("audio", audio_bytes, content_type)},
-                    data={"language_code": "hi-IN", "model": "saarika:v2"},
+                    data={"language_code": language_code, "model": "saarika:v2"},
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -364,14 +431,19 @@ class SarvamProvider:
         return TranscribeResult(
             ok=True,
             raw_transcript=transcript,
-            lang_detected=data.get("language_code", "hi-IN"),
+            lang_detected=data.get("language_code", language_code),
             billed=True,
         )
 
-    async def speak(self, text: str, *, lang: str = "en-IN") -> SpeakResult:
+    async def speak(self, text: str, *, lang: str | None = None) -> SpeakResult:
         """Text -> TTS audio. Returns ok=False on any failure so the caller can
         silently disable voice-output while the already-rendered text reply
         stands on its own.
+
+        `lang` (A5): the BCP-47 code posted as Sarvam's `target_language_code`.
+        `None` falls back to `Settings.voice_default_tts_language` (env
+        VOICE_DEFAULT_TTS_LANGUAGE, default en-IN); CREATOR turns always pass
+        the creator's `creator_language` explicitly.
 
         Long replies are split on sentence boundaries (bulbul:v3 caps a single
         input at 2500 chars) and the per-chunk audio is stitched back into one
@@ -389,6 +461,9 @@ class SarvamProvider:
             return SpeakResult(ok=False, error="empty_text")
 
         settings = self._settings
+        target_language_code = normalize_voice_language(
+            lang, default=getattr(settings, "voice_default_tts_language", "en-IN")
+        )
         raw_datas: list[object] = []
         billed_chars = 0
         try:
@@ -441,7 +516,7 @@ class SarvamProvider:
                         #  (v3 auto-preprocesses).
                         json={
                             "inputs": [spoken_chunk],
-                            "target_language_code": lang,
+                            "target_language_code": target_language_code,
                             "speaker": "priya",
                             "model": "bulbul:v3",
                             "pace": 1.1,

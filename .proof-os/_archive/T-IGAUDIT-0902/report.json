@@ -1,0 +1,160 @@
+{
+ "rows": [
+  {
+   "subject": "influora-api/src/main/java/com/influora/repository/MediaMetricsRepository.java",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rn 'mediaMetricsRepository.save' --include=*.java influora-api/src/main/java influora-api/src/test/java | wc -l",
+    "result": "0 \u2014 media_metrics is never written, in main or test",
+    "where": "influora-api/src/main/java/com/influora/job/ScoreCalculationJob.java:280"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/scoring/QualityScoreService.java",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "ast",
+    "command": "read QualityScoreService.java:44-91,100-121 and evaluate the composite for recentMedia=[]",
+    "result": "no empty-recentMedia guard; components resolve to engagement=0, consistency=50, frequency=0, audienceMatch=50 -> composite 20.00 for every creator",
+    "where": "influora-api/src/main/java/com/influora/service/scoring/QualityScoreService.java:44"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/integration/meta/client/InstagramInsightsClient.java#getAccountInsights",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rn 'getAccountInsights' --include=*.java influora-api/src/main/java | grep -v InstagramInsightsClient.java | wc -l",
+    "result": "0 production callers \u2014 account-level reach/views/profile_links_taps is dead code",
+    "where": "influora-api/src/main/java/com/influora/integration/meta/client/InstagramInsightsClient.java:115"
+   }
+  },
+  {
+   "subject": "instagram-story-performance-tracking",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rn '/stories' --include=*.java influora-api/src/main/java",
+    "result": "0 hits \u2014 the /stories edge is never called; MEDIA_FIELDS uses /media, which does not return stories",
+    "where": "influora-api/src/main/java/com/influora/integration/meta/client/InstagramInsightsClient.java:20"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/integration/meta/webhook/MetaPlatformCallbackController.java",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rn '@GetMapping|@PostMapping|hub.challenge|subscribe' influora-api/src/main/java/com/influora/integration/meta/webhook/",
+    "result": "2 POST mappings, both Meta compliance callbacks (deauthorize, data-deletion); no subscription or hub.challenge verify endpoint exists",
+    "where": "influora-api/src/main/java/com/influora/integration/meta/webhook/MetaPlatformCallbackController.java:137"
+   }
+  },
+  {
+   "subject": "meta-oauth-scopes-for-comments-and-marketplace",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rn 'instagram_manage_comments|creator_marketplace|marketplace_discovery' --include=*.java influora-api/src/main/java | wc -l",
+    "result": "0 \u2014 neither scope is requested anywhere; REQUIRED_SCOPES is instagram_basic, instagram_manage_insights, pages_show_list",
+    "where": "influora-api/src/main/java/com/influora/integration/meta/oauth/MetaOAuthService.java:39"
+   }
+  },
+  {
+   "subject": "creator-discovery-demographic-filters",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -n '@RequestParam' influora-api/src/main/java/com/influora/web/CreatorController.java | grep -iE 'audience|demograph|gender|minAge|maxAge|country' | wc -l",
+    "result": "0 \u2014 demographics are a read-only per-profile panel, not a search filter",
+    "where": "influora-api/src/main/java/com/influora/web/CreatorController.java:43"
+   }
+  },
+  {
+   "subject": "creator-discovery-engagement-rate-filter",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -n '@RequestParam' influora-api/src/main/java/com/influora/web/CreatorController.java | grep -c EngagementRate",
+    "result": "4 \u2014 minEngagementRate/maxEngagementRate present on both search endpoints",
+    "where": "influora-api/src/main/java/com/influora/web/CreatorController.java:53"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/domain/entity/CreatorMetric.java",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "ast",
+    "command": "read CreatorMetric.java:36-48 and PlatformStatsAggregationJob.java:226",
+    "result": "builder fails closed to CREATOR_REPORTED; PlatformStat.verified is set from metric.isPlatformVerified(), not hardcoded",
+    "where": "influora-api/src/main/java/com/influora/domain/entity/CreatorMetric.java:48"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/verification/DeliverableVerificationService.java",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "gates/build.sh .",
+    "result": "compiles and its surefire suite is present; per-post insight fetch is wired, but no live Graph API run is proven",
+    "where": "influora-api/src/main/java/com/influora/service/verification/DeliverableVerificationService.java:244"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/job/AudienceDemographicsJob.java",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "ast",
+    "command": "read AudienceDemographicsJob.java:96,188",
+    "result": "@Scheduled weekly and calls getAudienceDemographics; requires 100+ followers per Meta and no live run is proven",
+    "where": "influora-api/src/main/java/com/influora/job/AudienceDemographicsJob.java:96"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/job/CreatorCaptionSyncJob.java",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "ast",
+    "command": "read CreatorCaptionSyncJob.java:85,89",
+    "result": "@Scheduled daily, gated off unless influora.creator-copilot.enabled is true",
+    "where": "influora-api/src/main/java/com/influora/job/CreatorCaptionSyncJob.java:85"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/resources/application.yml#meta",
+   "owner": "meera",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -n -A12 '^  meta:' influora-api/src/main/resources/application.yml",
+    "result": "Facebook-Login path is gated off by blank app-id/app-secret, but Priya (fresh-context) found this does NOT disable all Meta OAuth: Instagram Business Login is gated independently on isInstagramLoginConfigured() (MetaOAuthController.java:79) and can be live with META_APP_ID blank",
+    "where": "influora-api/src/main/java/com/influora/web/MetaOAuthController.java:79"
+   }
+  }
+ ]
+}

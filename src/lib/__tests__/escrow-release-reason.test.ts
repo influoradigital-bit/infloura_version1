@@ -54,8 +54,8 @@ describe('F-0223 — every held reason explains that no money moved', () => {
   });
 
   it('tells the brand what to do about the two they can fix themselves', () => {
-    expect(paymentHeldMessage('MILESTONE_NOT_FUNDED')).toMatch(/fund it from the deal room/i);
-    expect(paymentHeldMessage('ESCROW_NOT_FOUND')).toMatch(/fund it from the deal room/i);
+    expect(paymentHeldMessage('MILESTONE_NOT_FUNDED')).toMatch(/secure them from the deal room/i);
+    expect(paymentHeldMessage('ESCROW_NOT_FOUND')).toMatch(/secure them from the deal room/i);
   });
 
   it('does not present a dispute freeze as a brand to-do', () => {

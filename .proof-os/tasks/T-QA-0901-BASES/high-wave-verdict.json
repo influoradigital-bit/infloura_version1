@@ -1,0 +1,24 @@
+{
+ "verdict": "broken",
+ "oracle": "mvn",
+ "isolation": "oracle",
+ "done_when": "the five actionable high-severity defects fixed, each pinned by a test that fails without the fix",
+ "evidence": {
+  "oracle": "mvn",
+  "command": "mvn -o -Dtest=<class> test for each of the five target classes",
+  "result": "2 of 5 genuinely closed - ConversionTrackingDedupTest 2 of 2 and BrandDeliverableConcurrentApprovalTest 1 of 1. WooCommerceWebhookIdempotencyTest shows redeem firing twice, CampaignAuthzTest passes but a Meera sibling path is unguarded, and EmailOutboxTerminalFailureTest does not exist",
+  "where": "influora-api/src/main/java/com/influora/web/WooCommerceWebhookController.java:250"
+ },
+ "not_checked": [
+  "the FULL backend suite: test-compile now passes but the suite was not run to completion after the fixes, and a concurrent session was editing EmailWorker, BrandDeliverableService, SecurityConfig and DeliverableRepository throughout",
+  "whether the BrandDeliverableService pessimistic lock actually serialises under real concurrency - the reviewer judged its test does NOT pin the fix, so a revert might leave it green",
+  "no fix was exercised at runtime; all evidence is unit-level",
+  "the three highs I did not attempt - F-0535 support ticket create path, F-0551 token in web storage, F-0593 tax identity enforcement - are untouched and each needs a decision"
+ ],
+ "skipped": [
+  {
+   "step": "F-0535, F-0551 and F-0593",
+   "reason": "a feature build, an auth-architecture change and a business rule respectively - none is a bug fix, and inventing the rule is how F-0477 happened"
+  }
+ ]
+}

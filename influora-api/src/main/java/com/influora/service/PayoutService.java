@@ -334,7 +334,7 @@ public class PayoutService {
                         .orElseThrow(
                                 () ->
                                         new ApiException(
-                                                "ESCROW_NOT_FOUND", "Escrow hold not found", HttpStatus.NOT_FOUND));
+                                                "ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND));
 
         // [SEC: Kabir, E2 LOW-2] Ownership BEFORE state — never let a caller distinguish
         // "not yours" from "not released yet" for a milestone in a workspace they aren't a member
@@ -345,7 +345,7 @@ public class PayoutService {
         if (hold.getStatus() != EscrowStatus.RELEASED) {
             throw new ApiException(
                     "MILESTONE_NOT_RELEASED",
-                    "Payout can only be queued after the milestone's escrow is RELEASED",
+                    "Payout can only be queued after the milestone's secured funds are RELEASED",
                     HttpStatus.CONFLICT);
         }
 

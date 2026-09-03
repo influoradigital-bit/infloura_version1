@@ -108,6 +108,17 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
     @Transactional
     public ReviewResponse approve(AuthPrincipal principal, String deliverableId) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
+        requireBrandDeliverable(workspace, deliverableId);
+        // [F-0580] Re-resolved a second time on purpose, immediately before the status check
+        // this approval actually gates on. Deliverable carries no @Version, and this method's
+        // underlying query (DeliverableRepository#findByIdAndWorkspaceId) is now
+        // PESSIMISTIC_WRITE-locked — same pattern EscrowService uses to guard a hold (see
+        // EscrowService#requireHoldForUpdate). Two brand members approving the same SUBMITTED
+        // deliverable concurrently previously both resolved it unlocked, both passed canReview
+        // below on their own in-hand instance, and both reached tryReleaseOnApproval — a double
+        // release, since approval attempts an escrow release (B3). Now the second caller blocks
+        // on this row's lock until the first transaction commits, then this read observes the
+        // already-committed status instead of continuing to act on a stale one.
         Deliverable deliverable = requireBrandDeliverable(workspace, deliverableId);
         if (!canReview(deliverable.getStatus())) {
             throw new ApiException(
@@ -239,6 +250,29 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
      * call itself is wrapped so that a future synchronous {@code @EventListener} on this type
      * could not turn a trail concern into a rolled-back approval either.
      */
+    /**
+     * F-0288 — emits {@link DeliverableRevisionRequestedEvent}. Mirrors {@link
+     * #publishApproved} exactly, including the null-publisher guard and the swallow-and-log: a
+     * failure here must cost the trail row and nothing else, because the revision has already been
+     * applied and saved by the time this runs.
+     */
+    private void publishRevisionRequested(Deliverable deliverable) {
+        if (eventPublisher == null) {
+            return;
+        }
+        try {
+            eventPublisher.publishEvent(
+                    new DeliverableRevisionRequestedEvent(
+                            deliverable.getId(), deliverable.getCollaborationId()));
+        } catch (RuntimeException e) {
+            log.error(
+                    "Could not publish the revision-requested event for deliverable {} — the"
+                            + " revision itself already stands",
+                    deliverable.getId(),
+                    e);
+        }
+    }
+
     private void publishApproved(Deliverable deliverable) {
         if (eventPublisher == null) {
             return;
@@ -275,6 +309,18 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
      */
     public record DeliverableApprovedEvent(String deliverableId, String collaborationId) {}
 
+    /**
+     * F-0288 — the revision half of a deliverable review. Approval had an event and a trail row;
+     * revision had neither, so {@code REVISION_REQUESTED} — a first-class {@code
+     * CollaborationStatus} and the one review outcome that asks the creator to act — happened in
+     * silence. The creator saw their deal move backwards with no entry in the room explaining why.
+     *
+     * <p>Carries no feedback text on purpose. The feedback is already sanitized-but-not-redacted
+     * (see {@code requestRevision}) and the trail row is read by both parties; the row says a
+     * revision was requested and the deliverable itself carries the note.
+     */
+    public record DeliverableRevisionRequestedEvent(String deliverableId, String collaborationId) {}
+
     @Transactional
     public ReviewResponse requestRevision(
             AuthPrincipal principal, String deliverableId, ReviseRequest request) {
@@ -296,6 +342,10 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
         deliverableRepository.save(deliverable);
         // W2-1 — the creator must revise before this collaboration can proceed.
         collaborationLifecycleService.onDeliverableReviewed(deliverable.getCollaborationId());
+        // F-0288 — put this transition on the deal thread. Best-effort on the same terms as
+        // publishApproved: the only consumer is an AFTER_COMMIT listener, and the publish itself is
+        // wrapped, so a trail concern can never roll back a revision the brand already made.
+        publishRevisionRequested(deliverable);
         // Phase 2 item 2.3 — flywheel logging. sanitizedFeedback is HTML-stripped only
         // (TextSanitizer), NOT PII-redacted; MeeraInteractionLogService.record redacts it via
         // SensitiveTextRedactor as its own first line before persisting. campaignId is left null

@@ -2081,7 +2081,7 @@ export default function BrandCampaignDetailPage() {
               </DialogTitle>
               <DialogDescription>
                 Accept {selectedBid?.creator.name}&apos;s proposal of {selectedBid && formatCurrency(selectedBid.amount)}.
-                This will lock funds in escrow and move to the contract stage.
+                This will secure the funds and move to the contract stage.
               </DialogDescription>
             </DialogHeader>
             <div className="py-3 space-y-2 text-sm">
@@ -2092,7 +2092,7 @@ export default function BrandCampaignDetailPage() {
               ))}
               <div className="flex items-center gap-2 mt-3 p-3 bg-primary/10 border border-primary/20 rounded-md text-xs text-primary">
                 <Lock className="h-3.5 w-3.5 shrink-0" />
-                {selectedBid && formatCurrency(selectedBid.amount)} will be locked in escrow until deliverables are approved.
+                {selectedBid && formatCurrency(selectedBid.amount)} will be held securely until deliverables are approved.
               </div>
             </div>
             <DialogFooter className="gap-2">
@@ -2103,7 +2103,7 @@ export default function BrandCampaignDetailPage() {
                 disabled={!!selectedBid && mutatingId === selectedBid.id}
               >
                 {selectedBid && mutatingId === selectedBid.id && <Loader2 className="h-4 w-4 animate-spin" />}
-                Confirm &amp; Lock Escrow
+                Confirm &amp; Secure Funds
               </Button>
             </DialogFooter>
           </DialogContent>

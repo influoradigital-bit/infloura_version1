@@ -634,7 +634,7 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
             <p className="text-xs text-muted-foreground mt-1">
               {neverFunded
                 ? 'Fund this when your first deal is accepted'
-                : `Available · ${formatINR(escrow)} in escrow`}
+                : `Available · ${formatINR(escrow)} secured`}
             </p>
           </div>
           <div className="text-right">

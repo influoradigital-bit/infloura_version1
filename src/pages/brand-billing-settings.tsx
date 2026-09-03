@@ -152,7 +152,7 @@ function CampaignInvoicesCard({ invoices }: { invoices: CampaignServiceInvoice[]
             </div>
             <p className="mt-4 font-medium">No creator invoices yet</p>
             <p className="text-sm text-muted-foreground">
-              These appear once a collaboration's escrow is released to the creator.
+              These appear once a collaboration's secured funds are released to the creator.
             </p>
           </div>
         ) : (

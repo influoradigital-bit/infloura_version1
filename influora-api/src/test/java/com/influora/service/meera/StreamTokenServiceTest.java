@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.influora.config.JwksSigningKeyProperties;
 import com.influora.config.MeeraStreamProperties;
+import com.influora.domain.enums.UserType;
 import com.influora.security.SpringJwksKeyService;
 import com.influora.testsupport.TestEcKeys;
 import io.jsonwebtoken.Claims;
@@ -49,7 +50,7 @@ class StreamTokenServiceTest {
     @Test
     @DisplayName("mint: token carries workspace/conversation/message claims and the user as subject")
     void testMintCarriesExpectedClaims() {
-        String token = service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID);
+        String token = service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID, UserType.BRAND);
 
         Claims claims = service.parse(token);
         assertEquals(WORKSPACE_ID, claims.get("workspaceId"));
@@ -57,6 +58,23 @@ class StreamTokenServiceTest {
         assertEquals(MESSAGE_ID, claims.get("messageId"));
         assertEquals(USER_ID, claims.getSubject());
         assertTrue(claims.getAudience().contains(StreamTokenService.STREAM_AUDIENCE));
+        assertEquals("BRAND", claims.get(StreamTokenService.USER_TYPE_CLAIM, String.class));
+    }
+
+    @Test
+    @DisplayName(
+            "fix round 1: mint carries the verified userType claim influora-ai's derive_audience reads --"
+                    + " a CREATOR principal mints userType=CREATOR, and a null userType is refused")
+    void testMintCarriesUserTypeClaimAndRefusesNull() {
+        String creatorToken =
+                service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID, UserType.CREATOR);
+        Claims claims = service.parse(creatorToken);
+        assertEquals("CREATOR", claims.get(StreamTokenService.USER_TYPE_CLAIM, String.class));
+        assertEquals("userType", StreamTokenService.USER_TYPE_CLAIM);
+
+        assertThrows(
+                NullPointerException.class,
+                () -> service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID, null));
     }
 
     @Test
@@ -66,7 +84,7 @@ class StreamTokenServiceTest {
                     + "SCOPE_CHAT_STREAM (\"chat:stream\"), per app/auth/service_token.py's "
                     + "_decode_and_verify (require iss) and ENDPOINT_SCOPES[\"chat\"]")
     void testMintCarriesIssuerAndScopeClaims() {
-        String token = service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID);
+        String token = service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID, UserType.BRAND);
 
         Claims claims = service.parse(token);
         assertEquals("influora-api", claims.getIssuer());
@@ -78,7 +96,7 @@ class StreamTokenServiceTest {
     @Test
     @DisplayName("mint: signed asymmetrically (ES256) with the configured kid header, not HS256")
     void testMintSignsWithEs256AndKid() {
-        String token = service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID);
+        String token = service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID, UserType.BRAND);
         var header =
                 Jwts.parser().verifyWith(jwksKeyService.publicKey()).build().parseSignedClaims(token).getHeader();
         assertEquals("ES256", header.getAlgorithm());
@@ -95,7 +113,7 @@ class StreamTokenServiceTest {
         SpringJwksKeyService wrongKeyService = new SpringJwksKeyService(wrongProps);
         StreamTokenService serviceWithWrongKey = new StreamTokenService(props, wrongKeyService);
 
-        String forgedToken = serviceWithWrongKey.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID);
+        String forgedToken = serviceWithWrongKey.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID, UserType.BRAND);
 
         assertThrows(SignatureException.class, () -> service.parse(forgedToken));
     }
@@ -106,7 +124,7 @@ class StreamTokenServiceTest {
         props.setStreamTokenTtlSeconds(3600);
         java.time.Instant before = java.time.Instant.now();
 
-        String token = service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID);
+        String token = service.mint(WORKSPACE_ID, CONVERSATION_ID, MESSAGE_ID, USER_ID, UserType.BRAND);
         Claims claims = service.parse(token);
 
         long actualTtl = claims.getExpiration().toInstant().getEpochSecond() - before.getEpochSecond();

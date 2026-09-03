@@ -53,7 +53,7 @@ export function CreatorContractPanel({
     if (status === 'brand_signed') return 'Brand Signed - Your Turn to Sign';
     if (status === 'creator_signed') return 'Both Signed - Active';
     // F-0226: contract ACTIVE means both signed, not that escrow is funded (separate step).
-    if (status === 'active') return 'Both Signed - Awaiting Escrow';
+    if (status === 'active') return 'Both Signed - Awaiting Funding';
     return 'Unknown Status';
   };
 
@@ -107,7 +107,7 @@ export function CreatorContractPanel({
         // when the brand funds a milestone — a separate action. Submit control is gated on in_progress.
         toast({
           title: 'Contract signed',
-          description: 'Waiting for the brand to fund escrow. You’ll be notified when you can start work.',
+          description: 'Waiting for the brand to secure the funds. You’ll be notified when you can start work.',
         });
         setSignerName('');
         onOpenChange(false);
@@ -155,7 +155,7 @@ export function CreatorContractPanel({
               )}
               {status === 'active' && (
                 <p className="text-sm text-blue-700 mt-1">
-                  Both parties have signed. Waiting for the brand to fund escrow before you can start work.
+                  Both parties have signed. Waiting for the brand to secure the funds before you can start work.
                 </p>
               )}
             </div>
@@ -251,7 +251,7 @@ export function CreatorContractPanel({
             <div className="space-y-3 text-sm">
               <div>
                 <p className="text-gray-600">Payment Terms</p>
-                <p className="font-medium">50% upfront (escrow), 50% on completion</p>
+                <p className="font-medium">50% upfront (secured), 50% on completion</p>
               </div>
               <div>
                 <p className="text-gray-600">Deliverables</p>

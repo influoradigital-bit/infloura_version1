@@ -161,4 +161,51 @@ class AuthRateLimitFilterMeeraBucketTest {
             assertEquals(200, response.getStatus());
         }
     }
+
+    // ------------------------------------------------------------------------------------------
+    // T-MEERA-CREATOR-PHASE-A (fix round 2, item 4 — Priya Q10). MEERA_TURN previously matched
+    // ONLY `^/meera/sessions/[^/]+/messages$`, so `POST /creator/meera/sessions/{id}/messages`
+    // (CreatorMeeraController's route, the CREATOR-audience counterpart of the same LLM-cost
+    // surface) never matched at all and every creator Meera turn was completely unthrottled.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("POST /creator/meera/sessions/{id}/messages (the CREATOR-audience route) is throttled per user once meera-turn limit is exceeded")
+    void creatorMeeraTurn_throttledAfterLimit() throws Exception {
+        assertThrottledAfterLimit("POST", "/creator/meera/sessions/convo-1/messages", BRAND_TOKEN, 2);
+    }
+
+    @Test
+    @DisplayName("BRAND-route and CREATOR-route meera-turn share ONE bucket per user, not two independent ones")
+    void meeraTurn_brandAndCreatorRoutesShareOneBucketPerUser() throws Exception {
+        MockHttpServletResponse first = new MockHttpServletResponse();
+        filter.doFilter(
+                authed("POST", "/meera/sessions/convo-1/messages", BRAND_TOKEN), first, new MockFilterChain());
+        assertEquals(200, first.getStatus());
+
+        MockHttpServletResponse second = new MockHttpServletResponse();
+        filter.doFilter(
+                authed("POST", "/creator/meera/sessions/convo-1/messages", BRAND_TOKEN),
+                second,
+                new MockFilterChain());
+        assertEquals(200, second.getStatus());
+
+        MockHttpServletResponse third = new MockHttpServletResponse();
+        filter.doFilter(
+                authed("POST", "/creator/meera/sessions/convo-1/messages", BRAND_TOKEN),
+                third,
+                new MockFilterChain());
+        assertEquals(429, third.getStatus());
+    }
+
+    @Test
+    @DisplayName("Unrelated creator-Meera-adjacent path (/creator/meera/sessions, session start) is not throttled by the new buckets")
+    void creatorMeeraSessionStart_unaffected() throws Exception {
+        for (int i = 0; i < 10; i++) {
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            filter.doFilter(
+                    authed("POST", "/creator/meera/sessions", BRAND_TOKEN), response, new MockFilterChain());
+            assertEquals(200, response.getStatus());
+        }
+    }
 }

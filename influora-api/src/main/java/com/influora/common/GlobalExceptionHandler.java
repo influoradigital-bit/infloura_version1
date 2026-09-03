@@ -64,6 +64,18 @@ public class GlobalExceptionHandler {
                                         ex.getCurrency())));
     }
 
+    // T-CREATORCONNECT-0902 — same "subclass-specific handler wins, no @Order needed" dispatch
+    // as handleInsufficientFunds above. Only place linkedCreatorProfileId is ever put on the wire.
+    @ExceptionHandler(CreatorAlreadyOnInfluoraException.class)
+    public ResponseEntity<ApiResponse<Void>> handleCreatorAlreadyOnInfluora(
+            CreatorAlreadyOnInfluoraException ex) {
+        return ResponseEntity.status(ex.getStatus())
+                .body(
+                        ApiResponse.fail(
+                                ApiErrorBody.creatorAlreadyOnInfluora(
+                                        ex.getMessage(), ex.getLinkedCreatorProfileId())));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
         List<ApiErrorBody.FieldError> fields =

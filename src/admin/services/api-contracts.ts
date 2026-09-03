@@ -7,6 +7,12 @@
  * Backend implementation: Vikram
  */
 
+// F-0486 — the money gate. This is the THIRD client layer that POSTs a money route (after
+// src/lib/api.ts and src/lib/meera-api.ts) and it was the one nobody counted: the payments gate
+// was added to the first, extended to the second when Fund Escrow turned out to use it, and this
+// module was never in either grep's blast radius. Imported from the same module the other two
+// use so all three layers read ONE predicate and cannot disagree about what is available.
+import { isMoneyActionBlocked } from '@/lib/api';
 import type {
   AdminLoginRequest,
   AdminLoginResponse,
@@ -42,6 +48,11 @@ import type {
   ApprovalWorkflow,
   AccountSuspension,
   ModerationAction,
+  AdminConnection,
+  AdminExternalCreator,
+  PagedConnections,
+  ImportExternalCreatorsResult,
+  CreatorConnectionRequestStatus,
   AuditLogEntry,
   ErrorLogEntry,
   EmailQueueItem,
@@ -54,7 +65,12 @@ import type {
   PaginatedSubscriptionResponse,
   CompSubscriptionRequest,
   OverrideSubscriptionRequest,
-  AdminSubscriptionActionResult
+  AdminSubscriptionActionResult,
+  AdminCustomEmailPreviewRequest,
+  AdminCustomEmailPreviewResponse,
+  AdminCustomEmailSendRequest,
+  AdminCustomEmailSendResponse,
+  CreatorAgentBaselines
 } from '../types/admin.types';
 
 // ============================================
@@ -373,13 +389,40 @@ export const financeApi = {
   // stub comment was stale). Response shape is the retried Payout row's own state, not
   // PayoutQueueItem (which needs TDS/creator/campaign fields this endpoint has no data for and
   // must never fabricate).
-  retryPayout: (id: string) =>
-    apiRequest<{
-      payoutId: string;
-      status: string;
-      razorpayPayoutId: string;
-      updatedAt: string;
-    }>(`/finance/payouts/${id}/retry`, { method: 'POST' }),
+  // F-0486 — money OUT, gated. This re-drives PayoutReconciliationService#retryFailedPayout over
+  // the LIVE RazorpayX rail (see the note above), which is the exact rail `PAYOUTS_ENABLED` holds
+  // closed by default — `isMoneyActionBlocked('withdraw')` returns `!PAYOUTS_ENABLED`. Ungated,
+  // this shipped a real payout behind nothing but a window.confirm while every other client path
+  // to that rail was blocked.
+  //
+  // Returns a failed ApiResponse rather than THROWING: ReconciliationPanel calls this as
+  // `financeApi.retryPayout(id).then(…).catch(…)`, and a synchronous throw escapes before `.catch`
+  // is attached — it would surface as an uncaught error in the click handler instead of a message
+  // the admin can read. The existing `else` branch already renders `res.error`.
+  //
+  // Deliberately NOT the `unavailable()` helper above, despite the identical shape: that helper
+  // prefixes "Not available yet — ", which asserts the BACKEND does not expose the route. It does
+  // — AdminFinanceController serves it today. What stops this is a client flag, and saying
+  // "not available yet" would send an admin looking for a missing endpoint instead of a disabled
+  // flag. Same response shape, different fact.
+  retryPayout: (id: string): Promise<ApiResponse<{
+    payoutId: string;
+    status: string;
+    razorpayPayoutId: string;
+    updatedAt: string;
+  }>> =>
+    isMoneyActionBlocked('withdraw')
+      ? Promise.resolve({
+          success: false,
+          error:
+            'Payouts are disabled on this environment, so this retry was not sent. It would have moved real money over the RazorpayX rail.',
+        })
+      : apiRequest<{
+          payoutId: string;
+          status: string;
+          razorpayPayoutId: string;
+          updatedAt: string;
+        }>(`/finance/payouts/${id}/retry`, { method: 'POST' }),
 
   /**
    * Records a bank transfer that ALREADY HAPPENED — POST /admin/finance/payouts/manual.
@@ -644,6 +687,73 @@ export const moderationApi = {
 };
 
 // ============================================
+// CREATOR CONNECTIONS APIs (T-CREATORCONNECT-0902)
+// ============================================
+
+// AdminCreatorConnectionController (Vikram) — mounted at /admin/creator-connections,
+// resolving to /api/v1/admin/creator-connections via API_BASE. Follows AdminCreatorController's
+// discipline exactly (admin auth enforced service-side; every mutation audit-logged there).
+export const creatorConnectionsApi = {
+  /** GET /admin/creator-connections?status=&search=&page=&pageSize= */
+  list: (filters: { status?: CreatorConnectionRequestStatus; search?: string; page?: number; pageSize?: number } = {}) => {
+    // Same "undefined must be an absent param, not the literal string 'undefined'" pitfall as
+    // brandApi.list/creatorApi.list above — build params manually rather than spreading filters.
+    const params = new URLSearchParams();
+    if (filters.status) params.set('status', filters.status);
+    if (filters.search) params.set('search', filters.search);
+    params.set('page', String(filters.page ?? 1));
+    params.set('pageSize', String(filters.pageSize ?? 20));
+    return apiRequest<PagedConnections<AdminConnection>>(`/creator-connections?${params}`);
+  },
+
+  /** GET /admin/creator-connections/:id */
+  get: (id: string) => apiRequest<AdminConnection>(`/creator-connections/${id}`),
+
+  /** POST /admin/creator-connections/:id/contacted — status → CONTACTED. */
+  markContacted: (id: string, notes?: string) =>
+    apiRequest<AdminConnection>(`/creator-connections/${id}/contacted`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    }),
+
+  /** POST /admin/creator-connections/:id/decline — status → DECLINED. */
+  decline: (id: string, notes?: string) =>
+    apiRequest<AdminConnection>(`/creator-connections/${id}/decline`, {
+      method: 'POST',
+      body: JSON.stringify({ notes }),
+    }),
+
+  /**
+   * POST /admin/creator-connections/:id/invite — sets the external creator's email, status →
+   * INVITED, sends `creator.join_invitation`. Re-invite (resend) is allowed by the backend.
+   */
+  invite: (id: string, payload: { email: string; notes?: string }) =>
+    apiRequest<AdminConnection>(`/creator-connections/${id}/invite`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+
+  /** GET /admin/external-creators?status=&q=&page=&pageSize= */
+  externalCreators: (
+    filters: { status?: string; q?: string; page?: number; pageSize?: number } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (filters.status) params.set('status', filters.status);
+    if (filters.q) params.set('q', filters.q);
+    params.set('page', String(filters.page ?? 1));
+    params.set('pageSize', String(filters.pageSize ?? 20));
+    return apiRequest<PagedConnections<AdminExternalCreator>>(`/external-creators?${params}`);
+  },
+
+  /** POST /admin/external-creators/import — { usernames: string[] } (≤50). */
+  importHandles: (usernames: string[]) =>
+    apiRequest<ImportExternalCreatorsResult>('/external-creators/import', {
+      method: 'POST',
+      body: JSON.stringify({ usernames }),
+    }),
+};
+
+// ============================================
 // DISPUTE APIs
 // ============================================
 
@@ -770,6 +880,69 @@ export const emailApi = {
       pending: number;
       avgDeliveryTime: number;
     }>('/emails/stats'),
+
+  /**
+   * POST /emails/custom/preview — T-ADMINMAIL-0903. Renders the branded HTML for the given
+   * subject/body/CTA/audience and returns the live recipient count. A 400 here means an unknown
+   * `{{token}}` in subject or body (SPEC "Personalization") — apiRequest's generic message is
+   * sufficient, the caller renders it inline next to the compose fields, not as a toast.
+   */
+  previewCustom: (request: AdminCustomEmailPreviewRequest) =>
+    apiRequest<AdminCustomEmailPreviewResponse>('/emails/custom/preview', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+
+  /**
+   * POST /emails/custom/send — T-ADMINMAIL-0903. `confirmRecipientCount` must equal the
+   * `recipientCount` the most recent preview returned (SPEC control #3); the backend recomputes
+   * the audience and returns 409 `RECIPIENT_COUNT_CHANGED` when it no longer matches.
+   *
+   * Bypasses the shared `apiRequest` helper for the error path on purpose, same reasoning as
+   * `billingApi`/`finance` fee-config's `updateFeeConfig` above: `GlobalExceptionHandler` wraps
+   * errors as `{ error: { code, message } }`, and the 409 mismatch is a real, expected path the
+   * caller must distinguish from every other failure (SPEC: "not a generic error toast") — so the
+   * `code` has to survive past this call, not get flattened into a string by `apiRequest`.
+   */
+  sendCustom: async (
+    request: AdminCustomEmailSendRequest,
+  ): Promise<{
+    success: boolean;
+    data?: AdminCustomEmailSendResponse;
+    error?: string;
+    /** True when this failure is the recipient-count mismatch (HTTP 409 / RECIPIENT_COUNT_CHANGED) — the caller must force a fresh preview, never resend with the stale count. */
+    recipientCountChanged?: boolean;
+  }> => {
+    const token = localStorage.getItem('admin_token');
+
+    const response = await fetch(`${API_BASE}/emails/custom/send`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (response.ok) {
+      let data: AdminCustomEmailSendResponse;
+      try {
+        data = (await response.json()) as AdminCustomEmailSendResponse;
+      } catch {
+        return { success: false, error: 'Malformed response from server' };
+      }
+      return { success: true, data };
+    }
+
+    const body = (await response.json().catch(() => null)) as {
+      error?: { code?: string; message?: string };
+    } | null;
+    const message = body?.error?.message ?? `Request failed (${response.status})`;
+    const recipientCountChanged =
+      response.status === 409 || body?.error?.code === 'RECIPIENT_COUNT_CHANGED';
+
+    return { success: false, error: message, recipientCountChanged };
+  },
 };
 
 // ============================================
@@ -852,4 +1025,18 @@ export const billingApi = {
       method: 'POST',
       body: JSON.stringify(request),
     }),
+};
+
+// ============================================
+// CREATOR AGENT (Meera-for-Creators) BASELINES — T-MEERA-CREATOR-PHASE-A (A1, fix round 1 item 2)
+// ============================================
+
+/**
+ * `AdminCreatorAgentController` (Vikram), mounted at `/admin/creator-agent` -> resolves to
+ * `/api/v1/admin/creator-agent` via API_BASE. Priya's gate-fix audit found this endpoint had
+ * zero FE callers (`grep -rn "creator-agent/baselines" src/` = 0 hits) — this is that client.
+ */
+export const creatorAgentApi = {
+  /** GET /creator-agent/baselines — read-only Phase A rollout metrics snapshot. */
+  getBaselines: () => apiRequest<CreatorAgentBaselines>('/creator-agent/baselines'),
 };

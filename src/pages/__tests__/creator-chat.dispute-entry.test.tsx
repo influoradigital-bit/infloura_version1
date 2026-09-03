@@ -151,7 +151,7 @@ describe('CreatorChatPage — creator dispute entry point (F-0301)', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText(/dispute can only be raised once escrow is funded/i),
+        screen.getByText(/dispute can only be raised once the funds are secured/i),
       ).toBeInTheDocument(),
     );
     expect(screen.queryByText('Report a problem with this deal')).not.toBeInTheDocument();

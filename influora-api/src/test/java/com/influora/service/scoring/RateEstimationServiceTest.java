@@ -312,6 +312,34 @@ class RateEstimationServiceTest {
         assertEquals(BigDecimal.valueOf(70.0), result.confidence());
     }
 
+    @Test
+    @DisplayName("estimate: an ABSENT quality score does not NPE and adds no confidence bump")
+    void testAbsentQualityAddsNoConfidence() {
+        CreatorMetric metric = creatorMetric(10_000L, new BigDecimal("2"), "META_API");
+
+        RateEstimation result =
+                service.estimate(Optional.of(metric), QualityScoreResult.absent(), List.of());
+
+        // 50 base + 30 META_API, and nothing for a score that was never computed.
+        assertEquals(BigDecimal.valueOf(80.0), result.confidence());
+    }
+
+    @Test
+    @DisplayName("estimate: an ABSENT quality score leaves the rate neutral, not discounted 20%")
+    void testAbsentQualityDoesNotDiscountRate() {
+        // The old fabricated 20.00 composite tripped the `< 40` branch, cutting every unmeasured
+        // creator's estimated rate to 0.8x. Absence must not be read as a low score.
+        CreatorMetric metric = creatorMetric(10_000L, new BigDecimal("2"), "MANUAL");
+
+        RateEstimation absent =
+                service.estimate(Optional.of(metric), QualityScoreResult.absent(), List.of());
+        RateEstimation neutral = service.estimate(Optional.of(metric), NEUTRAL_QUALITY, List.of());
+
+        assertEquals(1.0, absent.factors().get("qualityMultiplier"));
+        assertEquals(neutral.min(), absent.min());
+        assertEquals(neutral.max(), absent.max());
+    }
+
     // --- fixtures ---
 
     private RateEstimation estimateWithFollowersAndNeutralEverything(long followers) {

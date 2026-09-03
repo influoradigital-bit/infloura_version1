@@ -281,7 +281,7 @@ async def test_f05_the_chat_route_holds_budget_across_its_tool_loop(monkeypatch)
 
     with patch.object(chat_route, "verify_token_async", AsyncMock(return_value=VerifiedToken(
         workspace_id="ws-f05b", scope="chat:stream", subject="u",
-        conversation_id="c1", claims={"messageId": "m1"},
+        conversation_id="c1", claims={"messageId": "m1", "userType": "BRAND"},
     ))), patch.object(chat_route, "run_tool_loop", _loop_that_checks_the_hold), patch.object(
         chat_route, "_get_spring", MagicMock(return_value=spring)
     ):

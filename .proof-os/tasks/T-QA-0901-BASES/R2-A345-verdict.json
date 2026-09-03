@@ -1,0 +1,29 @@
+{
+ "verdict": "proved",
+ "oracle": "gates/citations.py",
+ "isolation": "oracle",
+ "done_when": "brand, creator and admin bases each have 100 code-cited Q&A and gates/citations.py --min 100 exits 0",
+ "evidence": {
+  "oracle": "gates/citations.py",
+  "command": "python .proof-os/gates/citations.py .proof-os/tasks/T-QA-0901-BASES/R2-A{3,4,5}-*.answers.md . --min 100",
+  "result": "brand exit 0 (178/178), creator exit 0 (100/100), admin exit 0 (100/100); 100 headings each, no gaps",
+  "where": ".proof-os/tasks/T-QA-0901-BASES/R2-A3-brand.answers.md:1"
+ },
+ "not_checked": [
+  "entailment - the gate proves each cited line exists and is quoted correctly, never that it supports the claim above it",
+  "the append-only constraint could NOT be verified: another process deleted my backups of the 139 partial answers, so I cannot prove answers 1-N are byte-identical to before the continuation run",
+  "the answers are model output from fresh contexts: believed, not proved. Only citation integrity is oracle-proved",
+  "no finding was reproduced at runtime; F-0487 and F-0488 were re-verified by me by reading source, the rest rest on the answerers",
+  "citations were written against a tree a concurrent session is actively editing, so some may already have drifted"
+ ],
+ "skipped": [
+  {
+   "step": "gates lane (dev, 8 blocked classes)",
+   "reason": "the concurrent session was writing gates for the same six classes as recently as 18:46; a third gate per class would deepen F-0482 rather than close anything"
+  },
+  {
+   "step": "all fix agents",
+   "reason": "both source trees were being written throughout; no collision-free lane existed"
+  }
+ ]
+}

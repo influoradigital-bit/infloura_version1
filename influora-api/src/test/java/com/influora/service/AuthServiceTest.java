@@ -74,6 +74,7 @@ class AuthServiceTest {
     @Mock private BrandEmailOtpService brandEmailOtpService;
     @Mock private InfluoraEnvironment environment;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private RegistrationService registrationService;
 
     private AuthService authService;
 
@@ -116,7 +117,8 @@ class AuthServiceTest {
                         jwtService,
                         brandEmailOtpService,
                         environment,
-                        eventPublisher);
+                        eventPublisher,
+                        registrationService);
         // Defaults match application.yml; tests that need OTP/verification gates flip these.
         setField("requireEmailVerification", true);
         setField("requireEmailOtpBeforeRegister", false);
@@ -384,6 +386,38 @@ class AuthServiceTest {
 
         verify(walletRepository).save(any(Wallet.class));
         verify(brandEmailOtpService, never()).requireVerifiedEmail(anyString());
+        // Q5.5: an ordinary (non-invite) registration passes the null inviteToken through
+        // unconditionally — RegistrationService is responsible for treating that as a no-op.
+        verify(registrationService).consumeInviteToken(isNull(), eq(profileCaptor.getValue().getId()));
+    }
+
+    @Test
+    @DisplayName(
+            "Q5.5: creatorRegister forwards a non-blank inviteToken to"
+                    + " RegistrationService#consumeInviteToken with the newly created CreatorProfile's"
+                    + " id, after the profile is persisted")
+    void testCreatorRegisterConsumesInviteToken() {
+        CreatorRegisterRequest withInvite =
+                new CreatorRegisterRequest(
+                        "riya@example.com", "Supersecret1", "Riya", "Sharma", null, true, "signed-invite-token");
+        when(userRepository.existsByEmailIgnoreCase(withInvite.email())).thenReturn(false);
+        when(passwordEncoder.encode("Supersecret1")).thenReturn("hashed-pw");
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(creatorProfileRepository.save(any(CreatorProfile.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(walletRepository.save(any(Wallet.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(anyString(), eq(UserType.CREATOR), anyString(), isNull()))
+                .thenReturn("access-jwt");
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.creatorRegister(withInvite);
+
+        ArgumentCaptor<CreatorProfile> profileCaptor = ArgumentCaptor.forClass(CreatorProfile.class);
+        verify(creatorProfileRepository).save(profileCaptor.capture());
+        verify(registrationService)
+                .consumeInviteToken("signed-invite-token", profileCaptor.getValue().getId());
     }
 
     @Test

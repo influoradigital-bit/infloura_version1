@@ -59,6 +59,12 @@ INFLUORA_JWKS_PRIVATEKEYPEM="$JWKS_PRIV"
 INFLUORA_JWKS_PUBLICKEYPEM="$JWKS_PUB"
 UNSUBSCRIBE_SIGNING_SECRET=$(secret)
 TREND_TAG_INGEST_SECRET=$(secret)
+# Q5.5 (T-CREATORCONNECT-0902) -- signs the creator-invite link consumed by
+# RegistrationService#consumeInviteToken. InviteTokenService.java fails CLOSED (rejects every
+# token) outside the dev/test Spring profile if this is ever left at its committed
+# dev-...-min-32-chars default or shorter than 32 chars -- same random-secret mechanism as the
+# JWT/other signing secrets above, so a fresh box never boots on the forgeable literal.
+CREATOR_INVITE_TOKEN_SECRET=$(secret)
 
 # ---- paste your own ----
 # NOTE: these three MUST use the exact literal SecretsStartupValidator rejects
@@ -74,18 +80,40 @@ MSG91_WIDGET_ID=REPLACE_ME
 MSG91_OTP_TEMPLATE_ID=REPLACE_ME
 MSG91_WELCOME_TEMPLATE_ID=REPLACE_ME
 MSG91_EMAIL_TRANSACTIONAL_TEMPLATE_ID=REPLACE_ME
-# Deploy TLD is .in, not the application.yml default of .com (F-0390 A5) -- already correct,
-# nothing to paste.
+# Deploy TLD is .in, not the application.yml default of .com (F-0390 A5).
+# SENDING DOMAIN = mail.influora.in (INTERIM, chosen 2026-09-02). Both influora.in and
+# mail.influora.in are verified inside MSG91, but only the subdomain is DNS-complete: it has
+# include:mailer91.com in its SPF and a live DKIM key at spaceship._domainkey.mail.influora.in,
+# so MSG91's d=mail.influora.in signature actually resolves and DMARC p=quarantine passes.
+# The apex has NEITHER record yet -- sending as @influora.in today authenticates nowhere and
+# Gmail quarantines it, even though the MSG91 dashboard reports the domain as verified.
+# TO SWITCH TO APEX: import influora.in.apex-msg91.txt in GoDaddy (adds apex SPF include +
+# DKIM + mailer91 CNAME, leaves the Hostinger apex MX alone), wait for the 3600s TTL, confirm
+#   nslookup -type=txt spaceship._domainkey.influora.in 8.8.8.8
+# returns the key, THEN set both vars below to the apex. Never point the apex MX at mailer91 --
+# that is Hostinger's official mailbox delivery.
 MSG91_EMAIL_DOMAIN=mail.influora.in
-MSG91_FROM_EMAIL=noreply@influora.in
+MSG91_FROM_EMAIL=noreply@mail.influora.in
 MSG91_FROM_NAME=Influora
 MSG91_EMAIL_COMPANY_NAME=Influora
 # MSG91's SMTP relay (Msg91EmailClient) -- SMTP_HOST unset means Spring never creates a
 # JavaMailSender bean at all, i.e. all outbound email silently dead (F-0390 A2).
-SMTP_HOST=REPLACE_ME
-SMTP_PORT=587
+SMTP_HOST=smtp.mailer91.com
+# 465 (implicit TLS), NOT the conventional 587: Utho DROPS outbound 587, verified from the VPS
+# on 2026-09-02 -- it fails as SocketTimeoutException "Connect timed out", never as a refusal
+# or an auth error, so it reads like an MSG91 outage when it is purely egress. 465 is open and
+# serves a valid cert (CN=smtp.mailer91.com, AUTH LOGIN PLAIN).
+SMTP_PORT=465
+# The mailbox MSG91 provisions on the SENDING domain, e.g. emailer@mail.influora.in. This is
+# why MSG91_FROM_EMAIL must stay on mail.influora.in: the relay authenticates that domain,
+# and a MAIL FROM outside it comes back 550 5.7.1 Invalid Mail From address received.
 SMTP_USERNAME=REPLACE_ME
 SMTP_PASSWORD=REPLACE_ME
+# STARTTLS must stay false on 465: the session is already encrypted before the banner, and the
+# server still advertises 250-STARTTLS, so leaving this true makes JavaMail renegotiate TLS
+# inside TLS and the connection dies. On 587 the pair inverts (STARTTLS=true, SSL=false).
+SMTP_STARTTLS_ENABLE=false
+SMTP_SSL_ENABLE=true
 R2_ACCOUNT_ID=REPLACE_ME
 R2_ACCESS_KEY_ID=REPLACE_ME
 R2_SECRET_ACCESS_KEY=REPLACE_ME
@@ -107,6 +135,28 @@ META_INSTAGRAM_APP_SECRET=REPLACE_ME
 # recovers which one from the state token. Must match a Valid OAuth Redirect URI byte-for-byte.
 META_REDIRECT_URI=https://app.influora.in/creator/settings/meta/callback
 META_INSTAGRAM_REDIRECT_URI=https://app.influora.in/creator/settings/meta/callback
+# T-CREATORCONNECT-0902 — CreatorMarketplaceClient gate. OFF: instagram_creator_marketplace_discovery
+# cannot even be App-Reviewed yet (wiki/decisions/2026-09-02-what-we-need.md); ExternalCreatorService
+# falls back to the external_creators table (Business Discovery + admin import) regardless.
+META_CREATOR_MARKETPLACE_ENABLED=false
+# Q1.3 (T-CREATORCONNECT-0902) — Influora-owned IG Business system caller for Business Discovery
+# lookups, preferred ahead of borrowing a live creator's own token (which throttles that creator's
+# own MetricsPollingJob — see MetaApiProperties#systemIgUserId javadoc). Blank by default, same
+# off-by-default convention as every other Meta property here: ExternalCreatorService falls
+# through to the pre-existing creator-token path exactly as before when either is unset. No
+# REPLACE_ME — a literal REPLACE_ME would reach InstagramInsightsClient as a real ig-user-id/token
+# and fail confusingly, same reasoning as ADMIN_NOTIFICATION_EMAIL below. Cross-user token reuse on
+# the fallback path this reduces reliance on still needs a platform-terms ruling from Swapnil
+# before being relied on in production; provisioning a real system caller here is what lets that
+# fallback path stop being exercised.
+META_SYSTEM_IG_USER_ID=
+META_SYSTEM_IG_ACCESS_TOKEN=
+# T-CREATORCONNECT-0902 — recipient for admin.creator_connection_requested. No REPLACE_ME
+# here on purpose: nothing in this codebase validates against that literal (grepped, zero
+# hits), so an un-edited REPLACE_ME would reach Msg91EmailClient as a literal "to" address
+# and fail confusingly. Blank is a real, handled value: NotificationListener logs a WARN and
+# skips sending. Fill in a real address to actually receive these emails.
+ADMIN_NOTIFICATION_EMAIL=
 # CompanyTaxStartupValidator REJECTS placeholders -- the API will not boot until these are real
 INFLUORA_COMPANY_GSTIN=REPLACE_ME
 INFLUORA_LEGAL_NAME=REPLACE_ME

@@ -444,6 +444,31 @@ class Settings:
         default_factory=lambda: _get_optional_float("WORKSPACE_DAILY_HARD_CAP_USD")
     )
 
+    # --- Meera for Creators, Phase A (A8) — per-creator MONTHLY cap ---
+    # CREATOR-audience chat turns are metered per creator per calendar month
+    # (UTC), separately from the per-workspace DAILY counters above. Default
+    # USD 0.75/month (~INR 60): an active creator costs 25-45 INR/month against
+    # a 500-750 INR commission on one deal (plan Part 5). Enforced BLOCKING by
+    # `app.costs.spend_tracker.check_creator_spend_gate` before any provider
+    # call; the over-cap reply is a friendly message, never a raw 5xx. Set
+    # `AI_CREATOR_MONTHLY_CAP_USD=0` to disable the cap entirely.
+    ai_creator_monthly_cap_usd: float = field(
+        default_factory=lambda: _get_float("AI_CREATOR_MONTHLY_CAP_USD", 0.75)
+    )
+
+    # --- Voice language defaults (A5) ---
+    # BRAND-audience voice turns have no per-user language preference yet, so
+    # these are the fallbacks when neither the request nor a creator's
+    # preferences supply one. CREATOR-audience turns ALWAYS take
+    # `creator_language` from the creator's Meera preferences (via the
+    # Spring context) for BOTH STT and TTS — see app/routes/voice.py.
+    voice_default_stt_language: str = field(
+        default_factory=lambda: os.getenv("VOICE_DEFAULT_STT_LANGUAGE", "hi-IN")
+    )
+    voice_default_tts_language: str = field(
+        default_factory=lambda: os.getenv("VOICE_DEFAULT_TTS_LANGUAGE", "en-IN")
+    )
+
     # --- F-05 spend reservations ---
     # Pessimistic per-call estimate held between the gate check and the recorded
     # spend, so concurrent callers see each other's in-flight cost instead of

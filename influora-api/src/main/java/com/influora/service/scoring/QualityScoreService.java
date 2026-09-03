@@ -31,19 +31,43 @@ import org.springframework.stereotype.Service;
 public class QualityScoreService {
 
     public record QualityScoreResult(
-            BigDecimal overall, // 0-100 composite
-            BigDecimal engagementScore, // 0-100
-            BigDecimal consistency, // 0-100 (low std dev = high score)
-            BigDecimal frequency, // 0-100 (based on posts/week)
-            BigDecimal audienceMatch // 0-100 (placeholder for brand matching)
-            ) {}
+            BigDecimal overall, // 0-100 composite, or null when UNSCORED
+            BigDecimal engagementScore, // 0-100, or null when UNSCORED
+            BigDecimal consistency, // 0-100 (low std dev = high score), or null when UNSCORED
+            BigDecimal frequency, // 0-100 (based on posts/week), or null when UNSCORED
+            BigDecimal audienceMatch // 0-100 (placeholder for brand matching), or null when UNSCORED
+            ) {
+
+        /**
+         * The "nothing to measure" result: every component {@code null}, meaning UNSCORED — never a
+         * fabricated 0 and never the neutral 50. The four {@code creator_scores} columns these map
+         * to are all NULL-able in V22 precisely so this state is representable, and {@code
+         * ScoreCalculationJob} already states the rule for the brand-safety columns on the same
+         * row: a NULL column means "unscored", never a score.
+         */
+        public static QualityScoreResult absent() {
+            return new QualityScoreResult(null, null, null, null, null);
+        }
+
+        /** True when there was no basis to score this creator at all; see {@link #absent()}. */
+        public boolean isAbsent() {
+            return overall == null;
+        }
+    }
 
     public QualityScoreResult calculate(
             Optional<CreatorMetric> latestMetric, List<MediaMetric> recentMedia) {
 
-        if (latestMetric.isEmpty()) {
-            return new QualityScoreResult(
-                    BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        // No snapshot, or no media rows to measure over. Without media, three of the four
+        // components have no basis whatsoever — engagement scores 0 (line ~82), frequency scores 0,
+        // and consistency falls to its "not enough data" neutral 50 — leaving the fixed
+        // audienceMatch placeholder as the only real contributor. That used to return a composite
+        // of exactly 20.00 for every creator alive: (0*0.40)+(50*0.25)+(0*0.20)+(50*0.15). 20.00
+        // reads as a measured, poor creator rather than as an absent measurement, and it silently
+        // drove a 0.8x rate multiplier and a +20 confidence bump in RateEstimationService.
+        // F-0260's ruling applies: absent, never a fabricated number.
+        if (latestMetric.isEmpty() || recentMedia.isEmpty()) {
+            return QualityScoreResult.absent();
         }
 
         // === Engagement Score (40% weight) ===

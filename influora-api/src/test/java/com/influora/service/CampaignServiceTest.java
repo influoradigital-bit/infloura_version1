@@ -334,7 +334,7 @@ class CampaignServiceTest {
         CampaignPatchRequest req =
                 new CampaignPatchRequest(
                         "New Title", null, null, CampaignStatus.PAUSED, null, null, null, null, null,
-                        null, null, null, null, null, null, null);
+                        null, null, null, null, null, null, null, null, null);
 
         ApiException ex =
                 assertThrows(
@@ -406,13 +406,13 @@ class CampaignServiceTest {
     private static CampaignPatchRequest titlePatchRequest(String title) {
         return new CampaignPatchRequest(
                 title, null, null, null, null, null, null, null, null, null, null, null, null, null,
-                null, null);
+                null, null, null, null);
     }
 
     private static CampaignPatchRequest statusOnlyPatchRequest(CampaignStatus status) {
         return new CampaignPatchRequest(
                 null, null, null, status, null, null, null, null, null, null, null, null, null, null,
-                null, null);
+                null, null, null, null);
     }
 
     private static Campaign activatableCampaign(CampaignStatus status) {
@@ -427,7 +427,7 @@ class CampaignServiceTest {
     private static CampaignPatchRequest activateRequest() {
         return new CampaignPatchRequest(
                 null, null, null, CampaignStatus.ACTIVE, null, null, null, null, null, null, null, null,
-                null, null, null, null);
+                null, null, null, null, null, null);
     }
 
     private static CampaignWriteRequest writeRequest(CampaignIntentType campaignType) {
@@ -452,7 +452,103 @@ class CampaignServiceTest {
                 null,
                 null,
                 null,
-                null);
+                null,
+                "Test Brand",
+                "Test Category");
+    }
+
+    private static CampaignWriteRequest writeRequestWithEndBrand(String endBrandName, String endBrandCategory) {
+        return new CampaignWriteRequest(
+                "Test Campaign Title",
+                "description",
+                null,
+                null,
+                CampaignIntentType.STANDARD,
+                null,
+                new BudgetDto(BigDecimal.TEN, BigDecimal.valueOf(100), "INR"),
+                new TimelineDto(LocalDate.now().plusDays(1), LocalDate.now().plusDays(30)),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                endBrandName,
+                endBrandCategory);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Gate fix round 1 (Priya Q2.3, T-MEERA-CREATOR-PHASE-A) -- create() must 400 when either
+    // end-brand field is missing; previously untested (`grep dealTerms/endBrand` over this file
+    // returned nothing before this pass).
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("create(): missing end_brand_name -> 400 END_BRAND_NAME_REQUIRED, nothing persisted")
+    void testCreateMissingEndBrandNameRejected() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.create(principal, writeRequestWithEndBrand(null, "Beauty")));
+
+        assertEquals("END_BRAND_NAME_REQUIRED", ex.getCode());
+        verify(campaignRepository, never()).save(any(Campaign.class));
+    }
+
+    @Test
+    @DisplayName("create(): blank end_brand_name -> 400 END_BRAND_NAME_REQUIRED (whitespace does not satisfy the requirement)")
+    void testCreateBlankEndBrandNameRejected() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.create(principal, writeRequestWithEndBrand("   ", "Beauty")));
+
+        assertEquals("END_BRAND_NAME_REQUIRED", ex.getCode());
+        verify(campaignRepository, never()).save(any(Campaign.class));
+    }
+
+    @Test
+    @DisplayName("create(): end_brand_name present but missing end_brand_category -> 400 END_BRAND_CATEGORY_REQUIRED")
+    void testCreateMissingEndBrandCategoryRejected() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.create(principal, writeRequestWithEndBrand("Glow Cosmetics", null)));
+
+        assertEquals("END_BRAND_CATEGORY_REQUIRED", ex.getCode());
+        verify(campaignRepository, never()).save(any(Campaign.class));
+    }
+
+    @Test
+    @DisplayName("create(): both end_brand_name and end_brand_category present -> succeeds, both persisted onto the Campaign row")
+    void testCreateWithEndBrandFieldsSucceeds() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(principal.getUserId()).thenReturn(USER_ID);
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.create(principal, writeRequestWithEndBrand("Glow Cosmetics", "Beauty"));
+
+        org.mockito.ArgumentCaptor<Campaign> captor = org.mockito.ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(captor.capture());
+        assertEquals("Glow Cosmetics", captor.getValue().getEndBrandName());
+        assertEquals("Beauty", captor.getValue().getEndBrandCategory());
     }
 
     private static HypeConfigDto validHype() {
@@ -783,7 +879,7 @@ class CampaignServiceTest {
             CampaignStatus status, HypeConfigDto hype, BudgetDto budget) {
         return new CampaignPatchRequest(
                 null, null, null, status, hype, budget, null, null, null, null, null, null, null,
-                null, null, null);
+                null, null, null, null, null);
     }
 
     private static Campaign hypeCampaign(HypeConfigDto hype) {
@@ -800,7 +896,7 @@ class CampaignServiceTest {
     private static CampaignPatchRequest hypePatchRequest(HypeConfigDto hype) {
         return new CampaignPatchRequest(
                 null, null, null, null, hype, null, null, null, null, null, null, null, null,
-                null, null, null);
+                null, null, null, null, null);
     }
 
     // ---------------------------------------------------------------------------------------

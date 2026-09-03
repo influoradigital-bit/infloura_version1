@@ -3,6 +3,7 @@ package com.influora.domain.entity;
 import com.influora.common.TextSanitizer;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.ExclusivityScope;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -15,6 +16,9 @@ import java.time.Instant;
 @Entity
 @Table(name = "collaborations")
 public class Collaboration {
+
+    /** SPEC.md 1.1 — default {@code maxRevisions} for every entry point that doesn't set it explicitly. */
+    private static final int DEFAULT_MAX_REVISIONS = 2;
 
     @Id
     @Column(length = 26)
@@ -53,6 +57,35 @@ public class Collaboration {
     @Column(name = "usage_rights", columnDefinition = "TEXT")
     private String usageRights;
 
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1, A2) — structured deal terms, distinct from the free-text
+     * {@link #usageRights} above. {@code usageMonths} NULL means perpetual only when {@link
+     * #usagePerpetual} is also true; the two are set together by {@link #applyDealTerms}.
+     */
+    @Column(name = "usage_months")
+    private Integer usageMonths;
+
+    @Column(name = "usage_perpetual", nullable = false)
+    private boolean usagePerpetual;
+
+    /** Comma-separated {@link com.influora.domain.enums.UsageChannel} names, e.g. "ORGANIC,PAID_ADS". */
+    @Column(name = "usage_channels", length = 255)
+    private String usageChannels;
+
+    @Column(name = "exclusivity_days")
+    private Integer exclusivityDays;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "exclusivity_scope", nullable = false, length = 32)
+    private ExclusivityScope exclusivityScope;
+
+    /** JSON array of brand names, populated only when {@link #exclusivityScope} == NAMED_BRANDS. */
+    @Column(name = "exclusivity_brands", columnDefinition = "TEXT")
+    private String exclusivityBrands;
+
+    @Column(name = "max_revisions", nullable = false)
+    private int maxRevisions;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -84,6 +117,8 @@ public class Collaboration {
         c.source = CollaborationSource.INVITATION;
         c.currency = currency != null ? currency : "INR";
         c.notes = TextSanitizer.sanitizePlainText(message);
+        c.exclusivityScope = ExclusivityScope.NONE;
+        c.maxRevisions = DEFAULT_MAX_REVISIONS;
         Instant now = Instant.now();
         c.createdAt = now;
         c.appliedAt = now;
@@ -107,6 +142,8 @@ public class Collaboration {
         c.source = CollaborationSource.APPLICATION;
         c.currency = currency != null ? currency : "INR";
         c.notes = TextSanitizer.sanitizePlainText(message);
+        c.exclusivityScope = ExclusivityScope.NONE;
+        c.maxRevisions = DEFAULT_MAX_REVISIONS;
         Instant now = Instant.now();
         c.createdAt = now;
         c.appliedAt = now;
@@ -169,6 +206,60 @@ public class Collaboration {
         this.updatedAt = Instant.now();
     }
 
+    public Integer getUsageMonths() {
+        return usageMonths;
+    }
+
+    public boolean isUsagePerpetual() {
+        return usagePerpetual;
+    }
+
+    public String getUsageChannels() {
+        return usageChannels;
+    }
+
+    public Integer getExclusivityDays() {
+        return exclusivityDays;
+    }
+
+    public ExclusivityScope getExclusivityScope() {
+        return exclusivityScope;
+    }
+
+    public String getExclusivityBrands() {
+        return exclusivityBrands;
+    }
+
+    public int getMaxRevisions() {
+        return maxRevisions;
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1, A2) — set post-construction, same discipline as {@link
+     * #setUsageRights}, so both {@link #propose} and every other entry point (invite/apply, and a
+     * later PATCH of an in-negotiation deal) can attach structured terms without a second
+     * constructor family. Null-guarded per field EXCEPT {@code exclusivityScope}/{@code
+     * maxRevisions}, which always carry a value in the DTO (default NONE / 2) so there is never an
+     * "unset" state to preserve for them.
+     */
+    public void applyDealTerms(
+            Integer usageMonths,
+            boolean usagePerpetual,
+            String usageChannels,
+            Integer exclusivityDays,
+            ExclusivityScope exclusivityScope,
+            String exclusivityBrands,
+            int maxRevisions) {
+        this.usageMonths = usageMonths;
+        this.usagePerpetual = usagePerpetual;
+        this.usageChannels = usageChannels;
+        this.exclusivityDays = exclusivityDays;
+        this.exclusivityScope = exclusivityScope != null ? exclusivityScope : ExclusivityScope.NONE;
+        this.exclusivityBrands = exclusivityBrands;
+        this.maxRevisions = maxRevisions;
+        this.updatedAt = Instant.now();
+    }
+
     public void transitionTo(CollaborationStatus newStatus) {
         this.status = newStatus;
         this.updatedAt = Instant.now();
@@ -215,6 +306,16 @@ public class Collaboration {
         this.notes = TextSanitizer.sanitizePlainText(message);
         this.agreedRate = null;
         this.usageRights = null;
+        // T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1, A2) — same reasoning as agreedRate/usageRights
+        // above: a withdrawn attempt's structured terms must not silently set the terms of the
+        // fresh application/invitation this revives into.
+        this.usageMonths = null;
+        this.usagePerpetual = false;
+        this.usageChannels = null;
+        this.exclusivityDays = null;
+        this.exclusivityScope = ExclusivityScope.NONE;
+        this.exclusivityBrands = null;
+        this.maxRevisions = DEFAULT_MAX_REVISIONS;
         this.currency = newCurrency != null ? newCurrency : "INR";
         Instant now = Instant.now();
         this.appliedAt = now;
@@ -238,6 +339,8 @@ public class Collaboration {
         c.agreedRate = amount;
         c.currency = currency != null ? currency : "INR";
         c.notes = TextSanitizer.sanitizePlainText(message);
+        c.exclusivityScope = ExclusivityScope.NONE;
+        c.maxRevisions = DEFAULT_MAX_REVISIONS;
         Instant now = Instant.now();
         c.createdAt = now;
         c.appliedAt = now;

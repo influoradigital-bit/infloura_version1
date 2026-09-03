@@ -43,11 +43,24 @@ EXEMPT_FILE = re.compile(
 
 VERB = re.compile(r"@(Get|Post|Put|Patch|Delete)Mapping(?:\(\s*(?:value\s*=\s*|path\s*=\s*)?\"([^\"]*)\"|\()?")
 BASE = re.compile(r"@RequestMapping\(\s*(?:value\s*=\s*)?\"([^\"]*)\"")
+# F-0407b: two misses here reported live endpoints as dead.
+#   1. `requestOrNull` was absent from the helper list, so GET /brand/trendspark/nudge
+#      (src/lib/api.ts:5605) read as an orphan.
+#   2. `<[^(]*?>` cannot span a generic that CONTAINS a paren, and real ones do --
+#      http.request<{ creators: (CreatorProfile & {...})[] }>('GET', '/creators/featured')
+#      at src/lib/api.ts:1712. Allow any bounded generic body instead of excluding "(".
 FE_CALL = re.compile(
-    r"""(?:request|requestWithMeta|downloadBlob|postForm|uploadForm|upload|apiRequest)"""
-    r"""\s*(?:<[^(]*?>)?\(\s*"""
+    r"""(?:requestWithMeta|requestOrNull|requestVoid|downloadBlob|postForm|uploadForm"""
+    r"""|apiRequest|request|upload)"""
+    r"""\s*(?:<[\s\S]{0,800}?>\s*)?\(\s*"""
     r"""(?:['"](GET|POST|PUT|PATCH|DELETE)['"]\s*,\s*)?[`'"]([/][^`'"]+)"""
 )
+# F-0407c: an API client that mounts under a prefix sends paths RELATIVE to it --
+# src/admin/services/api-contracts.ts:67 sets API_BASE = '/api/v1/admin' and calls
+# apiRequest('/moderation/approvals/pending'). Compared raw against the controller's
+# /admin/moderation/... every admin endpoint read as unreachable, which is also the
+# whole surface fe_be_endpoints.py separately proves IS wired.
+FE_BASE_CONST = re.compile(r"""API_BASE\s*=\s*['"](?:/api/v1)?(/[A-Za-z0-9_-]+)['"]""")
 # A bare path argument on its own line, as uploadForm(...) and friends are often called.
 FE_PATH_ARG = re.compile(r"""^\s*[`'"](/[A-Za-z0-9_\-/${}.]*)[`'"]\s*,?\s*$""", re.M)
 FE_RAW = re.compile(r"""(?:fetch|EventSource)\(\s*[`'"]([^`'"]+)""")
@@ -55,9 +68,28 @@ FE_RAW = re.compile(r"""(?:fetch|EventSource)\(\s*[`'"]([^`'"]+)""")
 
 def norm(p):
     p = p.split("?")[0].rstrip("/")
+    # F-0407: a call built from an interpolated base URL -- fetch(`${API_BASE_URL}/x`) --
+    # must normalise to "/x". Without this the substitution below turns the prefix into a
+    # leading "*", the path can never equal its backend mapping, and every hand-rolled
+    # fetch reads as an unreachable orphan (/meera/voice/speak, /meera/voice/transcribe
+    # and /deals/*/messages/stream were all reported dead while live). Only a LEADING
+    # interpolation is a base URL; a mid-path ${id} is still a wildcard and is left alone.
+    p = re.sub(r"^\$\{[^}]*\}", "", p)
     p = re.sub(r"\$\{[^}]*\}", "*", p)
     p = re.sub(r"\{[^}]*\}", "*", p)
     p = re.sub(r"/me(?=/|$)", "/*", p)
+    # F-0407d: a NESTED template literal truncates the capture mid-segment --
+    # `/moderation/approvals/pending${type ? `?type=${type}` : ''}` (api-contracts.ts:626)
+    # yields "/moderation/approvals/pending*". A real path parameter is always preceded by
+    # "/" (as in /users/*), so a "*" glued to the end of a segment is a capture artefact,
+    # never a segment of its own. Drop it; keep /users/* untouched.
+    p = re.sub(r"(?<=[^/*])\*+$", "", p)
+    # F-0407e: the same nested-template capture can also end in an UNTERMINATED "${" --
+    # "/moderation/approvals/pending${type ? " -- which the balanced substitutions above
+    # cannot touch because there is no closing brace. Anything from a dangling "${" on is
+    # capture debris, not path.
+    p = re.sub(r"\$\{.*$", "", p).rstrip("/")
+    p = re.sub(r"(?<=[^/*])\*+$", "", p)
     if p.startswith("/api/v1"):
         p = p[7:]
     elif p.startswith("/api"):
@@ -93,12 +125,20 @@ def frontend():
                 if not name.endswith((".ts", ".tsx")) or ".test." in name:
                     continue
                 src = open(os.path.join(dp, name), encoding="utf-8", errors="replace").read()
+                bm = FE_BASE_CONST.search(src)
+                pre = bm.group(1) if bm else ""
+
+                def add(verb, path):
+                    seen.add((verb, norm(path)))
+                    if pre and path.startswith("/"):
+                        seen.add((verb, norm(pre + path)))
+
                 for mm in FE_CALL.finditer(src):
-                    seen.add(((mm.group(1) or "GET").upper(), norm(mm.group(2))))
+                    add((mm.group(1) or "GET").upper(), mm.group(2))
                 for mm in FE_RAW.finditer(src):
-                    seen.add(("ANY", norm(mm.group(1))))
+                    add("ANY", mm.group(1))
                 for mm in FE_PATH_ARG.finditer(src):
-                    seen.add(("ANY", norm(mm.group(1))))
+                    add("ANY", mm.group(1))
     return seen
 
 

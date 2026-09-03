@@ -1,0 +1,249 @@
+queue · 241 runnable, 1 blocked (of 242 workable · 242 open, 0 unclassified, 240 closed, 482 total)
+ #  id       class                        blast sites  exit test              why first
+ 1  F-0382   two-api-layers                  29     1  NO EXIT TEST           money path
+ 2  F-0437   fabricated-data-in-ui            7     1  NO EXIT TEST           money path
+ 3  F-0388   empty-state-misleads-repair      0    23  NO EXIT TEST           money path
+ 4  F-0051   unverified-at-runtime            0    13  NO EXIT TEST           money path
+ 5  F-0064   admin-endpoint-epics             0     1  NO EXIT TEST           money path
+ 6  F-0104   tracker-evidence-conflation      0     1  NO EXIT TEST           money path
+ 7  F-0130   ambiguous-pooled-hold            0     1  NO EXIT TEST           money path
+ 8  F-0141   incomplete-doc-correction        0     1  NO EXIT TEST           money path
+ 9  F-0143   verification-only-ticket-le…     0     1  NO EXIT TEST           money path
+10  F-0158   one-way-flag-latch-in-money…     0     1  NO EXIT TEST           money path
+11  F-0159   delayed-charge-clears-pendi…     0     1  NO EXIT TEST           money path
+12  F-0162   reclaim-op-outside-ops-bean…     0     1  NO EXIT TEST           money path
+13  F-0177   content-consistency              0     1  NO EXIT TEST           money path
+14  F-0184   content-integrity                0     1  NO EXIT TEST           money path
+15  F-0232   revive-ignores-attached-art…     0     1  NO EXIT TEST           money path
+16  F-0288   thin-event-log                   0     1  NO EXIT TEST           money path
+17  F-0305   best-effort-guard-that-isnt      0     1  NO EXIT TEST           money path
+18  F-0307   raw-ids-as-error-text            0     1  NO EXIT TEST           money path
+19  F-0381   dead-endpoint                    0     1  NO EXIT TEST           money path
+20  F-0389   unreachable-endpoint-repair      0     1  NO EXIT TEST           money path
+21  F-0390   flag-absent-from-build-pipe…     0     1  NO EXIT TEST           money path
+22  F-0391   partial-provisioning-strand…     0     1  NO EXIT TEST           money path
+23  F-0402   money-path-dead-end              0     1  NO EXIT TEST           money path
+24  F-0415   compliance-gap                   0     1  NO EXIT TEST           money path
+25  F-0416   unreachable-endpoint             0     1  NO EXIT TEST           money path
+26  F-0445   unreachable-endpoint             0     1  NO EXIT TEST           money path
+27  F-0450   unreachable-endpoint             0     1  NO EXIT TEST           money path
+28  F-0473   money-path-dead-end              0     1  NO EXIT TEST           money path
+29  F-0476   unenforced-limit                 0     1  NO EXIT TEST           money path
+30  F-0348   role-token-slot-cross-writt…   183     1  NO EXIT TEST           auth path
+31  F-0455   revoke-control-gated-on-wro…     5     1  NO EXIT TEST           auth path
+32  F-0172   stated-invariant-not-univer…     3     1  NO EXIT TEST           auth path
+33  F-0093   unbounded-poll                   2     1  NO EXIT TEST           auth path
+34  F-0367   meta-app-secret-proof-disab…     0     1  NO EXIT TEST           auth path
+35  F-0368   expired-justification-kept-…     0     1  NO EXIT TEST           auth path
+36  F-0374   prod-compose-omits-meta-con…     0     1  NO EXIT TEST           auth path
+37  F-0385   unusable-credential              0     1  NO EXIT TEST           auth path
+38  F-0387   audit-scope-reads-as-allcle…     0     1  NO EXIT TEST           auth path
+39  F-0404   machine-bound-config             0     1  NO EXIT TEST           auth path
+40  F-0429   silent-oracle                    0     1  NO EXIT TEST           crashes
+41  F-0454   client-crash-reports-never-…     0     1  NO EXIT TEST           crashes
+42  F-0202   fabricated-verification-cla…    15     1  NO EXIT TEST           ships fake data
+43  F-0089   hardcoded-contract-terms         5     1  NO EXIT TEST           ships fake data
+44  F-0411   dead-control                     5     1  NO EXIT TEST           ships fake data
+45  F-0461   mock-in-production-path          5     1  NO EXIT TEST           ships fake data
+46  F-0344   dead-control-hardcoded-empt…     4     1  NO EXIT TEST           ships fake data
+47  F-0352   mock-in-live                     4     1  NO EXIT TEST           ships fake data
+48  F-0419   mocked-surface                   3     1  NO EXIT TEST           ships fake data
+49  F-0434   dropped-field-at-call-site       3     1  NO EXIT TEST           ships fake data
+50  F-0441   mock-data-in-live-mode           3     1  NO EXIT TEST           ships fake data
+51  F-0136   missing-mock-stub-for-new-g…     0     1  NO EXIT TEST           ships fake data
+52  F-0313   neutered-guard-test              0     1  NO EXIT TEST           ships fake data
+53  F-0330   weaker-guard-on-one-surface      0     1  NO EXIT TEST           ships fake data
+54  F-0369   hardcoded-host-in-user-inst…     0     1  NO EXIT TEST           ships fake data
+55  F-0420   hardcoded-neutral-value          0     1  NO EXIT TEST           ships fake data
+56  F-0426   stale-runtime-copy               0     1  NO EXIT TEST           ships fake data
+57  F-0446   unreachable-endpoint             0     1  NO EXIT TEST           ships fake data
+58  F-0091   dead-server-value              183     1  NO EXIT TEST           cleanup
+59  F-0435   dto-drift                      183     1  NO EXIT TEST           cleanup
+60  F-0438   no-session-recovery            183     1  NO EXIT TEST           cleanup
+61  F-0442   dead-protocol-support          183     1  NO EXIT TEST           cleanup
+62  F-0277   latent-dead-control              8     1  NO EXIT TEST           cleanup
+63  F-0182   ux-dead-end                      5     1  NO EXIT TEST           cleanup
+64  F-0280   publish-fails-late               5     1  NO EXIT TEST           cleanup
+65  F-0359   dead-control-optional-field…     5     1  NO EXIT TEST           cleanup
+66  F-0405   dead-control                     5     1  NO EXIT TEST           cleanup
+67  F-0102   dead-click-target                4     1  NO EXIT TEST           cleanup
+68  F-0371   aeo-schema-built-but-unemit…     3     1  NO EXIT TEST           cleanup
+69  F-0094   dead-field                       2     1  NO EXIT TEST           cleanup
+70  F-0088   ledger-reference-type-misla…     0     1  NO EXIT TEST           cleanup
+71  F-0124   dead-wip-blocks-build            0     1  NO EXIT TEST           cleanup
+72  F-0149   unused-ts-expect-error           0     1  NO EXIT TEST           cleanup
+73  F-0154   shape-sniffing-id-username-…     0     1  NO EXIT TEST           cleanup
+74  F-0299   dead-route-cta                   0     1  NO EXIT TEST           cleanup
+75  F-0356   meta-compliance-callback-mi…     0     1  NO EXIT TEST           cleanup
+76  F-0366   meta-privacy-policy-url-dead     0     1  NO EXIT TEST           cleanup
+77  F-0370   live-cta-points-at-dead-dom…     0     1  NO EXIT TEST           cleanup
+78  F-0375   dead-code                        0     1  NO EXIT TEST           cleanup
+79  F-0380   dead-write-path                  0     1  NO EXIT TEST           cleanup
+80  F-0407   false-red-tool-error             0     1  NO EXIT TEST           cleanup
+81  F-0412   dead-control                     0     1  NO EXIT TEST           cleanup
+82  F-0423   false-red-tool-error             0     1  NO EXIT TEST           cleanup
+83  F-0448   unreachable-endpoint             0     1  NO EXIT TEST           cleanup
+84  F-0449   unreachable-endpoint             0     1  NO EXIT TEST           cleanup
+85  F-0474   gate-evadable-by-variant         0     1  NO EXIT TEST           cleanup
+86  F-0482   duplicate-gate-drift             0     1  NO EXIT TEST           cleanup
+87  F-0297   contract-drift-across-agents   183     1  NO EXIT TEST           —
+88  F-0363   shared-type-narrower-than-d…   183     1  NO EXIT TEST           —
+89  F-0408   contract-drift                 183     1  NO EXIT TEST           —
+90  F-0431   contract-drift                 183     1  NO EXIT TEST           —
+91  F-0439   no-request-timeout             183     1  NO EXIT TEST           —
+92  F-0464   dto-drift                      183     1  NO EXIT TEST           —
+93  F-0466   validation-errors-unmappable   183     1  NO EXIT TEST           —
+94  F-0452   mandatory-mfa-unenrollable-…    48     1  NO EXIT TEST           —
+95  F-0187   product-inconsistency           31     1  NO EXIT TEST           —
+96  F-0101   silent-default-fallback         17     1  NO EXIT TEST           —
+97  F-0211   prod-console-noise               8     1  NO EXIT TEST           —
+98  F-0199   ungated-edit-link                7     1  NO EXIT TEST           —
+99  F-0287   spec-conflicts-ruling            7     1  NO EXIT TEST           —
+100  F-0327   accepted-status-not-surface…     7     1  NO EXIT TEST           —
+101  F-0060   unqualified-redirect             5     1  NO EXIT TEST           —
+102  F-0228   producer-reported-complete-…     5     1  NO EXIT TEST           —
+103  F-0360   off-by-one-revision-count        5     1  NO EXIT TEST           —
+104  F-0361   false-policy-assertion           5     1  NO EXIT TEST           —
+105  F-0409   contract-drift                   5     1  NO EXIT TEST           —
+106  F-0410   empty-state-misleads             5     1  NO EXIT TEST           —
+107  F-0061   latched-wrong-selection          4     1  NO EXIT TEST           —
+108  F-0125   no-op-ui-control                 4     1  NO EXIT TEST           —
+109  F-0128   ambiguous-metric-denominator     4     1  NO EXIT TEST           —
+110  F-0196   optimistic-send-no-dealid-g…     4     1  NO EXIT TEST           —
+111  F-0200   disabled-not-accessible          4     1  NO EXIT TEST           —
+112  F-0278   empty-state-misleads             4     1  NO EXIT TEST           —
+113  F-0345   unguarded-required-field         4     1  NO EXIT TEST           —
+114  F-0346   action-error-destroys-list       4     1  NO EXIT TEST           —
+115  F-0349   empty-state-misleads             4     1  NO EXIT TEST           —
+116  F-0351   unreachable-dialog               4     1  NO EXIT TEST           —
+117  F-0353   brand-feedback-never-shown-…     4     1  NO EXIT TEST           —
+118  F-0354   collected-input-discarded        4     1  NO EXIT TEST           —
+119  F-0362   live-mode-no-op-control          4     1  NO EXIT TEST           —
+120  F-0432   dropped-field-at-call-site       4     1  NO EXIT TEST           —
+121  F-0460   incomplete-logout                4     1  NO EXIT TEST           —
+122  F-0463   fabricated-data-in-ui            4     1  NO EXIT TEST           —
+123  F-0062   id-space-mismatch                3     1  NO EXIT TEST           —
+124  F-0118   stale-read-receipt               3     1  NO EXIT TEST           —
+125  F-0119   inconsistent-effect-deps         3     1  NO EXIT TEST           —
+126  F-0142   cache-invalidation-bounce-l…     3     1  NO EXIT TEST           —
+127  F-0275   first-run-routing                3     1  NO EXIT TEST           —
+128  F-0286   history-ui-absent                3     1  NO EXIT TEST           —
+129  F-0331   fr02-undecided-on-second-su…     3     1  NO EXIT TEST           —
+130  F-0383   claim-outruns-capability         3     1  NO EXIT TEST           —
+131  F-0462   full-replace-patch-clears-f…     3     1  NO EXIT TEST           —
+132  F-0468   partial-fix-narrows-defect       3     1  NO EXIT TEST           —
+133  F-0092   optimistic-update-race           2     1  NO EXIT TEST           —
+134  F-0183   routing-consistency              2     1  NO EXIT TEST           —
+135  F-0436   empty-state-misleads             2     1  NO EXIT TEST           —
+136  F-0459   storage-split-breaks-guard       2     1  NO EXIT TEST           —
+137  F-0465   token-in-url                     2     1  NO EXIT TEST           —
+138  F-0056   truncated-gate-output            0    26  NO EXIT TEST           —
+139  F-0026   unproved-progress-claim          0     1  NO EXIT TEST           —
+140  F-0028   spec-assigns-proved-without…     0     1  NO EXIT TEST           —
+141  F-0029   false-green-gate-blind-spot      0     1  NO EXIT TEST           —
+142  F-0032   destructive-rerun                0     1  NO EXIT TEST           —
+143  F-0033   duplicate-skill-double-count     0     1  NO EXIT TEST           —
+144  F-0034   common-word-phantom-routing      0     1  NO EXIT TEST           —
+145  F-0035   weak-oracle-counted-as-proof     0     1  NO EXIT TEST           —
+146  F-0045   jurisdiction-glob-gap            0     1  NO EXIT TEST           —
+147  F-0053   stale-runtime-copy               0     1  NO EXIT TEST           —
+148  F-0057   silent-oracle                    0     1  NO EXIT TEST           —
+149  F-0058   stale-allowlist                  0     1  NO EXIT TEST           —
+150  F-0059   model-attested-green             0     1  NO EXIT TEST           —
+151  F-0084   eval-coverage-gap-deferred       0     1  NO EXIT TEST           —
+152  F-0085   claim-outran-its-evidence        0     1  NO EXIT TEST           —
+153  F-0090   unenveloped-write-endpoint       0     1  NO EXIT TEST           —
+154  F-0096   missing-oracle                   0     1  NO EXIT TEST           —
+155  F-0097   unrelated-pre-existing-buil…     0     1  NO EXIT TEST           —
+156  F-0098   copy-paste-navigation-regre…     0     1  NO EXIT TEST           —
+157  F-0117   no-degraded-state-indicator      0     1  NO EXIT TEST           —
+158  F-0121   untested-dto-field               0     1  NO EXIT TEST           —
+159  F-0122   stale-form-state                 0     1  NO EXIT TEST           —
+160  F-0129   inconsistent-spend-definiti…     0     1  NO EXIT TEST           —
+161  F-0133   untested-authz-gate              0     1  NO EXIT TEST           —
+162  F-0137   dropped-field                    0     1  NO EXIT TEST           —
+163  F-0138   no-frontend-consumer             0     1  NO EXIT TEST           —
+164  F-0140   unvalidated-free-text-enum       0     1  NO EXIT TEST           —
+165  F-0144   analytics-funnel-unjoinable      0     1  NO EXIT TEST           —
+166  F-0145   silent-multi-tool-drop           0     1  NO EXIT TEST           —
+167  F-0147   weak-count-assertion             0     1  NO EXIT TEST           —
+168  F-0148   doc-drift                        0     1  NO EXIT TEST           —
+169  F-0153   inconsistent-json-convention     0     1  NO EXIT TEST           —
+170  F-0156   concurrent-write-double-del…     0     1  NO EXIT TEST           —
+171  F-0160   idempotency-save-is-silent-…     0     1  NO EXIT TEST           —
+172  F-0161   ambient-transaction-defeats…     0     1  NO EXIT TEST           —
+173  F-0163   idor-key-space-accidental-s…     0     1  NO EXIT TEST           —
+174  F-0178   asset-missing                    0     1  NO EXIT TEST           —
+175  F-0193   connected-since-preservatio…     0     1  NO EXIT TEST           —
+176  F-0194   misleading-test-displayname…     0     1  NO EXIT TEST           —
+177  F-0205   gate-budget-too-small            0     1  NO EXIT TEST           —
+178  F-0231   wrong-sql-dialect                0     1  NO EXIT TEST           —
+179  F-0233   backfill-clobbers-audit-tim…     0     1  NO EXIT TEST           —
+180  F-0284   missing-event-model              0     1  NO EXIT TEST           —
+181  F-0285   missing-view-tracking            0     1  NO EXIT TEST           —
+182  F-0298   cross-role-route-leak            0     1  NO EXIT TEST           —
+183  F-0300   nondeterministic-ordering        0     1  NO EXIT TEST           —
+184  F-0302   self-inflicted-rejection-la…     0     1  NO EXIT TEST           —
+185  F-0303   arbitration-breach-now-live      0     1  NO EXIT TEST           —
+186  F-0306   label-defeated-by-descripti…     0     1  NO EXIT TEST           —
+187  F-0309   fixture-transcription-is-pe…     0     1  NO EXIT TEST           —
+188  F-0311   event-outlives-rolled-back-…     0     1  NO EXIT TEST           —
+189  F-0312   value-drift-not-shape-drift      0     1  NO EXIT TEST           —
+190  F-0314   fk-vs-requires-new-at-apply      0     1  NO EXIT TEST           —
+191  F-0315   status-label-map-bypassed        0     1  NO EXIT TEST           —
+192  F-0316   best-effort-write-suppresse…     0     1  NO EXIT TEST           —
+193  F-0317   guard-weaker-than-its-javad…     0     1  NO EXIT TEST           —
+194  F-0328   event-has-no-caller              0     1  NO EXIT TEST           —
+195  F-0332   overruled-reasoning-still-s…     0     1  NO EXIT TEST           —
+196  F-0347   mutation-not-published-to-s…     0     1  NO EXIT TEST           —
+197  F-0350   low-contrast-status-text         0     1  NO EXIT TEST           —
+198  F-0357   unstated-integration-prereq…     0     1  NO EXIT TEST           —
+199  F-0358   oracle-blind-to-module           0     1  NO EXIT TEST           —
+200  F-0364   notification-gate-blocks-ev…     0     1  NO EXIT TEST           —
+201  F-0365   meta-app-not-live                0     1  NO EXIT TEST           —
+202  F-0372   overstated-finding-refuted-…     0     1  NO EXIT TEST           —
+203  F-0373   overclaimed-count-in-verifi…     0     1  NO EXIT TEST           —
+204  F-0376   gate-cannot-run                  0     1  NO EXIT TEST           —
+205  F-0378   silent-integration-gap           0     1  NO EXIT TEST           —
+206  F-0379   blocked-by-upstream              0     1  NO EXIT TEST           —
+207  F-0386   unattributed-scope-cut           0     1  NO EXIT TEST           —
+208  F-0398   unrecorded-consent               0     1  NO EXIT TEST           —
+209  F-0399   unenforced-limit                 0     1  NO EXIT TEST           —
+210  F-0400   unenforced-limit                 0     1  NO EXIT TEST           —
+211  F-0401   missing-state-machine            0     1  NO EXIT TEST           —
+212  F-0403   missing-feature                  0     1  NO EXIT TEST           —
+213  F-0406   silent-partial-success           0     1  NO EXIT TEST           —
+214  F-0413   missing-feature                  0     1  NO EXIT TEST           —
+215  F-0414   missing-feature                  0     1  NO EXIT TEST           —
+216  F-0417   unenforced-limit                 0     1  NO EXIT TEST           —
+217  F-0418   unenforced-limit                 0     1  NO EXIT TEST           —
+218  F-0421   unreachable-feature              0     1  NO EXIT TEST           —
+219  F-0422   incomplete-revocation            0     1  NO EXIT TEST           —
+220  F-0424   overclaim-consequence-contr…     0     1  NO EXIT TEST           —
+221  F-0425   citation-bare-basename-unve…     0     1  NO EXIT TEST           —
+222  F-0427   false-green-gate-blind-spot      0     1  NO EXIT TEST           —
+223  F-0428   stale-runtime-copy               0     1  NO EXIT TEST           —
+224  F-0430   report-mislabels-finding         0     1  NO EXIT TEST           —
+225  F-0433   advertised-feature-absent        0     1  NO EXIT TEST           —
+226  F-0440   optimistic-update-not-rolle…     0     1  NO EXIT TEST           —
+227  F-0443   unreachable-endpoint             0     1  NO EXIT TEST           —
+228  F-0444   unreachable-endpoint             0     1  NO EXIT TEST           —
+229  F-0447   unreachable-endpoint             0     1  NO EXIT TEST           —
+230  F-0453   soft-deleted-rows-leak-into…     0     1  NO EXIT TEST           —
+231  F-0456   dpdp-export-promised-not-im…     0     1  NO EXIT TEST           —
+232  F-0467   concurrent-write-collision       0     1  NO EXIT TEST           —
+233  F-0469   stale-runtime-copy               0     1  NO EXIT TEST           —
+234  F-0470   partial-fix-narrows-defect       0     1  NO EXIT TEST           —
+235  F-0471   partial-fix-narrows-defect       0     1  NO EXIT TEST           —
+236  F-0472   partial-fix-narrows-defect       0     1  NO EXIT TEST           —
+237  F-0475   suite-red-radix-pointer-lock     0     1  NO EXIT TEST           —
+238  F-0477   wrong-invariant-shipped          0     1  NO EXIT TEST           —
+239  F-0483   flaky-test                       0     1  NO EXIT TEST           —
+240  F-0001   gate-order-inverted              0     1  NO EXIT TEST           —
+241  F-0005   identity-contradiction           0     1  NO EXIT TEST           —
+ ⛔  F-0355   dead-external-api-contract                —                      BLOCKED: needs an external service
+
+note: 241 record(s) have NO EXIT TEST — they can be FIXED but nothing can declare them DONE: F-0382, F-0437, F-0388, F-0051, F-0064, F-0104, F-0130, F-0141
+
+no item in this queue has a verified exit test — this queue cannot terminate on evidence. Promote a gate before starting (FLOW law 1).
+NOT CHECKED: whether each recorded gate actually covers its record's symptom, and whether `where` names every affected file

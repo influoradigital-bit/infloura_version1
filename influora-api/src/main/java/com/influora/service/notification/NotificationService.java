@@ -29,9 +29,17 @@ public class NotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
 
-    /** Events that are email-only (no in-app notification). */
+    /**
+     * Events that are email-only (no in-app notification).
+     *
+     * <p>{@code creator.not_connected} is here for a different reason than the others: it is
+     * raised by a <b>daily</b> job that re-evaluates the same creators on every run, and only the
+     * email half of {@link #notify} is idempotent — {@code createInAppNotification} deliberately is
+     * not. Routing it through both channels would therefore leave one more in-app notification
+     * behind every single day while the email correctly collapsed to a no-op.
+     */
     private static final Set<String> EMAIL_ONLY_EVENTS =
-            Set.of("auth.otp", "auth.reset", "cron.monthly_statement");
+            Set.of("auth.otp", "auth.reset", "cron.monthly_statement", "creator.not_connected");
 
     /** Events that are in-app only (no email). */
     private static final Set<String> IN_APP_ONLY_EVENTS =

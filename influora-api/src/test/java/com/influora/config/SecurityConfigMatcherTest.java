@@ -262,6 +262,64 @@ class SecurityConfigMatcherTest {
         assertTrue(!isGranted(ANONYMOUS, request(HttpMethod.PATCH, "/portfolio/priyacreates")));
     }
 
+    // ---- Gate fix round 1 (Priya Q3/Q5): /creator/** hasRole("CREATOR") --------------------
+
+    @Test
+    @DisplayName("Creator-gate: anonymous GET /creator/agent-preferences is DENIED")
+    void creatorAgentPreferencesDeniedAnonymous() {
+        assertTrue(!isGranted(ANONYMOUS, request(HttpMethod.GET, "/creator/agent-preferences")));
+    }
+
+    @Test
+    @DisplayName("Creator-gate: BRAND-authenticated GET /creator/agent-preferences is DENIED at the filter (was previously only a service-layer 404-by-missing-row)")
+    void creatorAgentPreferencesDeniedForBrand() {
+        assertTrue(
+                !isGranted(
+                        authenticatedAs(UserType.BRAND),
+                        request(HttpMethod.GET, "/creator/agent-preferences")));
+    }
+
+    @Test
+    @DisplayName("Creator-gate: ADMIN-authenticated GET /creator/agent-preferences is DENIED (admin JWT is not a creator JWT)")
+    void creatorAgentPreferencesDeniedForAdmin() {
+        assertTrue(
+                !isGranted(
+                        authenticatedAs(UserType.ADMIN),
+                        request(HttpMethod.GET, "/creator/agent-preferences")));
+    }
+
+    @Test
+    @DisplayName("Creator-gate: CREATOR-authenticated GET /creator/agent-preferences is permitted (ROLE_CREATOR matches hasRole(\"CREATOR\"))")
+    void creatorAgentPreferencesPermittedForCreator() {
+        assertTrue(
+                isGranted(
+                        authenticatedAs(UserType.CREATOR),
+                        request(HttpMethod.GET, "/creator/agent-preferences")));
+    }
+
+    @Test
+    @DisplayName("Creator-gate: BRAND-authenticated POST /creator/meera/sessions is DENIED")
+    void creatorMeeraSessionsDeniedForBrand() {
+        assertTrue(
+                !isGranted(
+                        authenticatedAs(UserType.BRAND),
+                        request(HttpMethod.POST, "/creator/meera/sessions")));
+    }
+
+    @Test
+    @DisplayName("Creator-gate narrowness: BRAND-authenticated GET /creators/discover is still permitted through to the generic authenticated rule (the plural /creators/** brand-facing route is untouched by the singular /creator/** matcher)")
+    void pluralCreatorsRouteUnaffectedByCreatorGate() {
+        assertTrue(
+                isGranted(authenticatedAs(UserType.BRAND), request(HttpMethod.GET, "/creators/discover")));
+    }
+
+    @Test
+    @DisplayName("Creator-gate narrowness: anonymous GET /public/creators/priyacreates/verified stays permitted (unrelated public route, evaluated before the /creator/** matcher would even apply)")
+    void publicCreatorVerifiedUnaffectedByCreatorGate() {
+        assertTrue(
+                isGranted(ANONYMOUS, request(HttpMethod.GET, "/public/creators/priyacreates/verified")));
+    }
+
     // ---- Pre-existing behavior must be unchanged -------------------------------------------
 
     @Test

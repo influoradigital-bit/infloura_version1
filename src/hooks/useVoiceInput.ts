@@ -76,6 +76,12 @@ export interface UseVoiceInputOptions {
    * unchanged. Only the {@code VoiceMode} conversation loop sets this.
    */
   autoStopSilenceMs?: number
+  /**
+   * T-MEERA-CREATOR-PHASE-A (A5/A10) — which role's token `meeraApi.transcribe` authenticates
+   * as. Defaults to 'brand' so every pre-existing caller is unaffected; the creator chat entry
+   * passes 'creator'.
+   */
+  role?: 'brand' | 'creator'
 }
 
 export interface UseVoiceInputResult {
@@ -112,6 +118,7 @@ export function useVoiceInput({
   onError,
   lang = 'en-IN',
   autoStopSilenceMs,
+  role = 'brand',
 }: UseVoiceInputOptions): UseVoiceInputResult {
   // Detected once — capability doesn't change over the hook's lifetime.
   const recorderSupportedRef = useRef(detectRecorderSupport())
@@ -345,7 +352,7 @@ export function useVoiceInput({
       logVoiceUsage('stt')
 
       meeraApi
-        .transcribe(blob)
+        .transcribe(blob, role)
         .then((result) => {
           if (!result) {
             // Mock mode, backend soft-fail, non-2xx, or network error —
@@ -372,7 +379,7 @@ export function useVoiceInput({
           startBrowserRecognition()
         })
     },
-    [releaseRecordingResources, startBrowserRecognition, onResult],
+    [releaseRecordingResources, startBrowserRecognition, onResult, role],
   )
 
   const startSarvamRecording = useCallback(async () => {

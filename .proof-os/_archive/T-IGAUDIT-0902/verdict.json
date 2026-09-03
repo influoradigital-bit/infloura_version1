@@ -1,0 +1,18 @@
+{
+ "verdict": "proved",
+ "oracle": "mvn",
+ "isolation": "oracle",
+ "done_when": "gates/F-0478-absent-score-not-fabricated.sh exits 0, and exits 1 against the pre-fix tree on both its source legs",
+ "evidence": {
+  "oracle": "mvn",
+  "command": "bash .proof-os/gates/F-0478-absent-score-not-fabricated.sh",
+  "result": "exit 0 on the fix (Tests run: 57, Failures: 0, Errors: 0); exit 1 on the pre-fix tree on leg 1 QualityScoreService, and exit 1 again with latestQualityScore reverted to orElse(BigDecimal.ZERO) on leg 1 AdminCreatorService",
+  "where": ".proof-os/gates/F-0478-absent-score-not-fabricated.sh"
+ },
+ "not_checked": [
+  "whether media_metrics is ever populated - F-0478 ROOT CAUSE is untouched, the storage layer is still write-never, so in production every creator is now legitimately UNSCORED rather than fabricated-20.00",
+  "whether any live UI other than the admin KpiCard renders the resulting null as a number",
+  "whether a real Graph API run produces media rows at all"
+ ],
+ "skipped": []
+}

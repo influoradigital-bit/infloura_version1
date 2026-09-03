@@ -606,7 +606,7 @@ function DealRow({ deal, actionLoading, onOpen, onAccept, onCounter, onReject }:
               <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 {deal.escrowFunded && (
                   <span className="inline-flex items-center gap-1 text-green-700">
-                    <Shield className="h-3 w-3" /> Escrow funded
+                    <Shield className="h-3 w-3" /> Funds secured
                   </span>
                 )}
                 {deal.brandPaymentSpeed && (

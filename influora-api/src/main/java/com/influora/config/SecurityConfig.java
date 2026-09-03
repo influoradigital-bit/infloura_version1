@@ -169,6 +169,13 @@ public class SecurityConfig {
                                         .permitAll()
                                         .requestMatchers(HttpMethod.POST, "/portfolio/*/contact")
                                         .permitAll()
+                                        // T-MEERA-CREATOR-PHASE-A (SPEC.md 2.8, A9) — public,
+                                        // indexable verified-metrics snapshot (/c/:username/verified
+                                        // on the frontend). Same reasoning as /portfolio/* above: a
+                                        // logged-out visitor/brand/crawler cannot present a JWT.
+                                        // PublicCreatorController exposes NO rates/floors/tax-id.
+                                        .requestMatchers(HttpMethod.GET, "/public/creators/*/verified")
+                                        .permitAll()
                                         // CR-11 client crash-report sink — the SPA's ErrorBoundary
                                         // posts here, including from the public portfolio page or
                                         // before login, where no JWT can exist yet. See
@@ -199,6 +206,26 @@ public class SecurityConfig {
                                         // blocked before a token even exists.
                                         .requestMatchers("/admin/**")
                                         .hasRole("ADMIN")
+                                        // Gate fix round 1 (Priya Q3/Q5, T-MEERA-CREATOR-PHASE-A) —
+                                        // every /creator/** controller (agent-preferences, meera,
+                                        // deliverables, disputes, ...) already resolves the current
+                                        // user's own creator_profiles row from the JWT principal and
+                                        // 404s a BRAND/ADMIN principal there because they have no such
+                                        // row — a correct outcome, but one that held only by accident
+                                        // of each service's own lookup, not as an enforced invariant. A
+                                        // future controller here that takes a creatorId param (or a
+                                        // service that widens its lookup) would silently drop that
+                                        // protection with no test to catch it. This matcher makes the
+                                        // role requirement explicit at the filter, same as the
+                                        // hasRole("ADMIN") pattern immediately above. Same
+                                        // "ROLE_" + userType.name() authority shape (AuthPrincipal,
+                                        // JwtAuthenticationFilter) applies to CREATOR access tokens.
+                                        // "/creator/**" never matches the unrelated "/creators/**"
+                                        // (brand-facing discovery) or "/creators/external" (admin
+                                        // connect-flow) routes — Ant-style "/**" requires the literal
+                                        // "/creator/" prefix, not just the "/creator" substring.
+                                        .requestMatchers("/creator/**")
+                                        .hasRole("CREATOR")
                                         .anyRequest()
                                         .authenticated())
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)

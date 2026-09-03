@@ -12,12 +12,18 @@ import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.IntentStatus;
 import com.influora.domain.enums.MeeraInteractionEventType;
 import com.influora.domain.enums.MeeraToolName;
+import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.ToolCallStatus;
 import com.influora.domain.enums.ToolResultRefType;
+import com.influora.domain.enums.UserType;
+import com.influora.domain.entity.Workspace;
 import com.influora.repository.CampaignIntentRepository;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.MeeraToolCallRepository;
+import com.influora.repository.WorkspaceRepository;
+import com.influora.security.AuthPrincipal;
 import com.influora.service.AuditLogService;
+import com.influora.service.BrandContextService;
 import com.influora.service.CampaignTemplateService;
 import com.influora.service.IdempotencyService;
 import com.influora.service.meera.MeeraInteractionLogService;
@@ -86,6 +92,12 @@ public class CreateCampaignExecutor {
     private static final Set<String> ALLOWED_CONTENT_TYPES =
             Set.of("POST", "STORY", "REEL", "VIDEO", "LIVE_STREAM", "ARTICLE", "PODCAST");
 
+    /** Fallback when the workspace itself has no {@code industry} set — see the class javadoc
+     * "Gate fix round 1" note on {@code endBrandCategory} below. Matches {@code
+     * AdminBrandService}'s existing "STANDARD"/generic-fallback convention of never leaving a
+     * required-for-new column NULL rather than inventing a specific-sounding lie. */
+    private static final String UNSPECIFIED_END_BRAND_CATEGORY = "Unspecified";
+
     private final CampaignIntentRepository campaignIntentRepository;
     private final CampaignRepository campaignRepository;
     private final MeeraToolCallRepository toolCallRepository;
@@ -93,6 +105,8 @@ public class CreateCampaignExecutor {
     private final IdempotencyService idempotencyService;
     private final CampaignTemplateService campaignTemplateService;
     private final MeeraInteractionLogService meeraInteractionLogService;
+    private final WorkspaceRepository workspaceRepository;
+    private final BrandContextService brandContext;
 
     public CreateCampaignExecutor(
             CampaignIntentRepository campaignIntentRepository,
@@ -101,7 +115,9 @@ public class CreateCampaignExecutor {
             AuditLogService auditLogService,
             IdempotencyService idempotencyService,
             CampaignTemplateService campaignTemplateService,
-            MeeraInteractionLogService meeraInteractionLogService) {
+            MeeraInteractionLogService meeraInteractionLogService,
+            WorkspaceRepository workspaceRepository,
+            BrandContextService brandContext) {
         this.campaignIntentRepository = campaignIntentRepository;
         this.campaignRepository = campaignRepository;
         this.toolCallRepository = toolCallRepository;
@@ -109,14 +125,32 @@ public class CreateCampaignExecutor {
         this.idempotencyService = idempotencyService;
         this.campaignTemplateService = campaignTemplateService;
         this.meeraInteractionLogService = meeraInteractionLogService;
+        this.workspaceRepository = workspaceRepository;
+        this.brandContext = brandContext;
     }
 
     public CreateCampaignResult execute(
             String workspaceId,
             String conversationId,
             String userId,
+            UserType userType,
             String idempotencyKey,
             Map<String, Object> input) {
+        // F-0530: this D-tier tool path is the Meera sibling of CampaignService#create (the human
+        // REST write path) — that path now hard-gates on brandContext.requireRole(OWNER, ADMIN,
+        // MANAGER) (see its own F-0530 comment), but this executor never checked the caller's
+        // MemberRole at all: the on-behalf JWT's scope claim proves WHICH TOOL may run, not WHICH
+        // MEMBER may act, so a VIEWER/MEMBER-role workspace member could still mint/replay a
+        // create_campaign turn and draft a campaign they are refused to update/publish/delete
+        // afterward. Reuses the exact same brandContext.requireRole helper (not a second,
+        // independently-drifting check). workspaceId/userId/userType all come from the
+        // JWT-verified OnBehalfContext (MeeraInternalController), never from client-supplied body
+        // fields. Runs before replay/idempotency lookups so an unauthorized call never even
+        // touches the idempotency ledger.
+        AuthPrincipal principal = new AuthPrincipal(userId, null, userType, workspaceId);
+        var member = brandContext.requireMember(principal, workspaceId);
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN, MemberRole.MANAGER);
+
         CreateCampaignResult replay = replayIfPresent(workspaceId, idempotencyKey);
         if (replay != null) {
             return replay;
@@ -198,6 +232,33 @@ public class CreateCampaignExecutor {
         String aiSourceReelUrl = stringArg(input, "source_reel_url");
         List<String> aiFormatLanes = stringListArg(input, "format_lanes");
 
+        // Gate fix round 1 (Priya Q2.4/Q9.6, T-MEERA-CREATOR-PHASE-A) — CampaignService#create
+        // (the human write path) hard-requires endBrandName/endBrandCategory on every NEW
+        // campaign (END_BRAND_NAME_REQUIRED/END_BRAND_CATEGORY_REQUIRED, V72). This AI-drafted
+        // path built Campaign.builder() directly and never applied that rule, so a Meera-created
+        // draft was born with NULL end-brand fields — indistinguishable from a pre-V72 legacy row
+        // and silently exempt from a "required for every new campaign" invariant. The current
+        // create_campaign tool schema (influora-ai, out of this file's scope) does not yet ask the
+        // model for an end-brand name/category, so this cannot 400 the AI the way the human form
+        // does without breaking every AI-drafted campaign today — instead: honor an AI-supplied
+        // value if the schema ever adds one (forward-compatible), else default from the
+        // workspace's own name/industry (the common case — a brand running a campaign for its own
+        // products), so the columns are always meaningfully filled, never NULL, on a fresh AI
+        // draft. A human reviewing the DRAFT before it goes live can still correct either field.
+        String aiEndBrandName = stringArg(input, "end_brand_name");
+        String aiEndBrandCategory = stringArg(input, "end_brand_category");
+        Workspace workspace = workspaceRepository.findById(workspaceId).orElse(null);
+        String resolvedEndBrandName =
+                nonBlankOrElse(
+                        aiEndBrandName,
+                        nonBlankOrElse(workspace != null ? workspace.getName() : null, "Unspecified brand"));
+        String resolvedEndBrandCategory =
+                nonBlankOrElse(
+                        aiEndBrandCategory,
+                        nonBlankOrElse(
+                                workspace != null ? workspace.getIndustry() : null,
+                                UNSPECIFIED_END_BRAND_CATEGORY));
+
         // Wave 1b (Priya A3 + Ash's STANDARD-enum ruling): template_id present -> the template
         // row is the authority for campaign_type (may be STANDARD); any AI-supplied campaign_type
         // is ignored. template_id absent -> unchanged, AI-supplied value (or STANDARD fallback).
@@ -238,7 +299,9 @@ public class CreateCampaignExecutor {
                                         + " going live.")
                         .status(CampaignStatus.DRAFT)
                         .createdBy(userId)
-                        .campaignType(campaignType);
+                        .campaignType(campaignType)
+                        .endBrandName(resolvedEndBrandName)
+                        .endBrandCategory(resolvedEndBrandCategory);
 
         // Wave 1b (Priya A3): copy requirements/hashtags/target_audience/brand_guidelines from the
         // template into the draft. Budget (budgetMin/budgetMax) is deliberately NEVER copied here —
@@ -439,6 +502,11 @@ public class CreateCampaignExecutor {
             }
         }
         return new ArrayList<>(kept);
+    }
+
+    /** {@code primary} if non-null/non-blank, else {@code fallback} (which may itself be null). */
+    private static String nonBlankOrElse(String primary, String fallback) {
+        return primary != null && !primary.isBlank() ? primary : fallback;
     }
 
     private static Integer intArg(Map<String, Object> input, String key) {

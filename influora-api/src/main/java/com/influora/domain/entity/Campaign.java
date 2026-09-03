@@ -113,6 +113,18 @@ public class Campaign {
     @Column(name = "commission_rate", precision = 5, scale = 4)
     private BigDecimal commissionRate;
 
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1, A2) — the actual end-brand a campaign is running for,
+     * distinct from the {@code Workspace} (which may be an agency running campaigns for several
+     * brands). NULL only on legacy rows created before this migration; required at the DTO layer
+     * ({@code CampaignDtos.CampaignWriteRequest}) for every campaign created from here on.
+     */
+    @Column(name = "end_brand_name", length = 200)
+    private String endBrandName;
+
+    @Column(name = "end_brand_category", length = 100)
+    private String endBrandCategory;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -220,6 +232,14 @@ public class Campaign {
 
     public BigDecimal getCommissionRate() {
         return commissionRate;
+    }
+
+    public String getEndBrandName() {
+        return endBrandName;
+    }
+
+    public String getEndBrandCategory() {
+        return endBrandCategory;
     }
 
     public Instant getCreatedAt() {
@@ -357,6 +377,16 @@ public class Campaign {
             return this;
         }
 
+        public Builder endBrandName(String endBrandName) {
+            c.endBrandName = endBrandName;
+            return this;
+        }
+
+        public Builder endBrandCategory(String endBrandCategory) {
+            c.endBrandCategory = endBrandCategory;
+            return this;
+        }
+
         /** Only set when {@code campaignType == HYPE}; leave unset (null) for every other type. */
         public Builder hypeConfigJson(String hypeConfigJson) {
             c.hypeConfigJson = hypeConfigJson;
@@ -396,7 +426,9 @@ public class Campaign {
             String brandGuidelines,
             Boolean isPrivate,
             Integer maxCollaborators,
-            String hypeConfigJson) {
+            String hypeConfigJson,
+            String endBrandName,
+            String endBrandCategory) {
         if (title != null) this.title = title;
         if (description != null) this.description = description;
         if (status != null) this.status = status;
@@ -416,6 +448,8 @@ public class Campaign {
         if (isPrivate != null) this.isPrivate = isPrivate;
         if (maxCollaborators != null) this.maxCollaborators = maxCollaborators;
         if (hypeConfigJson != null) this.hypeConfigJson = hypeConfigJson;
+        if (endBrandName != null) this.endBrandName = endBrandName;
+        if (endBrandCategory != null) this.endBrandCategory = endBrandCategory;
         touch();
     }
 
@@ -466,6 +500,8 @@ public class Campaign {
                 .campaignType(campaignType)
                 .hypeConfigJson(hypeConfigJson)
                 .commissionRate(commissionRate)
+                .endBrandName(endBrandName)
+                .endBrandCategory(endBrandCategory)
                 .build();
     }
 }

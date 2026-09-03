@@ -28,6 +28,8 @@ import com.influora.service.AuditLogService;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -342,9 +344,18 @@ class AudienceDemographicsJobTest {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);
         when(tokenRepository.findByRevokedFalseAndExpiresAtAfter(any(Instant.class)))
                 .thenReturn(List.of(token));
+        // F-0480 — this stub is reached only AFTER pollDemographics() has won the running
+        // compareAndSet, so counting the latch down here is a positive signal that thread1 now
+        // HOLDS the guard. The test previously just slept 10ms and hoped; under a contended
+        // full-suite run thread1 had not always got that far, both calls proceeded, and the
+        // times(1) assertion failed against a guard that was working correctly the whole time.
+        CountDownLatch insideGuardedSection = new CountDownLatch(1);
         when(tokenStorage.getValidCreatorToken(CREATOR_ID))
                 .thenAnswer(
                         invocation -> {
+                            insideGuardedSection.countDown();
+                            // Stay inside the guarded section long enough for the main thread's call
+                            // below to hit the guard and be turned away.
                             Thread.sleep(100);
                             return Optional.of(TOKEN);
                         });
@@ -360,7 +371,12 @@ class AudienceDemographicsJobTest {
 
         Thread thread1 = new Thread(() -> job.pollDemographics());
         thread1.start();
-        Thread.sleep(10);
+        // Wait for the FACT (thread1 is inside the guard), not for a duration. The 5s ceiling is a
+        // deadlock stop, not a timing assumption — it is never reached on a healthy run, and if it
+        // ever is, this fails with a message saying so rather than as a confusing times(1) mismatch.
+        assertTrue(
+                insideGuardedSection.await(5, TimeUnit.SECONDS),
+                "thread1 never entered the guarded section — the overlap guard was not exercised");
 
         job.pollDemographics();
 

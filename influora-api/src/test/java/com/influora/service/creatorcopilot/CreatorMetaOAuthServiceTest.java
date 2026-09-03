@@ -96,6 +96,7 @@ class CreatorMetaOAuthServiceTest {
                         eq(List.of("instagram_basic", "pages_show_list")),
                         isNull(),
                         eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull(),
                         isNull());
     }
 
@@ -116,6 +117,7 @@ class CreatorMetaOAuthServiceTest {
                         isNull(),
                         isNull(),
                         eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull(),
                         isNull());
     }
 
@@ -171,7 +173,8 @@ class CreatorMetaOAuthServiceTest {
                         eq(List.of("instagram_basic")),
                         isNull(),
                         eq(MetaAuthPath.FACEBOOK_LOGIN),
-                        eq("17841400000099999"));
+                        eq("17841400000099999"),
+                        isNull());
     }
 
     @Test
@@ -197,6 +200,7 @@ class CreatorMetaOAuthServiceTest {
                         eq(List.of("instagram_basic")),
                         isNull(),
                         eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull(),
                         isNull());
     }
 
@@ -223,6 +227,7 @@ class CreatorMetaOAuthServiceTest {
                         any(),
                         isNull(),
                         eq(MetaAuthPath.FACEBOOK_LOGIN),
+                        isNull(),
                         isNull());
 
         // Before the fix this was Instant.now() (0-second lifetime) — an already-expired token

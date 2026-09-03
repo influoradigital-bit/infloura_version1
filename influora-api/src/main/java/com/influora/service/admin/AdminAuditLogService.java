@@ -138,7 +138,12 @@ public class AdminAuditLogService {
                     // Subscription row (plan/status/comp fields), not a wallet balance — WALLET
                     // would be a shoehorned, inaccurate label for what's actually being logged. See
                     // AdminBillingController class javadoc for the full reasoning.
-                    "SUBSCRIPTION");
+                    "SUBSCRIPTION",
+                    // T-CREATORCONNECT-0902 — AdminCreatorConnectionService's contacted/decline/
+                    // invite mutations on creator_connection_requests, plus the ADMIN_IMPORT bulk
+                    // import of external_creators rows. No secrets on either entity.
+                    "CREATOR_CONNECTION_REQUEST",
+                    "EXTERNAL_CREATOR");
 
     /**
      * Per-entity_type field allow-list for {@code old_value}/{@code new_value} snapshots — NEVER
@@ -148,9 +153,14 @@ public class AdminAuditLogService {
      * allow-list uses the KYC/suspension columns that table actually carries, not a fabricated
      * shape.
      */
+    // Map.ofEntries, not Map.of — T-CREATORCONNECT-0902 pushed this past Map.of's 10-pair explicit
+    // overload ceiling (11 entity types once CREATOR_CONNECTION_REQUEST/EXTERNAL_CREATOR were
+    // added); Map.ofEntries has no such limit and every existing Map.entry(k, Set.of(...)) call
+    // below is a mechanical, behavior-neutral rewrite of the prior Map.of(k, v, k, v, ...) pairs.
     private static final Map<String, Set<String>> FIELD_ALLOWLIST =
-            Map.of(
-                    "BRAND",
+            Map.ofEntries(
+                    Map.entry(
+                            "BRAND",
                             Set.of(
                                     "id",
                                     "name",
@@ -166,42 +176,47 @@ public class AdminAuditLogService {
                                     "verificationStatus",
                                     "isSuspended",
                                     "suspendedReason",
-                                    "kycRejectionReason"),
-                    "ADMIN_USER", Set.of("id", "email", "role", "isActive", "mfaEnabled"),
-                    "SUPPORT_TICKET", Set.of("id", "status", "priority", "assignedTo", "category"),
-                    "CONTENT_FLAG",
-                            Set.of("id", "status", "actionTaken", "contentType", "contentId"),
+                                    "kycRejectionReason")),
+                    Map.entry("ADMIN_USER", Set.of("id", "email", "role", "isActive", "mfaEnabled")),
+                    Map.entry("SUPPORT_TICKET", Set.of("id", "status", "priority", "assignedTo", "category")),
+                    Map.entry(
+                            "CONTENT_FLAG",
+                            Set.of("id", "status", "actionTaken", "contentType", "contentId")),
                     // "tier" backs the TIER_ADJUST action (PUT /admin/creators/{id}/tier);
                     // "name"/"niche" back the creator profile-edit path (PUT /admin/creators/{id})
                     // — Vikram. Both are non-secret profile fields already returned in
                     // CreatorDetailDto. Kabir: confirm safe to persist in the audit trail.
-                    "CREATOR", Set.of("id", "isSuspended", "applicationStatus", "tier", "name", "niche"),
+                    Map.entry(
+                            "CREATOR",
+                            Set.of("id", "isSuspended", "applicationStatus", "tier", "name", "niche")),
                     // Vikram, campaign budget-override path (POST /admin/brands/{id}/campaigns/
                     // {campaignId}/budget-override) — MONEY PATH. No secrets on the campaign budget
                     // fields; explicit allow-list per Rule 2 rather than a raw entity dump. The
                     // override writes "budget" (== budgetMax); budgetMin/budgetMax/status are listed
                     // for any future campaign audit writer. Kabir: money-path — verify.
-                    "CAMPAIGN", Set.of("id", "budget", "budgetMin", "budgetMax", "status"),
+                    Map.entry("CAMPAIGN", Set.of("id", "budget", "budgetMin", "budgetMax", "status")),
                     // PlatformFeeAdminService (wiki/decisions/admin-pending-tasks-directive.md
                     // item #5) — no secrets on this entity, but still explicit allow-list per
                     // Rule 2 discipline rather than a raw entity dump.
-                    "PLATFORM_FEE_CONFIG",
+                    Map.entry(
+                            "PLATFORM_FEE_CONFIG",
                             Set.of(
                                     "id",
                                     "brandFeePercent",
                                     "creatorFeePercent",
                                     "razorpayAbsorbedByPlatform",
                                     "approvedBy",
-                                    "effectiveAt"),
+                                    "effectiveAt")),
                     // Dispute resolution decision only — no secrets on this entity. resolutionNotes
                     // is passed separately as the `reason` free-text field on record(), not here.
-                    "DISPUTE", Set.of("id", "status", "resolvedByAdminId"),
+                    Map.entry("DISPUTE", Set.of("id", "status", "resolvedByAdminId")),
                     // AdminBillingService (Task 25) comp/override snapshots. No secrets on this
                     // entity — razorpaySubscriptionId is intentionally EXCLUDED even though it's
                     // not a secret, because AdminBillingService#grantAdminPlan refuses to touch a
                     // row that has one set (see that method's ALREADY_PAID_SUBSCRIBER guard), so it
                     // is never a meaningful before/after value for this specific action.
-                    "SUBSCRIPTION",
+                    Map.entry(
+                            "SUBSCRIPTION",
                             Set.of(
                                     "subscriptionId",
                                     "workspaceId",
@@ -210,7 +225,16 @@ public class AdminAuditLogService {
                                     "isComp",
                                     "compReason",
                                     "compExpiresAt",
-                                    "currentPeriodEnd"));
+                                    "currentPeriodEnd")),
+                    // T-CREATORCONNECT-0902 — AdminCreatorConnectionService. No secrets on either
+                    // entity; message/adminNotes are brand/admin-authored free text already
+                    // TextSanitizer-cleaned at write time.
+                    Map.entry(
+                            "CREATOR_CONNECTION_REQUEST",
+                            Set.of("id", "status", "adminNotes", "handledBy")),
+                    Map.entry(
+                            "EXTERNAL_CREATOR",
+                            Set.of("id", "status", "email", "linkedCreatorProfileId")));
 
     private final AdminAuditLogRepository adminAuditLogRepository;
     private final AdminUserRepository adminUserRepository;

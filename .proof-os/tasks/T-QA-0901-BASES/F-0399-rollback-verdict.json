@@ -1,0 +1,24 @@
+{
+ "verdict": "believed",
+ "oracle": "mvn",
+ "isolation": "oracle",
+ "done_when": "roll back the null-rate clause of F-0399, keeping the cumulative budget gate",
+ "evidence": {
+  "oracle": "mvn",
+  "command": "mvn -o -Dtest=DealServiceTest test ; mvn -o -Dtest=DealServiceBudgetTest test",
+  "result": "DealServiceTest 62 run, 0 failures, 0 errors (was 9 errors before the rollback); DealServiceBudgetTest 3 run, 0 failures, 1 skipped (the disabled residual)",
+  "where": "influora-api/src/main/java/com/influora/service/DealService.java:1656"
+ },
+ "not_checked": [
+  "the FULL backend suite is currently unmeasurable, not green: a concurrent session is writing the tree and the run collected 1085 tests with 161 errors across controller classes I never touched, against 1963 tests earlier. Two targeted classes are green; the suite verdict is unavailable",
+  "no runtime or e2e exercise of the invite-then-accept flow - the rollback is proved by unit tests only",
+  "F-0476, the null-rate accounting gap, is now deliberately open: a rate-less collaboration still contributes nothing to the committed sum",
+  "whether any OTHER caller depended on the null-rate rejection during the ~1h it existed"
+ ],
+ "skipped": [
+  {
+   "step": "moving budget enforcement to proposal/counter/escrow-funding",
+   "reason": "option (b), explicitly deferred by Swapnil in favour of the narrow rollback; queued as F-0476 rather than improvised after the first ruling proved wrong"
+  }
+ ]
+}

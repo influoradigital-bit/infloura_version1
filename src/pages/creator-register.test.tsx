@@ -52,9 +52,9 @@ vi.mock('@/lib/api', async () => {
   };
 });
 
-function renderPage() {
+function renderPage(initialEntry = '/creator/register') {
   return render(
-    <MemoryRouter initialEntries={['/creator/register']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <CreatorRegisterPage />
     </MemoryRouter>,
   );
@@ -144,5 +144,67 @@ describe('CreatorRegisterPage — email OTP gate', () => {
     expect(await screen.findByText(/Unable to send verification email/i)).toBeInTheDocument();
     expect(screen.queryByText(/Verify your email/i)).not.toBeInTheDocument();
     expect(creatorRegister).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Q5.5 (T-CREATORCONNECT-0902, Medium) — the invite claim path.
+ *
+ * The invite email's signup_url (AdminCreatorConnectionService#sendJoinInvitationEmail) carries
+ * `?ref=influora-invite&handle={igUsername}&invite_token={signed token}`. Before this fix the
+ * page never read `searchParams` at all, so `inviteToken` was always null on the wire, and
+ * AuthService#creatorRegister -> RegistrationService#consumeInviteToken was unreachable for any
+ * invited creator who registered by email — the external_creators row stayed INVITED forever.
+ * This pins that `invite_token` reaches the POST body, and that an ordinary (non-invite)
+ * registration is unaffected.
+ */
+describe('CreatorRegisterPage — invite claim (Q5.5)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    publicConfig.mockResolvedValue({ requireEmailOtp: false });
+    creatorRegister.mockResolvedValue({ token: 't', userId: 'cr_1', onboardingComplete: false });
+  });
+
+  it('forwards the invite_token query param to creatorRegister', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderPage('/creator/register?ref=influora-invite&handle=foodie.mumbai&invite_token=signed-abc123');
+    await waitFor(() => expect(publicConfig).toHaveBeenCalled());
+
+    // The handle is shown as a human-readable hint...
+    expect(await screen.findByText(/You were invited as @foodie\.mumbai/i)).toBeInTheDocument();
+
+    await fillForm(user);
+    await user.click(screen.getByRole('button', { name: /Create Account/i }));
+
+    // ...but it is the signed token, not the bare handle, that is sent as the claim.
+    await waitFor(() =>
+      expect(creatorRegister).toHaveBeenCalledWith(
+        expect.objectContaining({ inviteToken: 'signed-abc123' }),
+      ),
+    );
+  });
+
+  it('registers with no inviteToken when there is no invite in the URL', async () => {
+    const user = userEvent.setup({ delay: null });
+    renderPage('/creator/register');
+    await waitFor(() => expect(publicConfig).toHaveBeenCalled());
+
+    expect(screen.queryByText(/You were invited/i)).not.toBeInTheDocument();
+
+    await fillForm(user);
+    await user.click(screen.getByRole('button', { name: /Create Account/i }));
+
+    await waitFor(() => expect(creatorRegister).toHaveBeenCalledTimes(1));
+    expect(creatorRegister.mock.calls[0][0].inviteToken).toBeUndefined();
+  });
+
+  it('does not show the invite banner when handle is present without the expected ref', async () => {
+    // A stray ?handle= must never itself be treated as a claim (Q5.4's spoof class) — the
+    // banner (and the claim) require ref=influora-invite to have come from the real email.
+    const user = userEvent.setup({ delay: null });
+    renderPage('/creator/register?handle=someone&invite_token=signed-abc123');
+    await waitFor(() => expect(publicConfig).toHaveBeenCalled());
+
+    expect(screen.queryByText(/You were invited/i)).not.toBeInTheDocument();
   });
 });

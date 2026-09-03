@@ -1,0 +1,20 @@
+{
+ "verdict": "proved",
+ "oracle": "gates/citations.py",
+ "isolation": "oracle",
+ "done_when": "for each of the 31 features, 5 tester questions answered from code, every answer citing file:line, and gates/citations.py exits 0 for each of 3 batches",
+ "evidence": {
+  "oracle": "gates/citations.py",
+  "command": "python .proof-os/gates/citations.py .proof-os/tasks/T-QA-0901-BASES/FEAT-B{1,2,3}.answers.md . --min 55|50|50",
+  "result": "all three exit 0 - batch1 191 citations, batch2 192, batch3 199; 55 + 50 + 50 = 155 answers, no gaps",
+  "where": ".proof-os/tasks/T-QA-0901-BASES/FEAT-B1.answers.md:1"
+ },
+ "not_checked": [
+  "entailment - the gate proves each cited line exists and is quoted correctly, never that it supports the claim above it",
+  "53 citations were re-pinned by me after the gate initially rejected them; all 53 were verified as line drift or a line-wrapped quote, with ZERO fabrications, but 14 were resolved by nearest-match where the quoted text occurs more than once in the file",
+  "the workflow's halt condition read the ANSWERING agent's self-reported gate result, so it could not halt - batches 2 and 3 ran over batches that had in fact drifted red by the time I checked",
+  "no finding was reproduced at runtime; all were read from source",
+  "the answers are model output from fresh contexts: believed, not proved. Only citation integrity is oracle-proved"
+ ],
+ "skipped": []
+}

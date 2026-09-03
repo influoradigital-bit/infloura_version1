@@ -149,12 +149,19 @@ async def run_tool_loop(
     initial_messages: list[dict[str, Any]],
     ctx: ToolLoopContext,
     is_cancelled: Any = None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[LoopEvent]:
     """Runs the full function-calling loop for one /chat turn, yielding
     normalized LoopEvents as they occur (text tokens, tool lifecycle, done/error).
+
+    `tools` (Meera for Creators Phase A, A4): the tool schemas offered to
+    Claude for this turn. `None` (every pre-existing caller) means the full
+    BRAND set from `get_tool_schemas()`. CREATOR turns pass `[]` -- no money
+    tools, no brand tools -- and `assemble_prompt` is the single place that
+    decides which; the route only forwards `prompt.tools`.
     """
     messages = list(initial_messages)
-    tools = get_tool_schemas()
+    tools = get_tool_schemas() if tools is None else list(tools)
     iterations = 0
     final_usage: dict[str, Any] | None = None
     # P1 BLANK TURN fix (F2): bounded to ONE retry across the entire loop call

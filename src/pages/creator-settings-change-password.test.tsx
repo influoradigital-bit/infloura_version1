@@ -59,6 +59,16 @@ vi.mock('@/lib/api', async () => {
       },
       me: { deleteAccount: vi.fn().mockResolvedValue({ ok: true }) },
       creatorProfile: { getMe: vi.fn().mockResolvedValue(null) },
+      // T-MEERA-CREATOR-PHASE-A — MeeraSettingsSection is now mounted on this page; its two
+      // effects (preferences + conversations) need both present or property access throws.
+      creatorAgentPrefs: {
+        getPreferences: vi.fn().mockRejectedValue(new Error('not under test')),
+        updatePreferences: vi.fn(),
+        recordConsent: vi.fn(),
+        listConversations: vi.fn().mockResolvedValue({ conversations: [] }),
+        exportConversation: vi.fn(),
+        deleteConversation: vi.fn(),
+      },
       // CR-101/F-0114 — ConnectedAccounts is now mounted on this page; its useMetaConnection
       // hook needs both members present or property access on the mock throws.
       metaOAuth: {

@@ -300,7 +300,7 @@ function InvoicesTabContent() {
             <CardContent className="flex flex-col items-center justify-center gap-2 p-6 text-center">
               <FileText className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                Your invoices appear here after a collaboration's escrow is released.
+                Your invoices appear here after a collaboration's secured funds are released.
               </p>
             </CardContent>
           </Card>
@@ -710,7 +710,7 @@ export default function CreatorWalletPage() {
             <div>
               <p className="font-medium">Platform fee: {platformFeePercent}%</p>
               <p className="text-muted-foreground">
-                Deducted when campaign earnings are released from escrow.
+                Deducted when campaign earnings are released from secured funds.
               </p>
             </div>
           </div>
@@ -748,12 +748,12 @@ export default function CreatorWalletPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white/10 rounded-lg p-3">
                 <WalletFigureLabel
-                  label="In Escrow"
+                  label="Secured"
                   definition="Funds a brand has locked for a deal that's still in progress. Not withdrawable yet — moves to Available Balance once you deliver and it's approved."
                   labelClassName="text-xs text-white/80"
                   iconClassName="text-white/70 hover:text-white"
                 />
-                <p className="text-lg font-semibold" aria-label="In escrow">
+                <p className="text-lg font-semibold" aria-label="Secured">
                   {formatEarning(earnings.escrowLocked)}
                 </p>
               </div>
@@ -1200,7 +1200,7 @@ export default function CreatorWalletPage() {
                 {formatEarning(earnings.availableBalance)}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                {formatEarning(earnings.escrowLocked)} in escrow, not yet released
+                {formatEarning(earnings.escrowLocked)} secured, not yet released
               </p>
             </div>
 

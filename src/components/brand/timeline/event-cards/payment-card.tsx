@@ -20,10 +20,10 @@ export function PaymentEventCard({
     { label: string; color: string; icon: React.ReactNode; description: string }
   > = {
     escrow_locked: {
-      label: 'Escrow Locked',
+      label: 'Funds Secured',
       color: 'bg-yellow-100 text-yellow-900',
       icon: <Lock className="h-4 w-4" />,
-      description: 'Funds locked in escrow pending content approval',
+      description: 'Funds secured pending content approval',
     },
     milestone_released: {
       label: 'Milestone Released',

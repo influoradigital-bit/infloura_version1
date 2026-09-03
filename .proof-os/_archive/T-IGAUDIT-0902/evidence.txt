@@ -1,0 +1,16 @@
+## E1 getAccountInsights production callers (excl. client decl)
+0
+## E2 getMediaInsights production callers
+influora-api/src/main/java/com/influora/integration/meta/service/InstagramMetricsFetcher.java:209:                    instagramClient.getMediaInsights(
+influora-api/src/main/java/com/influora/service/verification/DeliverableVerificationService.java:244:                    instagramInsightsClient.getMediaInsights(
+## E3 /stories edge calls anywhere in main
+2
+## E4 webhook mappings under integration/meta/webhook
+influora-api/src/main/java/com/influora/integration/meta/webhook/MetaPlatformCallbackController.java:137:    @PostMapping(
+influora-api/src/main/java/com/influora/integration/meta/webhook/MetaPlatformCallbackController.java:206:    @PostMapping(
+## E5 instagram_manage_comments in any scope list
+9
+## E6 discovery demographic filter params
+8
+## E7 engagement-rate filter params
+4

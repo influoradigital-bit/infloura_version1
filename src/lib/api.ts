@@ -29,6 +29,7 @@ import type {
   CreatorMetrics,
   CreatorScores,
   CreatorScoresSummary,
+  DealTerms,
   DeliverableStatus,
   Platform,
   PlatformStats,
@@ -221,6 +222,12 @@ export interface ApiErrorPayload {
   walletBalance?: number;
   shortfallAmount?: number;
   currency?: string;
+  /**
+   * T-CREATORCONNECT-0902 Q2.3 — populated ONLY on the `CREATOR_ALREADY_ON_INFLUORA` 409 from
+   * `POST /creators/external/:id/connect` (`ApiErrorBody.creatorAlreadyOnInfluora`). Lets a
+   * caller offer the create-campaign link straight from the error instead of re-fetching.
+   */
+  linkedCreatorProfileId?: string;
 }
 
 export interface ApiEnvelope<T> {
@@ -271,6 +278,12 @@ export class ApiError extends Error {
     public status?: number,
     /** Populated only for `INSUFFICIENT_FUNDS` 402s that carry the server-computed shortfall. */
     public details?: InsufficientFundsDetails,
+    /**
+     * T-CREATORCONNECT-0902 Q2.3 — populated only for `CREATOR_ALREADY_ON_INFLUORA` 409s. A
+     * sibling field rather than folding into `details` (which stays INSUFFICIENT_FUNDS-shaped)
+     * so existing `details` consumers are untouched.
+     */
+    public linkedCreatorProfileId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -564,6 +577,7 @@ class HttpClient {
         envelope.error?.message || res.statusText,
         res.status,
         extractInsufficientFundsDetails(envelope.error),
+        envelope.error?.linkedCreatorProfileId,
       );
     }
 
@@ -636,6 +650,7 @@ class HttpClient {
         envelope.error?.message || res.statusText,
         res.status,
         extractInsufficientFundsDetails(envelope.error),
+        envelope.error?.linkedCreatorProfileId,
       );
     }
     return { data: envelope.data as T, meta: envelope.meta };
@@ -687,6 +702,7 @@ class HttpClient {
         envelope.error?.message || res.statusText,
         res.status,
         extractInsufficientFundsDetails(envelope.error),
+        envelope.error?.linkedCreatorProfileId,
       );
     }
     return (envelope.data as T) ?? null;
@@ -1432,6 +1448,10 @@ function campaignToPayload(payload: Partial<Campaign>) {
     isPrivate: payload.isPrivate,
     maxCollaborators: payload.maxCollaborators,
     targetAudience: (payload as { targetAudience?: unknown }).targetAudience,
+    // T-MEERA-CREATOR-PHASE-A (A2) — required for new campaigns (campaign-form.tsx validates
+    // before submit); may be undefined on an edit that predates this field.
+    endBrandName: payload.endBrandName,
+    endBrandCategory: payload.endBrandCategory,
   };
 }
 
@@ -1559,6 +1579,18 @@ export interface CampaignAnalytics {
 // Creators (discovery)
 // ---------------------------------------------------------------------------
 
+/**
+ * Sort orders `GET /creators` honours *under the name it advertises* — verified against
+ * CreatorDiscoveryService#toSort: engagement → engagementRate DESC, price_low → rateMin ASC,
+ * price_high → rateMax DESC, anything else → totalFollowers DESC (the server's own default).
+ *
+ * F-0408 — `toSort` also accepts `relevance`, `rating` and `rate`. `relevance` and `rating` are
+ * deliberately NOT in this union: neither sorts by what it names (both fall through to a plain
+ * followers/engagement ORDER BY — see the H-22 comment in toSort), so offering them would put a
+ * label on the screen the ranking does not honour. `rate` is just an alias for `price_low`.
+ */
+export type CreatorSortOrder = 'followers' | 'engagement' | 'price_low' | 'price_high';
+
 export interface CreatorSearchParams {
   q?: string;
   platforms?: Platform[];
@@ -1567,13 +1599,22 @@ export interface CreatorSearchParams {
   maxFollowers?: number;
   minRate?: number;
   maxRate?: number;
+  /** Percentage points, matching CreatorProfile.engagementRate (e.g. 4.2 = 4.2%). */
+  minEngagementRate?: number;
+  maxEngagementRate?: number;
   verticals?: string[];
+  languages?: string[];
+  /** Only sent when true — the server's `verifiedOnly` spec is a no-op for false/null. */
+  isVerified?: boolean;
+  sortBy?: CreatorSortOrder;
   page?: number;
   limit?: number;
 }
 
-function creatorSearchQuery(params: CreatorSearchParams): Record<string, string | number | undefined> {
-  const q: Record<string, string | number | undefined> = {};
+function creatorSearchQuery(
+  params: CreatorSearchParams,
+): Record<string, string | number | boolean | undefined> {
+  const q: Record<string, string | number | boolean | undefined> = {};
   if (params.q) q.q = params.q;
   if (params.city) q.city = params.city;
   if (params.page) q.page = params.page;
@@ -1582,8 +1623,15 @@ function creatorSearchQuery(params: CreatorSearchParams): Record<string, string 
   if (params.maxFollowers != null) q.maxFollowers = params.maxFollowers;
   if (params.minRate != null) q.minRate = params.minRate;
   if (params.maxRate != null) q.maxRate = params.maxRate;
+  if (params.minEngagementRate != null) q.minEngagementRate = params.minEngagementRate;
+  if (params.maxEngagementRate != null) q.maxEngagementRate = params.maxEngagementRate;
   if (params.platforms?.length) q.platforms = params.platforms.join(',');
+  // The server merges `verticals` and `categories` into one distinct list (mergeCategoryFilters),
+  // so one of the two carries the whole category filter — sending both would only duplicate it.
   if (params.verticals?.length) q.verticals = params.verticals.join(',');
+  if (params.languages?.length) q.languages = params.languages.join(',');
+  if (params.isVerified) q.isVerified = true;
+  if (params.sortBy) q.sortBy = params.sortBy;
   return q;
 }
 
@@ -1779,6 +1827,149 @@ export const creators = {
 };
 
 // ---------------------------------------------------------------------------
+// External creators (Instagram / Meta-sourced) — T-CREATORCONNECT-0902.
+// ExternalCreatorController @ /creators/external (brand-facing, requires brand workspace).
+// Types below mirror ExternalCreatorResponse / ConnectionRequestResponse (Java records,
+// .proof-os/tasks/T-CREATORCONNECT-0902/TASKS.md §Backend API contract) field-for-field,
+// including nullability. Never coerce a nullable numeric field to 0 — render "—" (F-0259/F-0260).
+// ---------------------------------------------------------------------------
+
+/** `external_creators.status` — UNVERIFIED (never on Influora), INVITED (admin reached out),
+ *  JOINED (matched to a real CreatorProfile by ExternalCreatorLinkService). */
+export type ExternalCreatorStatus = 'UNVERIFIED' | 'INVITED' | 'JOINED';
+
+/** `creator_connection_requests.status` — this workspace's own request against one creator. */
+export type ConnectionRequestStatus = 'PENDING' | 'CONTACTED' | 'JOINED' | 'DECLINED';
+
+/** Mirrors `ExternalCreatorResponse` field-for-field, same nullability. */
+export interface ExternalCreator {
+  id: string;
+  /** META_MARKETPLACE | BUSINESS_DISCOVERY | ADMIN_IMPORT */
+  source: string;
+  igUsername: string;
+  displayName: string | null;
+  bio: string | null;
+  avatarUrl: string | null;
+  /** Nullable — Business Discovery/admin-import rows may never have been enriched. */
+  followers: number | null;
+  mediaCount: number | null;
+  engagementRate: number | null;
+  country: string | null;
+  categories: string[] | null;
+  status: ExternalCreatorStatus;
+  /** `status === 'JOINED' && linkedCreatorProfileId != null` — computed server-side. */
+  verifiedWithInfluora: boolean;
+  linkedCreatorProfileId: string | null;
+  /** This workspace's own request against this creator, if any has been made. */
+  connectionStatus: ConnectionRequestStatus | null;
+  connectionRequestId: string | null;
+  lastSyncedAt: string | null;
+  /** Q2.5 — set once an admin sends the join invitation (`markInvited`); null until then. */
+  invitedAt: string | null;
+}
+
+/** Mirrors `ConnectionRequestResponse` field-for-field, same nullability. */
+export interface ConnectionRequest {
+  id: string;
+  externalCreatorId: string;
+  igUsername: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  message: string | null;
+  status: ConnectionRequestStatus;
+  createdAt: string;
+  handledAt: string | null;
+  updatedAt: string;
+  linkedCreatorProfileId: string | null;
+}
+
+export interface ExternalCreatorListParams {
+  q?: string;
+  minFollowers?: number;
+  maxFollowers?: number;
+  page?: number;
+  limit?: number;
+}
+
+export interface ExternalCreatorListResult {
+  creators: ExternalCreator[];
+  meta: { page: number; limit: number; total?: number; hasMore: boolean };
+}
+
+export const externalCreators = {
+  /** GET /creators/external — every status, server-side paginated. */
+  list: async (params: ExternalCreatorListParams = {}): Promise<ExternalCreatorListResult> => {
+    if (!isLive()) {
+      return mockOr<ExternalCreatorListResult>({
+        creators: [],
+        meta: { page: params.page ?? 1, limit: params.limit ?? 20, hasMore: false },
+      });
+    }
+    const { data, meta } = await http.requestWithMeta<ExternalCreator[]>('GET', '/creators/external', {
+      query: {
+        q: params.q || undefined,
+        minFollowers: params.minFollowers,
+        maxFollowers: params.maxFollowers,
+        page: params.page ?? 1,
+        limit: params.limit ?? 20,
+      },
+    });
+    return {
+      creators: data,
+      meta: {
+        page: meta?.page ?? params.page ?? 1,
+        limit: meta?.limit ?? params.limit ?? 20,
+        total: meta?.total,
+        hasMore: Boolean(meta?.hasMore),
+      },
+    };
+  },
+
+  /**
+   * GET /creators/external/lookup?username= — Business Discovery. Throws `ApiError`
+   * (`status: 404` — no such professional account; `status: 503`,
+   * `code: 'INSTAGRAM_LOOKUP_UNAVAILABLE'` — Meta off / no usable page token) rather than ever
+   * inventing a creator. Callers must render the 503 as an honest "unavailable" state, not a
+   * generic error (F-0259/F-0260).
+   */
+  lookup: (username: string): Promise<ExternalCreator> =>
+    isLive()
+      ? http.request<ExternalCreator>('GET', '/creators/external/lookup', { query: { username } })
+      : Promise.reject(
+          new ApiError('INSTAGRAM_LOOKUP_UNAVAILABLE', "Instagram lookup isn't connected yet.", 503),
+        ),
+
+  /**
+   * POST /creators/external/:id/connect — idempotent: an existing non-DECLINED request for this
+   * (workspace, creator) is returned unchanged with 200. 409 `CREATOR_ALREADY_ON_INFLUORA` if the
+   * creator has already JOINED (callers should catch `ApiError` and offer the create-campaign
+   * link instead of retrying).
+   */
+  connect: (id: string, body: { message?: string } = {}): Promise<ConnectionRequest> =>
+    isLive()
+      ? http.request<ConnectionRequest>('POST', `/creators/external/${id}/connect`, { body })
+      : mockOr<ConnectionRequest>({
+          id: 'ccr_new',
+          externalCreatorId: id,
+          igUsername: 'creator',
+          displayName: null,
+          avatarUrl: null,
+          message: body.message ?? null,
+          status: 'PENDING',
+          createdAt: new Date().toISOString(),
+          handledAt: null,
+          updatedAt: new Date().toISOString(),
+          linkedCreatorProfileId: null,
+        }),
+
+  /** GET /creators/external/connection-requests — this workspace's own requests. */
+  connectionRequests: (): Promise<ConnectionRequest[]> =>
+    isLive()
+      ? http.request<ConnectionRequest[]>('GET', '/creators/external/connection-requests')
+      : mockOr<ConnectionRequest[]>([]),
+};
+
+// ---------------------------------------------------------------------------
 // Campaign templates (BR-14 Phase 1) — CampaignTemplateController @ /campaign-templates.
 // Read is free to every plan tier (4 SYSTEM presets are seeded); only POST (save-as-template,
 // not built in this pass) carries @RequiresPlan. No FE plan gate needed for list/get.
@@ -1959,6 +2150,14 @@ export const deals = {
       deliverables?: Array<{ type: string; qty: number }>;
       deadline?: string;
       usageRights?: string;
+      /**
+       * T-MEERA-CREATOR-PHASE-A (A2, SPEC.md §1.1) — structured deal terms, persisted onto the
+       * Collaboration row (usage_months/usage_perpetual/usage_channels/exclusivity_days/
+       * exclusivity_scope/exclusivity_brands/max_revisions). Sent alongside the existing free-text
+       * `usageRights` string (kept for the human-readable proposal message) — this is the field
+       * DealRiskService/Meera read structured values from.
+       */
+      dealTerms?: DealTerms;
     },
     role: Role = 'creator',
     idempotencyKey?: string,
@@ -1995,6 +2194,8 @@ export const deals = {
     deadline?: string;
     usageRights?: string;
     message?: string;
+    /** T-MEERA-CREATOR-PHASE-A (A2) — see `counter()`'s `dealTerms` doc comment. */
+    dealTerms?: DealTerms;
   }) =>
     isLive()
       ? http.request<Deal>('POST', '/deals', { body: payload })
@@ -5687,6 +5888,193 @@ export const creatorCopilot = {
 };
 
 // ---------------------------------------------------------------------------
+// Meera for Creators — Phase A (T-MEERA-CREATOR-PHASE-A, SPEC.md §2.2-2.8)
+// ---------------------------------------------------------------------------
+// Every field below matches the Java DTO one-for-one — snake_case on the wire, deliberately
+// NOT translated to camelCase here, so a spec/DTO drift surfaces as a real `undefined` at
+// runtime instead of being silently absorbed by a mapping layer (per the task brief's
+// "match DTO shapes exactly" rule).
+
+export type CreatorApprovalLevel = 0 | 1 | 2;
+export type CreatorBrandTone = 'FORMAL' | 'FRIENDLY';
+
+/** GET/PUT /creator/agent-preferences response shape (SPEC.md §2.2/§2.3). */
+export interface CreatorAgentPreferences {
+  reel_floor: number | null;
+  story_set_floor: number | null;
+  post_floor: number | null;
+  excluded_categories: string[];
+  blocked_brands: string[];
+  approval_level: CreatorApprovalLevel;
+  creator_language: string;
+  brand_tone: CreatorBrandTone;
+  working_hours_start: number | null;
+  working_hours_end: number | null;
+  working_days: number[];
+  weekly_sponsored_limit: number | null;
+  represented: boolean;
+  agency_name: string | null;
+  consent_accepted: boolean;
+}
+
+/**
+ * PUT request body (SPEC.md §2.3) — same fields as the GET response minus `consent_accepted`,
+ * which is server-owned (set only via `recordConsent`, never via this PUT).
+ */
+export type CreatorAgentPreferencesUpdate = Omit<CreatorAgentPreferences, 'consent_accepted'>;
+
+export interface CreatorAgentConsentResponse {
+  consent_accepted_at: string;
+}
+
+export interface CreatorAgentConversationItem {
+  conversation_id: string;
+  started_at: string;
+  last_message_at: string;
+  message_count: number;
+}
+
+export interface CreatorAgentConversationExportMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+}
+
+export interface CreatorAgentConversationExport {
+  conversation_id: string;
+  started_at: string;
+  messages: CreatorAgentConversationExportMessage[];
+}
+
+const MOCK_CREATOR_AGENT_PREFS: CreatorAgentPreferences = {
+  reel_floor: 1200,
+  story_set_floor: 800,
+  post_floor: 1500,
+  excluded_categories: [],
+  blocked_brands: [],
+  approval_level: 0,
+  creator_language: 'hi-IN',
+  brand_tone: 'FRIENDLY',
+  working_hours_start: null,
+  working_hours_end: null,
+  working_days: [],
+  weekly_sponsored_limit: null,
+  represented: false,
+  agency_name: null,
+  consent_accepted: false,
+};
+
+export const creatorAgentPrefs = {
+  /** GET /creator/agent-preferences — server computes+persists defaults on first call (A3). */
+  getPreferences: (): Promise<CreatorAgentPreferences> =>
+    isLive()
+      ? http.request<CreatorAgentPreferences>('GET', '/creator/agent-preferences', { role: 'creator' })
+      : mockOr(MOCK_CREATOR_AGENT_PREFS),
+
+  /** PUT /creator/agent-preferences (A3). */
+  updatePreferences: (payload: CreatorAgentPreferencesUpdate): Promise<CreatorAgentPreferences> =>
+    isLive()
+      ? http.request<CreatorAgentPreferences>('PUT', '/creator/agent-preferences', {
+          role: 'creator',
+          body: payload,
+        })
+      : mockOr({ ...MOCK_CREATOR_AGENT_PREFS, ...payload }),
+
+  /** POST /creator/agent-preferences/consent — DPDP consent gate (A6). Empty body. */
+  recordConsent: (): Promise<CreatorAgentConsentResponse> =>
+    isLive()
+      ? http.request<CreatorAgentConsentResponse>('POST', '/creator/agent-preferences/consent', {
+          role: 'creator',
+        })
+      : mockOr({ consent_accepted_at: new Date().toISOString() }),
+
+  /** GET /creator/agent-preferences/conversations — DPDP export/delete list (A6). */
+  listConversations: (): Promise<{ conversations: CreatorAgentConversationItem[] }> =>
+    isLive()
+      ? http.request<{ conversations: CreatorAgentConversationItem[] }>(
+          'GET',
+          '/creator/agent-preferences/conversations',
+          { role: 'creator' },
+        )
+      : mockOr({ conversations: [] }),
+
+  /** GET /creator/agent-preferences/conversations/:id/export — downloadable JSON (A6). */
+  exportConversation: (conversationId: string): Promise<CreatorAgentConversationExport> =>
+    isLive()
+      ? http.request<CreatorAgentConversationExport>(
+          'GET',
+          `/creator/agent-preferences/conversations/${conversationId}/export`,
+          { role: 'creator' },
+        )
+      : mockOr({ conversation_id: conversationId, started_at: new Date().toISOString(), messages: [] }),
+
+  /** DELETE /creator/agent-preferences/conversations/:id (A6). */
+  deleteConversation: (conversationId: string): Promise<void> =>
+    isLive()
+      ? http.request<void>('DELETE', `/creator/agent-preferences/conversations/${conversationId}`, {
+          role: 'creator',
+        })
+      : mockOr(undefined),
+};
+
+// ---------------------------------------------------------------------------
+// Public verified-metrics (A9, SPEC.md §2.8) — no auth required
+// ---------------------------------------------------------------------------
+
+/**
+ * T-MEERA-CREATOR-PHASE-A (fix round 1, item 3) — Java's `VerifiedMetrics` record
+ * (PublicCreatorDtos.java) is `@JsonInclude(NON_NULL)` with `long followers` (never null) but
+ * `Long reach30d`, `BigDecimal engagementRate`, and `Instant verifiedAt` all nullable — a
+ * Meta-connected creator with no `CreatorMetric` row yet (metrics polling hasn't run)
+ * produces a payload that OMITS those three keys entirely. Declaring them required here let
+ * `creator-verified-metrics.tsx` call `.toLocaleString()` on `undefined` and crash a public,
+ * indexable page — `npx tsc --noEmit` cannot catch a Java-vs-TS nullability mismatch.
+ */
+export interface PublicVerifiedMetrics {
+  followers: number;
+  reach_30d: number | null;
+  engagement_rate: number | null;
+  verified_at: string | null;
+}
+
+export interface PublicCreatorVerifiedResponse {
+  username: string;
+  display_name: string;
+  city: string | null;
+  categories: string[];
+  verified_metrics: PublicVerifiedMetrics;
+  platform_deal_count: number;
+  snapshot_date: string;
+}
+
+export const publicCreators = {
+  /**
+   * GET /public/creators/:username/verified — public (no auth), 404 when the creator isn't
+   * discoverable or has no connected Meta account. NO rates, NO floors on this DTO (A9).
+   */
+  getVerifiedMetrics: (username: string): Promise<PublicCreatorVerifiedResponse> =>
+    isLive()
+      ? http.request<PublicCreatorVerifiedResponse>(
+          'GET',
+          `/public/creators/${encodeURIComponent(username)}/verified`,
+        )
+      : mockOr<PublicCreatorVerifiedResponse>({
+          username,
+          display_name: username,
+          city: 'Mumbai',
+          categories: ['Fashion', 'Lifestyle'],
+          verified_metrics: {
+            followers: 12400,
+            reach_30d: 45600,
+            engagement_rate: 3.2,
+            verified_at: new Date().toISOString(),
+          },
+          platform_deal_count: 8,
+          snapshot_date: new Date().toISOString(),
+        }),
+};
+
+// ---------------------------------------------------------------------------
 // Client crash reporting (CR-11)
 // ---------------------------------------------------------------------------
 // wiki/tech/cr-11-client-error-contract.md — LOCKED contract, do not deviate from the
@@ -5789,6 +6177,7 @@ export const api = {
   campaigns,
   campaignTemplates,
   creators,
+  externalCreators,
   deals,
   messages,
   shipments,
@@ -5823,6 +6212,8 @@ export const api = {
   brandDisputes,
   trendspark,
   creatorCopilot,
+  creatorAgentPrefs,
+  publicCreators,
   clientErrors,
 };
 

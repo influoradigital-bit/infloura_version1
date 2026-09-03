@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.common.ApiException;
+import com.influora.common.JsonLists;
 import com.influora.common.TextSanitizer;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.Campaign;
@@ -17,6 +18,7 @@ import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.ApplicationHistoryActorType;
 import com.influora.domain.enums.ApplicationHistoryEventType;
+import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.ContractStatus;
@@ -24,6 +26,7 @@ import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.ExclusivityScope;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.UserType;
 import com.influora.repository.CampaignRepository;
@@ -50,6 +53,7 @@ import com.influora.web.dto.deal.DealDtos.CounterRequest;
 import com.influora.web.dto.deal.DealDtos.CreateDealRequest;
 import com.influora.web.dto.deal.DealDtos.DealMessageResponse;
 import com.influora.web.dto.deal.DealDtos.DealResponse;
+import com.influora.web.dto.deal.DealDtos.DealTermsDto;
 import com.influora.web.dto.deal.DealDtos.OkResponse;
 import com.influora.web.dto.deal.DealDtos.RejectRequest;
 import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
@@ -149,6 +153,12 @@ public class DealService {
     public List<DealResponse> list(AuthPrincipal principal, String statusFilter) {
         UserType role = requireRole(principal);
         List<Collaboration> collaborations = loadCollaborations(principal, role);
+        // Q6.2 (T-CREATORCONNECT-0902) — a creator must never see a deal tied to a still-DRAFT
+        // campaign; CreatorDiscoveryService#invite now refuses to create one, but this is the
+        // backstop for any collaboration row that predates that guard or was created another way.
+        if (role == UserType.CREATOR) {
+            collaborations = excludeDraftCampaignCollaborations(collaborations);
+        }
         List<CollaborationStatus> allowed = statusesForFilter(statusFilter, role);
         List<Collaboration> filtered =
                 collaborations.stream()
@@ -271,6 +281,7 @@ public class DealService {
             if (body.usageRights() != null && !body.usageRights().isBlank()) {
                 collaboration.setUsageRights(TextSanitizer.sanitizePlainText(body.usageRights()));
             }
+            applyDealTermsIfPresent(collaboration, body.dealTerms());
             collaborationRepository.save(collaboration);
         } else {
             collaboration =
@@ -285,6 +296,7 @@ public class DealService {
             if (body.usageRights() != null && !body.usageRights().isBlank()) {
                 collaboration.setUsageRights(TextSanitizer.sanitizePlainText(body.usageRights()));
             }
+            applyDealTermsIfPresent(collaboration, body.dealTerms());
             try {
                 collaborationRepository.save(collaboration);
             } catch (DataIntegrityViolationException ex) {
@@ -824,7 +836,7 @@ public class DealService {
                             hold ->
                                     appendLifecycleRow(
                                             hold.getCollaborationId(),
-                                            "Escrow funded — "
+                                            "Funds secured — "
                                                     + hold.getAmount()
                                                     + " "
                                                     + hold.getCurrency()
@@ -905,6 +917,45 @@ public class DealService {
     }
 
     /**
+     * Revision requested — the other outcome of a deliverable review, and the one that was silent.
+     *
+     * <p>F-0288 landed handlers for approval, submission, signature, funding and release, which
+     * between them cover the path where everything goes right. A revision is the path where it does
+     * not: the deliverable goes back to the creator and the collaboration moves to {@code
+     * REVISION_REQUESTED}. Before this handler the creator's deal room showed that reversal with no
+     * entry explaining it — the same thin-event-log defect, in the transition where an unexplained
+     * gap is least acceptable, because it is the one that asks someone to do more work.
+     *
+     * <p>Not de-duplicated, matching {@link #onDeliverableApproved}: a deliverable can be sent back
+     * more than once and each round is its own entry. The type is prose from the row and the
+     * collaboration comes off the event, so a failed lookup costs the wording, not the row.
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onDeliverableRevisionRequested(
+            BrandDeliverableService.DeliverableRevisionRequestedEvent event) {
+        try {
+            String type =
+                    deliverableRepository
+                            .findById(event.deliverableId())
+                            .map(
+                                    deliverable ->
+                                            " "
+                                                    + deliverable
+                                                            .getType()
+                                                            .name()
+                                                            .toLowerCase(Locale.ROOT)
+                                                            .replace('_', ' '))
+                            .orElse("");
+            appendLifecycleRow(
+                    event.collaborationId(),
+                    "Brand requested a revision on the" + type + " deliverable");
+        } catch (RuntimeException e) {
+            logTrailFailure("deliverable.revision_requested", event.deliverableId(), e);
+        }
+    }
+
+    /**
      * Escrow released — the terminal money event, and the closing row of the trail.
      *
      * <p><b>Why this row is about the release and not the approval.</b> Brand approval is the
@@ -938,7 +989,7 @@ public class DealService {
         try {
             appendLifecycleRow(
                     collaborationIdForPayout(event.entityId()),
-                    "Payment released from escrow — " + event.amount());
+                    "Payment released from secured funds — " + event.amount());
         } catch (RuntimeException e) {
             logTrailFailure("payout.released", event.entityId(), e);
         }
@@ -1082,6 +1133,12 @@ public class DealService {
         // (the transition to TERMS_AGREED below), not at proposal/counter time — a campaign can
         // carry any number of merely-negotiating offers without over-committing anything.
         requireWithinRemainingBudget(collaboration);
+
+        // F-0400 — campaign.maxCollaborators was persisted, echoed back in every campaign
+        // response and read by nothing, so the cap was decorative. Enforced at the same edge as
+        // the budget gate above and for the same reason: accept is where a creator actually joins
+        // the campaign, so any number of creators may be negotiating without the cap firing.
+        requireWithinCollaboratorCap(collaboration);
 
         collaboration.transitionTo(CollaborationStatus.TERMS_AGREED);
         collaborationRepository.save(collaboration);
@@ -1247,6 +1304,7 @@ public class DealService {
         if (body.usageRights() != null && !body.usageRights().isBlank()) {
             collaboration.setUsageRights(TextSanitizer.sanitizePlainText(body.usageRights()));
         }
+        applyDealTermsIfPresent(collaboration, body.dealTerms());
         collaboration.transitionTo(CollaborationStatus.IN_NEGOTIATION);
         collaborationRepository.save(collaboration);
         // [H1] Settle the offer this counter supersedes BEFORE persisting the new one — ordering
@@ -1378,6 +1436,27 @@ public class DealService {
         }
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
         return collaborationRepository.findByWorkspaceId(workspace.getId());
+    }
+
+    /** Q6.2 — drops any collaboration whose campaign is still DRAFT. A brand's own deal list is
+     * untouched (drafts are visible and expected there); this only ever runs for the creator side. */
+    private List<Collaboration> excludeDraftCampaignCollaborations(List<Collaboration> collaborations) {
+        if (collaborations.isEmpty()) {
+            return collaborations;
+        }
+        Set<String> campaignIds =
+                collaborations.stream().map(Collaboration::getCampaignId).collect(Collectors.toSet());
+        Set<String> draftCampaignIds =
+                campaignRepository.findAllById(campaignIds).stream()
+                        .filter(c -> c.getStatus() == CampaignStatus.DRAFT)
+                        .map(Campaign::getId)
+                        .collect(Collectors.toSet());
+        if (draftCampaignIds.isEmpty()) {
+            return collaborations;
+        }
+        return collaborations.stream()
+                .filter(c -> !draftCampaignIds.contains(c.getCampaignId()))
+                .toList();
     }
 
     /** CR-80 — statuses a dispute can never be opened against; see {@link #listEligibleForDispute}. */
@@ -1642,16 +1721,15 @@ public class DealService {
      * #validateProposalAmount}'s existing null-skip behavior — this does not newly invent a
      * ceiling where the brand set none.
      *
-     * <p>F-0399 — a null {@code agreedRate} must fail this gate, not clear it. {@link
-     * Collaboration#apply()} and {@link Collaboration#invite()} never set {@code agreedRate} (only
-     * {@code propose()}/{@code updateAgreedRate()} do), yet both {@code APPLIED} and {@code
-     * INVITED} pass {@link Collaboration#canAccept()} — so a brand accepting a creator's bid
-     * directly, with no proposal exchanged, used to reach this gate with a null rate. Folding that
-     * to {@code BigDecimal.ZERO} let it clear any budget outright, and dropping it from the
-     * committed-sum stream erased it from accounting forever after. Per CTO ruling, a collaboration
-     * may not reach {@code TERMS_AGREED} without an agreed rate: a null rate — this offer's or an
-     * already-committed row's — is an unverified, not a zero, amount, so it fails the gate closed
-     * with the existing {@code AMOUNT_EXCEEDS_BUDGET} shape rather than being guessed at.
+     * <p>F-0399 — what this gate DOES fix: the budget is now summed across every
+     * budget-committed collaboration on the campaign, not checked one offer at a time. Before
+     * this, each offer was compared to {@code budgetMax} in isolation, so N creators could each be
+     * offered the full budget and a campaign could commit N times its own cap.
+     *
+     * <p>What it deliberately does NOT do: reject a null {@code agreedRate}. See the comment at
+     * the null check in the body — an INVITED deal carries no rate by design, so failing closed
+     * there breaks the invite-then-accept flow. The null-rate accounting gap is a known, recorded
+     * residual, not an oversight.
      */
     private void requireWithinRemainingBudget(Collaboration collaboration) {
         Campaign campaign =
@@ -1671,18 +1749,26 @@ public class DealService {
                         .filter(c -> !c.getId().equals(collaboration.getId()))
                         .filter(c -> BUDGET_COMMITTED_STATUSES.contains(c.getStatus()))
                         .collect(Collectors.toList());
-        boolean unaccountedRate =
-                collaboration.getAgreedRate() == null
-                        || committedOthers.stream().anyMatch(c -> c.getAgreedRate() == null);
-        if (unaccountedRate) {
-            throw new ApiException(
-                    "AMOUNT_EXCEEDS_BUDGET",
-                    "Proposed amount exceeds campaign budget",
-                    HttpStatus.BAD_REQUEST);
+        // [F-0399] A null agreedRate is NOT rejected here, and that is deliberate. An earlier pass
+        // failed this gate closed on a null rate, on the reasoning that a deal with no agreed
+        // amount is not agreed terms. That reasoning was wrong for this product: Collaboration
+        // #invite takes no amount (id, campaignId, creatorUserId, message, currency) and neither
+        // does POST /creators/{id}/invite, so an INVITED deal legitimately carries no rate and a
+        // creator accepting an invite before any rate is negotiated is a supported flow. Failing
+        // closed here broke it — nine DealServiceTest accept cases, including both happy paths.
+        //
+        // The residual gap is recorded rather than papered over: a null-rate collaboration
+        // contributes nothing to the committed sum, so it neither trips the cap on the way in nor
+        // counts against it afterwards. Closing that means enforcing where the amount first becomes
+        // known — proposal, counter, or escrow funding — not at accept, where there may be no
+        // number to check. See the open ledger entry for that follow-up.
+        if (collaboration.getAgreedRate() == null) {
+            return;
         }
         BigDecimal alreadyCommitted =
                 committedOthers.stream()
                         .map(Collaboration::getAgreedRate)
+                        .filter(rate -> rate != null)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal thisOffer = collaboration.getAgreedRate();
         if (alreadyCommitted.add(thisOffer).compareTo(campaign.getBudgetMax()) > 0) {
@@ -1690,6 +1776,59 @@ public class DealService {
                     "AMOUNT_EXCEEDS_BUDGET",
                     "Proposed amount exceeds campaign budget",
                     HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /**
+     * F-0400 — {@link #doAccept}'s collaborator-count gate. {@code campaign.maxCollaborators} was
+     * accepted on create/patch, persisted, and mapped into every campaign response, but no code
+     * path ever read it back to reject anything, so the cap a brand set was decorative and a
+     * campaign capped at N could take on any number of creators.
+     *
+     * <p>Counted over the same {@link #BUDGET_COMMITTED_STATUSES} set the budget gate uses, and for
+     * the same reason: those are the statuses in which a creator is really on the campaign, so
+     * merely-negotiating offers (INVITED/APPLIED/SHORTLISTED/IN_NEGOTIATION) do not consume a slot
+     * and a withdrawn one (CANCELLED) gives its slot back. One collaboration is one creator here —
+     * {@code COLLABORATION_EXISTS} already prevents a second row for the same creator on a
+     * campaign. Excludes {@code collaboration} itself by id (it is not yet committed —
+     * {@link Collaboration#canAccept()} guarantees that) and then counts it as the +1 seeking a
+     * slot.
+     *
+     * <p>A {@code null} cap means the brand set none, matching how {@code budgetMax} is treated. A
+     * non-positive cap is also treated as "no cap": {@code maxCollaborators} carries no positivity
+     * constraint on either write DTO, so a stored {@code 0} is an unvalidated value rather than a
+     * deliberate "nobody may join", and reading it literally would brick every accept on such a
+     * campaign.
+     *
+     * <p>What this does NOT do: re-check the cap when a brand PATCHes {@code maxCollaborators}
+     * downward. A campaign already at N committed creators can still be patched to a lower cap;
+     * that leaves stored state inconsistent but commits no new creator and moves no money, and the
+     * gate here keeps refusing further accepts against the new, lower number.
+     */
+    private void requireWithinCollaboratorCap(Collaboration collaboration) {
+        Campaign campaign =
+                campaignRepository
+                        .findById(collaboration.getCampaignId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CAMPAIGN_NOT_FOUND",
+                                                "Campaign not found",
+                                                HttpStatus.NOT_FOUND));
+        Integer cap = campaign.getMaxCollaborators();
+        if (cap == null || cap <= 0) {
+            return;
+        }
+        long committedOthers =
+                collaborationRepository.findByCampaignId(campaign.getId()).stream()
+                        .filter(c -> !c.getId().equals(collaboration.getId()))
+                        .filter(c -> BUDGET_COMMITTED_STATUSES.contains(c.getStatus()))
+                        .count();
+        if (committedOthers + 1 > cap) {
+            throw new ApiException(
+                    "MAX_COLLABORATORS_REACHED",
+                    "This campaign has reached its collaborator limit",
+                    HttpStatus.CONFLICT);
         }
     }
 
@@ -1929,7 +2068,68 @@ public class DealService {
                 nextDeadline,
                 latest != null ? latest.getId() : null,
                 latest != null ? latest.getStatus() : null,
-                escrowFunded);
+                escrowFunded,
+                toDealTermsDto(collaboration));
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1/4.2, A2) — {@code null} {@code dealTerms} means "the
+     * caller sent no structured terms," left as-is (never overwritten with defaults); a present
+     * {@code dealTerms} always wins even if every one of its own fields is at its default (e.g. a
+     * brand deliberately clearing exclusivity back to NONE on a re-proposal).
+     */
+    private static void applyDealTermsIfPresent(Collaboration collaboration, DealTermsDto terms) {
+        if (terms == null) {
+            return;
+        }
+        String channels =
+                terms.usageChannels() == null || terms.usageChannels().isEmpty()
+                        ? null
+                        : String.join(",", terms.usageChannels());
+        String exclusivityBrands =
+                terms.exclusivityScope() == ExclusivityScope.NAMED_BRANDS
+                        ? JsonLists.toJson(terms.exclusivityBrands())
+                        : null;
+        collaboration.applyDealTerms(
+                terms.usageMonths(),
+                terms.usagePerpetual(),
+                channels,
+                terms.exclusivityDays(),
+                terms.exclusivityScope(),
+                exclusivityBrands,
+                terms.maxRevisions() != null ? terms.maxRevisions() : 2);
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1/4.2, A2) — {@code null} when nothing structured was ever
+     * set (every field on the collaboration is at its unset default), so a deal predating this
+     * feature (or one that only ever used the free-text {@code usageRights}) renders no {@code
+     * dealTerms} block rather than a block full of misleading zeros/NONE.
+     */
+    private static DealTermsDto toDealTermsDto(Collaboration collaboration) {
+        boolean anySet =
+                collaboration.getUsageMonths() != null
+                        || collaboration.isUsagePerpetual()
+                        || collaboration.getUsageChannels() != null
+                        || collaboration.getExclusivityDays() != null
+                        || collaboration.getExclusivityScope() != ExclusivityScope.NONE
+                        || collaboration.getExclusivityBrands() != null;
+        if (!anySet) {
+            return null;
+        }
+        List<String> channels =
+                collaboration.getUsageChannels() == null || collaboration.getUsageChannels().isBlank()
+                        ? List.of()
+                        : List.of(collaboration.getUsageChannels().split(","));
+        List<String> exclusivityBrands = JsonLists.stringListFromJson(collaboration.getExclusivityBrands());
+        return new DealTermsDto(
+                collaboration.getUsageMonths(),
+                collaboration.isUsagePerpetual(),
+                channels,
+                collaboration.getExclusivityDays(),
+                collaboration.getExclusivityScope(),
+                exclusivityBrands,
+                collaboration.getMaxRevisions());
     }
 
     /** Brand-approved-or-beyond — see {@link #toDealResponse} deliverable aggregation. */

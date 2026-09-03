@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -17,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import type { UsageChannel, ExclusivityScope } from '@/lib/types';
 
 /**
  * Terms the deal-room proposal collects. `exclusivity` and `revisionCap` were removed
@@ -25,9 +27,14 @@ import {
  * either one, so a brand setting them bought nothing.
  *
  * `budget` is the CREATOR PAYOUT and the only figure sent to the server (as the counter
- * `amount`). Everything else here is descriptive: `POST /deals/:id/counter` accepts only
- * amount/message/deliverables, so deadline, usage rights and custom clauses travel in the
- * message body — visible to the creator in the thread rather than silently dropped.
+ * `amount`). `usageRightsDuration`/`usageRightsAddOns`/`customClauses` are still descriptive
+ * only — they travel in the free-text message body, not a structured field.
+ *
+ * T-MEERA-CREATOR-PHASE-A (A2, SPEC.md §1.1) brings exclusivity and revisions BACK — this time
+ * wired to real Collaboration columns (usage_months/usage_perpetual/usage_channels/
+ * exclusivity_days/exclusivity_scope/exclusivity_brands/max_revisions), sent as the structured
+ * `dealTerms` field on `POST /deals` and `POST /deals/:id/counter`. Unlike the 2026-07-26
+ * removal, these are no longer dead controls — see brand-chat.tsx's `handleSendProposal`.
  */
 export interface ProposalFormData {
   // Step 1: Deliverables
@@ -36,10 +43,19 @@ export interface ProposalFormData {
   budget: number;
   // Step 3: Timeline
   deadline: string;
-  // Step 4: Usage Rights
+  // Step 4: Usage Rights (descriptive summary)
   usageRightsDuration: string;
   usageRightsAddOns: string[];
-  // Step 5: Terms
+  // Step 4: Usage Rights (structured — DealTerms)
+  usageMonths: number | null;
+  usagePerpetual: boolean;
+  usageChannels: UsageChannel[];
+  // Step 5: Terms (structured — DealTerms)
+  exclusivityDays: number | null;
+  exclusivityScope: ExclusivityScope;
+  exclusivityBrands: string[];
+  maxRevisions: number;
+  // Step 5: Terms (descriptive)
   customClauses: string;
 }
 
@@ -90,6 +106,22 @@ const addOnOptions = [
   { id: 'exclusive', label: 'Exclusive Content' },
 ];
 
+/** T-MEERA-CREATOR-PHASE-A (A2) — structured usage channels, matches UsageChannel one-for-one. */
+const usageChannelOptions: { value: UsageChannel; label: string }[] = [
+  { value: 'ORGANIC', label: 'Organic' },
+  { value: 'PAID_ADS', label: 'Paid Ads' },
+  { value: 'WHITELISTING', label: 'Whitelisting' },
+  { value: 'WEBSITE', label: 'Website' },
+  { value: 'OFFLINE', label: 'Offline' },
+];
+
+/** T-MEERA-CREATOR-PHASE-A (A2) — structured exclusivity scope, matches ExclusivityScope. */
+const exclusivityScopeOptions: { value: ExclusivityScope; label: string }[] = [
+  { value: 'NONE', label: 'None' },
+  { value: 'NAMED_BRANDS', label: 'Named Brands' },
+  { value: 'CATEGORY', label: 'Category' },
+];
+
 export function ProposalForm({
   creatorName,
   onSubmit,
@@ -104,8 +136,16 @@ export function ProposalForm({
     deadline: '',
     usageRightsDuration: '6-months',
     usageRightsAddOns: [],
+    usageMonths: 6,
+    usagePerpetual: false,
+    usageChannels: ['ORGANIC'],
+    exclusivityDays: null,
+    exclusivityScope: 'NONE',
+    exclusivityBrands: [],
+    maxRevisions: 2,
     customClauses: '',
   });
+  const [exclusivityBrandsDraft, setExclusivityBrandsDraft] = React.useState('');
 
   const totalSteps = 5;
   const steps = [
@@ -395,6 +435,66 @@ export function ProposalForm({
                   ))}
                 </div>
               </div>
+
+              {/* T-MEERA-CREATOR-PHASE-A (A2) — structured usage terms, persisted onto the
+                  Collaboration (usage_months/usage_perpetual/usage_channels) so a creator's Meera
+                  can actually flag "perpetual usage" or an off-scope channel instead of only
+                  reading it back out of free text. */}
+              <div className="space-y-3 rounded-lg border border-border p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium">Perpetual usage rights</p>
+                    <p className="text-xs text-muted-foreground">Content can be used indefinitely, no expiry</p>
+                  </div>
+                  <Checkbox
+                    checked={formData.usagePerpetual}
+                    onCheckedChange={(checked) => setFormData({ ...formData, usagePerpetual: checked === true })}
+                  />
+                </div>
+                {!formData.usagePerpetual && (
+                  <div>
+                    <Label className="text-xs mb-1.5 block">Usage duration (months)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={formData.usageMonths ?? ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          usageMonths: e.target.value ? parseInt(e.target.value) || null : null,
+                        })
+                      }
+                      className="h-9 w-32 text-sm"
+                    />
+                  </div>
+                )}
+                <div>
+                  <Label className="text-xs mb-2 block">Where can this content be used?</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {usageChannelOptions.map((channel) => {
+                      const active = formData.usageChannels.includes(channel.value);
+                      return (
+                        <Badge
+                          key={channel.value}
+                          variant={active ? 'default' : 'outline'}
+                          className="cursor-pointer"
+                          onClick={() =>
+                            setFormData({
+                              ...formData,
+                              usageChannels: active
+                                ? formData.usageChannels.filter((c) => c !== channel.value)
+                                : [...formData.usageChannels, channel.value],
+                            })
+                          }
+                        >
+                          {channel.label}
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -406,13 +506,84 @@ export function ProposalForm({
                 <p className="text-sm text-muted-foreground mb-4">Anything else the creator should agree to</p>
               </div>
 
-              {/* Removed 2026-07-26 (CEO call): the "Exclusivity" select and "Max Revisions"
-                  slider. Neither term is accepted by any endpoint — POST /deals/:id/counter takes
-                  amount, message and deliverables only — so both were live controls a brand could
-                  set that bound nobody to anything. Revisions in particular are already modelled
-                  server-side on the deliverable (currentRevision/maxRevisions); when the cap comes
-                  back it binds to that, not to a second proposal-level field. Exclusivity returns
-                  as a contract clause with an enforcement window after escrow/Route. */}
+              {/* T-MEERA-CREATOR-PHASE-A (A2, SPEC.md §1.1) — Exclusivity and Max Revisions are
+                  BACK, this time bound to real Collaboration columns (exclusivity_days/
+                  exclusivity_scope/exclusivity_brands/max_revisions) sent as the structured
+                  `dealTerms` field — see the 2026-07-26 removal note this replaces, and
+                  brand-chat.tsx's handleSendProposal for the wiring. */}
+              <div className="space-y-4 rounded-lg border border-border p-4">
+                <div>
+                  <Label className="text-sm mb-2 block">Exclusivity</Label>
+                  <Select
+                    value={formData.exclusivityScope}
+                    onValueChange={(val) =>
+                      setFormData({ ...formData, exclusivityScope: val as ExclusivityScope })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {exclusivityScopeOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {formData.exclusivityScope !== 'NONE' && (
+                  <div>
+                    <Label className="text-xs mb-1.5 block">Exclusivity window (days)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="365"
+                      value={formData.exclusivityDays ?? ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          exclusivityDays: e.target.value ? parseInt(e.target.value) || null : null,
+                        })
+                      }
+                      className="h-9 w-32 text-sm"
+                    />
+                  </div>
+                )}
+                {formData.exclusivityScope === 'NAMED_BRANDS' && (
+                  <div>
+                    <Label className="text-xs mb-1.5 block">Excluded brand names (comma-separated)</Label>
+                    <Textarea
+                      value={exclusivityBrandsDraft}
+                      onChange={(e) => {
+                        setExclusivityBrandsDraft(e.target.value);
+                        setFormData({
+                          ...formData,
+                          exclusivityBrands: e.target.value
+                            .split(',')
+                            .map((b) => b.trim())
+                            .filter(Boolean),
+                        });
+                      }}
+                      placeholder="e.g. Brand A, Brand B"
+                      className="min-h-16 text-sm"
+                    />
+                  </div>
+                )}
+                <div>
+                  <Label className="text-xs mb-1.5 block">Max revisions</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="10"
+                    value={formData.maxRevisions}
+                    onChange={(e) =>
+                      setFormData({ ...formData, maxRevisions: parseInt(e.target.value) || 0 })
+                    }
+                    className="h-9 w-24 text-sm"
+                  />
+                </div>
+              </div>
 
               {/* Custom Clauses */}
               <div>
@@ -432,7 +603,7 @@ export function ProposalForm({
                     <span className="font-semibold">Total You Pay:</span>
                     <span className="text-xl font-bold text-primary">₹{Math.round(totalCost).toLocaleString('en-IN')}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">Funds will be held securely in escrow until you approve the work</p>
+                  <p className="text-xs text-muted-foreground mt-2">Funds will be held securely until you approve the work</p>
                 </CardContent>
               </Card>
             </div>

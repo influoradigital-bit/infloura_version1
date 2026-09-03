@@ -252,7 +252,7 @@ class OnBehalfAuthResolverTest {
         var streamTokenService =
                 new com.influora.service.meera.StreamTokenService(
                         new com.influora.config.MeeraStreamProperties(), jwksKeyService);
-        String streamToken = streamTokenService.mint(WORKSPACE_ID, "conv-001", "turn-001", USER_ID);
+        String streamToken = streamTokenService.mint(WORKSPACE_ID, "conv-001", "turn-001", USER_ID, UserType.BRAND);
 
         ApiException ex =
                 assertThrows(ApiException.class, () -> resolver.resolveForWorkspace(streamToken, WORKSPACE_ID));

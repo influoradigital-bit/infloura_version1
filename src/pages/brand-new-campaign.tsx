@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowRight, LayoutTemplate, Loader2, Megaphone, Trash2, UserRoundSearch, Zap } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowRight, LayoutTemplate, Loader2, Megaphone, Trash2, UserRoundSearch, X, Zap } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type { CampaignType, ContentType, Platform } from '@/lib/types';
@@ -75,9 +75,85 @@ const TYPE_OPTIONS: TypeOption[] = [
   },
 ];
 
+/**
+ * T-CREATORCONNECT-0902 — a brand arriving from Discover's "Connect this creator" → Create
+ * campaign flow carries `?creatorId=` (the linked CreatorProfile id). Read once, from the actual
+ * browser URL — CampaignForm mounts on this SAME route (no navigate() happens between the type
+ * picker and the wizard), so it sees the same `?creatorId=` via its own `useSearchParams()` and
+ * performs the post-create `api.creators.invite` call. This component only resolves the handle
+ * for the informational banner shown before a campaign type is picked.
+ */
+function useCreatorIdParam() {
+  const [searchParams] = useSearchParams();
+  return searchParams.get('creatorId');
+}
+
+/** Q6.5 — Discover's card and every upstream surface say `@igUsername`; the handoff URL now
+ * carries `?ig=` (creator-discovery.tsx) so this banner can show that same handle instead of
+ * resolving (and possibly showing a different) Influora username. */
+function useIgParam() {
+  const [searchParams] = useSearchParams();
+  return searchParams.get('ig');
+}
+
+/** Dismissible banner — informational only; dismissing it does not cancel the invite. */
+function CreatorHandoffBanner({
+  creatorId,
+  ig,
+  onDismiss,
+}: {
+  creatorId: string;
+  ig: string | null;
+  onDismiss: () => void;
+}) {
+  const [resolvedHandle, setResolvedHandle] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (ig) return; // already have the handle Discover handed off — no need to resolve.
+    let cancelled = false;
+    api.creators
+      .getProfile(creatorId)
+      .then((profile) => {
+        if (!cancelled && profile) setResolvedHandle(profile.username);
+      })
+      .catch(() => {
+        // Best-effort — the banner still reads fine without a resolved handle.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [creatorId, ig]);
+
+  const handle = ig ?? resolvedHandle;
+
+  return (
+    <div className="mb-4 flex items-start justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm">
+      <p className="text-foreground">
+        Creating this campaign for {handle ? `@${handle}` : 'this creator'} — they&apos;ll be invited
+        when you publish an Open or Direct campaign.{' '}
+        {/* Q6.4 — Hype is always one of the tiles below and cannot invite a specific creator (see
+            the honest banner on that page instead); this promise must not read as unconditional
+            when the very next click could be the one tile that can't keep it. */}
+        <span className="text-muted-foreground">Hype campaigns can&apos;t invite a specific creator.</span>
+      </p>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 export default function BrandNewCampaignPage() {
   const navigate = useNavigate();
   const [selectedType, setSelectedType] = React.useState<CampaignType | null>(null);
+  const creatorId = useCreatorIdParam();
+  const igHandle = useIgParam();
+  const [creatorBannerDismissed, setCreatorBannerDismissed] = React.useState(false);
 
   // BR-14 Phase 1 — template picker dialog + client-side prefill.
   const [templatesOpen, setTemplatesOpen] = React.useState(false);
@@ -121,7 +197,16 @@ export default function BrandNewCampaignPage() {
 
   const choose = (type: CampaignType) => {
     if (type === 'HYPE') {
-      navigate('/brand/campaigns/new/hype');
+      // Q6.4 — this used to drop `?creatorId=` (and `?ig=`) on the floor, so the "they'll be
+      // invited when you publish" banner shown above (creatorId && !creatorBannerDismissed) made
+      // a promise the Hype flow then silently broke. Forward the handoff through so the Hype page
+      // can act on it — see brand-new-hype-campaign.tsx, which shows its own honest banner rather
+      // than a promise Hype's flat-rate/slots model can't fulfil the same way Open/Direct can.
+      const hypeParams = new URLSearchParams();
+      if (creatorId) hypeParams.set('creatorId', creatorId);
+      if (igHandle) hypeParams.set('ig', igHandle);
+      const query = hypeParams.toString();
+      navigate(query ? `/brand/campaigns/new/hype?${query}` : '/brand/campaigns/new/hype');
       return;
     }
     setSelectedType(type);
@@ -148,6 +233,10 @@ export default function BrandNewCampaignPage() {
     // and the CAMPAIGN_TYPE_TO_API translation table in src/lib/api.ts. Template-applied campaigns
     // never went through `choose()`, so selectedType is null in that branch and the template's own
     // values (if any) are used as-is.
+    // CampaignForm owns its own full-width layout (no max-width wrapper here — it isn't a
+    // narrow-column page like the type picker below it) and reads `?creatorId=` off this same
+    // URL itself (useSearchParams — no navigate() happens between this screen and the wizard),
+    // rendering its own banner + performing the post-create invite. See campaign-form.tsx.
     return (
       <CampaignForm
         initialValues={templateInitialValues ?? (selectedType ? { campaignType: selectedType } : undefined)}
@@ -163,6 +252,14 @@ export default function BrandNewCampaignPage() {
           How do you want to work with creators?
         </p>
       </div>
+
+      {creatorId && !creatorBannerDismissed && (
+        <CreatorHandoffBanner
+          creatorId={creatorId}
+          ig={igHandle}
+          onDismiss={() => setCreatorBannerDismissed(true)}
+        />
+      )}
 
       {/* B-5: optional, dismissible KYC prompt (never blocks campaign creation). */}
       <BrandKycPrompt />

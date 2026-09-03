@@ -113,8 +113,8 @@ export function generateContractHTML(data: ContractData): string {
             <td>Release upon approval of final deliverables</td>
           </tr>
           <tr>
-            <td>Escrow:</td>
-            <td>Full amount held in platform escrow</td>
+            <td>Secure Payments:</td>
+            <td>Full amount held securely by the platform</td>
           </tr>
         </table>
       </div>
@@ -132,7 +132,7 @@ export function generateContractHTML(data: ContractData): string {
           
           <p>5. <strong>Quality Standards:</strong> Content must be of professional quality, free from watermarks (unless agreed), and comply with platform guidelines.</p>
           
-          <p>6. <strong>Payment Release:</strong> Payment will be released from escrow within 7 days of brand approval of final deliverables.</p>
+          <p>6. <strong>Payment Release:</strong> Payment will be released from secured funds within 7 days of brand approval of final deliverables.</p>
           
           <p>7. <strong>Dispute Resolution:</strong> Any disputes shall be resolved through the platform's arbitration process before pursuing legal action.</p>
           

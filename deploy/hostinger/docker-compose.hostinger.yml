@@ -147,6 +147,11 @@ services:
       MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
       VOICE_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
+      CREATOR_COPILOT_AI_BASE_URL: http://influora-ai:8000
+      # ---- Creator AI Co-pilot batch (OFF unless set in .env) ----
+      # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
+      # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.
+      CREATOR_COPILOT_ENABLED: ${CREATOR_COPILOT_ENABLED:-false}
       INFLUORA_MEERA_STREAM_PUBLICCHATURL: https://${AI_DOMAIN}/chat
       CLAMAV_HOST: clamav
       # ---- Money + comms (no validator — break silently if wrong) ----
@@ -171,14 +176,52 @@ services:
       SMTP_PORT: ${SMTP_PORT}
       SMTP_USERNAME: ${SMTP_USERNAME}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_STARTTLS_ENABLE: ${SMTP_STARTTLS_ENABLE}
+      SMTP_SSL_ENABLE: ${SMTP_SSL_ENABLE}
       # Signs one-click unsubscribe links (F-0390 A3) — no default is the git-committed placeholder
       UNSUBSCRIBE_SIGNING_SECRET: ${UNSUBSCRIBE_SIGNING_SECRET}
+      # Q5.5 (T-CREATORCONNECT-0902) — signs the creator-invite link RegistrationService
+      # #consumeInviteToken verifies at registration. generate-env.sh generates a real value with
+      # the same random-secret mechanism as JWT_ACCESS_SECRET/UNSUBSCRIBE_SIGNING_SECRET above;
+      # :- default is empty (not the committed dev-...-min-32-chars literal in
+      # InviteTokenService.java), so an operator who skipped generate-env.sh gets an empty secret
+      # and InviteTokenService's own fail-closed guard rejects every invite token outside
+      # dev/test, instead of silently signing with the public dev default.
+      CREATOR_INVITE_TOKEN_SECRET: ${CREATOR_INVITE_TOKEN_SECRET:-}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
       R2_BUCKET_NAME: ${R2_BUCKET_NAME}
       R2_ENDPOINT: ${R2_ENDPOINT}
       R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      # T-CREATORCONNECT-0902 — CreatorMarketplaceClient gate (OFF until instagram_creator_
+      # marketplace_discovery clears App Review) + admin recipient for creator-connection emails.
+      # Q7.4 (Critical) — `:-false`/`:-` here, NOT a bare `${VAR}`: compose passes an unset host
+      # var through as a container env var that IS SET but EMPTY, which is different from "not
+      # set" to Spring's placeholder resolver — `${META_CREATOR_MARKETPLACE_ENABLED:false}` in
+      # application.yml only applies its own default when the property is ABSENT, so a present-
+      # but-empty value reached the primitive `boolean` binder as `""` and crashed boot on the
+      # live Hostinger VPS. `:-` makes compose itself substitute the default before the var ever
+      # reaches the container. Hardened at the property-binding layer too (MetaApiProperties —
+      # nullable Boolean, coalescing setter) so this is not the only thing standing between an
+      # empty env var and a boot crash.
+      META_CREATOR_MARKETPLACE_ENABLED: ${META_CREATOR_MARKETPLACE_ENABLED:-false}
+      ADMIN_NOTIFICATION_EMAIL: ${ADMIN_NOTIFICATION_EMAIL:-}
+      # Q1.3 (T-CREATORCONNECT-0902) — Influora-owned IG Business system caller for Business
+      # Discovery lookups (MetaApiProperties#systemIgUserId/systemIgAccessToken), preferred ahead
+      # of borrowing a live creator's own token so brand Discover volume stops throttling that
+      # creator's own MetricsPollingJob. Same F-0390 class as META_CREATOR_MARKETPLACE_ENABLED
+      # above: application.yml already reads these (${META_SYSTEM_IG_USER_ID:}/
+      # ${META_SYSTEM_IG_ACCESS_TOKEN:}), but this explicit-map `environment:` block only forwards
+      # keys listed here — without these two lines the code path is unreachable on this VPS no
+      # matter what ops sets on the host, and the creator-token borrow stays the only fallback.
+      # Blank/unset keeps it off (falls through to the pre-existing creator-token path) — same
+      # off-by-default convention as every other Meta property. Cross-user token reuse on THAT
+      # fallback path still needs a platform-terms ruling from Swapnil before relying on it in
+      # production; provisioning a real system caller here is what lets that fallback stop being
+      # exercised.
+      META_SYSTEM_IG_USER_ID: ${META_SYSTEM_IG_USER_ID:-}
+      META_SYSTEM_IG_ACCESS_TOKEN: ${META_SYSTEM_IG_ACCESS_TOKEN:-}
       # ---- GST identity (CompanyTaxStartupValidator rejects placeholders) ----
       INFLUORA_COMPANY_GSTIN: ${INFLUORA_COMPANY_GSTIN}
       INFLUORA_COMPANY_ADDRESS: ${INFLUORA_COMPANY_ADDRESS}

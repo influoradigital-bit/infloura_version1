@@ -6,7 +6,7 @@ export type DealPhase = 'negotiate' | 'contract' | 'escrow' | 'deliver' | 'pay';
 const phases: { id: DealPhase; label: string }[] = [
   { id: 'negotiate', label: 'Negotiate' },
   { id: 'contract', label: 'Contract' },
-  { id: 'escrow', label: 'Fund escrow' },
+  { id: 'escrow', label: 'Secure funds' },
   { id: 'deliver', label: 'Deliver' },
   { id: 'pay', label: 'Pay' },
 ];

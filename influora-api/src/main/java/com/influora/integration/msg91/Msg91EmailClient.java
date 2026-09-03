@@ -173,6 +173,35 @@ public class Msg91EmailClient {
         }
     }
 
+    /**
+     * Inert placeholder unsubscribe href for preview renders only — see {@link #renderPreview}'s
+     * javadoc (T-ADMINMAIL-0903 round 3, B2). Never resolves to a real endpoint or carries any
+     * token; it exists purely so the footer LOOKS the way a real send's footer would.
+     */
+    private static final String PREVIEW_UNSUBSCRIBE_PLACEHOLDER = "#unsubscribe-preview";
+
+    /**
+     * Renders (but does not send) {@code templateKey}'s subject/HTML/plain-text for a preview UI
+     * — T-ADMINMAIL-0903's {@code POST /admin/emails/custom/preview}. Routes through the exact
+     * same {@link EmailTemplateRegistry#render} call {@link #sendTemplateEmail} uses, so a preview
+     * can never drift from what a real send would actually render (same shell, same escaping, same
+     * unsubscribe-footer rule) — this is the one public seam onto that package-private registry.
+     *
+     * <p><b>B2 fix (REVIEW-R2.md round 3 ship-blocker):</b> this used to take a {@code
+     * sampleUserId} and call {@link #buildUnsubscribeUrl}, minting a REAL, working HMAC
+     * unsubscribe token — redeemable at the unauthenticated {@code GET
+     * /notifications/unsubscribe-link} — for whatever user the caller happened to be previewing,
+     * with no rate limit and no audit trail. A preview never sends anything, so there is nothing
+     * for a real unsubscribe token to be "for": the footer link now always renders {@link
+     * #PREVIEW_UNSUBSCRIBE_PLACEHOLDER}, an inert {@code #}-fragment href that is never signed,
+     * never tied to any user, and does nothing if clicked.
+     */
+    public EmailPreviewResult renderPreview(String templateKey, Map<String, Object> templateData) {
+        EmailTemplateRegistry.Rendered rendered =
+                EmailTemplateRegistry.render(templateKey, templateData, PREVIEW_UNSUBSCRIBE_PLACEHOLDER);
+        return new EmailPreviewResult(rendered.subject(), rendered.html(), rendered.plainText());
+    }
+
     private String buildUnsubscribeUrl(String userId, String templateKey) {
         String token = unsubscribeTokenService.generateToken(userId, templateKey);
         String encodedToken;

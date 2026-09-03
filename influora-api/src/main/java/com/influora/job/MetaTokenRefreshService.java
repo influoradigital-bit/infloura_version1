@@ -194,7 +194,11 @@ public class MetaTokenRefreshService {
                         grantedScopes,
                         igBusinessAccountId,
                         authPath,
-                        metaUserId);
+                        metaUserId,
+                        // T-CREATORCONNECT-0902 — no username re-resolution at refresh time (the
+                        // id-only match from the original connect already linked it; see
+                        // MetaTokenStorage#storeCreatorToken's 8-arg javadoc).
+                        null);
             } else {
                 tokenStorage.storeToken(
                         creatorProfileId,

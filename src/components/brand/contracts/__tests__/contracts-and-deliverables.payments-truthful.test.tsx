@@ -127,7 +127,7 @@ describe('F-0251 — live mode, no milestone data: the tab tells the truth inste
     );
     await openPaymentsTab(user);
 
-    expect(screen.getByText('No escrow held')).toBeInTheDocument();
+    expect(screen.getByText('No funds secured')).toBeInTheDocument();
   });
 });
 
@@ -150,7 +150,7 @@ describe('F-0251 — demo mode: the same honesty applies to mockContracts fixtur
     expect(screen.queryByText('Paid')).toBeNull();
     expect(screen.queryByText(/Jan 10, 2024/i)).toBeNull();
     expect(screen.queryByText(/Jan 15, 2024/i)).toBeNull();
-    expect(screen.getByText('No escrow held')).toBeInTheDocument();
+    expect(screen.getByText('No funds secured')).toBeInTheDocument();
   });
 
   it('contract-1 (escrowLocked: true, escrowAmount: 45000) shows the real held amount, not an invented 50% split', async () => {
@@ -164,7 +164,7 @@ describe('F-0251 — demo mode: the same honesty applies to mockContracts fixtur
     );
     await openPaymentsTab(user);
 
-    const escrowHeldLabel = screen.getByText('Escrow held');
+    const escrowHeldLabel = screen.getByText('Funds secured');
     // Scoped to the Payment Schedule row itself — "45,000" also legitimately appears in the
     // unrelated "Contract Value" stat tile elsewhere on the page (same number here, by
     // coincidence of this fixture), so an unscoped getAllByText would pass even if this row's

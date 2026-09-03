@@ -407,7 +407,7 @@ export function useEscrowFund(): UseEscrowFundResult {
   const onPaymentComplete = useCallback(async () => {
     if (!escrowHoldId) {
       setStatus('error');
-      setError('No escrow hold ID available');
+      setError('No secured payment ID available');
       return;
     }
 

@@ -1,0 +1,19 @@
+{
+ "verdict": "proved",
+ "oracle": "gates/citations.py",
+ "isolation": "oracle",
+ "done_when": "A1-features.answers.md contains one answer for every question 1-100 and gates/citations.py A1-features.answers.md . --min 100 exits 0",
+ "evidence": {
+  "oracle": "gates/citations.py",
+  "command": "python gates/citations.py .proof-os/tasks/T-QA-0901-BASES/A1-features.answers.md . --min 100",
+  "result": "citations checked: 295, quotations verified: 295, failed: 0 (exit 0); 100/100 answers present",
+  "where": ".proof-os/tasks/T-QA-0901-BASES/A1-features.answers.md:1"
+ },
+ "not_checked": [
+  "whether a cited line that exists and is quoted correctly actually SUPPORTS the answer written above it - the gate verifies textual presence, never entailment",
+  "the answers themselves are model output from a fresh context: believed, not proved. Only citation integrity is oracle-proved",
+  "whether any of the 8 defects logged (F-0399..F-0406) reproduce at runtime - all were read from source, none executed",
+  "the 4 remaining bases (user, brand, creator, admin) - not started"
+ ],
+ "skipped": []
+}

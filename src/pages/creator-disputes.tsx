@@ -216,8 +216,8 @@ function OpenDisputeForm({
       <CardHeader className="pb-3">
         <p className="font-medium">Open a dispute</p>
         <p className="text-sm text-muted-foreground">
-          Only deals with funded escrow (not already disputed, completed, or cancelled) can be
-          disputed. Opening freezes unreleased escrow for admin review.
+          Only deals with secured funds (not already disputed, completed, or cancelled) can be
+          disputed. Opening freezes unreleased secured funds for admin review.
         </p>
       </CardHeader>
       <CardContent>

@@ -7,6 +7,7 @@ import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
+import com.influora.service.ExternalCreatorLinkService;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -53,12 +54,17 @@ public class MetaTokenStorage {
 
     private final MetaOAuthTokenRepository repository;
     private final AuditLogService auditLog;
+    private final ExternalCreatorLinkService externalCreatorLinkService;
     private final byte[] encryptionKey;
 
     public MetaTokenStorage(
-            MetaOAuthTokenRepository repository, AuditLogService auditLog, MetaApiProperties props) {
+            MetaOAuthTokenRepository repository,
+            AuditLogService auditLog,
+            ExternalCreatorLinkService externalCreatorLinkService,
+            MetaApiProperties props) {
         this.repository = repository;
         this.auditLog = auditLog;
+        this.externalCreatorLinkService = externalCreatorLinkService;
         this.encryptionKey = decodeKey(props.getTokenEncryptionKey());
     }
 
@@ -217,6 +223,7 @@ public class MetaTokenStorage {
                 grantedScopes,
                 igBusinessAccountId,
                 MetaAuthPath.FACEBOOK_LOGIN,
+                null,
                 null);
     }
 
@@ -240,7 +247,14 @@ public class MetaTokenStorage {
             String igBusinessAccountId,
             MetaAuthPath authPath) {
         storeCreatorToken(
-                creatorProfileId, accessToken, expiresAt, grantedScopes, igBusinessAccountId, authPath, null);
+                creatorProfileId,
+                accessToken,
+                expiresAt,
+                grantedScopes,
+                igBusinessAccountId,
+                authPath,
+                null,
+                null);
     }
 
     /**
@@ -258,6 +272,15 @@ public class MetaTokenStorage {
      * MetaTokenRefreshService}) MUST thread it back through here — passing {@code null} on a
      * refresh would silently wipe a previously-resolved id, the exact class of bug C1 fixed for
      * {@code authPath}.
+     *
+     * <p>{@code igUsername} (T-CREATORCONNECT-0902) — the single funnel all three overloads share,
+     * so this is where {@code ExternalCreatorLinkService#onCreatorIdentified} (the JOINED hook) is
+     * called, after the token row is saved. {@code null} on the 5-/6-arg overloads (which don't
+     * receive a username) and on every {@code MetaTokenRefreshService} refresh call (no username
+     * re-resolution at refresh time — the id-only match from the original connect already linked
+     * it); {@code CreatorMetaOAuthService}'s FACEBOOK_LOGIN {@code connect()} is the one caller
+     * that has it, from the same {@code resolveConnectedInstagram} call that resolved {@code
+     * igBusinessAccountId}.
      */
     public void storeCreatorToken(
             String creatorProfileId,
@@ -266,7 +289,8 @@ public class MetaTokenStorage {
             List<String> grantedScopes,
             String igBusinessAccountId,
             MetaAuthPath authPath,
-            String metaUserId) {
+            String metaUserId,
+            String igUsername) {
         // F-0173 — the revoke-before-insert step above mints a brand-new row (fresh createdAt)
         // on EVERY call, not just first-connect: MetaTokenRefreshService routes every creator
         // token refresh through this same method (F-0171), so the row this creator's Meta
@@ -316,6 +340,30 @@ public class MetaTokenStorage {
                 Map.of(
                         "creatorProfileId", creatorProfileId,
                         "scopeCount", grantedScopes == null ? 0 : grantedScopes.size()));
+
+        // T-CREATORCONNECT-0902 — the JOINED hook. After the save, using whatever id/username this
+        // call actually has (either may be null; onCreatorIdentified no-ops on both blank).
+        //
+        // Q5.5 — onCreatorIdentified runs REQUIRES_NEW so a deferred-flush failure inside it (e.g.
+        // a unique-constraint violation surfacing only when its own internal query auto-flushes)
+        // commits/rolls back on ITS OWN transaction boundary rather than this method's. But
+        // REQUIRES_NEW alone only isolates the DATABASE state — it does NOT stop Spring's
+        // TransactionInterceptor from re-throwing at that method's own commit if the flush already
+        // marked its persistence context rollback-only, even though onCreatorIdentified's internal
+        // try/catch already logged and "handled" it. Without a try/catch HERE too, that re-thrown
+        // exception would still propagate out and fail this token save's own transaction — the
+        // exact bug this fix closes. This mirrors the established
+        // ApplicationHistoryService#record call-site pattern (every caller wraps a REQUIRES_NEW
+        // best-effort call), not a redundant belt-and-braces habit.
+        try {
+            externalCreatorLinkService.onCreatorIdentified(creatorProfileId, igUsername, igBusinessAccountId);
+        } catch (RuntimeException e) {
+            log.error(
+                    "storeCreatorToken: JOINED hook failed for creatorProfileId={} (swallowed — the"
+                            + " token save above already committed and is unaffected)",
+                    creatorProfileId,
+                    e);
+        }
     }
 
     /**

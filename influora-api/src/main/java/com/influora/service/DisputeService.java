@@ -114,7 +114,7 @@ public class DisputeService {
         if (!escrowService.hasFundedUnreleasedEscrow(collaboration.getId())) {
             throw new ApiException(
                     "NO_FUNDED_ESCROW",
-                    "This deal has no funded, unreleased escrow to dispute",
+                    "This deal has no secured, unreleased payment to dispute",
                     HttpStatus.CONFLICT);
         }
 
@@ -297,7 +297,7 @@ public class DisputeService {
                     "DISPUTE_SETTLEMENT_EMPTY",
                     "This collaboration had "
                             + frozenHoldsBefore
-                            + " frozen escrow hold(s) but the settlement moved only "
+                            + " frozen secured payment(s) but the settlement moved only "
                             + settlements.size()
                             + " — refusing to mark the dispute resolved without the money actually moving",
                     HttpStatus.CONFLICT);

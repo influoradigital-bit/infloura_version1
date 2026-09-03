@@ -1,0 +1,22 @@
+{
+  "verdict": "believed",
+  "oracle": "mvn",
+  "isolation": "oracle",
+  "done_when": "mvn -o test on the touched backend classes exits 0 with NEW tests proving: brand register persists the submitted phone to workspaces.phone; CreatorSummaryDto and CreatorDetailDto expose phone; acceptedTerms=false is rejected with 400. AND npm run typecheck exits 0. AND the onboarding wizard renders a real terms checkbox that gates submit, and disables Continue while the logo upload is in flight.",
+  "not_checked": [
+    "whether a real brand signup writes a real row \u2014 no live database was queried; persistence is proved through mocked repositories (AuthServiceTest captures the User passed to save) and entity mutators, not an actual INSERT",
+    "whether the admin panel visibly renders a creator's phone in a browser \u2014 the DTO now carries the field and the mapper populates it, but no live UI check was run",
+    "whether Terms/Privacy consent is PERSISTED \u2014 it is now genuinely collected and validated, but no column stores accepted_at or a policy version; this remains an open compliance gap, deliberately not closed here",
+    "the two pre-existing creator-disputes.test.tsx failures (Radix pointer-events) \u2014 unmodified at HEAD, unrelated to this task, left as-is"
+  ],
+  "skipped": [
+    {
+      "step": "\u00a76 fresh-context checker",
+      "reason": "No independent model reviewed this work. Substitute evidence: the new tests were run against deliberately reverted source and 4 of them failed on the exact pre-fix symptoms, which is an oracle result rather than a second opinion. A fresh-context review would still add something this does not."
+    },
+    {
+      "step": "done_when clause 'persists to workspaces.phone'",
+      "reason": "The landed backend writes users.phone_number instead, per the DTO javadoc's reasoning that this is the person's own mobile at signup while workspaces.phone stays the separate business-contact number. The clause was satisfied against a different and better-argued column, so it is recorded as changed rather than met as written."
+    }
+  ]
+}

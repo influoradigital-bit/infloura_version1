@@ -60,6 +60,52 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { format } from 'date-fns';
 
+/**
+ * T-CREATORCONNECT-0902 Q6.2 — a DRAFT save must not invite the creator (see `handleSubmit`
+ * below), but the "they'll be invited when you publish" promise in the banner still has to hold
+ * once this same draft is later opened and actually published. `?creatorId=`/`?ig=` are gone from
+ * the URL by the time that happens (isEditing nulls them), so the handoff is stashed here, keyed
+ * by the draft's own campaign id, and consumed (removed) the moment the invite fires or the
+ * campaign is deleted. Per-browser, best-effort — same discipline as every other localStorage use
+ * in this app: never the source of truth, only a convenience that degrades to "no stashed invite"
+ * silently if storage is unavailable (private browsing, cleared site data, a different device).
+ */
+interface PendingCreatorInvite {
+  creatorId: string;
+  ig: string | null;
+}
+
+function pendingCreatorInviteKey(campaignId: string): string {
+  return `influora:pending-creator-invite:${campaignId}`;
+}
+
+function stashPendingCreatorInvite(campaignId: string, creatorId: string, ig: string | null): void {
+  try {
+    localStorage.setItem(
+      pendingCreatorInviteKey(campaignId),
+      JSON.stringify({ creatorId, ig } satisfies PendingCreatorInvite),
+    );
+  } catch {
+    // Best-effort — see file-level comment above.
+  }
+}
+
+/** Reads AND clears the stashed invite for this campaign — consumed at most once. */
+function takePendingCreatorInvite(campaignId: string): PendingCreatorInvite | null {
+  try {
+    const key = pendingCreatorInviteKey(campaignId);
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    localStorage.removeItem(key);
+    const parsed = JSON.parse(raw) as Partial<PendingCreatorInvite>;
+    return typeof parsed.creatorId === 'string'
+      ? { creatorId: parsed.creatorId, ig: typeof parsed.ig === 'string' ? parsed.ig : null }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 const platformOptions: { value: Platform; label: string; icon: string }[] = [
   { value: 'INSTAGRAM', label: 'Instagram', icon: 'IG' },
   { value: 'YOUTUBE', label: 'YouTube', icon: 'YT' },
@@ -106,6 +152,9 @@ export interface CampaignFormData {
   brandGuidelines: string;
   isPrivate: boolean;
   targetAudience: TargetAudience;
+  /** T-MEERA-CREATOR-PHASE-A (A2) — required for every NEW campaign; legacy campaigns may be null. */
+  endBrandName: string;
+  endBrandCategory: string;
 }
 
 const initialFormData: CampaignFormData = {
@@ -125,7 +174,29 @@ const initialFormData: CampaignFormData = {
   brandGuidelines: '',
   isPrivate: false,
   targetAudience: { interests: [] },
+  endBrandName: '',
+  endBrandCategory: '',
 };
+
+/**
+ * T-MEERA-CREATOR-PHASE-A (A2) — end-brand category options. Mirrors the vocabulary
+ * `CreatorAgentPreferences.excludedCategories` already uses on the creator side so a
+ * category a creator excludes reads as the same word on both sides of a deal.
+ */
+const endBrandCategoryOptions = [
+  'Fashion',
+  'Beauty',
+  'Food & Beverage',
+  'Tech & Gadgets',
+  'Travel',
+  'Fitness & Wellness',
+  'Home & Lifestyle',
+  'Finance',
+  'Alcohol',
+  'Tobacco',
+  'Gambling',
+  'Other',
+];
 
 /**
  * D-14 — flattens the structured `TargetAudience` object into the free-text summary
@@ -266,6 +337,40 @@ export function CampaignForm({
   const isEditing = !!campaignId;
   const currentStepIndex = steps.findIndex((s) => s.id === currentStep);
 
+  // T-CREATORCONNECT-0902 — a brand arriving from Discover's "Connect this creator" → Create
+  // campaign flow carries `?creatorId=` on this same URL (brand-new-campaign.tsx never
+  // navigates between the type picker and this wizard). Only meaningful on create — an edit's
+  // campaign already has whatever creators it has, and `?creatorId=` is not part of the
+  // CampaignPatchRequest contract.
+  const creatorIdParam = !isEditing ? searchParams.get('creatorId') : null;
+  // Q6.5 — Discover's own card and every upstream surface refer to this creator by their
+  // Instagram handle (`@igUsername`), not their Influora username, which is what
+  // `api.creators.getProfile` resolves below. The handoff link now carries `?ig=` (see
+  // creator-discovery.tsx's Create-campaign link) so the banner can show the SAME handle the
+  // brand just saw on the card instead of resolving and showing a different one.
+  const igParam = !isEditing ? searchParams.get('ig') : null;
+  const [creatorBannerDismissed, setCreatorBannerDismissed] = React.useState(false);
+  const [creatorHandle, setCreatorHandle] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    // Nothing to resolve when the URL already carries the handle, or there's no creator at all.
+    if (!creatorIdParam || igParam) return;
+    let cancelled = false;
+    api.creators
+      .getProfile(creatorIdParam)
+      .then((profile) => {
+        if (!cancelled && profile) setCreatorHandle(profile.username);
+      })
+      .catch(() => {
+        // Best-effort — the banner still reads fine without a resolved handle.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [creatorIdParam, igParam]);
+
+  const creatorBannerHandle = igParam ?? creatorHandle;
+
   // When editing, we must fetch the real campaign and prefill before the form is
   // submittable — otherwise a save (PATCH) would overwrite the record with empty
   // defaults. `isLoading` gates the render until the fetch resolves.
@@ -303,6 +408,10 @@ export function CampaignForm({
             brandGuidelines: c.brandGuidelines ?? '',
             isPrivate: c.isPrivate,
             targetAudience: c.targetAudience ?? { interests: [] },
+            // Legacy campaigns predate this field and may be null — the form still opens
+            // editable (validateStep only requires it to be filled before Continue/Publish).
+            endBrandName: c.endBrandName ?? '',
+            endBrandCategory: c.endBrandCategory ?? '',
           });
         }
         setIsLoading(false);
@@ -398,6 +507,14 @@ export function CampaignForm({
         if (formData.objectives.length === 0) {
           newErrors.objectives = 'Select at least one objective';
         }
+        // T-MEERA-CREATOR-PHASE-A (A2) — required for NEW campaigns only; legacy campaigns
+        // (isEditing with a pre-existing null) aren't retroactively blocked from being saved.
+        if (!isEditing && !formData.endBrandName.trim()) {
+          newErrors.endBrandName = 'End brand name is required';
+        }
+        if (!isEditing && !formData.endBrandCategory.trim()) {
+          newErrors.endBrandCategory = 'End brand category is required';
+        }
         break;
       }
 
@@ -453,6 +570,29 @@ export function CampaignForm({
     }
   };
 
+  /** POSTs the Discover handoff invite and reports the result — shared by the immediate-publish
+   * path and the stashed-DRAFT-then-later-publish path (Q6.2). */
+  const inviteHandoffCreator = async (creatorId: string, campaignIdForInvite: string, handle: string | null) => {
+    try {
+      await api.creators.invite(creatorId, campaignIdForInvite);
+      toast({
+        title: 'Creator invited',
+        description: handle
+          ? `@${handle} has been invited to this campaign.`
+          : 'The creator has been invited to this campaign.',
+      });
+    } catch (inviteErr) {
+      toast({
+        title: 'Campaign published, but the invite failed',
+        description:
+          inviteErr instanceof ApiError
+            ? inviteErr.message
+            : 'You can invite this creator from Discover instead.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleSubmit = async (status: CampaignStatus = 'DRAFT') => {
     if (!validateStep(currentStep)) return;
 
@@ -485,12 +625,40 @@ export function CampaignForm({
       isPrivate: formData.isPrivate,
       maxCollaborators: formData.maxCollaborators,
       targetAudience: formData.targetAudience,
+      // T-MEERA-CREATOR-PHASE-A (A2) — omit rather than send empty strings when editing a
+      // legacy campaign that still has these unset; validateStep already required them on create.
+      endBrandName: formData.endBrandName.trim() || undefined,
+      endBrandCategory: formData.endBrandCategory.trim() || undefined,
     };
 
     try {
       const saved = isEditing && campaignId
         ? await api.campaigns.update(campaignId, payload)
         : await api.campaigns.create(payload);
+
+      // T-CREATORCONNECT-0902 — post-create/post-publish invite for the creator Discover handed
+      // off via `?creatorId=`. Reuses the exact `api.creators.invite` path creator-discovery.tsx's
+      // own invite dialog calls (POST /creators/:id/invite). Best-effort: a failed invite must not
+      // block navigation away from a campaign that was, in fact, created successfully.
+      //
+      // Q6.2 — gated on `status === 'ACTIVE'`: this used to fire on every create regardless of
+      // status, so saving a DRAFT silently invited the creator to a campaign the brand had not
+      // published yet (and, per CreatorDiscoveryService's own DRAFT guard, made that draft
+      // undeletable). A DRAFT save instead STASHES the handoff (creatorId + resolved handle,
+      // keyed by the new campaign id) so the invite fires later when this same draft is actually
+      // published — see the isEditing/ACTIVE branch below.
+      if (!isEditing && creatorIdParam) {
+        if (status === 'ACTIVE') {
+          await inviteHandoffCreator(creatorIdParam, saved.id, creatorBannerHandle);
+        } else {
+          stashPendingCreatorInvite(saved.id, creatorIdParam, creatorBannerHandle);
+        }
+      } else if (isEditing && campaignId && status === 'ACTIVE') {
+        const pending = takePendingCreatorInvite(campaignId);
+        if (pending) {
+          await inviteHandoffCreator(pending.creatorId, campaignId, pending.ig);
+        }
+      }
 
       addCampaign(saved);
       navigate('/brand/campaigns');
@@ -607,6 +775,25 @@ export function CampaignForm({
   return (
     <TooltipProvider>
       <div className="flex flex-col gap-6 p-4 lg:p-6">
+        {/* T-CREATORCONNECT-0902 — dismissible; dismissing only hides the notice, the invite
+            still fires on publish/save (it's keyed on `?creatorId=` in the URL, not this state). */}
+        {creatorIdParam && !creatorBannerDismissed && (
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm">
+            <p className="text-foreground">
+              Creating this campaign for {creatorBannerHandle ? `@${creatorBannerHandle}` : 'this creator'} —
+              they&apos;ll be invited when you publish.
+            </p>
+            <button
+              type="button"
+              onClick={() => setCreatorBannerDismissed(true)}
+              aria-label="Dismiss"
+              className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
@@ -722,6 +909,50 @@ export function CampaignForm({
                       {errors.description && (
                         <p className="text-xs text-destructive-foreground">{errors.description}</p>
                       )}
+                    </div>
+
+                    {/* T-MEERA-CREATOR-PHASE-A (A2) — the brand the creator is actually
+                        producing content for. Required going forward so a creator's Meera
+                        (excluded_categories/blocked_brands) has something real to match
+                        against; legacy campaigns keep null until re-saved. */}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="endBrandName">End Brand Name</Label>
+                        <Input
+                          id="endBrandName"
+                          placeholder="e.g., Kavala Skincare"
+                          value={formData.endBrandName}
+                          onChange={(e) => updateFormData({ endBrandName: e.target.value })}
+                          className={cn(errors.endBrandName && 'border-destructive-foreground')}
+                        />
+                        {errors.endBrandName && (
+                          <p className="text-xs text-destructive-foreground">{errors.endBrandName}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="endBrandCategory">End Brand Category</Label>
+                        <Select
+                          value={formData.endBrandCategory || undefined}
+                          onValueChange={(value) => updateFormData({ endBrandCategory: value })}
+                        >
+                          <SelectTrigger
+                            id="endBrandCategory"
+                            className={cn(errors.endBrandCategory && 'border-destructive-foreground')}
+                          >
+                            <SelectValue placeholder="Select a category" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {endBrandCategoryOptions.map((category) => (
+                              <SelectItem key={category} value={category}>
+                                {category}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {errors.endBrandCategory && (
+                          <p className="text-xs text-destructive-foreground">{errors.endBrandCategory}</p>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-2">

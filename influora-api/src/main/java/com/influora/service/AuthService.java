@@ -61,6 +61,7 @@ public class AuthService {
     private final BrandEmailOtpService brandEmailOtpService;
     private final InfluoraEnvironment environment;
     private final ApplicationEventPublisher eventPublisher;
+    private final RegistrationService registrationService;
 
     @Value("${influora.auth.require-email-verification:true}")
     private boolean requireEmailVerification;
@@ -83,7 +84,8 @@ public class AuthService {
             JwtService jwtService,
             BrandEmailOtpService brandEmailOtpService,
             InfluoraEnvironment environment,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            RegistrationService registrationService) {
         this.userRepository = userRepository;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -96,6 +98,7 @@ public class AuthService {
         this.brandEmailOtpService = brandEmailOtpService;
         this.environment = environment;
         this.eventPublisher = eventPublisher;
+        this.registrationService = registrationService;
     }
 
     /**
@@ -351,6 +354,14 @@ public class AuthService {
             throw new ApiException(
                     "EMAIL_ALREADY_EXISTS", "An account with this email already exists", HttpStatus.CONFLICT);
         }
+
+        // Q5.5 (T-CREATORCONNECT-0902, Medium) — an invited creator who registers by email
+        // (rather than connecting Meta first) links to their external_creators row here, right
+        // after the CreatorProfile id exists. req.inviteToken() is null/blank for an ordinary
+        // (non-invite) registration; RegistrationService#consumeInviteToken treats that as a safe
+        // no-op and never throws — a bad/expired/already-consumed invite token must never fail
+        // account creation itself.
+        registrationService.consumeInviteToken(req.inviteToken(), profileId);
 
         // W3-1 — #18 "welcome after signup", same gap as brandRegister above.
         eventPublisher.publishEvent(new UserCreatedEvent(userId, null, userId, displayName, "creator"));

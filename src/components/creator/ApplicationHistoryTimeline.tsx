@@ -71,7 +71,7 @@ const EVENT_TYPE_LABELS: Record<string, string> = {
   DEAL_ROOM_ACTIVATED: 'Deal Room Activated',
   CONTRACT_GENERATED: 'Contract Generated',
   CONTRACT_SIGNED: 'Contract Signed',
-  FUND_ESCROW: 'Fund Escrow',
+  FUND_ESCROW: 'Secure Funds',
   DELIVERABLE_SUBMITTED: 'Deliverable Submitted',
   DELIVERABLE_APPROVED: 'Deliverable Approved',
   DELIVER: 'Deliver',
@@ -188,7 +188,7 @@ function actorLabel(actorType: CreatorApplicationHistoryEvent['actorType'], bran
 const DEAL_PHASE_LABELS: Record<'negotiate' | 'contract' | 'escrow' | 'deliver' | 'pay', string> = {
   negotiate: 'Negotiate',
   contract: 'Contract',
-  escrow: 'Fund Escrow',
+  escrow: 'Secure Funds',
   deliver: 'Deliver',
   pay: 'Pay',
 };

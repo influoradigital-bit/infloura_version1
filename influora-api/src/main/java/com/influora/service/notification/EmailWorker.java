@@ -4,9 +4,11 @@ import com.influora.domain.entity.EmailOutbox;
 import com.influora.domain.enums.EmailOutboxStatus;
 import com.influora.integration.msg91.Msg91EmailClient;
 import com.influora.repository.EmailOutboxRepository;
+import com.influora.repository.EmailPreferenceRepository;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +56,48 @@ import org.springframework.transaction.support.TransactionTemplate;
  *       managed row by id and writing {@code markSent()}/{@code markFailed()}. A failure marking
  *       one item can no longer roll back the 49 others that already committed.
  * </ol>
+ *
+ * <p><b>C2 fix (REVIEW-R1.md, T-ADMINMAIL-0903 round 2):</b> {@link #TRANSACTIONAL_PRIORITY_KEYS}
+ * is passed into {@link EmailOutboxRepository#findPendingForSend} so a claim batch always fills
+ * with every currently-pending priority row (login OTP, password reset) before considering any
+ * other {@code templateKey} — see that method's javadoc. This is an {@code ORDER BY} change only;
+ * {@link #BATCH_SIZE} and the claim/send/mark phase split above are untouched, so the D5
+ * connection-pool reasoning (no DB connection held across the sequential MSG91 calls) still holds.
+ *
+ * <p><b>C8/item-8 fix:</b> unsubscribe (T-ADMINMAIL-0903 control #5) is otherwise resolved ONCE,
+ * at enqueue time, in {@code AdminCustomEmailService.send} — for a batch that can take a long time
+ * to fully drain, someone who unsubscribes mid-drain would still receive the mail. {@link
+ * #processOne} adds one extra check immediately before dispatch, scoped to {@code
+ * ADMIN_CUSTOM_TEMPLATE_KEY} only (a single indexed lookup, and only for this one marketing
+ * template key — every other {@code templateKey} skips it entirely, so this does not add a query
+ * to the hot path for ordinary transactional/notification email).
+ *
+ * <p><b>A3 fix (round 4, REVIEW-R3.md):</b> same shape as the item-8 unsubscribe re-check, and for
+ * the same underlying reason — {@code AdminCustomEmailService.cancel} can mark a row terminal
+ * WHILE it is already claimed and sitting in this worker's in-memory batch ({@link #claimBatch}
+ * only touches {@code nextRetryAt}, not {@code status}, so a claimed row is still {@code PENDING}
+ * and still matches {@code cancel}'s filter). {@link #processOne} re-checks that the row is still
+ * {@code PENDING} immediately before dispatch, scoped to {@code ADMIN_CUSTOM_TEMPLATE_KEY} only —
+ * without this, a cancelled row would be sent anyway and {@link #applyResult}'s {@code
+ * markSent()} would silently overwrite the CANCELLED status back to SENT, leaving {@code cancel}'s
+ * reported count wrong with no trace of the mail that actually went out.
+ *
+ * <p><b>A4 fix (round 5, REVIEW-R4.md):</b> {@code spring.mail}'s connect/read/write timeouts are
+ * 10s each, so a full {@link #BATCH_SIZE} (50) batch that all times out under degraded SMTP takes
+ * up to ~500s — longer than both {@link #CLAIM_LEASE} (3 min) and {@code @SchedulerLock}'s {@code
+ * lockAtMostFor} (5 min). If a real run ever takes that long, its own claim lease expires
+ * mid-batch and a later poll (this instance or another) can re-claim and re-send rows this run has
+ * already dispatched — duplicate mail, precisely under the degraded conditions a large blast
+ * induces. {@link #processOutbox} now tracks elapsed wall-clock against {@link
+ * #maxBatchWallClock} (comfortably under {@code CLAIM_LEASE}, leaving margin for the claim/mark
+ * transactions and clock skew) and, once a later row would risk crossing it, stops dispatching for
+ * THIS poll. This touches nothing else — {@link #BATCH_SIZE}, the claim/send/mark phase split, and
+ * priority ordering are all untouched. The rows left un-dispatched are not orphaned: {@link
+ * #claimBatch} already committed them as {@code PENDING} with {@code nextRetryAt} set to this
+ * batch's lease (see {@link EmailOutbox#markClaimed}), so {@link
+ * EmailOutboxRepository#findPendingForSend}'s {@code WHERE} clause skips them until that lease
+ * naturally passes, at which point a normal poll claims and sends them exactly once — a delay,
+ * never a duplicate.
  */
 @Component
 public class EmailWorker {
@@ -61,23 +105,64 @@ public class EmailWorker {
     private static final Logger log = LoggerFactory.getLogger(EmailWorker.class);
     private static final int BATCH_SIZE = 50;
 
+    /** Mirrors {@code EmailTemplateRegistry.NO_UNSUBSCRIBE_FOOTER} (that field is private, a
+     * different package — this is the same three literal keys, kept here since {@code EmailWorker}
+     * needs them for query priority, not footer suppression). auth.otp / auth.password_reset /
+     * otpman must never wait behind a marketing blast (C2, REVIEW-R1.md). */
+    private static final Set<String> TRANSACTIONAL_PRIORITY_KEYS =
+            Set.of("auth.otp", "otpman", "auth.password_reset");
+
+    /** Mirrors {@code AdminCustomEmailService.TEMPLATE_KEY} / {@code
+     * EmailTemplateRegistry.ADMIN_CUSTOM_TEMPLATE_KEY} — see class javadoc "C8/item-8 fix". */
+    private static final String ADMIN_CUSTOM_TEMPLATE_KEY = "admin.custom";
+
     /** D5: crash-recovery window for the claim lease — must stay comfortably under
      * {@code @SchedulerLock}'s {@code lockAtMostFor = "PT5M"} so a normal run never has its own
      * claim expire out from under it, while still being short enough that a crashed run's rows
      * become retryable well within this worker's own next few 30s polls. */
     private static final Duration CLAIM_LEASE = Duration.ofMinutes(3);
 
+    /** A4 fix (round 5, REVIEW-R4.md): default wall-clock budget for one {@link #processOutbox}
+     * run — 30s of margin under {@link #CLAIM_LEASE} for the claim transaction that already ran
+     * and the per-item mark transactions still to come, so a batch that respects this budget can
+     * never actually outlive the lease it was claimed under. See class javadoc "A4 fix". */
+    private static final Duration DEFAULT_MAX_BATCH_WALL_CLOCK = CLAIM_LEASE.minus(Duration.ofSeconds(30));
+
     private final EmailOutboxRepository emailOutboxRepository;
+    private final EmailPreferenceRepository emailPreferenceRepository;
     private final Msg91EmailClient msg91Client;
     private final TransactionTemplate transactionTemplate;
+    private final Duration maxBatchWallClock;
 
     public EmailWorker(
             EmailOutboxRepository emailOutboxRepository,
+            EmailPreferenceRepository emailPreferenceRepository,
             Msg91EmailClient msg91Client,
             PlatformTransactionManager transactionManager) {
+        this(
+                emailOutboxRepository,
+                emailPreferenceRepository,
+                msg91Client,
+                transactionManager,
+                DEFAULT_MAX_BATCH_WALL_CLOCK);
+    }
+
+    /** A4 fix (round 5, REVIEW-R4.md): package-private overload taking the wall-clock budget
+     * explicitly, purely so {@code EmailWorkerTest} can exercise the deadline boundary
+     * deterministically (a tiny {@link Duration}) instead of waiting out the real ~2.5 minute
+     * default. Spring never sees this constructor — the public 4-arg one above is the only one
+     * on the classpath it can autowire, so this does not change or complicate DI. */
+    EmailWorker(
+            EmailOutboxRepository emailOutboxRepository,
+            EmailPreferenceRepository emailPreferenceRepository,
+            Msg91EmailClient msg91Client,
+            PlatformTransactionManager transactionManager,
+            Duration maxBatchWallClock) {
         this.emailOutboxRepository = emailOutboxRepository;
+        this.emailPreferenceRepository = emailPreferenceRepository;
         this.msg91Client = msg91Client;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.maxBatchWallClock = maxBatchWallClock;
     }
 
     /**
@@ -95,7 +180,25 @@ public class EmailWorker {
 
         log.info("Processing {} pending emails", claimed.size());
 
+        // A4 fix (round 5, REVIEW-R4.md): see class javadoc "A4 fix". Deadline is measured from
+        // here, right after the claim transaction (which set every row's lease) committed — the
+        // closest available approximation of the lease's own start, without threading a captured
+        // Instant back out of claimBatch()'s TransactionTemplate.execute() just for this.
+        Instant batchDeadline = Instant.now().plus(maxBatchWallClock);
+        int dispatched = 0;
         for (EmailOutbox outbox : claimed) {
+            if (Instant.now().isAfter(batchDeadline)) {
+                log.warn(
+                        "EmailWorker batch wall-clock budget ({}) exceeded after {} of {} claimed"
+                                + " rows -- deferring the rest to a later poll (A4 fix,"
+                                + " REVIEW-R4.md). They stay claimed (PENDING, nextRetryAt = this"
+                                + " batch's lease) and are only reclaimed once that lease naturally"
+                                + " passes, so this never double-sends.",
+                        maxBatchWallClock,
+                        dispatched,
+                        claimed.size());
+                break;
+            }
             // Read everything needed for the send BEFORE the transaction that claimed it closed
             // (already committed by now) — these are plain field reads off a detached instance,
             // never reused for a later save.
@@ -105,6 +208,7 @@ public class EmailWorker {
                     outbox.getTemplateKey(),
                     outbox.getTemplateData(),
                     outbox.getUserId());
+            dispatched++;
         }
     }
 
@@ -117,7 +221,10 @@ public class EmailWorker {
     private List<EmailOutbox> claimBatch() {
         List<EmailOutbox> pending =
                 emailOutboxRepository.findPendingForSend(
-                        EmailOutboxStatus.PENDING, Instant.now(), PageRequest.of(0, BATCH_SIZE));
+                        EmailOutboxStatus.PENDING,
+                        Instant.now(),
+                        TRANSACTIONAL_PRIORITY_KEYS,
+                        PageRequest.of(0, BATCH_SIZE));
         if (pending.isEmpty()) {
             return pending;
         }
@@ -133,9 +240,43 @@ public class EmailWorker {
      * D5 send phase: exactly one blocking MSG91 call, with no transaction open. Never throws —
      * any failure (including a thrown exception from the client) is captured and handed to the
      * mark phase as a failure result.
+     *
+     * <p>C8/item-8 fix: for {@code ADMIN_CUSTOM_TEMPLATE_KEY} only, re-checks unsubscribe status
+     * right here — immediately before the MSG91 call, as late as this architecture allows without
+     * re-opening the claim transaction — instead of trusting the enqueue-time check alone. Every
+     * other {@code templateKey} skips this branch entirely (one cheap {@code String.equals}), so
+     * ordinary transactional/notification email pays no extra query.
+     *
+     * <p>A3 fix (round 4, REVIEW-R3.md): same shape, same scope, for cancellation instead of
+     * unsubscribe — see class javadoc "A3 fix". If the row is no longer {@code PENDING} it has
+     * already been marked terminal by {@code AdminCustomEmailService#cancel} (or, in principle, by
+     * some other terminal transition) since it was claimed; this method must not touch it at all
+     * (no send, no {@link #markResult} call) so that terminal state is never overwritten.
      */
     private void processOne(
             String id, String toEmail, String templateKey, String templateData, String userId) {
+        if (ADMIN_CUSTOM_TEMPLATE_KEY.equals(templateKey)) {
+            if (emailPreferenceRepository
+                    .findUnsubscribedUserIds(List.of(userId), templateKey)
+                    .contains(userId)) {
+                log.info(
+                        "admin.custom outbox row skipped at dispatch: userId={} unsubscribed after"
+                                + " enqueue, before this row was claimed (id={})",
+                        userId,
+                        id);
+                markSkipped(id);
+                return;
+            }
+            if (!emailOutboxRepository.existsByIdAndStatus(id, EmailOutboxStatus.PENDING)) {
+                log.info(
+                        "admin.custom outbox row skipped at dispatch: id={} is no longer PENDING —"
+                                + " cancelled by admin after this row was claimed, before it was"
+                                + " sent. Leaving its terminal status untouched.",
+                        id);
+                return;
+            }
+        }
+
         boolean success;
         String errorMessage = null;
         try {
@@ -148,6 +289,26 @@ public class EmailWorker {
             errorMessage = e.getMessage();
         }
         markResult(id, success, errorMessage);
+    }
+
+    /**
+     * C8/item-8 fix: terminal, non-retried outcome for a row skipped at dispatch because the
+     * recipient unsubscribed after enqueue. Reuses {@code EmailOutboxStatus.FAILED} — the DB enum
+     * has no dedicated "skipped" value, and adding one is a schema change out of scope here — but
+     * {@link EmailOutbox#markSkippedUnsubscribed()} sets {@code retryCount} straight to the max so
+     * {@code canRetry()} is immediately false: no backoff loop, no further MSG91 attempts, one poll
+     * and done.
+     */
+    private void markSkipped(String id) {
+        transactionTemplate.executeWithoutResult(
+                status ->
+                        emailOutboxRepository
+                                .findById(id)
+                                .ifPresent(
+                                        outbox -> {
+                                            outbox.markSkippedUnsubscribed();
+                                            emailOutboxRepository.save(outbox);
+                                        }));
     }
 
     /**

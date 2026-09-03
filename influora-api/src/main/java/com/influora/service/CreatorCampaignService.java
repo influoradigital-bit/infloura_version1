@@ -60,6 +60,15 @@ public class CreatorCampaignService {
 
     private static final Logger log = LoggerFactory.getLogger(CreatorCampaignService.class);
 
+    /**
+     * F-0412 — how many browsable campaigns the niche/platform post-filters may scan before paging
+     * the matches themselves. The browsable base (ACTIVE, non-private, deadline not passed, budget
+     * overlap) is orders of magnitude below this today; if it ever approaches it, the match has to
+     * move into the DB query (e.g. promoting platforms to a join table like PlatformStat) rather
+     * than this number being raised.
+     */
+    private static final int POST_FILTER_SCAN_LIMIT = 1000;
+
     private final CampaignRepository campaignRepository;
     private final CollaborationRepository collaborationRepository;
     private final WorkspaceRepository workspaceRepository;
@@ -97,15 +106,17 @@ public class CreatorCampaignService {
     public record PagedCreatorCampaigns(List<CreatorCampaignListItem> items, PageMeta meta) {}
 
     /**
-     * Platform/niche filters are applied in-memory after the DB-level status/visibility/deadline/
-     * budget filters, same pattern as {@code CreatorDiscoveryService.search}'s vertical post-filter
-     * (Campaign has no dedicated niche/category column to filter on at the DB level — see
-     * TECH-STACK.md's note that 05_CREATOR_CAMPAIGNS_SPEC.md entity shapes are a feature reference,
-     * not literal). When either post-filter is active, {@code total}/{@code hasMore} reflect only
-     * the current page (same documented limitation as the vertical post-filter above it) — TODO for
-     * Kavya: flag if creators need exact totals under these filters, which would require moving the
-     * niche/platform match into the DB query (e.g. promoting platforms to a join table like
-     * PlatformStat).
+     * Platform/niche filters are matched in-memory after the DB-level status/visibility/deadline/
+     * budget filters (Campaign has no dedicated niche/category column to filter on at the DB level
+     * — see TECH-STACK.md's note that 05_CREATOR_CAMPAIGNS_SPEC.md entity shapes are a feature
+     * reference, not literal).
+     *
+     * <p>F-0412 — those filters used to run on {@code result.getContent()}, i.e. on the page the DB
+     * had already sliced, so they only ever pruned rows the creator had been handed anyway: a
+     * campaign matching the niche that sorted 30th never surfaced under a 20-per-page browse, and
+     * {@code total}/{@code hasMore} described the slice rather than the matches. When either filter
+     * is active the base is now scanned up to {@link #POST_FILTER_SCAN_LIMIT} rows and the *matched*
+     * list is paged here, so the filter reaches the campaign base and the meta counts matches.
      */
     @Transactional(readOnly = true)
     public PagedCreatorCampaigns browse(
@@ -125,20 +136,37 @@ public class CreatorCampaignService {
                         .and(CampaignSpecs.applicationDeadlineNotPassed())
                         .and(CampaignSpecs.budgetOverlap(budgetMin, budgetMax));
 
+        boolean byPlatform = platform != null && !platform.isBlank();
+        boolean byNiche = niche != null && !niche.isBlank();
+        boolean postFiltered = byPlatform || byNiche;
+
+        Sort sort = Sort.by(Sort.Direction.DESC, "createdAt");
         Page<Campaign> result =
                 campaignRepository.findAll(
                         spec,
-                        PageRequest.of(safePage - 1, safeLimit, Sort.by(Sort.Direction.DESC, "createdAt")));
+                        postFiltered
+                                ? PageRequest.of(0, POST_FILTER_SCAN_LIMIT, sort)
+                                : PageRequest.of(safePage - 1, safeLimit, sort));
 
         List<Campaign> campaigns = result.getContent();
-        boolean postFiltered = false;
-        if (platform != null && !platform.isBlank()) {
-            campaigns = campaigns.stream().filter(c -> matchesPlatform(c, platform)).toList();
-            postFiltered = true;
-        }
-        if (niche != null && !niche.isBlank()) {
-            campaigns = campaigns.stream().filter(c -> matchesNiche(c, niche)).toList();
-            postFiltered = true;
+        long total;
+        boolean hasMore;
+        if (postFiltered) {
+            if (byPlatform) {
+                campaigns = campaigns.stream().filter(c -> matchesPlatform(c, platform)).toList();
+            }
+            if (byNiche) {
+                campaigns = campaigns.stream().filter(c -> matchesNiche(c, niche)).toList();
+            }
+            total = campaigns.size();
+            // (safePage - 1) * safeLimit in long math — safePage is caller-supplied and unbounded.
+            int from = (int) Math.min((long) (safePage - 1) * safeLimit, campaigns.size());
+            int to = Math.min(from + safeLimit, campaigns.size());
+            campaigns = campaigns.subList(from, to);
+            hasMore = to < total;
+        } else {
+            total = result.getTotalElements();
+            hasMore = result.hasNext();
         }
 
         Map<String, Workspace> workspaces = loadWorkspaces(campaigns);
@@ -154,8 +182,6 @@ public class CreatorCampaignService {
                                                 applicationsByCampaign.get(c.getId())))
                         .toList();
 
-        long total = postFiltered ? items.size() : result.getTotalElements();
-        boolean hasMore = postFiltered ? false : result.hasNext();
         return new PagedCreatorCampaigns(items, new PageMeta(safePage, safeLimit, total, hasMore));
     }
 

@@ -70,7 +70,7 @@ class NotificationControllerTest {
                         .id("01NOTIF000000000000001")
                         .userId(USER_A)
                         .eventType("escrow.funded")
-                        .title("Escrow funded")
+                        .title("Funds secured")
                         .body("Your funds are secured")
                         .build();
         when(notificationRepository.findByUserIdOrdered(eq(USER_A), any()))

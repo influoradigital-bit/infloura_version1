@@ -30,9 +30,13 @@
     <meta property="og:site_name" content="Influora" />
     <meta property="og:locale" content="en_IN" />
     <meta property="og:title" content="Influencer Marketing Platform for India | Influora" />
+    <!-- F-0177 — must stay byte-identical to <Seo>'s description on landing.tsx and to
+         name="description" above. This head ships to a non-JS crawler; <Seo> replaces it after
+         hydration. When the two disagree, one URL advertises two different descriptions
+         depending on who is looking, and the crawler gets the shorter one. -->
     <meta
       property="og:description"
-      content="Hire verified Indian creators, agree terms in one Deal Room, and pay only after the work is approved."
+      content="Hire verified Indian creators, agree terms in one Deal Room, and pay only after the work is approved. Contracts, TDS and payment protection built in. Free to start."
     />
     <meta property="og:url" content="https://influora.in/" />
     <meta property="og:image" content="https://influora.in/og-image.png" />
@@ -41,9 +45,10 @@
     <meta property="og:image:alt" content="Influora — influencer marketing platform for India" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Influencer Marketing Platform for India | Influora" />
+    <!-- F-0177 — same rule as og:description above. -->
     <meta
       name="twitter:description"
-      content="Hire verified Indian creators, agree terms in one Deal Room, and pay only after the work is approved."
+      content="Hire verified Indian creators, agree terms in one Deal Room, and pay only after the work is approved. Contracts, TDS and payment protection built in. Free to start."
     />
     <meta name="twitter:image" content="https://influora.in/og-image.png" />
 

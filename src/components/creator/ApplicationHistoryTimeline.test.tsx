@@ -352,9 +352,9 @@ describe('ApplicationHistoryTimeline', () => {
 
     renderTimeline();
 
-    // "Fund Escrow" appears twice by coincidence — once as the FUND_ESCROW event-type label,
+    // "Secure Funds" appears twice by coincidence — once as the FUND_ESCROW event-type label,
     // once as the 'escrow' dealPhase badge — so both must be present rather than exactly one.
-    await waitFor(() => expect(screen.getAllByText('Fund Escrow')).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText('Secure Funds')).toHaveLength(2));
   });
 
   it('never coerces a null dealPhase (CANCELLED/DISPUTED) into a fabricated phase badge', async () => {
@@ -387,7 +387,7 @@ describe('ApplicationHistoryTimeline', () => {
     await waitFor(() => expect(screen.getAllByText('Closed')).toHaveLength(2));
     // None of the 5 real phase labels may appear — a null dealPhase must render no phase badge
     // at all, never a default like "Negotiate".
-    ['Negotiate', 'Contract', 'Fund Escrow', 'Deliver', 'Pay'].forEach((label) => {
+    ['Negotiate', 'Contract', 'Secure Funds', 'Deliver', 'Pay'].forEach((label) => {
       expect(screen.queryByText(label)).not.toBeInTheDocument();
     });
   });

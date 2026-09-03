@@ -1,0 +1,20 @@
+{
+ "verdict": "proved",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "gates/endpoint_reachability.py findings verified (no false orphan from an interpolated base URL) -> PROVED list of unreachable endpoints, all 204",
+ "evidence": {
+  "oracle": "script",
+  "command": "python .proof-os/gates/endpoint_reachability.py",
+  "result": "204 user-facing endpoints, 328 frontend call sites, 16 unreachable (was 29 with 13 false positives); each of the 16 hand-verified to have no src caller; companion gate fe_be_endpoints.py exits 0, 58/58 admin FE calls resolve",
+  "where": ".proof-os/gates/endpoint_reachability.py:56"
+ },
+ "not_checked": [
+  "whether a frontend caller is reachable by NAVIGATION - a call in an unmounted or unrouted component still counts as reached",
+  "whether the call fires with correct arguments, or whether the UI renders the response - that is part 2 and is not touched here",
+  "authorization on any of the 204 endpoints",
+  "call shapes still outside the scanner: a fetch built from concatenated variables remains invisible and would read as an orphan",
+  "F-0407 and F-0423 remain OPEN - the gate was fixed but no fixture test locks the fix, so the class can regress silently"
+ ],
+ "skipped": []
+}

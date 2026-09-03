@@ -112,7 +112,12 @@ function detectSupport(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined'
 }
 
-export function useVoiceOutput(): UseVoiceOutputResult {
+/**
+ * T-MEERA-CREATOR-PHASE-A (A5/A10) — which role's token (and therefore whose Sarvam TTS
+ * quota/language) `meeraApi.speak` authenticates as. Defaults to 'brand' so every pre-existing
+ * caller (which never passed one) is unaffected; the creator chat entry passes 'creator'.
+ */
+export function useVoiceOutput(role: 'brand' | 'creator' = 'brand'): UseVoiceOutputResult {
   const supportedRef = useRef(detectSupport())
   const supported = supportedRef.current
 
@@ -240,7 +245,7 @@ export function useVoiceOutput(): UseVoiceOutputResult {
       // Kick off the server-TTS attempt but never await it before
       // returning — speak() itself must stay synchronous/instant.
       meeraApi
-        .speak(text, lang)
+        .speak(text, lang, role)
         .then((blob) => {
           if (speakTokenRef.current !== token) return // superseded — discard
           if (!blob) {
@@ -286,7 +291,7 @@ export function useVoiceOutput(): UseVoiceOutputResult {
           speakWithBrowser()
         })
     },
-    [supported, enabled, releaseAudio],
+    [supported, enabled, releaseAudio, role],
   )
 
   const speakSequence = useCallback(
@@ -326,7 +331,7 @@ export function useVoiceOutput(): UseVoiceOutputResult {
       const prefetch = (i: number) => {
         if (i >= spoken.length || fetches.has(i)) return
         const text = spoken[i]
-        fetches.set(i, text ? meeraApi.speak(text, opts?.lang).catch(() => null) : Promise.resolve(null))
+        fetches.set(i, text ? meeraApi.speak(text, opts?.lang, role).catch(() => null) : Promise.resolve(null))
       }
 
       // Fall back to the browser voice for ONE sentence, keeping the sequence going.
@@ -411,7 +416,7 @@ export function useVoiceOutput(): UseVoiceOutputResult {
 
       playIndex(0)
     },
-    [supported, enabled, releaseAudio],
+    [supported, enabled, releaseAudio, role],
   )
 
   // Cancel on unmount so nothing keeps talking after the panel is gone.

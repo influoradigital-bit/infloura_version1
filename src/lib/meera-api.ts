@@ -388,8 +388,30 @@ export function isOptionsPayload(data: unknown): data is OptionsPayload {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
-function getToken(): string | null {
-  return localStorage.getItem('brand_token');
+/**
+ * T-MEERA-CREATOR-PHASE-A (A10) — Meera is no longer brand-only. `role` defaults to 'brand' so
+ * every pre-existing call site (which never passed one) keeps reading `brand_token` exactly as
+ * before; the creator chat entry (CreatorMeeraChatPanel) is the only caller that passes
+ * 'creator'. Matches the `brand_token`/`creator_token` split `src/lib/api.ts`'s `HttpClient`
+ * already uses — deliberately NOT a brand-then-creator fallback, which would silently attach
+ * the wrong role's token when a browser happens to hold both (a real case during QA/dev).
+ */
+type MeeraRole = 'brand' | 'creator';
+
+function getToken(role: MeeraRole = 'brand'): string | null {
+  return localStorage.getItem(role === 'creator' ? 'creator_token' : 'brand_token');
+}
+
+/**
+ * T-MEERA-CREATOR-PHASE-A (fix round 1, item 1) — `role` used to select only the auth token,
+ * not the URL: every call below hit the brand-gated `/meera/...` path regardless of role, so a
+ * creator session 403'd at `BrandContextService.requireBrand` before ever reaching
+ * `CreatorMeeraController` (`/creator/meera/...`), which exists and is the correct counterpart.
+ * This is now the single place that maps role -> path prefix; every method below must route
+ * through it rather than hardcoding `/meera`.
+ */
+function basePath(role: MeeraRole): string {
+  return role === 'creator' ? '/creator/meera' : '/meera';
 }
 
 async function request<T>(
@@ -399,6 +421,7 @@ async function request<T>(
     body?: unknown;
     idempotencyKey?: string;
     query?: Record<string, string | number | undefined>;
+    role?: MeeraRole;
   } = {}
 ): Promise<T> {
   const url = new URL(`${API_BASE_URL}${path}`);
@@ -414,7 +437,7 @@ async function request<T>(
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
-  const token = getToken();
+  const token = getToken(opts.role);
   if (token) headers.Authorization = `Bearer ${token}`;
   if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey;
 
@@ -474,7 +497,7 @@ export const meeraApi = {
    * POST /meera/sessions - Start or resume a Meera session
    * Returns conversationId and brand profile status
    */
-  startSession: async (): Promise<MeeraSessionResponse> => {
+  startSession: async (role: MeeraRole = 'brand'): Promise<MeeraSessionResponse> => {
     if (!isApiLive()) {
       await delay();
       return {
@@ -484,7 +507,7 @@ export const meeraApi = {
         credits: { remaining: 100, unlimited: false },
       };
     }
-    return request<MeeraSessionResponse>('POST', '/meera/sessions');
+    return request<MeeraSessionResponse>('POST', `${basePath(role)}/sessions`, { role });
   },
 
   /**
@@ -493,7 +516,8 @@ export const meeraApi = {
    */
   sendTurn: async (
     conversationId: string,
-    content: string
+    content: string,
+    role: MeeraRole = 'brand'
   ): Promise<MeeraTurnResponse> => {
     if (!isApiLive()) {
       await delay();
@@ -512,10 +536,15 @@ export const meeraApi = {
     // failed turn (double-spend guard), so a fresh key per call is correct.
     // (Kavya QA: if a retry path is ever added, the SAME key must be reused
     // across retries of one logical turn or the backend dedupe is bypassed.)
-    return request<MeeraTurnResponse>('POST', `/meera/sessions/${conversationId}/messages`, {
-      body: { content },
-      idempotencyKey: safeRandomUUID(),
-    });
+    return request<MeeraTurnResponse>(
+      'POST',
+      `${basePath(role)}/sessions/${conversationId}/messages`,
+      {
+        body: { content },
+        idempotencyKey: safeRandomUUID(),
+        role,
+      }
+    );
   },
 
   /**
@@ -616,12 +645,14 @@ export const meeraApi = {
    * owns its own transcript there).
    */
   getHistory: async (
-    conversationId: string
+    conversationId: string,
+    role: MeeraRole = 'brand'
   ): Promise<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>> => {
     if (!isApiLive()) return [];
     return request<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>>(
       'GET',
-      `/meera/sessions/${conversationId}/messages`
+      `${basePath(role)}/sessions/${conversationId}/messages`,
+      { role }
     );
   },
 
@@ -631,7 +662,8 @@ export const meeraApi = {
    */
   getMessagesAfter: async (
     conversationId: string,
-    afterMessageId: string
+    afterMessageId: string,
+    role: MeeraRole = 'brand'
   ): Promise<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>> => {
     if (!isApiLive()) {
       await delay();
@@ -645,8 +677,8 @@ export const meeraApi = {
     }
     return request<Array<{ id: string; role: 'USER' | 'ASSISTANT'; content: string }>>(
       'GET',
-      `/meera/sessions/${conversationId}/messages`,
-      { query: { after: afterMessageId } }
+      `${basePath(role)}/sessions/${conversationId}/messages`,
+      { query: { after: afterMessageId }, role }
     );
   },
 
@@ -672,12 +704,20 @@ export const meeraApi = {
    * case the backend's own default (`en-IN`, `voice.py`'s
    * `body.get("lang", "en-IN")`) applies.
    */
-  speak: async (text: string, lang?: string): Promise<Blob | null> => {
+  speak: async (text: string, lang?: string, role: MeeraRole = 'brand'): Promise<Blob | null> => {
     if (!isApiLive()) return null;
+    // T-MEERA-CREATOR-PHASE-A (fix round 1, item 1): there is no creator-audience
+    // counterpart to `/meera/voice/speak` yet (it lives on the brand-gated
+    // MeeraController, and CreatorMeeraController exposes no voice routes) — hitting
+    // it with a creator token would just 403. Returning null here is the documented,
+    // intentional fallback: `useVoiceOutput` already treats null as "use the browser's
+    // SpeechSynthesis instead", so creator voice output degrades to that until a
+    // creator voice route ships on the backend.
+    if (role === 'creator') return null;
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      const token = getToken();
+      const token = getToken(role);
       if (token) headers.Authorization = `Bearer ${token}`;
 
       const res = await fetch(`${API_BASE_URL}/meera/voice/speak`, {
@@ -716,12 +756,16 @@ export const meeraApi = {
    * endpoint takes multipart form data (a single `audio` file part) and
    * returns a flat JSON object, not the envelope shape.
    */
-  transcribe: async (audio: Blob): Promise<MeeraTranscribeResult | null> => {
+  transcribe: async (audio: Blob, role: MeeraRole = 'brand'): Promise<MeeraTranscribeResult | null> => {
     if (!isApiLive()) return null;
+    // Same reasoning as `speak()` above: `/meera/voice/transcribe` is brand-gated and has
+    // no creator counterpart yet. `useVoiceInput` falls back to webkitSpeechRecognition on
+    // a null return, so creator STT degrades to the browser's own recognizer.
+    if (role === 'creator') return null;
 
     try {
       const headers: Record<string, string> = {};
-      const token = getToken();
+      const token = getToken(role);
       if (token) headers.Authorization = `Bearer ${token}`;
 
       const formData = new FormData();

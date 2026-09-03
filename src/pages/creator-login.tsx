@@ -82,7 +82,7 @@ export default function CreatorLoginPage() {
       heroSubtitle="Manage deals, submit deliverables, and get paid — with a workspace built for Indian creators."
       heroBullets={[
         'Verified brand partnerships',
-        'Transparent escrow payouts',
+        'Transparent, protected payouts',
         'Deal room in one place',
       ]}
     >

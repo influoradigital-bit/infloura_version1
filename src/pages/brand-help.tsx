@@ -36,12 +36,12 @@ const SECTIONS = [
   {
     icon: FileSignature,
     title: 'Contracts',
-    body: `Once you and the creator agree on terms, a contract is generated right inside the Deal Room. Both sides e-sign before work starts. The contract locks in deliverables, payment schedule, and usage rights — once it's signed, ask Meera to fund escrow for the deal (escrow funding isn't automatic; it's a step you or Meera trigger).`,
+    body: `Once you and the creator agree on terms, a contract is generated right inside the Deal Room. Both sides e-sign before work starts. The contract locks in deliverables, payment schedule, and usage rights — once it's signed, ask Meera to secure the funds for the deal (securing funds isn't automatic; it's a step you or Meera trigger).`,
   },
   {
     icon: Wallet,
-    title: 'Payments & Escrow',
-    body: `When a deal is signed, the agreed amount is held in escrow and released to the creator only after you approve their deliverables. You can top up your wallet, view transaction history, and track escrow holds — all in one dashboard. Payment processing is powered by Razorpay.`,
+    title: 'Payments & Protection',
+    body: `When a deal is signed, the agreed amount is held securely and released to the creator only after you approve their deliverables. You can top up your wallet, view transaction history, and track secured funds — all in one dashboard. Payment processing is powered by Razorpay.`,
   },
   {
     icon: Sparkles,

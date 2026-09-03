@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isApiLive, notifications as notificationsApi, type Role } from '@/lib/api';
+import { ApiError, isApiLive, notifications as notificationsApi, type Role } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
 // ---------------------------------------------------------------------------
@@ -27,6 +27,13 @@ import { toast } from '@/hooks/use-toast';
 // an open-triggered refresh wired in by the bell's own consumer (e.g.
 // brand-layout.tsx calls `refresh()` when the popover opens).
 const REFRESH_INTERVAL_MS = 60_000;
+
+// F-0093: a tab whose refresh token has died keeps hitting GET /notifications every 60s
+// forever, unauthenticated, for as long as it stays open. Consecutive auth failures now
+// buy an exponentially growing number of skipped ticks (60s -> 2m -> 4m -> ... capped at
+// this many), reset the moment one fetch succeeds. The cap keeps a tab that is merely
+// waiting on a re-login from going quiet for the rest of the day.
+const MAX_AUTH_BACKOFF_SKIPS = 15;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,7 +115,7 @@ const MOCK_NOTIFICATIONS: Notification[] = [
   {
     id: 'n4',
     type: 'success',
-    title: 'Escrow funded',
+    title: 'Funds secured',
     body: 'Your funds are secured',
     read: true,
     createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
@@ -135,8 +142,25 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
   // `loading` now means "no data yet at all"; background refreshes after the
   // first successful load don't re-arm it.
   const hasLoadedOnceRef = useRef(false);
+  // F-0436: `GET /notifications` pages at 20 (NotificationController#list) but its envelope
+  // carries `unreadCount`, the server's count over ALL of the user's rows — and
+  // `notificationsApi.list()` already hands it back. The badge used to be recomputed from the
+  // one page held in state, so a user with more unread than fit on it saw an undercount that
+  // never grew. Hold the server total and prefer it; `null` means "no server total yet"
+  // (mock mode, or before the first successful fetch), where the page count is all there is.
+  const [serverUnreadCount, setServerUnreadCount] = useState<number | null>(null);
+  // Mirrors `notifications` so the optimistic handlers can read the pre-update rows without
+  // taking `notifications` as a dependency (which would re-create them on every fetch).
+  const notificationsRef = useRef<Notification[]>([]);
+  // F-0093: consecutive auth failures, and how many poll ticks are still owed to the backoff.
+  const authFailuresRef = useRef(0);
+  const skipTicksRef = useRef(0);
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  useEffect(() => {
+    notificationsRef.current = notifications;
+  }, [notifications]);
+
+  const unreadCount = serverUnreadCount ?? notifications.filter((n) => !n.read).length;
 
   /**
    * Fetch notifications from server (or mock). N-1: routed through
@@ -149,16 +173,30 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
 
     try {
       if (!isApiLive()) {
-        // Mock mode - use local data
+        // Mock mode - use local data. No server total exists here, so leave it null and let
+        // the badge fall back to counting the mock rows.
         await new Promise((r) => setTimeout(r, 300));
         setNotifications(MOCK_NOTIFICATIONS);
+        setServerUnreadCount(null);
       } else {
-        const { items } = await notificationsApi.list(role);
+        const { items, unreadCount: serverUnread } = await notificationsApi.list(role);
         setNotifications(items);
+        setServerUnreadCount(serverUnread);
       }
       hasLoadedOnceRef.current = true;
+      authFailuresRef.current = 0;
+      skipTicksRef.current = 0;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notifications');
+      // F-0093: only an auth rejection earns the backoff — a 500 or a dropped connection is
+      // transient and the plain 60s floor is the right retry for it.
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        authFailuresRef.current += 1;
+        skipTicksRef.current = Math.min(
+          2 ** authFailuresRef.current - 1,
+          MAX_AUTH_BACKOFF_SKIPS,
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -170,10 +208,21 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
    * body `{ notificationId }` (NotificationController.java) — not `POST /notifications/{id}/read`.
    */
   const markRead = useCallback(async (id: string) => {
+    // F-0436: the badge reads the server total now, so an optimistic flip has to move that
+    // total too — otherwise the row greys out while the badge sits unchanged. Only a row that
+    // was actually unread counts. The next poll re-reads the authoritative number; the
+    // mark-read response is NOT used for it, because NotificationController returns a bare
+    // `MarkReadResponse` with no `data` envelope while `http.request` unwraps `envelope.data`,
+    // so its typed `newUnreadCount` arrives `undefined` at runtime.
+    const wasUnread = notificationsRef.current.some((n) => n.id === id && !n.read);
+
     // Optimistic update
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n))
     );
+    if (wasUnread) {
+      setServerUnreadCount((c) => (c === null ? c : Math.max(0, c - 1)));
+    }
 
     if (isApiLive()) {
       try {
@@ -184,6 +233,9 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
         setNotifications((prev) =>
           prev.map((n) => (n.id === id ? { ...n, read: false } : n))
         );
+        if (wasUnread) {
+          setServerUnreadCount((c) => (c === null ? c : c + 1));
+        }
         toast({ title: 'Couldn’t mark as read', description: 'Please try again.', variant: 'destructive' });
       }
     }
@@ -199,8 +251,11 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
     const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
     if (unreadIds.length === 0) return;
 
-    // Optimistic update
+    // Optimistic update. F-0436: read-all clears the server's whole unread total, not only
+    // the rows on this page, so the badge goes to 0 rather than down by `unreadIds.length`.
+    const previousServerUnread = serverUnreadCount;
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    setServerUnreadCount((c) => (c === null ? c : 0));
 
     if (isApiLive()) {
       try {
@@ -211,6 +266,7 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
         setNotifications((prev) =>
           prev.map((n) => (revertIds.has(n.id) ? { ...n, read: false } : n)),
         );
+        setServerUnreadCount(previousServerUnread);
         toast({
           title: 'Couldn’t mark notifications read',
           description: 'Please try again.',
@@ -219,7 +275,7 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notifications, role]);
+  }, [notifications, serverUnreadCount, role]);
 
   // Fetch on mount / when the role changes
   useEffect(() => {
@@ -234,6 +290,13 @@ export function useNotifications(role: Role = 'brand'): UseNotificationsResult {
   useEffect(() => {
     if (!isApiLive()) return;
     const id = setInterval(() => {
+      // F-0093: burn a tick instead of firing another unauthenticated request. A consumer's
+      // own explicit `refresh()` (e.g. the bell popover opening) is never skipped — this
+      // guard is on the unattended interval only.
+      if (skipTicksRef.current > 0) {
+        skipTicksRef.current -= 1;
+        return;
+      }
       refresh();
     }, REFRESH_INTERVAL_MS);
     return () => clearInterval(id);

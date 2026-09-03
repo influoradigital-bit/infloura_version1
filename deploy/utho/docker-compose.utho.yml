@@ -168,6 +168,11 @@ services:
       MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
       VOICE_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
+      CREATOR_COPILOT_AI_BASE_URL: http://influora-ai:8000
+      # ---- Creator AI Co-pilot batch (OFF unless set in .env) ----
+      # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
+      # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.
+      CREATOR_COPILOT_ENABLED: ${CREATOR_COPILOT_ENABLED:-false}
       INFLUORA_MEERA_STREAM_PUBLICCHATURL: https://${AI_DOMAIN}/chat
       CLAMAV_HOST: clamav
       # ---- Money + comms (no validator — break silently if wrong) ----
@@ -192,8 +197,18 @@ services:
       SMTP_PORT: ${SMTP_PORT}
       SMTP_USERNAME: ${SMTP_USERNAME}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_STARTTLS_ENABLE: ${SMTP_STARTTLS_ENABLE}
+      SMTP_SSL_ENABLE: ${SMTP_SSL_ENABLE}
       # Signs one-click unsubscribe links (F-0390 A3) — no default is the git-committed placeholder
       UNSUBSCRIBE_SIGNING_SECRET: ${UNSUBSCRIBE_SIGNING_SECRET}
+      # Q5.5 (T-CREATORCONNECT-0902) — signs the creator-invite link RegistrationService
+      # #consumeInviteToken verifies at registration. generate-env.sh generates a real value with
+      # the same random-secret mechanism as JWT_ACCESS_SECRET/UNSUBSCRIBE_SIGNING_SECRET above;
+      # :- default is empty (not the committed dev-...-min-32-chars literal in
+      # InviteTokenService.java), so an operator who skipped generate-env.sh gets an empty secret
+      # and InviteTokenService's own fail-closed guard rejects every invite token outside
+      # dev/test, instead of silently signing with the public dev default.
+      CREATOR_INVITE_TOKEN_SECRET: ${CREATOR_INVITE_TOKEN_SECRET:-}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
@@ -213,6 +228,22 @@ services:
       META_INSTAGRAM_REDIRECT_URI: ${META_INSTAGRAM_REDIRECT_URI}
       # DISTINCT AES-256 key, must decode to EXACTLY 32 bytes (enforced in MetaTokenStorage).
       META_TOKEN_ENCRYPTION_KEY: ${META_TOKEN_ENCRYPTION_KEY}
+      # T-CREATORCONNECT-0902 — CreatorMarketplaceClient gate (OFF until instagram_creator_
+      # marketplace_discovery clears App Review) + admin recipient for creator-connection emails.
+      # Q7.4 (Critical) — `:-false`/`:-`, NOT a bare `${VAR}`: see the matching comment in
+      # deploy/hostinger/docker-compose.hostinger.yml for why a present-but-empty compose env var
+      # crashed API boot (Spring's `${VAR:default}` only applies when the property is ABSENT, not
+      # when it's empty) and why this is hardened at the property-binding layer too.
+      META_CREATOR_MARKETPLACE_ENABLED: ${META_CREATOR_MARKETPLACE_ENABLED:-false}
+      ADMIN_NOTIFICATION_EMAIL: ${ADMIN_NOTIFICATION_EMAIL:-}
+      # Q1.3 (T-CREATORCONNECT-0902) — Influora-owned IG Business system caller for Business
+      # Discovery lookups, preferred ahead of borrowing a live creator's own token — see the
+      # matching comment in deploy/hostinger/docker-compose.hostinger.yml. Same F-0390 class: this
+      # explicit-map `environment:` block only forwards keys listed here, so without these two
+      # lines the code path stays unreachable on this VPS regardless of what ops sets on the host.
+      # Blank/unset keeps it off (falls through to the pre-existing creator-token path).
+      META_SYSTEM_IG_USER_ID: ${META_SYSTEM_IG_USER_ID:-}
+      META_SYSTEM_IG_ACCESS_TOKEN: ${META_SYSTEM_IG_ACCESS_TOKEN:-}
       # ---- GST identity (CompanyTaxStartupValidator rejects placeholders) ----
       INFLUORA_COMPANY_GSTIN: ${INFLUORA_COMPANY_GSTIN}
       INFLUORA_COMPANY_ADDRESS: ${INFLUORA_COMPANY_ADDRESS}

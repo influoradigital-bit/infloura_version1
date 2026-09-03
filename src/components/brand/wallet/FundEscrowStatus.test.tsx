@@ -29,7 +29,7 @@ describe('FundEscrowStatus (F-0131)', () => {
       />,
     );
     expect(screen.getByRole('status')).toHaveTextContent(
-      'Ready to lock funds for Summer Launch. Continue to fund escrow.',
+      'Ready to secure funds for Summer Launch. Continue to secure funds.',
     );
   });
 

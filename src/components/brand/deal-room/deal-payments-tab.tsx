@@ -124,12 +124,18 @@ export function DealPaymentsTab({
     }
   };
 
-  const perDeliverable =
-    deliverablesTotal > 0 ? Math.round(dealValue / deliverablesTotal) : dealValue;
-
-  // Real contract milestones when we have them — ids, amounts and statuses straight from
-  // `payment_milestones`. The derived list below is the pre-contract placeholder and is only
-  // reached when no contract has been generated yet.
+  // F-0437 — real contract milestones ONLY: ids, amounts and statuses straight from
+  // `payment_milestones`. When the server sends none, this list stays EMPTY and the panel says so
+  // (see the empty state below).
+  //
+  // What used to be here was a derived "pre-contract placeholder": a `Funds secured` row for the
+  // full dealValue plus one `Deliverable N payout` row per deliverable at dealValue/deliverablesTotal.
+  // It was labelled a placeholder in a comment, but nothing on screen distinguished those rupee
+  // figures from real ones, and it did not stop at inventing AMOUNTS — it invented STATUSES too,
+  // marking the first `deliverablesDone` rows `released` with today's date. A brand looking at the
+  // payments tab of a deal with no contract saw a payment plan, and saw money already paid out,
+  // when no milestone existed and nothing had been released. The sibling deal-contract-tab.tsx
+  // renders "No milestones on this contract." for exactly this state; this tab now agrees with it.
   const rows: PaymentMilestoneRow[] = hasRealMilestones
     ? realMilestones.map((m, i) => {
         const raw = (m.status ?? 'PENDING').toUpperCase();
@@ -141,24 +147,7 @@ export function DealPaymentsTab({
             raw === 'RELEASED' ? 'released' : raw === 'FUNDED' ? 'locked' : 'pending',
         };
       })
-    : [
-        {
-          id: 'escrow',
-          label: 'Escrow funded',
-          amount: dealValue,
-          status: escrowLocked ? 'locked' : 'pending',
-        },
-        ...Array.from({ length: deliverablesTotal }, (_, i) => ({
-          id: `del-${i + 1}`,
-          label: `Deliverable ${i + 1} payout`,
-          amount: perDeliverable,
-          status: (i < deliverablesDone ? 'released' : escrowLocked ? 'locked' : 'pending') as
-            | 'pending'
-            | 'locked'
-            | 'released',
-          date: i < deliverablesDone ? new Date().toLocaleDateString('en-IN') : undefined,
-        })),
-      ];
+    : [];
 
   const releasedTotal = rows
     .filter((m) => m.status === 'released')
@@ -181,17 +170,17 @@ export function DealPaymentsTab({
             <div>
               <p className="font-medium text-sm">
                 {escrowLocked
-                  ? 'Escrow active'
+                  ? 'Payment secured'
                   : fullySigned
-                    ? 'Contract signed — escrow not funded yet'
-                    : 'Escrow not funded yet'}
+                    ? 'Contract signed — funds not secured yet'
+                    : 'Funds not secured yet'}
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 {escrowLocked
                   ? `${formatINR(inEscrow)} is secured until deliverables are approved.`
                   : fullySigned
-                    ? 'Both parties have signed. Fund the milestone below to start the work — the creator cannot submit deliverables until escrow is funded.'
-                    : 'Fund escrow after both parties sign the contract.'}
+                    ? 'Both parties have signed. Fund the milestone below to start the work — the creator cannot submit deliverables until the funds are secured.'
+                    : 'Secure the funds after both parties sign the contract.'}
               </p>
             </div>
           </CardContent>
@@ -210,7 +199,7 @@ export function DealPaymentsTab({
             <CardContent className="space-y-2">
               <p className="text-sm text-muted-foreground">
                 {fundable?.description || `Milestone ${fundable?.sequenceNo ?? 1}`} —{' '}
-                {formatINR(fundable?.amount ?? 0)} moves from your wallet into escrow. The
+                {formatINR(fundable?.amount ?? 0)} moves from your wallet into secured funds. The
                 amount is re-derived server-side.
               </p>
               <FundEscrowButton
@@ -228,7 +217,7 @@ export function DealPaymentsTab({
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                In escrow
+                Secured
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -296,10 +285,14 @@ export function DealPaymentsTab({
               </div>
             ))}
           </div>
+          {/* F-0437 — the honest empty state that replaced the invented schedule. It NAMES what is
+              absent (milestones / payment schedule) rather than only hinting that figures are
+              approximate: the old copy said "Estimated from the deal value", which described
+              fabricated rows as an estimate instead of saying no schedule exists. */}
           {!hasRealMilestones && (
             <p className="mt-2 text-xs text-muted-foreground">
-              Estimated from the deal value — real milestones appear once the contract is
-              generated.
+              No payment milestones on this contract yet. The payment schedule appears here once
+              the contract is generated — nothing is scheduled or paid until then.
             </p>
           )}
         </div>

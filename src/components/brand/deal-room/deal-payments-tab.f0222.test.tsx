@@ -153,8 +153,8 @@ describe('F-0222 — the panel states escrow honestly', () => {
   it('does not claim escrow is active on a signed but unfunded deal', () => {
     renderPanel({ campaignId: 'camp_1', escrowFunded: false, milestones: [MS()] });
 
-    expect(screen.queryByText('Escrow active')).toBeNull();
-    expect(screen.getByText('Contract signed — escrow not funded yet')).toBeTruthy();
+    expect(screen.queryByText('Payment secured')).toBeNull();
+    expect(screen.getByText('Contract signed — funds not secured yet')).toBeTruthy();
   });
 
   it('reports escrow active only when the deal really is funded', () => {
@@ -164,14 +164,14 @@ describe('F-0222 — the panel states escrow honestly', () => {
       milestones: [MS({ status: 'FUNDED' })],
     });
 
-    expect(screen.getByText('Escrow active')).toBeTruthy();
+    expect(screen.getByText('Payment secured')).toBeTruthy();
   });
 
   it('keeps the creator mount on its prior signature-derived behaviour', () => {
     // escrowFunded omitted -> falls back to contractStatus, unchanged by this fix.
     renderPanel({ escrowFunded: undefined, contractStatus: 'active' });
 
-    expect(screen.getByText('Escrow active')).toBeTruthy();
+    expect(screen.getByText('Payment secured')).toBeTruthy();
   });
 });
 

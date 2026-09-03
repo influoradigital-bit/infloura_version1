@@ -23,11 +23,13 @@ import {
   LineChart,
   LifeBuoy,
   ShieldAlert,
+  UserPlus,
   Scale,
   CreditCard,
   ScrollText,
   AlertOctagon,
   Mail,
+  Bot,
   Menu,
   X,
   Bell,
@@ -64,11 +66,13 @@ const NAV_ITEMS: AdminNavItem[] = [
   { label: 'Revenue', to: '/admin/revenue', icon: LineChart },
   { label: 'Support', to: '/admin/support', icon: LifeBuoy },
   { label: 'Moderation', to: '/admin/moderation', icon: ShieldAlert },
+  { label: 'Creator connections', to: '/admin/creator-connections', icon: UserPlus },
   { label: 'Disputes', to: '/admin/disputes', icon: Scale },
   { label: 'Billing', to: '/admin/billing', icon: CreditCard },
   { label: 'Audit Log', to: '/admin/audit', icon: ScrollText },
   { label: 'Error Log', to: '/admin/errors', icon: AlertOctagon },
   { label: 'Email Queue', to: '/admin/emails', icon: Mail },
+  { label: 'Creator Agent', to: '/admin/creator-agent', icon: Bot },
 ];
 
 // ============================================

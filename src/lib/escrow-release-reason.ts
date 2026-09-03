@@ -27,9 +27,9 @@ export type PaymentHeldReason =
 const REASONS: Record<PaymentHeldReason, string> = {
   // The F-0222 signature: funded campaign-level, so the hold never reached the milestone.
   MILESTONE_NOT_FUNDED:
-    'Escrow was never funded for this milestone, so nothing was paid out. Fund it from the deal room and the payment will release.',
+    'Funds were never secured for this milestone, so nothing was paid out. Secure them from the deal room and the payment will release.',
   ESCROW_NOT_FOUND:
-    'No escrow hold exists for this milestone, so nothing was paid out. Fund it from the deal room and the payment will release.',
+    'No secured funds exist for this milestone, so nothing was paid out. Secure them from the deal room and the payment will release.',
   NO_MILESTONE:
     'This deliverable is not linked to a payment milestone, so no payment was released. It needs a contract with milestones before it can pay out.',
   MILESTONE_NOT_FOUND:
@@ -41,7 +41,7 @@ const REASONS: Record<PaymentHeldReason, string> = {
   ESCROW_BLOCKED_BY_DISPUTE:
     'Payment is frozen while this deal is in dispute. The approval is recorded; the payout waits for the dispute to close.',
   INVALID_ESCROW_STATE:
-    'Escrow for this milestone is not in a releasable state, so no payment went out. Check the Payments panel for this deal.',
+    'The secured funds for this milestone are not in a releasable state, so no payment went out. Check the Payments panel for this deal.',
   NOT_APPLICABLE: 'No payment is attempted on this action.',
 };
 

@@ -13,6 +13,8 @@ import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
 import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.List;
@@ -116,16 +118,20 @@ class StaleTokenCleanupJobTest {
     @DisplayName("overlap guard blocks concurrent runs via AtomicBoolean")
     void testOverlapGuardPreventsConcurrentRuns() throws InterruptedException {
         RevokeTrackingToken token = new RevokeTrackingToken(WORKSPACE_ID, CREATOR_ID, false);
+        CountDownLatch inGuardedSection = new CountDownLatch(1);
         when(tokenRepository.findByExpiresAtBeforeAndRevokedFalse(any(Instant.class)))
                 .thenAnswer(
                         invocation -> {
+                            inGuardedSection.countDown();
                             Thread.sleep(100);
                             return List.of(token);
                         });
 
         Thread thread1 = new Thread(() -> cleanupJob.cleanupStaleTokens());
         thread1.start();
-        Thread.sleep(10);
+        assertTrue(
+                inGuardedSection.await(5, TimeUnit.SECONDS),
+                "the first run never entered the guarded section - the overlap guard was not exercised");
 
         cleanupJob.cleanupStaleTokens();
 

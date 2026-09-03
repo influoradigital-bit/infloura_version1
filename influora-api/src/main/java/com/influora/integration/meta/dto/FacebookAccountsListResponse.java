@@ -11,6 +11,12 @@ public record FacebookAccountsListResponse(List<PageWithInstagram> data) {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record PageWithInstagram(
             String id,
+            // T-CREATORCONNECT-0902 — CreatorMarketplaceClient's page-token resolution requests
+            // this field explicitly (fields=id,access_token,instagram_business_account{id}).
+            // Every OTHER caller of this DTO omits access_token from its own fields= list, so this
+            // stays null for them (Jackson leaves an absent JSON field null) — additive, no
+            // behavior change for FacebookPageClient#resolveConnectedInstagram.
+            @JsonProperty("access_token") String accessToken,
             @JsonProperty("instagram_business_account") InstagramBusinessAccount instagramBusinessAccount) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)

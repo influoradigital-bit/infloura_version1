@@ -13,12 +13,18 @@
  *   health, flagged escrow, at-risk campaigns, HYPE ops, suspensions — read-only)
  * - /admin/support → TicketList
  * - /admin/moderation → ModerationPage (Content Flags + Approvals tabs, A7)
+ * - /admin/creator-connections → CreatorConnectionsPage (Instagram "Connect this creator"
+ *   enquiries + import, T-CREATORCONNECT-0902)
  * - /admin/disputes → DisputesPage (Task #9)
  * - /admin/billing → BillingPage (Subscription billing console, Task #25 — UI shell,
  *   mock data until AdminBillingController ships)
  * - /admin/audit → AuditLogPage (Audit log viewer, A6)
  * - /admin/errors → ErrorLogPage (Error log console — recent errors + stats + resolve)
  * - /admin/emails → EmailQueuePage (Email queue console — queue + stats + templates + retry)
+ * - /admin/emails/compose → EmailComposePage (Custom email compose — preview + confirm + send,
+ *   T-ADMINMAIL-0903)
+ * - /admin/creator-agent → CreatorAgentBaselinesPage (Meera-for-Creators Phase A baselines
+ *   snapshot — read-only, T-MEERA-CREATOR-PHASE-A A1, gate fix round 1 item 2)
  *
  * Route-level auth gating happens in `AdminProtectedRoute` (src/App.tsx) — this
  * component assumes it is only ever rendered for an authenticated session.
@@ -33,11 +39,14 @@ import FeeControlPanel from '@/admin/components/finance/FeeControlPanel';
 import RevenuePage from '@/admin/pages/RevenuePage';
 import TicketList from '@/admin/components/support/TicketList';
 import ModerationPage from '@/admin/pages/ModerationPage';
+import CreatorConnectionsPage from '@/admin/pages/CreatorConnectionsPage';
 import DisputesPage from '@/admin/pages/DisputesPage';
 import BillingPage from '@/admin/pages/BillingPage';
 import AuditLogPage from '@/admin/pages/AuditLogPage';
 import ErrorLogPage from '@/admin/pages/ErrorLogPage';
 import EmailQueuePage from '@/admin/pages/EmailQueuePage';
+import EmailComposePage from '@/admin/pages/EmailComposePage';
+import CreatorAgentBaselinesPage from '@/admin/pages/CreatorAgentBaselinesPage';
 import { useAdminAuth } from '@/admin/hooks/useAdminAuth';
 
 export default function AdminConsolePage() {
@@ -58,11 +67,14 @@ export default function AdminConsolePage() {
         <Route path="revenue" element={<RevenuePage />} />
         <Route path="support" element={<TicketList />} />
         <Route path="moderation" element={<ModerationPage />} />
+        <Route path="creator-connections" element={<CreatorConnectionsPage />} />
         <Route path="disputes" element={<DisputesPage />} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="audit" element={<AuditLogPage />} />
         <Route path="errors" element={<ErrorLogPage />} />
         <Route path="emails" element={<EmailQueuePage />} />
+        <Route path="emails/compose" element={<EmailComposePage />} />
+        <Route path="creator-agent" element={<CreatorAgentBaselinesPage />} />
         {/* Catch unmatched /admin/* paths — redirect to dashboard */}
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Routes>

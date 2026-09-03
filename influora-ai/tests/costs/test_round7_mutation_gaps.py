@@ -133,7 +133,7 @@ def _body() -> dict:
 def _verified() -> VerifiedToken:
     return VerifiedToken(
         workspace_id=WORKSPACE_ID, scope="chat:stream", subject="user-1",
-        conversation_id=CONVERSATION_ID, claims={"messageId": "01HMSG-ROUND7-F05F"},
+        conversation_id=CONVERSATION_ID, claims={"messageId": "01HMSG-ROUND7-F05F", "userType": "BRAND"},
     )
 
 

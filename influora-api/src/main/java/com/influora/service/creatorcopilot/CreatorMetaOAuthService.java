@@ -142,7 +142,10 @@ public class CreatorMetaOAuthService {
                 grantedScopes,
                 igBusinessAccountId,
                 MetaAuthPath.FACEBOOK_LOGIN,
-                metaUserId);
+                metaUserId,
+                // T-CREATORCONNECT-0902 — the JOINED hook's username, from the same
+                // resolveConnectedInstagram call that resolved igBusinessAccountId above.
+                igAccount != null ? igAccount.username() : null);
 
         if (igAccount == null) {
             return new ConnectResult(false, grantedScopes, ACCOUNT_TYPE_PERSONAL);

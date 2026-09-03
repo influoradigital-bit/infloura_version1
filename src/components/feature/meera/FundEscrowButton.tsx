@@ -119,7 +119,7 @@ function getStatusHelperText(status: EscrowFundStatus): string | null {
     case 'awaiting_payment':
       return 'Complete payment in the Razorpay window — funds are not secured yet.';
     case 'verifying':
-      return 'Verifying your payment with the server before marking escrow as secured.';
+      return 'Verifying your payment with the server before marking the funds as secured.';
     default:
       return null;
   }
@@ -185,7 +185,7 @@ export function FundEscrowButton({
       amount: serverAmount ?? undefined,
       currency: 'INR',
       name: 'Influora',
-      description: 'Fund campaign escrow',
+      description: 'Secure campaign funds',
       onSuccess: () => {
         escrowCheckoutOpenRef.current = false;
         // NEVER trust this callback alone - onPaymentComplete polls the server for

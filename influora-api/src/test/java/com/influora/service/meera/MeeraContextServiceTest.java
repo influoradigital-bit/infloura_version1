@@ -1,10 +1,12 @@
 package com.influora.service.meera;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -59,6 +61,9 @@ class MeeraContextServiceTest {
     @Mock private UtmCampaignRepository utmCampaignRepository;
     @Mock private AICreditService creditService;
     @Mock private Workspace workspace;
+    @Mock private com.influora.repository.CreatorProfileRepository creatorProfileRepository;
+    @Mock private com.influora.repository.CreatorAgentPreferencesRepository creatorAgentPreferencesRepository;
+    @Mock private com.influora.repository.CreatorMetricsRepository creatorMetricsRepository;
 
     private MeeraContextService service;
 
@@ -75,22 +80,213 @@ class MeeraContextServiceTest {
                         deliverableMetricRepository,
                         utmCampaignRepository,
                         creditService,
-                        new BrandContextAssembler());
+                        new BrandContextAssembler(),
+                        creatorProfileRepository,
+                        creatorAgentPreferencesRepository,
+                        creatorMetricsRepository);
     }
 
     @Test
-    @DisplayName("audience=CREATOR is guarded, not populated — Phase 3 (Priya A4), rejects before touching any repo")
-    void testCreatorAudienceGuarded() {
-        ApiException ex =
-                assertThrows(ApiException.class, () -> service.assemble(WORKSPACE_ID, "CREATOR"));
-        assertEquals("AUDIENCE_NOT_SUPPORTED", ex.getCode());
-        verifyNoInteractions(workspaceRepository, brandProfileRepository, templateRepository, campaignRepository);
+    @DisplayName("audience=CREATOR (SPEC.md T-MEERA-CREATOR-PHASE-A, A4) — creator not found -> 404, never a silent empty context")
+    void testCreatorAudienceCreatorNotFound() {
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.empty());
+        ApiException ex = assertThrows(ApiException.class, () -> service.assemble(WORKSPACE_ID, "CREATOR"));
+        assertEquals("CREATOR_PROFILE_NOT_FOUND", ex.getCode());
+        verifyNoInteractions(collaborationRepository, creatorMetricsRepository);
+    }
+
+    @Test
+    @DisplayName("audience=CREATOR (A4/A7) — identity carries ONLY kyc_done/gstin_present booleans, never PAN/GSTIN/Aadhaar")
+    void testCreatorAudienceIdentityBarrier() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(12_400L);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+
+        Object result = service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertTrue(result instanceof com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse);
+        var creatorContext = (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse) result;
+        assertEquals(java.util.Set.of("kyc_done", "gstin_present"), creatorContext.identity().keySet());
+        assertEquals(true, creatorContext.identity().get("kyc_done"));
+        assertEquals(false, creatorContext.identity().get("gstin_present"));
+        assertEquals("Priya", creatorContext.firstName());
+        assertEquals("Priya Shah", creatorContext.displayName());
+        assertFalse(creatorContext.consentAccepted());
+    }
+
+    @Test
+    @DisplayName(
+            "audience=CREATOR (fix round 2, item 3 -- Priya Q8) -- excluded_categories, blocked_brands,"
+                    + " working_hours_start/end, working_days and weekly_sponsored_limit are all present"
+                    + " in the response when the creator has set them, so Meera can actually honor a"
+                    + " blocklisted brand instead of never being told about it")
+    void testCreatorAudienceIncludesFiltersAndWorkingHours() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(12_400L);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+
+        com.influora.domain.entity.CreatorAgentPreferences prefs =
+                mock(com.influora.domain.entity.CreatorAgentPreferences.class);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.of(prefs));
+        when(prefs.getCreatorLanguage()).thenReturn("en-IN");
+        when(prefs.getBrandTone()).thenReturn("FRIENDLY");
+        when(prefs.getApprovalLevel()).thenReturn(0);
+        when(prefs.isRepresented()).thenReturn(false);
+        when(prefs.isConsentAccepted()).thenReturn(true);
+        when(prefs.getExcludedCategoriesJson()).thenReturn("[\"Alcohol\",\"Gambling\"]");
+        when(prefs.getBlockedBrandsJson()).thenReturn("[\"RivalCo\"]");
+        when(prefs.getWorkingHoursStart()).thenReturn(9);
+        when(prefs.getWorkingHoursEnd()).thenReturn(18);
+        when(prefs.getWorkingDaysJson()).thenReturn("[\"1\",\"2\",\"3\",\"4\",\"5\"]");
+        when(prefs.getWeeklySponsoredLimit()).thenReturn(3);
+
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+
+        Object result = service.assemble(WORKSPACE_ID, "CREATOR");
+
+        var creatorContext = (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse) result;
+        assertEquals(List.of("Alcohol", "Gambling"), creatorContext.excludedCategories());
+        assertEquals(List.of("RivalCo"), creatorContext.blockedBrands());
+        assertEquals(9, creatorContext.workingHoursStart());
+        assertEquals(18, creatorContext.workingHoursEnd());
+        assertEquals(List.of(1, 2, 3, 4, 5), creatorContext.workingDays());
+        assertEquals(3, creatorContext.weeklySponsoredLimit());
+    }
+
+    @Test
+    @DisplayName(
+            "Gate fix round 1 (Priya Q7): a creator with an admin-set ai_monthly_cap_usd override"
+                    + " has it rendered as a 2-decimal string on the CREATOR context payload, and it"
+                    + " is omitted entirely when unset")
+    void testCreatorAudienceSurfacesAiMonthlyCapUsdOverride() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(0L);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.UNVERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+
+        com.influora.domain.entity.CreatorAgentPreferences prefsWithCap =
+                mock(com.influora.domain.entity.CreatorAgentPreferences.class);
+        when(prefsWithCap.getAiMonthlyCapUsd()).thenReturn(new java.math.BigDecimal("2.50"));
+        when(prefsWithCap.getBrandTone()).thenReturn("FRIENDLY");
+        when(prefsWithCap.getApprovalLevel()).thenReturn(0);
+        when(prefsWithCap.isRepresented()).thenReturn(false);
+        when(prefsWithCap.isConsentAccepted()).thenReturn(false);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.of(prefsWithCap));
+
+        var withCap =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+        assertEquals("2.50", withCap.aiMonthlyCapUsd());
+
+        com.influora.domain.entity.CreatorAgentPreferences prefsNoCap =
+                mock(com.influora.domain.entity.CreatorAgentPreferences.class);
+        when(prefsNoCap.getAiMonthlyCapUsd()).thenReturn(null);
+        when(prefsNoCap.getBrandTone()).thenReturn("FRIENDLY");
+        when(prefsNoCap.getApprovalLevel()).thenReturn(0);
+        when(prefsNoCap.isRepresented()).thenReturn(false);
+        when(prefsNoCap.isConsentAccepted()).thenReturn(false);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.of(prefsNoCap));
+
+        var withoutCap =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+        assertEquals(null, withoutCap.aiMonthlyCapUsd());
     }
 
     @Test
     @DisplayName("unknown audience value is rejected the same way as CREATOR")
     void testUnknownAudienceGuarded() {
         assertThrows(ApiException.class, () -> service.assemble(WORKSPACE_ID, "SOMETHING_ELSE"));
+    }
+
+    @Test
+    @DisplayName(
+            "Gate fix round 1 (Priya Q6/Q9.6) -- a creator who never connected Instagram and never"
+                    + " self-reported a follower count gets NO 'followers' key at all, so Meera's honest"
+                    + " 'Instagram not connected yet' branch fires instead of a fabricated '0 followers'")
+    void testCreatorAudienceUnconnectedNoMetricsOmitsFollowersKey() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(0L);
+        when(profile.getEngagementRate()).thenReturn(null);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.UNVERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+
+        Object result = service.assemble(WORKSPACE_ID, "CREATOR");
+
+        var creatorContext = (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse) result;
+        assertFalse(
+                creatorContext.metricsSummary().containsKey("followers"),
+                "expected no 'followers' key for an unconnected creator with no self-reported total, got: "
+                        + creatorContext.metricsSummary());
+    }
+
+    @Test
+    @DisplayName(
+            "Gate fix round 1 (Priya Q6/Q9.6) -- a creator with no verified CreatorMetric row but a"
+                    + " nonzero self-reported onboarding follower count is labelled 'self-reported, not"
+                    + " verified' rather than presented as a Meta-verified fact")
+    void testCreatorAudienceSelfReportedFollowersAreLabelled() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(12_400L);
+        when(profile.getEngagementRate()).thenReturn(null);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.UNVERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+
+        Object result = service.assemble(WORKSPACE_ID, "CREATOR");
+
+        var creatorContext = (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse) result;
+        assertEquals(
+                "12,400 followers (self-reported, not verified)",
+                creatorContext.metricsSummary().get("followers"));
     }
 
     @Test
@@ -134,7 +330,7 @@ class MeeraContextServiceTest {
         when(creditService.getStatus(WORKSPACE_ID))
                 .thenReturn(BrandAiCredit.builder().workspaceId(WORKSPACE_ID).creditsRemaining(50).build());
 
-        ContextResponse response = service.assemble(WORKSPACE_ID, "BRAND");
+        ContextResponse response = (ContextResponse) service.assemble(WORKSPACE_ID, "BRAND");
 
         assertEquals(2, response.templateDigest().size());
         assertTrue(response.templateDigest().stream().anyMatch(t -> t.name().equals("Brand Awareness")));
@@ -183,7 +379,7 @@ class MeeraContextServiceTest {
         when(creditService.getStatus(WORKSPACE_ID))
                 .thenReturn(BrandAiCredit.builder().workspaceId(WORKSPACE_ID).creditsRemaining(10).build());
 
-        ContextResponse response = service.assemble(WORKSPACE_ID, "BRAND");
+        ContextResponse response = (ContextResponse) service.assemble(WORKSPACE_ID, "BRAND");
 
         assertEquals(2, response.pastCampaignSummary().size());
         var funded = response.pastCampaignSummary().stream().filter(p -> p.type().equals("HYPE")).findFirst().get();

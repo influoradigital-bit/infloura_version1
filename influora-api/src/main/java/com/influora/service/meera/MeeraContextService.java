@@ -7,33 +7,46 @@ import com.influora.domain.entity.BrandProfile;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.CampaignTemplate;
 import com.influora.domain.entity.Collaboration;
+import com.influora.domain.entity.CreatorAgentPreferences;
+import com.influora.domain.entity.CreatorMetric;
+import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DeliverableMetric;
 import com.influora.domain.entity.UtmCampaign;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CampaignTemplateScope;
+import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.EscrowStatus;
+import com.influora.domain.enums.VerificationStatus;
 import com.influora.repository.BrandProfileRepository;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CampaignTemplateRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CollaborationRepository.RateBandCandidateRow;
+import com.influora.repository.CreatorAgentPreferencesRepository;
+import com.influora.repository.CreatorMetricsRepository;
+import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DeliverableMetricRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
+import com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.OutcomeDigest;
 import com.influora.web.dto.meera.MeeraContextDtos.PastCampaignEntry;
 import java.math.BigDecimal;
+import java.text.NumberFormat;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,6 +71,9 @@ public class MeeraContextService {
 
     private static final String BRAND_AUDIENCE = "BRAND";
 
+    /** T-MEERA-CREATOR-PHASE-A (SPEC.md 2.9, A4). */
+    private static final String CREATOR_AUDIENCE = "CREATOR";
+
     /**
      * A campaign is treated as "funded" once it has left DRAFT/PENDING_APPROVAL — going ACTIVE is
      * the point escrow funds per the Commit-tier model (06-MEERA-PERMISSIONS-MATRIX.md: "going
@@ -67,6 +83,17 @@ public class MeeraContextService {
      */
     private static final Set<CampaignStatus> FUNDED_STATUSES =
             EnumSet.of(CampaignStatus.ACTIVE, CampaignStatus.PAUSED, CampaignStatus.COMPLETED);
+
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 2.9, A4) — {@code deals_summary.active_count}: every
+     * non-terminal collaboration status. Terminal = {@code COMPLETED}/{@code CANCELLED}/{@code
+     * DISPUTED}; everything else is still an open negotiation or in-flight deal from the
+     * creator's point of view.
+     */
+    private static final Set<CollaborationStatus> ACTIVE_DEAL_STATUSES =
+            EnumSet.complementOf(
+                    EnumSet.of(
+                            CollaborationStatus.COMPLETED, CollaborationStatus.CANCELLED, CollaborationStatus.DISPUTED));
 
     private final WorkspaceRepository workspaceRepository;
     private final BrandProfileRepository brandProfileRepository;
@@ -78,6 +105,9 @@ public class MeeraContextService {
     private final UtmCampaignRepository utmCampaignRepository;
     private final AICreditService creditService;
     private final BrandContextAssembler contextAssembler;
+    private final CreatorProfileRepository creatorProfileRepository;
+    private final CreatorAgentPreferencesRepository creatorAgentPreferencesRepository;
+    private final CreatorMetricsRepository creatorMetricsRepository;
 
     public MeeraContextService(
             WorkspaceRepository workspaceRepository,
@@ -89,7 +119,10 @@ public class MeeraContextService {
             DeliverableMetricRepository deliverableMetricRepository,
             UtmCampaignRepository utmCampaignRepository,
             AICreditService creditService,
-            BrandContextAssembler contextAssembler) {
+            BrandContextAssembler contextAssembler,
+            CreatorProfileRepository creatorProfileRepository,
+            CreatorAgentPreferencesRepository creatorAgentPreferencesRepository,
+            CreatorMetricsRepository creatorMetricsRepository) {
         this.workspaceRepository = workspaceRepository;
         this.brandProfileRepository = brandProfileRepository;
         this.templateRepository = templateRepository;
@@ -100,16 +133,33 @@ public class MeeraContextService {
         this.utmCampaignRepository = utmCampaignRepository;
         this.creditService = creditService;
         this.contextAssembler = contextAssembler;
+        this.creatorProfileRepository = creatorProfileRepository;
+        this.creatorAgentPreferencesRepository = creatorAgentPreferencesRepository;
+        this.creatorMetricsRepository = creatorMetricsRepository;
     }
 
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 2.9, A4) — {@code audience} now branches to either the
+     * BRAND path (unchanged below) or {@link #assembleCreatorContext}. Any other value is still
+     * rejected outright rather than silently returning an empty/wrong-shaped payload.
+     *
+     * <p>Overloaded so existing BRAND callers keep their {@link ContextResponse}-typed call site;
+     * {@code MeeraInternalController#context} calls this {@code Object}-returning overload and
+     * relies on Jackson to serialize whichever concrete record comes back.
+     */
     @Transactional(readOnly = true)
-    public ContextResponse assemble(String workspaceId, String audience) {
+    public Object assemble(String workspaceId, String audience) {
+        if (CREATOR_AUDIENCE.equalsIgnoreCase(audience)) {
+            return assembleCreatorContext(workspaceId);
+        }
+        return assembleBrand(workspaceId, audience);
+    }
+
+    private ContextResponse assembleBrand(String workspaceId, String audience) {
         if (!BRAND_AUDIENCE.equalsIgnoreCase(audience)) {
-            // A4: CREATOR allow-list is locked but Phase 3 — structurally guarded, never populated,
-            // rather than silently returning an empty/wrong-shaped BRAND-less payload.
             throw new ApiException(
                     "AUDIENCE_NOT_SUPPORTED",
-                    "audience '" + audience + "' is not yet supported (Phase 1 is BRAND-only)",
+                    "audience '" + audience + "' is not supported",
                     HttpStatus.BAD_REQUEST);
         }
 
@@ -150,6 +200,220 @@ public class MeeraContextService {
                 creditMode,
                 credit.getCreditsRemaining(),
                 outcomeDigest);
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 2.9, A4) — {@code workspaceId} here is actually the
+     * creator's USER id (the spec's own {@code "workspace_id": "creator_user_id_here"} comment on
+     * the request shape) — the field is reused across audiences rather than renamed on the wire
+     * contract Python already sends. Resolved to a {@link CreatorProfile} first; every other
+     * lookup below is keyed off {@code profile.getId()} (the FK space {@code
+     * creator_agent_preferences.creator_id} actually lives in), never the raw user id again.
+     *
+     * <p><b>Info barrier (A7):</b> this is the ONLY place {@link
+     * CreatorAgentPreferencesRepository} may be read for a CREATOR turn's own floors — never
+     * exposed to a BRAND context (see {@link #assembleBrand} above, which never touches this
+     * repository). {@code identity} carries ONLY the two allow-listed booleans; PAN/GSTIN
+     * value/Aadhaar never leave {@link CreatorProfile} through this method.
+     */
+    private CreatorContextResponse assembleCreatorContext(String creatorUserId) {
+        CreatorProfile profile =
+                creatorProfileRepository
+                        .findByUserId(creatorUserId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CREATOR_PROFILE_NOT_FOUND", "Creator profile not found", HttpStatus.NOT_FOUND));
+
+        CreatorAgentPreferences prefs =
+                creatorAgentPreferencesRepository.findByCreatorId(profile.getId()).orElse(null);
+
+        String creatorLanguage =
+                prefs != null && prefs.getCreatorLanguage() != null
+                        ? prefs.getCreatorLanguage()
+                        : firstLanguageOrDefault(profile);
+        Locale locale = localeForLanguageTag(creatorLanguage);
+
+        Map<String, String> floors = new LinkedHashMap<>();
+        if (prefs != null) {
+            putIfPresent(floors, "reel_floor", prefs.getReelFloor(), locale);
+            putIfPresent(floors, "story_set_floor", prefs.getStorySetFloor(), locale);
+            putIfPresent(floors, "post_floor", prefs.getPostFloor(), locale);
+        }
+
+        Optional<CreatorMetric> latestMetric =
+                creatorMetricsRepository
+                        .findByCreatorProfileIdOrderByTimeDesc(profile.getId(), PageRequest.of(0, 1))
+                        .stream()
+                        .findFirst();
+        Map<String, String> metricsSummary = buildMetricsSummary(profile, latestMetric, locale);
+
+        List<Collaboration> collaborations = collaborationRepository.findByCreatorId(creatorUserId);
+        Map<String, Object> dealsSummary = buildDealsSummary(collaborations, locale);
+
+        Map<String, Boolean> identity = new LinkedHashMap<>();
+        identity.put("kyc_done", profile.getIdentityKycStatus() == VerificationStatus.VERIFIED);
+        identity.put("gstin_present", profile.getGstin() != null && !profile.getGstin().isBlank());
+
+        String tier = profile.getTierOverride() != null ? profile.getTierOverride().name() : deriveTier(profile.getTotalFollowers());
+
+        // Fix round 2, item 3 (Priya Q8) — these were persisted correctly on the settings row but
+        // never reached this response, so Meera never actually saw them. JsonLists.stringListFromJson
+        // already returns an empty (never null) list for a null/blank JSON column.
+        List<String> excludedCategories =
+                prefs != null ? JsonLists.stringListFromJson(prefs.getExcludedCategoriesJson()) : List.of();
+        List<String> blockedBrands =
+                prefs != null ? JsonLists.stringListFromJson(prefs.getBlockedBrandsJson()) : List.of();
+        List<Integer> workingDays =
+                prefs != null
+                        ? JsonLists.stringListFromJson(prefs.getWorkingDaysJson()).stream()
+                                .map(Integer::parseInt)
+                                .toList()
+                        : List.of();
+
+        return new CreatorContextResponse(
+                creatorUserId,
+                CREATOR_AUDIENCE,
+                profile.getDisplayName(),
+                firstNameOf(profile.getDisplayName()),
+                profile.getCity(),
+                tier,
+                JsonLists.stringListFromJson(profile.getCategoriesJson()),
+                creatorLanguage,
+                prefs != null && prefs.getBrandTone() != null ? prefs.getBrandTone() : CreatorAgentPreferences.TONE_FRIENDLY,
+                floors,
+                metricsSummary,
+                dealsSummary,
+                prefs != null ? prefs.getApprovalLevel() : CreatorAgentPreferences.APPROVAL_LEVEL_DRAFT_ONLY,
+                prefs != null && prefs.isRepresented(),
+                excludedCategories,
+                blockedBrands,
+                prefs != null ? prefs.getWorkingHoursStart() : null,
+                prefs != null ? prefs.getWorkingHoursEnd() : null,
+                workingDays,
+                prefs != null ? prefs.getWeeklySponsoredLimit() : null,
+                identity,
+                prefs != null && prefs.isConsentAccepted(),
+                prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null);
+    }
+
+    /**
+     * Gate fix round 1 (Priya Q7) — deliberately NOT {@link #formatDecimal} (which uses {@code
+     * NumberFormat.getIntegerInstance}, rounding a cap like 0.75 down to "1"). A USD cap needs its
+     * cents preserved so influora-ai's {@code Decimal(str(...))} parse gets the real value.
+     */
+    private static String formatCapUsd(BigDecimal capUsd, Locale locale) {
+        if (capUsd == null) {
+            return null;
+        }
+        NumberFormat format = NumberFormat.getNumberInstance(locale);
+        format.setGroupingUsed(true);
+        format.setMinimumFractionDigits(2);
+        format.setMaximumFractionDigits(2);
+        return format.format(capUsd);
+    }
+
+    /** A8 — every number the CREATOR context carries leaves this class as a locale-formatted string, never a raw numeric type. */
+    private static Locale localeForLanguageTag(String bcp47) {
+        try {
+            return bcp47 != null ? Locale.forLanguageTag(bcp47) : Locale.forLanguageTag(CreatorAgentPreferences.DEFAULT_LANGUAGE);
+        } catch (RuntimeException e) {
+            return Locale.forLanguageTag(CreatorAgentPreferences.DEFAULT_LANGUAGE);
+        }
+    }
+
+    private static void putIfPresent(Map<String, String> target, String key, BigDecimal value, Locale locale) {
+        if (value != null) {
+            target.put(key, formatDecimal(value, locale));
+        }
+    }
+
+    private static String formatDecimal(BigDecimal value, Locale locale) {
+        NumberFormat format = NumberFormat.getIntegerInstance(locale);
+        format.setGroupingUsed(true);
+        return format.format(value);
+    }
+
+    /**
+     * Gate fix round 1 (Priya Q6/Q9.6) — a creator with no {@link CreatorMetric} row (never
+     * connected Instagram, or a stale/expired token) previously always got a "followers" key,
+     * either the Meta-verified count or a silent fallback to {@link CreatorProfile#totalFollowers}
+     * (self-reported at onboarding, 0 for a brand-new creator). Because the key was always
+     * present, assembler.py's honest "Instagram not connected yet (no verified numbers)" branch
+     * (only triggered when {@code metrics_summary} carries no "followers" key) could never fire,
+     * so Meera stated either a fabricated "0 followers" or an unverified self-reported number as
+     * if it were a Meta-verified fact. Now: a verified {@link CreatorMetric} row formats normally;
+     * absent that, a nonzero self-reported total is labelled as such; absent both, the key is
+     * omitted entirely so the honest branch downstream fires.
+     */
+    private static Map<String, String> buildMetricsSummary(
+            CreatorProfile profile, Optional<CreatorMetric> latestMetric, Locale locale) {
+        Map<String, String> summary = new LinkedHashMap<>();
+        if (latestMetric.isPresent()) {
+            long followers = latestMetric.get().getFollowers();
+            summary.put("followers", formatDecimal(BigDecimal.valueOf(followers), locale) + " followers");
+        } else if (profile.getTotalFollowers() > 0) {
+            summary.put(
+                    "followers",
+                    formatDecimal(BigDecimal.valueOf(profile.getTotalFollowers()), locale)
+                            + " followers (self-reported, not verified)");
+        }
+        // else: no verified metric and no self-reported total — omit the key so the "Instagram
+        // not connected yet" honest-state branch fires downstream instead of a fabricated zero.
+
+        Long reach = latestMetric.map(CreatorMetric::getAvgReachPerPost).orElse(null);
+        if (reach != null) {
+            summary.put("reach_30d", formatDecimal(BigDecimal.valueOf(reach), locale) + " reach (30 days)");
+        }
+
+        BigDecimal engagement = latestMetric.map(CreatorMetric::getAvgEngagementRate).orElse(profile.getEngagementRate());
+        if (engagement != null) {
+            NumberFormat pctFormat = NumberFormat.getNumberInstance(locale);
+            pctFormat.setMaximumFractionDigits(1);
+            summary.put("engagement_rate", pctFormat.format(engagement) + "% engagement");
+        }
+        return summary;
+    }
+
+    private static Map<String, Object> buildDealsSummary(List<Collaboration> collaborations, Locale locale) {
+        long activeCount =
+                collaborations.stream().filter(c -> ACTIVE_DEAL_STATUSES.contains(c.getStatus())).count();
+        long completedCount =
+                collaborations.stream().filter(c -> c.getStatus() == CollaborationStatus.COMPLETED).count();
+        BigDecimal totalEarned =
+                collaborations.stream()
+                        .filter(c -> c.getStatus() == CollaborationStatus.COMPLETED && c.getAgreedRate() != null)
+                        .map(Collaboration::getAgreedRate)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("active_count", (int) activeCount);
+        summary.put("completed_count", (int) completedCount);
+        summary.put("total_earned_inr", formatDecimal(totalEarned, locale));
+        return summary;
+    }
+
+    private static String firstLanguageOrDefault(CreatorProfile profile) {
+        List<String> languages = JsonLists.stringListFromJson(profile.getLanguagesJson());
+        return languages.isEmpty() ? CreatorAgentPreferences.DEFAULT_LANGUAGE : languages.get(0);
+    }
+
+    private static String firstNameOf(String displayName) {
+        if (displayName == null || displayName.isBlank()) {
+            return displayName;
+        }
+        String trimmed = displayName.trim();
+        int spaceIndex = trimmed.indexOf(' ');
+        return spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
+    }
+
+    /** Mirrors {@code CreatorAgentBaselineService.deriveTier} — kept as a private copy rather than a shared util for one three-line method. */
+    private static String deriveTier(long followers) {
+        if (followers >= 1_000_000) return "MEGA";
+        if (followers >= 500_000) return "MACRO";
+        if (followers >= 50_000) return "MID";
+        if (followers >= 10_000) return "MICRO";
+        return "NANO";
     }
 
     /** Last N campaigns for this workspace: type, distinct creator count (collaborations), funded y/n. */

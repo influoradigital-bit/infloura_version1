@@ -111,4 +111,13 @@ public interface MetaOAuthTokenRepository extends JpaRepository<MetaOAuthToken, 
                     + "AND t.revoked = false")
     Optional<MetaOAuthToken> findByIgBusinessAccountIdAndAuthPathAndRevokedFalse(
             @Param("igBusinessAccountId") String igBusinessAccountId, @Param("authPath") MetaAuthPath authPath);
+
+    /**
+     * T-MEERA-CREATOR-PHASE-A (SPEC.md 2.1, A1) — {@code meta_connect_rate} numerator: how many
+     * DISTINCT creators have at least one active (non-revoked) Meta connection, on either auth
+     * path, brand-linked or not. {@code COUNT(DISTINCT ...)} rather than counting rows because a
+     * creator can hold more than one non-revoked token (creator-owned + workspace-linked).
+     */
+    @Query("SELECT COUNT(DISTINCT t.creatorProfileId) FROM MetaOAuthToken t WHERE t.revoked = false")
+    long countDistinctConnectedCreatorProfiles();
 }

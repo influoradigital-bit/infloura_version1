@@ -82,7 +82,16 @@ public final class CampaignDtos {
             String brandGuidelines,
             Boolean isPrivate,
             Integer maxCollaborators,
-            TargetAudienceDto targetAudience) {}
+            TargetAudienceDto targetAudience,
+            /**
+             * T-MEERA-CREATOR-PHASE-A (SPEC.md 1.1/4.1, A2) — the real end-brand this campaign
+             * runs for, required on every new campaign (validated in {@code CampaignService.create}
+             * — a bean-validation {@code @NotBlank} here would also reject the existing {@code
+             * CampaignPatchRequest} reuse pattern other fields follow, so the check lives in the
+             * service alongside the other cross-field campaign-type rules).
+             */
+            String endBrandName,
+            String endBrandCategory) {}
 
     /** Partial update — all fields optional. */
     public record CampaignPatchRequest(
@@ -113,7 +122,10 @@ public final class CampaignDtos {
             String brandGuidelines,
             Boolean isPrivate,
             Integer maxCollaborators,
-            TargetAudienceDto targetAudience) {}
+            TargetAudienceDto targetAudience,
+            /** Optional on PATCH — a legacy (pre-migration) campaign can have these filled in later. */
+            String endBrandName,
+            String endBrandCategory) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CampaignResponse(
@@ -142,7 +154,9 @@ public final class CampaignDtos {
             Integer collaboratorsCount,
             Integer activeCollaborations,
             Integer completedCollaborations,
-            BigDecimal totalSpend) {}
+            BigDecimal totalSpend,
+            String endBrandName,
+            String endBrandCategory) {}
 
     public record DuplicateResponse(String id) {}
 

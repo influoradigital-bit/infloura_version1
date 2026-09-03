@@ -67,6 +67,7 @@ import CreatorSettingsPage from '@/pages/creator-settings';
 import CreatorChatPage from '@/pages/creator-chat';
 import CreatorPortfolioEditorPage from '@/pages/creator-portfolio-editor';
 import CreatorPortfolioPublicPage from '@/pages/creator-portfolio-public';
+import CreatorVerifiedMetricsPage from '@/pages/creator-verified-metrics';
 import CreatorAnalyticsPage from '@/pages/creator-analytics';
 import CreatorDashboardPage from '@/pages/creator-dashboard';
 import CreatorCampaignsPage from '@/pages/creator-campaigns';
@@ -809,6 +810,12 @@ export default function App() {
             />
           }
         />
+
+        {/* ==================== PUBLIC VERIFIED METRICS ==================== */}
+        {/* T-MEERA-CREATOR-PHASE-A (A9) — influora.com/c/username/verified — no auth, no rates,
+            no floors. Placed ahead of the /:handle catch-all below for clarity, though React
+            Router's ranking would resolve this correctly either way (more path segments win). */}
+        <Route path="/c/:username/verified" element={<CreatorVerifiedMetricsPage />} />
 
         {/* ==================== PUBLIC PORTFOLIO ==================== */}
         {/* influora.com/@username — no auth, indexable. Spec: docs/CREATOR-PORTFOLIO-PAGE.md

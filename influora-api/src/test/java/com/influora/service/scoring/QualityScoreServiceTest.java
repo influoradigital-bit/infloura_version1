@@ -1,6 +1,9 @@
 package com.influora.service.scoring;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.influora.domain.entity.CreatorMetric;
@@ -26,32 +29,63 @@ class QualityScoreServiceTest {
     private final QualityScoreService service = new QualityScoreService();
 
     @Test
-    @DisplayName("calculate: returns all-zero result when latestMetric is empty")
-    void testCalculateReturnsZeroForEmptyMetric() {
+    @DisplayName("calculate: returns an ABSENT result (all null), not zeros, when latestMetric is empty")
+    void testCalculateReturnsAbsentForEmptyMetric() {
         QualityScoreResult result = service.calculate(Optional.empty(), List.of());
 
-        assertEquals(BigDecimal.ZERO, result.overall());
-        assertEquals(BigDecimal.ZERO, result.engagementScore());
-        assertEquals(BigDecimal.ZERO, result.consistency());
-        assertEquals(BigDecimal.ZERO, result.frequency());
-        assertEquals(BigDecimal.ZERO, result.audienceMatch());
+        assertTrue(result.isAbsent());
+        assertNull(result.overall());
+        assertNull(result.engagementScore());
+        assertNull(result.consistency());
+        assertNull(result.frequency());
+        assertNull(result.audienceMatch());
     }
 
     @Test
-    @DisplayName("calculate: audienceMatch is always the neutral 50 placeholder")
+    @DisplayName("calculate: returns an ABSENT result when there is no media to measure over")
+    void testCalculateReturnsAbsentForEmptyMedia() {
+        CreatorMetric metric = creatorMetric(10_000L);
+
+        QualityScoreResult result = service.calculate(Optional.of(metric), List.of());
+
+        assertTrue(result.isAbsent());
+        assertNull(result.overall());
+        assertNull(result.audienceMatch());
+    }
+
+    @Test
+    @DisplayName("calculate: no media never yields the fabricated 20.00 composite (regression)")
+    void testCalculateEmptyMediaNeverFabricatesTwenty() {
+        // Regression guard. With no media rows, engagement scored 0, frequency scored 0, and
+        // consistency fell to its "not enough data" neutral 50, leaving only the fixed
+        // audienceMatch 50 placeholder — so EVERY creator scored exactly
+        // (0*0.40)+(50*0.25)+(0*0.20)+(50*0.15) = 20.00. A plausible-looking bad score computed
+        // from nothing is worse than no score: it is indistinguishable from a measured one.
+        CreatorMetric metric = creatorMetric(10_000L);
+
+        QualityScoreResult result = service.calculate(Optional.of(metric), List.of());
+
+        assertNotEquals(new BigDecimal("20.00"), result.overall());
+        assertTrue(result.isAbsent());
+    }
+
+    @Test
+    @DisplayName("calculate: audienceMatch is the neutral 50 placeholder whenever a score is produced")
     void testCalculateAudienceMatchIsNeutralPlaceholder() {
         CreatorMetric metric = creatorMetric(10_000L);
-        QualityScoreResult result = service.calculate(Optional.of(metric), List.of());
+        QualityScoreResult result = service.calculate(Optional.of(metric), List.of(media(100L, 50L)));
 
         assertEquals(new BigDecimal("50.00"), result.audienceMatch());
     }
 
     @Test
-    @DisplayName("calculate: zero engagement rate (no media or zero followers) yields engagementScore 0")
+    @DisplayName("calculate: zero followers yields engagementScore 0 while still producing a score")
     void testCalculateZeroEngagementRateYieldsZeroScore() {
-        CreatorMetric metric = creatorMetric(10_000L);
-        QualityScoreResult result = service.calculate(Optional.of(metric), List.of());
+        // Zero followers is a real, measured state (the creator has media), unlike absent data.
+        CreatorMetric metric = creatorMetric(0L);
+        QualityScoreResult result = service.calculate(Optional.of(metric), List.of(media(100L, 50L)));
 
+        assertFalse(result.isAbsent());
         assertEquals(new BigDecimal("0.00"), result.engagementScore());
     }
 
@@ -143,13 +177,33 @@ class QualityScoreServiceTest {
     }
 
     @Test
-    @DisplayName("calculate: empty media list yields frequency score of 0")
-    void testCalculateFrequencyZeroForEmptyMedia() {
+    @DisplayName("calculate: media all outside the 30-day window yields the low frequency score, not absence")
+    void testCalculateFrequencyLowForMediaOutsideWindow() {
+        // An empty media list is now ABSENT (see testCalculateReturnsAbsentForEmptyMedia), so the
+        // "counted zero posts in the window" path is exercised with media that exists but is old.
         CreatorMetric metric = creatorMetric(10_000L);
+        List<MediaMetric> stale = postsOverLastNDays(3, 30, 70L, 30L);
+        List<MediaMetric> aged =
+                stale.stream()
+                        .map(
+                                m ->
+                                        MediaMetric.builder()
+                                                .id(m.getId())
+                                                .mediaId(m.getMediaId())
+                                                .creatorProfileId(CREATOR_ID)
+                                                .platform("INSTAGRAM")
+                                                .mediaType("IMAGE")
+                                                .likes(m.getLikes())
+                                                .comments(m.getComments())
+                                                .postedAt(Instant.now().minus(120, ChronoUnit.DAYS))
+                                                .time(Instant.now())
+                                                .build())
+                        .toList();
 
-        QualityScoreResult result = service.calculate(Optional.of(metric), List.of());
+        QualityScoreResult result = service.calculate(Optional.of(metric), aged);
 
-        assertEquals(new BigDecimal("0.00"), result.frequency());
+        assertFalse(result.isAbsent());
+        assertEquals(new BigDecimal("20.00"), result.frequency());
     }
 
     @Test

@@ -311,8 +311,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": CONFIRM_LAUNCH,
         "description": (
-            "PROPOSE launching (send creator invites) once escrow is funded. "
-            "Spring verifies escrow state before acting; produces a pending "
+            "PROPOSE launching (send creator invites) once the funds are secured. "
+            "Spring verifies the secured-funds state before acting; produces a pending "
             "action the human confirms."
         ),
         "input_schema": {

@@ -149,6 +149,38 @@ public class EmailOutbox {
     }
 
     /**
+     * T-ADMINMAIL-0903 REVIEW-R1.md item 8 (C8) fix: {@code EmailWorker} calls this when a row is
+     * skipped at dispatch because the recipient unsubscribed after enqueue but before this row was
+     * claimed. Reuses {@link EmailOutboxStatus#FAILED} — there is no dedicated terminal "skipped"
+     * status in the DB enum, and adding one is a schema change out of scope here — but sets {@code
+     * retryCount} straight to {@code MAX_RETRIES} so {@link #canRetry()} is immediately false: no
+     * backoff loop, no further send attempt, distinguishable from a real delivery failure only by
+     * {@code errorMessage}.
+     */
+    public void markSkippedUnsubscribed() {
+        this.status = EmailOutboxStatus.FAILED;
+        this.retryCount = MAX_RETRIES;
+        this.nextRetryAt = null;
+        this.errorMessage = "Recipient unsubscribed before dispatch";
+    }
+
+    /**
+     * T-ADMINMAIL-0903 round 3, B3 (REVIEW-R2.md ship-blocker): {@code
+     * AdminCustomEmailService#cancel} calls this for every still-PENDING {@code admin.custom} row
+     * belonging to the cancelled campaign. Same shape as {@link #markSkippedUnsubscribed} (reuses
+     * {@link EmailOutboxStatus#FAILED} with {@code retryCount} forced to {@code MAX_RETRIES} so
+     * {@link #canRetry()} is immediately false — there is no dedicated terminal "cancelled" status
+     * in the DB enum, and adding one is a schema change out of scope here), distinguishable from a
+     * real delivery failure or an unsubscribe-skip only by {@code errorMessage}.
+     */
+    public void markCancelled() {
+        this.status = EmailOutboxStatus.FAILED;
+        this.retryCount = MAX_RETRIES;
+        this.nextRetryAt = null;
+        this.errorMessage = "Cancelled by admin before dispatch";
+    }
+
+    /**
      * Admin manual retry (admin email-queue console). Puts a {@link EmailOutboxStatus#FAILED} row
      * back into the {@code PENDING} pool with a clean slate: {@code retryCount} reset to 0, {@code
      * nextRetryAt}/{@code errorMessage} cleared so {@code EmailWorker}'s next poll picks it up

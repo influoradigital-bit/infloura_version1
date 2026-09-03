@@ -208,7 +208,7 @@ class EscrowControllerTest {
     GlobalExceptionHandler handler = new GlobalExceptionHandler(errorLogService);
     InsufficientFundsException ex =
         new InsufficientFundsException(
-            "Wallet balance is insufficient for this escrow amount",
+            "Wallet balance is insufficient to secure this amount",
             new BigDecimal("50000"),
             new BigDecimal("20000"),
             new BigDecimal("30000"),

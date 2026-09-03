@@ -3,11 +3,18 @@ package com.influora.web;
 import com.influora.common.ApiErrorBody;
 import com.influora.common.ApiResponse;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.admin.AdminCustomEmailService;
 import com.influora.service.admin.AdminEmailService;
+import com.influora.web.dto.admin.AdminCustomEmailDtos.CancelResponse;
+import com.influora.web.dto.admin.AdminCustomEmailDtos.PreviewRequest;
+import com.influora.web.dto.admin.AdminCustomEmailDtos.PreviewResponse;
+import com.influora.web.dto.admin.AdminCustomEmailDtos.SendRequest;
+import com.influora.web.dto.admin.AdminCustomEmailDtos.SendResponse;
 import com.influora.web.dto.admin.AdminEmailDtos.EmailQueueItemDto;
 import com.influora.web.dto.admin.AdminEmailDtos.EmailStatsDto;
 import com.influora.web.dto.admin.AdminEmailDtos.EmailTemplateDto;
 import com.influora.web.dto.admin.AdminEmailDtos.PagedEmailQueueDto;
+import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +22,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,15 +34,48 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code API_BASE = '/api/v1/admin'} — mounted here at {@code /admin/emails}. Backed by the
  * existing {@code email_outbox} table via {@link AdminEmailService}; RBAC (SUPER_ADMIN + MFA) is
  * enforced there.
+ *
+ * <p>{@code /custom/preview} and {@code /custom/send} (T-ADMINMAIL-0903) are the real,
+ * abuse-controlled bulk-send path — see {@link AdminCustomEmailService} class javadoc for the five
+ * required controls. {@code sendBulk} below keeps its 501 and its current signature unchanged; this
+ * is deliberately a separate pair of endpoints, not a flip of that one.
  */
 @RestController
 @RequestMapping("/admin/emails")
 public class AdminEmailController {
 
     private final AdminEmailService adminEmailService;
+    private final AdminCustomEmailService adminCustomEmailService;
 
-    public AdminEmailController(AdminEmailService adminEmailService) {
+    public AdminEmailController(
+            AdminEmailService adminEmailService, AdminCustomEmailService adminCustomEmailService) {
         this.adminEmailService = adminEmailService;
+        this.adminCustomEmailService = adminCustomEmailService;
+    }
+
+    @PostMapping("/custom/preview")
+    public PreviewResponse previewCustom(
+            @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody PreviewRequest request) {
+        return adminCustomEmailService.preview(principal, request);
+    }
+
+    @PostMapping("/custom/send")
+    public SendResponse sendCustom(
+            @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody SendRequest request) {
+        return adminCustomEmailService.send(principal, request);
+    }
+
+    /**
+     * B3 (T-ADMINMAIL-0903 round 3, REVIEW-R2.md ship-blocker) — the abort for a queued send.
+     * Marks this campaign's still-PENDING {@code admin.custom} outbox rows terminal; SUPER_ADMIN +
+     * MFA + audited, same tier as {@link #sendCustom}. See {@link
+     * AdminCustomEmailService#cancel}'s javadoc.
+     */
+    @PostMapping("/custom/{campaignId}/cancel")
+    public CancelResponse cancelCustom(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable("campaignId") String campaignId) {
+        return adminCustomEmailService.cancel(principal, campaignId);
     }
 
     @GetMapping("/queue")

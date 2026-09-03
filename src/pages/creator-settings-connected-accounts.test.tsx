@@ -33,6 +33,16 @@ vi.mock('@/lib/api', async () => {
       },
       me: { deleteAccount: vi.fn() },
       creatorProfile: { getMe: vi.fn().mockResolvedValue(null) },
+      // T-MEERA-CREATOR-PHASE-A — MeeraSettingsSection is now mounted on this page; its two
+      // effects (preferences + conversations) need both present or property access throws.
+      creatorAgentPrefs: {
+        getPreferences: vi.fn().mockRejectedValue(new Error('not under test')),
+        updatePreferences: vi.fn(),
+        recordConsent: vi.fn(),
+        listConversations: vi.fn().mockResolvedValue({ conversations: [] }),
+        exportConversation: vi.fn(),
+        deleteConversation: vi.fn(),
+      },
       metaOAuth: {
         getLocalConnectionState: vi.fn().mockReturnValue({ connected: true, scopes: ['instagram_basic'], accountType: 'business' }),
         status: vi.fn().mockResolvedValue({ connected: true, grantedScopes: ['instagram_basic'] }),

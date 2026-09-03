@@ -2,6 +2,59 @@
 
 New/changed endpoints logged here, newest first.
 
+## 2026-09-03 — T-MEERA-CREATOR-PHASE-A backend (A1/A2/A3/A4/A6/A7/A8/A9)
+
+**Task:** SPEC at `.proof-os/tasks/T-MEERA-CREATOR-PHASE-A/SPEC.md`. Full backend scope, migrations
+V72-V74 logged in `wiki/processes/schema-changes.md`. All paths below omit `/api/v1` (the
+context-path already supplies it, same as every sibling controller).
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/admin/creator-agent/baselines` | Admin (`/admin/**` `hasRole(ADMIN)`) | Raw DTO, no envelope (admin console convention). Creators-by-tier (incl. MEGA), briefs/creator/month percentiles, Meta connect rate, median reply hours; `sample_label_compliance` is a hand-sample placeholder per SPEC.md §2.1, not automated. |
+| GET | `/creator/agent-preferences` | Creator | Computes+persists defaults on first call (floor = last COMPLETED deal's rate, else `RateEstimationService.estimate().min()`, else ₹500/300/600 fallback). |
+| PUT | `/creator/agent-preferences` | Creator | Full replace; `represented=true` requires non-blank `agency_name`. |
+| POST | `/creator/agent-preferences/consent` | Creator | Sets `consent_accepted_at` (idempotent). |
+| GET | `/creator/agent-preferences/conversations` | Creator | Ownership via `meera_creator_conversations`, not `AiConversation.workspaceId`. |
+| GET | `/creator/agent-preferences/conversations/{id}/export` | Creator | JSON dump of the conversation's messages. |
+| DELETE | `/creator/agent-preferences/conversations/{id}` | Creator | Deletes `ai_messages`, `ai_conversations`, and the tracking row. |
+| GET | `/public/creators/{username}/verified` | None (`permitAll`) | 404 unless `discoverable=true` AND an active Meta token exists. NO rates/floors/PAN/GSTIN. |
+| POST | `/internal/meera/context` | Dual-credential mesh (unchanged) | Now branches on `audience`: `CREATOR` → `MeeraContextService.assembleCreatorContext`, `BRAND` → unchanged path. Return type is now `Object` (Jackson serializes whichever concrete record). |
+
+**Also touched (existing endpoints, additive fields only):**
+- `POST /campaigns`, `PATCH /campaigns/{id}` — `endBrandName`/`endBrandCategory` (required on create).
+- `POST /deals`, `POST /deals/{id}/counter` — `dealTerms` (nested `DealTermsDto`: usageMonths, usagePerpetual, usageChannels, exclusivityDays, exclusivityScope, exclusivityBrands, maxRevisions). `GET /deals`/`/deals/{id}` responses now include `dealTerms` (null when never set).
+
+**Info barrier (A7):** `CreatorAgentPreferencesRepository` (the floors) may only be read from
+`CreatorAgentPreferencesService`/`MeeraContextService.assembleCreatorContext` — enforced by
+`InfoBarrierTest` (source scan: no Brand-named class under `service/meera`/`web` may import it) and
+`InfoBarrierRuntimeTest` (runtime: BRAND context assembly never even touches the repository;
+two creators' floors never cross-contaminate). `CreatorContextResponse.identity` carries ONLY
+`kyc_done`/`gstin_present` — no PAN, GSTIN value, or Aadhaar digit ever leaves `CreatorProfile`
+through this path.
+
+**Cross-stream verification:** every new DTO's wire field names were diffed against BOTH concurrent
+sessions' actual consumers, not just SPEC.md's JSON examples: influora-ai's
+`app/prompt/assembler.py::CREATOR_CONTEXT_PAYLOAD_FIELDS` (exact match, 16/16 fields incl.
+`consent_accepted`, which the spec's own record listing omits but `chat.py`'s consent gate reads —
+already flagged as a gap by dev's own TASKS.md notes and closed here) and `src/lib/api.ts`/
+`src/lib/types.ts` (`CreatorAgentPreferences`, `DealTerms`, `PublicCreatorVerifiedResponse` — exact
+field-name matches).
+
+**Known gaps** (full detail in TASKS.md's "Known gaps / deviations" section): metrics come from
+`creator_metrics`/`CreatorProfile` (this codebase has no `instagram_insights` table, unlike the
+spec's assumption); `meera_creator_conversations` has no write-side hook yet (belongs on the
+CREATOR-audience chat-turn persistence path, outside this task's file ownership); on-behalf token
+minting for CREATOR turns (workspace_id claim = creator's user id) was not touched/verified; A9's
+`reach_30d`/`engagement_rate` are omitted (not fabricated as 0) when no metric row exists yet, which
+disagrees with the frontend's non-nullable TS types.
+
+**Test run:** `mvn -o compile`/`test-compile` clean. Targeted suite (`InfoBarrierTest`,
+`InfoBarrierRuntimeTest`, `MeeraContextServiceTest`, `DealServiceTest`, `DealControllerTest`,
+`CampaignServiceTest`, `MeeraInternalController*Test`) — 118/118 green, re-confirmed after a
+concurrent session's own `mvn` process transiently locked/deleted files under `target/` mid-run
+(see TASKS.md for the exact symptom). Full-suite `mvn clean install` not personally re-run in this
+pass — re-run once no other session is building against the same `target/` directory.
+
 ## 2026-08-10 — `POST /me/portfolio/sync` behavior change (CR-84), `GET /me/portfolio/analytics` labeling (CR-71)
 
 **Task:** CR-84 (Medium) — `PortfolioService.syncPlatforms()` was a documented no-op (validated the
@@ -148,5 +201,88 @@ extends the existing shape by one field (`email`).
 - Docs: `docs/api.md`, `docs/docs/api.md`, `docs/features/workspaces-members.md`, `docs/docs/features/workspaces-members.md`.
 
 **Not done (frontend):** `src/pages/brand-settings.tsx` and `src/lib/api.ts` are untouched — that's Ananya's wiring task once this clears QA. The frontend's `phone` field should stay disabled/local-only; `email`/`workspaceName`/`website` can wire to `PATCH /workspaces/me`.
+
+---
+
+## 2026-09-03 — Gate fix round 1, T-MEERA-CREATOR-PHASE-A (backend area)
+
+**Task:** Priya's tester-question gate-fix pass on the Meera-for-Creators Phase A build. Seven
+findings touched my area (Java/Spring). Fixed each in code, with tests where feasible.
+
+**Q1 (day-one onboarding turn).** `MeeraSessionService#startOrResumeForCreator` — new
+CREATOR-specific overload of `startOrResume`. On a genuinely NEW conversation, persists SPEC.md
+4.7's greeting ("Hi {first_name}! I'm Meera...") as a real ASSISTANT `ai_messages` row (never on a
+resumed conversation) and bumps the `meera_creator_conversations` rollup, so the greeting a
+creator reads is now the one the DPDP conversation export actually contains — previously it was a
+client-only string in `MeeraCopilotChat.tsx` that never touched the backend.
+`CreatorMeeraController#startSession` now calls this instead of the generic `startOrResume`.
+
+**Q2 (test coverage gaps + AI-created campaigns bypassing end-brand validation).**
+- New `CreatorAgentPreferencesServiceTest` (17 cases) and `CreatorAgentControllerTest` (7 cases) —
+  previously zero coverage on either class.
+- `CreateCampaignExecutor` (Meera's `create_campaign` tool) now resolves and applies
+  `endBrandName`/`endBrandCategory` — the same fields `CampaignService#create` hard-requires for
+  every NEW campaign on the human write path — defaulting from the workspace's own `name`/
+  `industry` when the AI doesn't supply them (the current tool schema has no such input yet), so an
+  AI-drafted campaign is never born with `NULL` end-brand fields indistinguishable from a
+  pre-V72 legacy row. New constructor param `WorkspaceRepository`.
+
+**Q3/Q5 (creator-route authorization not structurally enforced).** Added an explicit
+`.requestMatchers("/creator/**").hasRole("CREATOR")` matcher in `SecurityConfig` (mirrors the
+existing `hasRole("ADMIN")` pattern for `/admin/**`) — previously a BRAND/ADMIN JWT on any
+`/creator/**` route was rejected only by each service's own `findByUserId`-returns-empty 404, an
+accident of the current method signatures, not an enforced invariant. 7 new cases in
+`SecurityConfigMatcherTest` pin the matrix (BRAND/ADMIN denied, CREATOR permitted, the unrelated
+plural `/creators/**` and `/public/creators/**` routes unaffected).
+
+**Q6/Q9 (unconnected creator gets a fabricated "0 followers").**
+`MeeraContextService#buildMetricsSummary` no longer emits a `followers` key from
+`CreatorProfile.totalFollowers` (self-reported at onboarding, 0 for a brand-new creator) as if it
+were Meta-verified. A verified `CreatorMetric` row formats normally; a nonzero self-reported total
+is now labelled "(self-reported, not verified)"; absent both, the key is omitted so
+influora-ai's honest "Instagram not connected yet" branch fires instead. 2 new
+`MeeraContextServiceTest` cases.
+
+**Q7 (spend-cap override has no write side).** New nullable
+`creator_agent_preferences.ai_monthly_cap_usd DECIMAL(6,2)` column
+(`V20260903150000__creator_agent_preferences_ai_monthly_cap.sql`) + admin-only
+`PUT /admin/creator-agent/creators/{creatorId}/monthly-cap` (`CreatorAgentPreferencesService#adminSetMonthlyCapOverride`)
+— closes the write side of the `ai_monthly_cap_usd` key influora-ai's
+`spend_tracker.creator_cap_override_from_context` already read but nothing ever populated.
+Surfaced on the CREATOR context payload (`MeeraContextService`) as a 2-decimal string, omitted
+when unset. Not reachable from the creator's own `PUT /creator/agent-preferences` — deliberately
+admin-only. 6 new service tests, 2 new controller tests, 1 new context-service test.
+
+**Q10 (public verified page has no cache-control header).**
+`PublicCreatorController#getVerifiedMetrics` now sets `Cache-Control: no-store, private` — an
+opt-out/suspension must not be servable from any intermediary. New `PublicCreatorControllerTest`
+also pins the exact 7-key + 4-metric-key JSON allow-list via serialization, so a future field
+added to `VerifiedProfileResponse`/`VerifiedMetrics` fails the test loudly instead of silently
+leaking onto a public, unauthenticated page.
+
+**Files:**
+- `influora-api/src/main/java/com/influora/service/meera/MeeraSessionService.java` — `startOrResumeForCreator`.
+- `influora-api/src/main/java/com/influora/web/CreatorMeeraController.java` — calls the new method.
+- `influora-api/src/main/java/com/influora/service/meera/tool/CreateCampaignExecutor.java` — end-brand defaulting, `WorkspaceRepository` dependency.
+- `influora-api/src/main/java/com/influora/config/SecurityConfig.java` — `/creator/**` `hasRole("CREATOR")` matcher.
+- `influora-api/src/main/java/com/influora/service/meera/MeeraContextService.java` — `buildMetricsSummary` honesty fix, `ai_monthly_cap_usd` surfacing.
+- `influora-api/src/main/java/com/influora/domain/entity/CreatorAgentPreferences.java` — `aiMonthlyCapUsd` field.
+- `influora-api/src/main/java/com/influora/service/CreatorAgentPreferencesService.java` — `adminSetMonthlyCapOverride`.
+- `influora-api/src/main/java/com/influora/web/AdminCreatorAgentController.java`, `influora-api/src/main/java/com/influora/web/dto/admin/AdminCreatorAgentDtos.java` — new PUT endpoint + DTOs.
+- `influora-api/src/main/java/com/influora/web/PublicCreatorController.java` — `Cache-Control` header.
+- `influora-api/src/main/resources/db/migration/V20260903150000__creator_agent_preferences_ai_monthly_cap.sql` — new migration.
+- New tests: `CreatorAgentPreferencesServiceTest`, `CreatorAgentControllerTest`, `PublicCreatorControllerTest`, `AdminCreatorAgentControllerTest`; extended `MeeraContextServiceTest`, `MeeraSessionServiceTest`, `SecurityConfigMatcherTest`, `CreateCampaignExecutorTest`, `CreatorMeeraControllerTest` (constructor/call-site update).
+
+**Not done (out of my area or lower-priority, flagged not silently skipped):**
+- Q2/Q9 frontend: `dealTerms` never rendered in the deal room; withdraw-consent UI action — Ananya.
+- Q2 creator voice route on `CreatorMeeraController` — larger surface (Sarvam wiring), not attempted this pass.
+- Q9 `MEERA_CREATOR_ENABLED` flag (SPEC's named rollback mechanism) — not implemented; Phase A still has no rollback beyond "leave the additive columns."
+- Q9 JUnit coverage for a pre-V72 Collaboration/Campaign through list/detail/edit/mapper — not added this pass.
+
+**Addendum (same pass):** also added `CampaignServiceTest` coverage for `create()`'s
+END_BRAND_NAME_REQUIRED/END_BRAND_CATEGORY_REQUIRED 400s (4 new cases) and `DealServiceTest`
+coverage for `createProposal()` actually persisting a `dealTerms` block onto the Collaboration (2
+new cases — the happy path through `createProposal` was previously deliberately left unasserted,
+per that file's own comment: "Cover it when the suite can actually be executed").
 
 **Test run:** `mvn -o test` (full suite) → 1343 run, 0 failures, 0 errors, 3 skipped (pre-existing, unrelated). `mvn -o compile`/`test-compile` clean.

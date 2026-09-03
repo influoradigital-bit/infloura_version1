@@ -13,6 +13,7 @@ import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.exception.MetaRateLimitException;
 import com.influora.integration.meta.exception.MetaTokenExpiredException;
 import com.influora.integration.meta.oauth.MetaTokenStorage;
+import com.influora.integration.meta.service.InstagramInsightValues;
 import com.influora.integration.meta.service.MetaRateLimitTracker;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.DeliverableMetricRepository;
@@ -254,9 +255,9 @@ public class DeliverableVerificationService {
             return fallback(deliverable, Outcome.FALLBACK_API_ERROR, "Meta API error fetching insights: " + e.getMessage());
         }
 
-        Long reach = metricValue(insights, METRIC_REACH);
-        Long impressions = metricValue(insights, METRIC_VIEWS);
-        Long engagements = metricValue(insights, METRIC_TOTAL_INTERACTIONS);
+        Long reach = InstagramInsightValues.metricValue(insights, METRIC_REACH);
+        Long impressions = InstagramInsightValues.metricValue(insights, METRIC_VIEWS);
+        Long engagements = InstagramInsightValues.metricValue(insights, METRIC_TOTAL_INTERACTIONS);
 
         return persistVerified(deliverable, reach, impressions, engagements, matched.get().id());
     }
@@ -315,33 +316,6 @@ public class DeliverableVerificationService {
         return mediaResponse.data().stream()
                 .filter(item -> item.permalink() != null && item.permalink().contains(marker))
                 .findFirst();
-    }
-
-    private static Long metricValue(InstagramInsightsResponse insights, String metricName) {
-        if (insights == null || insights.data() == null) {
-            return null;
-        }
-        return insights.data().stream()
-                .filter(m -> metricName.equals(m.name()))
-                .findFirst()
-                .map(DeliverableVerificationService::firstValue)
-                .orElse(null);
-    }
-
-    private static Long firstValue(InstagramInsightsResponse.InsightMetric metric) {
-        List<InstagramInsightsResponse.InsightValue> values = metric.values();
-        if (values == null || values.isEmpty() || values.get(0).value() == null) {
-            return null;
-        }
-        Object raw = values.get(0).value();
-        if (raw instanceof Number number) {
-            return number.longValue();
-        }
-        try {
-            return Long.valueOf(raw.toString());
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 
     private Outcome fallback(Deliverable deliverable, Outcome outcome, String reason) {

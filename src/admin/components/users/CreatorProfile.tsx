@@ -498,7 +498,9 @@ export default function CreatorProfile({ creatorId, className }: CreatorProfileP
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <KpiCard title="Creator Score" value={creator.qualityScore} icon="creators" />
+        {/* `?? '—'`, not `?? 0`: an unscored creator has no score, and a fabricated 0 reads as a
+            measured terrible one. Same rule as KpiCard.change's null-vs-real-0 distinction. */}
+        <KpiCard title="Creator Score" value={creator.qualityScore ?? '—'} icon="creators" />
         <KpiCard title="Active Collaborations" value={activeCollaborationCount} icon="campaigns" />
         <KpiCard
           title="Flagged Content"

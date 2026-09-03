@@ -439,7 +439,7 @@ const mockTimelineEvents = [
     data: {
       type: 'escrow_funded',
       amount: 50000,
-      description: 'Full amount secured in escrow',
+      description: 'Full amount secured',
     },
     timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000 + 3 * 60 * 60 * 1000),
   },
@@ -448,7 +448,7 @@ const mockTimelineEvents = [
     type: 'message',
     sender: 'creator',
     senderName: 'Priya Sharma',
-    content: 'Contract signed and escrow confirmed! I\'ll start working on the first reel today.',
+    content: 'Contract signed and payment secured! I\'ll start working on the first reel today.',
     timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
     status: 'read',
   },
@@ -1183,7 +1183,7 @@ export default function BrandChatPage() {
       setDisputeReason('');
       toast({
         title: 'Dispute opened',
-        description: 'An admin will review this deal. Escrow stays frozen until it is resolved.',
+        description: 'An admin will review this deal. Secured funds stay frozen until it is resolved.',
       });
     } catch (err) {
       setDisputeError(
@@ -1592,6 +1592,18 @@ export default function BrandChatPage() {
           deadline: data.deadline || undefined,
           // '6-months' → '6 months', matching the human-readable form createProposal persists.
           usageRights: data.usageRightsDuration.replace(/-/g, ' '),
+          // T-MEERA-CREATOR-PHASE-A (A2) — structured terms, persisted onto the Collaboration
+          // row (usage_months/usage_perpetual/usage_channels/exclusivity_days/exclusivity_scope/
+          // exclusivity_brands/max_revisions) alongside the free-text `usageRights` above.
+          dealTerms: {
+            usageMonths: data.usagePerpetual ? null : data.usageMonths,
+            usagePerpetual: data.usagePerpetual,
+            usageChannels: data.usageChannels,
+            exclusivityDays: data.exclusivityScope === 'NONE' ? null : data.exclusivityDays,
+            exclusivityScope: data.exclusivityScope,
+            exclusivityBrands: data.exclusivityScope === 'NAMED_BRANDS' ? data.exclusivityBrands : [],
+            maxRevisions: data.maxRevisions,
+          },
         },
         'brand',
         // Fresh key per submit — without it the server derives one from dealId + amount, so
@@ -2149,7 +2161,7 @@ export default function BrandChatPage() {
                         </DropdownMenuItem>
                       ) : (
                         <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                          A dispute can only be raised once escrow is funded — there is no money
+                          A dispute can only be raised once the funds are secured — there is no money
                           on hold for this deal yet.
                         </div>
                       )}
@@ -2844,7 +2856,7 @@ export default function BrandChatPage() {
           <DialogHeader>
             <DialogTitle>Report a problem with this deal</DialogTitle>
             <DialogDescription>
-              This opens a formal dispute. The escrow held for this deal is frozen while an
+              This opens a formal dispute. The secured funds for this deal are frozen while an
               admin reviews it, and {selectedDeal?.creatorName ?? 'the creator'} is notified.
             </DialogDescription>
           </DialogHeader>

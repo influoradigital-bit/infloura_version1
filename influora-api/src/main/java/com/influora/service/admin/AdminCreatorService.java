@@ -574,11 +574,23 @@ public class AdminCreatorService {
                 profile.getApplicationRejectionReason());
     }
 
+    /**
+     * The latest computed quality score, or {@code null} when this creator has never been scored —
+     * either no {@code CreatorScore} row exists at all, or the row's {@code quality_score} column is
+     * NULL because {@link com.influora.service.scoring.QualityScoreService} had no media to measure
+     * over and correctly returned {@code absent()}.
+     *
+     * <p>Deliberately NOT {@code BigDecimal.ZERO}. A fabricated 0 renders on the admin surface as a
+     * measured, terrible creator and is indistinguishable from one genuinely scored 0 — F-0260's
+     * ruling, and the same distinction {@code KpiCard.change} already draws between a null baseline
+     * and a real flat reading. Note {@code Optional.map} already collapses a NULL column to empty,
+     * so both absence cases arrive here identically.
+     */
     private BigDecimal latestQualityScore(String creatorProfileId) {
         return creatorScoreRepository
                 .findFirstByCreatorProfileIdOrderByTimeDesc(creatorProfileId)
                 .map(CreatorScore::getQualityScore)
-                .orElse(BigDecimal.ZERO);
+                .orElse(null);
     }
 
     private QualityMetricsDto qualityMetrics(String creatorProfileId) {

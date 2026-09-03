@@ -22,6 +22,11 @@ public class FacebookPageClient {
     private static final String PAGE_FIELDS = "id,name,category,fan_count,followers_count,about,link";
     private static final String ACCOUNTS_FIELDS =
             "instagram_business_account{id,username,followers_count}";
+    // T-CREATORCONNECT-0902 — CreatorMarketplaceClient needs a PAGE access token (distinct from
+    // the FACEBOOK_LOGIN USER token every other call in this class uses), resolved at call time
+    // per the Marketplace client's own javadoc ("no new storage").
+    private static final String ACCOUNTS_WITH_TOKEN_FIELDS =
+            "id,access_token,instagram_business_account{id}";
 
     private final MetaGraphApiClient apiClient;
 
@@ -60,6 +65,31 @@ public class FacebookPageClient {
         for (FacebookAccountsListResponse.PageWithInstagram page : pages) {
             if (page.instagramBusinessAccount() != null) {
                 return page.instagramBusinessAccount();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * T-CREATORCONNECT-0902 — resolves a PAGE access token (distinct from the USER token passed
+     * in) for the first Facebook Page with a connected Instagram Business Account, for {@code
+     * CreatorMarketplaceClient}'s search call. Returns {@code null} when the caller has no Page
+     * with a connected Instagram account, or when Meta omits {@code access_token} on every page
+     * (e.g. the {@code pages_show_list}-only case) — callers must degrade to "unavailable", never
+     * fail the caller's own flow.
+     */
+    public FacebookAccountsListResponse.PageWithInstagram resolvePageAccessToken(String accessToken) {
+        String path = "/me/accounts?fields=" + ACCOUNTS_WITH_TOKEN_FIELDS;
+        FacebookAccountsListResponse response =
+                apiClient.get(path, accessToken, FacebookAccountsListResponse.class, "me");
+        if (response == null || response.data() == null) {
+            return null;
+        }
+        for (FacebookAccountsListResponse.PageWithInstagram page : response.data()) {
+            if (page.instagramBusinessAccount() != null
+                    && page.accessToken() != null
+                    && !page.accessToken().isBlank()) {
+                return page;
             }
         }
         return null;

@@ -45,7 +45,7 @@ export function DealDeliverablesTab({
           </div>
           <Progress value={progress} className="h-2" />
           <p className="text-xs text-muted-foreground mt-2">
-            {formatINR(dealValue)} releases from escrow as each deliverable is approved.
+            {formatINR(dealValue)} releases from secured funds as each deliverable is approved.
           </p>
         </div>
 

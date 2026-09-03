@@ -175,6 +175,8 @@ class CreatorCampaignServiceApplyHistoryFkRaceTest {
                                                     + "campaign_type VARCHAR(32),"
                                                     + "hype_config JSON,"
                                                     + "commission_rate DECIMAL(5,4),"
+                                                    + "end_brand_name VARCHAR(200),"
+                                                    + "end_brand_category VARCHAR(100),"
                                                     + "created_at TIMESTAMP NOT NULL,"
                                                     + "updated_at TIMESTAMP NOT NULL)")
                                     .executeUpdate();
@@ -190,6 +192,16 @@ class CreatorCampaignServiceApplyHistoryFkRaceTest {
                                                     + "currency VARCHAR(3),"
                                                     + "notes CLOB,"
                                                     + "usage_rights CLOB,"
+                                                    // V72 (T-MEERA-CREATOR-PHASE-A) -- structured deal terms Collaboration.java
+                                                    // now maps and Hibernate now selects; see the matching campaigns-table fix
+                                                    // above for end_brand_name/end_brand_category.
+                                                    + "usage_months INTEGER,"
+                                                    + "usage_perpetual BOOLEAN NOT NULL DEFAULT false,"
+                                                    + "usage_channels VARCHAR(255),"
+                                                    + "exclusivity_days INTEGER,"
+                                                    + "exclusivity_scope VARCHAR(32) NOT NULL DEFAULT 'NONE',"
+                                                    + "exclusivity_brands TEXT,"
+                                                    + "max_revisions INTEGER NOT NULL DEFAULT 2,"
                                                     + "created_at TIMESTAMP NOT NULL,"
                                                     + "applied_at TIMESTAMP NOT NULL,"
                                                     + "updated_at TIMESTAMP NOT NULL,"

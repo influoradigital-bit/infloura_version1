@@ -14,6 +14,7 @@ import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.BrandProfileRepository;
 import com.influora.repository.WorkspaceRepository;
+import com.influora.service.CreatorAgentConversationService;
 import com.influora.service.IdempotencyService;
 import java.time.Instant;
 import java.util.List;
@@ -96,6 +97,7 @@ public class MeeraSessionService {
     private final StreamTokenService streamTokenService;
     private final OnBehalfTokenService onBehalfTokenService;
     private final IdempotencyService idempotencyService;
+    private final CreatorAgentConversationService creatorAgentConversationService;
 
     public MeeraSessionService(
             AiConversationRepository conversationRepository,
@@ -106,7 +108,8 @@ public class MeeraSessionService {
             BrandContextAssembler contextAssembler,
             StreamTokenService streamTokenService,
             OnBehalfTokenService onBehalfTokenService,
-            IdempotencyService idempotencyService) {
+            IdempotencyService idempotencyService,
+            CreatorAgentConversationService creatorAgentConversationService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.workspaceRepository = workspaceRepository;
@@ -116,6 +119,7 @@ public class MeeraSessionService {
         this.streamTokenService = streamTokenService;
         this.onBehalfTokenService = onBehalfTokenService;
         this.idempotencyService = idempotencyService;
+        this.creatorAgentConversationService = creatorAgentConversationService;
     }
 
     /** Reuses the workspace's ACTIVE conversation, or opens a new one. Tenant-scoped. */
@@ -139,6 +143,82 @@ public class MeeraSessionService {
     @Transactional(readOnly = true)
     public BrandProfile getBrandProfile(String workspaceId) {
         return brandProfileRepository.findByWorkspaceId(workspaceId).orElse(null);
+    }
+
+    /**
+     * Gate fix round 1 (Priya Q1, T-MEERA-CREATOR-PHASE-A, SPEC.md 4.7/A10) — the CREATOR
+     * counterpart to {@link #startOrResume}. SPEC.md 4.7 promises a "day-one onboarding" first
+     * message, "sent from backend as first assistant message if conversation is new" — before
+     * this method existed, {@code CreatorMeeraController} called the generic {@link
+     * #startOrResume}, which creates a bare conversation with no message at all; the greeting the
+     * creator actually saw was a client-only string in {@code MeeraCopilotChat.tsx} that never
+     * touched {@code ai_messages}, so it silently never appeared in the DPDP conversation export
+     * the consent screen promises the creator they can obtain (Priya's Q1 trace).
+     *
+     * <p>Same find-or-resume as {@link #startOrResume}, but when (and only when) THIS call is the
+     * one that creates a brand-new conversation, it also persists Meera's greeting as a real
+     * ASSISTANT {@link AiMessage} row — {@code creditsCharged(0)} (Phase A creator turns never
+     * touch the brand AI-credit ledger, see class javadoc) — and bumps the {@code
+     * meera_creator_conversations} rollup via {@link
+     * CreatorAgentConversationService#recordTurnForUser}, the same call {@link
+     * #doPersistAssistantWriteback} makes for every other CREATOR assistant turn, so the
+     * conversation list's {@code message_count}/{@code last_message_at} are correct from the very
+     * first message onward. A RESUMED (pre-existing) conversation is untouched — the greeting is a
+     * one-time, first-turn-only event, never repeated on every session start.
+     */
+    @Transactional
+    public AiConversation startOrResumeForCreator(
+            String creatorUserId, String userId, String creatorDisplayName) {
+        return conversationRepository
+                .findFirstByWorkspaceIdAndStatusOrderByLastMessageAtDesc(
+                        creatorUserId, ConversationStatus.ACTIVE)
+                .orElseGet(() -> createConversationWithOnboardingGreeting(creatorUserId, userId, creatorDisplayName));
+    }
+
+    private AiConversation createConversationWithOnboardingGreeting(
+            String creatorUserId, String userId, String creatorDisplayName) {
+        AiConversation conversation =
+                conversationRepository.save(
+                        AiConversation.builder()
+                                .id(Ulids.newUlid())
+                                .workspaceId(creatorUserId)
+                                .startedBy(userId)
+                                .status(ConversationStatus.ACTIVE)
+                                .build());
+
+        String greeting =
+                "Hi "
+                        + onboardingFirstName(creatorDisplayName)
+                        + "! I'm Meera, your manager here on Influora. I can help you track your"
+                        + " deals, understand your earnings, and answer questions about the"
+                        + " platform. What would you like to know?";
+        messageRepository.save(
+                AiMessage.builder()
+                        .id(Ulids.newUlid())
+                        .conversationId(conversation.getId())
+                        .role(MessageRole.ASSISTANT)
+                        .content(greeting)
+                        .creditsCharged(0)
+                        .build());
+
+        conversation.markMessageAt(Instant.now());
+        conversationRepository.save(conversation);
+        creatorAgentConversationService.recordTurnForUser(creatorUserId, conversation.getId(), Instant.now());
+
+        return conversation;
+    }
+
+    /** Local copy of {@code MeeraContextService#firstNameOf} — same reasoning as that method's
+     * javadoc on {@code deriveTier}: a private three-line helper isn't worth a shared util. Falls
+     * back to "there" rather than null/blank so the greeting is always grammatical even for a
+     * creator profile with no display name set yet. */
+    private static String onboardingFirstName(String displayName) {
+        if (displayName == null || displayName.isBlank()) {
+            return "there";
+        }
+        String trimmed = displayName.trim();
+        int spaceIndex = trimmed.indexOf(' ');
+        return spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
     }
 
     /**
@@ -211,13 +291,24 @@ public class MeeraSessionService {
         // SAME value, never a client-supplied one (Kabir FAIL 2 fix — see class javadoc).
         String messageId = Ulids.newUlid();
 
-        // SECURITY FIX (Kabir FAILs #1/#2) — charge HERE, at send, keyed on messageId. Replaces
-        // the old non-decrementing assertAvailable pre-check: this ACTUALLY decrements credit and
-        // bumps the 500/day counter (same two gates as before — exhausted credits / daily cap —
-        // same error codes/statuses), and records the per-turn charge-ledger marker AICreditService
-        // #release later consults. If this throws, nothing below runs: no USER message, no stream
-        // token, nothing to ever appear "charged" and dangling.
-        creditService.tryConsumeForTurn(workspaceId, TURN_CREDIT_COST, messageId);
+        // T-MEERA-CREATOR-PHASE-A (fix round 1, item 2) — a CREATOR turn's workspaceId is
+        // actually the creator's USER id (see MeeraContextService#assembleCreatorContext
+        // javadoc), never a real Workspace row, and is never charged against this
+        // workspace-scoped brand AI-credit ledger at all: influora-ai's spend_tracker enforces
+        // the per-creator monthly cap for CREATOR-audience turns on its own side (A8). The BRAND
+        // branch below is entirely unchanged.
+        boolean isCreatorTurn = userType == UserType.CREATOR;
+
+        if (!isCreatorTurn) {
+            // SECURITY FIX (Kabir FAILs #1/#2) — charge HERE, at send, keyed on messageId.
+            // Replaces the old non-decrementing assertAvailable pre-check: this ACTUALLY
+            // decrements credit and bumps the 500/day counter (same two gates as before —
+            // exhausted credits / daily cap — same error codes/statuses), and records the
+            // per-turn charge-ledger marker AICreditService#release later consults. If this
+            // throws, nothing below runs: no USER message, no stream token, nothing to ever
+            // appear "charged" and dangling.
+            creditService.tryConsumeForTurn(workspaceId, TURN_CREDIT_COST, messageId);
+        }
 
         AiMessage userMessage =
                 messageRepository.save(
@@ -236,19 +327,38 @@ public class MeeraSessionService {
         conversation.markMessageAt(Instant.now());
         conversationRepository.save(conversation);
 
-        // Guardrail 3 — sanitized context assembly (not sent anywhere yet in this phase; Domain D
-        // is the actual consumer once the Python integration lands).
-        Workspace workspace =
-                workspaceRepository
-                        .findById(workspaceId)
-                        .orElseThrow(
-                                () ->
-                                        new ApiException(
-                                                "WORKSPACE_NOT_FOUND", "Workspace not found", HttpStatus.NOT_FOUND));
-        BrandProfile brandProfile = brandProfileRepository.findByWorkspaceId(workspaceId).orElse(null);
-        Map<String, Object> sanitizedContext = contextAssembler.assemble(workspace, brandProfile);
+        Map<String, Object> sanitizedContext;
+        if (isCreatorTurn) {
+            // T-MEERA-CREATOR-PHASE-A (fix round 2, item 2 — Priya Q4). Deliberately NOT calling
+            // CreatorAgentConversationService#recordTurnForUser here anymore. This method persists
+            // the USER message and returns before the browser has even opened its SSE connection
+            // to influora-ai — if Python (or the stream) never completes, recording the turn here
+            // left a dangling ai_messages row AND an inflated meera_creator_conversations
+            // message_count for a turn that produced no assistant reply. recordTurnForUser is now
+            // called exactly once, from doPersistAssistantWriteback, so message_count counts only
+            // COMPLETED turns. Block B for a CREATOR turn is sourced separately, via
+            // MeeraContextService#assembleCreatorContext (POST /internal/meera/context) — there is
+            // no BRAND-shaped sanitizedContext to assemble here.
+            sanitizedContext = Map.of();
+        } else {
+            // Guardrail 3 — sanitized context assembly (not sent anywhere yet in this phase;
+            // Domain D is the actual consumer once the Python integration lands).
+            Workspace workspace =
+                    workspaceRepository
+                            .findById(workspaceId)
+                            .orElseThrow(
+                                    () ->
+                                            new ApiException(
+                                                    "WORKSPACE_NOT_FOUND", "Workspace not found", HttpStatus.NOT_FOUND));
+            BrandProfile brandProfile = brandProfileRepository.findByWorkspaceId(workspaceId).orElse(null);
+            sanitizedContext = contextAssembler.assemble(workspace, brandProfile);
+        }
 
-        String streamToken = streamTokenService.mint(workspaceId, conversationId, messageId, userId);
+        // Fix round 1 (BLOCKING): the verified principal type rides IN the stream token so
+        // influora-ai derives the Meera audience from a signature-checked claim, never from the
+        // (Python-unverifiable) on-behalf JWT a client can simply omit.
+        String streamToken =
+                streamTokenService.mint(workspaceId, conversationId, messageId, userId, userType);
         // SECURITY FIX #1: mint the dedicated per-turn on-behalf token here, alongside the stream
         // token — the browser forwards THIS as onbehalf_jwt, never the full access token.
         String onBehalfToken =
@@ -343,6 +453,27 @@ public class MeeraSessionService {
             String content,
             Map<String, Object> metadata,
             String idempotencyKey) {
+        return persistAssistantWriteback(workspaceId, conversationId, content, metadata, idempotencyKey, UserType.BRAND);
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-A (fix round 1, item 4) — {@code userType} overload. Callers that
+     * already know the on-behalf JWT's verified {@code userType} (e.g. {@code
+     * MeeraInternalController#persistTurnWriteback}, which resolves it via {@link
+     * com.influora.security.OnBehalfAuthResolver#resolveForWorkspace}) MUST pass it here rather
+     * than relying on the 5-arg overload's {@code UserType.BRAND} default. A CREATOR write-back
+     * skips the brand AI-credit ledger entirely (see {@link #doPersistAssistantWriteback}) and
+     * records the turn on {@link CreatorAgentConversationService} so it appears in the creator's
+     * own Meera conversation list/export/delete surface (SPEC.md 2.5-2.7, A6) — the "write side"
+     * gap {@link CreatorAgentConversationService}'s class javadoc used to flag as unimplemented.
+     */
+    public AiMessage persistAssistantWriteback(
+            String workspaceId,
+            String conversationId,
+            String content,
+            Map<String, Object> metadata,
+            String idempotencyKey,
+            UserType userType) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new ApiException(
                     "IDEMPOTENCY_KEY_REQUIRED",
@@ -354,7 +485,9 @@ public class MeeraSessionService {
                     idempotencyKey,
                     workspaceId,
                     PERSIST_WRITEBACK_SCOPE,
-                    () -> doPersistAssistantWriteback(workspaceId, conversationId, content, metadata, idempotencyKey),
+                    () ->
+                            doPersistAssistantWriteback(
+                                    workspaceId, conversationId, content, metadata, idempotencyKey, userType),
                     AiMessage::getId);
         } catch (IdempotencyService.AlreadyCompletedException replay) {
             AiMessage previous = replayPersistedMessage(workspaceId, conversationId, idempotencyKey);
@@ -394,24 +527,38 @@ public class MeeraSessionService {
 
     @Transactional
     protected AiMessage doPersistAssistantWriteback(
-            String workspaceId, String conversationId, String content, Map<String, Object> metadata, String turnId) {
+            String workspaceId,
+            String conversationId,
+            String content,
+            Map<String, Object> metadata,
+            String turnId,
+            UserType userType) {
         AiConversation conversation = resolveConversation(conversationId);
 
-        // SECURITY FIX (Wave 2 round 2): the charge already happened at send (doSendTurn ->
-        // AICreditService#tryConsumeForTurn) — this method never charges. It only reflects that
-        // charge on the persisted row by checking the SAME turnId (== idempotencyKey, the
-        // server-verified messageId per the class javadoc) against AICreditService's charge
-        // ledger. An unrecognized turnId (should not happen when influora-ai behaves per contract)
-        // is persisted uncharged with a WARN, not hard-rejected — same "never drop a turn the user
-        // already watched stream" posture this codebase already applied to the old credit race.
-        int creditsCharged = creditService.wasCharged(workspaceId, turnId) ? TURN_CREDIT_COST : 0;
-        if (creditsCharged == 0) {
-            log.warn(
-                    "write-back turnId={} workspaceId={} conversationId={} has no matching send-time"
-                            + " charge -- persisting uncharged",
-                    turnId,
-                    workspaceId,
-                    conversationId);
+        // T-MEERA-CREATOR-PHASE-A (fix round 1, item 4) — a CREATOR write-back never touches the
+        // brand AI-credit ledger at all (see doSendTurn — a CREATOR turn is never charged there
+        // either, so creditService.wasCharged(workspaceId, turnId) would only ever legitimately
+        // return false and log a spurious WARN for every single creator turn).
+        int creditsCharged;
+        if (userType == UserType.CREATOR) {
+            creditsCharged = 0;
+        } else {
+            // SECURITY FIX (Wave 2 round 2): the charge already happened at send (doSendTurn ->
+            // AICreditService#tryConsumeForTurn) — this method never charges. It only reflects that
+            // charge on the persisted row by checking the SAME turnId (== idempotencyKey, the
+            // server-verified messageId per the class javadoc) against AICreditService's charge
+            // ledger. An unrecognized turnId (should not happen when influora-ai behaves per contract)
+            // is persisted uncharged with a WARN, not hard-rejected — same "never drop a turn the user
+            // already watched stream" posture this codebase already applied to the old credit race.
+            creditsCharged = creditService.wasCharged(workspaceId, turnId) ? TURN_CREDIT_COST : 0;
+            if (creditsCharged == 0) {
+                log.warn(
+                        "write-back turnId={} workspaceId={} conversationId={} has no matching send-time"
+                                + " charge -- persisting uncharged",
+                        turnId,
+                        workspaceId,
+                        conversationId);
+            }
         }
 
         AiMessage assistantMessage =
@@ -427,6 +574,12 @@ public class MeeraSessionService {
 
         conversation.markMessageAt(Instant.now());
         conversationRepository.save(conversation);
+
+        if (userType == UserType.CREATOR) {
+            // A6 — the assistant turn also counts toward the creator's own conversation rollup
+            // (message_count/last_message_at) that backs list/export/delete.
+            creatorAgentConversationService.recordTurnForUser(workspaceId, conversationId, Instant.now());
+        }
 
         return assistantMessage;
     }

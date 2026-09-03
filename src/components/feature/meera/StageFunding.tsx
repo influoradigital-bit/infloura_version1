@@ -73,7 +73,7 @@ export function StageFunding({ paid, onPay, onGoLive, paymentToolResult, budgetT
       </div>
     )
   } else {
-    return <StageLoadingState label="Preparing your escrow…" className={className} />
+    return <StageLoadingState label="Securing your funds…" className={className} />
   }
 
   return (

@@ -88,7 +88,9 @@ def _verified_stream_token() -> VerifiedToken:
         scope="chat:stream",
         subject="user-1",
         conversation_id=CONVERSATION_ID,
-        claims={"messageId": STREAM_MESSAGE_ID},
+        # Fix round 1: StreamTokenService.mint writes userType; a chat:stream
+        # token without it is refused 403 audience_unverified.
+        claims={"messageId": STREAM_MESSAGE_ID, "userType": "BRAND"},
     )
 
 

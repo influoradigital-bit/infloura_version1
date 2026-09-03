@@ -17,9 +17,9 @@ export type MoneyFlowStepId = 'fund' | 'hold' | 'deliver' | 'approve' | 'payout'
 
 const STEPS: ReadonlyArray<{ id: MoneyFlowStepId; title: string; detail: string }> = [
   { id: 'fund', title: 'Brand funds the deal', detail: 'Payment is collected up front, before any work starts.' },
-  { id: 'hold', title: 'Money is held in escrow', detail: 'Neither side can move it. The creator can see it is there.' },
+  { id: 'hold', title: 'Money is held securely', detail: 'Neither side can move it. The creator can see it is there.' },
   { id: 'deliver', title: 'Creator delivers', detail: 'The post goes live and is verified against the brief.' },
-  { id: 'approve', title: 'Brand approves', detail: 'Escrow releases into the creator’s Influora balance.' },
+  { id: 'approve', title: 'Brand approves', detail: 'Secured funds release into the creator’s Influora balance.' },
   { id: 'payout', title: 'Creator withdraws', detail: 'Balance is transferred to their bank account or UPI.' },
 ];
 
