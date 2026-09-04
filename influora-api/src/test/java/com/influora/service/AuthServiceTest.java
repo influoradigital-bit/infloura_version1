@@ -78,6 +78,9 @@ class AuthServiceTest {
 
     private AuthService authService;
 
+    // PHONE-0904 Q8 ruling — brand phone is now REQUIRED at registration, so the shared happy-path
+    // fixture must carry one; a dedicated null/blank REQUEST variant lives in
+    // testBrandRegisterRejectsMissingPhone/testBrandRegisterRejectsBlankPhone below instead.
     private static final BrandRegisterRequest REQUEST =
             new BrandRegisterRequest(
                     "Ada",
@@ -88,7 +91,7 @@ class AuthServiceTest {
                     "RETAIL",
                     "SMALL",
                     true,
-                    null);
+                    "9876543210");
 
     private static final CreatorRegisterRequest CREATOR_REQUEST =
             new CreatorRegisterRequest(
@@ -104,6 +107,9 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
+        // Real UserPhoneService wired onto the same mocked userRepository, not a mock — PHONE-0904
+        // extracted brandRegister's inline phone normalize/validate/exists logic out unchanged,
+        // so the existing phone tests below still exercise the real behavior via one extra hop.
         authService =
                 new AuthService(
                         userRepository,
@@ -118,7 +124,8 @@ class AuthServiceTest {
                         brandEmailOtpService,
                         environment,
                         eventPublisher,
-                        registrationService);
+                        registrationService,
+                        new UserPhoneService(userRepository));
         // Defaults match application.yml; tests that need OTP/verification gates flip these.
         setField("requireEmailVerification", true);
         setField("requireEmailOtpBeforeRegister", false);
@@ -228,29 +235,35 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("brandRegister: registration still succeeds when phone is omitted (older clients)")
-    void testBrandRegisterSucceedsWithoutPhone() {
-        // REQUEST has phone = null. Same happy-path stubs as the normalized-phone test above.
-        when(userRepository.existsByEmailIgnoreCase(REQUEST.email())).thenReturn(false);
-        when(passwordEncoder.encode(any())).thenReturn("hashed");
-        when(workspaceRepository.existsBySlug(any())).thenReturn(false);
-        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(workspaceMemberRepository.save(any(WorkspaceMember.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(walletRepository.save(any(Wallet.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(jwtService.createAccessToken(anyString(), eq(UserType.BRAND), anyString(), anyString()))
-                .thenReturn("access-jwt");
-        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
-        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
-        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
-        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
+    @DisplayName(
+            "brandRegister: PHONE-0904 Q8 -- missing phone rejected with its OWN PHONE_REQUIRED"
+                    + " code, distinct from INVALID_PHONE/PHONE_ALREADY_EXISTS, before touching"
+                    + " persistence")
+    void testBrandRegisterRejectsMissingPhone() {
+        BrandRegisterRequest req = brandRequestWithPhone(null);
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
 
-        TokenPair pair = authService.brandRegister(REQUEST);
+        ApiException ex = assertThrows(ApiException.class, () -> authService.brandRegister(req));
 
-        assertNotNull(pair);
+        assertEquals("PHONE_REQUIRED", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
         verify(userRepository, never()).existsByPhoneNumber(any());
-        ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).saveAndFlush(userCaptor.capture());
-        assertNull(userCaptor.getValue().getPhoneNumber());
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    @DisplayName("brandRegister: PHONE-0904 Q8 -- blank phone (whitespace) also rejected as PHONE_REQUIRED")
+    void testBrandRegisterRejectsBlankPhone() {
+        BrandRegisterRequest req = brandRequestWithPhone("   ");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.brandRegister(req));
+
+        assertEquals("PHONE_REQUIRED", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+        verify(userRepository, never()).save(any(User.class));
     }
 
     @Test

@@ -11,22 +11,26 @@
 
 ## 1. Summary
 
-**29 of 31 findings solved. 2 remain open. Build gate: GREEN.**
+**29 of 31 findings solved, 1 closed by ruling, 1 remains open. Build gate: GREEN.**
 
-| Severity | Total | Solved | Open |
-|---|---|---|---|
-| Critical | 2 | 2 | 0 |
-| High | 8 | 7 | **1** (Q3.1) |
-| Medium | 17 | 16 | **1** (Q1.3) |
-| Low | 4 | 4 | 0 |
-| **Total** | **31** | **29** | **2** |
+| Severity | Total | Solved | Accepted by ruling | Open |
+|---|---|---|---|---|
+| Critical | 2 | 2 | 0 | 0 |
+| High | 8 | 7 | **1** (Q3.1) | 0 |
+| Medium | 17 | 16 | 0 | **1** (Q1.3) |
+| Low | 4 | 4 | 0 | 0 |
+| **Total** | **31** | **29** | **1** | **1** |
 
 Round 2 closed all four findings this wave was dispatched to fix — **Q1.4 (High), Q4.5, Q5.5 and Q6.5
 (Medium)**. Every one was re-checked against the live tree, not accepted on report.
 
-**Both remaining opens are ops/provisioning, not code.** Q3.1 and Q1.3 are each blocked on a secret or
-an address that only Swapnil/ops can provision; the code side of both is already correct and bound.
-There is no open code defect left in this wave.
+**Q3.1 closed 2026-09-03 by explicit Swapnil ruling** (chat, in this session): skip the admin
+notification email for now, the admin dashboard is the sole channel for creator-connection enquiries.
+This was the exact fallback the code already implements — no code change was made or needed. See
+section 4 for the full ruling text.
+
+**Q1.3 remains open, ops/provisioning, not code.** It is blocked on a secret only Swapnil/ops can
+provision; the code side is already correct and bound. There is no open code defect left in this wave.
 
 Nothing in this wave is a WRONG_FIX. No finding was closed on a vacuous pin, and no finding was closed
 on a fixer's report alone.
@@ -111,23 +115,32 @@ live-proven.**
 
 ## 4. Still open
 
-**Two findings. Neither is a code defect, and neither is a regression from this wave.** Both are
-blocked on a value only ops/Swapnil can provision; in both cases the application code is already
-correct and correctly bound.
+**One finding remains open. One was closed by ruling, not by code.** Both were blocked on a value only
+ops/Swapnil can provision; in both cases the application code was already correct and correctly bound —
+this section records why one now counts as closed.
 
-### Q3.1 — High — admin connection-request email dark on every deploy target (ops + optional code)
+### Q3.1 — CLOSED 2026-09-03 by Swapnil ruling — admin connection-request email stays dark, dashboard is the sole channel
 
-`deploy/utho/generate-env.sh:159` still writes `ADMIN_NOTIFICATION_EMAIL=` blank, and both compose files
-pass `${ADMIN_NOTIFICATION_EMAIL:-}` — a default that defaults to empty. `NotificationListener`
-WARN-and-skips, so step 3 of Swapnil's flow (the enquiry reaching the admin team) never fires and the
-admin console page is the only channel a request is ever seen through. The escalation at
-`SHARED_CONTEXT.md:343` is accurate and correctly routed, but an escalation is not a fix.
+`deploy/utho/generate-env.sh:159` writes `ADMIN_NOTIFICATION_EMAIL=` blank, and both compose files pass
+`${ADMIN_NOTIFICATION_EMAIL:-}` — a default that defaults to empty. `NotificationListener` WARN-and-skips
+on every deploy target, so the enquiry email step of Swapnil's flow never fires.
 
-**To close:** (a) ops provisions a real inbox; **and** (b) the code half that is in reach — a startup
-assertion or a `generate-env.sh` gate that fails loudly on blank, following the
-`CompanyTaxStartupValidator` precedent already demonstrated in that same file. Alternatively an explicit
-Swapnil ruling that WARN-and-skip is accepted for launch, recorded in `wiki/` so the next audit does not
-re-raise it.
+**Ruling (Swapnil, chat, 2026-09-03):** asked directly "can we send all enquiries in admin dashboard,
+compare email setting?" — confirmed the dashboard already lists every enquiry independent of email
+(`AdminCreatorConnectionService.list`, `GET /admin/creator-connections`, reads `creator_connection_requests`
+straight from the database) — then instructed: **"Skip email setup for now, use admin dashboard only."**
+
+This is accepted as the launch posture for creator-connection enquiries specifically. No code change was
+made or is needed — WARN-and-skip on a blank address is already the exact behaviour this ruling asks for.
+`ADMIN_NOTIFICATION_EMAIL` may be provisioned later without any code change; nothing needs to be undone.
+
+**Scope note — this ruling does NOT cover SMTP generally.** `SMTP_HOST` is separately blank in the deploy
+env, which means every other transactional email (OTP, deal notifications, payout alerts) is currently
+non-functional too. That is a pre-existing gap unrelated to this feature and this ruling; MSG91 SMTP
+credentials (`smtp.mailer91.com`, domain `mail.influora.in`, confirmed verified — SPF/DKIM/MX all green
+per the MSG91 dashboard) were being gathered toward fixing it, then this ruling paused that specifically
+for the creator-connect admin notification. Re-raising SMTP setup for the rest of the app is a separate,
+still-open item.
 
 ### Q1.3 — Medium — borrowed creator token is still the production path (ops + Swapnil ruling)
 

@@ -3,7 +3,6 @@ package com.influora.service;
 import com.influora.common.ApiException;
 import com.influora.common.JsonLists;
 import com.influora.config.R2Properties;
-import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.User;
 import com.influora.integration.storage.R2StorageService;
@@ -13,8 +12,6 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.payout.CreatorBankAccountService;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorIdResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorKycRequest;
-import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutRequest;
-import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorProfileRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorSocialRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorSocialResponse;
@@ -37,6 +34,7 @@ public class CreatorOnboardingService {
     private final CreatorProfileRepository creatorProfileRepository;
     private final UserRepository userRepository;
     private final CreatorBankAccountService creatorBankAccountService;
+    private final UserPhoneService userPhoneService;
 
     /** [F-0390 D4] KYC-doc read-path key resolution — see {@link #resolveKycDocUrl}. */
     private final R2StorageService r2StorageService;
@@ -48,12 +46,14 @@ public class CreatorOnboardingService {
             CreatorProfileRepository creatorProfileRepository,
             UserRepository userRepository,
             CreatorBankAccountService creatorBankAccountService,
+            UserPhoneService userPhoneService,
             R2StorageService r2StorageService,
             R2Properties r2Properties) {
         this.creatorContext = creatorContext;
         this.creatorProfileRepository = creatorProfileRepository;
         this.userRepository = userRepository;
         this.creatorBankAccountService = creatorBankAccountService;
+        this.userPhoneService = userPhoneService;
         this.r2StorageService = r2StorageService;
         this.r2Properties = r2Properties;
     }
@@ -112,6 +112,32 @@ public class CreatorOnboardingService {
                 null);
 
         creatorProfileRepository.save(profile);
+
+        // PHONE-0904 — same relative ordering CreatorProfileService#patchMyProfile already set:
+        // the rate-range guard above and the CreatorProfile row are validated/saved first, phone
+        // (lives on `users`, a separate table from `creator_profiles`) applied last. This method
+        // is @Transactional and ApiException is unchecked, so a phone rejection here still rolls
+        // back the profile save too — the ordering is about which error a multi-bad-field request
+        // sees first, not about write-safety.
+        //
+        // D2 (Priya CTO review, wiki/decisions/phone-0904-cto-review.md): guard on !isBlank(),
+        // not != null. UserPhoneService#applyPhone itself treats blank/null as "clear the stored
+        // number" — see its javadoc — which is the right behavior for an explicit Settings action
+        // (CreatorProfileService#patchMyProfile) but wrong here: this is a create/first-write
+        // wizard step, so "no phone captured this step" (null OR blank) must be a pure no-op that
+        // leaves whatever number the user already has (set via another surface) untouched, never
+        // an erasure. This call site — not UserPhoneService — is what decides that.
+        if (req.phone() != null && !req.phone().isBlank()) {
+            User user =
+                    userRepository
+                            .findById(principal.getUserId())
+                            .orElseThrow(
+                                    () ->
+                                            new ApiException(
+                                                    "USER_NOT_FOUND", "User not found", HttpStatus.NOT_FOUND));
+            userPhoneService.applyPhone(user, req.phone());
+        }
+
         return new CreatorIdResponse(profile.getId());
     }
 
@@ -143,45 +169,13 @@ public class CreatorOnboardingService {
         return new KycResponse(profile.getIdentityKycStatus().name());
     }
 
-    /**
-     * Deferred to first withdrawal per the onboarding UI. Routes through the SAME encrypted
-     * {@code CreatorBankAccountService} N3 wires up to WalletController — one PII-encrypted
-     * persistence path for creator payout instruments, not two. {@code accountName} (bank-transfer
-     * beneficiary name) has no column on {@code CreatorBankAccount} today; it is accepted for
-     * client-contract compatibility but not persisted — flagged for Priya, not silently dropped
-     * without a record of the gap.
-     */
-    @Transactional
-    public CreatorPayoutResponse savePayout(AuthPrincipal principal, CreatorPayoutRequest req) {
-        String method = req.method() == null ? "" : req.method().trim().toLowerCase();
-        CreatorBankAccount account;
-        if ("upi".equals(method)) {
-            if (req.upiId() == null || req.upiId().isBlank()) {
-                throw new ApiException(
-                        "INVALID_PAYOUT_DETAILS", "upiId is required for method=upi", HttpStatus.BAD_REQUEST);
-            }
-            account = creatorBankAccountService.addInstrument(principal, "UPI", req.upiId(), null, null);
-        } else if ("bank".equals(method)) {
-            if (req.bankAccount() == null
-                    || req.bankAccount().isBlank()
-                    || req.ifsc() == null
-                    || req.ifsc().isBlank()) {
-                throw new ApiException(
-                        "INVALID_PAYOUT_DETAILS",
-                        "bankAccount and ifsc are required for method=bank",
-                        HttpStatus.BAD_REQUEST);
-            }
-            account =
-                    creatorBankAccountService.addInstrument(
-                            principal, "BANK", req.bankAccount(), req.ifsc(), null);
-        } else {
-            throw new ApiException(
-                    "INVALID_PAYOUT_METHOD", "method must be 'upi' or 'bank'", HttpStatus.BAD_REQUEST);
-        }
-        // [Priya flag] req.accountName() (bank-transfer beneficiary name) is accepted for client
-        // contract compatibility but has no column on CreatorBankAccount yet — not persisted.
-        return new CreatorPayoutResponse(account.getId());
-    }
+    // [F-0450] savePayout(...) removed. Its own javadoc claimed to be "one PII-encrypted
+    // persistence path for creator payout instruments, not two" — but WalletController's
+    // POST /wallet/payout-methods (WalletController.java:213) calls the SAME
+    // creatorBankAccountService.addInstrument(...) writer, and this route had zero frontend
+    // callers in any client layer. It was the second path it believed did not exist. The
+    // wallet route is the live one: it is called from creator-wallet.tsx, and it persists the
+    // exact same CreatorBankAccount row this method did.
 
     /**
      * [F-0390 D4] Resolves a stored {@code CreatorProfile.selfieUrl} value — bare R2 key (new,

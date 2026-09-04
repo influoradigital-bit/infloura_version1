@@ -17,6 +17,13 @@ public interface SupportTicketRepository
 
     long countByStatusIn(List<TicketStatus> statuses);
 
+    /**
+     * [F-0535] The requester's own tickets. Scoped by {@code userId} at the query, not filtered
+     * after the fact — a support surface that fetches broadly and narrows in Java is one refactor
+     * away from leaking someone else's ticket.
+     */
+    List<SupportTicket> findByUserIdOrderByCreatedAtDesc(String userId);
+
     /** Oldest still-open tickets past a cutoff — feeds the CEO Pulse {@code SUPPORT_AGING} red flag. */
     List<SupportTicket> findTop5ByStatusAndCreatedAtBeforeOrderByCreatedAtAsc(
             TicketStatus status, Instant cutoff);

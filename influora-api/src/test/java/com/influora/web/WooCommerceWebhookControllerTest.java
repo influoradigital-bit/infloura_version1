@@ -499,8 +499,15 @@ class WooCommerceWebhookControllerTest {
                 .executeOnce(keyCaptor.capture(), eq(WORKSPACE_ID), eq("woocommerce.webhook"), any(Supplier.class));
         assertEquals(keyCaptor.getAllValues().get(0), keyCaptor.getAllValues().get(1));
 
+        // This used to assert times(2) -- i.e. a replayed delivery redeemed the coupon TWICE, which
+        // is a double-counted usage increment on a money path. `stubIdempotencyServiceRunsAction()`
+        // makes the mocked IdempotencyService always run the action, so the real DB-backed dedup
+        // layer is deliberately not simulated here; what stops the second redemption is the
+        // controller's own bounded `redemptionByIdempotencyKey` memoization, whose javadoc states
+        // redeemViaWooCommerceOrder must "never run more than once from this instance, regardless of
+        // how many times executeOnce ends up calling the action". Exactly ONE redeem is the contract.
         org.mockito.ArgumentCaptor<String> redeemKeyCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(redemptionService, times(2))
+        verify(redemptionService, times(1))
                 .redeem(
                         eq(WORKSPACE_ID),
                         eq("CODE555"),
@@ -508,7 +515,57 @@ class WooCommerceWebhookControllerTest {
                         eq(new BigDecimal("15.00")),
                         eq(null),
                         redeemKeyCaptor.capture());
-        assertEquals(redeemKeyCaptor.getAllValues().get(0), redeemKeyCaptor.getAllValues().get(1));
-        assertEquals(keyCaptor.getAllValues().get(0), redeemKeyCaptor.getAllValues().get(0));
+        // The single redeem is keyed by the same derived key both deliveries produced, so the two
+        // dedup layers agree and a retry is a clean no-op at whichever layer it races against.
+        assertEquals(keyCaptor.getAllValues().get(0), redeemKeyCaptor.getValue());
+    }
+
+    @Test
+    @DisplayName(
+            "receive [F-0521]: order.created and order.updated for the SAME order derive the SAME key"
+                    + " (topic is deliberately NOT part of the dedup identity) and redeem only once")
+    @SuppressWarnings("unchecked")
+    void receive_differentTopicsSameOrder_derivesSameKeyAndRedeemsOnce() {
+        stubResolvedIntegrationAndDecryptedSecret();
+        when(signatureVerifier.verify(anyString(), eq(VALID_SIGNATURE), eq("the-secret"))).thenReturn(true);
+        stubIdempotencyServiceRunsAction();
+
+        CouponRedemption redemption =
+                CouponRedemption.builder()
+                        .id("id")
+                        .couponId("coupon")
+                        .orderId("555")
+                        .orderAmount(new BigDecimal("15.00"))
+                        .discountApplied(new BigDecimal("2.00"))
+                        .idempotencyKey("woocommerce:whatever")
+                        .build();
+        when(redemptionService.redeem(
+                        eq(WORKSPACE_ID), anyString(), anyString(), any(BigDecimal.class), eq(null), anyString()))
+                .thenReturn(redemption);
+
+        String rawPayload = "{\"id\":555,\"total\":\"15.00\",\"coupon_lines\":[{\"code\":\"CODE555\"}]}";
+
+        // WooCommerce routinely delivers BOTH topics for the same order. Before F-0521 the key was
+        // siteUrl|topic|orderId, so these two deliveries derived DIFFERENT keys and the coupon was
+        // redeemed twice for one order. The key is now siteUrl|orderId.
+        controller.receive(VALID_SIGNATURE, SITE_URL, "order.created", rawPayload);
+        controller.receive(VALID_SIGNATURE, SITE_URL, "order.updated", rawPayload);
+
+        org.mockito.ArgumentCaptor<String> keyCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(idempotencyService, times(2))
+                .executeOnce(keyCaptor.capture(), eq(WORKSPACE_ID), eq("woocommerce.webhook"), any(Supplier.class));
+        assertEquals(
+                keyCaptor.getAllValues().get(0),
+                keyCaptor.getAllValues().get(1),
+                "topic must not affect the derived key");
+
+        verify(redemptionService, times(1))
+                .redeem(
+                        eq(WORKSPACE_ID),
+                        eq("CODE555"),
+                        eq("555"),
+                        eq(new BigDecimal("15.00")),
+                        eq(null),
+                        anyString());
     }
 }

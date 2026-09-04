@@ -29,6 +29,7 @@ import {
   api,
   ApiError,
   isApiLive,
+  type ContractApiRecord,
   type CreatorDeliverableListItem,
   type PortfolioAnalytics,
   type WalletSummaryResponse,
@@ -141,13 +142,11 @@ async function fetchDashboardData(): Promise<DashboardData> {
 
   const deals = dealRows.map(mapDealToDealsPageRow);
   const unreadMessages = deals.reduce((sum, d) => sum + d.unreadCount, 0);
-  // `api.contracts` has no bulk/"unsigned" list endpoint on the real backend
-  // (verified against ContractController.java — only get/generate/sign
-  // exist, all brand-workspace-scoped). Deal rows already carry
-  // `contractStatus` from a real, working endpoint (`GET /deals`), so derive
-  // the pending-signature count from that instead of inventing a fake
-  // `listUnsigned` call — consistent with this file's own "no new backend"
-  // rollup-helper convention above.
+  // `GET /contracts/unsigned` (api.contracts.listUnsigned) now exists and is fetched separately
+  // below for the dedicated "Contracts awaiting your signature" section — but this summary tile
+  // count is cheaper to derive from data this call already has in hand: deal rows already carry
+  // `contractStatus` from `GET /deals`, so keep deriving the tile count from that rather than
+  // firing a second request for the same number.
   const awaitingSignature = dealRows.filter((d) => d.contractStatus === 'PENDING_SIGNATURES').length;
   const activeIds = deals.filter(isActiveDeal).map((d) => d.id);
   const submittableDeliverables = await loadDeliverablePendingCount(activeIds);
@@ -323,6 +322,40 @@ export default function CreatorDashboardPage() {
   const [analytics, setAnalytics] = React.useState<PortfolioAnalytics | null>(null);
   const [username, setUsername] = React.useState<string | null>(null);
 
+  // Contracts awaiting the creator's own signature (GET /contracts/unsigned,
+  // ContractController.java:58 — creator-only, api.contracts.listUnsigned). Fetched
+  // independently of fetchDashboardData above: it is a discovery list, not part of the
+  // wallet/deals/pending rollup, and its loading/error states must stay genuinely distinct from
+  // that rollup's (empty-state-misleads is a recurring defect class in this codebase — an error
+  // here must never render as "nothing to sign", and vice versa).
+  const [unsignedContracts, setUnsignedContracts] = React.useState<ContractApiRecord[]>([]);
+  const [unsignedLoading, setUnsignedLoading] = React.useState(true);
+  const [unsignedError, setUnsignedError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setUnsignedLoading(true);
+      setUnsignedError(null);
+      try {
+        const list = await api.contracts.listUnsigned('creator');
+        if (cancelled) return;
+        setUnsignedContracts(list);
+      } catch (e) {
+        if (cancelled) return;
+        setUnsignedContracts([]);
+        setUnsignedError(
+          e instanceof ApiError ? e.message : "We couldn't load your contracts. Please try again.",
+        );
+      } finally {
+        if (!cancelled) setUnsignedLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -490,6 +523,71 @@ export default function CreatorDashboardPage() {
               </CardContent>
             </Card>
           </div>
+        </FadeUp>
+
+        {/* Contracts awaiting your signature — discovery only. Signing itself already works on
+            each deal's own contract tab (CreatorDealContractTab, via api.contracts.sign); every
+            row here links there rather than reimplementing a signing UI. */}
+        <FadeUp y={0} delay={0.02}>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-medium">
+                Contracts awaiting your signature
+              </CardTitle>
+              <CardDescription>
+                The brand has signed — these are waiting on you to countersign.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {unsignedLoading ? (
+                <div className="space-y-2" aria-hidden>
+                  <Skeleton className="h-14 w-full rounded-lg" />
+                  <Skeleton className="h-14 w-full rounded-lg" />
+                </div>
+              ) : unsignedError ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Could not load contracts</AlertTitle>
+                  <AlertDescription>{unsignedError}</AlertDescription>
+                </Alert>
+              ) : unsignedContracts.length === 0 ? (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
+                  <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
+                  No contracts waiting on your signature.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {unsignedContracts.map((contract) => (
+                    <Link
+                      key={contract.id}
+                      to={`/creator/chat?deal=${contract.collaborationId}&tab=contract`}
+                      className="flex items-center gap-3 rounded-lg border border-border p-3 transition-[box-shadow,background-color] duration-150 ease-out hover:bg-muted/50 hover:shadow-sm"
+                    >
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning">
+                        <FileSignature className="h-4 w-4" aria-hidden />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium tabular-nums">
+                          {formatINR(contract.totalAmount)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {contract.milestones?.length ?? 0} milestone
+                          {(contract.milestones?.length ?? 0) === 1 ? '' : 's'} ·{' '}
+                          {/* F-0623: this used to hardcode "brand signed, your turn" for every row.
+                              The backend list is now scoped to PENDING_SIGNATURES contracts (a real
+                              status transition only reached once someone has signed), but the FE
+                              tells the truth off the record's own brandSignedAt field rather than
+                              assume the backend invariant — a field this record already carries,
+                              never fabricated. */}
+                          {contract.brandSignedAt ? 'brand signed, your turn' : 'awaiting your signature'}
+                        </p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </FadeUp>
 
         {/* Placeholder for the sections that mount only after the fetch resolves

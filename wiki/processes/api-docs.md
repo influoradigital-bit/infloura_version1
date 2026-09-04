@@ -2,6 +2,68 @@
 
 New/changed endpoints logged here, newest first.
 
+## 2026-09-04 — PHONE-0904 sign-off items 1 (Q1) + 2 (Q8): brand phone required + self read/edit
+
+**Task:** Swapnil ruling on `wiki/reports/phone-0904-signoff-qa.md` Q1/Q8 (both blocking items).
+No migration — `users.phone_number` stays nullable (legacy brands with `NULL` are unaffected).
+
+**Item 2 (Q8) — `POST /auth/brand/register` (`AuthController` → `AuthService#brandRegister`):**
+brand `phone` is now REQUIRED, enforced as its own service-level check (deliberately NOT
+`@NotBlank` on `BrandRegisterRequest` — that would collapse the failure into Bean Validation's
+generic field-errors 400 instead of a code the client can branch on). Three distinct,
+machine-readable error codes on this endpoint now:
+
+| Code | Status | Meaning |
+|---|---|---|
+| `PHONE_REQUIRED` | 400 | phone missing/blank |
+| `INVALID_PHONE` | 400 | phone present but fails `IndianPhoneUtils` (unchanged, pre-existing) |
+| `PHONE_ALREADY_EXISTS` | 409 | phone (post-normalize) collides with another account — message text names "phone number" explicitly, never confusable with the sibling `EMAIL_ALREADY_EXISTS` 409 the same endpoint also throws |
+
+Creator registration (`CreatorRegisterRequest`) has no `phone` field at all and is untouched —
+creator phone capture stays optional everywhere, per Priya's standing ruling.
+
+**Item 1 (Q1) — `GET`/`PATCH /users/me` (`UserController` → `UserService`), the generic
+authenticated-self endpoint (not creator-specific `/me/creator-profile`):**
+- `UserDtos.UserProfileDto` gained `phone` — populated from `User.phoneNumber`. Self-only: guarded
+  by `@AuthenticationPrincipal`, so this can only ever be the caller's own row. Re-grepped every
+  `getPhoneNumber()`/`phoneNumber` reference in `influora-api/src/main/java` after this change —
+  still exactly the same set sign-off Q10 already cleared (admin, creator-self, this new
+  user-self, the `existsByPhoneNumber` boolean check, and `BrandContextAssembler`'s
+  never-included comment) plus this one new self-read site. No public/brand-facing-creator/
+  discovery/AI/Meera serializer touches it.
+- `UserDtos.UpdateProfileRequest` gained `phone` (null = leave unchanged, same convention as its
+  other fields). Honored for `BRAND` callers only — routes through the EXISTING
+  `UserPhoneService#applyPhone` (no new phone-writing logic; normalize/`INVALID_PHONE`/
+  `PHONE_ALREADY_EXISTS`/`saveAndFlush`+TOCTOU all reused as-is). A `CREATOR`/`ADMIN` caller
+  sending `phone` here has it silently ignored — creators keep their own write path
+  (`CreatorProfileService#patchMyProfile`, different intentional blank-means-clear semantics for
+  an optional field) rather than gaining a second, conflicting one.
+- Null/blank decision for the BRAND branch: a blank string is rejected with `PHONE_REQUIRED`
+  (same code as registration), NOT treated as "clear the field" — unlike creator Settings' own
+  blank-clears-it path. Reasoning: brand phone is now mandatory (Item 2), so there is no valid
+  cleared state for a brand to fall back into on this endpoint.
+
+**Files:**
+- `influora-api/src/main/java/com/influora/service/AuthService.java` — `brandRegister` `PHONE_REQUIRED` guard.
+- `influora-api/src/main/java/com/influora/web/dto/auth/BrandRegisterRequest.java` — javadoc only (required-vs-optional contract, no annotation change).
+- `influora-api/src/main/java/com/influora/web/dto/user/UserDtos.java` — `UserProfileDto.phone`, `UpdateProfileRequest.phone`.
+- `influora-api/src/main/java/com/influora/service/UserService.java` — reads/writes `phone` via `UserPhoneService`, injected dependency.
+- New test: `UserServiceTest` (10 cases: self read incl. legacy NULL, valid/blank/malformed/duplicate/raced-duplicate/re-save-own-number on the BRAND write path, CREATOR phone-ignored regression guard).
+- Extended `AuthServiceTest`: `REQUEST` fixture now carries a phone (brand phone is no longer
+  optional); replaced `testBrandRegisterSucceedsWithoutPhone` with
+  `testBrandRegisterRejectsMissingPhone` + `testBrandRegisterRejectsBlankPhone`.
+
+**Test run:** `mvn -o -q compile` / `mvn -o -q test-compile` clean. `mvn -o surefire:test
+-Dtest='AuthServiceTest,UserServiceTest,CreatorProfileServiceTest,CreatorOnboardingServiceTest,AdminCreatorServiceTest'`
+→ 81 run, 0 failures, 0 errors (39+10+13+15+4), reproduced on a clean re-run.
+
+**Not done (explicitly out of scope for this pass, per the ticket):**
+- Frontend wiring (`brand-onboarding.tsx` inline `PHONE_REQUIRED`/`PHONE_ALREADY_EXISTS` mapping,
+  a brand Settings phone read/edit UI against the new `/users/me` fields) — Ananya, separate ticket
+  per the sign-off report's own owner split.
+- Q3's `IndianPhoneUtilsTest.java` gap and Q6's enumeration-oracle ruling — separate, non-blocking
+  items from the same sign-off report, not part of Items 1/2.
+
 ## 2026-09-03 — T-MEERA-CREATOR-PHASE-A backend (A1/A2/A3/A4/A6/A7/A8/A9)
 
 **Task:** SPEC at `.proof-os/tasks/T-MEERA-CREATOR-PHASE-A/SPEC.md`. Full backend scope, migrations

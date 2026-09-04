@@ -42,6 +42,13 @@ vi.mock('@/hooks/use-toast', () => ({
 const apiLive = vi.fn();
 const getMe = vi.fn();
 const updateMe = vi.fn();
+// PHONE-0904 Q1 — brand-settings.tsx now also calls api.users.getMe() unconditionally on mount
+// (the new account-level Mobile Number row, distinct from api.workspaces.getMe above). Every
+// test in this file renders the page, so these must exist and resolve or the page's effect
+// throws into every one of these unrelated F-0249 tests. See
+// brand-settings-account-phone.test.tsx for the dedicated coverage of this endpoint's own behavior.
+const usersGetMe = vi.fn();
+const usersUpdateMe = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -65,6 +72,10 @@ vi.mock('@/lib/api', async () => {
         logout: vi.fn().mockResolvedValue({ message: 'ok' }),
         changePassword: vi.fn().mockResolvedValue({ changed: true }),
       },
+      users: {
+        getMe: (...a: unknown[]) => usersGetMe(...a),
+        updateMe: (...a: unknown[]) => usersUpdateMe(...a),
+      },
     },
   };
 });
@@ -83,6 +94,21 @@ function renderPage() {
 describe('BrandSettingsPage — Workspace Information (F-0249)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    usersGetMe.mockResolvedValue({
+      id: 'user_1',
+      email: 'admin@techbrands.in',
+      displayName: 'Amit Singh',
+      firstName: 'Amit',
+      lastName: 'Singh',
+      userType: 'BRAND',
+      status: 'ACTIVE',
+      avatarUrl: null,
+      emailVerified: true,
+      phoneVerified: false,
+      phone: '9000000001',
+      timezone: null,
+      createdAt: new Date().toISOString(),
+    });
   });
 
   it('live mode, GET /workspaces/me REJECTS: never seeds the mock values and disables Save', async () => {

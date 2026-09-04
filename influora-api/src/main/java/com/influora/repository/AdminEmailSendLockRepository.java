@@ -18,13 +18,23 @@ import org.springframework.data.repository.query.Param;
 public interface AdminEmailSendLockRepository extends JpaRepository<AdminEmailSendLock, String> {
 
     /**
-     * Blocking pessimistic-write lock on the singleton row, bounded to 10s
-     * ({@code jakarta.persistence.lock.timeout}, milliseconds) rather than MySQL's default
-     * {@code innodb_lock_wait_timeout} (50s) — this is an admin-facing HTTP request, so a caller
-     * stuck behind another in-flight send should get a clear, fast 429
-     * ({@code AdminCustomEmailService#acquireSendLock}'s {@code SEND_IN_PROGRESS}) rather than
-     * hanging for most of a minute. Must run inside the caller's own {@code @Transactional}
-     * method — the lock is held until that transaction commits or rolls back.
+     * Blocking pessimistic-write lock on the singleton row. Must run inside the caller's own
+     * {@code @Transactional} method — the lock is held until that transaction commits or rolls
+     * back.
+     *
+     * <p><b>The 10s {@code jakarta.persistence.lock.timeout} hint below is inert on MySQL.</b>
+     * Hibernate's {@code MySQLDialect} honours only {@code NO_WAIT} (0) and {@code SKIP_LOCKED}
+     * (-2) and otherwise emits a bare {@code FOR UPDATE}, so the real bound is the server's
+     * {@code innodb_lock_wait_timeout} (50s by default). A caller queued behind an in-flight send
+     * therefore usually blocks for most of a minute and then surfaces the underlying timeout —
+     * {@code AdminCustomEmailService#acquireSendLock}'s fast {@code SEND_IN_PROGRESS} 429 mostly
+     * will not fire. The hint is kept because it IS honoured on other dialects (and on the H2
+     * harness in {@code AdminEmailSendLockRepositoryConcurrencyTest}), but do not rely on it for
+     * request latency here. Making the 429 real on MySQL needs {@code innodb_lock_wait_timeout}
+     * set on the connection, or a {@code NO_WAIT} lock plus an application-level retry.
+     *
+     * <p>This javadoc previously asserted the 10s bound as fact — corrected after a review caught
+     * that the code does not deliver it.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "10000"))

@@ -50,6 +50,7 @@ import { KycIdentityForm } from '@/components/creator/KycIdentityForm';
 import { ConnectedAccounts } from '@/components/creator/connected-accounts';
 import { MeeraSettingsSection } from '@/components/creator/MeeraSettingsSection';
 import { api, isApiLive, ApiError, type CreatorProfileSelfResponse } from '@/lib/api';
+import { normalizePhone, isValidPhone, filterPhoneInput } from '@/lib/phone';
 import { toast } from '@/hooks/use-toast';
 import { COMPANY } from '@/lib/company';
 
@@ -174,25 +175,32 @@ export default function CreatorSettingsPage() {
   };
 
   // PATCH /me/creator-profile — optional field, save is never blocked when empty (clearing is
-  // allowed). Validation mirrors brand onboarding's exactly (onboarding-steps.tsx:465) so both
-  // surfaces agree on what a valid Indian mobile number looks like.
+  // allowed). Validation mirrors brand onboarding's exactly (onboarding-steps.tsx) via the
+  // shared src/lib/phone.ts helper so all surfaces agree on what a valid Indian mobile number
+  // looks like. PHONE-0904 — normalize first (strip +91 country code / leading 0) so a pasted
+  // '+91 9876543210' from contacts isn't rejected client-side when the server would accept it.
   const handleSavePhone = async () => {
-    const stripped = phoneDraft.replace(/\s+/g, '');
-    if (stripped && !/^[6-9]\d{9}$/.test(stripped)) {
+    const normalized = normalizePhone(phoneDraft);
+    if (normalized && !isValidPhone(normalized)) {
       setPhoneError('Enter a valid 10-digit mobile number');
       return;
     }
     setPhoneError(null);
     setIsSavingPhone(true);
     try {
-      const updated = await api.creatorProfile.patchMe({ phone: stripped });
+      const updated = await api.creatorProfile.patchMe({ phone: normalized });
       setSavedPhone(updated.phone);
       setShowPhoneDialog(false);
-      toast({ title: stripped ? 'Mobile number updated' : 'Mobile number removed' });
+      toast({ title: normalized ? 'Mobile number updated' : 'Mobile number removed' });
     } catch (err) {
-      // 409 = duplicate phone (server-enforced uniqueness) — shown inline, next to the field,
-      // not as a generic toast failure per the ticket's explicit ask.
-      if (err instanceof ApiError && err.status === 409) {
+      // PHONE-0904 Q6 fix — PATCH /me/creator-profile also 409s for USERNAME_TAKEN
+      // (CreatorProfileService.java:94, :135) on the same shared endpoint, so branching on the
+      // bare HTTP status would label a future username conflict "This mobile number is already
+      // registered". Branch on the machine-readable `code` (src/lib/api.ts:276) instead — this
+      // dialog only ever submits `phone`, so USERNAME_TAKEN can't fire from here today, but the
+      // check must not depend on that staying true. Everything else, including USERNAME_TAKEN,
+      // falls through to the generic toast with the server's own message.
+      if (err instanceof ApiError && err.code === 'PHONE_ALREADY_EXISTS') {
         setPhoneError('This mobile number is already registered');
       } else {
         toast({
@@ -739,11 +747,15 @@ export default function CreatorSettingsPage() {
                 </div>
                 <Input
                   id="phone"
+                  inputMode="tel"
                   placeholder="98765 43210"
                   value={phoneDraft}
-                  onChange={(e) => setPhoneDraft(e.target.value.replace(/[^0-9\s]/g, ''))}
+                  // PHONE-0904 — allow '+' and spaces through on keystroke (don't strip them)
+                  // so pasting '+91 9876543210' isn't mangled; normalizePhone() handles it in
+                  // handleSavePhone above.
+                  onChange={(e) => setPhoneDraft(filterPhoneInput(e.target.value))}
                   className="flex-1"
-                  maxLength={12}
+                  maxLength={17}
                   disabled={isSavingPhone}
                 />
               </div>

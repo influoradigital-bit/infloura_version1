@@ -28,6 +28,24 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 
+/**
+ * PHONE-0904 D1 coverage note (wiki/decisions/phone-0904-cto-review.md): this class is
+ * Mockito-only and, per the review, must not be the sole proof that
+ * {@code userRepository.saveAndFlush(...)} genuinely surfaces a UNIQUE(phone_number) violation to
+ * the catch block in {@code UserPhoneService#applyPhone} — a mock stubbed to throw proves nothing
+ * about real flush timing or real constraint enforcement, only that this class's exception
+ * handling is wired correctly for whatever exception does arrive. This repo DOES have real
+ * {@code @SpringBootTest} + Testcontainers-MySQL integration infra
+ * ({@code com.influora.testsupport.AbstractIntegrationTest}, used today by
+ * {@code DatabaseConstraintIntegrationTest}) that could genuinely insert two users with the same
+ * phone number and assert a live 409. It was deliberately NOT added under this ticket: that infra
+ * requires Docker, and this sandbox has no reachable Docker daemon (see
+ * {@code DockerAvailableCondition}'s javadoc and {@code AbstractIntegrationTest}'s "SANDBOX
+ * LIMITATION" note) — a test added here could not be run or observed passing in this environment,
+ * only compiled. Writing an unrun integration test and calling the defect closed would repeat the
+ * exact failure mode this review is about. What IS proven, honestly: see
+ * {@link #testPatchPhoneRaceReturns409}'s inline note.
+ */
 @ExtendWith(MockitoExtension.class)
 class CreatorProfileServiceTest {
 
@@ -45,13 +63,18 @@ class CreatorProfileServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Real UserPhoneService wired onto the same mocked userRepository, not a mock itself —
+        // PHONE-0904 extracted this class's own phone logic out unchanged, so the existing
+        // phone tests below exercise the real normalize/validate/duplicate-check behavior
+        // exactly as before, just one hop further.
         service =
                 new CreatorProfileService(
                         creatorContext,
                         creatorProfileRepository,
                         platformStatRepository,
                         userRepository,
-                        externalCreatorLinkService);
+                        externalCreatorLinkService,
+                        new UserPhoneService(userRepository));
     }
 
     @Test
@@ -217,7 +240,11 @@ class CreatorProfileServiceTest {
 
         assertEquals("9876543210", response.phone());
         assertEquals("9876543210", user.getPhoneNumber());
-        verify(userRepository).save(user);
+        // D1 regression guard: the non-blank write path MUST flush (see UserPhoneService#applyPhone
+        // javadoc) — a regression back to plain save() would make the race-safety catch below dead
+        // code again without failing here, since the mock would still merge into `user` correctly.
+        verify(userRepository).saveAndFlush(user);
+        verify(userRepository, org.mockito.Mockito.never()).save(user);
     }
 
     @Test
@@ -341,6 +368,24 @@ class CreatorProfileServiceTest {
             "patchMyProfile: a raced duplicate phone (DB UNIQUE violation past the pre-check) still"
                     + " returns 409, not an uncaught 500")
     void testPatchPhoneRaceReturns409() {
+        // NOTE ON WHAT THIS TEST DOES AND DOES NOT PROVE (PHONE-0904 D1 / CTO review):
+        // Stubbing userRepository.saveAndFlush(user) to throw synchronously is still a Mockito
+        // fiction — real Hibernate/JPA only raises DataIntegrityViolationException this way when
+        // the flush actually reaches the DB and the UNIQUE(phone_number) constraint fires; a mock
+        // cannot prove that a real flush happens or that MySQL enforces the constraint. What this
+        // test DOES prove, and the reason it exists: UserPhoneService#applyPhone's catch block
+        // correctly translates *whatever* DataIntegrityViolationException reaches it into the
+        // documented PHONE_ALREADY_EXISTS/409 (as opposed to letting it escape as a 500) — i.e.
+        // the catch's own translation logic. The verify(...) calls below additionally lock in
+        // *which repository method* the production code must call for that exception to ever be
+        // reachable at all: saveAndFlush, not save. That is what makes this a real regression
+        // guard for D1 — if applyPhone reverts to plain save(), this test fails immediately
+        // (saveAndFlush is never invoked), instead of silently continuing to pass against dead
+        // code the way the pre-fix version of this test did. Real constraint-enforcement /
+        // flush-timing proof against an actual DB engine is out of scope for this Mockito unit
+        // test; see DatabaseConstraintIntegrationTest / AbstractIntegrationTest (Testcontainers
+        // MySQL) for that class of proof, and this class's own file-level note on why a
+        // UserPhoneService-specific integration test was not added under this ticket.
         CreatorProfile profile = profile("Name", null);
         User user = realUser();
 
@@ -349,7 +394,7 @@ class CreatorProfileServiceTest {
         when(creatorProfileRepository.save(any(CreatorProfile.class))).thenAnswer(i -> i.getArgument(0));
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(userRepository.existsByPhoneNumber("9876543210")).thenReturn(false);
-        when(userRepository.save(user)).thenThrow(new DataIntegrityViolationException("dup"));
+        when(userRepository.saveAndFlush(user)).thenThrow(new DataIntegrityViolationException("dup"));
 
         ApiException ex =
                 assertThrows(
@@ -357,6 +402,10 @@ class CreatorProfileServiceTest {
                         () -> service.patchMyProfile(principal, patchWithPhone("9876543210")));
         assertEquals("PHONE_ALREADY_EXISTS", ex.getCode());
         assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        // D1 regression guard: proves the exception was actually reachable via saveAndFlush, not
+        // via a plain save() that Mockito happened to let us stub anyway.
+        verify(userRepository).saveAndFlush(user);
+        verify(userRepository, org.mockito.Mockito.never()).save(user);
     }
 
     private CreatorProfilePatchRequest patchWithPhone(String phone) {

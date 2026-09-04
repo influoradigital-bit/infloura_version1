@@ -5,8 +5,6 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorOnboardingService;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorIdResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorKycRequest;
-import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutRequest;
-import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorProfileRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorSocialRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorSocialResponse;
@@ -62,10 +60,11 @@ public class CreatorOnboardingController {
         return ResponseEntity.ok(ApiResponse.ok(creatorOnboardingService.submitKyc(principal, body)));
     }
 
-    @PostMapping("/payout")
-    public ResponseEntity<ApiResponse<CreatorPayoutResponse>> savePayout(
-            @AuthenticationPrincipal AuthPrincipal principal,
-            @Valid @RequestBody CreatorPayoutRequest body) {
-        return ResponseEntity.ok(ApiResponse.ok(creatorOnboardingService.savePayout(principal, body)));
-    }
+    // [F-0450] POST /payout (savePayout) removed. It duplicated WalletController's
+    // POST /wallet/payout-methods — both routed to the same CreatorBankAccountService
+    // .addInstrument(...) writer — and had zero frontend callers; the client-side comment at
+    // src/lib/api.ts already recorded the wrapper as removed on 2026-08-04
+    // (PROJECT-DEEP-AUDIT-2026-08-04.md §5). This deletes the backend half of that same
+    // decision, which the earlier removal never reached. See CreatorOnboardingService for the
+    // matching removal of savePayout(...) itself.
 }

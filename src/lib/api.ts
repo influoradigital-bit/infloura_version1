@@ -3489,6 +3489,93 @@ export const creatorProfile = {
       : mockOr<CreatorProfileSelfResponse>({ ...mockCreatorProfileSelf, ...payload } as CreatorProfileSelfResponse),
 };
 
+/**
+ * PHONE-0904 Q1 ({@code wiki/reports/phone-0904-signoff-qa.md}) — {@code GET /users/me} response,
+ * mirrors {@code UserDtos.UserProfileDto} (UserController.java:27 -> UserService#getProfile)
+ * field-for-field. Self endpoint only ({@code @AuthenticationPrincipal}-guarded) — never another
+ * user's row. `phone` is new: lets a BRAND (whose mobile is now REQUIRED, PHONE-0904 Q8) read
+ * back the number it registered with. Verified against `UserService#toDto` — every field here has
+ * a matching `user.getX()` call there. `userType`/`status` kept as `string` rather than a closed
+ * union: this endpoint also serves CREATOR/ADMIN callers and the wire value is the Java enum's
+ * `.name()`, so a union would need to track `UserType`/`UserStatus` exactly to stay accurate for
+ * no benefit this brand-only surface uses.
+ */
+export interface UserProfileMeResponse {
+  id: string;
+  email: string;
+  displayName: string;
+  firstName: string;
+  lastName: string;
+  userType: string;
+  status: string;
+  avatarUrl: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  phone: string | null;
+  timezone: string | null;
+  createdAt: string;
+}
+
+/**
+ * {@code PATCH /users/me} request body — mirrors {@code UserDtos.UpdateProfileRequest} exactly.
+ * Every field: `null`/omitted means "leave unchanged" (UserService#updateProfile checks
+ * `!= null` per field before applying). `phone` is honored for BRAND callers only — a
+ * CREATOR/ADMIN sending it here has it silently ignored server-side (they keep
+ * `api.creatorProfile.patchMe`, which has independent optional/blank-clears semantics; do NOT
+ * route creator phone edits through this type). A BRAND sending an empty string for `phone` gets
+ * `PHONE_REQUIRED` — unlike `CreatorProfilePatchPayload.phone`, there is no clear-it convention
+ * here because brand phone is mandatory post-registration (PHONE-0904 Q8).
+ */
+export interface UsersMeUpdatePayload {
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
+  timezone?: string;
+  avatarUrl?: string;
+  /** Normalized 10-digit Indian mobile (see src/lib/phone.ts) — send the normalized value, not
+   *  raw user input. Omit to leave unchanged; a BRAND caller must never send '' (see above). */
+  phone?: string;
+}
+
+const mockUserProfileMe: UserProfileMeResponse = {
+  id: 'user_mock',
+  email: 'admin@techbrands.in',
+  displayName: 'Amit Singh',
+  firstName: 'Amit',
+  lastName: 'Singh',
+  userType: 'BRAND',
+  status: 'ACTIVE',
+  avatarUrl: null,
+  emailVerified: true,
+  phoneVerified: false,
+  phone: '9876543210',
+  timezone: null,
+  createdAt: new Date().toISOString(),
+};
+
+/**
+ * PHONE-0904 Q1 — {@code GET}/{@code PATCH /users/me} (UserController.java, brand-only usage
+ * here per the endpoint's own phone-write restriction documented on `UsersMeUpdatePayload`).
+ * Distinct from `workspaces.getMe/updateMe` (`/workspaces/me`): that pair reads/writes the
+ * WORKSPACE's own contact phone (`workspaces.phone`, optional, blank-clears), a different column
+ * with different validation than this endpoint's `users.phone_number` (mandatory for BRAND,
+ * Indian-mobile-validated via `src/lib/phone.ts`, same rules as creator/onboarding phone fields).
+ * Do not conflate the two in the UI or merge these payload types.
+ */
+export const users = {
+  /** GET /users/me */
+  getMe: () =>
+    isLive()
+      ? http.request<UserProfileMeResponse>('GET', '/users/me', { role: 'brand' })
+      : mockOr<UserProfileMeResponse>(mockUserProfileMe),
+
+  /** PATCH /users/me */
+  updateMe: (payload: UsersMeUpdatePayload) =>
+    isLive()
+      ? http.request<UserProfileMeResponse>('PATCH', '/users/me', { role: 'brand', body: payload })
+      : mockOr<UserProfileMeResponse>({ ...mockUserProfileMe, ...payload } as UserProfileMeResponse),
+};
+
 // Account self-service — MeAccountController (/me/account). Soft-delete only: server
 // anonymizes PII and marks the account closed/unable-to-login; it does not hard-delete
 // records that must be retained for legal/compliance reasons (e.g. completed deals).
@@ -6240,6 +6327,7 @@ export const api = {
   config,
   wallet,
   creatorProfile,
+  users,
   me,
   payments,
   dashboard,

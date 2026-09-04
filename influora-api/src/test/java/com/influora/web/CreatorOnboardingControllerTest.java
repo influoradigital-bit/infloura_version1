@@ -10,8 +10,6 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorOnboardingService;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorIdResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorKycRequest;
-import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutRequest;
-import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorProfileRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorSocialRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorSocialResponse;
@@ -75,7 +73,8 @@ class CreatorOnboardingControllerTest {
                         List.of("Hindi"),
                         "Mumbai",
                         new BigDecimal("5000"),
-                        new BigDecimal("15000"));
+                        new BigDecimal("15000"),
+                        null);
         when(service.saveProfile(principal, body)).thenReturn(new CreatorIdResponse("cr_1"));
 
         ResponseEntity<ApiResponse<CreatorIdResponse>> response = controller.saveProfile(principal, body);
@@ -113,17 +112,6 @@ class CreatorOnboardingControllerTest {
         verify(service).submitKyc(principal, body);
     }
 
-    @Test
-    @DisplayName("POST /onboarding/creator/payout delegates to service")
-    void testSavePayout() {
-        CreatorPayoutRequest body = new CreatorPayoutRequest("upi", "creator@upi", null, null, null);
-        when(service.savePayout(principal, body)).thenReturn(new CreatorPayoutResponse("pm_1"));
-
-        ResponseEntity<ApiResponse<CreatorPayoutResponse>> response = controller.savePayout(principal, body);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals("pm_1", response.getBody().data().payoutId());
-        verify(service).savePayout(principal, body);
-    }
+    // [F-0450] testSavePayout removed with POST /onboarding/creator/payout itself — see
+    // CreatorOnboardingController and CreatorOnboardingService for why.
 }

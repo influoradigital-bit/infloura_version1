@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { api, ApiError } from '@/lib/api';
 import { hasBrandToken } from '@/lib/auth-session';
+import { normalizePhone } from '@/lib/phone';
 
 const TOTAL_STEPS = 3;
 
@@ -38,6 +39,12 @@ export default function BrandOnboardingPage() {
   const [data, setData] = React.useState<OnboardingData>(initialData);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [error, setError] = React.useState('');
+  // PHONE-0904 Q6 fix — brandRegister's duplicate 409s (PHONE_ALREADY_EXISTS,
+  // EMAIL_ALREADY_EXISTS — AuthService.java:123, :139-143, :195-200) used to fall into `error`
+  // above as a generic page-level banner rendered on step 2, while both fields live on step 1
+  // (onboarding-steps.tsx). Keyed by field so AccountSetupStep can show the right message next
+  // to the right input, and the two duplicate reasons stay distinguishable from each other.
+  const [fieldErrors, setFieldErrors] = React.useState<{ phone?: string; email?: string }>({});
 
   const updateData = (updates: Partial<OnboardingData>) => {
     setData((prev) => ({ ...prev, ...updates }));
@@ -60,6 +67,7 @@ export default function BrandOnboardingPage() {
   const handleCompanySaveAndNext = async () => {
     setIsSubmitting(true);
     setError('');
+    setFieldErrors({});
     try {
       if (!hasBrandToken()) {
         await api.auth.brandRegister({
@@ -81,7 +89,9 @@ export default function BrandOnboardingPage() {
           // validates this (Required, /^[6-9]\d{9}$/), but it was never included in the
           // registration payload despite BrandRegisterPayload.phone already existing —
           // every brand's mobile number was collected and silently discarded.
-          phone: data.phone,
+          // PHONE-0904 — send the normalized 10-digit value, not the raw '+91 9876543210'
+          // the user may have pasted; onboarding-steps.tsx's onChange no longer strips '+'.
+          phone: normalizePhone(data.phone),
         });
       }
 
@@ -97,6 +107,48 @@ export default function BrandOnboardingPage() {
       });
       nextStep();
     } catch (err) {
+      // PHONE-0904 Q6 fix — distinguish the two 409s brandRegister can throw by `code`
+      // (src/lib/api.ts:276), not a generic message, and route the user back to step 1 where
+      // the field that caused it actually lives, instead of a page-level banner on step 2.
+      if (err instanceof ApiError && err.code === 'PHONE_ALREADY_EXISTS') {
+        setFieldErrors({ phone: 'This mobile number is already registered' });
+        // Step 1 (AccountSetupStep) short-circuits to an "email verified" / OTP-entry screen
+        // once data.emailOtpVerified/emailOtpSent is set from the earlier pass through step 1,
+        // which would otherwise strand the user on a screen with no editable phone field and no
+        // further auto-advance. Resetting these puts step 1 back in its normal editable-form
+        // state so the corrected number can actually be resubmitted (re-verifying the email is
+        // the cost of that route, but it is not a dead end).
+        updateData({ emailOtpSent: false, emailOtpVerified: false });
+        setCurrentStep(1);
+        window.scrollTo(0, 0);
+        return;
+      }
+      if (err instanceof ApiError && err.code === 'EMAIL_ALREADY_EXISTS') {
+        setFieldErrors({ email: 'An account with this email already exists' });
+        updateData({ emailOtpSent: false, emailOtpVerified: false });
+        setCurrentStep(1);
+        window.scrollTo(0, 0);
+        return;
+      }
+      // PHONE-0904 (Defect B follow-up) — Vikram's phone-required-for-brand backend can also
+      // return PHONE_REQUIRED (blank phone slipped past the client check below, e.g. a stale
+      // form state) or INVALID_PHONE (malformed) from this same brandRegister call. Both used to
+      // fall into the generic `error` banner on step 2 even though the phone field lives on step
+      // 1 — same bug class as the duplicate-409 fix above, same fix shape.
+      if (err instanceof ApiError && err.code === 'PHONE_REQUIRED') {
+        setFieldErrors({ phone: 'Mobile number is required' });
+        updateData({ emailOtpSent: false, emailOtpVerified: false });
+        setCurrentStep(1);
+        window.scrollTo(0, 0);
+        return;
+      }
+      if (err instanceof ApiError && err.code === 'INVALID_PHONE') {
+        setFieldErrors({ phone: 'Enter a valid 10-digit mobile number' });
+        updateData({ emailOtpSent: false, emailOtpVerified: false });
+        setCurrentStep(1);
+        window.scrollTo(0, 0);
+        return;
+      }
       setError(err instanceof ApiError ? err.message : 'Could not save company details');
     } finally {
       setIsSubmitting(false);
@@ -134,7 +186,17 @@ export default function BrandOnboardingPage() {
   const renderStep = () => {
     switch (currentStep) {
       case 1:
-        return <AccountSetupStep data={data} onUpdate={updateData} onNext={nextStep} />;
+        return (
+          <AccountSetupStep
+            data={data}
+            onUpdate={updateData}
+            onNext={nextStep}
+            serverErrors={fieldErrors}
+            onClearServerError={(field) =>
+              setFieldErrors((prev) => ({ ...prev, [field]: undefined }))
+            }
+          />
+        );
       case 2:
         return (
           <CompanyDetailsStep

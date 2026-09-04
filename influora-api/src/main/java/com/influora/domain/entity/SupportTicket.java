@@ -108,6 +108,50 @@ public class SupportTicket {
     }
 
     /**
+     * [F-0535] Opens a new ticket. This factory is the whole reason the defect existed: the class
+     * had only a protected no-arg constructor and admin-side mutators, so a ticket could be
+     * listed, replied to, assigned and escalated but never CREATED by anyone — no support
+     * controller outside the admin one had any way to make the row.
+     *
+     * <p>A new ticket always starts {@link TicketStatus#OPEN}. Priority is the REQUESTER'S stated
+     * urgency and is deliberately accepted from them rather than forced to {@code MEDIUM}: the
+     * admin side can already re-triage it, and {@link #escalate()} exists precisely so support
+     * owns the final word. Refusing the requester any say would make the field a lie on the form.
+     * {@code assignedTo} stays null — assignment is a support decision, not a requester one.
+     */
+    public static SupportTicket open(
+            String id, String userId, UserType userType, String category, String subject, TicketPriority priority) {
+        SupportTicket t = new SupportTicket();
+        t.id = id;
+        t.userId = userId;
+        t.userType = userType;
+        t.category = category;
+        t.subject = subject;
+        t.status = TicketStatus.OPEN;
+        t.priority = priority == null ? TicketPriority.MEDIUM : priority;
+        t.createdAt = Instant.now();
+        t.updatedAt = t.createdAt;
+        return t;
+    }
+
+    /**
+     * [F-0535] The requester has replied. Clears {@link TicketStatus#WAITING_USER}, which was
+     * previously a dead end for the person it names: only an admin could move a ticket out of it,
+     * so a user answering the question they were asked left the ticket sitting in "waiting on
+     * user" forever with no signal that they had in fact responded.
+     *
+     * <p>Only WAITING_USER is affected. A reply on an OPEN or IN_PROGRESS ticket must not reorder
+     * the triage queue, and a reply on a RESOLVED or CLOSED ticket must not silently reopen it —
+     * reopening is a support decision and there is no requester-side route for it by design.
+     */
+    public void noteUserReplied() {
+        if (this.status == TicketStatus.WAITING_USER) {
+            this.status = TicketStatus.OPEN;
+        }
+        touch();
+    }
+
+    /**
      * Admin-panel status transition (AdminSupportController). Stamps {@code resolvedAt} the
      * moment the ticket first reaches {@link TicketStatus#RESOLVED}; deliberately does NOT clear
      * it on a later re-open (e.g. RESOLVED -> IN_PROGRESS) — that timestamp remains the historical

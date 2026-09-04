@@ -24,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { normalizePhone, isValidPhone, filterPhoneInput } from '@/lib/phone';
 
 /**
  * Creator onboarding — reduced from 5 steps to 3.
@@ -91,9 +92,13 @@ export default function CreatorOnboardingPage() {
     verticals: [] as string[],
     languages: [] as string[],
     city: '',
+    phone: '',
     rateMin: '',
     rateMax: '',
   });
+  // PHONE-0904 — mirrors creator-settings.tsx's phone dialog: optional field, server-side
+  // 409 (duplicate phone) surfaces here, field-adjacent, not as a generic toast.
+  const [phoneError, setPhoneError] = React.useState<string | null>(null);
 
   const progress = (currentStep / STEPS.length) * 100;
 
@@ -165,12 +170,20 @@ export default function CreatorOnboardingPage() {
     switch (currentStep) {
       case 1:
         return connectedSocials.length > 0;
-      case 2:
+      case 2: {
+        // Phone is Optional here (matches creator Settings' phone field, PHONE-0829 P1) —
+        // but if the creator did type something, it must be a valid 10-digit Indian mobile
+        // before Continue is allowed. Normalize first (PHONE-0904) so a pasted +91/leading-0
+        // number that the server would accept isn't blocked client-side.
+        const normalizedPhone = normalizePhone(profileData.phone);
+        const phoneValid = normalizedPhone.length === 0 || isValidPhone(normalizedPhone);
         return (
           profileData.displayName.trim().length > 0 &&
           profileData.verticals.length > 0 &&
-          profileData.rateMin.trim().length > 0
+          profileData.rateMin.trim().length > 0 &&
+          phoneValid
         );
+      }
       case 3:
         return true;
       default:
@@ -180,19 +193,35 @@ export default function CreatorOnboardingPage() {
 
   const handleSaveProfileAndNext = async () => {
     setIsLoading(true);
+    setPhoneError(null);
     try {
+      const normalizedPhone = normalizePhone(profileData.phone);
       await api.onboarding.saveCreatorProfile({
         displayName: profileData.displayName,
         bio: profileData.bio,
         verticals: profileData.verticals,
         languages: profileData.languages,
         city: profileData.city,
+        phone: normalizedPhone || undefined,
         rateMin: Number(profileData.rateMin) || 0,
         rateMax: Number(profileData.rateMax) || 0,
       });
       setCurrentStep(3);
       window.scrollTo(0, 0);
     } catch (err) {
+      // 409 = duplicate phone (server-enforced uniqueness) — shown inline, next to the
+      // field, not as a generic toast. Mirrors creator-settings.tsx's phone dialog. Must
+      // NOT advance to step 3: falling through to the generic toast below would still
+      // leave the user on step 2, but this gives them an actionable, field-adjacent reason.
+      //
+      // PHONE-0904 Q6 fix — branch on the machine-readable `code`, not the bare HTTP status.
+      // saveCreatorProfile shares this 409 status with other ApiExceptions the profile-patch
+      // path can throw; keying on `err.code === 'PHONE_ALREADY_EXISTS'` is what stops any of
+      // those from ever being mislabeled as a phone conflict.
+      if (err instanceof ApiError && err.code === 'PHONE_ALREADY_EXISTS') {
+        setPhoneError('This mobile number is already registered');
+        return;
+      }
       // Was try/finally with NO catch — a save failure was an unhandled rejection
       // and the user stayed on step 2 with no explanation.
       toast({
@@ -313,6 +342,8 @@ export default function CreatorOnboardingPage() {
             onUpdate={setProfileData}
             onToggleVertical={handleVerticalToggle}
             onToggleLanguage={handleLanguageToggle}
+            phoneError={phoneError}
+            onPhoneErrorClear={() => setPhoneError(null)}
           />
         )}
 
@@ -461,12 +492,16 @@ interface BuildProfileStepProps {
     verticals: string[];
     languages: string[];
     city: string;
+    phone: string;
     rateMin: string;
     rateMax: string;
   };
   onUpdate: React.Dispatch<React.SetStateAction<BuildProfileStepProps['data']>>;
   onToggleVertical: (v: string) => void;
   onToggleLanguage: (l: string) => void;
+  /** PHONE-0904 — server-side 409 (duplicate phone), surfaced field-adjacent by the parent. */
+  phoneError: string | null;
+  onPhoneErrorClear: () => void;
 }
 
 function BuildProfileStep({
@@ -474,7 +509,15 @@ function BuildProfileStep({
   onUpdate,
   onToggleVertical,
   onToggleLanguage,
+  phoneError,
+  onPhoneErrorClear,
 }: BuildProfileStepProps) {
+  // Same validation as creator Settings' phone field (creator-settings.tsx handleSavePhone) —
+  // optional, but if present it must look like a real Indian mobile number. Normalized first
+  // (PHONE-0904) so a pasted +91/leading-0 number is judged the same way the server would.
+  const normalizedPhone = normalizePhone(data.phone);
+  const phoneFormatInvalid = normalizedPhone.length > 0 && !isValidPhone(normalizedPhone);
+
   return (
     <div className="space-y-6">
       <div className="text-center">
@@ -513,6 +556,46 @@ function BuildProfileStep({
           onChange={(e) => onUpdate({ ...data, city: e.target.value })}
           placeholder="e.g., Mumbai"
         />
+      </div>
+
+      {/* PHONE-0904 — Optional here, same as creator Settings' Mobile Number field
+          (PHONE-0829 P1). Same +91 affix / filter / maxLength / shared phone.ts helper as
+          creator-settings.tsx so both creator surfaces agree. The onChange filter allows
+          '+' and spaces through (does not strip them) so pasting '+91 9876543210' from
+          contacts is never mangled mid-keystroke — normalizePhone() handles it at
+          validate/submit time instead. */}
+      <div className="space-y-2">
+        <Label htmlFor="phone">Mobile number</Label>
+        <div className="flex gap-2">
+          <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+            +91
+          </div>
+          <Input
+            id="phone"
+            inputMode="tel"
+            placeholder="98765 43210"
+            value={data.phone}
+            onChange={(e) => {
+              onPhoneErrorClear();
+              onUpdate({ ...data, phone: filterPhoneInput(e.target.value) });
+            }}
+            maxLength={17}
+            className="flex-1"
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Optional. Brands and Influora use this to reach you about deals.
+        </p>
+        {phoneFormatInvalid && (
+          <p role="alert" className="text-xs text-destructive-foreground">
+            Enter a valid 10-digit mobile number
+          </p>
+        )}
+        {phoneError && (
+          <p role="alert" className="text-xs text-destructive-foreground">
+            {phoneError}
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">

@@ -68,6 +68,10 @@ const MOCK_BRAND_PENDING_KYC = {
   id: 'brand-123',
   name: 'Acme Corp',
   email: 'contact@acme.test',
+  // F7 — deliberately null by default here (matches "no phones on file" reality for most
+  // fixtures); individual tests below override to exercise the present-value paths.
+  ownerPhone: null,
+  workspacePhone: null,
   industry: 'Fashion',
   size: 'Medium',
   kycStatus: KycStatus.PENDING,
@@ -215,6 +219,69 @@ describe('BrandProfile Component', () => {
       render(<BrandProfile brandId="brand-123" />);
 
       expect(screen.getByText(/No team members on file/i)).toBeInTheDocument();
+    });
+  });
+
+  // ============================================
+  // F7 — ownerPhone / workspacePhone (AdminBrandDtos.java: two distinct phone
+  // values, deliberately not merged into one "Phone" field)
+  // ============================================
+
+  describe('Owner Phone / Workspace Phone (F7)', () => {
+    it('should render "— Not provided" for both when both are null (pre-PHONE-0904 brand)', () => {
+      mockUseBrandDetail.mockReturnValue({
+        data: MOCK_BRAND_PENDING_KYC, // ownerPhone: null, workspacePhone: null
+        isLoading: false,
+        error: null,
+      });
+
+      render(<BrandProfile brandId="brand-123" />);
+
+      expect(screen.getAllByText('— Not provided')).toHaveLength(2);
+    });
+
+    it('should render ownerPhone with a +91 prefix (strict Indian mobile) when present', () => {
+      mockUseBrandDetail.mockReturnValue({
+        data: { ...MOCK_BRAND_PENDING_KYC, ownerPhone: '9876543210' },
+        isLoading: false,
+        error: null,
+      });
+
+      render(<BrandProfile brandId="brand-123" />);
+
+      expect(screen.getByText('+91 9876543210')).toBeInTheDocument();
+      // workspacePhone still null -> exactly one "Not provided" left.
+      expect(screen.getAllByText('— Not provided')).toHaveLength(1);
+    });
+
+    it('should render workspacePhone as-is, never +91-prefixed, since it may already carry its own country code', () => {
+      mockUseBrandDetail.mockReturnValue({
+        data: { ...MOCK_BRAND_PENDING_KYC, workspacePhone: '+44 20 7946 0958' },
+        isLoading: false,
+        error: null,
+      });
+
+      render(<BrandProfile brandId="brand-123" />);
+
+      expect(screen.getByText('+44 20 7946 0958')).toBeInTheDocument();
+      expect(screen.queryByText('+91 +44 20 7946 0958')).not.toBeInTheDocument();
+    });
+
+    it('should render both phones distinctly, with the Owner/Workspace labels making them tellable apart', () => {
+      mockUseBrandDetail.mockReturnValue({
+        data: { ...MOCK_BRAND_PENDING_KYC, ownerPhone: '9876543210', workspacePhone: '9123456780' },
+        isLoading: false,
+        error: null,
+      });
+
+      render(<BrandProfile brandId="brand-123" />);
+
+      expect(screen.getByText('Owner:')).toBeInTheDocument();
+      expect(screen.getByText('Workspace:')).toBeInTheDocument();
+      expect(screen.getByText('+91 9876543210')).toBeInTheDocument();
+      expect(screen.getByText('9123456780')).toBeInTheDocument();
+      // Same 10-digit shape as ownerPhone, but must not pick up the +91 prefix.
+      expect(screen.queryByText('+91 9123456780')).not.toBeInTheDocument();
     });
   });
 

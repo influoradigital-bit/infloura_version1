@@ -9,22 +9,22 @@ import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.config.R2Properties;
-import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.CreatorProfile;
+import com.influora.domain.entity.User;
 import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.UserRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.payout.CreatorBankAccountService;
+import com.influora.web.dto.onboarding.OnboardingDtos.CreatorIdResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorKycRequest;
-import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutRequest;
-import com.influora.web.dto.onboarding.OnboardingDtos.CreatorPayoutResponse;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorProfileRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.CreatorSocialRequest;
 import com.influora.web.dto.onboarding.OnboardingDtos.KycResponse;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,8 +36,8 @@ import org.springframework.http.HttpStatus;
 /**
  * N1 (Wave 6) — covers the parts of CreatorOnboardingService with actual branching logic: the
  * rateMin/rateMax guard, the KYC persistence (reusing the D14 `pan` column + new identity-KYC
- * columns), and the UPI/bank discriminated-union payout routing through the SAME encrypted
- * CreatorBankAccountService N3 wires into WalletController.
+ * columns), and R2 doc-URL resolution. The UPI/bank payout-routing tests that used to live here
+ * were removed under F-0450 along with {@code savePayout(...)} itself — see that method's note.
  */
 @ExtendWith(MockitoExtension.class)
 class CreatorOnboardingServiceTest {
@@ -57,17 +57,19 @@ class CreatorOnboardingServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Real UserPhoneService wired onto the same mocked userRepository — PHONE-0904.
         service =
                 new CreatorOnboardingService(
                         creatorContext,
                         creatorProfileRepository,
                         userRepository,
                         creatorBankAccountService,
+                        new UserPhoneService(userRepository),
                         r2StorageService,
                         r2Properties);
         profile = CreatorProfile.newForUser("prof_1", CREATOR_USER_ID, "Priya Creates");
-        // lenient: the payout-method tests below don't touch creatorContext at all (savePayout
-        // goes straight to CreatorBankAccountService, which does its own principal resolution).
+        // lenient: not every test below reads this stub (e.g. testResolveKycDocUrlPresignsBareKey
+        // exercises a static-file path that never resolves a creator profile).
         org.mockito.Mockito.lenient().when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
     }
 
@@ -101,11 +103,153 @@ class CreatorOnboardingServiceTest {
     void testSaveProfileRejectsInvertedRateRange() {
         CreatorProfileRequest req =
                 new CreatorProfileRequest(
-                        "Priya", null, List.of(), List.of(), null, new BigDecimal("20000"), new BigDecimal("5000"));
+                        "Priya",
+                        null,
+                        List.of(),
+                        List.of(),
+                        null,
+                        new BigDecimal("20000"),
+                        new BigDecimal("5000"),
+                        null);
 
         ApiException ex = assertThrows(ApiException.class, () -> service.saveProfile(principal, req));
         assertEquals("INVALID_RATE_RANGE", ex.getCode());
         verify(creatorProfileRepository, never()).save(any());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // PHONE-0904 — creator onboarding phone capture, shared with CreatorProfileService via
+    // UserPhoneService. displayName/rates are required fields on this DTO, so every test below
+    // supplies a valid rate range.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("saveProfile: null phone leaves users.phone_number untouched (no user lookup at all)")
+    void testSaveProfileNullPhoneDoesNotTouchUser() {
+        when(creatorProfileRepository.save(any(CreatorProfile.class))).thenAnswer(i -> i.getArgument(0));
+
+        CreatorIdResponse response = service.saveProfile(principal, profileRequest(null));
+
+        assertEquals("prof_1", response.creatorId());
+        verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName(
+            "saveProfile: blank phone (\"\") is a no-op too, same as null — D2 (Priya CTO review):"
+                    + " an onboarding wizard must never clear a number set through another surface")
+    void testSaveProfileBlankPhoneDoesNotTouchUser() {
+        when(creatorProfileRepository.save(any(CreatorProfile.class))).thenAnswer(i -> i.getArgument(0));
+
+        CreatorIdResponse response = service.saveProfile(principal, profileRequest(""));
+
+        assertEquals("prof_1", response.creatorId());
+        verify(userRepository, never()).findById(any());
+    }
+
+    @Test
+    @DisplayName("saveProfile: sets phone, normalizing +91 and spaces, after the profile row is saved")
+    void testSaveProfileSetsPhoneNormalized() {
+        User user = realUser();
+        when(creatorProfileRepository.save(any(CreatorProfile.class))).thenAnswer(i -> i.getArgument(0));
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        when(userRepository.findById(CREATOR_USER_ID)).thenReturn(Optional.of(user));
+        when(userRepository.existsByPhoneNumber("9876543210")).thenReturn(false);
+
+        service.saveProfile(principal, profileRequest("+91 98765 43210"));
+
+        assertEquals("9876543210", user.getPhoneNumber());
+        // D1 regression guard: the non-blank write path MUST flush (see UserPhoneService#applyPhone
+        // javadoc) — plain save() would make the raced-duplicate 409 unreachable in production.
+        verify(userRepository).saveAndFlush(user);
+        verify(userRepository, never()).save(user);
+    }
+
+    @Test
+    @DisplayName("saveProfile: normalizes a leading-0 trunk prefix to the same 10 digits")
+    void testSaveProfileNormalizesLeadingZero() {
+        User user = realUser();
+        when(creatorProfileRepository.save(any(CreatorProfile.class))).thenAnswer(i -> i.getArgument(0));
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        when(userRepository.findById(CREATOR_USER_ID)).thenReturn(Optional.of(user));
+        when(userRepository.existsByPhoneNumber("9876543210")).thenReturn(false);
+
+        service.saveProfile(principal, profileRequest("09876543210"));
+
+        assertEquals("9876543210", user.getPhoneNumber());
+    }
+
+    @Test
+    @DisplayName("saveProfile: rejects invalid phone format with INVALID_PHONE/400")
+    void testSaveProfileRejectsInvalidPhone() {
+        User user = realUser();
+        when(creatorProfileRepository.save(any(CreatorProfile.class))).thenAnswer(i -> i.getArgument(0));
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        when(userRepository.findById(CREATOR_USER_ID)).thenReturn(Optional.of(user));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.saveProfile(principal, profileRequest("12345")));
+
+        assertEquals("INVALID_PHONE", ex.getCode());
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+    }
+
+    @Test
+    @DisplayName("saveProfile: duplicate phone returns a clean PHONE_ALREADY_EXISTS/409")
+    void testSaveProfileDuplicatePhoneReturns409() {
+        User user = realUser();
+        when(creatorProfileRepository.save(any(CreatorProfile.class))).thenAnswer(i -> i.getArgument(0));
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        when(userRepository.findById(CREATOR_USER_ID)).thenReturn(Optional.of(user));
+        when(userRepository.existsByPhoneNumber("9876543210")).thenReturn(true);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.saveProfile(principal, profileRequest("9876543210")));
+
+        assertEquals("PHONE_ALREADY_EXISTS", ex.getCode());
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+    }
+
+    @Test
+    @DisplayName(
+            "saveProfile: an inverted rate range is rejected before the phone (on users) is ever"
+                    + " looked up, even when both fields on the request are bad")
+    void testSaveProfileRateRangeRejectedBeforePhoneLookup() {
+        CreatorProfileRequest req =
+                new CreatorProfileRequest(
+                        "Priya",
+                        null,
+                        List.of(),
+                        List.of(),
+                        null,
+                        new BigDecimal("20000"),
+                        new BigDecimal("5000"),
+                        "not-a-phone");
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.saveProfile(principal, req));
+
+        assertEquals("INVALID_RATE_RANGE", ex.getCode());
+        verify(userRepository, never()).findById(any());
+    }
+
+    private CreatorProfileRequest profileRequest(String phone) {
+        return new CreatorProfileRequest(
+                "Priya Creates",
+                "bio",
+                List.of("Fashion & Lifestyle"),
+                List.of("Hindi"),
+                "Mumbai",
+                new BigDecimal("5000"),
+                new BigDecimal("15000"),
+                phone);
+    }
+
+    private User realUser() {
+        return User.newCreator(
+                CREATOR_USER_ID, "creator@example.com", "hash", "Priya", "Sharma", "Priya Sharma");
     }
 
     @Test
@@ -121,58 +265,10 @@ class CreatorOnboardingServiceTest {
         verify(creatorProfileRepository).save(profile);
     }
 
-    @Test
-    @DisplayName("savePayout(method=upi) routes through CreatorBankAccountService as a UPI instrument")
-    void testSavePayoutUpi() {
-        CreatorPayoutRequest req = new CreatorPayoutRequest("upi", "creator@upi", null, null, null);
-        CreatorBankAccount saved =
-                CreatorBankAccount.createEncrypted(
-                        "pm_1", CREATOR_USER_ID, "c", null, "UPI", "****upi", true, Instant.now(), Instant.now());
-        when(creatorBankAccountService.addInstrument(principal, "UPI", "creator@upi", null, null))
-                .thenReturn(saved);
-
-        CreatorPayoutResponse response = service.savePayout(principal, req);
-
-        assertEquals("pm_1", response.payoutId());
-        verify(creatorBankAccountService).addInstrument(principal, "UPI", "creator@upi", null, null);
-    }
-
-    @Test
-    @DisplayName("savePayout(method=bank) routes through CreatorBankAccountService as a BANK instrument")
-    void testSavePayoutBank() {
-        CreatorPayoutRequest req =
-                new CreatorPayoutRequest("bank", null, "1234567890", "HDFC0001234", "Priya Sharma");
-        CreatorBankAccount saved =
-                CreatorBankAccount.createEncrypted(
-                        "pm_2",
-                        CREATOR_USER_ID,
-                        "c",
-                        "ifsc-c",
-                        "BANK",
-                        "****7890",
-                        true,
-                        Instant.now(),
-                        Instant.now());
-        when(creatorBankAccountService.addInstrument(
-                        principal, "BANK", "1234567890", "HDFC0001234", null))
-                .thenReturn(saved);
-
-        CreatorPayoutResponse response = service.savePayout(principal, req);
-
-        assertEquals("pm_2", response.payoutId());
-        verify(creatorBankAccountService)
-                .addInstrument(principal, "BANK", "1234567890", "HDFC0001234", null);
-    }
-
-    @Test
-    @DisplayName("savePayout rejects an unknown method without calling the bank-account service")
-    void testSavePayoutRejectsUnknownMethod() {
-        CreatorPayoutRequest req = new CreatorPayoutRequest("crypto", null, null, null, null);
-
-        ApiException ex = assertThrows(ApiException.class, () -> service.savePayout(principal, req));
-        assertEquals("INVALID_PAYOUT_METHOD", ex.getCode());
-        verify(creatorBankAccountService, never()).addInstrument(any(), any(), any(), any(), any());
-    }
+    // [F-0450] The three savePayout(...) tests that lived here were removed with the method
+    // itself — see CreatorOnboardingService's F-0450 note. WalletController's payout-methods
+    // path is the live route through the same CreatorBankAccountService.addInstrument(...)
+    // writer these tests exercised; it is covered separately.
 
     @Test
     @DisplayName("[F-0390 D4] resolveKycDocUrl: a bare R2 key (new, post-D4 upload) resolves to a presigned GET")

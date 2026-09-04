@@ -137,6 +137,10 @@ EXEMPT_PATH = [
     (re.compile(r"^/client-errors?(/|$)"), "crash sink: written by the global ErrorBoundary, not a feature"),
     (re.compile(r"^/config/public(/|$)"), "bootstrap config read before the API client exists"),
     (re.compile(r"^/track/click(/|$)"), "affiliate redirect: followed by the visitor's browser"),
+    (re.compile(r"^/notifications/unsubscribe-link(/|$)"),
+     "[F-0444] one-click email link: NotificationController#unsubscribeViaLink returns "
+     "text/html and is clicked directly from an outgoing email, never called via fetch/JS — "
+     "same shape as /track/click above, not a missing frontend caller"),
 ]
 # Whole-controller claims. Same rule: the handler must corroborate, per method.
 EXEMPT_FILE = {

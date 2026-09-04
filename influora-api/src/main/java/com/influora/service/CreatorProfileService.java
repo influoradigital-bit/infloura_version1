@@ -1,7 +1,6 @@
 package com.influora.service;
 
 import com.influora.common.ApiException;
-import com.influora.common.IndianPhoneUtils;
 import com.influora.common.JsonLists;
 import com.influora.common.UsernameUtils;
 import com.influora.domain.entity.CreatorProfile;
@@ -33,18 +32,21 @@ public class CreatorProfileService {
     private final PlatformStatRepository platformStatRepository;
     private final UserRepository userRepository;
     private final ExternalCreatorLinkService externalCreatorLinkService;
+    private final UserPhoneService userPhoneService;
 
     public CreatorProfileService(
             CreatorContextService creatorContext,
             CreatorProfileRepository creatorProfileRepository,
             PlatformStatRepository platformStatRepository,
             UserRepository userRepository,
-            ExternalCreatorLinkService externalCreatorLinkService) {
+            ExternalCreatorLinkService externalCreatorLinkService,
+            UserPhoneService userPhoneService) {
         this.creatorContext = creatorContext;
         this.creatorProfileRepository = creatorProfileRepository;
         this.platformStatRepository = platformStatRepository;
         this.userRepository = userRepository;
         this.externalCreatorLinkService = externalCreatorLinkService;
+        this.userPhoneService = userPhoneService;
     }
 
     /**
@@ -98,56 +100,16 @@ public class CreatorProfileService {
         // means "leave unchanged" (this record's usual convention); an explicit blank string means
         // "clear". Applied/saved separately from the CreatorProfile row above because phone lives
         // on `users`, not `creator_profiles`.
+        // PHONE-0904 — extracted to the shared UserPhoneService (see its javadoc) so this call
+        // site, CreatorOnboardingService#saveProfile, and AuthService#brandRegister can never
+        // define "valid"/"available" phone differently. Was a private applyPhone(User, String)
+        // method on this class (PHONE-0829); behavior is unchanged, just moved.
         User user = loadUser(principal.getUserId());
         if (req.phone() != null) {
-            applyPhone(user, req.phone());
+            userPhoneService.applyPhone(user, req.phone());
         }
 
         return toSelfResponse(profile, user);
-    }
-
-    /**
-     * PHONE-0829 — first write path {@code users.phone_number} has ever had. Normalizes (strips
-     * spaces/+91/leading 0 — see {@link IndianPhoneUtils#normalize}) then validates the strict
-     * Indian-mobile rule server-side (never trusts the client's own regex at
-     * onboarding-steps.tsx:465). Blank input clears the stored number ({@link User#setPhoneNumber}
-     * full-replace semantics). {@code users.phone_number} is {@code UNIQUE} — the DB constraint is
-     * the actual race-safe guarantee, this catch just translates it into the same clean 409 the
-     * duplicate-email path already returns (see {@code AuthService#brandRegister}) instead of
-     * letting it fall through to a raw 500.
-     */
-    private void applyPhone(User user, String rawPhone) {
-        if (rawPhone.isBlank()) {
-            user.setPhoneNumber(null);
-            userRepository.save(user);
-            return;
-        }
-
-        String normalized = IndianPhoneUtils.normalize(rawPhone);
-        if (!IndianPhoneUtils.isValid(normalized)) {
-            throw new ApiException(
-                    "INVALID_PHONE",
-                    "Enter a valid 10-digit Indian mobile number",
-                    HttpStatus.BAD_REQUEST);
-        }
-
-        if (!normalized.equals(user.getPhoneNumber())
-                && userRepository.existsByPhoneNumber(normalized)) {
-            throw new ApiException(
-                    "PHONE_ALREADY_EXISTS",
-                    "An account with this phone number already exists",
-                    HttpStatus.CONFLICT);
-        }
-
-        user.setPhoneNumber(normalized);
-        try {
-            userRepository.save(user);
-        } catch (DataIntegrityViolationException dup) {
-            throw new ApiException(
-                    "PHONE_ALREADY_EXISTS",
-                    "An account with this phone number already exists",
-                    HttpStatus.CONFLICT);
-        }
     }
 
     public CreatorProfile requireProfileByUsername(String username) {

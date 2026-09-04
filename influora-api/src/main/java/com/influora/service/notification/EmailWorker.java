@@ -97,7 +97,22 @@ import org.springframework.transaction.support.TransactionTemplate;
  * batch's lease (see {@link EmailOutbox#markClaimed}), so {@link
  * EmailOutboxRepository#findPendingForSend}'s {@code WHERE} clause skips them until that lease
  * naturally passes, at which point a normal poll claims and sends them exactly once — a delay,
- * never a duplicate.
+ * not a duplicate, for every row the budget defers.
+ *
+ * <p><b>Known gap in that guarantee, under degraded SMTP.</b> {@link #maxBatchWallClock} is
+ * checked BEFORE dispatching each row, and the deadline is measured from after the claim
+ * transaction committed while the lease was stamped inside it — so the deadline clock starts
+ * slightly later than the lease clock. A row that begins at {@code deadline - ε} finishes at
+ * {@code deadline + rowDuration}, and {@code markResult} then opens a further transaction. With a
+ * 30s margin ({@code CLAIM_LEASE - 30s}), any single row taking longer than ~30s pushes the run
+ * past its own {@code CLAIM_LEASE}; the row becomes visible to {@code findPendingForSend} again
+ * and another instance may re-claim and re-send it. {@code spring.mail}'s 10s timeout is per
+ * socket read, not per message, so a slow-but-responsive relay can exceed 30s for one message
+ * across an SMTP conversation's many round trips. Requires degraded SMTP AND multiple instances
+ * AND a poll landing in the window; blast radius is one duplicate marketing email, never an OTP
+ * (those are single-row and priority-ordered). Closing it properly means deriving the deadline
+ * from the lease instant itself and reserving margin for the mark transaction — tracked, not
+ * done here.
  */
 @Component
 public class EmailWorker {

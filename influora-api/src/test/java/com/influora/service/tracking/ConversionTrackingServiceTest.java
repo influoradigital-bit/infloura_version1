@@ -188,15 +188,41 @@ class ConversionTrackingServiceTest {
 
     private static final String WORKSPACE_ID = "01HWORKSPACE12345678A";
 
+    // [F-0523] These two tests pin BOTH halves of the reservation-key contract. Before F-0523 the
+    // order-derived key ALWAYS won and the caller's token was ignored, which silently collapsed two
+    // genuinely distinct conversions that happened to share workspace+UTM+order into one. This test
+    // previously asserted that old behaviour (its @DisplayName ended "NOT the caller-supplied
+    // idempotencyKey") and was left behind when ConversionTrackingService.recordConversion changed;
+    // it is now split so neither half can regress unnoticed.
+
     @Test
     @DisplayName(
-            "recordConversion: workspace-scoped overload reserves workspaceId+':conv:'+utmCampaignId+':'+orderId,"
-                    + " NOT the caller-supplied idempotencyKey")
-    void testWorkspaceScopedOverloadReservesOrderDerivedKey() {
+            "recordConversion [F-0523]: a caller-supplied idempotencyKey HAS authority -- it is the"
+                    + " reservation key, not the order-derived fallback")
+    void testWorkspaceScopedOverloadPrefersCallerSuppliedKey() {
         UtmCampaign utm = utm();
         when(utmCampaignRepository.findById(UTM_ID)).thenReturn(Optional.of(utm));
 
         service.recordConversion(WORKSPACE_ID, UTM_ID, ORDER_ID, BigDecimal.valueOf(150), "brand-supplied-token");
+
+        verify(idempotencyService)
+                .executeOnce(
+                        eq("brand-supplied-token"),
+                        eq(WORKSPACE_ID),
+                        eq("tracking.record_conversion"),
+                        any());
+        assertEquals(1, utm.getConversionCount());
+    }
+
+    @Test
+    @DisplayName(
+            "recordConversion [F-0523]: with NO caller key, falls back to"
+                    + " workspaceId+':conv:'+utmCampaignId+':'+orderId so the no-key case stays deduped")
+    void testWorkspaceScopedOverloadFallsBackToOrderDerivedKey() {
+        UtmCampaign utm = utm();
+        when(utmCampaignRepository.findById(UTM_ID)).thenReturn(Optional.of(utm));
+
+        service.recordConversion(WORKSPACE_ID, UTM_ID, ORDER_ID, BigDecimal.valueOf(150), null);
 
         verify(idempotencyService)
                 .executeOnce(
@@ -205,6 +231,24 @@ class ConversionTrackingServiceTest {
                         eq("tracking.record_conversion"),
                         any());
         assertEquals(1, utm.getConversionCount());
+    }
+
+    @Test
+    @DisplayName(
+            "recordConversion [F-0523]: a BLANK caller key is treated as absent, not as a literal"
+                    + " reservation key of \"\"")
+    void testWorkspaceScopedOverloadTreatsBlankKeyAsAbsent() {
+        UtmCampaign utm = utm();
+        when(utmCampaignRepository.findById(UTM_ID)).thenReturn(Optional.of(utm));
+
+        service.recordConversion(WORKSPACE_ID, UTM_ID, ORDER_ID, BigDecimal.valueOf(150), "   ");
+
+        verify(idempotencyService)
+                .executeOnce(
+                        eq(WORKSPACE_ID + ":conv:" + UTM_ID + ":" + ORDER_ID),
+                        eq(WORKSPACE_ID),
+                        eq("tracking.record_conversion"),
+                        any());
     }
 
     @Test

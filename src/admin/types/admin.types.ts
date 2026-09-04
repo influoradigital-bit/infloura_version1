@@ -154,6 +154,23 @@ export interface Brand {
   id: string;
   name: string;
   email: string;
+  /**
+   * F7 — workspace's business contact number (`workspaces.phone` / `BrandSummaryDto.workspacePhone`
+   * and `BrandDetailDto.workspacePhone` in AdminBrandDtos.java, both confirmed on disk). Optional,
+   * clearable, loosely-validated international format (7-15 digits) that may already carry its own
+   * country code — never prefix with +91. `null` for most workspaces (never set). Distinct from
+   * `ownerPhone` below — do not merge into a single "Phone" field (see CreatorProfile precedent /
+   * PHONE-0829 vocabulary ruling).
+   */
+  workspacePhone: string | null;
+  /**
+   * F7 — workspace OWNER's personal mobile (`users.phone_number` / `BrandSummaryDto.ownerPhone` and
+   * `BrandDetailDto.ownerPhone` in AdminBrandDtos.java, both confirmed on disk). Strict Indian-mobile
+   * format (10 digits, no country code stored) — render with a `+91` prefix like `creator.phone`.
+   * Required since PHONE-0904 for new registrations; `null` for any brand that registered before
+   * that date.
+   */
+  ownerPhone: string | null;
   industry: string;
   size: 'STARTUP' | 'SMB' | 'ENTERPRISE';
   kycStatus: KycStatus;

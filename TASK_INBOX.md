@@ -47,7 +47,7 @@ Discover shows Meta-sourced Instagram creators with an **Unverified with Influor
 | kavya | review both halves | DONE — 0 open findings |
 | meera | build + run verification | DONE — builds green; found+fixed `categories` column mapping; live click-through NOT run (Docker daemon down) |
 | tester × priya | 35-question Q&A, 5 per feature | DONE — **FAIL**: 31 findings (2 Critical, 8 High); report `wiki/reports/QA-CREATORCONNECT-0902.md`; pipeline BLOCKED pending fix wave |
-| fix wave (vikram + ananya) → priya CTO sign-off | close the 31 findings | **DONE 2026-09-03 (round 2) — 29/31 solved, build gate GREEN.** Round 2 closed all 4 dispatched findings, each re-verified by Priya against the live tree: **Q1.4** (recovery re-read now `runInNewTransaction`, `ExternalCreatorService.java:469-475`; discriminating pin `ExternalCreatorServiceTest.java:388-393`), **Q4.5** (four fields `\| null` at `admin.types.ts:617/619/621/626`, crash guarded `CreatorConnectionsPage.tsx:479`), **Q5.5** (invite claim path wired + server-verified, `AuthService.java:364` → `RegistrationService.java:57-108`; secret provisioned `generate-env.sh:67`, fails closed on the dev default), **Q6.5** (`&ig=` on both surfaces from one local, `NotificationListener.java:782-786`). Report `wiki/reports/FIX-WAVE-T-CREATORCONNECT-0902.md`; per-finding `status`/`evidence` in `.proof-os/tasks/T-CREATORCONNECT-0902/findings.json`. **2 open, both ops-only, no code component left:** Q3.1 (High — `ADMIN_NOTIFICATION_EMAIL` blank at `generate-env.sh:159`), Q1.3 (Medium — `META_SYSTEM_IG_*` blank at `:152-153`). 8 residuals ticketed in §5. **Uncommitted**; still **no live click-through** (Docker daemon down) — nothing here is live-proven |
+| fix wave (vikram + ananya) → priya CTO sign-off | close the 31 findings | **DONE 2026-09-03 (round 2) — 29/31 solved, build gate GREEN.** Round 2 closed all 4 dispatched findings, each re-verified by Priya against the live tree: **Q1.4** (recovery re-read now `runInNewTransaction`, `ExternalCreatorService.java:469-475`; discriminating pin `ExternalCreatorServiceTest.java:388-393`), **Q4.5** (four fields `\| null` at `admin.types.ts:617/619/621/626`, crash guarded `CreatorConnectionsPage.tsx:479`), **Q5.5** (invite claim path wired + server-verified, `AuthService.java:364` → `RegistrationService.java:57-108`; secret provisioned `generate-env.sh:67`, fails closed on the dev default), **Q6.5** (`&ig=` on both surfaces from one local, `NotificationListener.java:782-786`). Report `wiki/reports/FIX-WAVE-T-CREATORCONNECT-0902.md`; per-finding `status`/`evidence` in `.proof-os/tasks/T-CREATORCONNECT-0902/findings.json`. **1 open (Q1.3, Medium, ops-only — `META_SYSTEM_IG_*` blank at `generate-env.sh:152-153`), 1 closed by ruling not code (Q3.1):** 2026-09-03 Swapnil ruled, in chat, "Skip email setup for now, use admin dashboard only" — `ADMIN_NOTIFICATION_EMAIL` stays unset on purpose, `AdminCreatorConnectionService.list`/`GET /admin/creator-connections` is the sole channel for creator-connection enquiries. WARN-and-skip on blank was already the code's behaviour; nothing changed. SMTP for the REST of the app (OTP, deal notifications) is a separate still-open item — `SMTP_HOST` is blank in the deploy env and MSG91 SMTP creds were mid-collection when this ruling paused just the admin-notification piece. 8 residuals ticketed in §5. **Uncommitted**; still **no live click-through** (Docker daemon down) — nothing here is live-proven |
 
 **Still needs Swapnil (not code):** cancel stuck Meta submission 887626066959194; set `ADMIN_NOTIFICATION_EMAIL` in the deploy env; **set `META_SYSTEM_IG_USER_ID` + `META_SYSTEM_IG_ACCESS_TOKEN`** (else brand lookups keep borrowing a creator's token — Q1.3); **confirm `CREATOR_INVITE_TOKEN_SECRET` is set on every live target** — the Q5.5 invite path is now wired and `generate-env.sh:67` generates the secret, and an unset/weak value **fails closed** (`InviteTokenService.java:85-93`) rather than accepting a forgeable token, so the invite flow will silently not work until it is set; verify before the click-through or it gives a false negative; ruling on build-on-Meta vs compete; ruling on Meta cross-user token reuse; ruling on whether a blank-notification-email WARN-and-skip is accepted for launch.
 
@@ -206,6 +206,42 @@ would need a widened column + blind-index unique index and would leave equally-s
 plaintext beside it. `wiki/decisions/2026-07-10-pii-email-phone-encryption.md` already scopes
 migrating BOTH columns together — that ADR is not pre-empted here.
 
+
+---
+
+## 🔧 PHONE-0904 — phone capture during onboarding (dispatched 2026-09-04)
+
+**Origin:** Swapnil directive to capture mobile numbers during BOTH brand and creator onboarding flows.
+
+**Current state audit:**
+- **Brand onboarding:** ✅ ALREADY wired end-to-end (uncommitted work on this branch) — `src/components/brand/onboarding/onboarding-steps.tsx:706` renders "Mobile number" field, marked Required at :464, validated `/^[6-9]\d{9}$/` at :465; `src/pages/brand-onboarding.tsx` sends `phone: data.phone`; `BrandRegisterRequest` has `@Size(max = 20) String phone`; `AuthService.brandRegister` normalizes via `com.influora.common.IndianPhoneUtils`, validates, checks `existsByPhoneNumber`, persists to `users.phone_number`, and returns 409 PHONE_ALREADY_EXISTS on duplicate.
+- **Creator onboarding:** ❌ NO phone capture anywhere — `src/pages/creator-register.tsx` has no phone field; `src/pages/creator-onboarding.tsx` step 2 collects only displayName, bio, verticals, languages, city, rateMin, rateMax.
+- **Post-hoc capture:** ✅ Creator CAN set phone in Settings via `PATCH /me/creator-profile` → `CreatorProfileService.applyPhone` (PHONE-0829 P1, already shipped).
+- **Admin visibility:** ✅ Admin can see creator phone (`AdminCreatorDtos`/`AdminCreatorService`, "PHONE-0829 Gap B", landed 2026-09-01 18:48). ❌ Admin still CANNOT see brand phone — that is ticket F7, explicitly NOT in this ticket's scope.
+
+**Agreed design (DO NOT change):**
+Creator phone is captured in the creator onboarding wizard **step 2 ("Build profile")**, sent on the existing `POST /onboarding/creator/profile` call. `OnboardingDtos.CreatorProfileRequest` gains an **optional** `phone` field. `CreatorOnboardingService.saveProfile` persists it to `users.phone_number` reusing the SAME normalize/validate/duplicate-check logic `CreatorProfileService.applyPhone` already implements — **that logic must be EXTRACTED into one shared place** (a utility or service method) so the two call sites cannot drift. No second HTTP request from the client.
+
+**Scope split:**
+1. **Backend (Vikram):** Extract phone normalization/validation/duplicate-check logic from `CreatorProfileService.applyPhone` into a shared utility (e.g., `IndianPhoneUtils.validateAndNormalizeCreatorPhone` or a dedicated service method). Add `phone` field to `OnboardingDtos.CreatorProfileRequest`. Wire `CreatorOnboardingService.saveProfile` to call the extracted logic and persist to `users.phone_number`. Handle 409 PHONE_ALREADY_EXISTS conflict case.
+2. **Frontend (Ananya):** Add "Mobile number" field to creator onboarding step 2 (`src/pages/creator-onboarding.tsx`), marked optional, validated `/^[6-9]\d{9}$/` (Indian mobile format). Send `phone: data.phone` on the existing `POST /onboarding/creator/profile` call. Handle 409 response gracefully (inline error, toast).
+3. **QA review (Kavya):** Review both halves for standards violations, validate that duplicate phone detection works, check error states.
+4. **Local verification (Meera):** Run `mvn test`, `npm run build`, manual onboarding flow test with duplicate phone scenario.
+5. **CTO sign-off (Priya):** Verify extraction avoided duplication, confirm phone is stored in `users.phone_number` (not a separate column), approve for commit.
+6. **Zero-context tester gate:** Field-by-field persistence audit (same format as PHONE-0829 audit) to confirm phone reaches the database.
+
+**Acceptance criteria:**
+- [x] Design documented (this section)
+- [ ] Backend: phone logic extracted to shared utility, `OnboardingDtos.CreatorProfileRequest.phone` optional, `CreatorOnboardingService.saveProfile` wired, duplicate handling returns 409
+- [ ] Frontend: phone field in step 2, validation, sent on existing POST, 409 handled
+- [ ] Kavya: QA review PASS
+- [ ] Meera: `mvn test` PASS, `npm run build` PASS, onboarding flow verified
+- [ ] Priya: CTO sign-off
+- [ ] Tester: field persistence audit PASS
+
+**Owners:** Vikram (`influora-api/**`), Ananya (`src/**`)
+
+**CTO ruling carryover from PHONE-0829:** Phone is stored **PLAINTEXT** in `users.phone_number`, exactly as `User.email` is stored. `EmailPhonePiiCipher` remains a live-but-unwired scaffold. Encrypting phone alone would need a widened column + blind-index unique index and would leave equally-sensitive email plaintext beside it. `wiki/decisions/2026-07-10-pii-email-phone-encryption.md` already scopes migrating BOTH columns together — that ADR is not pre-empted here.
 ---
 
 ## 🔑 ADMIN-BOOTSTRAP-0829 — admin lockout (root-caused, needs permanent fix)

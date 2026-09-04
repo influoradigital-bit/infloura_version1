@@ -1,7 +1,6 @@
 package com.influora.service;
 
 import com.influora.common.ApiException;
-import com.influora.common.IndianPhoneUtils;
 import com.influora.common.PasswordPolicy;
 import com.influora.common.SlugUtils;
 import com.influora.common.Ulids;
@@ -62,6 +61,7 @@ public class AuthService {
     private final InfluoraEnvironment environment;
     private final ApplicationEventPublisher eventPublisher;
     private final RegistrationService registrationService;
+    private final UserPhoneService userPhoneService;
 
     @Value("${influora.auth.require-email-verification:true}")
     private boolean requireEmailVerification;
@@ -85,7 +85,8 @@ public class AuthService {
             BrandEmailOtpService brandEmailOtpService,
             InfluoraEnvironment environment,
             ApplicationEventPublisher eventPublisher,
-            RegistrationService registrationService) {
+            RegistrationService registrationService,
+            UserPhoneService userPhoneService) {
         this.userRepository = userRepository;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -99,6 +100,7 @@ public class AuthService {
         this.environment = environment;
         this.eventPublisher = eventPublisher;
         this.registrationService = registrationService;
+        this.userPhoneService = userPhoneService;
     }
 
     /**
@@ -122,30 +124,37 @@ public class AuthService {
         }
         PasswordPolicy.validate(req.password());
 
-        // PHONE-0829 Gap A — req.phone() is OPTIONAL (older clients omit it entirely); null/blank
-        // means "no phone captured at signup", never an error. When present it is normalized
-        // (strips spaces/+91/leading 0) and validated against the same strict Indian-mobile rule
-        // as creator phone capture (CreatorProfileService#applyPhone) BEFORE the user row is ever
-        // built, so a bad phone never gets as far as allocating a userId/workspace. Same
-        // upfront-check convention as the email dup check just above: users.phone_number is
-        // UNIQUE, so this narrows the common case, but the try/catch below (mirroring the email
-        // race-loser handling documented on this method) is what actually guarantees a clean 409
-        // rather than a raw 500 on a race.
-        String normalizedPhone = null;
-        if (req.phone() != null && !req.phone().isBlank()) {
-            normalizedPhone = IndianPhoneUtils.normalize(req.phone());
-            if (!IndianPhoneUtils.isValid(normalizedPhone)) {
-                throw new ApiException(
-                        "INVALID_PHONE",
-                        "Enter a valid 10-digit Indian mobile number",
-                        HttpStatus.BAD_REQUEST);
-            }
-            if (userRepository.existsByPhoneNumber(normalizedPhone)) {
-                throw new ApiException(
-                        "PHONE_ALREADY_EXISTS",
-                        "An account with this phone number already exists",
-                        HttpStatus.CONFLICT);
-            }
+        // PHONE-0904 Q8 ruling (Swapnil) — brand mobile is now REQUIRED, not merely a UI
+        // convention (BrandRegisterRequest's javadoc explains why this is a service-level check
+        // and not @NotBlank: it needs its OWN machine-readable code, distinct from both
+        // INVALID_PHONE below and a bare Bean-Validation 400, so Ananya's client can put an
+        // inline message on the phone field specifically — the exact gap Q6 raised). This check
+        // deliberately runs BEFORE normalizeAndValidate so "missing" and "malformed" never
+        // collapse into the same code.
+        if (req.phone() == null || req.phone().isBlank()) {
+            throw new ApiException(
+                    "PHONE_REQUIRED", "Phone number is required", HttpStatus.BAD_REQUEST);
+        }
+
+        // PHONE-0829 Gap A / PHONE-0904 — normalized and validated against the same strict
+        // Indian-mobile rule as every other phone-capture call site (shared via UserPhoneService,
+        // see its javadoc for why brandRegister can't just call its applyPhone(User, String)
+        // directly) BEFORE the user row is ever built, so a bad or duplicate phone never gets as
+        // far as allocating a userId/workspace. Same upfront-check convention as the email dup
+        // check just above: users.phone_number is UNIQUE, so this narrows the common case, but
+        // the try/catch below (mirroring the email race-loser handling documented on this method)
+        // is what actually guarantees a clean 409 rather than a raw 500 on a race.
+        String normalizedPhone = userPhoneService.normalizeAndValidate(req.phone());
+        if (userPhoneService.isTaken(normalizedPhone)) {
+            // The response code here is PHONE_ALREADY_EXISTS with a message that names the phone
+            // number specifically (never EMAIL_ALREADY_EXISTS's wording) so a caller on a shared
+            // number (family/agency line, or an existing CREATOR account) knows unambiguously
+            // which identifier collided and what to change — see this method's own javadoc on why
+            // that distinction matters now that the field is mandatory and has no dead-end.
+            throw new ApiException(
+                    "PHONE_ALREADY_EXISTS",
+                    "An account with this phone number already exists",
+                    HttpStatus.CONFLICT);
         }
 
         String displayName = (req.firstName() + " " + req.lastName()).trim();
@@ -158,9 +167,9 @@ public class AuthService {
                         req.firstName(),
                         req.lastName(),
                         displayName);
-        if (normalizedPhone != null) {
-            user.setPhoneNumber(normalizedPhone);
-        }
+        // normalizedPhone can never be null here -- the PHONE_REQUIRED guard above already
+        // rejected a missing/blank value before this point.
+        user.setPhoneNumber(normalizedPhone);
 
         if (requireEmailOtpBeforeRegister) {
             // Throws if the email hasn't completed OTP verification -- only reachable
@@ -196,7 +205,7 @@ public class AuthService {
             // raced duplicate PHONE surfaces its own accurate 409 instead of the misleading
             // EMAIL_ALREADY_EXISTS every other constraint violation on this save still falls back
             // to (unchanged from before this fix).
-            if (normalizedPhone != null && userRepository.existsByPhoneNumber(normalizedPhone)) {
+            if (userPhoneService.isTaken(normalizedPhone)) {
                 throw new ApiException(
                         "PHONE_ALREADY_EXISTS",
                         "An account with this phone number already exists",

@@ -212,6 +212,33 @@ public class AdminBrandService {
         List<String> workspaceIds = workspacePage.getContent().stream().map(Workspace::getId).toList();
         Map<String, Long> campaignCounts = new LinkedHashMap<>();
         Map<String, BigDecimal> totalSpends = new LinkedHashMap<>();
+
+        // F7 — batch-load each brand's OWNER user (email fallback + ownerPhone) for the whole page
+        // in 2 queries total, same discipline as AdminCreatorService.list()'s phonesByUserId: a
+        // plain HashMap, not Collectors.toMap, because User.email/phoneNumber are frequently null
+        // and toMap's default Map::merge accumulator NPEs on a null value.
+        Map<String, String> ownerEmailByWorkspaceId = new HashMap<>();
+        Map<String, String> ownerPhoneByWorkspaceId = new HashMap<>();
+        if (!workspaceIds.isEmpty()) {
+            Map<String, String> ownerUserIdByWorkspaceId = new HashMap<>();
+            for (WorkspaceMember owner :
+                    workspaceMemberRepository.findByWorkspaceIdInAndRoleAndActiveTrue(
+                            workspaceIds, MemberRole.OWNER)) {
+                ownerUserIdByWorkspaceId.put(owner.getWorkspaceId(), owner.getUserId());
+            }
+            List<String> ownerUserIds = ownerUserIdByWorkspaceId.values().stream().distinct().toList();
+            Map<String, User> ownerUsersById = new HashMap<>();
+            for (User u : userRepository.findAllById(ownerUserIds)) {
+                ownerUsersById.put(u.getId(), u);
+            }
+            for (Map.Entry<String, String> entry : ownerUserIdByWorkspaceId.entrySet()) {
+                User ownerUser = ownerUsersById.get(entry.getValue());
+                if (ownerUser != null) {
+                    ownerEmailByWorkspaceId.put(entry.getKey(), ownerUser.getEmail());
+                    ownerPhoneByWorkspaceId.put(entry.getKey(), ownerUser.getPhoneNumber());
+                }
+            }
+        }
         if (!workspaceIds.isEmpty()) {
             List<Campaign> campaigns = campaignRepository.findByWorkspaceIdIn(workspaceIds);
             for (Campaign campaign : campaigns) {
@@ -241,7 +268,9 @@ public class AdminBrandService {
         for (Workspace workspace : workspacePage.getContent()) {
             int campaignCount = campaignCounts.getOrDefault(workspace.getId(), 0L).intValue();
             BigDecimal totalSpend = totalSpends.getOrDefault(workspace.getId(), BigDecimal.ZERO);
-            summaries.add(toSummaryDto(workspace, campaignCount, totalSpend));
+            String email = resolveEmail(workspace, ownerEmailByWorkspaceId.get(workspace.getId()));
+            String ownerPhone = ownerPhoneByWorkspaceId.get(workspace.getId());
+            summaries.add(toSummaryDto(workspace, campaignCount, totalSpend, email, ownerPhone));
         }
 
         int totalPages = workspacePage.getTotalPages();
@@ -681,10 +710,14 @@ public class AdminBrandService {
                             null));
         }
 
+        OwnerContact owner = loadOwnerContact(workspace.getId());
+
         return new BrandDetailDto(
                 workspace.getId(),
                 workspace.getName(),
-                resolveEmail(workspace),
+                resolveEmail(workspace, owner.email()),
+                workspace.getPhone(),
+                owner.phone(),
                 workspace.getIndustry(),
                 normalizeSize(workspace.getCompanySize()),
                 mapKycStatus(workspace.getVerificationStatus()).name(),
@@ -705,19 +738,37 @@ public class AdminBrandService {
     }
 
     /**
-     * {@code workspaces.billing_email} is nullable; falls back to the workspace OWNER's own user
-     * email so {@code BrandDetail.email} (required, non-optional in admin.types.ts) is never
-     * silently empty.
+     * {@code workspaces.billing_email} is nullable; falls back to the given owner email so {@code
+     * BrandDetail.email} (required, non-optional in admin.types.ts) is never silently empty. Takes
+     * the owner email as a parameter (rather than looking it up itself) so the caller controls
+     * whether that lookup is a single-row query ({@link #loadOwnerContact}, detail path) or a
+     * page-wide batch ({@code list()}'s {@code ownerEmailByWorkspaceId}) — F7: same owner User row
+     * is reused for {@code ownerPhone}, never queried twice for one workspace.
      */
-    private String resolveEmail(Workspace workspace) {
+    private static String resolveEmail(Workspace workspace, String ownerEmail) {
         if (workspace.getBillingEmail() != null && !workspace.getBillingEmail().isBlank()) {
             return workspace.getBillingEmail();
         }
+        return ownerEmail;
+    }
+
+    /** F7 — one workspace's OWNER email + personal mobile, loaded together in a single User lookup. */
+    private record OwnerContact(String email, String phone) {
+        private static final OwnerContact EMPTY = new OwnerContact(null, null);
+    }
+
+    /**
+     * Single-workspace owner lookup for the detail path (one row, so the extra query pair is
+     * negligible — unlike {@code list()}, which batches this over a whole page via {@code
+     * findByWorkspaceIdInAndRoleAndActiveTrue} to avoid an N+1). Backs both the {@code email}
+     * fallback and {@code ownerPhone} in {@link #toDetailDto} from the SAME {@code User} row.
+     */
+    private OwnerContact loadOwnerContact(String workspaceId) {
         return workspaceMemberRepository
-                .findFirstByWorkspaceIdAndRoleAndActiveTrue(workspace.getId(), MemberRole.OWNER)
+                .findFirstByWorkspaceIdAndRoleAndActiveTrue(workspaceId, MemberRole.OWNER)
                 .flatMap(owner -> userRepository.findById(owner.getUserId()))
-                .map(User::getEmail)
-                .orElse(null);
+                .map(u -> new OwnerContact(u.getEmail(), u.getPhoneNumber()))
+                .orElse(OwnerContact.EMPTY);
     }
 
     private List<TeamMemberDto> teamMembers(String workspaceId) {
@@ -812,13 +863,18 @@ public class AdminBrandService {
 
     /**
      * Maps workspace to BrandSummaryDto for list endpoint — subset of BrandDetailDto fields (no
-     * nested teamMembers/campaigns/paymentHistory).
+     * nested teamMembers/campaigns/paymentHistory). {@code email}/{@code ownerPhone} are passed in
+     * already-resolved (batch-loaded per page by the caller) rather than looked up here, so this
+     * method makes zero additional queries per row.
      */
-    private BrandSummaryDto toSummaryDto(Workspace workspace, int campaignCount, BigDecimal totalSpend) {
+    private BrandSummaryDto toSummaryDto(
+            Workspace workspace, int campaignCount, BigDecimal totalSpend, String email, String ownerPhone) {
         return new BrandSummaryDto(
                 workspace.getId(),
                 workspace.getName(),
-                resolveEmail(workspace),
+                email,
+                workspace.getPhone(),
+                ownerPhone,
                 workspace.getIndustry(),
                 normalizeSize(workspace.getCompanySize()),
                 mapKycStatus(workspace.getVerificationStatus()).name(),

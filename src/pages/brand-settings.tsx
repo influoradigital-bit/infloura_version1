@@ -30,6 +30,7 @@ import { cn } from '@/lib/utils';
 import { api, isApiLive, ApiError, type NotificationPreference, type WorkspaceMeResponse } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 import { toast } from '@/hooks/use-toast';
+import { normalizePhone, isValidPhone, filterPhoneInput } from '@/lib/phone';
 
 /**
  * Verified against influora-api: NotificationService#isUnsubscribed (service/notification/
@@ -230,6 +231,101 @@ export default function BrandSettingsPage() {
       toast({ title: 'Save failed', description: message, variant: 'destructive' });
     } finally {
       setWorkspaceInfoSaving(false);
+    }
+  };
+
+  // PHONE-0904 Q1 — GET/PATCH /users/me (UserController -> UserService), the brand's OWN account
+  // mobile number. Deliberately a SEPARATE field from the "Phone" input inside the Workspace
+  // Information card above: that one is `workspaces.phone` (optional, blank-clears, `+ ( ) -
+  // space` 7-15 digit validation via /workspaces/me). This one is `users.phone_number` — the
+  // number collected at brand registration, now REQUIRED (Q8), Indian-mobile-validated via the
+  // shared src/lib/phone.ts helpers (same rules as creator/onboarding phone fields). Do not merge
+  // these two — different columns, different owners, different validation.
+  const [savedPhone, setSavedPhone] = React.useState<string | null>(null);
+  const [phoneLoading, setPhoneLoading] = React.useState(true);
+  const [phoneLoadError, setPhoneLoadError] = React.useState<string | null>(null);
+  const [showPhoneDialog, setShowPhoneDialog] = React.useState(false);
+  const [phoneDraft, setPhoneDraft] = React.useState('');
+  const [phoneError, setPhoneError] = React.useState<string | null>(null);
+  const [isSavingPhone, setIsSavingPhone] = React.useState(false);
+
+  const loadAccountPhone = React.useCallback(() => {
+    let cancelled = false;
+    setPhoneLoading(true);
+    setPhoneLoadError(null);
+    api.users
+      .getMe()
+      .then((profile) => {
+        if (cancelled) return;
+        setSavedPhone(profile.phone);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('Failed to load account mobile number', err);
+        setPhoneLoadError('Could not load your mobile number.');
+      })
+      .finally(() => {
+        if (!cancelled) setPhoneLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  React.useEffect(() => loadAccountPhone(), [loadAccountPhone]);
+
+  const openPhoneDialog = () => {
+    setPhoneDraft(savedPhone ?? '');
+    setPhoneError(null);
+    setShowPhoneDialog(true);
+  };
+
+  const closePhoneDialog = (open: boolean) => {
+    setShowPhoneDialog(open);
+    if (!open) setPhoneError(null);
+  };
+
+  // Brand phone is REQUIRED (PHONE-0904 Q8) — unlike creator Settings' own phone field, there is
+  // no "clear it" convention here (PHONE_REQUIRED on a blank PATCH). Block a blank/invalid submit
+  // client-side with the same reason the server would give, rather than round-tripping to learn
+  // it. The Save button below is also disabled on an empty normalized draft (primary guard); this
+  // check keeps the handler safe even if that's ever bypassed.
+  const handleSavePhone = async () => {
+    const normalized = normalizePhone(phoneDraft);
+    if (!normalized) {
+      setPhoneError('Mobile number is required and cannot be removed.');
+      return;
+    }
+    if (!isValidPhone(normalized)) {
+      setPhoneError('Enter a valid 10-digit mobile number');
+      return;
+    }
+    setPhoneError(null);
+    setIsSavingPhone(true);
+    try {
+      const updated = await api.users.updateMe({ phone: normalized });
+      setSavedPhone(updated.phone);
+      setShowPhoneDialog(false);
+      toast({ title: 'Mobile number updated' });
+    } catch (err) {
+      // Branch on the machine-readable `code` (src/lib/api.ts), never a bare `err.status` —
+      // PHONE_ALREADY_EXISTS/INVALID_PHONE/PHONE_REQUIRED are all 400/409 and must render their
+      // own distinct message next to this field rather than falling into a generic toast.
+      if (err instanceof ApiError && err.code === 'PHONE_ALREADY_EXISTS') {
+        setPhoneError('This mobile number is already registered');
+      } else if (err instanceof ApiError && err.code === 'INVALID_PHONE') {
+        setPhoneError('Enter a valid 10-digit mobile number');
+      } else if (err instanceof ApiError && err.code === 'PHONE_REQUIRED') {
+        setPhoneError('Mobile number is required and cannot be removed.');
+      } else {
+        toast({
+          title: 'Could not save changes',
+          description: err instanceof ApiError ? err.message : 'Please try again.',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setIsSavingPhone(false);
     }
   };
 
@@ -543,18 +639,25 @@ export default function BrandSettingsPage() {
                   <p className="text-xs text-muted-foreground mt-1">Used for billing & workspace contact</p>
                 </div>
                 <div>
-                  <Label htmlFor="phone">Phone</Label>
+                  {/* PHONE-0904 re-run item 1 (Priya) — this is workspaces.phone: the
+                      business/workspace contact number, optional, blank-clears, loose
+                      international format. Label, placeholder, and helper copy are all
+                      deliberately distinct from the "Mobile Number" field on the Security
+                      tab below (users.phone_number: your own account number, required,
+                      strict Indian-mobile) so the two are never mistaken for each other. */}
+                  <Label htmlFor="phone">Workspace Phone</Label>
                   <Input
                     id="phone"
                     type="tel"
                     value={settings.phone}
                     onChange={(e) => setSettings({ ...settings, phone: e.target.value })}
                     disabled={workspaceInfoLoading}
-                    placeholder="+91 98765 43210"
+                    placeholder="e.g. +1 415 555 0100"
                     className="mt-2"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Digits, spaces, and + ( ) - only. Leave blank to clear.
+                    Your workspace&apos;s business contact number (any country) — shown to
+                    partners, not your personal number. Optional; leave blank to clear.
                   </p>
                 </div>
                 <div>
@@ -789,6 +892,37 @@ export default function BrandSettingsPage() {
 
           {/* Security Settings */}
           <TabsContent value="security" className="space-y-6">
+            {/* Mobile Number — PHONE-0904 Q1. Your OWN account number (GET/PATCH /users/me),
+                distinct from the workspace contact "Phone" field in the General tab above
+                (workspaces.phone, optional, blank-clears). This one is required. */}
+            <Card className="p-6">
+              <h3 className="font-semibold mb-6">Mobile Number</h3>
+              {phoneLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+              {!phoneLoading && phoneLoadError && (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs text-destructive-foreground">{phoneLoadError}</p>
+                  <Button type="button" variant="outline" size="sm" onClick={loadAccountPhone}>
+                    Retry
+                  </Button>
+                </div>
+              )}
+              {!phoneLoading && !phoneLoadError && (
+                <div className="flex items-center justify-between p-3 border rounded-lg">
+                  <div>
+                    <p className="font-medium text-sm">
+                      {savedPhone ? `+91 ${savedPhone}` : 'No mobile number on file'}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Required for your account. Used to reach you about deals and campaigns.
+                    </p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={openPhoneDialog}>
+                    Edit
+                  </Button>
+                </div>
+              )}
+            </Card>
+
             {/* Two-Factor Authentication — REMOVED (P1 security fix, Priya 2026-07-30). The
                 Switch here was interactive and persisted nothing: no user-facing 2FA backend
                 exists (only the separate /admin/auth realm). A brand owner flipping this on
@@ -966,6 +1100,72 @@ export default function BrandSettingsPage() {
               </Button>
               <Button onClick={handleChangePassword} disabled={passwordSubmitting}>
                 {passwordSubmitting ? 'Saving…' : 'Change Password'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Mobile Number dialog — PHONE-0904 Q1. This is users.phone_number: YOUR OWN
+            account number (login/security/notifications), distinct from the "Workspace
+            Phone" business-contact field on the Workspace Information tab. Copy below
+            says so explicitly per PHONE-0904 re-run item 1 (Priya). */}
+        <Dialog open={showPhoneDialog} onOpenChange={closePhoneDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Your Mobile Number</DialogTitle>
+              <DialogDescription>
+                Your personal account number, used to reach you about deals and campaigns —
+                not your workspace&apos;s business phone. Required; can be updated but not
+                removed.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              {phoneError && (
+                <p role="alert" className="text-sm text-destructive-foreground">
+                  {phoneError}
+                </p>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="account-mobile">Mobile number</Label>
+                <div className="flex gap-2">
+                  <div className="flex h-9 items-center rounded-md border border-input bg-muted px-3 text-sm text-muted-foreground">
+                    +91
+                  </div>
+                  <Input
+                    id="account-mobile"
+                    inputMode="tel"
+                    placeholder="Your 10-digit Indian mobile"
+                    value={phoneDraft}
+                    // PHONE-0904 — allow '+' and spaces through on keystroke (don't strip them)
+                    // so pasting '+91 9876543210' isn't mangled; normalizePhone() handles it in
+                    // handleSavePhone above.
+                    onChange={(e) => setPhoneDraft(filterPhoneInput(e.target.value))}
+                    className="flex-1"
+                    maxLength={17}
+                    disabled={isSavingPhone}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Your personal account number — required for account security and deal
+                  notifications, and can&apos;t be saved empty.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => closePhoneDialog(false)} disabled={isSavingPhone}>
+                Cancel
+              </Button>
+              {/* Disabled on an empty normalized draft — the field cannot be cleared and saved.
+                  This is the primary guard; handleSavePhone's own check is defense in depth. */}
+              <Button onClick={handleSavePhone} disabled={isSavingPhone || !normalizePhone(phoneDraft)}>
+                {isSavingPhone ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  'Save'
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>

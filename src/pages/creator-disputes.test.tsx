@@ -96,12 +96,34 @@ function renderPage() {
   );
 }
 
-/** Prefer keyboard over pointer — more reliable with Radix Select in jsdom. */
+/**
+ * Opens the eligible-deals Select and picks the first option BY CLICKING IT.
+ *
+ * This used to send `{ArrowDown}{Enter}` instead, on the stated theory that keyboard was "more
+ * reliable with Radix Select in jsdom". That is backwards, and it was the cause of the two
+ * long-standing failures in this file. Measured against a minimal Select-only harness:
+ *
+ *              listbox closes?   sibling button findable?   body pointer-events
+ *   keyboard   no                no                         "none"
+ *   click      yes               yes                        "" (restored)
+ *
+ * The keyboard sequence never commits the selection in jsdom, so the listbox stays OPEN. An open
+ * Radix Select holds two things on the rest of the page: `pointer-events: none` on <body> (which
+ * is inherited, so the Reason textarea computes to `none` and user-event refuses to type into it)
+ * and `aria-hidden` on everything outside the portal (so `getByRole` cannot see the submit
+ * button). Those were the two symptoms — "pointer-events: none" first, and the previously-masked
+ * "Unable to find … Open dispute" underneath it.
+ *
+ * Clicking the option commits the value and closes the listbox, and Radix's own teardown then
+ * restores both. No workaround needed: this is Radix behaving correctly once it is driven
+ * correctly. In particular, do NOT reach for `pointerEventsCheck: PointerEventsCheckLevel.Never`
+ * here — that would disable the check that catches genuinely unclickable controls (F-0341).
+ */
 async function selectEligibleDeal(user: ReturnType<typeof userEvent.setup>) {
   const trigger = screen.getByRole('combobox');
   await user.click(trigger);
-  // ArrowDown + Enter selects first option without relying on portal pointer events
-  await user.keyboard('{ArrowDown}{Enter}');
+  const [firstOption] = await screen.findAllByRole('option');
+  await user.click(firstOption);
 }
 
 describe('CreatorDisputesPage', () => {

@@ -279,6 +279,8 @@ function BrandsTable() {
           <TableHeader>
             <TableRow>
               <TableHead>Brand</TableHead>
+              <TableHead>Owner Phone</TableHead>
+              <TableHead>Workspace Phone</TableHead>
               <TableHead>Industry</TableHead>
               <TableHead>KYC Status</TableHead>
               <TableHead>Campaigns</TableHead>
@@ -290,7 +292,7 @@ function BrandsTable() {
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 6 }).map((__, j) => (
+                  {Array.from({ length: 8 }).map((__, j) => (
                     <TableCell key={j}>
                       <div className="h-4 w-full max-w-24 animate-pulse rounded bg-muted" />
                     </TableCell>
@@ -299,7 +301,7 @@ function BrandsTable() {
               ))
             ) : brands.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
                     <Building2 className="size-6 text-muted-foreground/60" aria-hidden="true" />
                     No brands match the current filters.
@@ -327,6 +329,15 @@ function BrandsTable() {
                     <TableCell className="max-w-56 whitespace-normal font-medium text-foreground">
                       {brand.name}
                       <div className="text-xs font-normal text-muted-foreground">{brand.email}</div>
+                    </TableCell>
+                    {/* F7 — ownerPhone: strict Indian mobile, +91 prefix is correct here. */}
+                    <TableCell className="text-muted-foreground">
+                      {brand.ownerPhone ? `+91 ${brand.ownerPhone}` : '— Not provided'}
+                    </TableCell>
+                    {/* F7 — workspacePhone: loose international format that may already carry its
+                        own country code, so it is rendered as-is (no +91 prefix). */}
+                    <TableCell className="text-muted-foreground">
+                      {brand.workspacePhone ? brand.workspacePhone : '— Not provided'}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {brand.industry}

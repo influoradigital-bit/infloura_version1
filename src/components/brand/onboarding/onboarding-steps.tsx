@@ -21,6 +21,7 @@ import {
 
 import { cn } from '@/lib/utils';
 import type { WorkspaceType } from '@/lib/types';
+import { normalizePhone, isValidPhone, filterPhoneInput } from '@/lib/phone';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -419,13 +420,30 @@ export function AccountSetupStep({
   data,
   onUpdate,
   onNext,
+  serverErrors,
+  onClearServerError,
 }: {
   data: OnboardingData;
   onUpdate: (updates: Partial<OnboardingData>) => void;
   onNext: () => void;
+  /**
+   * PHONE-0904 Q6 fix — a duplicate-phone/email 409 from `brandRegister` is only discoverable
+   * after step 2's submit (`brand-onboarding.tsx`'s `handleCompanySaveAndNext`), but the fields
+   * themselves live here on step 1. The parent sends the user back to this step and hands the
+   * field-adjacent message down through this prop instead of rendering a page-level banner on
+   * the wrong step (Q6's finding).
+   */
+  serverErrors?: { phone?: string; email?: string };
+  onClearServerError?: (field: 'phone' | 'email') => void;
 }) {
   const [showPassword, setShowPassword] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, string>>({});
+
+  // PHONE-0904 Q6 fix — a local validation miss (empty/malformed) always wins once the user
+  // has retried, since `validateFields` below overwrites `errors` wholesale on every submit;
+  // the server-sourced duplicate error is the fallback shown until then.
+  const emailErrorText = errors.email || serverErrors?.email;
+  const phoneErrorText = errors.phone || serverErrors?.phone;
 
   // OTP state
   const [otpError, setOtpError] = React.useState('');
@@ -446,8 +464,11 @@ export function AccountSetupStep({
     if (!data.lastName) e.lastName = 'Required';
     if (!data.email) e.email = 'Required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) e.email = 'Invalid email';
+    // PHONE-0904 — normalize before validating (strip +91 country code / leading 0 the
+    // same way the backend's IndianPhoneUtils does) so a pasted '+91 9876543210' isn't
+    // rejected client-side when the server would accept it.
     if (!data.phone) e.phone = 'Required';
-    else if (!/^[6-9]\d{9}$/.test(data.phone.replace(/\s+/g, ''))) e.phone = 'Enter valid 10-digit mobile';
+    else if (!isValidPhone(normalizePhone(data.phone))) e.phone = 'Enter valid 10-digit mobile';
     if (!data.password) e.password = 'Required';
     else if (data.password.length < 8) e.password = 'Min 8 characters';
     if (data.password !== data.confirmPassword) e.confirmPassword = 'Does not match';
@@ -686,10 +707,13 @@ export function AccountSetupStep({
             type="email"
             placeholder="rahul@company.com"
             value={data.email}
-            onChange={(e) => onUpdate({ email: e.target.value })}
-            className={cn(errors.email && 'border-destructive-foreground')}
+            onChange={(e) => {
+              onUpdate({ email: e.target.value });
+              if (serverErrors?.email) onClearServerError?.('email');
+            }}
+            className={cn(emailErrorText && 'border-destructive-foreground')}
           />
-          {errors.email && <p className="text-xs text-destructive-foreground">{errors.email}</p>}
+          {emailErrorText && <p className="text-xs text-destructive-foreground">{emailErrorText}</p>}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -700,14 +724,21 @@ export function AccountSetupStep({
             </div>
             <Input
               id="phone"
+              inputMode="tel"
               placeholder="98765 43210"
               value={data.phone}
-              onChange={(e) => onUpdate({ phone: e.target.value.replace(/[^0-9\s]/g, '') })}
-              className={cn('flex-1', errors.phone && 'border-destructive-foreground')}
-              maxLength={12}
+              // PHONE-0904 — allow '+' and spaces through on keystroke (don't strip them) so
+              // a pasted '+91 9876543210' isn't mangled; normalizePhone() handles it at
+              // validate/submit time instead.
+              onChange={(e) => {
+                onUpdate({ phone: filterPhoneInput(e.target.value) });
+                if (serverErrors?.phone) onClearServerError?.('phone');
+              }}
+              className={cn('flex-1', phoneErrorText && 'border-destructive-foreground')}
+              maxLength={17}
             />
           </div>
-          {errors.phone && <p className="text-xs text-destructive-foreground">{errors.phone}</p>}
+          {phoneErrorText && <p className="text-xs text-destructive-foreground">{phoneErrorText}</p>}
         </div>
 
         <div className="flex flex-col gap-1.5">

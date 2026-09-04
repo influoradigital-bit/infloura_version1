@@ -1,0 +1,19 @@
+{
+ "verdict": "partial",
+ "oracle": "model",
+ "isolation": "fresh-context",
+ "done_when": "F-0447 built, verified, zero-context tester asks 10 questions, priya answers from code, all answers positive",
+ "evidence": {
+  "oracle": "tsc+vitest",
+  "command": "npx tsc --noEmit ; npx vitest run src/pages/creator-dashboard.unsigned-contracts.test.tsx",
+  "result": "both re-run independently: tsc exit 0, vitest 4 of 4 pass. The core discovery gap is closed - a creator can now see contracts awaiting their signature on the dashboard, backed by a real GET /contracts/unsigned call",
+  "where": "src/pages/creator-dashboard.tsx:335"
+ },
+ "not_checked": [
+  "F-0623: the copy brand signed your turn is not backed by the query, which checks only creatorSignedAt IS NULL - I verified this myself by reading the repository query directly",
+  "F-0624: the row link depends on selectedDeal.contractId, a field the new code never verifies is populated - a plausible dead-end, verified by tracing creator-chat.tsx directly, not proven to reproduce at runtime",
+  "F-0625: contract.milestones.length has no null guard",
+  "F-0626: kabir cold-reviewed this and reported reachesRealSignFlow true with no caveat; that verdict did not hold on independent tracing"
+ ],
+ "skipped": []
+}

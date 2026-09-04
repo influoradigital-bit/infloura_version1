@@ -158,7 +158,7 @@ public class ShopifyWebhookController {
             return ResponseEntity.ok().build();
         }
 
-        String idempotencyKey = deriveIdempotencyKey(integration.getShopDomain(), effectiveTopic, order.orderId());
+        String idempotencyKey = deriveIdempotencyKey(integration.getShopDomain(), order.orderId());
 
         try {
             idempotencyService.executeOnce(
@@ -217,17 +217,26 @@ public class ShopifyWebhookController {
     }
 
     /**
-     * Derives a stable idempotency key for one webhook delivery from fields Shopify itself
-     * guarantees are stable across retries of the SAME delivery: the shop domain, the topic, and
-     * the order id. Hashed (not a plain concatenation) purely to keep the key within {@code
+     * Derives a stable idempotency key for one webhook delivery from the shop domain and the order
+     * id. Hashed (not a plain concatenation) purely to keep the key within {@code
      * idempotency_keys.idempotency_key}'s column bound regardless of how long a shop domain is —
      * same defensive-length reasoning as {@code ConversionTrackingService#deriveFallbackKey},
      * though the threat model here is different: this key is never attacker-suppliable (there is
      * no caller-supplied idempotency key on this endpoint at all), so there is no squatting vector
      * to defend against, only a length bound to satisfy.
+     *
+     * <p>[F-0619] The TOPIC is deliberately NOT part of this key, and removing it is the whole
+     * fix. Both {@code orders/paid} and {@code orders/create} are acted on, and Shopify sends both
+     * for a single order, so keying on the topic gave one order two different keys: each reserved
+     * independently, each cleared the dedup check, and the discount code was redeemed twice. The
+     * dedup identity has to be the commercial event — this order, at this shop — not the delivery
+     * that happened to carry it. The topic is still logged and still decides WHETHER to act; it
+     * just no longer decides whether we have already acted. Identical to the fix applied to
+     * {@code WooCommerceWebhookController#deriveIdempotencyKey} (F-0521), found there first and
+     * only then here, by enumerating every {@code RedemptionService#redeem} call site.
      */
-    private static String deriveIdempotencyKey(String shopDomain, String topic, String orderId) {
-        String canonical = shopDomain + "|" + topic + "|" + orderId;
+    private static String deriveIdempotencyKey(String shopDomain, String orderId) {
+        String canonical = shopDomain + "|" + orderId;
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(canonical.getBytes(StandardCharsets.UTF_8));

@@ -87,7 +87,15 @@ public final class OnboardingDtos {
      */
     public record CreatorSocialResponse(String platform, String handle, long followers) {}
 
-    /** POST /onboarding/creator/profile — matches saveCreatorProfile(payload) field-for-field. */
+    /**
+     * POST /onboarding/creator/profile — matches saveCreatorProfile(payload) field-for-field.
+     *
+     * <p>PHONE-0904 — {@code phone} is OPTIONAL: null/absent means "no phone captured during
+     * onboarding", never a validation error (same convention as {@code
+     * BrandRegisterRequest#phone}, PHONE-0829 Gap A). When present it is normalized and validated
+     * server-side by {@link com.influora.service.UserPhoneService#applyPhone} — see {@link
+     * com.influora.service.CreatorOnboardingService#saveProfile}.
+     */
     public record CreatorProfileRequest(
             @NotBlank @Size(max = 100) String displayName,
             @Size(max = 5000) String bio,
@@ -95,7 +103,8 @@ public final class OnboardingDtos {
             java.util.List<String> languages,
             @Size(max = 100) String city,
             @NotNull java.math.BigDecimal rateMin,
-            @NotNull java.math.BigDecimal rateMax) {}
+            @NotNull java.math.BigDecimal rateMax,
+            @Size(max = 20) String phone) {}
 
     public record CreatorIdResponse(String creatorId) {}
 
@@ -107,18 +116,7 @@ public final class OnboardingDtos {
                     String aadhaarLast4,
             @NotBlank @Size(max = 500) String selfieUrl) {}
 
-    /**
-     * POST /onboarding/creator/payout — matches saveCreatorPayout(payload)'s discriminated union.
-     * Only one of the UPI/bank field groups is populated per {@code method}; validated in
-     * {@code CreatorOnboardingService} (a discriminated union doesn't map cleanly onto
-     * per-field @NotBlank without rejecting the branch that's legitimately absent).
-     */
-    public record CreatorPayoutRequest(
-            @NotBlank String method,
-            String upiId,
-            String bankAccount,
-            String ifsc,
-            String accountName) {}
-
-    public record CreatorPayoutResponse(String payoutId) {}
+    // [F-0450] CreatorPayoutRequest/CreatorPayoutResponse removed with the dead
+    // POST /onboarding/creator/payout route they backed — see
+    // CreatorOnboardingController and CreatorOnboardingService for why.
 }

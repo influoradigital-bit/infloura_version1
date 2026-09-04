@@ -1,0 +1,19 @@
+{
+ "verdict": "proved",
+ "oracle": "mvn",
+ "isolation": "oracle",
+ "done_when": "F-0619 Shopify double-redeem closed the same way as F-0521, pinned by a test that fails without the fix",
+ "evidence": {
+  "oracle": "mvn",
+  "command": "mvn -o -Dtest=ShopifyWebhookIdempotencyTest test ; revert probe via git show HEAD ; restore and re-run",
+  "result": "3 of 3 pass with the fix. Reverted to HEAD: 2 of 3 fail with TooManyActualInvocations and two different key hashes for one order. Restored: 3 of 3 pass again, topic-in-key occurrences 0",
+  "where": "influora-api/src/main/java/com/influora/web/ShopifyWebhookController.java:238"
+ },
+ "not_checked": [
+  "the full backend suite was not run to completion; only the target class and a compile",
+  "no runtime exercise against a real Shopify delivery - all evidence is unit-level",
+  "whether the DB reservation behaves as the stub models it: the stub dedupes by key the way IdempotencyService's unique constraint does, but no integration test exercises the real bean",
+  "the third redeem call site, ConversionWebhookController, uses a caller-supplied key with no topic concept and was judged out of scope rather than tested"
+ ],
+ "skipped": []
+}

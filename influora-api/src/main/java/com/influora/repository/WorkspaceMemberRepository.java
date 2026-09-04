@@ -48,6 +48,15 @@ public interface WorkspaceMemberRepository extends JpaRepository<WorkspaceMember
     Optional<WorkspaceMember> findFirstByWorkspaceIdAndRoleAndActiveTrue(
             String workspaceId, MemberRole role);
 
+    /**
+     * Batch counterpart of {@link #findFirstByWorkspaceIdAndRoleAndActiveTrue} — F7: resolves the
+     * OWNER member row for every workspace in {@code workspaceIds} in one query, so {@code
+     * AdminBrandService.list()} can resolve each brand's owner (for {@code ownerPhone}/email
+     * fallback) without an N+1 per-row lookup over a page of results.
+     */
+    List<WorkspaceMember> findByWorkspaceIdInAndRoleAndActiveTrue(
+            List<String> workspaceIds, MemberRole role);
+
     Optional<WorkspaceMember> findByIdAndWorkspaceId(String id, String workspaceId);
 
     long countByWorkspaceIdAndRoleAndActiveTrue(String workspaceId, MemberRole role);

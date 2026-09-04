@@ -47,6 +47,10 @@ const getMe = vi.fn();
 const updateMe = vi.fn();
 const getPreferences = vi.fn();
 const setPreference = vi.fn();
+// PHONE-0904 Q1 — brand-settings.tsx now also calls api.users.getMe() unconditionally on mount
+// (account-level Mobile Number row); must exist and resolve or every test here fails on mount.
+const usersGetMe = vi.fn();
+const usersUpdateMe = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -69,6 +73,10 @@ vi.mock('@/lib/api', async () => {
       auth: {
         logout: vi.fn().mockResolvedValue({ message: 'ok' }),
         changePassword: vi.fn().mockResolvedValue({ changed: true }),
+      },
+      users: {
+        getMe: (...a: unknown[]) => usersGetMe(...a),
+        updateMe: (...a: unknown[]) => usersUpdateMe(...a),
       },
     },
   };
@@ -116,6 +124,21 @@ describe('BrandSettingsPage — Notifications persistence copy (F-0262)', () => 
     });
     getPreferences.mockResolvedValue([]);
     setPreference.mockResolvedValue({ ok: true });
+    usersGetMe.mockResolvedValue({
+      id: 'user_1',
+      email: 'ops@realbrand.com',
+      displayName: 'Real Brand Owner',
+      firstName: 'Real',
+      lastName: 'Owner',
+      userType: 'BRAND',
+      status: 'ACTIVE',
+      avatarUrl: null,
+      emailVerified: true,
+      phoneVerified: false,
+      phone: '9000000001',
+      timezone: null,
+      createdAt: new Date().toISOString(),
+    });
   });
 
   it('does not claim the whole notifications card is session-only / non-persisting', async () => {

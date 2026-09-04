@@ -23,6 +23,7 @@ import { useState, type ReactNode } from 'react';
 import {
   Building2,
   Mail,
+  Phone,
   ShieldCheck,
   ShieldQuestion,
   ShieldX,
@@ -380,6 +381,21 @@ export default function BrandProfile({ brandId, className }: BrandProfileProps) 
               <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Mail className="size-3.5" aria-hidden="true" />
                 {brand.email}
+              </p>
+              {/* F7 — two distinct phone values, deliberately not merged into one "Phone" line
+                  (see class javadoc on AdminBrandDtos and the PHONE-0829 vocabulary ruling).
+                  ownerPhone is a strict Indian mobile (+91 prefix is correct); workspacePhone is a
+                  loosely-validated international number that may already carry its own country
+                  code, so it is rendered as-is, never prefixed. */}
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Phone className="size-3.5" aria-hidden="true" />
+                <span className="font-medium text-foreground/80">Owner:</span>
+                {brand.ownerPhone ? `+91 ${brand.ownerPhone}` : '— Not provided'}
+              </p>
+              <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Phone className="size-3.5" aria-hidden="true" />
+                <span className="font-medium text-foreground/80">Workspace:</span>
+                {brand.workspacePhone ? brand.workspacePhone : '— Not provided'}
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Badge variant="secondary">{brand.industry}</Badge>

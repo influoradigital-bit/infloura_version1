@@ -16,6 +16,15 @@ import java.util.List;
  * {@code CampaignSummaryDto} fields are honest zeros + a note rather than fabricated numbers —
  * this codebase has no deliverable-review-pipeline table yet (same "not implemented this cycle"
  * pattern as {@code AdminDashboardService}'s {@code campaignsAtRisk}/{@code reviewBacklog}).
+ *
+ * <p><b>F7 — two distinct brand phone values (do not conflate):</b> {@code BrandSummaryDto}/{@code
+ * BrandDetailDto} carry BOTH {@code workspacePhone} ({@code workspaces.phone} — the optional,
+ * loosely-validated business contact line) AND {@code ownerPhone} ({@code users.phone_number} of
+ * the workspace OWNER — the strictly-validated, now-required-at-registration personal mobile).
+ * They are named unambiguously on purpose: a single "phone" field already caused real confusion on
+ * the brand settings page. An admin trying to actually reach a brand needs {@code ownerPhone}; the
+ * business line is {@code workspacePhone}. Both are admin-only (PII scope, sign-off Q10) — never
+ * add either to a public/counterparty-facing DTO or the Meera context payload.
  */
 public final class AdminBrandDtos {
 
@@ -31,6 +40,22 @@ public final class AdminBrandDtos {
             String id,
             String name,
             String email,
+            /**
+             * Workspace's business contact number — {@code workspaces.phone} (V20260718180000).
+             * Optional and clearable; validated with a LOOSE international rule ({@code
+             * WorkspaceService#isValidPhone}: 7-15 digits, {@code [+()\-\s0-9]} chars only). {@code
+             * null} for any workspace that has never set one (most workspaces) — never a fabricated
+             * placeholder. NOT the same value as {@code ownerPhone} below — see class javadoc.
+             */
+            String workspacePhone,
+            /**
+             * Workspace OWNER's personal mobile — {@code users.phone_number} of the OWNER member.
+             * REQUIRED at brand registration since PHONE-0904 (strict Indian-mobile format via {@link
+             * com.influora.common.IndianPhoneUtils}), UNIQUE across every user type. {@code null} for
+             * any brand that registered BEFORE PHONE-0904 made this required — an honest gap, never a
+             * fabricated placeholder.
+             */
+            String ownerPhone,
             String industry,
             String size,
             String kycStatus,
@@ -53,6 +78,22 @@ public final class AdminBrandDtos {
             String id,
             String name,
             String email,
+            /**
+             * Workspace's business contact number — {@code workspaces.phone} (V20260718180000).
+             * Optional and clearable; validated with a LOOSE international rule ({@code
+             * WorkspaceService#isValidPhone}: 7-15 digits, {@code [+()\-\s0-9]} chars only). {@code
+             * null} for any workspace that has never set one (most workspaces) — never a fabricated
+             * placeholder. NOT the same value as {@code ownerPhone} below — see class javadoc.
+             */
+            String workspacePhone,
+            /**
+             * Workspace OWNER's personal mobile — {@code users.phone_number} of the OWNER member.
+             * REQUIRED at brand registration since PHONE-0904 (strict Indian-mobile format via {@link
+             * com.influora.common.IndianPhoneUtils}), UNIQUE across every user type. {@code null} for
+             * any brand that registered BEFORE PHONE-0904 made this required — an honest gap, never a
+             * fabricated placeholder.
+             */
+            String ownerPhone,
             String industry,
             String size,
             String kycStatus,

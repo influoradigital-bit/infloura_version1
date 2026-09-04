@@ -1,0 +1,19 @@
+{
+ "verdict": "proved",
+ "oracle": "mvn",
+ "isolation": "oracle",
+ "done_when": "F-0521 WooCommerce double-redeem and F-0530 Meera campaign-create path both closed, each pinned by a test that fails without the fix",
+ "evidence": {
+  "oracle": "mvn",
+  "command": "mvn -o -Dtest=WooCommerceWebhookIdempotencyTest test ; mvn -o -Dtest=CampaignAuthzTest test ; revert probe via git show HEAD",
+  "result": "Woo 2 of 2 and Authz 10 of 10, both exit 0 on my own runs. Revert probe: restoring the controller to HEAD makes the Woo test fail with the original TooManyActualInvocations, then restores green - the test genuinely pins the fix",
+  "where": "influora-api/src/main/java/com/influora/web/WooCommerceWebhookController.java:245"
+ },
+ "not_checked": [
+  "F-0619: Shopify carries the same double-redeem defect and is NOT fixed - verified by me at ShopifyWebhookController.java:161 versus the WooCommerce equivalent at :245",
+  "F-0620: the WooCommerce test proves the in-process memo layer, not the topic-less key. A half-revert keeping the key but removing the memo still fails the assertion, because the test stubs IdempotencyService to always run the supplier. The key change is what protects production; the test does not exercise it",
+  "the full backend suite was not run to completion - a concurrent session was editing CreateCampaignExecutor during the window",
+  "neither fix was exercised at runtime; all evidence is unit-level"
+ ],
+ "skipped": []
+}
