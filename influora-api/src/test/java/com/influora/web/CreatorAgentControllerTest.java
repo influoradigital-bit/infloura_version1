@@ -1,10 +1,14 @@
 package com.influora.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.config.MeeraCreatorFeatureProperties;
 import com.influora.domain.enums.UserType;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAgentConversationService;
@@ -23,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
@@ -41,23 +46,26 @@ class CreatorAgentControllerTest {
 
     @Mock private CreatorAgentPreferencesService preferencesService;
     @Mock private CreatorAgentConversationService conversationService;
+    @Mock private MeeraCreatorFeatureProperties featureProperties;
 
     private CreatorAgentController controller;
     private AuthPrincipal principal;
 
     @BeforeEach
     void setUp() {
-        controller = new CreatorAgentController(preferencesService, conversationService);
+        controller = new CreatorAgentController(preferencesService, conversationService, featureProperties);
         principal = new AuthPrincipal(USER_ID, "creator@example.com", UserType.CREATOR, null);
     }
 
     @Test
     @DisplayName("GET resolves the acting creator from the principal, never a request param")
     void getPreferencesUsesPrincipalUserId() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(true);
         PreferencesResponse response =
                 new PreferencesResponse(
-                        new BigDecimal("500"), new BigDecimal("500"), new BigDecimal("500"),
-                        List.of(), List.of(), 0, "hi-IN", "FRIENDLY", null, null, List.of(), null, false, null, false);
+                        new BigDecimal("500"), new BigDecimal("500"), new BigDecimal("500"), "INR",
+                        List.of(), List.of(), 0, "hi-IN", "FRIENDLY", null, null, "Asia/Kolkata", List.of(),
+                        null, false, null, false, "v1");
         when(preferencesService.getOrCreatePreferences(USER_ID)).thenReturn(response);
 
         ResponseEntity<ApiResponse<PreferencesResponse>> result = controller.getPreferences(principal);
@@ -69,14 +77,15 @@ class CreatorAgentControllerTest {
     @Test
     @DisplayName("PUT passes the principal's userId and the request body straight through, unmodified")
     void updatePreferencesUsesPrincipalUserId() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(true);
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
-                        new BigDecimal("1000"), null, null, List.of(), List.of(), 1, "en-IN", "FORMAL",
-                        null, null, List.of(), null, false, null);
+                        new BigDecimal("1000"), null, null, null, List.of(), List.of(), 1, "en-IN", "FORMAL",
+                        null, null, null, List.of(), null, false, null);
         PreferencesResponse response =
                 new PreferencesResponse(
-                        new BigDecimal("1000"), null, null, List.of(), List.of(), 1, "en-IN", "FORMAL",
-                        null, null, List.of(), null, false, null, false);
+                        new BigDecimal("1000"), null, null, "INR", List.of(), List.of(), 1, "en-IN", "FORMAL",
+                        null, null, "Asia/Kolkata", List.of(), null, false, null, false, "v1");
         when(preferencesService.updatePreferences(USER_ID, req)).thenReturn(response);
 
         ResponseEntity<ApiResponse<PreferencesResponse>> result = controller.updatePreferences(principal, req);
@@ -88,13 +97,59 @@ class CreatorAgentControllerTest {
     @Test
     @DisplayName("POST /consent records consent for the principal's own userId")
     void recordConsentUsesPrincipalUserId() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(true);
         Instant now = Instant.parse("2026-09-03T00:00:00Z");
-        when(preferencesService.recordConsent(USER_ID)).thenReturn(now);
+        ConsentResponse consentResponse = new ConsentResponse(now, "v1");
+        when(preferencesService.recordConsent(USER_ID)).thenReturn(consentResponse);
 
         ResponseEntity<ApiResponse<ConsentResponse>> result = controller.recordConsent(principal);
 
         assertEquals(now, result.getBody().data().consentAcceptedAt());
+        assertEquals("v1", result.getBody().data().consentVersion());
         verify(preferencesService).recordConsent(USER_ID);
+    }
+
+    // ---- Priya gate review defect 4: MEERA_CREATOR_ENABLED rollback flag ----
+
+    @Test
+    @DisplayName("GET returns 404 FEATURE_DISABLED and never touches the service when the flag is off")
+    void getPreferences_flagOff_returns404WithoutTouchingService() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> controller.getPreferences(principal));
+
+        assertEquals("FEATURE_DISABLED", ex.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verifyNoInteractions(preferencesService);
+    }
+
+    @Test
+    @DisplayName("PUT returns 404 FEATURE_DISABLED and never touches the service when the flag is off")
+    void updatePreferences_flagOff_returns404WithoutTouchingService() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(false);
+        UpdatePreferencesRequest req =
+                new UpdatePreferencesRequest(
+                        null, null, null, null, List.of(), List.of(), 0, null, null, null, null, null, List.of(),
+                        null, false, null);
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> controller.updatePreferences(principal, req));
+
+        assertEquals("FEATURE_DISABLED", ex.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verifyNoInteractions(preferencesService);
+    }
+
+    @Test
+    @DisplayName("POST /consent returns 404 FEATURE_DISABLED and never touches the service when the flag is off")
+    void recordConsent_flagOff_returns404WithoutTouchingService() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> controller.recordConsent(principal));
+
+        assertEquals("FEATURE_DISABLED", ex.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verifyNoInteractions(preferencesService);
     }
 
     @Test

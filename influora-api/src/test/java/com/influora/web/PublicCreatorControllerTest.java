@@ -1,12 +1,16 @@
 package com.influora.web;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.config.MeeraCreatorFeatureProperties;
 import com.influora.service.PublicCreatorService;
 import com.influora.web.dto.creator.PublicCreatorDtos.VerifiedMetrics;
 import com.influora.web.dto.creator.PublicCreatorDtos.VerifiedProfileResponse;
@@ -20,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
@@ -39,17 +44,19 @@ class PublicCreatorControllerTest {
     private static final String USERNAME = "priya-shah";
 
     @Mock private PublicCreatorService publicCreatorService;
+    @Mock private MeeraCreatorFeatureProperties featureProperties;
 
     private PublicCreatorController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new PublicCreatorController(publicCreatorService);
+        controller = new PublicCreatorController(publicCreatorService, featureProperties);
     }
 
     @Test
     @DisplayName("GET /public/creators/{username}/verified sets Cache-Control: no-store, private")
     void getVerifiedMetricsSetsNoStoreCacheControl() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(true);
         VerifiedProfileResponse response = sampleResponse();
         when(publicCreatorService.getVerifiedMetrics(USERNAME)).thenReturn(response);
 
@@ -85,6 +92,22 @@ class PublicCreatorControllerTest {
 
         Set<String> expectedMetricKeys = Set.of("followers", "reach_30d", "engagement_rate", "verified_at");
         assertEquals(expectedMetricKeys, fieldNames(root.get("verified_metrics")));
+    }
+
+    @Test
+    @DisplayName(
+            "Priya gate review defect 4 -- GET /public/creators/{username}/verified returns 404"
+                    + " FEATURE_DISABLED and never touches PublicCreatorService when the rollback flag"
+                    + " is off")
+    void getVerifiedMetrics_flagOff_returns404WithoutTouchingService() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(false);
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> controller.getVerifiedMetrics(USERNAME));
+
+        assertEquals("FEATURE_DISABLED", ex.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+        verifyNoInteractions(publicCreatorService);
     }
 
     private static Set<String> fieldNames(JsonNode node) {

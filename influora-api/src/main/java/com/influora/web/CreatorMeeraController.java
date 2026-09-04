@@ -2,11 +2,14 @@ package com.influora.web;
 
 import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.config.MeeraCreatorFeatureProperties;
 import com.influora.config.MeeraStreamProperties;
 import com.influora.domain.entity.AiConversation;
 import com.influora.domain.entity.AiMessage;
+import com.influora.domain.entity.CreatorAgentPreferences;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.enums.UserType;
+import com.influora.integration.ai.MeeraVoiceAiClient;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.CreatorContextService;
@@ -17,8 +20,13 @@ import com.influora.web.dto.meera.MeeraDtos.SendTurnRequest;
 import com.influora.web.dto.meera.MeeraDtos.SendTurnResponse;
 import com.influora.web.dto.meera.MeeraDtos.SessionStartResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -29,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * T-MEERA-CREATOR-PHASE-A (fix round 1, item 2) — the CREATOR-audience counterpart to {@link
@@ -58,20 +67,45 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/creator/meera")
 public class CreatorMeeraController {
 
+    /**
+     * Mirrors {@link MeeraController#MAX_VOICE_CLIP_BYTES} exactly (Kabir H-1) — same DoS/OOM
+     * guard, same silent-fallback-not-413 contract, applied to the CREATOR-audience upload leg.
+     */
+    private static final long MAX_VOICE_CLIP_BYTES = 10L * 1024 * 1024;
+
     private final MeeraSessionService sessionService;
     private final CreatorContextService creatorContext;
     private final MeeraStreamProperties streamProperties;
     private final CreatorAgentPreferencesService preferencesService;
+    private final MeeraVoiceAiClient voiceAiClient;
+    private final MeeraCreatorFeatureProperties featureProperties;
 
     public CreatorMeeraController(
             MeeraSessionService sessionService,
             CreatorContextService creatorContext,
             MeeraStreamProperties streamProperties,
-            CreatorAgentPreferencesService preferencesService) {
+            CreatorAgentPreferencesService preferencesService,
+            MeeraVoiceAiClient voiceAiClient,
+            MeeraCreatorFeatureProperties featureProperties) {
         this.sessionService = sessionService;
         this.creatorContext = creatorContext;
         this.streamProperties = streamProperties;
         this.preferencesService = preferencesService;
+        this.voiceAiClient = voiceAiClient;
+        this.featureProperties = featureProperties;
+    }
+
+    /**
+     * Priya gate review defect 4 — the Phase A rollback flag, applied to EVERY route on this
+     * controller (all of {@code /creator/meera/**}). Called first in every handler, before {@link
+     * CreatorContextService#requireCreatorProfile} or {@link #requireConsent} run, so a disabled
+     * feature 404s uniformly regardless of the caller's identity or consent state.
+     */
+    private void requireFeatureEnabled() {
+        if (!featureProperties.isCreatorEnabled()) {
+            throw new ApiException(
+                    "FEATURE_DISABLED", "Meera for Creators is currently disabled", HttpStatus.NOT_FOUND);
+        }
     }
 
     /**
@@ -83,6 +117,14 @@ public class CreatorMeeraController {
      * consent screen exists to gate. This check now runs first, in Spring, so an unconsented
      * creator's turn is rejected at the controller and nothing downstream ever sees it. The Python
      * gate ({@code chat.py}'s {@code consent_accepted} check) stays as defence-in-depth.
+     *
+     * <p>Gate fix round 2, item 1 (Priya Q3) — {@link
+     * CreatorAgentPreferencesService#isConsentAccepted} (via {@code
+     * CreatorAgentPreferences#isConsentAccepted}) now requires the stored {@code consentVersion}
+     * to equal {@code CreatorAgentPreferences#CURRENT_CONSENT_VERSION}, not merely a non-null
+     * timestamp — so a creator who consented under a since-superseded DPDP notice is rejected here
+     * with the same {@code 403 CONSENT_REQUIRED} as a creator who never consented at all, without
+     * this method needing its own separate version comparison.
      */
     private void requireConsent(String creatorUserId) {
         if (!preferencesService.isConsentAccepted(creatorUserId)) {
@@ -96,6 +138,7 @@ public class CreatorMeeraController {
     @PostMapping("/sessions")
     public ResponseEntity<ApiResponse<SessionStartResponse>> startSession(
             @AuthenticationPrincipal AuthPrincipal principal) {
+        requireFeatureEnabled();
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
         String creatorUserId = profile.getUserId();
         requireConsent(creatorUserId);
@@ -104,9 +147,19 @@ public class CreatorMeeraController {
         // day-one onboarding greeting as a real ASSISTANT message on first creation; the generic
         // startOrResume (still used by the BRAND-audience MeeraController) creates a bare
         // conversation with no message at all.
+        //
+        // Gate fix round 4 (Priya's fourth pass) — the persisted greeting must be language-aware.
+        // requireConsent() above already guarantees a creator_agent_preferences row exists (consent
+        // can only ever be recorded via CreatorAgentPreferencesService#recordConsent, which creates
+        // the row with computed defaults first), so getOrCreatePreferences here never actually
+        // creates a new row on this path -- it just reads the language the creator already has.
+        String creatorLanguage = preferencesService.getOrCreatePreferences(creatorUserId).creatorLanguage();
+        if (creatorLanguage == null || creatorLanguage.isBlank()) {
+            creatorLanguage = CreatorAgentPreferences.DEFAULT_LANGUAGE;
+        }
         AiConversation conversation =
                 sessionService.startOrResumeForCreator(
-                        creatorUserId, principal.getUserId(), profile.getDisplayName());
+                        creatorUserId, principal.getUserId(), profile.getDisplayName(), creatorLanguage);
 
         var response =
                 new SessionStartResponse(
@@ -126,6 +179,7 @@ public class CreatorMeeraController {
             @PathVariable String conversationId,
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody SendTurnRequest body) {
+        requireFeatureEnabled();
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
         String creatorUserId = profile.getUserId();
         requireConsent(creatorUserId);
@@ -160,6 +214,7 @@ public class CreatorMeeraController {
             @AuthenticationPrincipal AuthPrincipal principal,
             @PathVariable String conversationId,
             @RequestParam(value = "after", required = false) String after) {
+        requireFeatureEnabled();
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
 
         List<AiMessage> messages =
@@ -170,4 +225,98 @@ public class CreatorMeeraController {
                         .toList();
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
+
+    /**
+     * Priya gate review defect 3 — CREATOR-audience mirror of {@link MeeraController#speak}, EXACT
+     * same request/response contract (frontend's {@code src/lib/meera-api.ts} works unchanged once
+     * its creator null-returns are removed) so it can share {@code meeraApi.speak}'s call shape.
+     * Identity is resolved via {@link CreatorContextService#requireCreatorProfile} (never a
+     * body-supplied id), and the resolved creator's OWN user id is threaded through to {@link
+     * MeeraVoiceAiClient#speak} in the {@code workspaceId} parameter slot — the same "{@code
+     * workspace_id} carries a creator user id on the CREATOR audience" convention {@link
+     * com.influora.service.meera.MeeraContextService#assembleCreatorContext} already documents, so
+     * the minted service token's {@code workspace_id} claim matches what influora-ai's CREATOR-
+     * audience context resolution (and consent check) expects — never a BRAND workspace id.
+     *
+     * <p>DPDP consent PRECONDITION ({@link #requireConsent}) applies here exactly as it does to
+     * {@link #sendTurn} — an unconsented creator gets {@code 403 CONSENT_REQUIRED} before any
+     * provider call is attempted.
+     */
+    @PostMapping("/voice/speak")
+    public ResponseEntity<?> speak(
+            @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody VoiceSpeakRequest body) {
+        requireFeatureEnabled();
+        CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        String creatorUserId = profile.getUserId();
+        requireConsent(creatorUserId);
+
+        MeeraVoiceAiClient.SpeakResult result = voiceAiClient.speak(creatorUserId, body.text(), body.lang());
+        if (result.ok()) {
+            MediaType mediaType;
+            try {
+                mediaType =
+                        (result.contentType() == null || result.contentType().isBlank())
+                                ? MediaType.parseMediaType("audio/wav")
+                                : MediaType.parseMediaType(result.contentType());
+            } catch (Exception e) {
+                mediaType = MediaType.parseMediaType("audio/wav");
+            }
+            return ResponseEntity.ok().contentType(mediaType).body(result.audioBytes());
+        }
+
+        return ResponseEntity.ok(Map.of("fallback", true));
+    }
+
+    /**
+     * Priya gate review defect 3 — CREATOR-audience mirror of {@link MeeraController#transcribe},
+     * EXACT same {@code multipart/form-data} request shape (single {@code audio} file part) and
+     * response contract (real transcript JSON, or a silent {@code {"fallback": true}} 200 — never a
+     * 4xx/5xx for a provider/transport hiccup). Same {@link #MAX_VOICE_CLIP_BYTES} DoS/OOM guard
+     * (Kabir H-1) and the same identity/consent discipline as {@link #speak} above.
+     */
+    @PostMapping(value = "/voice/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> transcribe(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(value = "audio", required = false) MultipartFile audio) {
+        requireFeatureEnabled();
+        CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        String creatorUserId = profile.getUserId();
+        requireConsent(creatorUserId);
+
+        if (audio == null || audio.isEmpty()) {
+            return ResponseEntity.ok(Map.of("fallback", true));
+        }
+
+        if (audio.getSize() > MAX_VOICE_CLIP_BYTES) {
+            return ResponseEntity.ok(Map.of("fallback", true));
+        }
+
+        byte[] audioBytes;
+        try {
+            audioBytes = audio.getBytes();
+        } catch (IOException e) {
+            return ResponseEntity.ok(Map.of("fallback", true));
+        }
+
+        MeeraVoiceAiClient.TranscribeResult result =
+                voiceAiClient.transcribe(creatorUserId, audioBytes, audio.getContentType());
+        if (result.ok()) {
+            MediaType mediaType;
+            try {
+                mediaType =
+                        (result.contentType() == null || result.contentType().isBlank())
+                                ? MediaType.APPLICATION_JSON
+                                : MediaType.parseMediaType(result.contentType());
+            } catch (Exception e) {
+                mediaType = MediaType.APPLICATION_JSON;
+            }
+            return ResponseEntity.ok().contentType(mediaType).body(result.jsonBytes());
+        }
+
+        return ResponseEntity.ok(Map.of("fallback", true));
+    }
+
+    /** Request body for {@link #speak} — identical shape to {@link MeeraController.VoiceSpeakRequest}. */
+    public record VoiceSpeakRequest(
+            @NotBlank @Size(max = 1000) String text, @Size(max = 20) String lang) {}
 }

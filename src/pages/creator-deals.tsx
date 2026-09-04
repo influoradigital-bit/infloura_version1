@@ -31,6 +31,7 @@ import { getInitials } from '@/lib/helpers';
 import { type HypeInvite } from '@/lib/demo-data';
 import { HypeInboxCard } from '@/components/creator/hype-inbox-card';
 import { useToast } from '@/hooks/use-toast';
+import { DealTermsSummary } from '@/components/shared/deal-terms-summary';
 
 /**
  * Unified Creator Deals page.
@@ -640,6 +641,18 @@ function DealRow({ deal, actionLoading, onOpen, onAccept, onCounter, onReject }:
               <p className="mt-2 text-xs text-muted-foreground line-clamp-1">
                 {deal.lastMessage}
               </p>
+            )}
+
+            {/* T-MEERA-CREATOR-PHASE-A gate-fix round 2 (Priya Q1) — structured deal terms the
+                brand set on the offer, previously persisted and served but never rendered
+                anywhere on the creator side (`Deal.dealTerms` -> `mapDealToDealsPageRow`).
+                Undefined for any deal that never had structured terms set, so it simply
+                doesn't render rather than showing a misleading empty block. */}
+            {deal.dealTerms && (
+              <DealTermsSummary
+                terms={deal.dealTerms}
+                className="mt-2 rounded-md border bg-muted/20 px-2.5 py-2"
+              />
             )}
 
             {/* Status-specific CTAs */}

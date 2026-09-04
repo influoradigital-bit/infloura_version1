@@ -95,6 +95,49 @@ describe('getInitials (null-safe hardening)', () => {
 });
 
 /**
+ * T-MEERA-CREATOR-PHASE-A gate-fix round 2 (Priya Q1).
+ *
+ * Finding: `DealDtos.DealResponse.dealTerms` was persisted and served by the backend, but
+ * `grep -rn dealTerms src/` turned up only the two WRITE payloads (`api.ts` create/counter) and
+ * zero readers — "the brand fills the form and no one ever sees the result." These pin the
+ * READ side: both mappers must carry `Deal.dealTerms` through to their view models untouched,
+ * including the honest "field entirely absent" case (`@JsonInclude(NON_NULL)` — the backend
+ * omits the key, never sends `null`, when no structured terms were ever set).
+ */
+describe('dealTerms threading (Priya Q1 — the "zero frontend readers" finding)', () => {
+  const dealTerms: NonNullable<Deal['dealTerms']> = {
+    usageMonths: 6,
+    usagePerpetual: false,
+    usageChannels: ['ORGANIC', 'PAID_ADS'],
+    exclusivityDays: 30,
+    exclusivityScope: 'NAMED_BRANDS',
+    exclusivityBrands: ['Nykaa', 'Mamaearth'],
+    maxRevisions: 3,
+  };
+
+  it('mapDealToDealsPageRow carries dealTerms through untouched', () => {
+    const row = mapDealToDealsPageRow({ ...liveDeal, dealTerms });
+    expect(row.dealTerms).toEqual(dealTerms);
+  });
+
+  it('mapDealToDealsPageRow leaves dealTerms undefined when the backend omitted the field', () => {
+    // liveDeal has no dealTerms key at all — matching @JsonInclude(NON_NULL) on the wire.
+    const row = mapDealToDealsPageRow(liveDeal);
+    expect(row.dealTerms).toBeUndefined();
+  });
+
+  it('mapDealToChatRoom carries dealTerms through untouched', () => {
+    const room = mapDealToChatRoom({ ...liveDeal, dealTerms });
+    expect(room.dealTerms).toEqual(dealTerms);
+  });
+
+  it('mapDealToChatRoom leaves dealTerms undefined when the backend omitted the field', () => {
+    const room = mapDealToChatRoom(liveDeal);
+    expect(room.dealTerms).toBeUndefined();
+  });
+});
+
+/**
  * CR-05 regression guard.
  *
  * The bug: `creator-deals.tsx` and `creator-chat.tsx` each derived a coarse stage from

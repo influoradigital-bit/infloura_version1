@@ -286,14 +286,18 @@ public class MeeraContextService {
                 dealsSummary,
                 prefs != null ? prefs.getApprovalLevel() : CreatorAgentPreferences.APPROVAL_LEVEL_DRAFT_ONLY,
                 prefs != null && prefs.isRepresented(),
+                prefs != null ? prefs.getAgencyName() : null,
                 excludedCategories,
                 blockedBrands,
                 prefs != null ? prefs.getWorkingHoursStart() : null,
                 prefs != null ? prefs.getWorkingHoursEnd() : null,
+                prefs != null ? prefs.getWorkingHoursTimezone() : CreatorAgentPreferences.DEFAULT_WORKING_HOURS_TIMEZONE,
                 workingDays,
                 prefs != null ? prefs.getWeeklySponsoredLimit() : null,
+                prefs != null ? prefs.getFloorCurrency() : CreatorAgentPreferences.DEFAULT_FLOOR_CURRENCY,
                 identity,
                 prefs != null && prefs.isConsentAccepted(),
+                prefs != null ? prefs.getConsentVersion() : null,
                 prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null);
     }
 

@@ -175,6 +175,69 @@ class MeeraContextServiceTest {
 
     @Test
     @DisplayName(
+            "Priya gate review defect 2 -- a represented creator's agency_name is populated on the"
+                    + " CREATOR context from CreatorAgentPreferences.getAgencyName(), and is null when"
+                    + " the creator has no preferences row at all")
+    void testCreatorAudienceSurfacesAgencyName() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(12_400L);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+
+        com.influora.domain.entity.CreatorAgentPreferences prefs =
+                mock(com.influora.domain.entity.CreatorAgentPreferences.class);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.of(prefs));
+        when(prefs.getBrandTone()).thenReturn("FRIENDLY");
+        when(prefs.getApprovalLevel()).thenReturn(0);
+        when(prefs.isRepresented()).thenReturn(true);
+        when(prefs.getAgencyName()).thenReturn("Zylo Talent Partners");
+        when(prefs.isConsentAccepted()).thenReturn(true);
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+        assertTrue(creatorContext.represented());
+        assertEquals("Zylo Talent Partners", creatorContext.agencyName());
+    }
+
+    @Test
+    @DisplayName(
+            "Priya gate review defect 2 -- agency_name is null (and omitted from the wire payload"
+                    + " by @JsonInclude(NON_NULL)) when the creator has no preferences row")
+    void testCreatorAudienceAgencyNameNullWithNoPreferencesRow() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(12_400L);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+        assertFalse(creatorContext.represented());
+        assertEquals(null, creatorContext.agencyName());
+    }
+
+    @Test
+    @DisplayName(
             "Gate fix round 1 (Priya Q7): a creator with an admin-set ai_monthly_cap_usd override"
                     + " has it rendered as a 2-decimal string on the CREATOR context payload, and it"
                     + " is omitted entirely when unset")

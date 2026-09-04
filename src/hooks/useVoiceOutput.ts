@@ -119,6 +119,12 @@ function detectSupport(): boolean {
  */
 export function useVoiceOutput(role: 'brand' | 'creator' = 'brand'): UseVoiceOutputResult {
   const supportedRef = useRef(detectSupport())
+  // T-MEERA-CREATOR-PHASE-A gate review fix round 2 — CreatorMeeraController now exposes
+  // /creator/meera/voice/speak (Vikram), and meeraApi.speak() routes there via basePath(role)
+  // instead of the brand-only path it used to hardcode, so a creator speak() attempt reaches a
+  // real endpoint instead of silently 403'ing/resolving null. `supported` now reflects real
+  // browser capability for both roles, same as brand — the speaker button renders for creators
+  // exactly as it does for brands.
   const supported = supportedRef.current
 
   const [enabled, setEnabledState] = useState(false)

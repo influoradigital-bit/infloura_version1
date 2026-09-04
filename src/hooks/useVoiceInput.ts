@@ -131,6 +131,12 @@ export function useVoiceInput({
   // ever reach 'listening'. `isSecureContext` is true for https AND localhost, so local
   // dev is unaffected. Real fix for a deploy is TLS; this just makes the UI honest.
   const secureContext = typeof window !== 'undefined' && window.isSecureContext
+  // T-MEERA-CREATOR-PHASE-A gate review fix round 2 — CreatorMeeraController now exposes
+  // /creator/meera/voice/transcribe (Vikram), and meeraApi.transcribe() routes there via
+  // basePath(role) instead of the brand-only path it used to hardcode, so a creator transcribe()
+  // attempt reaches a real endpoint instead of silently 403'ing/resolving null. `supported` now
+  // reflects real browser capability for both roles, same as brand — the mic button renders for
+  // creators exactly as it does for brands.
   const supported = secureContext && (recorderSupportedRef.current || browserSttSupportedRef.current)
 
   const [phase, setPhase] = useState<VoiceInputPhase>('idle')

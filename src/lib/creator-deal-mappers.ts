@@ -1,5 +1,5 @@
 import type { Deal, DealMessage, MessageKind } from '@/lib/api';
-import type { CollaborationStatus, ContractStatus } from '@/lib/types';
+import type { CollaborationStatus, ContractStatus, DealTerms } from '@/lib/types';
 import { formatTimeAgo, getInitials } from '@/lib/helpers';
 import { formatMessageTimestamp } from '@/lib/creator-deal-messages';
 
@@ -122,6 +122,12 @@ export interface CreatorDealsPageRow {
   receivedAt?: Date;
   expiresAt?: Date;
   escrowFunded: boolean;
+  /**
+   * T-MEERA-CREATOR-PHASE-A gate-fix round 2 (Priya Q1) — structured deal terms off
+   * `Deal.dealTerms`. Undefined whenever the backend omits the field (no structured terms
+   * were ever set on this Collaboration) — render as "not specified", never as zeros.
+   */
+  dealTerms?: DealTerms;
 }
 
 export interface CreatorChatDealRoom {
@@ -165,6 +171,12 @@ export interface CreatorChatDealRoom {
    * in `deal-stage.ts` is the check; do not restate the number without recounting it.)
    */
   collaborationStatus?: CollaborationStatus;
+  /**
+   * T-MEERA-CREATOR-PHASE-A gate-fix round 2 (Priya Q1) — structured deal terms off
+   * `Deal.dealTerms`. Undefined whenever the backend omits the field (no structured terms
+   * were ever set on this Collaboration) — render as "not specified", never as zeros.
+   */
+  dealTerms?: DealTerms;
 }
 
 export interface CreatorChatTimelineEvent {
@@ -216,6 +228,7 @@ export function mapDealToDealsPageRow(deal: Deal): CreatorDealsPageRow {
     brandRating: undefined,
     brandPaymentSpeed: undefined,
     expiresAt: undefined,
+    dealTerms: deal.dealTerms,
   };
 }
 
@@ -238,6 +251,7 @@ export function mapDealToChatRoom(deal: Deal): CreatorChatDealRoom {
     contractStatus: deal.contractStatus,
     escrowFunded: deal.escrowFunded,
     collaborationStatus: deal.status,
+    dealTerms: deal.dealTerms,
   };
 }
 

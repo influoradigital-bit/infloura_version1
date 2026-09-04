@@ -1,5 +1,6 @@
 package com.influora.service;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -14,6 +15,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
@@ -2389,5 +2391,57 @@ class DealServiceTest {
                         any(),
                         any(),
                         any());
+    }
+
+    // ------------------------------------------------------------------
+    // Priya gate review defect 5 — a pre-V72 Collaboration (V72__meera_creator_deal_terms.sql,
+    // additive/nullable, no backfill) has every new deal-terms column at its unset default:
+    // usageMonths/usageChannels/exclusivityDays/exclusivityBrands NULL, usagePerpetual false,
+    // exclusivityScope NONE, maxRevisions 2 -- exactly what invitedDeal() below already produces
+    // (Collaboration.invite never touches the nullable columns and sets the two NOT NULL ones to
+    // their own DB defaults). Proves toDealResponse (shared by both get() [detail] and list())
+    // maps such a row without an NPE, and that dealTerms is OMITTED from the JSON entirely.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("get(): a pre-V72 collaboration (no structured deal terms ever set) maps without an NPE")
+    void get_legacyCollaborationWithNoDealTerms_doesNotThrow() throws Exception {
+        stubBrandWorkspace();
+        Collaboration legacyCollaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(legacyCollaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        stubToDealResponseCommonReads(DEAL_ID);
+
+        DealResponse response = assertDoesNotThrow(() -> service.get(brandPrincipal, DEAL_ID));
+
+        assertEquals(null, response.dealTerms());
+        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(response);
+        assertFalse(json.contains("dealTerms"), "expected dealTerms to be omitted, got: " + json);
+    }
+
+    @Test
+    @DisplayName("list(): a pre-V72 collaboration (no structured deal terms ever set) maps without an NPE")
+    void list_legacyCollaborationWithNoDealTerms_doesNotThrow() throws Exception {
+        stubBrandWorkspace();
+        Collaboration legacyCollaboration = invitedDeal();
+        when(collaborationRepository.findByWorkspaceId(WORKSPACE_ID))
+                .thenReturn(List.of(legacyCollaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(eq(DEAL_ID), any())).thenReturn(false);
+        when(deliverableRepository.findByCollaborationIdIn(List.of(DEAL_ID))).thenReturn(List.of());
+
+        List<DealResponse> responses = assertDoesNotThrow(() -> service.list(brandPrincipal, null));
+
+        assertEquals(1, responses.size());
+        assertEquals(null, responses.get(0).dealTerms());
+        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(responses.get(0));
+        assertFalse(json.contains("dealTerms"), "expected dealTerms to be omitted, got: " + json);
     }
 }

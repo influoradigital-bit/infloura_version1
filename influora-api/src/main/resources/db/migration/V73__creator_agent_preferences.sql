@@ -29,6 +29,6 @@ CREATE TABLE creator_agent_preferences (
 
     CONSTRAINT fk_creator_agent_prefs_creator FOREIGN KEY (creator_id)
         REFERENCES creator_profiles (id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE INDEX idx_creator_agent_prefs_creator ON creator_agent_preferences (creator_id);

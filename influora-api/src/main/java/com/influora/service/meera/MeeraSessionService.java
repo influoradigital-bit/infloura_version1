@@ -165,18 +165,31 @@ public class MeeraSessionService {
      * conversation list's {@code message_count}/{@code last_message_at} are correct from the very
      * first message onward. A RESUMED (pre-existing) conversation is untouched — the greeting is a
      * one-time, first-turn-only event, never repeated on every session start.
+     *
+     * <p><b>Gate fix round 4 (Priya's fourth pass):</b> {@code creatorLanguage} makes the
+     * persisted greeting language-aware. V73 defaults every creator's {@code
+     * creator_agent_preferences.creator_language} to {@link
+     * com.influora.domain.entity.CreatorAgentPreferences#DEFAULT_LANGUAGE} ({@code "hi-IN"}), and
+     * before this fix the persisted greeting was always the English literal — since {@link
+     * #createConversationWithOnboardingGreeting} is now the SOLE writer of the first ASSISTANT
+     * message, the frontend's Hindi fallback in {@code MeeraCopilotChat.tsx} could never actually
+     * be reached for a Hindi-default creator. The caller ({@code CreatorMeeraController}) resolves
+     * the BCP-47 tag from {@code CreatorAgentPreferences} and passes it straight through here.
      */
     @Transactional
     public AiConversation startOrResumeForCreator(
-            String creatorUserId, String userId, String creatorDisplayName) {
+            String creatorUserId, String userId, String creatorDisplayName, String creatorLanguage) {
         return conversationRepository
                 .findFirstByWorkspaceIdAndStatusOrderByLastMessageAtDesc(
                         creatorUserId, ConversationStatus.ACTIVE)
-                .orElseGet(() -> createConversationWithOnboardingGreeting(creatorUserId, userId, creatorDisplayName));
+                .orElseGet(
+                        () ->
+                                createConversationWithOnboardingGreeting(
+                                        creatorUserId, userId, creatorDisplayName, creatorLanguage));
     }
 
     private AiConversation createConversationWithOnboardingGreeting(
-            String creatorUserId, String userId, String creatorDisplayName) {
+            String creatorUserId, String userId, String creatorDisplayName, String creatorLanguage) {
         AiConversation conversation =
                 conversationRepository.save(
                         AiConversation.builder()
@@ -186,12 +199,7 @@ public class MeeraSessionService {
                                 .status(ConversationStatus.ACTIVE)
                                 .build());
 
-        String greeting =
-                "Hi "
-                        + onboardingFirstName(creatorDisplayName)
-                        + "! I'm Meera, your manager here on Influora. I can help you track your"
-                        + " deals, understand your earnings, and answer questions about the"
-                        + " platform. What would you like to know?";
+        String greeting = onboardingGreeting(creatorDisplayName, creatorLanguage);
         messageRepository.save(
                 AiMessage.builder()
                         .id(Ulids.newUlid())
@@ -206,6 +214,30 @@ public class MeeraSessionService {
         creatorAgentConversationService.recordTurnForUser(creatorUserId, conversation.getId(), Instant.now());
 
         return conversation;
+    }
+
+    /**
+     * Gate fix round 4 (Priya's fourth pass) — the two persisted greeting variants, kept in sync
+     * word-for-word with {@code onboardingGreeting()} in {@code
+     * src/components/creator/MeeraCopilotChat.tsx} (lines ~70-74) so the client-only placeholder
+     * shown before this backend turn lands on the wire and the actual persisted {@code
+     * ai_messages} row never diverge. Hindi for any BCP-47 tag starting with {@code "hi"}
+     * (case-insensitive — matches the frontend's {@code language.startsWith('hi')}), English for
+     * everything else. Do not add other languages here without updating the frontend copy too.
+     */
+    private static String onboardingGreeting(String creatorDisplayName, String creatorLanguage) {
+        String firstName = onboardingFirstName(creatorDisplayName);
+        if (creatorLanguage != null && creatorLanguage.toLowerCase(java.util.Locale.ROOT).startsWith("hi")) {
+            return "नमस्ते "
+                    + firstName
+                    + "! मैं Meera हूं, Influora पर आपकी मैनेजर। मैं आपकी डील्स, कमाई और मेट्रिक्स समझने में"
+                    + " मदद कर सकती हूं। आप क्या जानना चाहेंगे?";
+        }
+        return "Hi "
+                + firstName
+                + "! I'm Meera, your manager here on Influora. I can help you track your"
+                + " deals, understand your earnings, and answer questions about the"
+                + " platform. What would you like to know?";
     }
 
     /** Local copy of {@code MeeraContextService#firstNameOf} — same reasoning as that method's

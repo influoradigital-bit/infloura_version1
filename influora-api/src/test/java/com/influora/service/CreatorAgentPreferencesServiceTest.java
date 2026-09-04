@@ -157,6 +157,7 @@ class CreatorAgentPreferencesServiceTest {
                         new BigDecimal("2000"),
                         new BigDecimal("1500"),
                         new BigDecimal("2500"),
+                        "USD",
                         List.of("Alcohol"),
                         List.of("RivalCo"),
                         1,
@@ -164,6 +165,7 @@ class CreatorAgentPreferencesServiceTest {
                         CreatorAgentPreferences.TONE_FORMAL,
                         9,
                         18,
+                        "America/New_York",
                         List.of(1, 2, 3),
                         5,
                         false,
@@ -174,6 +176,7 @@ class CreatorAgentPreferencesServiceTest {
         assertEquals(new BigDecimal("2000"), response.reelFloor());
         assertEquals(new BigDecimal("1500"), response.storySetFloor());
         assertEquals(new BigDecimal("2500"), response.postFloor());
+        assertEquals("USD", response.floorCurrency());
         assertEquals(List.of("Alcohol"), response.excludedCategories());
         assertEquals(List.of("RivalCo"), response.blockedBrands());
         assertEquals(1, response.approvalLevel());
@@ -181,9 +184,34 @@ class CreatorAgentPreferencesServiceTest {
         assertEquals(CreatorAgentPreferences.TONE_FORMAL, response.brandTone());
         assertEquals(9, response.workingHoursStart());
         assertEquals(18, response.workingHoursEnd());
+        assertEquals("America/New_York", response.workingHoursTimezone());
         assertEquals(List.of(1, 2, 3), response.workingDays());
         assertEquals(5, response.weeklySponsoredLimit());
         verify(preferencesRepository).save(existing);
+    }
+
+    @Test
+    @DisplayName(
+            "Gate fix round 2, item 3 (Priya Q8): PUT rejects an invalid ISO 4217 currency code")
+    void updatePreferencesInvalidCurrencyRejected() {
+        UpdatePreferencesRequest req =
+                new UpdatePreferencesRequest(
+                        null, null, null, "NOTACODE", List.of(), List.of(), 0, "hi-IN", null, null, null, null,
+                        List.of(), null, false, null);
+        ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
+        assertEquals("INVALID_CURRENCY", ex.getCode());
+    }
+
+    @Test
+    @DisplayName(
+            "Gate fix round 2, item 3 (Priya Q8): PUT rejects an invalid IANA timezone id")
+    void updatePreferencesInvalidTimezoneRejected() {
+        UpdatePreferencesRequest req =
+                new UpdatePreferencesRequest(
+                        null, null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null,
+                        "Not/A_Zone", List.of(), null, false, null);
+        ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
+        assertEquals("INVALID_TIMEZONE", ex.getCode());
     }
 
     @Test
@@ -191,7 +219,8 @@ class CreatorAgentPreferencesServiceTest {
     void updatePreferencesRepresentedWithoutAgencyNameRejected() {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
-                        null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null, List.of(), null, true, "  ");
+                        null, null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null, null,
+                        List.of(), null, true, "  ");
 
         ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
         assertEquals("AGENCY_NAME_REQUIRED", ex.getCode());
@@ -208,7 +237,8 @@ class CreatorAgentPreferencesServiceTest {
 
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
-                        null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null, List.of(), null, true, "Agency Co");
+                        null, null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null, null,
+                        List.of(), null, true, "Agency Co");
 
         PreferencesResponse response = service.updatePreferences(USER_ID, req);
         assertEquals("Agency Co", response.agencyName());
@@ -220,7 +250,8 @@ class CreatorAgentPreferencesServiceTest {
     void updatePreferencesInvalidApprovalLevelRejected() {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
-                        null, null, null, List.of(), List.of(), 5, "hi-IN", null, null, null, List.of(), null, false, null);
+                        null, null, null, null, List.of(), List.of(), 5, "hi-IN", null, null, null, null,
+                        List.of(), null, false, null);
         ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
         assertEquals("INVALID_APPROVAL_LEVEL", ex.getCode());
     }
@@ -230,24 +261,59 @@ class CreatorAgentPreferencesServiceTest {
     void updatePreferencesNegativeFloorRejected() {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
-                        new BigDecimal("-1"), null, null, List.of(), List.of(), 0, "hi-IN", null, null, null, List.of(), null, false, null);
+                        new BigDecimal("-1"), null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null,
+                        null, List.of(), null, false, null);
         ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
         assertEquals("INVALID_FLOOR", ex.getCode());
     }
 
     @Test
-    @DisplayName("recordConsent sets consentAcceptedAt on a fresh row and is idempotent on a second call")
+    @DisplayName("recordConsent sets consentAcceptedAt+consentVersion on a fresh row and is idempotent on a second call")
     void recordConsentSetsTimestampAndIsIdempotent() {
         CreatorAgentPreferences existing =
                 CreatorAgentPreferences.newWithDefaults(
                         "prefs-1", PROFILE_ID, new BigDecimal("500"), new BigDecimal("500"), new BigDecimal("500"), "hi-IN");
         when(preferencesRepository.findByCreatorId(PROFILE_ID)).thenReturn(Optional.of(existing));
 
-        java.time.Instant first = service.recordConsent(USER_ID);
-        assertNotNull(first);
+        var first = service.recordConsent(USER_ID);
+        assertNotNull(first.consentAcceptedAt());
+        assertEquals(CreatorAgentPreferences.CURRENT_CONSENT_VERSION, first.consentVersion());
 
-        java.time.Instant second = service.recordConsent(USER_ID);
-        assertEquals(first, second);
+        var second = service.recordConsent(USER_ID);
+        assertEquals(first.consentAcceptedAt(), second.consentAcceptedAt());
+        assertEquals(CreatorAgentPreferences.CURRENT_CONSENT_VERSION, second.consentVersion());
+    }
+
+    /**
+     * Gate fix round 2, item 1 (Priya Q3) — a creator whose stored consentVersion is stale (an
+     * older DPDP notice, simulated here via reflection since the entity deliberately exposes no
+     * setter for it -- only {@code recordConsent()} ever writes it) is NOT considered consented,
+     * and {@code recordConsent()} re-stamps both the timestamp and version rather than treating
+     * the stale row as already-accepted (the old no-op-on-second-call idempotency only holds when
+     * the version is unchanged).
+     */
+    @Test
+    @DisplayName("a creator consented under a stale version reads as not-accepted, and recordConsent re-stamps it")
+    void staleConsentVersionIsNotAcceptedAndRecordConsentRestamps() throws Exception {
+        CreatorAgentPreferences existing =
+                CreatorAgentPreferences.newWithDefaults(
+                        "prefs-1", PROFILE_ID, new BigDecimal("500"), new BigDecimal("500"), new BigDecimal("500"), "hi-IN");
+        existing.recordConsent();
+        java.time.Instant staleAcceptedAt = existing.getConsentAcceptedAt();
+
+        java.lang.reflect.Field versionField = CreatorAgentPreferences.class.getDeclaredField("consentVersion");
+        versionField.setAccessible(true);
+        versionField.set(existing, "v0");
+
+        assertFalse(existing.isConsentAccepted());
+
+        when(preferencesRepository.findByCreatorId(PROFILE_ID)).thenReturn(Optional.of(existing));
+        assertFalse(service.isConsentAccepted(USER_ID));
+
+        var reconsent = service.recordConsent(USER_ID);
+        assertEquals(CreatorAgentPreferences.CURRENT_CONSENT_VERSION, reconsent.consentVersion());
+        assertTrue(reconsent.consentAcceptedAt().isAfter(staleAcceptedAt) || reconsent.consentAcceptedAt().equals(staleAcceptedAt));
+        assertTrue(service.isConsentAccepted(USER_ID));
     }
 
     @Test

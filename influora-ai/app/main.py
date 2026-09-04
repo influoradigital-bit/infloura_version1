@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import CLAUDE_MODEL, GEMINI_MODEL, PROMPT_VERSION, get_settings
+from app.costs.worker_guard import creator_cap_scope
 from app.routes import analyze_site, chat, voice
 from app.security.redaction import configure_logging
 
@@ -112,6 +113,18 @@ async def _refuse_boot_on_missing_secrets() -> None:
     if missing:
         logger.error("refusing to boot: missing required secrets/config: %s", ", ".join(missing))
         raise RuntimeError(f"missing required secrets/config: {', '.join(missing)}")
+    # Gate fix round 2 (Q7): the per-creator monthly cap's holds are shared
+    # through Redis; without Redis they are per-process, so more than one
+    # uvicorn worker would silently void the cap. Refuse rather than degrade.
+    cap_scope = creator_cap_scope(redis_configured=bool(settings.redis_url))
+    boot_error = cap_scope.boot_error()
+    if boot_error:
+        logger.error(boot_error)
+        raise RuntimeError(boot_error)
+    logger.info(
+        "creator monthly cap scope: %s (workers=%s, redis=%s)",
+        cap_scope.scope, cap_scope.workers, "configured" if cap_scope.redis_configured else "unset",
+    )
     logger.info(
         "influora-ai booted: env=%s claude_model=%s gemini_model=%s prompt_version=%s",
         settings.env,
@@ -191,13 +204,21 @@ async def readyz():
         "jwks_or_dev_secret": bool(settings.spring_jwks_url or settings.dev_shared_jwt_secret),
     }
     redis_status, redis_ok = await _redis_ready()
-    ready = all(keys_loaded.values()) and redis_ok
+    # Gate fix round 2 (Q7): expose the creator cap's concurrency scope so a
+    # deploy can assert it. "shared" needs Redis reachable; "per_process" is
+    # only ready with a single worker (the startup hook already refuses
+    # otherwise, but a compose `command:` override could bypass argv parsing
+    # -- so readyz re-checks and fails closed).
+    cap_scope = creator_cap_scope(redis_configured=bool(settings.redis_url) and redis_ok)
+    ready = all(keys_loaded.values()) and redis_ok and cap_scope.safe
     return JSONResponse(
         status_code=200 if ready else 503,
         content={
             "status": "ready" if ready else "not_ready",
             "keys_loaded": keys_loaded,
             "redis": redis_status,
+            "creator_cap_scope": cap_scope.scope,
+            "workers": cap_scope.workers,
             "prompt_version": PROMPT_VERSION,
             "claude_model": CLAUDE_MODEL,
             "gemini_model": GEMINI_MODEL,

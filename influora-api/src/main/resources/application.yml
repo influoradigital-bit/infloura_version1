@@ -192,6 +192,11 @@ influora:
     access-expiry-seconds: ${JWT_ACCESS_EXPIRY:900}
     refresh-expiry-seconds: ${JWT_REFRESH_EXPIRY:2592000}
   meera:
+    # Priya gate review defect 4 — Phase A rollback flag (MeeraCreatorFeatureProperties). true
+    # (on) by default; set MEERA_CREATOR_ENABLED=false to 404 every CREATOR-audience Meera
+    # surface (agent-preferences, consent, /creator/meera/**, public verified) without a code
+    # rollback.
+    creator-enabled: ${MEERA_CREATOR_ENABLED:true}
     stream:
       # Kabir G2/G6 — distinct signing key from the user access/refresh JWTs. ≤60s TTL scoped
       # per Meera turn (aud=meera-stream); Python verifies this, never the user's access JWT.

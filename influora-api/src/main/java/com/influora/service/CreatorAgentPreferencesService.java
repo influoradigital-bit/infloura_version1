@@ -157,6 +157,7 @@ public class CreatorAgentPreferencesService {
                 req.reelFloor(),
                 req.storySetFloor(),
                 req.postFloor(),
+                req.floorCurrency() != null ? req.floorCurrency() : CreatorAgentPreferences.DEFAULT_FLOOR_CURRENCY,
                 JsonLists.toJson(req.excludedCategories()),
                 JsonLists.toJson(req.blockedBrands()),
                 req.approvalLevel(),
@@ -164,6 +165,9 @@ public class CreatorAgentPreferencesService {
                 req.brandTone() != null ? req.brandTone() : CreatorAgentPreferences.TONE_FRIENDLY,
                 req.workingHoursStart(),
                 req.workingHoursEnd(),
+                req.workingHoursTimezone() != null
+                        ? req.workingHoursTimezone()
+                        : CreatorAgentPreferences.DEFAULT_WORKING_HOURS_TIMEZONE,
                 JsonLists.toJson(intListToStringList(req.workingDays())),
                 req.weeklySponsoredLimit(),
                 req.represented(),
@@ -191,6 +195,24 @@ public class CreatorAgentPreferencesService {
                 || req.postFloor() != null && req.postFloor().compareTo(BigDecimal.ZERO) < 0) {
             throw new ApiException("INVALID_FLOOR", "Rate floors must be >= 0", HttpStatus.BAD_REQUEST);
         }
+        // Gate fix round 2, item 3 (Priya Q8) — reject a currency code that cannot round-trip
+        // rather than silently persisting a value nothing downstream can interpret.
+        if (req.floorCurrency() != null) {
+            try {
+                java.util.Currency.getInstance(req.floorCurrency());
+            } catch (IllegalArgumentException e) {
+                throw new ApiException(
+                        "INVALID_CURRENCY", "floor_currency must be a valid ISO 4217 code", HttpStatus.BAD_REQUEST);
+            }
+        }
+        if (req.workingHoursTimezone() != null) {
+            try {
+                java.time.ZoneId.of(req.workingHoursTimezone());
+            } catch (java.time.DateTimeException e) {
+                throw new ApiException(
+                        "INVALID_TIMEZONE", "working_hours_timezone must be a valid IANA zone id", HttpStatus.BAD_REQUEST);
+            }
+        }
     }
 
     private static List<String> intListToStringList(List<Integer> ints) {
@@ -199,13 +221,14 @@ public class CreatorAgentPreferencesService {
 
     /** A6 — creates the row with computed defaults first if this creator has never touched Meera. */
     @Transactional
-    public java.time.Instant recordConsent(String userId) {
+    public com.influora.web.dto.creator.CreatorAgentDtos.ConsentResponse recordConsent(String userId) {
         CreatorProfile profile = requireCreatorProfile(userId);
         CreatorAgentPreferences prefs =
                 preferencesRepository.findByCreatorId(profile.getId()).orElseGet(() -> createWithComputedDefaults(profile));
         prefs.recordConsent();
         preferencesRepository.save(prefs);
-        return prefs.getConsentAcceptedAt();
+        return new com.influora.web.dto.creator.CreatorAgentDtos.ConsentResponse(
+                prefs.getConsentAcceptedAt(), prefs.getConsentVersion());
     }
 
     /**
@@ -266,6 +289,7 @@ public class CreatorAgentPreferencesService {
                 prefs.getReelFloor(),
                 prefs.getStorySetFloor(),
                 prefs.getPostFloor(),
+                prefs.getFloorCurrency(),
                 JsonLists.stringListFromJson(prefs.getExcludedCategoriesJson()),
                 JsonLists.stringListFromJson(prefs.getBlockedBrandsJson()),
                 prefs.getApprovalLevel(),
@@ -273,10 +297,12 @@ public class CreatorAgentPreferencesService {
                 prefs.getBrandTone(),
                 prefs.getWorkingHoursStart(),
                 prefs.getWorkingHoursEnd(),
+                prefs.getWorkingHoursTimezone(),
                 workingDays,
                 prefs.getWeeklySponsoredLimit(),
                 prefs.isRepresented(),
                 prefs.getAgencyName(),
-                prefs.isConsentAccepted());
+                prefs.isConsentAccepted(),
+                prefs.getConsentVersion());
     }
 }

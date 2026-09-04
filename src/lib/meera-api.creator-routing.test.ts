@@ -87,23 +87,44 @@ describe('meeraApi role -> URL routing', () => {
     expect(url).toContain('after=m1');
   });
 
-  it('speak resolves to null for a creator turn without ever hitting the brand-gated route', async () => {
-    const fetchMock = vi.fn();
+  // Gate review fix round 2 (Priya's frontend gate, item 2): CreatorMeeraController now exposes
+  // POST /creator/meera/voice/{speak,transcribe} (Vikram), so speak()/transcribe() no longer
+  // short-circuit to null for role 'creator' — they route through basePath(role) exactly like
+  // every other call in this file. Full route-correctness coverage (both roles, both methods)
+  // lives in meera-api.voice-routes.test.ts; these two just keep this file's "role -> URL"
+  // narrative complete now that voice is no longer the one exception to it.
+  it('speak now routes a creator turn to /creator/meera/voice/speak instead of resolving null', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Blob(['audio'], { type: 'audio/wav' }), {
+        status: 200,
+        headers: { 'Content-Type': 'audio/wav' },
+      }),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await meeraApi.speak('hello', undefined, 'creator');
 
-    expect(result).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain('/creator/meera/voice/speak');
   });
 
-  it('transcribe resolves to null for a creator turn without ever hitting the brand-gated route', async () => {
-    const fetchMock = vi.fn();
+  it('transcribe now routes a creator turn to /creator/meera/voice/transcribe instead of resolving null', async () => {
+    // transcribe() parses a flat JSON body ({ raw_transcript, cleaned_text, ... }), NOT the
+    // { success, data } envelope `jsonResponse()` above builds for the other endpoints in this
+    // file — see meera-api.ts's transcribe() doc comment.
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ raw_transcript: 'hi', cleaned_text: 'hi' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
     const result = await meeraApi.transcribe(new Blob(['x']), 'creator');
 
-    expect(result).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).not.toBeNull();
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain('/creator/meera/voice/transcribe');
   });
 });

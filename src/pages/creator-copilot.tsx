@@ -54,6 +54,35 @@ export default function CreatorCopilotPage() {
   const [chatOpen, setChatOpen] = React.useState(false);
   const [language, setLanguage] = React.useState('hi-IN');
   const [consentLoadError, setConsentLoadError] = React.useState<string | null>(null);
+  // T-MEERA-CREATOR-PHASE-A gate review fix (item 3) — MEERA_CREATOR_ENABLED rollback flag.
+  // GET /creator/agent-preferences 404s with { code: 'FEATURE_DISABLED' } in the standard
+  // envelope when it's off. No toast, no retry affordance — the entry point is replaced with a
+  // calm, static explanation once we know. `null` (not checked yet) and `false` (checked,
+  // enabled) both render the normal "Talk to Meera" entry — only an explicit `true` swaps it
+  // out, so the entry point never has to hide, then flash back, then hide again.
+  const [featureDisabled, setFeatureDisabled] = React.useState<boolean | null>(null);
+
+  // Probe once on mount so the entry point never renders (then disappears) for a disabled
+  // account — the same GET the "Open Meera" click already made, just run earlier and only
+  // watched for the one error code. Any other failure here is swallowed; the click handler
+  // below still surfaces it (unchanged behavior) when the creator actually tries to open Meera.
+  React.useEffect(() => {
+    let cancelled = false;
+    api.creatorAgentPrefs
+      .getPreferences()
+      .then((prefs) => {
+        if (cancelled) return;
+        setLanguage(prefs.creator_language || 'hi-IN');
+        setFeatureDisabled(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setFeatureDisabled(err instanceof ApiError && err.code === 'FEATURE_DISABLED');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const openMeera = async () => {
     setConsentLoadError(null);
@@ -67,7 +96,13 @@ export default function CreatorCopilotPage() {
         setShowConsent(true);
       }
     } catch (err) {
-      setConsentLoadError(err instanceof ApiError ? err.message : "Couldn't reach Meera — try again.");
+      if (err instanceof ApiError && err.code === 'FEATURE_DISABLED') {
+        // Flipped off between the mount probe and this click — same calm, no-retry treatment,
+        // no toast. The entry point hides itself on the next render.
+        setFeatureDisabled(true);
+      } else {
+        setConsentLoadError(err instanceof ApiError ? err.message : "Couldn't reach Meera — try again.");
+      }
     } finally {
       setCheckingConsent(false);
     }
@@ -88,45 +123,63 @@ export default function CreatorCopilotPage() {
         </div>
 
         {/* T-MEERA-CREATOR-PHASE-A (A10) — Meera chat entry. Conversational only in Phase A:
-            deals/earnings/metrics Q&A, no drafting or sending on the creator's behalf. */}
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" />
-              <CardTitle className="text-base">Talk to Meera</CardTitle>
-            </div>
-            <CardDescription>Your AI manager — ask about deals, earnings, and metrics.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {chatOpen ? (
-              <MeeraCopilotChat
-                firstName={firstName}
-                language={language}
-                onClose={() => setChatOpen(false)}
-                onConsentRequired={() => {
-                  setChatOpen(false);
-                  setShowConsent(true);
-                }}
-              />
-            ) : (
-              <>
-                <Button onClick={openMeera} disabled={checkingConsent}>
-                  {checkingConsent ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Connecting…
-                    </>
-                  ) : (
-                    'Open Meera'
+            deals/earnings/metrics Q&A, no drafting or sending on the creator's behalf.
+            Gate review fix (item 3): MEERA_CREATOR_ENABLED off replaces this entirely with a
+            calm, static state — no toast, no retry affordance. */}
+        {featureDisabled === true ? (
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-muted-foreground" />
+                <CardTitle className="text-base">Meera</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Meera for creators isn't available on your account yet.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="mb-6">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" />
+                <CardTitle className="text-base">Talk to Meera</CardTitle>
+              </div>
+              <CardDescription>Your AI manager — ask about deals, earnings, and metrics.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {chatOpen ? (
+                <MeeraCopilotChat
+                  firstName={firstName}
+                  language={language}
+                  onClose={() => setChatOpen(false)}
+                  onConsentRequired={() => {
+                    setChatOpen(false);
+                    setShowConsent(true);
+                  }}
+                />
+              ) : (
+                <>
+                  <Button onClick={openMeera} disabled={checkingConsent}>
+                    {checkingConsent ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Connecting…
+                      </>
+                    ) : (
+                      'Open Meera'
+                    )}
+                  </Button>
+                  {consentLoadError && (
+                    <p className="mt-2 text-sm text-destructive-foreground">{consentLoadError}</p>
                   )}
-                </Button>
-                {consentLoadError && (
-                  <p className="mt-2 text-sm text-destructive-foreground">{consentLoadError}</p>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <ConsentScreen
           open={showConsent}

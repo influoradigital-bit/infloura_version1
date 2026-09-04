@@ -724,11 +724,11 @@ class MeeraSessionServiceTest {
 
     @Test
     @DisplayName(
-            "Gate fix round 1 (Priya Q1, SPEC.md 4.7/A10): startOrResumeForCreator on a BRAND-NEW"
-                    + " conversation persists the day-one onboarding greeting as a real ASSISTANT"
-                    + " ai_messages row -- previously no message was ever written on session start,"
-                    + " so the client-only greeting the creator read never appeared in the DPDP"
-                    + " conversation export")
+            "Gate fix round 1 (Priya Q1, SPEC.md 4.7/A10), en-IN: startOrResumeForCreator on a"
+                    + " BRAND-NEW conversation persists the day-one onboarding greeting as a real"
+                    + " ASSISTANT ai_messages row -- previously no message was ever written on"
+                    + " session start, so the client-only greeting the creator read never appeared"
+                    + " in the DPDP conversation export")
     void testStartOrResumeForCreatorPersistsOnboardingGreetingOnNewConversation() {
         when(conversationRepository.findFirstByWorkspaceIdAndStatusOrderByLastMessageAtDesc(
                         CREATOR_USER_ID, ConversationStatus.ACTIVE))
@@ -736,7 +736,8 @@ class MeeraSessionServiceTest {
         when(conversationRepository.save(any(AiConversation.class))).thenAnswer(inv -> inv.getArgument(0));
         when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        AiConversation result = service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, "Priya Shah");
+        AiConversation result =
+                service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, "Priya Shah", "en-IN");
 
         ArgumentCaptor<AiMessage> messageCaptor = ArgumentCaptor.forClass(AiMessage.class);
         verify(messageRepository).save(messageCaptor.capture());
@@ -755,6 +756,36 @@ class MeeraSessionServiceTest {
 
     @Test
     @DisplayName(
+            "Gate fix round 4 (Priya's fourth pass), hi-IN: startOrResumeForCreator persists the"
+                    + " Hindi greeting for a creator whose creator_agent_preferences.creator_language"
+                    + " is 'hi-IN' -- the V73 default for every creator -- instead of the hardcoded"
+                    + " English literal")
+    void testStartOrResumeForCreatorPersistsHindiGreetingOnNewConversation() {
+        when(conversationRepository.findFirstByWorkspaceIdAndStatusOrderByLastMessageAtDesc(
+                        CREATOR_USER_ID, ConversationStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(conversationRepository.save(any(AiConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AiConversation result =
+                service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, "Priya Shah", "hi-IN");
+
+        ArgumentCaptor<AiMessage> messageCaptor = ArgumentCaptor.forClass(AiMessage.class);
+        verify(messageRepository).save(messageCaptor.capture());
+        AiMessage greeting = messageCaptor.getValue();
+        assertEquals(MessageRole.ASSISTANT, greeting.getRole());
+        assertEquals(result.getId(), greeting.getConversationId());
+        assertEquals(0, greeting.getCreditsCharged());
+        assertEquals(
+                "नमस्ते Priya! मैं Meera हूं, Influora पर आपकी मैनेजर। मैं आपकी डील्स, कमाई और मेट्रिक्स"
+                        + " समझने में मदद कर सकती हूं। आप क्या जानना चाहेंगे?",
+                greeting.getContent());
+        verify(creatorAgentConversationService)
+                .recordTurnForUser(eq(CREATOR_USER_ID), eq(result.getId()), any());
+    }
+
+    @Test
+    @DisplayName(
             "Gate fix round 1 (Priya Q1): startOrResumeForCreator on an EXISTING active conversation"
                     + " never re-sends the greeting -- it is a one-time, first-session-only event")
     void testStartOrResumeForCreatorDoesNotRepeatGreetingOnResume() {
@@ -763,7 +794,8 @@ class MeeraSessionServiceTest {
                         CREATOR_USER_ID, ConversationStatus.ACTIVE))
                 .thenReturn(Optional.of(existing));
 
-        AiConversation result = service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, "Priya Shah");
+        AiConversation result =
+                service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, "Priya Shah", "en-IN");
 
         assertSame(existing, result);
         verifyNoInteractions(messageRepository);
@@ -773,7 +805,7 @@ class MeeraSessionServiceTest {
 
     @Test
     @DisplayName(
-            "Gate fix round 1 (Priya Q1): startOrResumeForCreator falls back to a grammatical"
+            "Gate fix round 1 (Priya Q1), en-IN: startOrResumeForCreator falls back to a grammatical"
                     + " greeting ('Hi there!') when the creator has no display name set yet, rather"
                     + " than 'Hi null!'")
     void testStartOrResumeForCreatorFallsBackToThereWhenNoDisplayName() {
@@ -783,7 +815,7 @@ class MeeraSessionServiceTest {
         when(conversationRepository.save(any(AiConversation.class))).thenAnswer(inv -> inv.getArgument(0));
         when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, null);
+        service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, null, "en-IN");
 
         ArgumentCaptor<AiMessage> messageCaptor = ArgumentCaptor.forClass(AiMessage.class);
         verify(messageRepository).save(messageCaptor.capture());
@@ -791,6 +823,27 @@ class MeeraSessionServiceTest {
                 "Hi there! I'm Meera, your manager here on Influora. I can help you track your"
                         + " deals, understand your earnings, and answer questions about the"
                         + " platform. What would you like to know?",
+                messageCaptor.getValue().getContent());
+    }
+
+    @Test
+    @DisplayName(
+            "Gate fix round 4 (Priya's fourth pass), hi-IN: startOrResumeForCreator falls back to a"
+                    + " grammatical Hindi greeting when the creator has no display name set yet")
+    void testStartOrResumeForCreatorFallsBackToThereInHindiWhenNoDisplayName() {
+        when(conversationRepository.findFirstByWorkspaceIdAndStatusOrderByLastMessageAtDesc(
+                        CREATOR_USER_ID, ConversationStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        when(conversationRepository.save(any(AiConversation.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.startOrResumeForCreator(CREATOR_USER_ID, CREATOR_USER_ID, null, "hi-IN");
+
+        ArgumentCaptor<AiMessage> messageCaptor = ArgumentCaptor.forClass(AiMessage.class);
+        verify(messageRepository).save(messageCaptor.capture());
+        assertEquals(
+                "नमस्ते there! मैं Meera हूं, Influora पर आपकी मैनेजर। मैं आपकी डील्स, कमाई और मेट्रिक्स"
+                        + " समझने में मदद कर सकती हूं। आप क्या जानना चाहेंगे?",
                 messageCaptor.getValue().getContent());
     }
 }

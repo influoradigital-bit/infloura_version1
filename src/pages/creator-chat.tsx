@@ -75,6 +75,7 @@ import { RevisionHandler } from '@/components/creator/deal-room/revision-handler
 import { ShippingAddressForm, type ShippingAddressData } from '@/components/creator/deal-room/shipping-address-form';
 import { ReceiptConfirmation, type ReceiptData } from '@/components/creator/deal-room/receipt-confirmation';
 import { ShipmentCard, type ShipmentStatus } from '@/components/shared/shipment-card';
+import { DealTermsSummary } from '@/components/shared/deal-terms-summary';
 import { MapPin } from 'lucide-react';
 // CR-34 — `CollaborationStatus` is no longer imported here: the only value-level use was the
 // local canAccept() mirror, which now lives in lib/deal-stage.ts. It survives in prose below.
@@ -768,10 +769,20 @@ export default function CreatorChatPage() {
     [liveApi, toast],
   );
 
-  const selectedDeal = React.useMemo(
-    () => dealRooms.find((d) => d.id === selectedDealId) ?? dealRooms[0] ?? null,
-    [dealRooms, selectedDealId],
-  );
+  const selectedDeal = React.useMemo(() => {
+    // F-0447 round 2: dealRooms[0] used to be the fallback for EVERY miss, including a
+    // selectedDealId that was explicitly requested (via ?deal=<id>, e.g. from the creator
+    // dashboard's unsigned-contracts links) but doesn't match anything in dealRooms — a stale
+    // id, one the API no longer returns, or simply wrong. That silently substituted a totally
+    // unrelated deal's contract/messages/deliverables with no error, no indication anything
+    // was wrong. dealRooms[0] is now the default ONLY when nobody asked for a specific deal
+    // (selectedDealId is null, e.g. plain /creator/chat with no query param) — an explicit,
+    // unmatched request falls through to null and the existing "No deals yet" guard below.
+    if (selectedDealId == null) {
+      return dealRooms[0] ?? null;
+    }
+    return dealRooms.find((d) => d.id === selectedDealId) ?? null;
+  }, [dealRooms, selectedDealId]);
 
   // Message thread for the selected deal — GET/POST /deals/:id/messages (api.messages.*).
   const [liveMessages, setLiveMessages] = React.useState<DealMessage[]>([]);
@@ -2412,6 +2423,21 @@ export default function CreatorChatPage() {
                           </div>
                         </div>
 
+                        {/* T-MEERA-CREATOR-PHASE-A gate-fix round 2 (Priya Q1) — structured deal
+                            terms off the Collaboration itself (`selectedDeal.dealTerms`), not
+                            this message's snapshot metadata (the backend never wrote dealTerms
+                            into proposal-message metadata, only amount/deliverables/usageRights —
+                            see DealService.persistProposalMessage). Shown only while this card is
+                            the live offer (`status === 'pending'`, same gate as the Accept/
+                            Counter/Decline buttons below) so an older, settled card never claims
+                            the deal's CURRENT terms as its own history. */}
+                        {event.metadata?.status === 'pending' && selectedDeal.dealTerms && (
+                          <div className="mt-3 pt-3 border-t border-stage-outreach-border space-y-2">
+                            <p className="text-xs text-muted-foreground mb-1">Deal Terms</p>
+                            <DealTermsSummary terms={selectedDeal.dealTerms} />
+                          </div>
+                        )}
+
                         {/* Earnings Breakdown for Creator */}
                         <div className="mt-3 pt-3 border-t border-stage-outreach-border">
                           <p className="text-xs text-muted-foreground mb-2">Your Earnings Breakdown</p>
@@ -2607,6 +2633,15 @@ export default function CreatorChatPage() {
                             <span>{String(event.metadata?.usageRights ?? 'Not specified')}</span>
                           </div>
                         </div>
+
+                        {/* T-MEERA-CREATOR-PHASE-A gate-fix round 2 (Priya Q1) — see the identical
+                            note on the Brand Proposal card above. */}
+                        {event.metadata?.status === 'pending' && selectedDeal.dealTerms && (
+                          <div className="mt-3 pt-3 border-t border-stage-negotiating-border space-y-2">
+                            <p className="text-xs text-muted-foreground mb-1">Deal Terms</p>
+                            <DealTermsSummary terms={selectedDeal.dealTerms} />
+                          </div>
+                        )}
 
                         {/* Earnings Breakdown */}
                         <div className="mt-3 pt-3 border-t border-stage-negotiating-border">

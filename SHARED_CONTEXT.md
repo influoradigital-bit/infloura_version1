@@ -460,3 +460,196 @@ vikram → arjun | **Gate fix round 1 — backend (Java/Spring) findings from Pr
 **Not done (flagged, not silently skipped):** creator voice route on `CreatorMeeraController` (Sarvam wiring, bigger surface) · `MEERA_CREATOR_ENABLED` rollback flag (SPEC names it, none exists) · JUnit coverage for a pre-V72 Collaboration/Campaign through list/detail/edit/mapper · frontend items (dealTerms render, withdraw-consent UI) are Ananya's.
 
 | NEXT: whoever owns frontend/Python follow-ups on Q2/Q4/Q7; Meera/Priya for a live re-verify pass once Swapnil wants to move forward.
+
+## 2026-09-03 — meera → arjun | T-MEERA-CREATOR-PHASE-A round gate-1 attempt 1 — LOCAL VERIFICATION
+
+meera → arjun | **Local build/test/schema/smoke verification, Phase A** | FILES: none changed (verify-only) | **VERDICT: ❌ FAIL — 1 boot-blocking migration bug (V73/V74) + 1 cross-service contract regression (ai_monthly_cap_usd), both real and reproducible; everything else green.**
+
+### Backend (influora-api)
+- `mvn -q -o -DskipTests compile` → **exit 0**, clean.
+- `mvn -q -o test` targeted at every file this task touched/added (`InfoBarrierTest`, `InfoBarrierRuntimeTest`, `MeeraContextServiceTest`, `DealServiceTest`, `DealControllerTest`, `CampaignServiceTest`, 3x `MeeraInternalController*Test`, `DealServiceBudgetTest`, `DealServiceCreatorDraftExclusionTest`, `AuthRateLimitFilterPublicCreatorVerifiedBucketTest`, `CreatorAgentConversationServiceTest`, `CreatorAgentPreferencesServiceTest`, `PublicCreatorServiceTest`, `AdminCreatorAgentControllerTest`, `CreatorAgentControllerTest`, `PublicCreatorControllerTest`) → **181/181 PASS, 0 failures, 0 errors** (1 pre-existing skip in `DealServiceBudgetTest`, unrelated).
+- Did **not** re-run a full-repo `mvn clean install` (another session may be building concurrently per repo convention — targeted run above covers every file this task's TASKS.md lists).
+
+### Schema diff (entity vs Flyway) — clean on the literal spec, but see boot-blocker below
+- `Collaboration` (7 fields), `Campaign` (2 fields), `MeeraCreatorConversation` (5 fields) — every `@Column(name=...)` matches V72/V74 column-for-column, byte-for-byte.
+- `CreatorAgentPreferences` — 16 of 17 V73 columns match exactly. **1 extra entity field not in V72/73/74**: `aiMonthlyCapUsd` → `@Column(name = "ai_monthly_cap_usd", precision = 6, scale = 2)`. This is covered by a 4th migration outside the spec's literal V72-74 list: `src/main/resources/db/migration/V20260903150000__creator_agent_preferences_ai_monthly_cap.sql` (`ALTER TABLE creator_agent_preferences ADD COLUMN ai_monthly_cap_usd DECIMAL(6, 2) NULL`) — column name/type/nullability match the entity exactly, so **no drift here in isolation**, but it is the direct cause of the Python failure below.
+
+### 🔴 FINDING 1 (blocking) — V73/V74 CREATE TABLE missing the codebase's collation clause, boot crashes on any non-`utf8mb4_unicode_ci`-default MySQL
+Every prior `CREATE TABLE` migration in this repo ends with `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;` (verified in V4, V5, V6, V8, V9, V54, V58, V59, V68, V69). **V73 (`creator_agent_preferences`) and V74 (`meera_creator_conversations`) both omit this clause** — their `CREATE TABLE` statements just end with `);`.
+- Ran `mvn -o -DskipTests spring-boot:run` against the local dev MySQL 8.0 instance (`influora_ai` schema, reachable on `localhost:3306`, `creator_profiles.id` is `varchar(26) COLLATE utf8mb4_unicode_ci`).
+- **Boot failed.** V72 applied clean; V73 failed: `java.sql.SQLException: Referencing column 'creator_id' and referenced column 'id' in foreign key constraint 'fk_creator_agent_prefs_creator' are incompatible.` Full stack: `FlywayMigrateException → flywayInitializer bean → entityManagerFactory → auditLogEntryRepository → internalServiceTokenFilter` — the whole context fails to start, every endpoint 000s.
+- **Root cause**: this server's database-level default collation is `utf8mb4_0900_ai_ci` (MySQL 8's out-of-the-box default — confirmed via `SELECT @@collation_database`). V73's `creator_id VARCHAR(26)` column inherits that default (no explicit COLLATE), while the FK target `creator_profiles.id` is `utf8mb4_unicode_ci` — MySQL refuses the FK across incompatible collations. This is exactly the class of bug `ddl-auto=validate` is supposed to catch pre-prod, except here it's Flyway itself that dies first, before Hibernate validation even runs.
+- **Why the 181/181 green JUnit suite didn't catch it**: confirmed by reading the test files — `InfoBarrierRuntimeTest`'s own javadoc says *"Uses Mockito, not `@SpringBootTest` — this codebase has no full-Spring-context [test]"*, and `CreatorAgentPreferencesServiceTest` is `@ExtendWith(MockitoExtension.class)`. Nothing in this task's test suite boots a real Spring context against a real, freshly-migrated MySQL instance, so a Flyway-level DDL failure is invisible to `mvn test`.
+- **Fix**: append `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;` to both V73's and V74's `CREATE TABLE` statements, matching every other migration in the repo. (V74 has the identical FK-to-`creator_profiles.id` shape, so it will hit the same failure the moment V73 is fixed — did not get far enough to prove it live, but the pattern is byte-identical.)
+- **Consequence of this being unfixed**: I could not proceed to the smoke-test step at all — `GET /api/creator/agent-preferences` and `GET /api/public/creators/{username}/verified` were **never reachable**; the server never finished starting. Reporting this as "could not test," not faking a pass.
+- **Local DB left in a dirty state by this run, needs cleanup before the next boot attempt on this machine**: `flyway_schema_history` on `influora_ai` now has a `version='73', success=0` row (Flyway's standard failed-migration marker) — no partial table was created (MySQL 8 atomic DDL rolled the `CREATE TABLE` back cleanly, confirmed via `SHOW TABLES LIKE 'creator_agent%'` → empty). I attempted `DELETE FROM flyway_schema_history WHERE version='73' AND success=0` to clean it up myself; **the sandbox's auto-mode classifier blocked the destructive DB write**, correctly — I did not force it. Whoever re-runs this needs to either delete that row or run `flyway repair` against `influora_ai` first, otherwise Flyway will refuse to migrate at all (not just fail V73 again).
+
+### 🔴 FINDING 2 (blocking) — AI-service ↔ backend contract drift on `ai_monthly_cap_usd`
+`pytest` in `influora-ai`: **814 passed, 2 FAILED** (both in `tests/prompt/test_creator_context_drift.py`, both real, neither flaky):
+- `test_creator_context_payload_fields_match_the_java_record_exactly` — fails with `Spring's CreatorContextResponse emits fields the Python allow-list drops (they never reach Meera's prompt): ['ai_monthly_cap_usd']`
+- `test_every_java_field_changes_the_rendered_creator_block` — same field, same cause.
+- Confirmed by reading source: `MeeraContextDtos.java` does emit `@JsonProperty("ai_monthly_cap_usd")` (added as part of vikram's Q7 gate-fix-round-1 entry above), but `assembler.py`'s `CREATOR_CONTEXT_PAYLOAD_FIELDS` allow-list was last updated in dev's Q3+Q8 entry (also above) and doesn't include it — that entry predates vikram's Q7 fix. This is a same-day ordering gap between two concurrent gate-fix rounds, not a stale/flaky test; the test is doing exactly its documented job (drift-detection between the Java record and the Python allow-list) and is currently red.
+- This field being silently dropped is lower severity than Finding 1 (it doesn't crash anything — the drift test is specifically designed to fail loudly instead of letting it through silently), but it means the per-creator AI spend-cap override (Q7's whole point) doesn't reach Meera's prompt/spend-tracker read path today.
+- **Fix**: add `"ai_monthly_cap_usd"` to `CREATOR_CONTEXT_PAYLOAD_FIELDS` in `influora-ai/app/prompt/assembler.py` and render it in `build_block_b_creator`/`_creator_rules_lines` (one line, same pattern as the other 6 fields dev's Q3+Q8 entry added).
+
+### AI service (influora-ai) — otherwise clean
+- `pip install -r requirements.txt -r requirements-dev.txt` into the existing `.venv` → clean, no conflicts.
+- `pytest -q` → **814 passed, 2 failed** (Finding 2 above), 11 warnings (pre-existing FastAPI `on_event` deprecation + 1 pydantic `SkipValidation` warning, unrelated to this task).
+
+### Frontend (src/)
+- `npx tsc --noEmit` → **exit 0**, 0 errors.
+- `npm run build` (`vite build` + `postbuild` sitemap/prerender) → **exit 0**, built in 31.36s, 26/26 marketing routes prerendered. (Pre-existing warning: >500kB chunk on `index-*.js`/`PerformanceMonitor-*.js`, and a duplicate `baseUrl` key in root `tsconfig.json` — both pre-existing, not from this task.)
+- `npx vitest run` targeted at this task's new/changed test files (`creator-verified-metrics.null-fields.test.tsx`, `creator-copilot-meera-consent.test.tsx`, `meera-api.creator-routing.test.ts`, `brand-new-hype-campaign.end-brand-fields.test.tsx`, `MeeraCopilotChat.test.tsx`) → **17/17 PASS**, 5/5 files (only React `act(...)` warnings from Radix Select/Dialog internals, non-blocking, pre-existing pattern elsewhere in this suite).
+- **Gap, not a failure**: no dedicated test file exists for `src/components/creator/MeeraSettingsSection.tsx` (the whole A3 settings form — floors/filters/automation/language/hours/representation) or `ConsentScreen.tsx` in isolation; `creator-copilot-meera-consent.test.tsx` covers the consent-gate integration but not the settings form itself. Flagging as a coverage gap, not blocking this verdict.
+
+### Smoke test — blocked by Finding 1
+- Local MySQL 8.0 reachable (`localhost:3306`, root/root per `application.yml` defaults), `influora_ai` schema exists. DB **was** available — this is not a "no DB, can't test" case.
+- Could not reach `GET /api/creator/agent-preferences` or `GET /api/public/creators/{username}/verified` — the Spring context never finished starting (Finding 1). No curl output to report; not fabricating one.
+
+### graphify
+- `graphify update .` launched; ran past the 120s foreground timeout and continued in background — see this session's own follow-up for its result.
+
+### VERDICT
+❌ **FAIL — routing back to vikram via Arjun for 2 fixes**: (1) add the collation clause to V73 and V74 (blocking — nothing boots without it), (2) add `ai_monthly_cap_usd` to `CREATE_CONTEXT_PAYLOAD_FIELDS` in `assembler.py` (dev's file, blocking the spend-cap override feature though not boot). Everything else — backend compile+181 tests, pytest 814/816, frontend tsc+build+17 vitest — is green and does not need rework.
+
+| NEXT: vikram — Finding 1 (V73/V74 collation) + repair `influora_ai`'s `flyway_schema_history` version 73 failed row before next boot attempt; dev — Finding 2 (`ai_monthly_cap_usd` in `assembler.py`); once both land, re-run this same local-verification pass (compile+test were fine, only boot+contract need a retry) before Kavya/Kabir/Swapnil sign-off.
+
+## 2026-09-03 — ananya → arjun | Gate fix round 2, T-MEERA-CREATOR-PHASE-A (frontend area, Q1/Q2/Q3) — DONE
+
+ananya → arjun | **Gate fix round 2 — frontend findings from Priya's tester Q&A (Q1 dealTerms read side, Q2/Q3 creator voice silent bypass)** | FILES: `src/lib/api.ts` (`Deal.dealTerms?: DealTerms`, read side of the write payloads already there) · `src/lib/creator-deal-mappers.ts` (+`dealTerms` on `CreatorDealsPageRow`/`CreatorChatDealRoom`, threaded through both mappers) · `src/pages/brand-chat.tsx` (`ChatDealRoom.dealTerms` + mapper, rendered on the proposal card) · `src/pages/creator-chat.tsx`, `src/pages/creator-deals.tsx` (rendered) · `src/components/shared/deal-terms-summary.tsx` (NEW, git-added — shared read-side render) · `src/hooks/useVoiceOutput.ts`, `src/hooks/useVoiceInput.ts` (`supported: false` for role 'creator') · tests NEW+git-added: `src/components/shared/deal-terms-summary.test.tsx` (3), `src/hooks/useVoiceOutput.creator-unsupported.test.ts` (2), `src/hooks/useVoiceInput.creator-unsupported.test.ts` (2); `src/lib/creator-deal-mappers.test.ts` +4 (dealTerms threading, both present and backend-omitted cases) | **STATUS: tsc --noEmit exit 0; 102/102 vitest green across every touched/new file.**
+
+**Q1 fix (dealTerms had zero frontend readers):** confirmed `DealDtos.persistProposalMessage` never writes `dealTerms` into proposal-MESSAGE metadata (only amount/deliverables/usageRights snapshot it) — the field lives on the Collaboration itself and comes back on `Deal.dealTerms` (`@JsonInclude(NON_NULL)`, so absent not null when never set). Render is therefore sourced from `selectedDeal.dealTerms` (current Collaboration state), gated on `metadata.status === 'pending'` — same visibility condition as the Accept/Counter/Decline buttons — so a settled historical proposal card never claims the deal's CURRENT terms as its own history. Shared `<DealTermsSummary>` renders usage window/channels/exclusivity/max-revisions with honest "Not specified" fallbacks; used on creator-chat.tsx's proposal AND counter-proposal cards, creator-deals.tsx's DealRow (compact, unconditional — list row has no per-message status to gate on), and brand-chat.tsx's shared ProposalCard. **Not done** (flagged, not silently skipped): `brand-deals.tsx` → `DealRoomDashboard`'s selected-deal panel (the OTHER brand deal-detail surface, `/brand/deals/:id`) — out of scope for this round, same `Deal.dealTerms` field is available there whenever someone wires it in. Also flagged: `agency_name` missing from `MeeraContextDtos.CreatorContextResponse` (Priya's Q1 backend half) — not mine, still open.
+
+**Q2/Q3 fix (creator voice silent bypass — "the worst" failure mode):** confirmed `CreatorMeeraController` still exposes no voice routes (`grep -n "voice\|@PostMapping\|@GetMapping" CreatorMeeraController.java` → only sessions/messages). Rather than ship routes that don't exist, made `useVoiceOutput('creator')`/`useVoiceInput({role:'creator'})` report `supported: false` unconditionally — the mic/speaker buttons in `MeeraCopilotChat` (both gated purely on `.supported`) now don't render AT ALL for creators, instead of rendering, silently recording/synthesizing, getting `null` back from `meeraApi.speak/transcribe`, and falling through to the browser's own SpeechSynthesis/webkitSpeechRecognition with zero visible difference — which was bypassing the DPDP consent gate, the creatorLanguage setting, and the spend cap. `role==='brand'` and the no-arg default are unaffected (both hooks' tests assert `supported: true` there against the same stubbed capability surface, proving the `false` comes from the role check, not the environment). Each hook file carries an inline note on when to delete the line: the day `CreatorMeeraController` actually ships `/voice/speak` + `/voice/transcribe`.
+
+**MEERA_CREATOR_ENABLED flag** (also flagged in Priya's Q2): still doesn't exist anywhere in the repo — not mine to add, flagging again since it wasn't picked up in round 1.
+
+| NEXT: arjun — route the `brand-deals.tsx` dealTerms gap + `agency_name` DTO field to whoever owns that slice next round; vikram/backend — creator voice routes or a formal decision to strike them from the launch checklist; Meera — re-run local verification once backend round-2 fixes land.
+
+**dev / AI SERVICE — gate fix round 2, Q7 (creator cap concurrency scope):** creator monthly holds moved from the process-local dict to Redis — `spend_tracker.try_reserve_creator` now does `INCRBY influora:ai:spend:creator:{id}:{YYYY-MM}:held` + `GET total` in one MULTI/EXEC (TTL = reservation TTL + 120s grace, clamped at zero on expiry-under-hold), released with DECRBY, and settled in the SAME MULTI/EXEC as the spend in `record_creator_spend`; in-memory table is now only the no-Redis/Redis-failed fallback (per-process, documented at the reservation section comment). New `app/costs/worker_guard.py`: `app.main` startup REFUSES to boot with `--workers > 1` / `WEB_CONCURRENCY > 1` and no `REDIS_URL`; `/readyz` reports `creator_cap_scope` (`shared`/`per_process`) + `workers` and fails closed on multi-worker-without-Redis. `AI_CREATOR_MONTHLY_CAP_USD: "0.75"` now declared in BOTH `deploy/utho/docker-compose.utho.yml` and `deploy/hostinger/docker-compose.hostinger.yml`; Dockerfile CMD + env.example annotated. Drift: Java's `CreatorContextResponse` gained `floor_currency`, `working_hours_timezone`, `consent_version`, `ai_monthly_cap_usd` — allow-listed in `assembler.CREATOR_CONTEXT_PAYLOAD_FIELDS`; first two rendered (currency on the floors line, zone on the hours line, IST kept for Asia/Kolkata), last two in the new `CREATOR_CONTEXT_FIELDS_NOT_RENDERED` set with a barrier test that the cap figure never reaches Block B. Tests: `tests/costs/test_creator_cap_shared_holds.py` (fake Redis, second-worker + 25-way concurrency + fallback + clamp), `tests/costs/test_worker_guard.py`, `tests/prompt/test_creator_block_round2_fields.py`. influora-ai: 851 passed. Not mine: creator voice actually calling the voice routes (Q2, frontend/backend) — until then voice cannot accrue against the cap.
+
+## 2026-09-03 — meera → arjun | T-MEERA-CREATOR-PHASE-A round gate-2 attempt 1 — LOCAL VERIFICATION
+
+meera → arjun | **T-MEERA-CREATOR-PHASE-A round gate-2 attempt 1** | Scope verified: `CreatorAgentPreferences.java`, `CreatorAgentPreferencesService.java`, `PublicCreatorService.java`, `MeeraContextService.java`, `CreatorAgentController.java`, `CreatorMeeraController.java`, `CreatorAgentDtos.java`, `MeeraContextDtos.java`, migrations `V20260903150000/160000/170000`, influora-ai `spend_tracker.py`/`assembler.py`/`worker_guard.py`/`main.py`, frontend `creator-deal-mappers.ts`, `creator-chat.tsx`, `creator-deals.tsx`, `deal-terms-summary.tsx`, `useVoiceInput.ts`/`useVoiceOutput.ts`.
+
+### 1. Backend (influora-api)
+- `mvn -q -o -DskipTests compile` → **exit 0**, no errors.
+- `mvn -q -o test -Dtest=CreatorAgentPreferencesServiceTest,PublicCreatorServiceTest,CreatorAgentControllerTest,DealResponseLegacyJsonMappingTest,MeeraContextServiceTest,CreatorMeeraControllerTest` → **exit 0**, 45/45 passing (20+4+7+2+10+4), 0 failures/errors/skips (surefire reports confirmed individually).
+
+### 2. Schema diff (entity vs Flyway) — CreatorAgentPreferences, the only entity this round touches
+All 22 fields on `CreatorAgentPreferences.java` map 1:1 to a column across `V73__creator_agent_preferences.sql` (base table) + `V20260903150000` (`ai_monthly_cap_usd`) + `V20260903160000` (`consent_version`) + `V20260903170000` (`working_hours_timezone`, `floor_currency`). No unnamed camelCase `@Column` risk — every field this round added carries an explicit `name=`. **No mismatch.** `Collaboration`/`Campaign` (SPEC 1.1) untouched this round — not re-diffed.
+
+### 3. AI service (influora-ai)
+- `python -m pytest -q` (full suite) → **exit 0**, **851 passed**, 0 failed, 23 warnings (deprecation noise only — `on_event`, pydantic `SkipValidation`). Includes new `tests/costs/test_creator_cap_shared_holds.py`, `tests/costs/test_worker_guard.py`, `tests/prompt/test_creator_block_round2_fields.py`.
+- Note: eval harness prints "60/85 golden cases measured offline; 25 NOT measured" (campaign_performance needs a Java-executor fixture dump, outcome_recommendation needs `--live --record` + `ANTHROPIC_API_KEY`) — this is the eval script's own coverage note, not a pytest failure; the 851 counted tests all passed.
+
+### 4. Frontend
+- `npx tsc --noEmit` → **exit 0**, 0 errors.
+- `npm run build` → **exit 0**, Vite build + prerender succeeded, 26/26 marketing routes snapshotted.
+- `npx vitest run` on touched/new specs (`deal-terms-summary.test.tsx`, `useVoiceInput.creator-unsupported.test.ts`, `useVoiceOutput.creator-unsupported.test.ts`, `creator-deal-mappers.test.ts`) → **exit 0**, **47/47 passed**, 0 failed.
+
+### 5. Smoke (GET /api/creator/agent-preferences, public verified endpoint)
+**NOT RUN — no DB available.** No Postgres listening (checked 5432/8080/3000), Docker Desktop daemon is not running (`docker ps` → "failed to connect to the docker API ... npipe ... system cannot find the file specified"), no `influora-api` process listening on 8080. Not faked. Someone with a running local Postgres + `mvn spring-boot:run` needs to hit `GET /api/creator/agent-preferences` and the public verified endpoint before this gate can be called fully closed on the live-request axis.
+
+### 6. graphify update .
+Ran successfully — 35449 nodes, 88320 edges, 1604 communities, `graphify-out/graph.json`/`graph.html`/`GRAPH_REPORT.md` updated.
+
+### VERDICT: ✅ ALL LOCAL CHECKS PASS (backend build+test, schema diff, AI pytest, frontend tsc+build+vitest) — ❌ SMOKE TEST BLOCKED (no local DB/backend running, not faked).
+
+NEXT: Arjun — (1) round gate-2 attempt 1 is code-green everywhere I could actually run it; (2) the GET /api/creator/agent-preferences + public verified endpoint smoke check is still open — needs a live local stack (Postgres up, `mvn spring-boot:run`) to close; (3) route to Swapnil/next gate only after that smoke check runs, or accept the code-level pass and flag the smoke gap explicitly.
+
+swapnil → team | T-CREATORCONNECT-0902 ruling | wiki/reports/FIX-WAVE-T-CREATORCONNECT-0902.md §4 | RULING 2026-09-03: "Skip email setup for now, use admin dashboard only." Confirmed first that GET /admin/creator-connections already lists every enquiry independent of email (AdminCreatorConnectionService.list reads creator_connection_requests directly). ADMIN_NOTIFICATION_EMAIL (Q3.1) stays unset intentionally — no code change made or needed, WARN-and-skip was already the behaviour. Findings.json Q3.1 status -> ACCEPTED_BY_RULING. Does NOT cover general SMTP: SMTP_HOST is separately blank, so OTP/deal-notification emails remain non-functional — MSG91 creds (smtp.mailer91.com, mail.influora.in verified SPF/DKIM/MX) were being gathered toward that when this ruling paused only the admin-notification piece. | NEXT: revisit ADMIN_NOTIFICATION_EMAIL and general SMTP whenever ops wants email back; until then no action needed.
+- 2026-09-04 dev (T-MEERA-CREATOR-PHASE-A, Priya gate defect: agency name never reached Meera): influora-ai/app/prompt/assembler.py now allow-lists agency_name (creator) + strips it from BRAND, renders 'REPRESENTED by <name>: warn-only mode' with nameless fallback; tests in influora-ai/tests/prompt/test_creator_prompt.py + test_creator_context_drift.py; pytest 856 passed exit 0 against Vikram's DTO line 181.
+
+## kabir — F-0447 audit (creator pending-signature contracts list) — 2026-09-04
+VERDICT: genuinely fixed. Evidence:
+- src/pages/creator-dashboard.tsx:325-357 mounts a dedicated useEffect that calls
+  `api.contracts.listUnsigned('creator')` unconditionally on mount (real call, not defined-but-unused).
+- 3 distinct renders confirmed at lines 542-556: unsignedLoading -> Skeletons; unsignedError -> Alert
+  (destructive, contract-specific copy); unsignedContracts.length===0 -> genuine empty state
+  ("No contracts waiting on your signature."); non-empty -> mapped list. No block covers two states.
+- Each row (line 559-579) is a real <Link> to `/creator/chat?deal=${contract.collaborationId}&tab=contract`,
+  confirmed reachable: creator-chat.tsx:1100-1103 reads `tab` from searchParams and opens the contract
+  panel (`openPanel==='contract'`) which renders CreatorDealContractTab — a pre-existing, already-tested
+  sign flow (contracts-sign-reachability.test.tsx / pending-signature-deadlock.test.tsx). collaborationId
+  IS the deal id per api.ts:2710-2720 doc comment and established codebase convention (listForDeal(collaborationId)).
+  The `/creator/chat?deal=<id>` link pattern is the same one already used by creator-deals.tsx,
+  CreatorApplicationCard.tsx, ApplicationHistoryTimeline.tsx, creator-disputes.tsx.
+- No fabricated values: totalAmount/milestones.length rendered straight off ContractApiRecord
+  (server-summed per api.ts:2712 doc comment); fetch errors are caught and surfaced via unsignedError,
+  never swallowed (creator-dashboard.tsx:344-349).
+- Backend confirmed real: ContractController.java:57-66 GET /contracts/unsigned, CREATOR-only guard,
+  delegates to contractService.listUnsignedForCreator.
+- Regression suite src/pages/creator-dashboard.unsigned-contracts.test.tsx (4 tests) run live:
+  `npx vitest run src/pages/creator-dashboard.unsigned-contracts.test.tsx` -> 4/4 PASS, including the
+  click-through-to-deal-77 navigation test and the empty-vs-error distinct-render tests.
+- No other creator entry point silently omits this: the dashboard tile's separate "Awaiting signature"
+  count (line 150) intentionally derives from deal rows' PENDING_SIGNATURES (documented tradeoff,
+  lines 145-150), not a second broken copy of this feature — not a defect.
+Files read: src/pages/creator-dashboard.tsx, src/pages/creator-dashboard.unsigned-contracts.test.tsx,
+src/lib/api.ts (~2700-2870), src/pages/creator-chat.tsx (~670-2870),
+influora-api/src/main/java/com/influora/web/ContractController.java.
+
+---
+
+## 📱 PHONE-0904 — Creator phone in onboarding (2026-09-04)
+
+**FROM → TO:** Arjun → Vikram (`influora-api/**`) + Ananya (`src/**`)  
+**TASK:** Add optional phone field to creator onboarding step 2, persist to users.phone_number  
+**FILES:** Backend: `OnboardingDtos.java`, `CreatorOnboardingService.java`, extract from `CreatorProfileService.applyPhone`. Frontend: `creator-onboarding.tsx`  
+**STATUS:** ASSIGNED — awaiting implementation  
+**NEXT:** Vikram extracts phone validation to shared util + wires onboarding path → Ananya adds field to step 2 → Kavya QA → Meera build+test → Priya sign-off → Tester persistence audit
+
+**Design:** Reuse existing `CreatorProfileService.applyPhone` logic (must extract to avoid duplication). No new HTTP call. Optional field, Indian mobile validation `/^[6-9]\d{9}$/`, 409 on duplicate phone.
+
+**Full spec:** `TASK_INBOX.md` §PHONE-0904
+
+---
+
+## T-MEERA-CREATOR-PHASE-A final verification — meera → arjun (2026-09-04)
+
+**FROM → TO:** meera → arjun | **TASK:** Stage 4 final local verification after gate-fix round 2 (migration collation clause V73/V74, agency_name, creator voice routes, MEERA_CREATOR_ENABLED, legacy-row tests, Testcontainers boot test, timezone/currency, feature-disabled UI, agency_name in Python assembler) | **STATUS:** ALL LOCAL GATES GREEN, one axis un-runnable here (stated, not faked)
+
+### 1. influora-api (Maven, offline)
+- `mvn -q -o -DskipTests compile` → **exit 0**
+- `mvn -q -o test-compile` → **exit 0**
+- `mvn -q -o test` → **Tests run: 2256, Failures: 2, Errors: 0, Skipped: 13**
+  - `ConversionTrackingServiceTest.testWorkspaceScopedOverloadReservesOrderDerivedKey` — FAIL. `git status --porcelain` on `influora-api/src/test/java/com/influora/service/tracking/ConversionTrackingServiceTest.java` → clean (no output), confirmed untouched by this task. Pre-existing/unrelated per task brief.
+  - `WooCommerceWebhookControllerTest.receive_sameOrderTwice_derivesSameIdempotencyKey` — FAIL. Same confirmation: `influora-api/src/test/java/com/influora/web/WooCommerceWebhookControllerTest.java` untouched. Pre-existing/unrelated.
+  - No other failures found anywhere in the run.
+  - `MeeraCreatorPhaseABootValidationTest` → surefire report: **Tests run: 2, Failures: 0, Errors: 0, Skipped: 2** — confirmed SKIPPED (Docker unavailable via `DockerAvailableCondition`, inherited from `AbstractIntegrationTest`), not failed.
+
+### 2. Schema diff — CreatorAgentPreferences / MeeraCreatorConversation / Collaboration / Campaign
+- `CreatorAgentPreferences.java`: 23 `@Column` fields — `id, creator_id, reel_floor, story_set_floor, post_floor, floor_currency, excluded_categories, blocked_brands, approval_level, creator_language, brand_tone, working_hours_start, working_hours_end, working_hours_timezone, working_days, weekly_sponsored_limit, represented, agency_name, consent_accepted_at, consent_version, ai_monthly_cap_usd, created_at, updated_at`. Matches exactly: V73 (19 cols incl. `id`) + V20260903150000 (`ai_monthly_cap_usd`) + V20260903160000 (`consent_version`) + V20260903170000 (`working_hours_timezone`, `floor_currency`) = 23. Zero drift.
+- `MeeraCreatorConversation.java`: 6 `@Column` fields — `id, creator_id, conversation_id, started_at, last_message_at, message_count`. Matches V74's `CREATE TABLE` exactly. Zero drift.
+- `Collaboration.java`: V72's 7 new columns (`usage_months, usage_perpetual, usage_channels, exclusivity_days, exclusivity_scope, exclusivity_brands, max_revisions`) all present with matching `@Column(name=...)`. Zero drift on the new columns.
+- `Campaign.java`: V72's 2 new columns (`end_brand_name, end_brand_category`) present with matching `@Column(name=...)`. Zero drift on the new columns.
+- V73 and V74 both confirmed ending with `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;` (the collation-clause defect from the prior gate round is fixed).
+- `MeeraCreatorPhaseABootValidationTest` (the regression guard for this exact collation defect) is present and SKIPPED here — see §1 — because Docker is unavailable to run its Testcontainers MySQL. Not proof it currently passes against real MySQL; the code fix + the schema-diff above are the evidence available in this environment.
+
+### 3. influora-ai
+- `python -m pytest -q` → **856 passed**, 0 failed, 23 warnings (FastAPI `on_event` deprecation noise, unrelated), 79.02s. Full suite green.
+
+### 4. Frontend
+- `npx tsc --noEmit` → **exit 0**, 0 errors.
+- `npm run build` → **exit 0**, Vite build + prerender succeeded, 26/26 marketing routes snapshotted, no errors in log.
+- `npx vitest run` (full suite) → **Test Files: 1 failed | 150 passed (151)**, **Tests: 2 failed | 923 passed (925)**, Duration 144.81s.
+  - Both failures are in `src/pages/creator-disputes.test.tsx`: `CreatorDisputesPage > opens a dispute via api.creatorDisputes.open with trimmed reason` and `CreatorDisputesPage > surfaces DISPUTE_ALREADY_OPEN from open() — no silent second-active UX`. Exactly the two pre-existing failures the task brief named as expected. No other failures.
+
+### 5. Escrow-word grep (touched files, user-facing strings only)
+Grepped every file this task touched (git status M/A list) for `escrow` (case-insensitive). Every hit is one of: an identifier/field name (`escrowFunded`, `escrowHoldId`, `escrowLocked`, `EscrowHoldRepository`, `EscrowStatus`), an API path (`/wallet/escrow/fund`, `GET /wallet/escrow`), a code comment, a Python gate-key string (`assembler.py:80` `"escrow_internals"` — an internal topic-gate identifier, never rendered to a user), or pre-existing unrelated wallet/migration content (`application.yml`'s CR-51 config, `DealServiceTest.java` mocks, `wiki/processes/schema-changes.md`'s prior migration-log row). Zero occurrences of "escrow" in actual rendered user-facing copy — e.g. `creator-dashboard.tsx:464` renders `${formatINR(wallet.escrowLocked)} secured`, i.e. the visible word is "secured". The core Phase A files (`MeeraCreatorFeatureProperties.java`, `CreatorAgentPreferences*.java`, `CreatorAgentController.java`, `CreatorMeeraController.java`, `MeeraSettingsSection.tsx`, `useVoiceInput.ts`/`useVoiceOutput.ts`, `creator-settings.tsx`) have zero "escrow" references at all.
+
+### 6. graphify update .
+Ran successfully — 35594 nodes, 88726 edges, 1594 communities, `graphify-out/graph.json`/`graph.html`/`GRAPH_REPORT.md` updated. (119 `.sql` files contributed nothing — `tree_sitter_sql` not installed, pre-existing tooling gap, unrelated to this task.)
+
+### What could NOT be run here (stated, not faked)
+- No live smoke test (`curl`/browser hit on `/api/creator/agent-preferences` etc.) — no Docker daemon, no Postgres/MySQL listening, no `influora-api` process running locally in this environment.
+- `MeeraCreatorPhaseABootValidationTest`'s real-MySQL Testcontainers assertion did not execute (SKIPPED, not run) — same reason.
+
+### VERDICT: ✅ ALL RUNNABLE LOCAL GATES PASS — backend compile/test-compile/test (2 pre-existing failures only, confirmed unrelated), schema diff clean on all 4 entities, V73/V74 collation clause confirmed present, influora-ai pytest 856/856, frontend tsc/build/vitest (2 pre-existing failures only, confirmed as predicted), escrow-word check clean, graphify updated. ❌ NOT PROVEN: live boot/smoke against real MySQL+Docker — explicitly out of reach in this environment, not skipped silently.
+
+NEXT: Arjun — ready to route to Swapnil/next gate on the code-level pass; the Testcontainers boot-validation + live smoke check still need a machine with Docker to close the last verification axis.
+
+- 2026-09-04 tara → arjun/swapnil | T-MEERA-CREATOR-PHASE-A run report | .proof-os/tasks/T-MEERA-CREATOR-PHASE-A/REPORT.md (git-added) | STATUS: code-side DONE, gate 10/10, all runnable local gates green; NOT deploy-ready: live smoke on Docker/VPS pending, Phase A foundation sits inside commit 1792c37 (mislabelled creator-connect) and gate-fix work is uncommitted (32 staged / 76 unstaged, mixed with unrelated work). | NEXT: Swapnil reads REPORT.md; someone runs the live smoke + separates and commits the Phase A slice.
+
+- 2026-09-04 vikram → arjun | PHONE-0904 sign-off items 1 (Q1) + 2 (Q8) | influora-api/src/main/java/com/influora/service/AuthService.java, UserService.java, web/dto/user/UserDtos.java, web/dto/auth/BrandRegisterRequest.java; new test influora-api/src/test/java/com/influora/service/UserServiceTest.java; log at wiki/processes/api-docs.md (2026-09-04 entry) | STATUS: DONE — brand phone now REQUIRED at POST /auth/brand/register with its own PHONE_REQUIRED/400 (distinct from INVALID_PHONE/400 and PHONE_ALREADY_EXISTS/409); GET+PATCH /users/me self endpoint now reads/writes the brand's own phone via the existing UserPhoneService (no new write path); Q10 no-leak re-verified; creator phone untouched (still optional, no 4th write path). mvn -o -q compile/test-compile clean; AuthServiceTest+UserServiceTest+CreatorProfileServiceTest+CreatorOnboardingServiceTest+AdminCreatorServiceTest = 81 run/0 failures, reproduced on clean re-run (no flake this pass). | NEXT: Ananya — wire brand-onboarding.tsx inline PHONE_REQUIRED/PHONE_ALREADY_EXISTS mapping (Q6, already flagged to her) and a brand Settings phone read/edit UI against the new /users/me phone field; then Priya re-verifies against wiki/reports/phone-0904-signoff-qa.md for sign-off.

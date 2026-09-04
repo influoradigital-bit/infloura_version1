@@ -13,6 +13,7 @@ import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.web.dto.creator.PublicCreatorDtos.VerifiedProfileResponse;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,7 +61,8 @@ class PublicCreatorServiceTest {
 
     private void stubDiscoverableAndConnected() {
         when(profile.isDiscoverable()).thenReturn(true);
-        when(metaOAuthTokenRepository.findByCreatorProfileIdAndRevokedFalse(PROFILE_ID))
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndRevokedFalseAndExpiresAtAfter(
+                        org.mockito.ArgumentMatchers.eq(PROFILE_ID), org.mockito.ArgumentMatchers.any(Instant.class)))
                 .thenReturn(List.of(mock(MetaOAuthToken.class)));
     }
 
@@ -104,7 +106,33 @@ class PublicCreatorServiceTest {
     @DisplayName("a not-discoverable creator gets the SAME 404 code as a suspended one -- no enumeration signal")
     void notDiscoverableCreator_returnsSame404AsSuspended() {
         when(profile.isDiscoverable()).thenReturn(false);
-        when(metaOAuthTokenRepository.findByCreatorProfileIdAndRevokedFalse(PROFILE_ID)).thenReturn(List.of());
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndRevokedFalseAndExpiresAtAfter(
+                        org.mockito.ArgumentMatchers.eq(PROFILE_ID), org.mockito.ArgumentMatchers.any(Instant.class)))
+                .thenReturn(List.of());
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.getVerifiedMetrics(USERNAME));
+
+        assertEquals("CREATOR_NOT_FOUND", ex.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatus());
+    }
+
+    /**
+     * Gate fix round 2, item 2 (Priya Q6). Before this fix, {@code getVerifiedMetrics} tested
+     * {@code findByCreatorProfileIdAndRevokedFalse} (revocation only), so a creator whose Meta
+     * token expired weeks ago -- never explicitly revoked -- still passed the connected-check and
+     * the public page kept advertising a dead connection as verified. This proves an expired,
+     * non-revoked token now yields the SAME 404 as "never connected" -- expiry alone is enough to
+     * un-verify the page, without waiting for an explicit revoke.
+     */
+    @Test
+    @DisplayName("a creator whose only Meta token has expired gets 404, same as never connected")
+    void expiredMetaToken_returns404() {
+        when(profile.isDiscoverable()).thenReturn(true);
+        // The repository call itself filters expiry server-side; simulate that filtering finding
+        // nothing because the one non-revoked token this creator has is expired.
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndRevokedFalseAndExpiresAtAfter(
+                        org.mockito.ArgumentMatchers.eq(PROFILE_ID), org.mockito.ArgumentMatchers.any(Instant.class)))
+                .thenReturn(List.of());
 
         ApiException ex = assertThrows(ApiException.class, () -> service.getVerifiedMetrics(USERNAME));
 

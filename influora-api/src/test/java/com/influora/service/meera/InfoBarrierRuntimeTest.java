@@ -70,6 +70,11 @@ class InfoBarrierRuntimeTest {
     private static final String LEAK_FLOOR_RAW = "99999.00";
     private static final String OTHER_FLOOR_RAW = "111.00";
 
+    // Priya gate review defect 2 — a seeded, distinctive agency name that must never appear
+    // outside a CREATOR context, and never leak between two creators' own CREATOR contexts.
+    private static final String LEAK_AGENCY_NAME = "Zylo Talent Partners LEAK9999";
+    private static final String OTHER_AGENCY_NAME = "Marigold Creator Mgmt OTHER1111";
+
     @Mock private WorkspaceRepository workspaceRepository;
     @Mock private BrandProfileRepository brandProfileRepository;
     @Mock private CampaignTemplateRepository templateRepository;
@@ -181,7 +186,16 @@ class InfoBarrierRuntimeTest {
         // The Meera rate-FLOOR for this same creator must never appear, regardless.
         assertThat(json).doesNotContain(LEAK_FLOOR_RAW);
         assertThat(json).doesNotContain("99,999");
-        // Structural proof: the BRAND path never even reads the repository that holds floors.
+        // Priya gate review defect 2 — the creator's agency name (a CREATOR-only field, added to
+        // CreatorContextResponse) must never appear in a BRAND context either. There is no way to
+        // stub it into this path's data (see the verifyNoInteractions below — the BRAND path
+        // never queries the repository agencyName lives in at all), so this is a defense-in-depth
+        // literal check against the SAME distinctive marker the CREATOR-audience test below
+        // proves is actually rendered for a CREATOR context.
+        assertThat(json).doesNotContain(LEAK_AGENCY_NAME);
+        assertThat(json).doesNotContain("agency_name");
+        // Structural proof: the BRAND path never even reads the repository that holds floors
+        // (and agency names).
         verifyNoInteractions(creatorAgentPreferencesRepository);
     }
 
@@ -190,8 +204,8 @@ class InfoBarrierRuntimeTest {
     void creatorContextNeverExposesAnotherCreatorsFloor() throws Exception {
         String creatorAUserId = "01J2CREATORAUSER";
         String creatorBUserId = "01J2CREATORBUSER";
-        stubCreator(creatorAUserId, "creatorA-profile", "Creator A", LEAK_FLOOR_RAW);
-        stubCreator(creatorBUserId, "creatorB-profile", "Creator B", OTHER_FLOOR_RAW);
+        stubCreator(creatorAUserId, "creatorA-profile", "Creator A", LEAK_FLOOR_RAW, LEAK_AGENCY_NAME);
+        stubCreator(creatorBUserId, "creatorB-profile", "Creator B", OTHER_FLOOR_RAW, OTHER_AGENCY_NAME);
 
         String jsonA = mapper.writeValueAsString(service.assemble(creatorAUserId, "CREATOR"));
         String jsonB = mapper.writeValueAsString(service.assemble(creatorBUserId, "CREATOR"));
@@ -202,9 +216,21 @@ class InfoBarrierRuntimeTest {
         // ...and never the other creator's.
         assertThat(jsonA).doesNotContain("111");
         assertThat(jsonB).doesNotContain(LEAK_FLOOR_RAW).doesNotContain("99,999");
+
+        // Priya gate review defect 2 — same proof for agency_name: each creator sees only their
+        // own agency name, never the other creator's.
+        assertThat(jsonA).contains(LEAK_AGENCY_NAME);
+        assertThat(jsonB).contains(OTHER_AGENCY_NAME);
+        assertThat(jsonA).doesNotContain(OTHER_AGENCY_NAME);
+        assertThat(jsonB).doesNotContain(LEAK_AGENCY_NAME);
     }
 
     private void stubCreator(String userId, String profileId, String displayName, String floorRaw) {
+        stubCreator(userId, profileId, displayName, floorRaw, null);
+    }
+
+    private void stubCreator(
+            String userId, String profileId, String displayName, String floorRaw, String agencyName) {
         CreatorProfile profile = mock(CreatorProfile.class);
         when(creatorProfileRepository.findByUserId(userId)).thenReturn(Optional.of(profile));
         when(profile.getId()).thenReturn(profileId);
@@ -219,7 +245,10 @@ class InfoBarrierRuntimeTest {
         when(prefs.getCreatorLanguage()).thenReturn("en-IN");
         when(prefs.getBrandTone()).thenReturn("FRIENDLY");
         when(prefs.getApprovalLevel()).thenReturn(0);
-        when(prefs.isRepresented()).thenReturn(false);
+        when(prefs.isRepresented()).thenReturn(agencyName != null);
+        if (agencyName != null) {
+            when(prefs.getAgencyName()).thenReturn(agencyName);
+        }
         when(prefs.isConsentAccepted()).thenReturn(false);
         when(creatorAgentPreferencesRepository.findByCreatorId(profileId)).thenReturn(Optional.of(prefs));
 

@@ -36,6 +36,18 @@ public class CreatorAgentPreferences {
 
     public static final String DEFAULT_LANGUAGE = "hi-IN";
 
+    /**
+     * Gate fix round 2, item 1 (Priya Q3) — the DPDP consent notice's current version. Bump this
+     * whenever the consent text itself changes; {@link #isConsentAccepted()} compares the stored
+     * {@link #consentVersion} against this constant (not just null-checking {@link
+     * #consentAcceptedAt}), so a version bump forces every creator back behind {@code 403
+     * CONSENT_REQUIRED} until they re-consent, even one who already accepted an older notice.
+     */
+    public static final String CURRENT_CONSENT_VERSION = "v1";
+
+    public static final String DEFAULT_WORKING_HOURS_TIMEZONE = "Asia/Kolkata";
+    public static final String DEFAULT_FLOOR_CURRENCY = "INR";
+
     @Id
     @Column(length = 26)
     private String id;
@@ -51,6 +63,10 @@ public class CreatorAgentPreferences {
 
     @Column(name = "post_floor", precision = 12, scale = 2)
     private BigDecimal postFloor;
+
+    /** Gate fix round 2, item 3 (Priya Q8) — ISO 4217 code the three floors above are denominated in. */
+    @Column(name = "floor_currency", nullable = false, length = 3)
+    private String floorCurrency;
 
     /** JSON array of category names, e.g. ["Alcohol", "Gambling"]. */
     @Column(name = "excluded_categories", columnDefinition = "TEXT")
@@ -75,6 +91,15 @@ public class CreatorAgentPreferences {
     @Column(name = "working_hours_end")
     private Integer workingHoursEnd;
 
+    /**
+     * Gate fix round 2, item 3 (Priya Q8) — IANA zone id (e.g. {@code "Asia/Kolkata"}) that {@link
+     * #workingHoursStart}/{@link #workingHoursEnd} are hours-of-day IN. Without this the working
+     * hours are decorative: nothing can determine whether "now" falls inside a bare 9-18 with no
+     * zone attached.
+     */
+    @Column(name = "working_hours_timezone", nullable = false, length = 64)
+    private String workingHoursTimezone;
+
     /** JSON array of ISO-8601 weekday numbers, 1 (Mon) - 7 (Sun). */
     @Column(name = "working_days", columnDefinition = "TEXT")
     private String workingDaysJson;
@@ -91,6 +116,14 @@ public class CreatorAgentPreferences {
     /** DPDP consent (A6) — {@code null} means "not consented yet"; the first Meera turn is blocked until this is set. */
     @Column(name = "consent_accepted_at")
     private Instant consentAcceptedAt;
+
+    /**
+     * Gate fix round 2, item 1 (Priya Q3) — which DPDP notice {@link #consentAcceptedAt} was
+     * recorded against. {@link #isConsentAccepted()} requires this to equal {@link
+     * #CURRENT_CONSENT_VERSION}, not merely that {@link #consentAcceptedAt} is non-null.
+     */
+    @Column(name = "consent_version", nullable = false, length = 16)
+    private String consentVersion;
 
     /**
      * Gate fix round 1 (Priya Q7) — per-creator override of influora-ai's default monthly AI-spend
@@ -132,6 +165,11 @@ public class CreatorAgentPreferences {
         p.creatorLanguage = creatorLanguage != null ? creatorLanguage : DEFAULT_LANGUAGE;
         p.brandTone = TONE_FRIENDLY;
         p.represented = false;
+        // Not consent — consentAcceptedAt stays null — but the NOT NULL column needs a value, and
+        // it is what a subsequent recordConsent() would stamp anyway (see isConsentAccepted()).
+        p.consentVersion = CURRENT_CONSENT_VERSION;
+        p.workingHoursTimezone = DEFAULT_WORKING_HOURS_TIMEZONE;
+        p.floorCurrency = DEFAULT_FLOOR_CURRENCY;
         Instant now = Instant.now();
         p.createdAt = now;
         p.updatedAt = now;
@@ -162,6 +200,10 @@ public class CreatorAgentPreferences {
         return postFloor;
     }
 
+    public String getFloorCurrency() {
+        return floorCurrency;
+    }
+
     public String getExcludedCategoriesJson() {
         return excludedCategoriesJson;
     }
@@ -190,6 +232,10 @@ public class CreatorAgentPreferences {
         return workingHoursEnd;
     }
 
+    public String getWorkingHoursTimezone() {
+        return workingHoursTimezone;
+    }
+
     public String getWorkingDaysJson() {
         return workingDaysJson;
     }
@@ -210,6 +256,10 @@ public class CreatorAgentPreferences {
         return consentAcceptedAt;
     }
 
+    public String getConsentVersion() {
+        return consentVersion;
+    }
+
     public BigDecimal getAiMonthlyCapUsd() {
         return aiMonthlyCapUsd;
     }
@@ -220,8 +270,17 @@ public class CreatorAgentPreferences {
         touch();
     }
 
+    /**
+     * Gate fix round 2, item 1 (Priya Q3) — accepted means both a timestamp AND the CURRENT notice
+     * version, not merely a non-null timestamp. A creator who consented under an older version
+     * (e.g. the migration-backfilled {@code "v1"} for pre-existing rows, once {@link
+     * #CURRENT_CONSENT_VERSION} is bumped past it) reads as NOT accepted here, which is exactly
+     * what routes them back through {@link
+     * com.influora.web.CreatorMeeraController#requireConsent} into a fresh {@code 403
+     * CONSENT_REQUIRED} — no separate version check needed at the controller.
+     */
     public boolean isConsentAccepted() {
-        return consentAcceptedAt != null;
+        return consentAcceptedAt != null && CURRENT_CONSENT_VERSION.equals(consentVersion);
     }
 
     public Instant getCreatedAt() {
@@ -241,6 +300,7 @@ public class CreatorAgentPreferences {
             BigDecimal reelFloor,
             BigDecimal storySetFloor,
             BigDecimal postFloor,
+            String floorCurrency,
             String excludedCategoriesJson,
             String blockedBrandsJson,
             int approvalLevel,
@@ -248,6 +308,7 @@ public class CreatorAgentPreferences {
             String brandTone,
             Integer workingHoursStart,
             Integer workingHoursEnd,
+            String workingHoursTimezone,
             String workingDaysJson,
             Integer weeklySponsoredLimit,
             boolean represented,
@@ -255,6 +316,7 @@ public class CreatorAgentPreferences {
         this.reelFloor = reelFloor;
         this.storySetFloor = storySetFloor;
         this.postFloor = postFloor;
+        this.floorCurrency = floorCurrency != null ? floorCurrency : DEFAULT_FLOOR_CURRENCY;
         this.excludedCategoriesJson = excludedCategoriesJson;
         this.blockedBrandsJson = blockedBrandsJson;
         this.approvalLevel = approvalLevel;
@@ -262,6 +324,7 @@ public class CreatorAgentPreferences {
         this.brandTone = brandTone;
         this.workingHoursStart = workingHoursStart;
         this.workingHoursEnd = workingHoursEnd;
+        this.workingHoursTimezone = workingHoursTimezone != null ? workingHoursTimezone : DEFAULT_WORKING_HOURS_TIMEZONE;
         this.workingDaysJson = workingDaysJson;
         this.weeklySponsoredLimit = weeklySponsoredLimit;
         this.represented = represented;
@@ -269,10 +332,18 @@ public class CreatorAgentPreferences {
         touch();
     }
 
-    /** A6 — DPDP consent. Idempotent: calling this again after consent is already recorded is a no-op on the timestamp. */
+    /**
+     * A6 — DPDP consent, recorded against {@link #CURRENT_CONSENT_VERSION}. Idempotent for a
+     * creator who already accepted the CURRENT version (no-op on the timestamp); but a creator
+     * whose stored {@link #consentVersion} is stale (an older notice) re-stamps both the timestamp
+     * and the version — same re-consent path a first-time consent takes (gate fix round 2, item 1,
+     * Priya Q3: a text change must be able to force re-consent, not silently keep old acceptances
+     * valid forever).
+     */
     public void recordConsent() {
-        if (this.consentAcceptedAt == null) {
+        if (this.consentAcceptedAt == null || !CURRENT_CONSENT_VERSION.equals(this.consentVersion)) {
             this.consentAcceptedAt = Instant.now();
+            this.consentVersion = CURRENT_CONSENT_VERSION;
             touch();
         }
     }

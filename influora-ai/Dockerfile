@@ -45,4 +45,10 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status==200 else 1)"
 
+# Gate fix round 2 (Q7): the per-creator monthly AI cap keeps its in-flight
+# holds in Redis when REDIS_URL is set, so raising --workers (or scaling
+# replicas) is safe ONLY with Redis configured. Without it the cap is
+# per-process and app.main refuses to boot with --workers > 1; /readyz reports
+# `creator_cap_scope` either way. A compose `command:` override is subject to
+# the same check.
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

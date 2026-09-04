@@ -54,6 +54,19 @@ public interface MetaOAuthTokenRepository extends JpaRepository<MetaOAuthToken, 
 
     List<MetaOAuthToken> findByCreatorProfileIdAndRevokedFalse(String creatorProfileId);
 
+    /**
+     * Gate fix round 2, item 2 (Priya Q6) — expiry-aware counterpart to {@link
+     * #findByCreatorProfileIdAndRevokedFalse}. That method tests revocation only, so a creator
+     * whose Meta token expired weeks ago (never explicitly revoked) still passed {@code
+     * PublicCreatorService#getVerifiedMetrics}'s connected-check and had the public page keep
+     * advertising a dead connection as verified. {@code expires_at} is {@code NOT NULL} on {@link
+     * com.influora.domain.entity.MetaOAuthToken} (see its {@code expiresAt} column), so this
+     * predicate never silently drops a row over a null comparison, unlike the sibling queries
+     * above that guard against a null-bound *argument* rather than a null *column*.
+     */
+    List<MetaOAuthToken> findByCreatorProfileIdAndRevokedFalseAndExpiresAtAfter(
+            String creatorProfileId, Instant now);
+
     Optional<MetaOAuthToken> findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
             String creatorProfileId);
 

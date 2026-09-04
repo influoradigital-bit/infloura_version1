@@ -154,8 +154,13 @@ public final class MeeraContextDtos {
      * CreatorAgentPreferences} and round-tripped correctly through the settings API, but never
      * reached this response at all — Meera had no way to know a brand was blocklisted, so a
      * transcript proving "a blocklisted brand visibly changes the AI's answer" could never be
-     * produced. They are added here now. {@code agency_name} stays deliberately PRIVATE — never
-     * added — {@code represented} (the boolean) is the only agency-adjacent fact Meera needs.
+     * produced. They are added here now.
+     *
+     * <p><b>Priya gate review defect 2:</b> {@code agency_name} was similarly stored
+     * ({@code CreatorAgentPreferences#getAgencyName}) but never reached this response either — a
+     * represented creator's Meera turn had only the bare {@code represented} boolean to go on,
+     * with no way to address the actual agency/manager on file. Added below, CREATOR audience
+     * only (see {@code InfoBarrierRuntimeTest}).
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CreatorContextResponse(
@@ -173,15 +178,32 @@ public final class MeeraContextDtos {
             @JsonProperty("deals_summary") Map<String, Object> dealsSummary,
             @JsonProperty("approval_level") int approvalLevel,
             @JsonProperty("represented") boolean represented,
+            /**
+             * Priya gate review defect 2 — the agency/manager name a represented creator has on
+             * file, so Meera can address the right party. CREATOR audience only: BRAND context
+             * must never carry this (see {@code InfoBarrierRuntimeTest}).
+             */
+            @JsonProperty("agency_name") String agencyName,
             @JsonProperty("excluded_categories") List<String> excludedCategories,
             @JsonProperty("blocked_brands") List<String> blockedBrands,
             @JsonProperty("working_hours_start") Integer workingHoursStart,
             @JsonProperty("working_hours_end") Integer workingHoursEnd,
+            /** Gate fix round 2, item 3 (Priya Q8) — IANA zone id working_hours_start/end are in. */
+            @JsonProperty("working_hours_timezone") String workingHoursTimezone,
             @JsonProperty("working_days") List<Integer> workingDays,
             @JsonProperty("weekly_sponsored_limit") Integer weeklySponsoredLimit,
+            /** Gate fix round 2, item 3 (Priya Q8) — ISO 4217 code {@code floors} above are denominated in. */
+            @JsonProperty("floor_currency") String floorCurrency,
             @JsonProperty("identity") Map<String, Boolean> identity,
             /** A6 — the Python side's consent gate reads this to decide CONSENT_REQUIRED (SPEC.md 3.4). */
             @JsonProperty("consent_accepted") boolean consentAccepted,
+            /**
+             * Gate fix round 2, item 1 (Priya Q3) — which DPDP notice version {@code
+             * consent_accepted} was computed against; already {@code false} above on a stale
+             * version (see {@code CreatorAgentPreferences#isConsentAccepted}), this is surfaced too
+             * so influora-ai can log/report which version a rejection was against.
+             */
+            @JsonProperty("consent_version") String consentVersion,
             /**
              * Gate fix round 1 (Priya Q7) — the admin-settable per-creator monthly AI-spend cap
              * override. Omitted entirely (NON_NULL on the class) when the creator has no override

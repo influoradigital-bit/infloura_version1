@@ -38,8 +38,11 @@ _JAVA_DTO_CANDIDATES = (
 
 # Fields on the Java record that are NOT rendered as prose in Block B by
 # design: routing/identity of the payload itself, or read by a different
-# consumer (the A6 consent gate in app/routes/chat.py + voice.py).
-_NOT_RENDERED_BY_DESIGN = frozenset({"audience", "workspace_id", "consent_accepted"})
+# consumer (the A6 consent gate + its version in app/routes/chat.py +
+# voice.py; the A8 per-creator cap override in app/costs/spend_tracker.py).
+# Single source of truth lives next to the allow-list in the assembler.
+_NOT_RENDERED_BY_DESIGN = assembler.CREATOR_CONTEXT_FIELDS_NOT_RENDERED
+assert _NOT_RENDERED_BY_DESIGN >= {"audience", "workspace_id", "consent_accepted"}
 
 
 def _java_creator_context_fields() -> set[str]:
@@ -100,7 +103,12 @@ def test_every_allow_listed_field_is_actually_read_by_the_creator_block_builder(
 def test_every_java_field_changes_the_rendered_creator_block():
     """Behavioural half of the structural check above: for each Java field
     (except the non-rendered-by-design ones), a context WITH a distinctive
-    value renders differently from one WITHOUT it."""
+    value renders differently from one WITHOUT it.
+
+    A field that only renders under another field (`agency_name` needs
+    `represented=True`) lists its prerequisites in `_PREREQUISITES`; both
+    sides of its comparison then carry the prerequisites so the diff
+    isolates the field itself."""
     java = _java_creator_context_fields() - _NOT_RENDERED_BY_DESIGN
     base = {
         "workspace_id": "c-drift",
@@ -128,13 +136,38 @@ def test_every_java_field_changes_the_rendered_creator_block():
         "working_days": [6, 7],
         "weekly_sponsored_limit": 9,
         "identity": {"kyc_done": True, "gstin_present": True},
+        "floor_currency": "AED",
+        "working_hours_timezone": "Asia/Dubai",
+        # Gate fix round 3 (Priya): the represented-by-agency NAME.
+        "agency_name": "Drift Agency Talent",
     }
     missing_fixture = sorted(java - set(distinctive))
     assert not missing_fixture, (
         f"Java added {missing_fixture}; give each a distinctive value here so the "
         "render check covers it"
     )
-    baseline = build_block_b_creator(dict(base))["text"]
     for name in sorted(java):
-        rendered = build_block_b_creator({**base, name: distinctive[name]})["text"]
+        prereq = _PREREQUISITES.get(name, {})
+        baseline = build_block_b_creator({**base, **prereq})["text"]
+        rendered = build_block_b_creator({**base, **prereq, name: distinctive[name]})["text"]
         assert rendered != baseline, f"setting `{name}` did not change the creator Block B"
+
+
+# Fields whose render line is gated on another field being set.
+_PREREQUISITES: dict[str, dict] = {
+    "agency_name": {"represented": True},
+}
+
+
+def test_agency_name_is_allow_listed_and_rendered_only_when_represented():
+    """Gate fix round 3 (Priya): `agency_name` was read by the renderer but
+    missing from the allow-list -> dead code, Meera never saw the name. The
+    exact-match test above enforces the Java side once Vikram's DTO change
+    (`@JsonProperty("agency_name") String agencyName`, nullable) lands; this
+    pins the Python side independently."""
+    assert "agency_name" in CREATOR_CONTEXT_PAYLOAD_FIELDS
+    assert "agency_name" not in _NOT_RENDERED_BY_DESIGN
+    assert "agency_name" in assembler._FORBIDDEN_BRAND_FIELDS
+    ctx = {"workspace_id": "c-1", "display_name": "D", "first_name": "D", "agency_name": "Drift Agency Talent"}
+    assert "Drift Agency Talent" not in build_block_b_creator(ctx)["text"]
+    assert "REPRESENTED by Drift Agency Talent" in build_block_b_creator({**ctx, "represented": True})["text"]

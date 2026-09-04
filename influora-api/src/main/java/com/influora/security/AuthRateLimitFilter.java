@@ -362,7 +362,14 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         if (path.equals("/wallet/withdraw")) {
             return "creator-withdraw";
         }
-        if (path.equals("/meera/voice/speak") || path.equals("/meera/voice/transcribe")) {
+        // Priya gate review defect 3 — CreatorMeeraController's mirrored voice routes are the
+        // exact same per-call TTS/STT cost surface as the BRAND-audience ones above (MEERA_TURN's
+        // "(/creator)? prefix" fix, same rationale): both must share this bucket, not go
+        // unthrottled.
+        if (path.equals("/meera/voice/speak")
+                || path.equals("/meera/voice/transcribe")
+                || path.equals("/creator/meera/voice/speak")
+                || path.equals("/creator/meera/voice/transcribe")) {
             return "meera-voice";
         }
         if (MEERA_TURN.matcher(path).matches()) {

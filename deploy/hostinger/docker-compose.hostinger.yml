@@ -152,6 +152,10 @@ services:
       # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
       # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.
       CREATOR_COPILOT_ENABLED: ${CREATOR_COPILOT_ENABLED:-false}
+      # T-MEERA-CREATOR-PHASE-A, Priya gate review defect 4 — rollback flag for the whole Meera
+      # for Creators surface (see MeeraCreatorFeatureProperties/application.yml). On by default;
+      # flip to "false" to 404 every CREATOR-audience Meera route without a code rollback.
+      MEERA_CREATOR_ENABLED: "true"
       INFLUORA_MEERA_STREAM_PUBLICCHATURL: https://${AI_DOMAIN}/chat
       CLAMAV_HOST: clamav
       # ---- Money + comms (no validator — break silently if wrong) ----
@@ -256,6 +260,13 @@ services:
       TREND_TAG_INGEST_SECRET: ${TREND_TAG_INGEST_SECRET}
       AI_DAILY_SPEND_CEILING_USD: "15.0"
       AI_SPEND_KILL_SWITCH: "false"
+      # Meera for Creators (A8): per-creator MONTHLY cap in USD, UTC calendar month,
+      # enforced by influora-ai before any provider call (spend_tracker.py). Declared
+      # explicitly -- gate fix round 2 (Q7) -- so prod never silently runs on the code
+      # default (same undeclared-flag pattern as F-0390). "0" disables the cap. Holds
+      # are shared through REDIS_URL above; without Redis the cap is per-process and
+      # influora-ai refuses to boot with more than one uvicorn worker.
+      AI_CREATOR_MONTHLY_CAP_USD: "0.75"
       # P1 BLANK TURN fix (2026-07-24, wiki/ai-review/meera-blank-turn-ai-
       # review.md): previously UNSET here, silently inheriting the Python
       # default (384), which sat exactly on create_campaign's tool-JSON

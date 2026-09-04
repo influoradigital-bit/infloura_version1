@@ -318,16 +318,43 @@ async def _get_global_total_redis() -> Decimal | None:
         return None
 
 
-async def _record_creator_spend_redis(cost_usd: Decimal, creator_id: str) -> Decimal | None:
+async def _record_creator_spend_redis(
+    cost_usd: Decimal,
+    creator_id: str,
+    reservation: CreatorReservation | None = None,
+) -> Decimal | None:
+    """Records the spend and, when `reservation` is an unsettled Redis-store
+    hold, gives it back in the same MULTI/EXEC (round 2, Q7). Marks the hold
+    settled only after EXEC succeeded, so a failure here leaves it for the
+    caller's fallback release."""
     try:
         client = await _get_redis_client()
         if client is None:
             return None
         key = _creator_month_key(creator_id, _current_month_utc())
+        settle_hold = (
+            reservation is not None
+            and reservation.store == _STORE_REDIS
+            and not reservation.settled
+        )
         async with client.pipeline(transaction=True) as pipe:
             pipe.incrby(key, _to_micros(cost_usd))
             pipe.expire(key, _MONTH_KEY_TTL_SECONDS)
+            if settle_hold:
+                pipe.decrby(
+                    _creator_held_key(reservation.creator_id, reservation.month),
+                    _to_micros(reservation.amount),
+                )
             results = await pipe.execute()
+        if settle_hold:
+            async with _lock:
+                reservation.settled = True
+            remaining = int(results[2])
+            if remaining < 0:
+                # :held expired under the live hold -- clamp, never negative.
+                await client.incrby(
+                    _creator_held_key(reservation.creator_id, reservation.month), -remaining
+                )
         return _from_micros(results[0])
     except Exception:
         logger.warning(
@@ -455,16 +482,23 @@ async def record_creator_spend(
     month. Returns the new monthly total.
 
     Gate fix round 1 (Q7): `reservation` is the hold taken by
-    `check_creator_spend_gate`; it is released FIRST (same F-05 shape as
+    `check_creator_spend_gate`; it is settled here (same F-05 shape as
     `record_spend`) so the real number replaces the estimate instead of
-    stacking on top of it, and a Redis failure below can never leave it in
-    place."""
-    await release_creator(reservation)
+    stacking on top of it. Round 2: a Redis-store hold is given back in the
+    SAME MULTI/EXEC that records the spend, so no concurrent gate check can
+    observe a moment where neither the hold nor the spend counts; a
+    memory-store hold is released first, as before. Whatever path fails, the
+    hold is never left in place."""
+    if reservation is not None and reservation.store == _STORE_MEMORY:
+        await release_creator(reservation)
     memory_total = await _record_creator_spend_memory(cost_usd, creator_id)
     if _redis_configured():
-        redis_total = await _record_creator_spend_redis(cost_usd, creator_id)
+        redis_total = await _record_creator_spend_redis(cost_usd, creator_id, reservation)
         if redis_total is not None:
             return max(redis_total, memory_total)
+    # No Redis, or the Redis write failed: give a Redis-store hold back on its
+    # own so a failed settle can never leave it counting against the creator.
+    await release_creator(reservation)
     return memory_total
 
 
@@ -524,6 +558,11 @@ async def check_creator_spend_gate(
     reservation with `record_creator_spend(..., reservation=r)` on success or
     `release_creator(r)` on any other exit; an unsettled hold expires on its
     own after `reserve_ttl_seconds`.
+
+    Gate fix round 2 (Q7): with Redis configured the hold is a shared,
+    atomic `:held` counter, so the guarantee spans every uvicorn worker and
+    container replica; without Redis it is per-process (see the reservation
+    section comment and `app.costs.worker_guard`).
 
     `cap_usd` is the per-creator override from the creator's context payload
     (see `creator_monthly_cap_usd`).
@@ -747,19 +786,75 @@ async def reset_reservations_for_testing() -> None:
 # ledgers are independent (a creator turn holds one of EACH, settled
 # separately) and because a creator hold must never count against the global
 # daily ceiling twice.
+#
+# Gate fix round 2 (Q7, Priya caveat 1): round 1 kept the holds in the
+# process-local `_creator_reservations` dict while the TOTAL lived in shared
+# Redis, so the "exactly one of N concurrent turns is admitted" guarantee only
+# held within ONE Python process -- true today only because the Dockerfile
+# runs `--workers 1` and the compose files declare a single influora-ai
+# replica, neither of which the code asserted. Now, whenever Redis is
+# configured, the hold is an atomic `INCRBY` on
+# `influora:ai:spend:creator:{creator_id}:{YYYY-MM}:held` (micro-dollars,
+# same unit as the total) taken in the same MULTI/EXEC that reads the month
+# total, and given back with `DECRBY` on release -- or in the same MULTI/EXEC
+# that records the real spend on settle, so there is no window where neither
+# the hold nor the spend is visible. Redis serialises the MULTI blocks, so N
+# concurrent callers across ANY number of uvicorn workers or container
+# replicas each see the holds taken before theirs.
+#
+# SCOPE OF THE GUARANTEE -- read before changing `--workers` or `replicas`:
+#   * REDIS_URL set and reachable: cross-process, cross-replica.
+#   * REDIS_URL unset, or Redis failing on that call: the hold falls back to
+#     the in-memory table below and the guarantee is PER-PROCESS ONLY (the
+#     same fallback contract as the totals). `app.main` refuses to boot with
+#     more than one uvicorn worker and no REDIS_URL, and `/readyz` reports
+#     `creator_cap_scope` so the downgrade is never silent (see
+#     `app.costs.worker_guard`).
+#
+# Leak backstop on the Redis path: a single counter cannot expire ONE owner's
+# phantom hold, so the `:held` key carries a TTL of the reservation TTL plus a
+# grace (`_HELD_KEY_GRACE_SECONDS`), refreshed on every reserve. A crashed
+# owner's hold therefore lingers only until the creator has been idle for
+# that long; a phantom hold can only over-restrict (a false "limit reached"
+# for that one creator), never over-spend. If the key expires under a live
+# hold, the release clamps the counter back to zero instead of going
+# negative. The in-memory fallback keeps the per-reservation TTL prune.
 # ---------------------------------------------------------------------------
+
+_CREATOR_HELD_KEY_SUFFIX = "held"
+# Grace added to the reservation TTL for the shared `:held` key's expiry so a
+# hold that is still legitimately in flight at the edge of its TTL is not
+# dropped by the key expiring a moment early.
+_HELD_KEY_GRACE_SECONDS = 120
+
+_STORE_MEMORY = "memory"
+_STORE_REDIS = "redis"
+
+
+def _creator_held_key(creator_id: str, month: str) -> str:
+    return f"{_creator_month_key(creator_id, month)}:{_CREATOR_HELD_KEY_SUFFIX}"
 
 
 @dataclass
 class CreatorReservation:
     """Budget held against one creator's monthly allowance for one in-flight
-    turn (chat) or provider call (voice)."""
+    turn (chat) or provider call (voice).
+
+    `store` says where the hold lives: `"redis"` (shared `:held` counter,
+    the round-2 default whenever Redis is configured and answered) or
+    `"memory"` (the process-local table -- Redis unset or that call failed).
+    `settled` flips once the hold has been given back or folded into a
+    recorded spend, which is what makes `release_creator` idempotent on the
+    Redis path (a second DECRBY would otherwise eat someone else's hold)."""
 
     reservation_id: int
     creator_id: str
     amount: Decimal
     created_at: float
     ttl_seconds: float = _RESERVATION_TTL_SECONDS
+    store: str = _STORE_MEMORY
+    month: str = ""
+    settled: bool = False
 
 
 _creator_reservations: dict[int, CreatorReservation] = {}
@@ -780,26 +875,95 @@ def _prune_expired_creator_reservations_locked(now: float) -> None:
         del _creator_reservations[rid]
 
 
-async def try_reserve_creator(
+def _next_reservation_id_locked() -> int:
+    """Must hold `_lock`. Ids are only ever compared within this process (the
+    Redis path keys nothing by them), so a process-local sequence is enough."""
+    global _reservation_seq
+    _reservation_seq += 1
+    return _reservation_seq
+
+
+async def _try_reserve_creator_redis(
     amount: Decimal,
     creator_id: str,
     *,
     month_total: Decimal,
     cap: Decimal,
-    ttl_seconds: float = _RESERVATION_TTL_SECONDS,
+    ttl_seconds: float,
+) -> tuple[CreatorReservation | None, bool] | None:
+    """Shared-store check-and-reserve. Returns `(reservation, exceeded)` like
+    `try_reserve_creator`, or None when Redis is unavailable / the call
+    failed so the caller falls back to the in-memory table.
+
+    One MULTI/EXEC does `INCRBY :held amount` + `EXPIRE` + `GET total`. The
+    INCRBY's reply is the held amount AFTER this caller's hold, so
+    `held_before = reply - amount` is exactly what earlier concurrent callers
+    hold, and the comparison `total + held_before >= cap` is the same one the
+    in-memory path makes under its lock. On rejection the hold is given back
+    with DECRBY (best-effort; the key TTL is the backstop)."""
+    try:
+        client = await _get_redis_client()
+        if client is None:
+            return None
+        month = _current_month_utc()
+        held_key = _creator_held_key(creator_id, month)
+        micros = _to_micros(amount) if amount > 0 else 0
+        held_ttl = int(ttl_seconds) + _HELD_KEY_GRACE_SECONDS
+        async with client.pipeline(transaction=True) as pipe:
+            pipe.incrby(held_key, micros)
+            pipe.expire(held_key, held_ttl)
+            pipe.get(_creator_month_key(creator_id, month))
+            results = await pipe.execute()
+        held_after = int(results[0])
+        held_before = _from_micros(max(held_after - micros, 0))
+        total = max(month_total, _from_micros(results[2]))
+        if total + held_before >= cap:
+            if micros:
+                try:
+                    await client.decrby(held_key, micros)
+                except Exception:
+                    logger.warning(
+                        "spend_tracker: could not give back a rejected creator hold "
+                        "(creator %s); the :held key TTL will reclaim it",
+                        creator_id, exc_info=True,
+                    )
+            return None, True
+        if micros == 0:
+            return None, False
+        async with _lock:
+            reservation_id = _next_reservation_id_locked()
+        return (
+            CreatorReservation(
+                reservation_id=reservation_id,
+                creator_id=creator_id,
+                amount=amount,
+                created_at=_monotonic(),
+                ttl_seconds=ttl_seconds,
+                store=_STORE_REDIS,
+                month=month,
+            ),
+            False,
+        )
+    except Exception:
+        logger.warning(
+            "spend_tracker: Redis try_reserve_creator failed, falling back to the "
+            "per-process hold table (creator cap is process-local until Redis recovers)",
+            exc_info=True,
+        )
+        return None
+
+
+async def _try_reserve_creator_memory(
+    amount: Decimal,
+    creator_id: str,
+    *,
+    month_total: Decimal,
+    cap: Decimal,
+    ttl_seconds: float,
 ) -> tuple[CreatorReservation | None, bool]:
-    """Check the creator's cap and take the reservation ATOMICALLY.
-
-    `month_total` is passed IN, already read (that read may be Redis I/O);
-    the comparison `month_total + held >= cap` and the insert happen under one
-    lock with no await in between, so N concurrent callers serialise and each
-    sees the holds the callers before it already took.
-
-    Returns `(reservation, False)` when admitted (`reservation` is None when
-    `amount <= 0`, i.e. the caller asked for no hold), or `(None, True)` when
-    the cap would be breached.
-    """
-    global _reservation_seq
+    """Process-local check-and-reserve (Redis unset or failing). The
+    comparison and the insert happen under one lock with no await in between,
+    so N concurrent callers IN THIS PROCESS serialise."""
     async with _lock:
         now = _monotonic()
         _prune_expired_creator_reservations_locked(now)
@@ -811,33 +975,111 @@ async def try_reserve_creator(
             return None, True
         if amount <= 0:
             return None, False
-        _reservation_seq += 1
         reservation = CreatorReservation(
-            reservation_id=_reservation_seq,
+            reservation_id=_next_reservation_id_locked(),
             creator_id=creator_id,
             amount=amount,
             created_at=now,
             ttl_seconds=ttl_seconds,
+            store=_STORE_MEMORY,
+            month=_current_month_utc(),
         )
         _creator_reservations[reservation.reservation_id] = reservation
         return reservation, False
 
 
+async def try_reserve_creator(
+    amount: Decimal,
+    creator_id: str,
+    *,
+    month_total: Decimal,
+    cap: Decimal,
+    ttl_seconds: float = _RESERVATION_TTL_SECONDS,
+) -> tuple[CreatorReservation | None, bool]:
+    """Check the creator's cap and take the reservation ATOMICALLY.
+
+    `month_total` is passed IN, already read (that read may be Redis I/O).
+    With Redis configured the hold is an atomic INCRBY on the shared `:held`
+    counter (see the section comment above) and the guarantee spans every
+    worker and replica; otherwise -- or if that Redis call fails -- the
+    comparison and the insert happen under one process lock with no await in
+    between, and the guarantee is per-process.
+
+    Returns `(reservation, False)` when admitted (`reservation` is None when
+    `amount <= 0`, i.e. the caller asked for no hold), or `(None, True)` when
+    the cap would be breached.
+    """
+    if _redis_configured():
+        outcome = await _try_reserve_creator_redis(
+            amount, creator_id, month_total=month_total, cap=cap, ttl_seconds=ttl_seconds
+        )
+        if outcome is not None:
+            return outcome
+    return await _try_reserve_creator_memory(
+        amount, creator_id, month_total=month_total, cap=cap, ttl_seconds=ttl_seconds
+    )
+
+
+async def _release_creator_redis(reservation: CreatorReservation) -> bool:
+    """Give a Redis-store hold back. Returns False when the DECRBY could not
+    be issued (the key TTL then reclaims the hold)."""
+    try:
+        client = await _get_redis_client()
+        if client is None:
+            return False
+        key = _creator_held_key(reservation.creator_id, reservation.month)
+        remaining = int(await client.decrby(key, _to_micros(reservation.amount)))
+        if remaining < 0:
+            # The :held key expired under this live hold (owner outlived the
+            # TTL + grace). Clamp back to zero rather than leaving a negative
+            # counter that would admit that much extra spend.
+            await client.incrby(key, -remaining)
+        return True
+    except Exception:
+        logger.warning(
+            "spend_tracker: Redis release_creator failed (creator %s, $%s); "
+            "the :held key TTL will reclaim the hold",
+            reservation.creator_id, reservation.amount, exc_info=True,
+        )
+        return False
+
+
 async def release_creator(reservation: CreatorReservation | None) -> None:
-    """Release a creator reservation. Idempotent — releasing twice is a no-op."""
+    """Release a creator reservation. Idempotent — releasing twice is a no-op
+    on both stores (`settled` guards the Redis DECRBY)."""
     if reservation is None:
         return
     async with _lock:
-        _creator_reservations.pop(reservation.reservation_id, None)
+        if reservation.settled:
+            return
+        reservation.settled = True
+        if reservation.store == _STORE_MEMORY:
+            _creator_reservations.pop(reservation.reservation_id, None)
+            return
+    await _release_creator_redis(reservation)
 
 
 async def get_reserved_creator(creator_id: str) -> Decimal:
+    """What this creator currently has on hold: the shared `:held` counter
+    when Redis is configured and answers, plus this process's in-memory
+    holds (which exist only when a reserve fell back)."""
     async with _lock:
         _prune_expired_creator_reservations_locked(_monotonic())
-        return sum(
+        memory_held = sum(
             (r.amount for r in _creator_reservations.values() if r.creator_id == creator_id),
             Decimal(0),
         )
+    if not _redis_configured():
+        return memory_held
+    try:
+        client = await _get_redis_client()
+        if client is None:
+            return memory_held
+        value = await client.get(_creator_held_key(creator_id, _current_month_utc()))
+        return memory_held + max(_from_micros(value), Decimal(0))
+    except Exception:
+        logger.warning("spend_tracker: Redis get_reserved_creator failed", exc_info=True)
+        return memory_held
 
 
 async def reset_for_testing() -> None:

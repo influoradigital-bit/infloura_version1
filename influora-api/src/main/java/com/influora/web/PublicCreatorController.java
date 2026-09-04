@@ -1,9 +1,12 @@
 package com.influora.web;
 
+import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.config.MeeraCreatorFeatureProperties;
 import com.influora.service.PublicCreatorService;
 import com.influora.web.dto.creator.PublicCreatorDtos.VerifiedProfileResponse;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,14 +25,24 @@ import org.springframework.web.bind.annotation.RestController;
 public class PublicCreatorController {
 
     private final PublicCreatorService publicCreatorService;
+    private final MeeraCreatorFeatureProperties featureProperties;
 
-    public PublicCreatorController(PublicCreatorService publicCreatorService) {
+    public PublicCreatorController(
+            PublicCreatorService publicCreatorService, MeeraCreatorFeatureProperties featureProperties) {
         this.publicCreatorService = publicCreatorService;
+        this.featureProperties = featureProperties;
     }
 
     @GetMapping("/{username}/verified")
     public ResponseEntity<ApiResponse<VerifiedProfileResponse>> getVerifiedMetrics(
             @PathVariable String username) {
+        // Priya gate review defect 4 — Phase A rollback flag. Checked first, before the
+        // unauthenticated service call below, so a disabled feature 404s without touching the
+        // database at all.
+        if (!featureProperties.isCreatorEnabled()) {
+            throw new ApiException(
+                    "FEATURE_DISABLED", "Meera for Creators is currently disabled", HttpStatus.NOT_FOUND);
+        }
         // Gate fix round 1 (Priya Q10) — this endpoint is unauthenticated and un-parameterized by
         // any secret, so nothing in this repo previously stopped an intermediary (a CDN page rule,
         // a shared proxy cache) from serving a stale snapshot after a creator opts out or is

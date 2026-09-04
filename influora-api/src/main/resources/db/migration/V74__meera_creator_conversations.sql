@@ -16,7 +16,7 @@ CREATE TABLE meera_creator_conversations (
 
     CONSTRAINT fk_meera_creator_conv_creator FOREIGN KEY (creator_id)
         REFERENCES creator_profiles (id) ON DELETE CASCADE
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE INDEX idx_meera_creator_conv_creator ON meera_creator_conversations (creator_id);
 CREATE INDEX idx_meera_creator_conv_last_msg ON meera_creator_conversations (creator_id, last_message_at DESC);

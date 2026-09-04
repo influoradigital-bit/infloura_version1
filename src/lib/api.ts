@@ -1276,6 +1276,10 @@ export const onboarding = {
     verticals: string[];
     languages: string[];
     city?: string;
+    /** PHONE-0904 — optional, normalized Indian mobile (10 digits, no +91/spaces). Same
+     *  validation as creator Settings' phone field (regex ^[6-9]\d{9}$). Matches
+     *  OnboardingDtos.CreatorProfileRequest.phone (Java) field-for-field. */
+    phone?: string;
     rateMin: number;
     rateMax: number;
   }) =>
@@ -2088,6 +2092,15 @@ export interface Deal {
   contractId?: string;
   contractStatus?: ContractStatus;
   escrowFunded: boolean;
+  /**
+   * T-MEERA-CREATOR-PHASE-A gate-fix round 2 (Priya Q1) — read side of the structured deal
+   * terms `deals.create`/`deals.counter` already send (see `dealTerms` on those payloads
+   * below). Matches `DealDtos.DealResponse.dealTerms` (`@JsonInclude(NON_NULL)`) — omitted
+   * from the JSON entirely, never sent as `null`, whenever no structured terms were ever set
+   * on the Collaboration (e.g. every pre-A2 deal, or one made through a flow that skipped
+   * this field). Render it as "not specified" in that case, never as zeros/empty lists.
+   */
+  dealTerms?: DealTerms;
 }
 
 export const deals = {
@@ -2840,6 +2853,23 @@ export const contracts = {
           terms: null,
           milestones: [],
         }),
+
+  /**
+   * GET /contracts/unsigned — creator-only discovery list (`ContractController.java:58`),
+   * delegates to `ContractService.listUnsignedForCreator` (`ContractService.java:987`, covered by
+   * `ContractServiceTest#testListUnsignedForCreator`). Returns full `ContractApiRecord[]` — same
+   * shape as `list`/`get` above, milestones included — for every contract where the brand has
+   * signed and this creator has not (`brandSignedAt` set, `creatorSignedAt` null). This is
+   * discovery only: it does not sign anything — callers route each row to the deal's existing
+   * contract tab (`sign` above) rather than reimplement signing here.
+   *
+   * There is no bulk "unsigned" concept in mock mode (nothing to discover without a live
+   * backend), so `[]` is the honest not-live answer, same convention as `list` above.
+   */
+  listUnsigned: (role: Role) =>
+    isLive()
+      ? http.request<ContractApiRecord[]>('GET', '/contracts/unsigned', { role })
+      : mockOr<ContractApiRecord[]>([]),
 
   /**
    * GET /contracts/:id/pdf-download-url — mints a fresh short-lived presigned
@@ -5903,6 +5933,12 @@ export interface CreatorAgentPreferences {
   reel_floor: number | null;
   story_set_floor: number | null;
   post_floor: number | null;
+  /**
+   * Gate fix round 2, item 3 (Priya Q8) — ISO 4217 code the three floors above are denominated
+   * in. Always present (the DB column is NOT NULL and defaults to 'INR' — see
+   * CreatorAgentPreferences.DEFAULT_FLOOR_CURRENCY on the Java side).
+   */
+  floor_currency: string;
   excluded_categories: string[];
   blocked_brands: string[];
   approval_level: CreatorApprovalLevel;
@@ -5910,18 +5946,33 @@ export interface CreatorAgentPreferences {
   brand_tone: CreatorBrandTone;
   working_hours_start: number | null;
   working_hours_end: number | null;
+  /**
+   * Gate fix round 2, item 3 (Priya Q8) — IANA zone id working_hours_start/end are in. Always
+   * present (NOT NULL, defaults to 'Asia/Kolkata').
+   */
+  working_hours_timezone: string;
   working_days: number[];
   weekly_sponsored_limit: number | null;
   represented: boolean;
   agency_name: string | null;
   consent_accepted: boolean;
+  /**
+   * Gate fix round 2, item 1 (Priya Q3) — which DPDP notice version `consent_accepted` was
+   * computed against. Always present (NOT NULL column, stamped even pre-consent — see
+   * CreatorAgentPreferences.newWithDefaults on the Java side). Server-owned: never sent on PUT.
+   */
+  consent_version: string;
 }
 
 /**
- * PUT request body (SPEC.md §2.3) — same fields as the GET response minus `consent_accepted`,
- * which is server-owned (set only via `recordConsent`, never via this PUT).
+ * PUT request body (SPEC.md §2.3) — same fields as the GET response minus `consent_accepted`
+ * and `consent_version`, both server-owned (set only via `recordConsent`, never via this PUT —
+ * UpdatePreferencesRequest on the Java side has no field for either).
  */
-export type CreatorAgentPreferencesUpdate = Omit<CreatorAgentPreferences, 'consent_accepted'>;
+export type CreatorAgentPreferencesUpdate = Omit<
+  CreatorAgentPreferences,
+  'consent_accepted' | 'consent_version'
+>;
 
 export interface CreatorAgentConsentResponse {
   consent_accepted_at: string;
@@ -5950,6 +6001,7 @@ const MOCK_CREATOR_AGENT_PREFS: CreatorAgentPreferences = {
   reel_floor: 1200,
   story_set_floor: 800,
   post_floor: 1500,
+  floor_currency: 'INR',
   excluded_categories: [],
   blocked_brands: [],
   approval_level: 0,
@@ -5957,11 +6009,13 @@ const MOCK_CREATOR_AGENT_PREFS: CreatorAgentPreferences = {
   brand_tone: 'FRIENDLY',
   working_hours_start: null,
   working_hours_end: null,
+  working_hours_timezone: 'Asia/Kolkata',
   working_days: [],
   weekly_sponsored_limit: null,
   represented: false,
   agency_name: null,
   consent_accepted: false,
+  consent_version: 'v1',
 };
 
 export const creatorAgentPrefs = {

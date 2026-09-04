@@ -309,4 +309,28 @@ Phase A is **DONE** when ALL of the following are TRUE:
 
 ---
 
+## OPS NOTE — V73 collation fix (Priya gate review)
+
+V73__creator_agent_preferences.sql and V74__meera_creator_conversations.sql originally shipped
+without the `ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci` clause on their
+`CREATE TABLE`. On a stock MySQL 8 server (default collation is NOT utf8mb4_unicode_ci), V73's
+FK from `creator_agent_preferences.creator_id` to `creator_profiles.id` fails with a collation
+mismatch and Flyway aborts, taking the whole Spring context down. Both migrations have been
+fixed in place to match every other CREATE TABLE migration in this repo.
+
+**If any environment already attempted the failed V73 migration** (i.e. Flyway recorded a
+`success=0` row for version 73 before this fix), it must be cleared before the app will boot
+again:
+
+```sql
+DELETE FROM flyway_schema_history WHERE version = '73' AND success = 0;
+```
+
+or, equivalently, run `flyway repair` against that database. Do this on any environment (local,
+staging) that hit the boot crash before this fix landed. Production was never migrated to V73
+(flag is off / not yet deployed), so no action is expected there, but check
+`flyway_schema_history` before deploying if in doubt.
+
+---
+
 **Questions or blockers** → escalate to Arjun immediately.

@@ -51,7 +51,17 @@ public class PublicCreatorService {
                         .orElseThrow(
                                 () -> new ApiException("CREATOR_NOT_FOUND", "Creator not found", HttpStatus.NOT_FOUND));
 
-        boolean metaConnected = !metaOAuthTokenRepository.findByCreatorProfileIdAndRevokedFalse(profile.getId()).isEmpty();
+        // Gate fix round 2, item 2 (Priya Q6) — was findByCreatorProfileIdAndRevokedFalse, which
+        // tests revocation only. A creator whose Meta token expired (never explicitly revoked)
+        // still passed that check and the page kept rendering "Verified on {old date} via
+        // connected Meta account" over a stale snapshot — a claim of CURRENT verification that was
+        // in fact weeks stale. Treated identically to "never connected": folded into the same 404
+        // as every other reason this route already declines to serve a snapshot, so it still can't
+        // be used to distinguish "token expired" from "never existed" from "not discoverable".
+        boolean metaConnected =
+                !metaOAuthTokenRepository
+                        .findByCreatorProfileIdAndRevokedFalseAndExpiresAtAfter(profile.getId(), Instant.now())
+                        .isEmpty();
         // Fix round 2, item 4 (Priya Q10) — profile.isSuspended() was never consulted here, so an
         // admin-suspended creator's public page kept serving live verified metrics with a plain
         // 200. Folded into the same 404 as "not discoverable"/"not connected" (never a distinct

@@ -1,6 +1,8 @@
 package com.influora.web;
 
+import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.config.MeeraCreatorFeatureProperties;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAgentConversationService;
 import com.influora.service.CreatorAgentPreferencesService;
@@ -10,6 +12,7 @@ import com.influora.web.dto.creator.CreatorAgentDtos.ConversationListResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePreferencesRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -34,22 +37,40 @@ public class CreatorAgentController {
 
     private final CreatorAgentPreferencesService preferencesService;
     private final CreatorAgentConversationService conversationService;
+    private final MeeraCreatorFeatureProperties featureProperties;
 
     public CreatorAgentController(
-            CreatorAgentPreferencesService preferencesService, CreatorAgentConversationService conversationService) {
+            CreatorAgentPreferencesService preferencesService,
+            CreatorAgentConversationService conversationService,
+            MeeraCreatorFeatureProperties featureProperties) {
         this.preferencesService = preferencesService;
         this.conversationService = conversationService;
+        this.featureProperties = featureProperties;
+    }
+
+    /**
+     * Priya gate review defect 4 — the Phase A rollback flag. Called first in every gated
+     * handler, before any service/repository work, so a disabled feature never touches the
+     * database at all.
+     */
+    private void requireFeatureEnabled() {
+        if (!featureProperties.isCreatorEnabled()) {
+            throw new ApiException(
+                    "FEATURE_DISABLED", "Meera for Creators is currently disabled", HttpStatus.NOT_FOUND);
+        }
     }
 
     @GetMapping
     public ResponseEntity<ApiResponse<PreferencesResponse>> getPreferences(
             @AuthenticationPrincipal AuthPrincipal principal) {
+        requireFeatureEnabled();
         return ResponseEntity.ok(ApiResponse.ok(preferencesService.getOrCreatePreferences(principal.getUserId())));
     }
 
     @PutMapping
     public ResponseEntity<ApiResponse<PreferencesResponse>> updatePreferences(
             @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody UpdatePreferencesRequest req) {
+        requireFeatureEnabled();
         return ResponseEntity.ok(
                 ApiResponse.ok(preferencesService.updatePreferences(principal.getUserId(), req)));
     }
@@ -57,8 +78,8 @@ public class CreatorAgentController {
     @PostMapping("/consent")
     public ResponseEntity<ApiResponse<ConsentResponse>> recordConsent(
             @AuthenticationPrincipal AuthPrincipal principal) {
-        return ResponseEntity.ok(
-                ApiResponse.ok(new ConsentResponse(preferencesService.recordConsent(principal.getUserId()))));
+        requireFeatureEnabled();
+        return ResponseEntity.ok(ApiResponse.ok(preferencesService.recordConsent(principal.getUserId())));
     }
 
     /**

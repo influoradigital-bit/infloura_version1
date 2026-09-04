@@ -94,6 +94,9 @@ _FORBIDDEN_BRAND_FIELDS = {
     "identity",
     "approval_level",
     "represented",
+    # Gate fix round 3 (Priya): the represented-by-agency NAME is creator
+    # private data, same class as `represented`.
+    "agency_name",
     "creator_language",
     "excluded_categories",
     "blocked_brands",
@@ -117,6 +120,18 @@ _FORBIDDEN_BRAND_FIELDS = {
 # the next widening cannot land without a matching line here AND a render
 # line in `build_block_b_creator` (which its sibling test asserts).
 CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
+    # Gate fix round 3 (Priya): the NAME of the agency behind `represented`.
+    # Nullable free text from Spring (`CreatorContextResponse.agency_name`);
+    # rendered only when `represented` is true, neutralized like every other
+    # creator-authored string. Before this line the `agency_name` read in
+    # `build_block_b_creator` was dead code and Meera only ever saw
+    # "REPRESENTED by an agency".
+    "agency_name",
+    # Gate fix round 2: read by `app.costs.spend_tracker` (per-creator cap
+    # override), NEVER rendered into the prompt -- a spend figure has no
+    # business in Meera's mouth. Listed so the Java<->Python drift test stays
+    # exact; `build_block_b_creator` deliberately never reads it.
+    "ai_monthly_cap_usd",
     "approval_level",
     "audience",
     "blocked_brands",
@@ -124,11 +139,17 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     "categories",
     "city",
     "consent_accepted",
+    # Gate fix round 2 (Q3): which DPDP notice version `consent_accepted` was
+    # computed against. Read by the consent gate's logging in the routes, not
+    # rendered (the creator is never asked to reason about notice versions).
+    "consent_version",
     "creator_language",
     "deals_summary",
     "display_name",
     "excluded_categories",
     "first_name",
+    # Gate fix round 2 (Q8): ISO 4217 code the `floors` are denominated in.
+    "floor_currency",
     "floors",
     "identity",
     "metrics_summary",
@@ -138,7 +159,15 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     "working_days",
     "working_hours_end",
     "working_hours_start",
+    # Gate fix round 2 (Q8): IANA zone the working hours are expressed in.
+    "working_hours_timezone",
     "workspace_id",
+)
+
+# Fields that pass the allow-list (so the drift test against Java stays exact)
+# but are consumed by OTHER readers and must never be rendered into Block B.
+CREATOR_CONTEXT_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
+    {"audience", "workspace_id", "consent_accepted", "consent_version", "ai_monthly_cap_usd"}
 )
 
 # ISO weekday numbers as the settings UI and Spring store them
@@ -480,13 +509,21 @@ def _creator_rules_lines(ctx: dict[str, Any], first_name: str) -> list[str]:
             )
             if n in _WEEKDAY_NAMES and _WEEKDAY_NAMES[n] not in day_names:
                 day_names.append(_WEEKDAY_NAMES[n])
+    # Round 2 (Q8): the zone the hours are in. Spring sends an IANA id;
+    # Asia/Kolkata (and absent) keeps the familiar "IST" label, anything else
+    # is rendered as the id itself so Meera never mislabels a zone.
+    tz_raw = ctx.get("working_hours_timezone")
+    tz = _safe(tz_raw).strip() if isinstance(tz_raw, str) and tz_raw.strip() else ""
+    tz_label = "IST" if tz in ("", "Asia/Kolkata") else tz
     if start or end or day_names:
-        hours = f"{start or '?'}-{end or '?'} IST" if (start or end) else "hours not set"
+        hours = f"{start or '?'}-{end or '?'} {tz_label}" if (start or end) else "hours not set"
         days = ", ".join(day_names) if day_names else "days not set"
         lines.append(
             f"- Working hours: {hours}; working days: {days}. "
             "Outside these, remind brands (and yourself) that replies wait for the next working slot."
         )
+    elif tz:
+        lines.append(f"- Working hours/days: not set (time zone {tz_label})")
     else:
         lines.append("- Working hours/days: not set")
 
@@ -562,13 +599,18 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
         lines.append("- Deals: none on Influora yet")
 
     floors = ctx.get("floors")
+    # Round 2 (Q8): the currency the floors are denominated in (ISO 4217 from
+    # Spring). INR when absent -- the Phase A launch market.
+    currency = _creator_str(ctx, "floor_currency", "INR")
     if isinstance(floors, dict) and floors:
         lines.append(
             "- PRIVATE rate floors (for your reasoning only, never shown to a brand): "
-            f"Reel INR {_safe(floors.get('reel_floor') or 'not set')}, "
-            f"Story set INR {_safe(floors.get('story_set_floor') or 'not set')}, "
-            f"Post INR {_safe(floors.get('post_floor') or 'not set')}"
+            f"Reel {currency} {_safe(floors.get('reel_floor') or 'not set')}, "
+            f"Story set {currency} {_safe(floors.get('story_set_floor') or 'not set')}, "
+            f"Post {currency} {_safe(floors.get('post_floor') or 'not set')}"
         )
+    elif currency != "INR":
+        lines.append(f"- PRIVATE rate floors: not set yet (rates are quoted in {currency})")
 
     approval_level = ctx.get("approval_level")
     if approval_level is not None:
@@ -577,14 +619,19 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
             "(0 = draft-only, 1 = routine replies, 2 = auto-decline)"
         )
     if ctx.get("represented"):
+        # Round 3: name the agency when Spring sends one, fall back to the
+        # nameless form when null/empty. The name is creator-authored free
+        # text landing in a system block -> `_safe` (angle-bracket
+        # neutralization from app/prompt/untrusted.py), exactly like
+        # display_name / city above.
         agency_name = ctx.get("agency_name")
-        agency = (
-            f" ({_safe(agency_name)})"
+        represented_by = (
+            _safe(agency_name.strip())
             if isinstance(agency_name, str) and agency_name.strip()
-            else ""
+            else "an agency"
         )
         lines.append(
-            f"- REPRESENTED by an agency{agency}: warn-only mode, "
+            f"- REPRESENTED by {represented_by}: warn-only mode, "
             "never draft anything addressed to a brand"
         )
 

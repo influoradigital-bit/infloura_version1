@@ -706,21 +706,17 @@ export const meeraApi = {
    */
   speak: async (text: string, lang?: string, role: MeeraRole = 'brand'): Promise<Blob | null> => {
     if (!isApiLive()) return null;
-    // T-MEERA-CREATOR-PHASE-A (fix round 1, item 1): there is no creator-audience
-    // counterpart to `/meera/voice/speak` yet (it lives on the brand-gated
-    // MeeraController, and CreatorMeeraController exposes no voice routes) — hitting
-    // it with a creator token would just 403. Returning null here is the documented,
-    // intentional fallback: `useVoiceOutput` already treats null as "use the browser's
-    // SpeechSynthesis instead", so creator voice output degrades to that until a
-    // creator voice route ships on the backend.
-    if (role === 'creator') return null;
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       const token = getToken(role);
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      const res = await fetch(`${API_BASE_URL}/meera/voice/speak`, {
+      // T-MEERA-CREATOR-PHASE-A gate review fix round 2 — Vikram's CreatorMeeraController now
+      // exposes /creator/meera/voice/speak with the same request/response shape as the brand
+      // route, so this routes through the same role -> path-prefix mapping every other Meera
+      // call uses (basePath) instead of the brand-only /meera/voice/speak this used to hardcode.
+      const res = await fetch(`${API_BASE_URL}${basePath(role)}/voice/speak`, {
         method: 'POST',
         headers,
         credentials: 'include',
@@ -758,10 +754,6 @@ export const meeraApi = {
    */
   transcribe: async (audio: Blob, role: MeeraRole = 'brand'): Promise<MeeraTranscribeResult | null> => {
     if (!isApiLive()) return null;
-    // Same reasoning as `speak()` above: `/meera/voice/transcribe` is brand-gated and has
-    // no creator counterpart yet. `useVoiceInput` falls back to webkitSpeechRecognition on
-    // a null return, so creator STT degrades to the browser's own recognizer.
-    if (role === 'creator') return null;
 
     try {
       const headers: Record<string, string> = {};
@@ -774,7 +766,10 @@ export const meeraApi = {
       // from the auth token, same as every other /meera/* call.
       formData.append('audio', audio);
 
-      const res = await fetch(`${API_BASE_URL}/meera/voice/transcribe`, {
+      // T-MEERA-CREATOR-PHASE-A gate review fix round 2 — same routing fix as `speak()` above:
+      // CreatorMeeraController now exposes /creator/meera/voice/transcribe, so this goes through
+      // basePath(role) instead of the brand-only /meera/voice/transcribe it used to hardcode.
+      const res = await fetch(`${API_BASE_URL}${basePath(role)}/voice/transcribe`, {
         method: 'POST',
         headers,
         credentials: 'include',

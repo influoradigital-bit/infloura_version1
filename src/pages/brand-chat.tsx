@@ -47,7 +47,8 @@ import {
 // CR-24 — the one switch over CollaborationStatus. CR-34 — and the one mirror of
 // Collaboration.canAccept(), which this file used to duplicate. See lib/deal-stage.ts.
 import { allowsProposalResponse, mapCollaborationStatusToDealStage } from '@/lib/deal-stage';
-import type { CollaborationStatus } from '@/lib/types';
+import type { CollaborationStatus, DealTerms } from '@/lib/types';
+import { DealTermsSummary } from '@/components/shared/deal-terms-summary';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -181,6 +182,12 @@ interface ChatDealRoom {
   contractId?: string;
   contractStatus?: ContractStatus;
   escrowFunded: boolean;
+  /**
+   * T-MEERA-CREATOR-PHASE-A gate-fix round 2 (Priya Q1) — structured deal terms off
+   * `Deal.dealTerms`. Undefined whenever the backend omits the field (no structured terms
+   * were ever set on this Collaboration) — render as "not specified", never as zeros.
+   */
+  dealTerms?: DealTerms;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +258,7 @@ function mapDealToChatRoom(deal: Deal): ChatDealRoom | null {
     contractId: deal.contractId,
     contractStatus: deal.contractStatus,
     escrowFunded: deal.escrowFunded,
+    dealTerms: deal.dealTerms,
   };
 }
 
@@ -1865,6 +1873,21 @@ export default function BrandChatPage() {
                 <span>{proposal.usageRights}</span>
               </div>
             </div>
+
+            {/* T-MEERA-CREATOR-PHASE-A gate-fix round 2 (Priya Q1) — structured deal terms this
+                brand set on the offer (`selectedDeal.dealTerms`, off `Deal.dealTerms`), not this
+                message's snapshot metadata (the backend never wrote dealTerms into proposal-
+                message metadata — see DealService.persistProposalMessage). Shown only while this
+                card is the live offer (isPending, same gate as Accept/Counter below) so a
+                settled historical card never claims the deal's CURRENT terms as its own. Brand
+                sets these on the offer form; this closes the loop so the brand can also confirm
+                what was actually persisted. */}
+            {isPending && selectedDeal?.dealTerms && (
+              <div className="mt-2 pt-2 border-t border-black/5 space-y-2">
+                <p className="text-xs text-muted-foreground">Deal Terms</p>
+                <DealTermsSummary terms={selectedDeal.dealTerms} />
+              </div>
+            )}
 
             {(showAccept || showCounter) && (
               <div className="flex gap-2 mt-3">

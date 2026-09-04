@@ -64,12 +64,71 @@ const WORKING_DAY_OPTIONS: { value: number; label: string }[] = [
   { value: 7, label: 'Sun' },
 ];
 
+/**
+ * Gate fix round 2, item 3 (Priya Q8) — short curated list, not every IANA zone (~600 of them).
+ * Asia/Kolkata first/default since that's the server-side default (CreatorAgentPreferences
+ * .DEFAULT_WORKING_HOURS_TIMEZONE). A persisted value outside this list (set some other way, or
+ * a zone we later drop from the list) is still shown correctly — see `withPersistedOption` below.
+ */
+const CURATED_TIMEZONES: { value: string; label: string }[] = [
+  { value: 'Asia/Kolkata', label: 'India — Asia/Kolkata (IST)' },
+  { value: 'Asia/Dubai', label: 'UAE — Asia/Dubai (GST)' },
+  { value: 'Asia/Karachi', label: 'Pakistan — Asia/Karachi (PKT)' },
+  { value: 'Asia/Dhaka', label: 'Bangladesh — Asia/Dhaka (BST)' },
+  { value: 'Asia/Singapore', label: 'Singapore — Asia/Singapore (SGT)' },
+  { value: 'Europe/London', label: 'UK — Europe/London (GMT/BST)' },
+  { value: 'America/New_York', label: 'US Eastern — America/New_York (ET)' },
+  { value: 'America/Los_Angeles', label: 'US Pacific — America/Los_Angeles (PT)' },
+  { value: 'Australia/Sydney', label: 'Australia — Australia/Sydney (AEST/AEDT)' },
+];
+
+/** Gate fix round 2, item 3 (Priya Q8) — curated ISO 4217 codes; INR first/default to match
+ *  CreatorAgentPreferences.DEFAULT_FLOOR_CURRENCY. */
+const CURATED_CURRENCIES: { value: string; label: string }[] = [
+  { value: 'INR', label: 'INR — Indian Rupee' },
+  { value: 'USD', label: 'USD — US Dollar' },
+  { value: 'EUR', label: 'EUR — Euro' },
+  { value: 'GBP', label: 'GBP — British Pound' },
+  { value: 'AED', label: 'AED — UAE Dirham' },
+  { value: 'SGD', label: 'SGD — Singapore Dollar' },
+  { value: 'AUD', label: 'AUD — Australian Dollar' },
+];
+
+/** Appends the persisted value as a trailing option when it isn't already in the curated list,
+ *  so a value set some other way (admin tooling, a future currency/zone we haven't curated yet)
+ *  still round-trips instead of silently snapping to the first option on save. */
+function withPersistedOption(
+  options: { value: string; label: string }[],
+  persisted: string | undefined,
+): { value: string; label: string }[] {
+  if (!persisted || options.some((o) => o.value === persisted)) return options;
+  return [...options, { value: persisted, label: persisted }];
+}
+
+/** Resolves the currency SYMBOL (₹, $, €, …) for a persisted ISO 4217 code, instead of the
+ *  hardcoded "₹" the floor labels used to carry regardless of floor_currency. Falls back to the
+ *  code itself if the runtime's Intl data doesn't recognize it (shouldn't happen for the curated
+ *  list, but a persisted value could be an edge case). */
+function currencySymbolFor(code: string): string {
+  try {
+    const part = new Intl.NumberFormat('en', { style: 'currency', currency: code })
+      .formatToParts(0)
+      .find((p) => p.type === 'currency');
+    return part?.value ?? code;
+  } catch {
+    return code;
+  }
+}
+
 /** Draft shape mirrors the PUT body exactly (CreatorAgentPreferencesUpdate) plus a couple of
  *  string-input scratch fields (blockedBrandsDraft) that get parsed on save/change. */
 type Draft = CreatorAgentPreferencesUpdate;
 
 function toDraft(prefs: CreatorAgentPreferences): Draft {
-  const { consent_accepted: _consent_accepted, ...rest } = prefs;
+  // Both consent_accepted and consent_version are server-owned (recordConsent only, never this
+  // PUT) — UpdatePreferencesRequest on the Java side has no field for either, so neither belongs
+  // in the draft/payload.
+  const { consent_accepted: _consent_accepted, consent_version: _consent_version, ...rest } = prefs;
   return rest;
 }
 
@@ -88,6 +147,10 @@ export function MeeraSettingsSection() {
   const [blockedBrandsText, setBlockedBrandsText] = React.useState('');
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  // Gate review fix (item 3) — MEERA_CREATOR_ENABLED rollback flag. GET /creator/agent-preferences
+  // 404s with { code: 'FEATURE_DISABLED' } when it's off; this section just disappears (no card,
+  // no error text, no toast, no retry) rather than showing a broken-looking settings block.
+  const [featureDisabled, setFeatureDisabled] = React.useState(false);
 
   const [conversations, setConversations] = React.useState<CreatorAgentConversationItem[]>([]);
   const [conversationsLoading, setConversationsLoading] = React.useState(true);
@@ -108,6 +171,10 @@ export function MeeraSettingsSection() {
       })
       .catch((err) => {
         if (cancelled) return;
+        if (err instanceof ApiError && err.code === 'FEATURE_DISABLED') {
+          setFeatureDisabled(true);
+          return;
+        }
         setLoadError(err instanceof ApiError ? err.message : 'Could not load Meera settings.');
       })
       .finally(() => {
@@ -117,6 +184,18 @@ export function MeeraSettingsSection() {
       cancelled = true;
     };
   }, []);
+
+  // Gate fix round 2, item 3 (Priya Q8) — options list is the curated set plus the persisted
+  // value trailing on if it's not already in it, so an out-of-list value still round-trips.
+  const timezoneOptions = React.useMemo(
+    () => withPersistedOption(CURATED_TIMEZONES, draft?.working_hours_timezone),
+    [draft?.working_hours_timezone],
+  );
+  const currencyOptions = React.useMemo(
+    () => withPersistedOption(CURATED_CURRENCIES, draft?.floor_currency),
+    [draft?.floor_currency],
+  );
+  const currencySymbol = draft ? currencySymbolFor(draft.floor_currency) : '';
 
   const loadConversations = React.useCallback(() => {
     setConversationsLoading(true);
@@ -224,6 +303,11 @@ export function MeeraSettingsSection() {
     }
   };
 
+  // Gate review fix (item 3) — feature off for this account: hide the whole section. No card,
+  // no message, no toast, no retry loop; creator-copilot.tsx's chat entry carries the one calm
+  // "not available yet" message so it isn't duplicated here.
+  if (featureDisabled) return null;
+
   return (
     <Card className="mb-6">
       <CardHeader>
@@ -257,7 +341,7 @@ export function MeeraSettingsSection() {
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="reelFloor" className="text-xs">Reel (₹)</Label>
+                  <Label htmlFor="reelFloor" className="text-xs">Reel ({currencySymbol})</Label>
                   <Input
                     id="reelFloor"
                     type="number"
@@ -267,7 +351,7 @@ export function MeeraSettingsSection() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="storySetFloor" className="text-xs">Story Set (₹)</Label>
+                  <Label htmlFor="storySetFloor" className="text-xs">Story Set ({currencySymbol})</Label>
                   <Input
                     id="storySetFloor"
                     type="number"
@@ -277,7 +361,7 @@ export function MeeraSettingsSection() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="postFloor" className="text-xs">Post (₹)</Label>
+                  <Label htmlFor="postFloor" className="text-xs">Post ({currencySymbol})</Label>
                   <Input
                     id="postFloor"
                     type="number"
@@ -286,6 +370,24 @@ export function MeeraSettingsSection() {
                     onChange={(e) => update({ post_floor: e.target.value ? Number(e.target.value) : null })}
                   />
                 </div>
+              </div>
+              <div className="space-y-1.5 sm:max-w-[220px]">
+                <Label className="text-xs">Currency</Label>
+                <Select
+                  value={draft.floor_currency}
+                  onValueChange={(val) => update({ floor_currency: val })}
+                >
+                  <SelectTrigger aria-label="Rate floor currency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {currencyOptions.map((c) => (
+                      <SelectItem key={c.value} value={c.value}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -434,6 +536,27 @@ export function MeeraSettingsSection() {
                     }
                   />
                 </div>
+              </div>
+              <div className="space-y-1.5 sm:max-w-xs">
+                <Label className="text-xs">Timezone</Label>
+                <Select
+                  value={draft.working_hours_timezone}
+                  onValueChange={(val) => update({ working_hours_timezone: val })}
+                >
+                  <SelectTrigger aria-label="Working hours timezone">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {timezoneOptions.map((tz) => (
+                      <SelectItem key={tz.value} value={tz.value}>
+                        {tz.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Start/end hours above are in this timezone.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label className="text-xs">Working days</Label>
