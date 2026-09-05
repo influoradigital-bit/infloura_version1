@@ -109,6 +109,6 @@ export const CREATOR_STEPS: readonly HowItWorksStep[] = [
     icon: Wallet,
     step: '06',
     title: 'Get paid, then post',
-    body: 'Once the brand approves, the payment releases to you automatically — TDS handled, invoice generated. Post within the campaign window and see the payment land, usually within 24 hours.',
+    body: 'Once the brand approves, the payment releases to you automatically — invoice generated with any recorded TDS shown. Post within the campaign window and see the payment land, usually within 24 hours.',
   },
 ] as const;

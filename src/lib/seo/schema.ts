@@ -14,7 +14,20 @@ import { COMPANY } from '@/lib/company';
 
 export const SITE_URL = 'https://influora.in';
 export const SITE_NAME = 'Influora';
-export const DEFAULT_LOGO_URL = `${SITE_URL}/icon.svg`;
+/**
+ * `Organization.logo` (and the `publisher.logo` ImageObject on Article) — the image Google
+ * uses for knowledge-panel branding. Must stay byte-identical to the `"logo"` value in the
+ * static Organization block in index.html's <head>, which is the only copy a non-JS crawler
+ * on "/" ever reads.
+ *
+ * A RASTER on purpose, and the full lockup rather than the bare mark: Google's structured-data
+ * guidance wants a raster of at least 112px for Organization.logo, and this property stands for
+ * the organisation, not the app icon. public/brand/logo-lockup.png is 491x123 on a white ground.
+ *
+ * This used to point at the v0/Vercel scaffold SVG the project was generated with in July, i.e.
+ * another company's mark published as Influora's brand identity. That file is now deleted.
+ */
+export const DEFAULT_LOGO_URL = `${SITE_URL}/brand/logo-lockup.png`;
 export const DEFAULT_OG_IMAGE_URL = `${SITE_URL}/og-image.png`;
 export const DEFAULT_AUTHOR_NAME = 'Influora Team';
 

@@ -17,8 +17,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { lazy, Suspense } from 'react';
-import { CanvasFallback } from '@/components/3d/CanvasFallback';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { FaqSection } from '@/components/site/FaqSection';
@@ -26,6 +24,7 @@ import { FunnelCta } from '@/components/site/FunnelCta';
 import { TrustBar } from '@/components/site/TrustBar';
 import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
 import { PROOF_POINTS } from '@/components/site/proof-points';
+import { DealRoomHeroThread } from '@/components/site/DealRoomHeroThread';
 import { Seo } from '@/lib/seo/Seo';
 import {
   JsonLd,
@@ -34,11 +33,6 @@ import {
   getSoftwareApplicationSchema,
   getWebPageSchema,
 } from '@/lib/seo/schema';
-
-// Lazy — keeps three.js out of the critical bundle (Lighthouse mobile ≥ 85)
-const HeroGlobeGate = lazy(() =>
-  import('@/components/3d/HeroGlobe').then((m) => ({ default: m.HeroGlobeGate })),
-);
 import { FadeUp, StaggerContainer, StaggerItem, WordReveal } from '@/components/motion';
 import { PaymentFlowAnimation } from '@/components/motion/PaymentFlowAnimation';
 import { HypeLiveIndicator } from '@/components/ui/hype-live-indicator';
@@ -128,7 +122,7 @@ const FEATURES = [
   {
     icon: Wallet,
     title: 'Clean payouts',
-    body: 'TDS handled, invoices generated, UPI or bank transfer — creators see gross → net clearly.',
+    body: 'Invoices generated with any recorded TDS shown, UPI or bank transfer — creators see gross → net clearly.',
   },
   {
     icon: Zap,
@@ -217,7 +211,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Influencer Marketing Platform for India | Influora"
-        description="Hire verified Indian creators, agree terms in one Deal Room, and pay only after the work is approved. Contracts, TDS and payment protection built in. Free to start."
+        description="Hire verified Indian creators, agree terms in one Deal Room, pay only on approval. Contracts, payment protection, TDS shown on invoices. Free to start."
         canonical="/"
       />
       <JsonLd data={getOrganizationSchema()} />
@@ -246,7 +240,7 @@ export default function LandingPage() {
             'Deal Room negotiation',
             'Auto-generated e-signed contracts',
             'Protected payments released on approval',
-            'TDS handling and invoice generation',
+            'Invoice generation with recorded TDS shown',
             'Hype multi-creator campaigns',
             'Per-creator sales and coupon tracking',
           ],
@@ -336,9 +330,7 @@ export default function LandingPage() {
               </FadeUp>
             </div>
             <div className="relative h-[360px] lg:h-[460px]">
-              <Suspense fallback={<CanvasFallback variant="portfolio" className="min-h-[320px]" />}>
-                <HeroGlobeGate />
-              </Suspense>
+              <DealRoomHeroThread />
             </div>
           </div>
         </section>
@@ -632,7 +624,7 @@ export default function LandingPage() {
               <h2 className="text-3xl font-semibold">Creators earn three ways</h2>
               <p className="mt-3 text-muted-foreground">
                 Every stream pays through the same protected rail — funds lock before you start, payout lands
-                after approval, TDS invoice generated for you.
+                after approval, invoice generated for you showing any recorded TDS.
               </p>
             </FadeUp>
             <StaggerContainer className="mt-12 grid gap-8 md:grid-cols-3 md:gap-0 md:divide-x md:divide-border/60">

@@ -1,6 +1,6 @@
 # Influora
 
-> Influora is an influencer marketing platform for India. Brands hire verified creators, agree scope and price in a shared Deal Room, and pay only after they approve the delivered work. Contracts, TDS handling and invoicing are generated automatically. Creators join, build a portfolio and get paid for free.
+> Influora is an influencer marketing platform for India. Brands hire verified creators, agree scope and price in a shared Deal Room, and pay only after they approve the delivered work. Contracts and invoices are generated automatically, with any recorded TDS shown on the payout. Creators join, build a portfolio and get paid for free.
 
 Influora is a platform, not an agency. It does not take a cut of creator content rights and does not sell followers or engagement.
 
@@ -36,7 +36,7 @@ Meera is Influora's built-in AI campaign co-pilot, included in every brand works
 - **Hype Campaigns**: Influora's UGC/multi-creator campaign format for running the same brief across many creators at once, at one flat rate, inside a fixed window.
 - **Contracts**: agreements are auto-generated from the agreed deal terms inside the Deal Room — no separate legal drafting for standard collaborations.
 - **KYC**: creator KYC (identity + payout verification) typically completes in 24-48 hours.
-- **TDS**: Influora handles India-specific TDS (tax deducted at source) on creator payouts and generates the invoice.
+- **TDS**: Where TDS (tax deducted at source) has been recorded on a payout, Influora shows the figure and reflects it on the invoice. Influora does not calculate or deduct tax on your behalf.
 - **Sales tracking**: each creator on a campaign gets a unique tracking link and coupon code, and the brand's store reports orders back over a signed webhook — so attribution is real transactions, not screenshots.
 - **Creators**: verified creators of all sizes, from nano to macro. No public minimum follower threshold.
 
@@ -61,6 +61,7 @@ Meera is Influora's built-in AI campaign co-pilot, included in every brand works
 - [How to find micro-influencers in India](https://influora.in/blog/how-to-find-micro-influencers-in-india)
 - [Nano vs micro vs macro influencers in India](https://influora.in/blog/nano-vs-micro-vs-macro-influencers-india)
 - [What is a Deal Room in influencer marketing?](https://influora.in/blog/what-is-a-deal-room-in-influencer-marketing)
+- [5 Clauses You Must Have in Your Next Brand Collaboration Agreement](https://influora.in/blog/5-clauses-you-must-have-in-your-next-brand-collaboration-agreement)
 
 ## Legal
 

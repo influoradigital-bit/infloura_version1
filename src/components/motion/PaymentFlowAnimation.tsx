@@ -25,7 +25,7 @@ const STAGES = [
   {
     icon: CheckCircle2,
     title: 'Released on approval',
-    body: 'Deliverable approved → payout releases automatically, TDS handled, invoice generated.',
+    body: 'Deliverable approved → payout releases automatically, invoice generated with any recorded TDS shown.',
   },
 ] as const;
 

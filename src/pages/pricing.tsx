@@ -54,7 +54,7 @@ const FREE_INCLUDED: IncludedItem[] = [
   { label: 'Campaign performance dashboard (unlimited)' },
   { label: 'Auto-generated contracts + e-signature' },
   { label: 'Payment protection on every deal' },
-  { label: 'TDS handling and dispute resolution' },
+  { label: 'TDS recorded on payouts + dispute resolution' },
 ];
 
 const PRO_INCLUDED: IncludedItem[] = [
@@ -67,13 +67,13 @@ const PRO_INCLUDED: IncludedItem[] = [
   { label: 'Campaign templates library', comingSoon: true },
   { label: 'Auto-generated contracts + e-signature' },
   { label: 'Payment protection on every deal' },
-  { label: 'TDS handling and dispute resolution' },
+  { label: 'TDS recorded on payouts + dispute resolution' },
 ];
 
 const CREATOR_INCLUDED = [
   'Free to join and build your profile',
   'Free to accept deals and Hype Campaign slots',
-  'TDS invoice generated automatically',
+  'Invoice with any recorded TDS shown',
   'UPI or direct bank payout',
   'Payment protection before you start work',
 ];
@@ -152,7 +152,7 @@ const MATRIX_ROWS: MatrixRow[] = [
     pro: { kind: 'text', value: 'Every deal' },
   },
   {
-    feature: 'TDS handling + dispute resolution',
+    feature: 'TDS recorded on payouts + dispute resolution',
     free: { kind: 'check' },
     pro: { kind: 'check' },
   },
@@ -550,7 +550,7 @@ export default function PricingPage() {
               <h2 className="text-3xl font-semibold">No hidden fees</h2>
               <p className="mt-3 text-muted-foreground">
                 Every fee is shown on the deal before you fund the deal, and on the invoice after payout.
-                There's no separate charge for payment protection, contracts, or TDS handling — they're part of the
+                There's no separate charge for payment protection, contracts, or invoicing — they're part of the
                 same transparent flow.
               </p>
             </FadeUp>

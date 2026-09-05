@@ -19,8 +19,9 @@
  * A designed card from Zara is still the better artifact and should replace this
  * one when it lands. This exists because "no image at all" is strictly worse than
  * "an on-brand typographic card", and the TODO had already been open long enough
- * to ship. Everything here is brand tokens from src/app/globals.css and the mark
- * from public/icon.svg — nothing invented.
+ * to ship. Everything here is brand tokens from src/app/globals.css and the
+ * approved lockup at public/brand/logo-lockup-transparent.png — nothing invented,
+ * and no logo geometry is redrawn in this file.
  *
  * WHY puppeteer-core
  * ------------------
@@ -39,12 +40,38 @@
  */
 import puppeteer from 'puppeteer-core';
 import { execFileSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const OUT = resolve('public/og-image.png');
 const WIDTH = 1200;
 const HEIGHT = 630;
+
+/**
+ * The brand lockup, inlined as a data URI.
+ *
+ * page.setContent() gives the document an `about:blank` base URL, so a relative
+ * or file:// <img src> is not reliably resolvable from the inline HTML — and a
+ * silently-broken <img> would ship a card with no logo on it at all. Reading the
+ * bytes here and embedding them makes the template self-contained and makes a
+ * missing asset a loud failure at startup instead of a blank rectangle in the
+ * PNG.
+ *
+ * public/brand/logo-lockup-transparent.png is the approved 451x83 lockup
+ * (mark + wordmark, transparent background). Do not regenerate it here.
+ */
+const LOCKUP_PATH = resolve('public/brand/logo-lockup-transparent.png');
+const LOCKUP_W = 451;
+const LOCKUP_H = 83;
+
+function lockupDataUri() {
+  if (!existsSync(LOCKUP_PATH)) {
+    throw new Error(
+      `Brand lockup not found at ${LOCKUP_PATH}. The OG card cannot be generated without it.`,
+    );
+  }
+  return `data:image/png;base64,${readFileSync(LOCKUP_PATH).toString('base64')}`;
+}
 
 function resolveChrome() {
   const envPath =
@@ -101,9 +128,10 @@ function resolveChrome() {
   );
 }
 
-// Brand tokens copied from src/app/globals.css (:root). The logo path data is
-// lifted verbatim from public/icon.svg.
-const HTML = `<!doctype html>
+// Brand tokens copied from src/app/globals.css (:root). The logo is the
+// approved lockup asset, embedded as a data URI (see lockupDataUri above) —
+// nothing about the mark is redrawn or re-coloured here.
+const buildHtml = (lockupSrc) => `<!doctype html>
 <html>
 <head><meta charset="utf-8" />
 <style>
@@ -124,9 +152,14 @@ const HTML = `<!doctype html>
   }
   .rule { position: absolute; left: 0; top: 0; width: 100%; height: 10px; background: #6d5ae6; }
   .wrap { position: relative; padding: 72px 80px; height: 100%; display: flex; flex-direction: column; }
-  .brand { display: flex; align-items: center; gap: 18px; }
-  .mark { width: 60px; height: 60px; border-radius: 14px; background: #221e35; display: flex; align-items: center; justify-content: center; }
-  .wordmark { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+  /* The lockup already contains the wordmark, so there is no separate
+     "Influora" text next to it — that would be a double wordmark, and the
+     text version would be a system-font approximation sitting beside the
+     real one. Rendered at its exact 451:83 intrinsic ratio; no dark plate
+     behind it, because the mark is orchid on transparent and reads fine on
+     this light ground. */
+  .brand { display: flex; align-items: center; }
+  .brand img { display: block; width: ${LOCKUP_W * 0.86}px; height: ${LOCKUP_H * 0.86}px; }
   h1 { margin-top: auto; font-size: 68px; line-height: 1.08; font-weight: 700; letter-spacing: -0.03em; max-width: 940px; }
   p.sub { margin-top: 24px; font-size: 29px; line-height: 1.4; color: #67617d; max-width: 900px; }
   ul { margin-top: auto; padding-top: 44px; display: flex; gap: 40px; list-style: none; }
@@ -139,15 +172,7 @@ const HTML = `<!doctype html>
   <div class="glow"></div>
   <div class="wrap">
     <div class="brand">
-      <div class="mark">
-        <svg width="40" height="40" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
-          <g style="transform: scale(95%); transform-origin: center">
-            <path fill="#ffffff" d="M101.141 53H136.632C151.023 53 162.689 64.6662 162.689 79.0573V112.904H148.112V79.0573C148.112 78.7105 148.098 78.3662 148.072 78.0251L112.581 112.898C112.701 112.902 112.821 112.904 112.941 112.904H148.112V126.672H112.941C98.5504 126.672 86.5638 114.891 86.5638 100.5V66.7434H101.141V100.5C101.141 101.15 101.191 101.792 101.289 102.422L137.56 66.7816C137.255 66.7563 136.945 66.7434 136.632 66.7434H101.141V53Z" />
-            <path fill="#ffffff" d="M65.2926 124.136L14 66.7372H34.6355L64.7495 100.436V66.7372H80.1365V118.47C80.1365 126.278 70.4953 129.958 65.2926 124.136Z" />
-          </g>
-        </svg>
-      </div>
-      <span class="wordmark">Influora</span>
+      <img src="${lockupSrc}" alt="Influora" />
     </div>
 
     <h1>Influencer marketing for India, without the payment risk</h1>
@@ -157,13 +182,20 @@ const HTML = `<!doctype html>
       <li><span class="dot"></span>Verified creators</li>
       <li><span class="dot"></span>Contracts built in</li>
       <li><span class="dot"></span>Paid on approval</li>
-      <li><span class="dot"></span>TDS handled</li>
+      <!-- Wording matches the meta description shipped in index.html and
+           src/pages/landing.tsx verbatim: the card and that description are
+           rendered side by side in a share preview, so they must not disagree.
+           Per Swapnil's ruling this claim is replaced with what is true, not
+           stripped — the platform records TDS on the invoice, it does not
+           file or remit it. -->
+      <li><span class="dot"></span>TDS shown on invoices</li>
     </ul>
   </div>
 </body>
 </html>`;
 
 async function main() {
+  const lockupSrc = lockupDataUri();
   const executablePath = resolveChrome();
   const browser = await puppeteer.launch({
     executablePath,
@@ -174,9 +206,20 @@ async function main() {
   try {
     const page = await browser.newPage();
     await page.setViewport({ width: WIDTH, height: HEIGHT, deviceScaleFactor: 1 });
-    await page.setContent(HTML, { waitUntil: 'load' });
+    await page.setContent(buildHtml(lockupSrc), { waitUntil: 'load' });
     // Let webfont fallback metrics settle before the shot.
     await page.evaluate(() => document.fonts.ready);
+    // Do not screenshot a half-decoded logo. 'load' should already cover the
+    // data URI, but decode() is cheap and a logo-less card is expensive.
+    await page.evaluate(() =>
+      Promise.all(Array.from(document.images, (img) => img.decode().catch(() => {}))),
+    );
+    // Fail loudly rather than shipping a card with a broken image box on it.
+    const logoOk = await page.evaluate(() => {
+      const img = document.querySelector('.brand img');
+      return Boolean(img && img.complete && img.naturalWidth > 0);
+    });
+    if (!logoOk) throw new Error('Brand lockup failed to render in the page — refusing to write a logo-less card.');
     const buffer = await page.screenshot({ type: 'png' });
     writeFileSync(OUT, buffer);
     console.log(`[og-image] wrote ${OUT} (${WIDTH}x${HEIGHT}, ${buffer.length} bytes)`);
