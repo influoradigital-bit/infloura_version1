@@ -142,6 +142,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node + node_modules exist here ONLY to make the F-0390 gate below able to finish. This job
+      # otherwise builds entirely inside Docker and needs no toolchain on the runner.
+      #
+      # Without them the gate's last leg — `node -e "import { loadEnv } from 'vite'"`, which
+      # cross-checks the statically-parsed build args against what Vite actually resolves — cannot
+      # import vite (a devDependency), so the gate exits 2 = UNAVAILABLE and this job dies with
+      # "could not run vite loadEnv". That is what happened on main @ 8f1153d (2026-09-01): the
+      # gate was added to this job for the right reason (see the block below) but without the
+      # toolchain it depends on, which has blocked the image-publish path ever since.
+      #
+      # Do NOT "fix" a future recurrence by letting the step tolerate exit 2. proof-os exit codes
+      # are 0 = proved / 1 = broken / 2 = unavailable, and GitHub collapses 1 and 2 into "failed".
+      # Collapsing them the other way — treating "could not verify" as "fine" — would make the one
+      # job that publishes the artifact green while proving nothing, which is the vacuous-gate
+      # failure this repo keeps getting caught by. Give the gate what it needs to run instead.
+      # Version and cache mirror frontend-checks.yml so the two jobs resolve identical dependencies.
+      - name: Set up Node 22 (for the F-0390 gate only)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies (for the F-0390 gate only)
+        run: npm ci
+
       # F-0390 — the ONLY runtime check on these two values, and the reason the repo variables can
       # stay free text. src/lib/api.ts:71 compares against the exact string 'true', so 'True',
       # 'TRUE', '1', 'yes' and a trailing space all mean OFF — silently, and via a change that
