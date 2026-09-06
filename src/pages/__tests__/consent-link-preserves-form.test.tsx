@@ -115,6 +115,9 @@ describe('creator-register.tsx — consent links do not destroy in-progress form
 
     await user.type(screen.getByLabelText(/Your Name/i), 'Priya Sharma');
     await user.type(screen.getByLabelText(/Email Address/i), 'priya@creator.com');
+    // PHONE-0906 - the mobile number is a required signup field now, so it is part of the
+    // in-progress state F-0293 says a consent link must not destroy.
+    await user.type(screen.getByLabelText(/Mobile Number/i), '9876500001');
 
     const termsLink = screen.getByRole('link', { name: 'Terms of Service' });
     const privacyLink = screen.getByRole('link', { name: 'Privacy Policy' });
@@ -126,5 +129,6 @@ describe('creator-register.tsx — consent links do not destroy in-progress form
 
     expect(screen.getByLabelText(/Your Name/i)).toHaveValue('Priya Sharma');
     expect(screen.getByLabelText(/Email Address/i)).toHaveValue('priya@creator.com');
+    expect(screen.getByLabelText(/Mobile Number/i)).toHaveValue('9876500001');
   });
 });

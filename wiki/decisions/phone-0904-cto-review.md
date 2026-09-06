@@ -1,5 +1,13 @@
 # PHONE-0904 — CTO review + Required/Optional ruling
 
+> ## ⚠️ PART 1 IS SUPERSEDED — see [Addendum PHONE-0906](#addendum-phone-0906--creator-signup-phone-is-now-required) at the foot of this file
+>
+> As of **2026-09-06**, creator phone is **REQUIRED at signup** (`AuthService#creatorRegister`),
+> by Swapnil's ruling, over the Part 1 ruling below. Part 1 is kept verbatim because its
+> *reasoning* — in particular the no-release-path dead-end — is unchanged and is now a shipped,
+> accepted risk rather than a hypothetical. **Read Part 1 as the argument, not as the current
+> state.** PART 2 (the architecture review, D1–D5) is untouched and still current.
+
 **Author:** Priya (CTO)
 **Date:** 2026-09-04
 **Ticket:** PHONE-0904 (`TASK_INBOX.md`), handoff in `SHARED_CONTEXT.md`
@@ -62,8 +70,11 @@ direction to the one Kavya's escalation implied. Do not "align" by making creato
   first-class in the layout. **New ticket — NOT this diff.** Owner: **Ananya**, dispatched by **Arjun**.
 - **REQUIRED becomes available to us again only if both ship:** (a) SMS verification of the number, and
   (b) a support/admin release path. Until then no user-facing surface may make phone mandatory.
+  **⚠️ OVERRULED TWICE, (a) and (b) still not shipped:** brand signup by PHONE-0904 Q8, creator
+  signup by PHONE-0906. Both surfaces are mandatory today with neither precondition met.
 - If Swapnil wants brand phone mandatory for commercial reasons, that is his call to overrule — but it
   needs (a) and (b) funded first, not waived. Escalating.
+  **⚠️ He did overrule, and waived both preconditions, on both surfaces.** See the addendum.
 
 ---
 
@@ -296,3 +307,76 @@ copy is better covered than the original. Worth a test file the next time anyone
 re-reviews with the D1 test caveat above in hand → Meera re-verifies → back to me. The ruling in Part 1
 does **not** block re-review and does not require a code change; it requires a comment pointer and a new
 brand-side ticket.
+
+---
+
+## Addendum PHONE-0906 — creator signup phone is now REQUIRED
+
+**Author:** Priya (CTO)
+**Date:** 2026-09-06
+**Decided by:** Swapnil (overruling the Part 1 ruling above)
+**Status:** SHIPPED (code + tests, this diff)
+
+### What changed
+
+`POST /auth/creator/register` now rejects a registration with no mobile number. Creator signup
+gained a required **Mobile Number** field, mirroring brand signup. Creator onboarding step 2 and
+creator Settings keep their optional phone fields — they are now **edit** surfaces for a number
+that already exists, never the first capture.
+
+| Surface | Before | After |
+|---|---|---|
+| Brand signup | REQUIRED (PHONE-0904 Q8, Swapnil) | REQUIRED (unchanged) |
+| Creator signup | not collected at all | **REQUIRED** |
+| Creator onboarding step 2 | optional (first capture) | optional (edit) |
+| Creator Settings | optional (edit, clearable) | optional (unchanged) |
+
+### The asymmetry Part 1 identified is closed — in the direction Part 1 argued against
+
+Part 1's ruling was "align by making brand optional." The business chose "align by making creator
+required." That is a legitimate call to make; what follows is the cost it buys, recorded so nobody
+has to rediscover it from a support ticket.
+
+### Accepted risk 1 — the dead-end is now on the creator funnel too
+
+Unchanged from Part 1 point 1 and D4: `users.phone_number` is `UNIQUE` **across user types**, is
+never SMS-verified, and has **no release path**. A creator whose number already sits on a brand
+account — an agency owner, a brand employee who also creates, a shared family or office line — now
+gets `PHONE_ALREADY_EXISTS`/409 **and cannot create an account at all**. Before this change they
+left the field blank and proceeded.
+
+Mitigation shipped: the client message names support explicitly rather than saying "already
+registered" and stopping there (`src/pages/creator-register.tsx`). That is a signpost, not a fix.
+**The fix remains an admin/support phone-release path, and it is still unfunded.** This is now the
+single highest-value item in the phone workstream, because it sits on both signup funnels.
+
+### Accepted risk 2 — India-only signup
+
+`IndianPhoneUtils.isValid` is `^[6-9]\d{9}$`. Required + India-only means a creator with a
+non-Indian mobile **cannot register**, full stop. Previously they simply skipped the field. If
+international creators are ever in scope, this is a hard blocker, not a polish item.
+
+### Defects prevented while implementing
+
+- **Burnt OTP / rate-limit trap.** A phone conflict is only knowable server-side, i.e. *after* the
+  email OTP is verified. Naively, every retry re-sent a code and walked the user into
+  `BrandEmailOtpService`'s per-email hourly `RATE_LIMITED` on a form they could not yet submit.
+  `creator-register.tsx` now tracks the email that already cleared the gate in-session and skips
+  the second send; `requireVerifiedEmail` reads the latest challenge, which stays verified, so this
+  is safe. Pinned by a test.
+- **Misattributed race-loser 409.** `creatorRegister`'s `DataIntegrityViolationException` catch
+  translated *every* constraint violation into `EMAIL_ALREADY_EXISTS`. With phone now written on
+  the same row it would have told a creator their email was taken when it was their mobile. Now
+  re-checks `isTaken` first, matching what `brandRegister` already did (PHONE-0829 Gap A).
+- **Three codes, not one.** `PHONE_REQUIRED`/400 (missing), `INVALID_PHONE`/400 (malformed),
+  `PHONE_ALREADY_EXISTS`/409 (duplicate) stay separate all the way to an inline message on the
+  field, and the client branches on `code` — never bare HTTP status, which this endpoint also
+  returns 409 for on `EMAIL_ALREADY_EXISTS`.
+
+### Known cosmetic residue (not fixed, deliberately)
+
+Creator onboarding step 2 still asks for a phone with an empty input, one screen after signup
+captured one. It cannot *erase* the signup value — `CreatorOnboardingService#saveProfile` guards
+on `!isBlank()` before `applyPhone` (D2 above) — so this is a redundant ask, not a data-loss bug.
+Prefilling it needs an extra `GET /me/creator-profile` read on that page. **Follow-up, owner:
+Ananya.**

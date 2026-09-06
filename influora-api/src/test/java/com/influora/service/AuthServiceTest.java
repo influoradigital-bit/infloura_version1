@@ -94,6 +94,11 @@ class AuthServiceTest {
                     true,
                     "9876543210");
 
+    // PHONE-0906 ruling -- creator phone is now REQUIRED at registration too, so the shared
+    // happy-path fixture must carry one. Deliberately a DIFFERENT number from the brand fixture
+    // above: users.phone_number is UNIQUE across user types, and reusing 9876543210 here would
+    // have made these two suites quietly describe the same person. Missing/blank/malformed/
+    // duplicate variants live in the dedicated tests below via creatorRequestWithPhone.
     private static final CreatorRegisterRequest CREATOR_REQUEST =
             new CreatorRegisterRequest(
                     "riya@example.com",
@@ -101,7 +106,9 @@ class AuthServiceTest {
                     "Riya",
                     "Sharma",
                     null,
-                    true);
+                    true,
+                    null,
+                    "9876500001");
 
     private static final LoginRequest CREATOR_LOGIN =
             new LoginRequest("riya@example.com", "Supersecret1");
@@ -325,6 +332,116 @@ class AuthServiceTest {
                 true, phone);
     }
 
+    private CreatorRegisterRequest creatorRequestWithPhone(String phone) {
+        return new CreatorRegisterRequest(
+                "riya@example.com", "Supersecret1", "Riya", "Sharma", null, true, null, phone);
+    }
+
+    // -- PHONE-0906: creator registration phone gate (mirrors the brand set above) ------------
+
+    @Test
+    @DisplayName(
+            "creatorRegister: PHONE-0906 -- a missing phone gets its own PHONE_REQUIRED/400 code,"
+                    + " distinct from INVALID_PHONE/PHONE_ALREADY_EXISTS, before touching"
+                    + " persistence")
+    void testCreatorRegisterRejectsMissingPhone() {
+        CreatorRegisterRequest req = creatorRequestWithPhone(null);
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.creatorRegister(req));
+
+        assertEquals("PHONE_REQUIRED", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        // The three codes must stay separable, so "missing" must never reach the uniqueness check.
+        verify(userRepository, never()).existsByPhoneNumber(any());
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+        verifyNoInteractions(creatorProfileRepository);
+        verifyNoInteractions(walletRepository);
+    }
+
+    @Test
+    @DisplayName(
+            "creatorRegister: PHONE-0906 -- blank phone (whitespace) also rejected as"
+                    + " PHONE_REQUIRED")
+    void testCreatorRegisterRejectsBlankPhone() {
+        CreatorRegisterRequest req = creatorRequestWithPhone("   ");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.creatorRegister(req));
+
+        assertEquals("PHONE_REQUIRED", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+        verifyNoInteractions(creatorProfileRepository);
+    }
+
+    @Test
+    @DisplayName(
+            "creatorRegister: PHONE-0906 -- a malformed phone is INVALID_PHONE/400, not"
+                    + " PHONE_REQUIRED, and never reaches persistence")
+    void testCreatorRegisterRejectsInvalidPhone() {
+        CreatorRegisterRequest req = creatorRequestWithPhone("12345");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.creatorRegister(req));
+
+        assertEquals("INVALID_PHONE", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+        verifyNoInteractions(creatorProfileRepository);
+    }
+
+    @Test
+    @DisplayName(
+            "creatorRegister: PHONE-0906 -- a number already held by ANY account (brand included)"
+                    + " throws PHONE_ALREADY_EXISTS/409, never the misleading EMAIL_ALREADY_EXISTS")
+    void testCreatorRegisterDuplicatePhoneThrowsFriendly409() {
+        CreatorRegisterRequest req = creatorRequestWithPhone("9876543210");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+        // The row that owns this number is deliberately unspecified here -- users.phone_number is
+        // UNIQUE across user types, so a brand account holding it blocks the creator signup just
+        // as another creator would. This is the accepted dead-end recorded in
+        // wiki/decisions/phone-0904-cto-review.md D4 and its PHONE-0906 addendum.
+        when(userRepository.existsByPhoneNumber("9876543210")).thenReturn(true);
+
+        ApiException ex = assertThrows(ApiException.class, () -> authService.creatorRegister(req));
+
+        assertEquals("PHONE_ALREADY_EXISTS", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+        verifyNoInteractions(creatorProfileRepository);
+    }
+
+    @Test
+    @DisplayName(
+            "creatorRegister: PHONE-0906 -- a pasted '+91 98765 00001' is normalized to 10 digits"
+                    + " and persisted on the user row")
+    void testCreatorRegisterNormalizesAndPersistsPhone() {
+        CreatorRegisterRequest req = creatorRequestWithPhone("+91 98765 00001");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+        when(passwordEncoder.encode("Supersecret1")).thenReturn("hashed-pw");
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(creatorProfileRepository.save(any(CreatorProfile.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(walletRepository.save(any(Wallet.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(anyString(), eq(UserType.CREATOR), anyString(), isNull()))
+                .thenReturn("access-jwt");
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        authService.creatorRegister(req);
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).saveAndFlush(saved.capture());
+        // Asserting the STORED value, not merely that the call succeeded: persisting the raw
+        // '+91 98765 00001' would defeat the UNIQUE constraint (the same number could be stored
+        // in several spellings) and break every lookup that assumes 10 digits.
+        assertEquals("9876500001", saved.getValue().getPhoneNumber());
+    }
+
     @Test
     @DisplayName(
             "creatorRegister: sequential duplicate (existsByEmailIgnoreCase true) throws the friendly"
@@ -413,7 +530,8 @@ class AuthServiceTest {
     void testCreatorRegisterConsumesInviteToken() {
         CreatorRegisterRequest withInvite =
                 new CreatorRegisterRequest(
-                        "riya@example.com", "Supersecret1", "Riya", "Sharma", null, true, "signed-invite-token");
+                        "riya@example.com", "Supersecret1", "Riya", "Sharma", null, true,
+                        "signed-invite-token", "9876500001");
         when(userRepository.existsByEmailIgnoreCase(withInvite.email())).thenReturn(false);
         when(passwordEncoder.encode("Supersecret1")).thenReturn("hashed-pw");
         when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -483,6 +601,9 @@ class AuthServiceTest {
     @Test
     @DisplayName("creatorRegister G-Kv3-1: weak password rejected before any persistence")
     void testCreatorRegisterWeakPassword() {
+        // PHONE-0906 -- deliberately left on the phone-less 6-arg constructor. This request would
+        // ALSO fail PHONE_REQUIRED, so the assertion below only holds while password validation
+        // still runs first; that ordering is the thing this test now pins.
         CreatorRegisterRequest weak =
                 new CreatorRegisterRequest("riya@example.com", "password", "Riya", "Sharma", null, true);
         when(userRepository.existsByEmailIgnoreCase(weak.email())).thenReturn(false);

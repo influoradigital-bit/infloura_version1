@@ -14,8 +14,10 @@ import jakarta.validation.constraints.Size;
  * throws its own {@code PHONE_REQUIRED}/400 up front, kept deliberately separate from
  * {@code INVALID_PHONE}/400 (present but malformed) and {@code PHONE_ALREADY_EXISTS}/409
  * (duplicate) so the client can branch on the code and put the right inline message on the field
- * (Q6). {@code creatorRegister}'s sibling DTO has no {@code phone} field at all and stays
- * unaffected — creator phone capture remains optional everywhere (Priya's standing ruling).
+ * (Q6). PHONE-0906 (Swapnil) later applied the same rule to {@link CreatorRegisterRequest}, which
+ * now carries its own required {@code phone} — the "creator phone capture is optional everywhere"
+ * standing ruling this paragraph used to cite is superseded for the SIGNUP surface only; creator
+ * onboarding step 2 and creator Settings stay optional as EDIT surfaces.
  *
  * <p>When present, normalized/validated server-side against the same strict Indian-mobile rule as
  * creator phone capture (never trusts the client's own regex at

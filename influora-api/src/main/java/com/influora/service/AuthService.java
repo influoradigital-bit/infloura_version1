@@ -325,6 +325,31 @@ public class AuthService {
         }
         PasswordPolicy.validate(req.password());
 
+        // PHONE-0906 (Swapnil) - creator mobile is now REQUIRED, closing the brand/creator
+        // asymmetry in the opposite direction to the one phone-0904-cto-review.md ruled for (see
+        // that document's addendum, and CreatorRegisterRequest's javadoc for the accepted
+        // dead-end this carries). Ordering is deliberately identical to brandRegister: email dup,
+        // then password, then missing-phone, then malformed, then duplicate - so "missing" and
+        // "malformed" never collapse into one code, and a weak password is still rejected before
+        // any phone work happens (the G-Kv3-1 test depends on that order).
+        if (req.phone() == null || req.phone().isBlank()) {
+            throw new ApiException(
+                    "PHONE_REQUIRED", "Phone number is required", HttpStatus.BAD_REQUEST);
+        }
+
+        // Same shared normalize/validate/uniqueness rules as brandRegister and every other
+        // phone-capture surface (UserPhoneService), applied BEFORE the user/profile/wallet rows
+        // are built so a bad or duplicate number never allocates a userId. As in brandRegister,
+        // this upfront isTaken check only narrows the common case - the UNIQUE constraint plus
+        // the catch block below is what actually closes the TOCTOU race.
+        String normalizedPhone = userPhoneService.normalizeAndValidate(req.phone());
+        if (userPhoneService.isTaken(normalizedPhone)) {
+            throw new ApiException(
+                    "PHONE_ALREADY_EXISTS",
+                    "An account with this phone number already exists",
+                    HttpStatus.CONFLICT);
+        }
+
         String firstName;
         String lastName;
         String displayName;
@@ -350,6 +375,8 @@ public class AuthService {
                         firstName,
                         lastName,
                         displayName);
+        // Never null here - the PHONE_REQUIRED guard above already rejected a missing/blank value.
+        user.setPhoneNumber(normalizedPhone);
 
         if (requireEmailOtpBeforeRegister) {
             brandEmailOtpService.requireVerifiedEmail(req.email());
@@ -364,6 +391,16 @@ public class AuthService {
             creatorProfileRepository.save(profile);
             walletRepository.save(Wallet.forUser(Ulids.newUlid(), userId));
         } catch (DataIntegrityViolationException dup) {
+            // PHONE-0906 - users.phone_number is UNIQUE too, so this catch can now fire for a
+            // raced duplicate PHONE, not only a raced duplicate email. Without this re-check the
+            // creator would be told their EMAIL was taken when it was their mobile - the same
+            // misattribution brandRegister already fixed for the brand side (PHONE-0829 Gap A).
+            if (userPhoneService.isTaken(normalizedPhone)) {
+                throw new ApiException(
+                        "PHONE_ALREADY_EXISTS",
+                        "An account with this phone number already exists",
+                        HttpStatus.CONFLICT);
+            }
             throw new ApiException(
                     "EMAIL_ALREADY_EXISTS", "An account with this email already exists", HttpStatus.CONFLICT);
         }

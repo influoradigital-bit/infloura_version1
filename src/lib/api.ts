@@ -1006,6 +1006,14 @@ export interface CreatorRegisterPayload {
   lastName?: string;
   displayName?: string;
   acceptedTerms: boolean;
+  /**
+   * PHONE-0906 — REQUIRED, mirroring `BrandRegisterPayload`. Send the NORMALIZED 10-digit value
+   * (`normalizePhone` from `src/lib/phone.ts`), never the raw `+91 98765 43210` the input holds:
+   * `AuthService.creatorRegister` rejects a blank with `PHONE_REQUIRED`/400, a malformed value
+   * with `INVALID_PHONE`/400, and a number already on ANY account (brand or creator —
+   * `users.phone_number` is UNIQUE across user types) with `PHONE_ALREADY_EXISTS`/409.
+   */
+  phone: string;
 }
 
 /**
