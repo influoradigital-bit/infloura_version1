@@ -13,6 +13,16 @@
 // module was never in either grep's blast radius. Imported from the same module the other two
 // use so all three layers read ONE predicate and cannot disagree about what is available.
 import { isMoneyActionBlocked } from '@/lib/api';
+// Admin session lifecycle (access-token read/refresh/clear). Lives in its own module so
+// `useAdminAuth` and the raw-fetch call sites below share ONE notion of "is this token still
+// good" instead of each keeping a private JWT decoder that can drift.
+import {
+  ADMIN_API_BASE,
+  clearAdminToken,
+  getAdminToken,
+  getFreshAdminToken,
+  refreshAdminSession,
+} from './admin-session';
 import type {
   AdminLoginRequest,
   AdminLoginResponse,
@@ -80,22 +90,57 @@ import type {
 // Backend runs with `server.servlet.context-path: /api/v1` (Vikram's AdminAuthController /
 // AdminDashboardController mount at `/admin/**`, resolving to `/api/v1/admin/**`). This base MUST
 // carry the `/v1` segment or every admin call 404s. See AdminAuthController class javadoc.
-const API_BASE = '/api/v1/admin';
+// Now sourced from `admin-session.ts` so the refresh call below and every call here cannot drift
+// onto different origins — the refresh cookie is SameSite=Strict and only travels same-origin.
+const API_BASE = ADMIN_API_BASE;
+
+/**
+ * Auth endpoints that must NEVER be retried through a refresh.
+ *
+ * `/auth/login` 401s on bad credentials — refreshing would swap a "wrong password" message for a
+ * confusing session error. `/auth/refresh` 401s when the session is over, and retrying it via
+ * itself is an infinite loop. `/auth/logout` is already tearing the session down.
+ */
+const NO_REFRESH_RETRY = ['/auth/login', '/auth/refresh', '/auth/logout'];
 
 async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
-  const token = localStorage.getItem('admin_token');
+  const retryable = !NO_REFRESH_RETRY.includes(endpoint);
 
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...options.headers,
-    },
-  });
+  // Proactive half of the 15-minute-session fix: renew a token that is at/near `exp` BEFORE
+  // spending it, so an admin returning to an idle tab gets a silent refresh, not a visible error.
+  // Login and refresh themselves deliberately skip this — they establish the session.
+  const token = retryable ? await getFreshAdminToken() : getAdminToken();
+
+  const send = (bearer: string | null) =>
+    fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      // Same-origin by construction (API_BASE is relative); this is what carries the
+      // path-scoped `influora_admin_refresh` cookie on the auth routes.
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(bearer && { Authorization: `Bearer ${bearer}` }),
+        ...options.headers,
+      },
+    });
+
+  let response = await send(token);
+
+  // Reactive half: covers what the proactive check cannot see — a token revoked server-side, an
+  // admin whose role changed, or one that expired mid-flight. Exactly one retry per call; if the
+  // refresh fails the session is genuinely over, so drop the stale token and let the route guard
+  // send them to /admin/login rather than leaving a dead credential in localStorage.
+  if (response.status === 401 && retryable) {
+    const refreshed = await refreshAdminSession();
+    if (refreshed) {
+      response = await send(refreshed);
+    } else {
+      clearAdminToken();
+    }
+  }
 
   if (!response.ok) {
     // GlobalExceptionHandler returns { success, data, error: { code, message }, meta, timestamp }.
@@ -146,11 +191,26 @@ export const authApi = {
   logout: () =>
     apiRequest<void>('/auth/logout', { method: 'POST' }),
 
-  refreshToken: (refreshToken: string) =>
-    apiRequest<{ token: string }>('/auth/refresh', {
-      method: 'POST',
-      body: JSON.stringify({ refreshToken }),
-    }),
+  /**
+   * Exchanges the HttpOnly refresh cookie for a fresh access token.
+   *
+   * Delegates to `refreshAdminSession()` rather than issuing its own `apiRequest` — and that
+   * indirection is load-bearing, not tidiness. `AdminAuthService#refresh` ROTATES: it revokes the
+   * presented refresh token before minting the next one. Two independent refresh paths would mean
+   * the second one presenting a token the first already burned, 401ing, and logging the admin out
+   * — the precise failure the shared in-flight promise in `admin-session.ts` exists to prevent.
+   * There is one refresh path in this client, and this is a named alias for it.
+   *
+   * Took no argument in practice even before: `AdminAuthDtos.LoginResponse.refreshToken` is
+   * `@JsonIgnore`d, so this client has never held a raw refresh token to pass. The old required
+   * `refreshToken: string` parameter was uncallable, which is part of why nothing ever called it.
+   */
+  refreshToken: async (): Promise<ApiResponse<{ token: string }>> => {
+    const token = await refreshAdminSession();
+    return token
+      ? { success: true, data: { token } }
+      : { success: false, error: 'Session expired. Please sign in again.' };
+  },
 
   getCurrentUser: () =>
     apiRequest<AdminUser>('/auth/me'),
@@ -540,7 +600,11 @@ export const financeApi = {
     /** True when this failure is the optimistic-lock conflict (HTTP 409 / FEE_CONFIG_CONFLICT) — the caller should prompt a reload, never retry-overwrite. */
     conflict?: boolean;
   }> => {
-    const token = localStorage.getItem('admin_token');
+    // Proactive refresh (see admin-session.ts). These four call sites bypass `apiRequest` for
+    // their bespoke error-code handling, so they need the renewal explicitly or they keep dying
+    // at the 15-minute mark. Proactive only, deliberately: each is a non-idempotent POST/PUT and
+    // a silent 401-retry here is a bigger change than this ticket warrants.
+    const token = await getFreshAdminToken();
 
     const response = await fetch(`${API_BASE}/finance/fee-config`, {
       method: 'PUT',
@@ -914,7 +978,11 @@ export const festivalEnquiryApi = {
     /** The backend's error code, when the failure is one of the documented ones. */
     code?: FestivalEnquiryProvisionErrorCode;
   }> => {
-    const token = localStorage.getItem('admin_token');
+    // Proactive refresh (see admin-session.ts). These four call sites bypass `apiRequest` for
+    // their bespoke error-code handling, so they need the renewal explicitly or they keep dying
+    // at the 15-minute mark. Proactive only, deliberately: each is a non-idempotent POST/PUT and
+    // a silent 401-retry here is a bigger change than this ticket warrants.
+    const token = await getFreshAdminToken();
 
     const response = await fetch(`${API_BASE}/festival-enquiries/${id}/provision`, {
       method: 'POST',
@@ -1087,7 +1155,11 @@ export const festivalCouponApi = {
     /** The backend's error code, when the failure is one of the documented ones. */
     code?: CreateFestivalCouponErrorCode;
   }> => {
-    const token = localStorage.getItem('admin_token');
+    // Proactive refresh (see admin-session.ts). These four call sites bypass `apiRequest` for
+    // their bespoke error-code handling, so they need the renewal explicitly or they keep dying
+    // at the 15-minute mark. Proactive only, deliberately: each is a non-idempotent POST/PUT and
+    // a silent 401-retry here is a bigger change than this ticket warrants.
+    const token = await getFreshAdminToken();
 
     const response = await fetch(`${API_BASE}/campaigns/${campaignId}/coupons`, {
       method: 'POST',
@@ -1341,7 +1413,11 @@ export const emailApi = {
     /** True when this failure is the recipient-count mismatch (HTTP 409 / RECIPIENT_COUNT_CHANGED) — the caller must force a fresh preview, never resend with the stale count. */
     recipientCountChanged?: boolean;
   }> => {
-    const token = localStorage.getItem('admin_token');
+    // Proactive refresh (see admin-session.ts). These four call sites bypass `apiRequest` for
+    // their bespoke error-code handling, so they need the renewal explicitly or they keep dying
+    // at the 15-minute mark. Proactive only, deliberately: each is a non-idempotent POST/PUT and
+    // a silent 401-retry here is a bigger change than this ticket warrants.
+    const token = await getFreshAdminToken();
 
     const response = await fetch(`${API_BASE}/emails/custom/send`, {
       method: 'POST',

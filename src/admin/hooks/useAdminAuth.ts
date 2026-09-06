@@ -15,6 +15,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { authApi } from '../services/api-contracts';
+import {
+  clearAdminToken,
+  getAdminToken,
+  isTokenExpired,
+  isTokenWellFormed,
+  refreshAdminSession,
+} from '../services/admin-session';
 import { AdminRole } from '../types/admin.types';
 import type { AdminUser } from '../types/admin.types';
 import { auditAction, AuditAction } from '../utils/auditLogger';
@@ -71,47 +78,16 @@ export type PermissionType = (typeof Permission)[keyof typeof Permission];
 // ============================================
 // TOKEN VALIDATION
 // ============================================
-
-/**
- * Decodes a base64url-encoded JWT segment into its JSON payload.
- * Returns null (never throws) on any malformed input.
- */
-function decodeJwtSegment(segment: string): Record<string, unknown> | null {
-  try {
-    const base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
-    const json = atob(padded);
-    const parsed: unknown = JSON.parse(json);
-    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Validates a JWT is well-formed (`header.payload.signature`, each segment
- * base64url-decodable) and, when the payload carries an `exp` claim, that it
- * has not already expired. This is a client-side sanity check only — it
- * exists to avoid firing a network request with a token that is guaranteed
- * to be rejected, not to establish trust in the token's contents. The server
- * remains the sole source of truth for signature verification.
- */
-function isTokenValid(token: string): boolean {
-  if (!token || typeof token !== 'string') return false;
-
-  const parts = token.split('.');
-  if (parts.length !== 3 || parts.some((part) => part.length === 0)) return false;
-
-  const payload = decodeJwtSegment(parts[1]);
-  if (!payload) return false;
-
-  if (typeof payload.exp === 'number') {
-    const nowInSeconds = Date.now() / 1000;
-    if (payload.exp <= nowInSeconds) return false;
-  }
-
-  return true;
-}
+//
+// The JWT decoder and the well-formed/expired predicates that used to live here now come from
+// `../services/admin-session`, so this hook and `api-contracts.ts` cannot disagree about whether
+// a token is still usable.
+//
+// The behavioural change that came with the move: this hook used to treat "expired" and
+// "malformed" identically and delete the token on sight. That is what made the admin session a
+// hard 15-minute wall — `JWT_ACCESS_EXPIRY` is 900s, and an expired access token was destroyed
+// here before anything could exchange the (still valid, 30-day) HttpOnly refresh cookie for a new
+// one. Expiry is now a reason to REFRESH; only a refresh that actually fails ends the session.
 
 /**
  * Role -> granted permissions matrix.
@@ -208,7 +184,7 @@ export function useAdminAuth(): UseAdminAuth {
     setIsLoading(true);
     setError(null);
 
-    const token = localStorage.getItem('admin_token');
+    const token = getAdminToken();
     if (!token) {
       setUser(null);
       setError(null);
@@ -216,14 +192,19 @@ export function useAdminAuth(): UseAdminAuth {
       return;
     }
 
-    if (!isTokenValid(token)) {
-      // Malformed or expired token — clear it immediately and skip the
-      // network round-trip; the request would be rejected server-side anyway.
-      localStorage.removeItem('admin_token');
-      setUser(null);
-      setError(null);
-      setIsLoading(false);
-      return;
+    // Expired (or unreadable) access token is NOT the end of the session — the HttpOnly refresh
+    // cookie outlives it by 30 days. Try to exchange it before giving up. Only a refresh that
+    // genuinely fails (no cookie, cookie expired, token already burned by rotation, admin
+    // deactivated) means the admin has to sign in again.
+    if (!isTokenWellFormed(token) || isTokenExpired(token)) {
+      const refreshed = await refreshAdminSession();
+      if (!refreshed) {
+        clearAdminToken();
+        setUser(null);
+        setError(null);
+        setIsLoading(false);
+        return;
+      }
     }
 
     const res = await authApi.getCurrentUser();
@@ -275,7 +256,7 @@ export function useAdminAuth(): UseAdminAuth {
           reason: 'Admin-initiated logout',
         });
       }
-      localStorage.removeItem('admin_token');
+      clearAdminToken();
       setUser(null);
       setError(null);
     }
