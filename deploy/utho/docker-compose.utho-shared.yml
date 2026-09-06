@@ -205,6 +205,11 @@ services:
       MSG91_FROM_EMAIL: ${MSG91_FROM_EMAIL}
       MSG91_FROM_NAME: ${MSG91_FROM_NAME}
       MSG91_EMAIL_COMPANY_NAME: ${MSG91_EMAIL_COMPANY_NAME}
+      # F-0601 — MUST stay true wherever influora.auth.require-email-verification is on.
+      # With this false (the application.yml default) the register pages skip the OTP gate,
+      # nothing ever sets users.email_verified, and every signup 403s EMAIL_NOT_VERIFIED at
+      # its second login. Depends on SMTP_HOST below being set.
+      REQUIRE_EMAIL_OTP_BEFORE_REGISTER: ${REQUIRE_EMAIL_OTP_BEFORE_REGISTER:-true}
       # SMTP relay for Msg91EmailClient — unset SMTP_HOST means no JavaMailSender bean at all,
       # i.e. all outbound email silently dead (F-0390 A2)
       SMTP_HOST: ${SMTP_HOST}

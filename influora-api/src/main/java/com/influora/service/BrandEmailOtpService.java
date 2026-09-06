@@ -4,6 +4,7 @@ import com.influora.common.ApiException;
 import com.influora.common.Ulids;
 import com.influora.config.InfluoraEnvironment;
 import com.influora.domain.entity.EmailOtpChallenge;
+import com.influora.domain.entity.User;
 import com.influora.integration.msg91.Msg91EmailClient;
 import com.influora.repository.EmailOtpChallengeRepository;
 import com.influora.repository.UserRepository;
@@ -57,17 +58,34 @@ public class BrandEmailOtpService {
     }
 
     /**
-     * Issues an email OTP challenge for signup. Always returns the same success shape whether or
-     * not the email is already registered (Kabir M-K6-C2-1) so callers cannot enumerate accounts.
-     * Registered emails still consume the per-email send quota (challenge row persisted) but the
-     * OTP is not delivered — registration itself continues to reject duplicates with 409.
+     * Issues an email OTP challenge for signup <em>or</em> for an already-registered account whose
+     * email is still unverified. Always returns the same success shape regardless of which case
+     * applies (Kabir M-K6-C2-1) so callers cannot enumerate accounts.
+     *
+     * <p>F-0601 — delivery used to be gated on {@code !alreadyRegistered} alone, which made an
+     * unverified account permanently unrecoverable: {@code AuthService.creatorLogin}/{@code
+     * brandLogin} reject it with {@code EMAIL_NOT_VERIFIED} while the only endpoint that could
+     * clear that state refused to send the code, because the account existed. That is reachable in
+     * production whenever {@code require-email-otp-before-register} is off (the default) and
+     * {@code require-email-verification} is on: {@code User.newCreator}/{@code newBrandOwner} stamp
+     * {@code PENDING_VERIFICATION} unconditionally, so every such signup is bricked at its second
+     * login. Delivery now covers the unverified-account case too. This adds no enumeration channel
+     * — the HTTP response is byte-identical in all three branches, and the only new signal goes to
+     * the mailbox that owns the address. A verified account still gets nothing: there is nothing
+     * left to verify, and sending would turn this endpoint into an unauthenticated mail cannon.
      */
     @Transactional
     public SendEmailOtpResponse sendOtp(String email) {
         String normalized = normalizeEmail(email);
         enforcePerEmailSendRateLimit(normalized);
 
-        boolean alreadyRegistered = userRepository.existsByEmailIgnoreCase(normalized);
+        // Read the row rather than existsByEmailIgnoreCase: "registered" alone can no longer decide
+        // delivery, only "registered AND already verified" can.
+        boolean alreadyVerified =
+                userRepository
+                        .findByEmailIgnoreCase(normalized)
+                        .map(User::isEmailVerified)
+                        .orElse(false);
 
         String otp = generateOtp();
         otpRepository.save(
@@ -77,8 +95,8 @@ public class BrandEmailOtpService {
                         JwtService.hashToken(otp),
                         Instant.now().plusSeconds(OTP_TTL_SECONDS)));
 
-        // Only deliver when the email is free to register — never branch the HTTP response.
-        if (!alreadyRegistered) {
+        // Deliver unless the address is already verified — never branch the HTTP response.
+        if (!alreadyVerified) {
             deliverOtp(normalized, otp);
         }
 
@@ -147,6 +165,25 @@ public class BrandEmailOtpService {
 
         challenge.setVerified(true);
         otpRepository.save(challenge);
+
+        // F-0601 — the challenge row was the ONLY thing this ever wrote. That is sufficient for the
+        // pre-register flow (AuthService reads it back through requireVerifiedEmail before the User
+        // row exists), but it left no path at all for an account that already exists: users.status
+        // stayed PENDING_VERIFICATION and users.email_verified stayed false forever, so the login
+        // gate kept rejecting an account whose owner had just proved they hold the mailbox.
+        // User#setEmailVerified promotes PENDING_VERIFICATION -> ACTIVE itself (User.java:280), so
+        // the two columns cannot drift apart here. Deliberately a no-op for an already-verified
+        // account and for an address with no account yet (register consumes the challenge instead).
+        userRepository
+                .findByEmailIgnoreCase(normalized)
+                .filter(u -> !u.isEmailVerified())
+                .ifPresent(
+                        u -> {
+                            u.setEmailVerified(true);
+                            userRepository.save(u);
+                            log.info("Email verified via OTP for existing account {}", maskEmail(normalized));
+                        });
+
         return new VerifyEmailOtpResponse(true, "Email verified successfully");
     }
 

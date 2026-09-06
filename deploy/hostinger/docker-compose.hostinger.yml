@@ -174,6 +174,15 @@ services:
       MSG91_FROM_EMAIL: ${MSG91_FROM_EMAIL}
       MSG91_FROM_NAME: ${MSG91_FROM_NAME}
       MSG91_EMAIL_COMPANY_NAME: ${MSG91_EMAIL_COMPANY_NAME}
+      # F-0601 — MUST stay true wherever influora.auth.require-email-verification is on (it is, in
+      # prod). With this false — the application.yml default, and what prod ran until now — the
+      # register pages skip the OTP gate (PublicConfigController mirrors this flag to the client),
+      # AuthService.creatorRegister/brandRegister never call setEmailVerified, and
+      # User.newCreator/newBrandOwner stamp PENDING_VERIFICATION regardless. The account then works
+      # exactly once (register issues tokens) and 403s EMAIL_NOT_VERIFIED at every later login.
+      # Requires SMTP_HOST below to be set: with no JavaMailSender bean, sendOtp 503s and signup
+      # stops instead of silently creating a dead account.
+      REQUIRE_EMAIL_OTP_BEFORE_REGISTER: ${REQUIRE_EMAIL_OTP_BEFORE_REGISTER:-true}
       # SMTP relay for Msg91EmailClient — unset SMTP_HOST means no JavaMailSender bean at all,
       # i.e. all outbound email silently dead (F-0390 A2)
       SMTP_HOST: ${SMTP_HOST}

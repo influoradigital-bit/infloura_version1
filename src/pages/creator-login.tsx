@@ -9,6 +9,7 @@ import { createMockCreatorUser } from '@/lib/mock-user';
 import { buildCreatorUser } from '@/lib/creator-identity';
 import { AuthLoginShell } from '@/components/shared/auth-login-shell';
 import { DemoAccessPanel } from '@/components/shared/demo-access-panel';
+import { UnverifiedEmailRecovery } from '@/components/shared/unverified-email-recovery';
 import { api, ApiError, isApiLive } from '@/lib/api';
 
 export default function CreatorLoginPage() {
@@ -22,16 +23,13 @@ export default function CreatorLoginPage() {
   // CR-121 — was a checkbox with no state or effect at all. Defaults to checked, matching this
   // app's existing de-facto behavior (the token already persisted in localStorage regardless).
   const [rememberMe, setRememberMe] = React.useState(true);
+  // F-0601 — set when the server answers a sign-in with EMAIL_NOT_VERIFIED. Swaps the form for
+  // the recovery panel, which is the only path out of that 403: the account exists and the
+  // password is correct, it just never had its address confirmed.
+  const [needsVerification, setNeedsVerification] = React.useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const performLogin = async () => {
     setError('');
-
-    if (!email || !password) {
-      setError('Please fill in all fields');
-      return;
-    }
-
     setIsLoading(true);
     try {
       // api.auth.creatorLogin (src/lib/api.ts) calls POST /auth/creator/login in live mode
@@ -69,11 +67,55 @@ export default function CreatorLoginPage() {
         result.onboardingComplete || !!localStorage.getItem('creator_onboarding_completed');
       navigate(onboardingCompleted ? '/creator/dashboard' : '/creator/onboarding');
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        // Not a failure the user can act on from this form — hand them the panel that can
+        // actually clear it instead of restating the block.
+        setNeedsVerification(true);
+        return;
+      }
       setError(err instanceof ApiError ? err.message : 'Login failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!email || !password) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    await performLogin();
+  };
+
+  if (needsVerification) {
+    return (
+      <AuthLoginShell
+        accent="creator"
+        heroTitle="Turn collaborations into income"
+        heroSubtitle="Manage deals, submit deliverables, and get paid — with a workspace built for Indian creators."
+        heroBullets={[
+          'Verified brand partnerships',
+          'Transparent, protected payouts',
+          'Deal room in one place',
+        ]}
+      >
+        <UnverifiedEmailRecovery
+          email={email}
+          role="creator"
+          // The password is still in state, so the retry needs no second sign-in form. If it
+          // fails for any other reason, performLogin's own error handling renders it.
+          onVerified={async () => {
+            setNeedsVerification(false);
+            await performLogin();
+          }}
+          onCancel={() => setNeedsVerification(false)}
+        />
+      </AuthLoginShell>
+    );
+  }
 
   return (
     <AuthLoginShell

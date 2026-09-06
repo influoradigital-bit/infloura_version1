@@ -32,6 +32,8 @@ vi.mock('@/lib/store', () => ({
 
 const creatorLogin = vi.fn();
 const setToken = vi.fn();
+const sendCreatorEmailOtp = vi.fn();
+const verifyCreatorEmail = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -42,6 +44,8 @@ vi.mock('@/lib/api', async () => {
       auth: {
         creatorLogin: (...a: unknown[]) => creatorLogin(...a),
         setToken: (...a: unknown[]) => setToken(...a),
+        sendCreatorEmailOtp: (...a: unknown[]) => sendCreatorEmailOtp(...a),
+        verifyCreatorEmail: (...a: unknown[]) => verifyCreatorEmail(...a),
       },
     },
   };
@@ -98,5 +102,99 @@ describe('CreatorLoginPage — post-login destination (F-0275)', () => {
     await submitLogin(user);
 
     await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/creator/onboarding'));
+  });
+});
+
+/**
+ * F-0601 — the EMAIL_NOT_VERIFIED dead end.
+ *
+ * A creator who signed up while `require-email-otp-before-register` was off (its default, and
+ * what production ran) got an account stamped PENDING_VERIFICATION that no email had ever been
+ * sent for. AuthService.creatorLogin (AuthService.java:412) then rejected every later sign-in
+ * with EMAIL_NOT_VERIFIED, and this page rendered that message as a flat error with no control
+ * able to clear it — the account was unrecoverable through the UI.
+ *
+ * These click all the way through the recovery, because a panel that renders but whose buttons
+ * do nothing passes tsc, eslint and a screenshot review alike.
+ */
+describe('CreatorLoginPage — unverified-email recovery (F-0601)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+  });
+
+  async function rejectAsUnverified() {
+    const { ApiError } = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+    creatorLogin.mockRejectedValueOnce(
+      new ApiError('EMAIL_NOT_VERIFIED', 'Please verify your email before signing in', 403),
+    );
+  }
+
+  it('offers a way to verify instead of a dead-end error, and signs in once verified', async () => {
+    await rejectAsUnverified();
+    sendCreatorEmailOtp.mockResolvedValue({
+      message: 'OTP sent successfully',
+      expiresIn: 300,
+      maskedEmail: 'c***@example.com',
+    });
+    verifyCreatorEmail.mockResolvedValue({ emailVerified: true, message: 'Email verified' });
+    // The retry after verification succeeds — the server has promoted the account to ACTIVE.
+    creatorLogin.mockResolvedValueOnce({
+      token: 't',
+      userId: 'cr_3',
+      email: 'creator@example.com',
+      displayName: 'Test Creator',
+      onboardingComplete: true,
+    });
+
+    const user = userEvent.setup({ delay: null });
+    renderPage();
+    await submitLogin(user);
+
+    // The 403 must NOT surface as a plain message the user can do nothing about.
+    expect(await screen.findByText(/Verify your email/i)).toBeInTheDocument();
+    expect(screen.queryByText('Please verify your email before signing in')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /Send verification code/i }));
+    await waitFor(() =>
+      expect(sendCreatorEmailOtp).toHaveBeenCalledWith('creator@example.com'),
+    );
+
+    const boxes = screen.getAllByRole('textbox').filter((el) => el.getAttribute('maxlength') === '1');
+    expect(boxes).toHaveLength(6);
+    await user.type(boxes[0], '123456');
+    await user.click(screen.getByRole('button', { name: /Verify email/i }));
+
+    await waitFor(() =>
+      expect(verifyCreatorEmail).toHaveBeenCalledWith('creator@example.com', '123456'),
+    );
+    // The whole point: the login is retried and now lands the creator in the app.
+    await waitFor(() => expect(creatorLogin).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/creator/dashboard'));
+  });
+
+  it('lets the user back out to the sign-in form', async () => {
+    await rejectAsUnverified();
+    const user = userEvent.setup({ delay: null });
+    renderPage();
+    await submitLogin(user);
+
+    expect(await screen.findByText(/Verify your email/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Back to sign in/i }));
+
+    expect(await screen.findByLabelText('Email Address')).toBeInTheDocument();
+  });
+
+  it('still shows an ordinary error inline — only EMAIL_NOT_VERIFIED opens the panel', async () => {
+    const { ApiError } = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+    creatorLogin.mockRejectedValueOnce(
+      new ApiError('INVALID_CREDENTIALS', 'Invalid email or password', 401),
+    );
+    const user = userEvent.setup({ delay: null });
+    renderPage();
+    await submitLogin(user);
+
+    expect(await screen.findByText('Invalid email or password')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Send verification code/i })).toBeNull();
   });
 });

@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Eye, EyeOff, ArrowRight, Loader2, Mail, Lock } from 'lucide-react';
 import { AuthLoginShell } from '@/components/shared/auth-login-shell';
 import { DemoAccessPanel } from '@/components/shared/demo-access-panel';
+import { UnverifiedEmailRecovery } from '@/components/shared/unverified-email-recovery';
 import { api, ApiError } from '@/lib/api';
 import { getBrandOnboardingComplete, getBrandDisplayName, buildBrandUser } from '@/lib/auth-session';
 import { useAuthStore } from '@/lib/store';
@@ -21,18 +22,15 @@ export default function BrandLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // F-0601 — see creator-login.tsx. brandRegister carries the identical PENDING_VERIFICATION
+  // trap (AuthService.java:174/:254), so the brand side needs the same way out.
+  const [needsVerification, setNeedsVerification] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const performLogin = async () => {
     setLoading(true);
     setError('');
 
     try {
-      if (!email || !password) {
-        setError('Please fill in all fields');
-        return;
-      }
-
       const session = await api.auth.brandLogin({ email, password });
       // F-0320 — populate the shared auth store the way the creator login flow does (CR-06),
       // instead of leaving `user` null forever. api.auth.brandLogin's LoginResponse doesn't
@@ -44,6 +42,10 @@ export default function BrandLoginPage() {
       const done = session.onboardingComplete || getBrandOnboardingComplete();
       navigate(done ? '/brand/dashboard' : '/brand/onboarding');
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        setNeedsVerification(true);
+        return;
+      }
       const message =
         err instanceof ApiError ? err.message : 'Login failed. Please try again.';
       setError(message);
@@ -51,6 +53,42 @@ export default function BrandLoginPage() {
       setLoading(false);
     }
   };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!email || !password) {
+      setError('Please fill in all fields');
+      return;
+    }
+
+    await performLogin();
+  };
+
+  if (needsVerification) {
+    return (
+      <AuthLoginShell
+        accent="brand"
+        heroTitle="Collaborate with creators at scale"
+        heroSubtitle="Fund campaigns, manage deal rooms, and release payments — all in one workspace."
+        heroBullets={[
+          'Payment-protected brand budgets',
+          'End-to-end deal room & contracts',
+          'Creator discovery built for India',
+        ]}
+      >
+        <UnverifiedEmailRecovery
+          email={email}
+          role="brand"
+          onVerified={async () => {
+            setNeedsVerification(false);
+            await performLogin();
+          }}
+          onCancel={() => setNeedsVerification(false)}
+        />
+      </AuthLoginShell>
+    );
+  }
 
   return (
     <AuthLoginShell

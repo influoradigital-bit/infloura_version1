@@ -16,6 +16,8 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiException;
 import com.influora.config.InfluoraEnvironment;
 import com.influora.domain.entity.EmailOtpChallenge;
+import com.influora.domain.entity.User;
+import com.influora.domain.enums.UserStatus;
 import com.influora.integration.msg91.Msg91EmailClient;
 import com.influora.repository.EmailOtpChallengeRepository;
 import com.influora.repository.UserRepository;
@@ -59,6 +61,16 @@ class BrandEmailOtpServiceTest {
         setField("otpTemplateVariable", "otp");
     }
 
+    private User unverifiedUser() {
+        return User.newCreator("01HUSER00000000000000000A", EMAIL, "hash", "Priya", "Ingle", "Priya Ingle");
+    }
+
+    private User verifiedUser() {
+        User u = unverifiedUser();
+        u.setEmailVerified(true);
+        return u;
+    }
+
     private EmailOtpChallenge challengeWithHash(String otp, Instant expiresAt) {
         return EmailOtpChallenge.create(
                 "01HOTPCHALLENGE123456789A", EMAIL, JwtService.hashToken(otp), expiresAt);
@@ -74,14 +86,14 @@ class BrandEmailOtpServiceTest {
         assertEquals("RATE_LIMITED", ex.getCode());
         assertEquals(429, ex.getStatus().value());
         verify(otpRepository, never()).save(any());
-        verify(userRepository, never()).existsByEmailIgnoreCase(any());
+        verify(userRepository, never()).findByEmailIgnoreCase(any());
         verify(msg91EmailClient, never()).sendTemplateEmail(anyString(), anyString(), anyString());
     }
 
     @Test
     @DisplayName("sendOtp: under the per-email cap persists a hashed challenge and returns masked email")
     void testSendOtpSucceedsUnderRateLimit() {
-        when(userRepository.existsByEmailIgnoreCase(EMAIL)).thenReturn(false);
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.empty());
         when(otpRepository.countByEmailAndCreatedAtAfter(eq(EMAIL), any(Instant.class))).thenReturn(2L);
         when(environment.isDev()).thenReturn(false);
         when(msg91EmailClient.isConfigured()).thenReturn(true);
@@ -104,7 +116,7 @@ class BrandEmailOtpServiceTest {
     @Test
     @DisplayName("sendOtp V-GA-6: dev mode logs only — never calls MSG91")
     void testSendOtpDevModeSkipsMsg91() {
-        when(userRepository.existsByEmailIgnoreCase(EMAIL)).thenReturn(false);
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.empty());
         when(otpRepository.countByEmailAndCreatedAtAfter(eq(EMAIL), any(Instant.class))).thenReturn(0L);
         when(environment.isDev()).thenReturn(true);
 
@@ -119,7 +131,7 @@ class BrandEmailOtpServiceTest {
     @Test
     @DisplayName("sendOtp V-GA-6: non-dev MSG91 failure returns 503 EMAIL_DELIVERY_FAILED")
     void testSendOtpMsg91Failure() {
-        when(userRepository.existsByEmailIgnoreCase(EMAIL)).thenReturn(false);
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.empty());
         when(otpRepository.countByEmailAndCreatedAtAfter(eq(EMAIL), any(Instant.class))).thenReturn(0L);
         when(environment.isDev()).thenReturn(false);
         when(msg91EmailClient.isConfigured()).thenReturn(true);
@@ -134,7 +146,7 @@ class BrandEmailOtpServiceTest {
     @Test
     @DisplayName("sendOtp M-K6-C2-1: registered email returns identical success shape (no 409 oracle)")
     void testSendOtpRegisteredEmailUniformSuccess() {
-        when(userRepository.existsByEmailIgnoreCase(EMAIL)).thenReturn(true);
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(verifiedUser()));
         when(otpRepository.countByEmailAndCreatedAtAfter(eq(EMAIL), any(Instant.class))).thenReturn(0L);
 
         SendEmailOtpResponse response = service.sendOtp(EMAIL);
@@ -151,11 +163,11 @@ class BrandEmailOtpServiceTest {
     void testSendOtpRegisteredAndUnregisteredIdenticalShapes() {
         when(otpRepository.countByEmailAndCreatedAtAfter(eq(EMAIL), any(Instant.class))).thenReturn(1L);
 
-        when(userRepository.existsByEmailIgnoreCase(EMAIL)).thenReturn(false);
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.empty());
         when(environment.isDev()).thenReturn(true);
         SendEmailOtpResponse unregistered = service.sendOtp(EMAIL);
 
-        when(userRepository.existsByEmailIgnoreCase(EMAIL)).thenReturn(true);
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(verifiedUser()));
         SendEmailOtpResponse registered = service.sendOtp(EMAIL);
 
         assertEquals(unregistered.message(), registered.message());
@@ -166,7 +178,7 @@ class BrandEmailOtpServiceTest {
     @Test
     @DisplayName("sendOtp G-Kv3-1: persisted challenge stores SHA-256 hash, never plaintext OTP")
     void testSendOtpHashesBeforeStorage() {
-        when(userRepository.existsByEmailIgnoreCase(EMAIL)).thenReturn(false);
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.empty());
         when(otpRepository.countByEmailAndCreatedAtAfter(eq(EMAIL), any(Instant.class))).thenReturn(0L);
         when(environment.isDev()).thenReturn(true);
 
@@ -186,6 +198,7 @@ class BrandEmailOtpServiceTest {
     void testVerifyCorrectOtp() {
         EmailOtpChallenge challenge = challengeWithHash(OTP, Instant.now().plusSeconds(300));
         when(otpRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL)).thenReturn(Optional.of(challenge));
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.empty());
 
         VerifyEmailOtpResponse response = service.verifyOtp(EMAIL, OTP);
 
@@ -278,6 +291,78 @@ class BrandEmailOtpServiceTest {
         when(otpRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL)).thenReturn(Optional.of(challenge));
 
         service.requireVerifiedEmail(EMAIL);
+    }
+
+
+    // ---- F-0601: the unverified-account recovery path -------------------------------------------
+    // Before this, an account created while require-email-otp-before-register was off (the default,
+    // and what production ran) was unrecoverable: PENDING_VERIFICATION blocked every login, sendOtp
+    // refused to deliver because the account existed, and verifyOtp only ever wrote the challenge
+    // row. These four pin the three halves of that trap shut.
+
+    @Test
+    @DisplayName("sendOtp F-0601: registered-but-UNVERIFIED account does get the code delivered")
+    void testSendOtpDeliversToRegisteredUnverifiedAccount() {
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(unverifiedUser()));
+        when(otpRepository.countByEmailAndCreatedAtAfter(eq(EMAIL), any(Instant.class))).thenReturn(0L);
+        when(msg91EmailClient.isConfigured()).thenReturn(true);
+        when(msg91EmailClient.sendTemplateEmail(eq(EMAIL), eq("otpman"), anyString())).thenReturn(true);
+
+        SendEmailOtpResponse response = service.sendOtp(EMAIL);
+
+        assertEquals("OTP sent successfully", response.message());
+        verify(otpRepository).save(any(EmailOtpChallenge.class));
+        // The assertion that matters: under the old !alreadyRegistered gate this was never(...).
+        verify(msg91EmailClient).sendTemplateEmail(eq(EMAIL), eq("otpman"), anyString());
+    }
+
+    @Test
+    @DisplayName("sendOtp F-0601: unverified-account send is shape-identical to the verified one")
+    void testSendOtpUnverifiedAndVerifiedIdenticalShapes() {
+        when(otpRepository.countByEmailAndCreatedAtAfter(eq(EMAIL), any(Instant.class))).thenReturn(1L);
+        when(environment.isDev()).thenReturn(true);
+
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(unverifiedUser()));
+        SendEmailOtpResponse unverified = service.sendOtp(EMAIL);
+
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(verifiedUser()));
+        SendEmailOtpResponse verified = service.sendOtp(EMAIL);
+
+        // Delivery differs; the response must not, or this endpoint becomes a verification oracle.
+        assertEquals(unverified.message(), verified.message());
+        assertEquals(unverified.expiresIn(), verified.expiresIn());
+        assertEquals(unverified.maskedEmail(), verified.maskedEmail());
+    }
+
+    @Test
+    @DisplayName("verifyOtp F-0601: correct OTP promotes a PENDING_VERIFICATION account to ACTIVE")
+    void testVerifyOtpActivatesPendingAccount() {
+        EmailOtpChallenge challenge = challengeWithHash(OTP, Instant.now().plusSeconds(300));
+        User pending = unverifiedUser();
+        assertFalse(pending.isEmailVerified());
+        assertEquals(UserStatus.PENDING_VERIFICATION, pending.getStatus());
+        when(otpRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL)).thenReturn(Optional.of(challenge));
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(pending));
+
+        VerifyEmailOtpResponse response = service.verifyOtp(EMAIL, OTP);
+
+        assertTrue(response.emailVerified());
+        // Both columns, because AuthService's login gate reads both (AuthService.java:412).
+        assertTrue(pending.isEmailVerified());
+        assertEquals(UserStatus.ACTIVE, pending.getStatus());
+        verify(userRepository).save(pending);
+    }
+
+    @Test
+    @DisplayName("verifyOtp F-0601: an already-verified account is not re-saved")
+    void testVerifyOtpLeavesVerifiedAccountAlone() {
+        EmailOtpChallenge challenge = challengeWithHash(OTP, Instant.now().plusSeconds(300));
+        when(otpRepository.findFirstByEmailOrderByCreatedAtDesc(EMAIL)).thenReturn(Optional.of(challenge));
+        when(userRepository.findByEmailIgnoreCase(EMAIL)).thenReturn(Optional.of(verifiedUser()));
+
+        service.verifyOtp(EMAIL, OTP);
+
+        verify(userRepository, never()).save(any(User.class));
     }
 
     private void setField(String name, Object value) throws Exception {
