@@ -107,25 +107,50 @@ class CampaignTrackingControllerTest {
     }
 
     @Test
-    @DisplayName("CreateTrackingLinkRequest: missing collaborationId/creatorProfileId/platform each fail validation")
-    void missingOtherRequiredFields_failValidation() {
-        assertFalse(
-                validator
-                        .validate(
-                                new CreateTrackingLinkRequest(
-                                        null, CREATOR_PROFILE_ID, "https://brand.example.com", "INSTAGRAM"))
-                        .isEmpty());
-        assertFalse(
-                validator
-                        .validate(
-                                new CreateTrackingLinkRequest(
-                                        COLLAB_ID, null, "https://brand.example.com", "INSTAGRAM"))
-                        .isEmpty());
+    @DisplayName("CreateTrackingLinkRequest: a missing platform still fails validation")
+    void missingPlatform_failsValidation() {
         assertFalse(
                 validator
                         .validate(
                                 new CreateTrackingLinkRequest(
                                         COLLAB_ID, CREATOR_PROFILE_ID, "https://brand.example.com", null))
+                        .isEmpty());
+    }
+
+    /**
+     * [T-FESTIVALBOX-0905 phase 7] {@code collaborationId}/{@code creatorProfileId} were {@code
+     * @NotBlank} until phase 7 dropped both annotations (see {@code
+     * TrackingDtos.CreateTrackingLinkRequest}'s javadoc): a null/blank {@code creatorProfileId} now
+     * *means* something -- it requests the campaign's page-level "Shop button" link rather than a
+     * per-creator one, which {@code CampaignTrackingService#createTrackingLink} dispatches on at
+     * lines 86-91. So bean validation must let both through; the per-creator path's own
+     * requirement on {@code collaborationId} is enforced in the service ({@code
+     * CampaignLinkService#createTrackingLink} throws {@code COLLABORATION_NOT_FOUND}), not here.
+     *
+     * <p>This replaces the old {@code missingOtherRequiredFields_failValidation}, which still
+     * asserted the pre-phase-7 contract and failed once the annotations came off.
+     */
+    @Test
+    @DisplayName(
+            "CreateTrackingLinkRequest: null collaborationId/creatorProfileId pass validation (page-level link)")
+    void nullCollaborationAndCreatorIds_passValidation() {
+        assertTrue(
+                validator
+                        .validate(
+                                new CreateTrackingLinkRequest(
+                                        null, CREATOR_PROFILE_ID, "https://brand.example.com", "INSTAGRAM"))
+                        .isEmpty());
+        assertTrue(
+                validator
+                        .validate(
+                                new CreateTrackingLinkRequest(
+                                        COLLAB_ID, null, "https://brand.example.com", "INSTAGRAM"))
+                        .isEmpty());
+        assertTrue(
+                validator
+                        .validate(
+                                new CreateTrackingLinkRequest(
+                                        null, null, "https://brand.example.com", "INSTAGRAM"))
                         .isEmpty());
     }
 
