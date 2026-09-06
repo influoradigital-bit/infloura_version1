@@ -30,7 +30,6 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.EnableAsync;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableConfigurationProperties({
@@ -106,9 +105,19 @@ import org.springframework.scheduling.annotation.EnableScheduling;
     WooCommerceProperties.class,
     ConversionWebhookProperties.class
 })
-// Required for @Scheduled to actually fire (EmailWorker, and Phase 2's MetricsPollingJob) — was
-// missing before Phase 2; without it every @Scheduled method in the app is silently inert.
-@EnableScheduling
+// @EnableScheduling deliberately does NOT live here any more (T-CI-SCHEDULER). It moved to
+// TaskSchedulerConfig so it can be switched off by property in integration tests. Scheduling is
+// still ON by default in production — TaskSchedulerConfig's @ConditionalOnProperty uses
+// matchIfMissing = true, so an environment that sets nothing behaves exactly as before.
+//
+// Why it had to move: with it here it was unconditional, so every @SpringBootTest booted all 30
+// @Scheduled jobs against the Testcontainers MySQL. Their threads outlived the context that owned
+// them, kept polling a container that had already been torn down (java.net.ConnectException:
+// Connection refused, HikariPool total=0), and were non-daemon, so surefire could not exit:
+// "Surefire is going to kill self fork JVM. The exit has elapsed 30 seconds after System.exit(0)."
+// This was invisible until EmailWorker's constructor ambiguity was fixed, because before that the
+// context never loaded far enough to start a scheduler at all.
+//
 // D2 — every handler in NotificationListener is annotated @Async, but without this,
 // @Async is silently inert (Spring just runs the method synchronously on the calling
 // thread) rather than erroring — so the domain service that published the event (DealService,

@@ -7,23 +7,27 @@ import org.testcontainers.DockerClientFactory;
 
 /**
  * Skips (not errors) any {@link AbstractIntegrationTest} subclass when no Docker environment is
- * reachable, instead of letting {@code @Testcontainers}' static {@code @Container} field blow up
- * with an {@code IllegalStateException} during container startup.
+ * reachable, instead of letting a test class try to run against a null/never-started
+ * {@code MYSQL} container.
  *
  * <p>Why an {@code ExecutionCondition} and not {@code Assumptions.assumeTrue(...)} in a
- * {@code @BeforeAll}: with {@code @Testcontainers} + a static {@code @Container} field, the
- * container's {@code start()} call happens inside {@code TestcontainersExtension#beforeAll}
- * (a {@code BeforeAllCallback}), which the JUnit 5 engine invokes for the failing Docker-less
- * environment BEFORE any user-defined {@code @BeforeAll} method runs -- confirmed from the
- * baseline failure's stack trace (see verification notes), where the error originates at
- * {@code TestcontainersExtension$StoreAdapter.start -> GenericContainer.start ->
- * DockerClientProviderStrategy}. An {@code assumeTrue} placed in {@code @BeforeAll} would never
- * get a chance to run -- the extension's own {@code beforeAll} already throws first.
+ * {@code @BeforeAll}: {@link AbstractIntegrationTest}'s {@code MYSQL} field is initialized (and,
+ * when Docker is reachable, started) in a static initializer that runs at class-load time --
+ * before JUnit 5 has even finished discovering the test class, let alone reached any
+ * user-defined {@code @BeforeAll} method. Originally (pre T-CI-CONTAINERS) that field was managed
+ * by {@code @Testcontainers} + a static {@code @Container} field instead, where the identical
+ * ordering problem applied one phase later: the container's {@code start()} call happened inside
+ * {@code TestcontainersExtension#beforeAll} (a {@code BeforeAllCallback}), which the JUnit 5
+ * engine invokes for a Docker-less environment BEFORE any user-defined {@code @BeforeAll} method
+ * runs -- confirmed from the baseline failure's stack trace (see verification notes), where the
+ * error originated at {@code TestcontainersExtension$StoreAdapter.start -> GenericContainer.start
+ * -> DockerClientProviderStrategy}. Either way, an {@code assumeTrue} placed in
+ * {@code @BeforeAll} would never get a chance to run -- something earlier already throws first.
  *
  * <p>{@code ExecutionCondition} extensions are evaluated by the JUnit 5 engine as a distinct,
- * earlier phase -- before any {@code BeforeAllCallback} (including
- * {@code TestcontainersExtension}) is invoked for that class -- so disabling here prevents
- * {@code TestcontainersExtension#beforeAll} from ever calling {@code MYSQL.start()}.
+ * earlier phase -- before any {@code BeforeAllCallback} and before Spring's
+ * {@code @DynamicPropertySource} handling runs for that class -- so disabling here means nothing
+ * downstream ever dereferences a null {@code MYSQL}.
  *
  * <p>Testcontainers 1.19.8 (the version resolved from this project's parent BOM) has no built-in
  * {@code @EnabledIfDockerAvailable} annotation -- that was added in a later release not present in

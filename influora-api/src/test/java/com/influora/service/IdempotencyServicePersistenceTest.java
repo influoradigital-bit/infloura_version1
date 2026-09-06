@@ -384,6 +384,36 @@ class IdempotencyServicePersistenceTest {
         String key = "concurrent-run-exclusive-key";
         AtomicInteger actionRunCount = new AtomicInteger();
         CountDownLatch bothStarting = new CountDownLatch(2);
+        // [SEC: T-CI-IDEMPOTENCY investigation] runExclusive's SUCCESS path DELETES the
+        // reservation row (see IdempotencyReservationOps#release), so the "exclusion window" this
+        // test means to probe only exists between reservation and release -- unlike
+        // executeOnce's COMPLETED-forever row, which stays a permanent barrier regardless of
+        // scheduling. `bothStarting` alone only guarantees both threads BEGIN their attempt
+        // around the same moment; it does NOT guarantee they actually contend for the row,
+        // because nothing stops the OS scheduler from running one thread's ENTIRE
+        // reserve-run-release cycle to completion before the other thread's reservation attempt
+        // is even issued. When that happens the second attempt legitimately finds the key free
+        // again (runExclusive's whole point is to allow exactly that for a LATER, non-overlapping
+        // caller) and correctly runs the action a second time -- not a double-execution bug, just
+        // two calls that never actually overlapped. That gap, not a service defect, is what
+        // produced the intermittent "expected <1> but was <2>" CI failures (34027735091,
+        // eac5e58): confirmed by CI's own SQL debug log, which shows the two threads' inserts
+        // completing as two fully sequential, non-adjacent insert/select/delete cycles with zero
+        // PRIMARY_KEY_63 violations, whereas the sibling concurrentExecuteOnce... test's two
+        // threads (same latch pattern, same underlying tryReserve) show a genuine back-to-back
+        // insert/insert/violation in the SAME run -- proving the DB-level exclusion mechanism
+        // itself is sound and the gap is specific to this test's reliance on the row surviving
+        // long enough to be contended, which only `executeOnce`'s non-deleting success path
+        // actually guarantees.
+        //
+        // Fix: force genuine overlap deterministically instead of hoping the scheduler cooperates.
+        // The loser signals `loserAttempted` from its catch block the instant its own reservation
+        // attempt has failed; the winner's guarded action blocks on that same latch (bounded by a
+        // timeout as a safety net) before returning, so release() can never run until the loser
+        // has already issued its insert against the still-present row. This does not weaken the
+        // assertion below in any way -- it still requires exactly one winner -- it just guarantees
+        // the race window this test claims to exercise is actually exercised every time.
+        CountDownLatch loserAttempted = new CountDownLatch(1);
 
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
@@ -395,8 +425,25 @@ class IdempotencyServicePersistenceTest {
                                 try {
                                     return (Object)
                                             service.runExclusive(
-                                                    key, WORKSPACE_ID, SCOPE, () -> actionRunCount.incrementAndGet());
+                                                    key,
+                                                    WORKSPACE_ID,
+                                                    SCOPE,
+                                                    () -> {
+                                                        int count = actionRunCount.incrementAndGet();
+                                                        // Winner: hold the reservation open until the
+                                                        // loser has provably made (and lost) its own
+                                                        // attempt, so release() cannot run first.
+                                                        try {
+                                                            loserAttempted.await(10, TimeUnit.SECONDS);
+                                                        } catch (InterruptedException ie) {
+                                                            Thread.currentThread().interrupt();
+                                                        }
+                                                        return count;
+                                                    });
                                 } catch (RuntimeException ex) {
+                                    // Loser: signal immediately so the winner (blocked above) can
+                                    // proceed to release().
+                                    loserAttempted.countDown();
                                     return ex;
                                 }
                             });
@@ -408,8 +455,20 @@ class IdempotencyServicePersistenceTest {
                                 try {
                                     return (Object)
                                             service.runExclusive(
-                                                    key, WORKSPACE_ID, SCOPE, () -> actionRunCount.incrementAndGet());
+                                                    key,
+                                                    WORKSPACE_ID,
+                                                    SCOPE,
+                                                    () -> {
+                                                        int count = actionRunCount.incrementAndGet();
+                                                        try {
+                                                            loserAttempted.await(10, TimeUnit.SECONDS);
+                                                        } catch (InterruptedException ie) {
+                                                            Thread.currentThread().interrupt();
+                                                        }
+                                                        return count;
+                                                    });
                                 } catch (RuntimeException ex) {
+                                    loserAttempted.countDown();
                                     return ex;
                                 }
                             });
