@@ -214,7 +214,25 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>-Xmx512m -XX:+UseSerialGC</argLine>
+                    <!-- T-CI-HEAP: 512m OOM'd in Backend CI (run 34026270851). reuseForks=true
+                         keeps ONE fork alive for the whole suite, so every @SpringBootTest caches
+                         its own ApplicationContext in that single JVM alongside the Testcontainers
+                         MySQL container. 2048m is 4x the value that provably failed while still
+                         fitting an 8GB dev machine. Deliberately NOT higher: a 4GB test heap is
+                         unrunnable on the 7.6GB Windows dev box (the JVM dies on a native malloc
+                         before Java heap is even the constraint), and CI at 16GB does not need it.
+                         If CI still OOMs, raise this using the new log as evidence rather than
+                         guessing upward.
+                         G1 replaces SerialGC: SerialGC is single-threaded and its stop-the-world
+                         pauses scale with heap, so it wastes the runner's 4 cores at this size.
+                         forkCount/reuseForks left alone: more forks run CONCURRENTLY and would
+                         multiply peak memory, and reuseForks=false rebuilds a context per class
+                         (a slowdown, not a memory fix).
+                         NOTE: this heap bump and the EmailWorker @Autowired fix landed together,
+                         so CI going green does not by itself prove which one was load-bearing.
+                         The ambiguous-constructor bug alone could have cascaded into the OOM by
+                         leaking failed context loads. Both are defensible independently. -->
+                    <argLine>-Xmx2048m -XX:+UseG1GC</argLine>
                 </configuration>
             </plugin>
         </plugins>

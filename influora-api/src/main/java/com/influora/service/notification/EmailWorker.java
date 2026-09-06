@@ -12,6 +12,7 @@ import java.util.Set;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -149,6 +150,7 @@ public class EmailWorker {
     private final TransactionTemplate transactionTemplate;
     private final Duration maxBatchWallClock;
 
+    @Autowired
     public EmailWorker(
             EmailOutboxRepository emailOutboxRepository,
             EmailPreferenceRepository emailPreferenceRepository,
@@ -165,8 +167,15 @@ public class EmailWorker {
     /** A4 fix (round 5, REVIEW-R4.md): package-private overload taking the wall-clock budget
      * explicitly, purely so {@code EmailWorkerTest} can exercise the deadline boundary
      * deterministically (a tiny {@link Duration}) instead of waiting out the real ~2.5 minute
-     * default. Spring never sees this constructor — the public 4-arg one above is the only one
-     * on the classpath it can autowire, so this does not change or complicate DI. */
+     * default. Correction to an earlier version of this note: Spring's {@code
+     * AutowiredAnnotationBeanPostProcessor} inspects every declared constructor on the class,
+     * package-private ones included — it does not skip this overload, and it was never blind to
+     * it. With two multi-arg constructors on the classpath and neither marked, the processor had
+     * no basis to choose between them and no no-arg fallback existed either, which is exactly why
+     * this class used to fail at boot with {@code NoSuchMethodException: <init>()}. The fix is on
+     * the public constructor above, now explicitly annotated {@code @Autowired} so the container
+     * has a single unambiguous entry point; this 5-arg overload is deliberately left un-annotated
+     * and stays reachable only by {@code EmailWorkerTest} calling it directly. */
     EmailWorker(
             EmailOutboxRepository emailOutboxRepository,
             EmailPreferenceRepository emailPreferenceRepository,
