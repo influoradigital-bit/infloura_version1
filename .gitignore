@@ -89,3 +89,23 @@ proof-os-0.1.8/
 # proof-os audit reports contain extracted secret-shaped strings — never commit them
 .proof-os/_archive/**/gitleaks.json
 .proof-os/tasks/**/gitleaks.json
+
+# Vendored third-party agent skills (remotion-dev/skills; see skills-lock.json)
+.agents/
+.claude/skills/remotion-*/
+skills-lock.json
+
+# proof-os per-run scratch: PID-suffixed citation files, tmp logs, oracle build logs
+.proof-os/_tmp_*
+.proof-os/rc/*.[0-9]*.rc
+.proof-os/_archive/**/*.log
+
+# Stray local scratch at repo root (kept on disk, never committed):
+#   .ts               - byte-identical duplicate of src/lib/upload.ts
+#   .f0248-backup.tsx - stale backup of contracts-and-deliverables.tsx
+#   .scratch3.txt     - captured JVM warning output
+#   class2.tsv        - one-off doc-classification output
+/.ts
+/.f0248-backup.tsx
+/.scratch3.txt
+/class2.tsv
