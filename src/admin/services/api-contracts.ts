@@ -251,6 +251,23 @@ export const brandApi = {
       method: 'POST',
       body: JSON.stringify({ newBudget, reason }),
     }),
+
+  /**
+   * PATCH /admin/brands/{id}/meta-pixel (T-FESTIVALBOX-0905 phase 6/10, `AdminBrandController
+   * #updateMetaPixel`). Set-or-clear, NOT the `update()` "leave unchanged when omitted"
+   * convention above — `metaPixelId: null` is a real, meaningful request body that clears the
+   * pixel (a sponsor withdrawing consent must be able to send it), never an "omit the field"
+   * no-op. `UpdateMetaPixelRequest.metaPixelId` validates `^[0-9]{8,20}$` when non-null
+   * (`AdminBrandDtos.java`) — 8-20 digits, no dashes/spaces; a blank string is sent as `null`
+   * by the caller (`MetaPixelSection`), never as `""`, since the backend pattern does not
+   * accept an empty string. Returns the full `BrandDetailDto` (incl. the now-current
+   * `metaPixelId`) so the caller can render server truth without a second round trip.
+   */
+  updateMetaPixel: (id: string, metaPixelId: string | null) =>
+    apiRequest<BrandDetail>(`/brands/${id}/meta-pixel`, {
+      method: 'PATCH',
+      body: JSON.stringify({ metaPixelId }),
+    }),
 };
 
 // ============================================
@@ -751,6 +768,417 @@ export const creatorConnectionsApi = {
       method: 'POST',
       body: JSON.stringify({ usernames }),
     }),
+};
+
+// ============================================
+// FESTIVAL BOX ENQUIRIES (T-FESTIVALBOX-0905) — AdminFestivalEnquiryController
+// @ /admin/festival-enquiries. Mirrors `AdminFestivalEnquiryDto` (Java record,
+// influora-api/src/main/java/com/influora/web/dto/admin/AdminFestivalEnquiryDtos.java)
+// field-for-field, same nullability: a BRAND row has no instagramHandle/followers/city; a
+// CREATOR row has no company/website/tier/productCategory. Render absent fields as "—", never
+// as an empty cell or 0 — "not asked" must stay visibly distinct from "answered with nothing".
+// ============================================
+
+export type FestivalEnquiryType = 'BRAND' | 'CREATOR';
+export type FestivalEnquiryStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'WON' | 'LOST';
+
+/** Mirrors `AdminFestivalEnquiryDto` field-for-field, same nullability. */
+export interface AdminFestivalEnquiry {
+  id: string;
+  type: FestivalEnquiryType;
+  status: FestivalEnquiryStatus;
+  edition: string;
+  name: string;
+  email: string;
+  phone: string;
+  company: string | null;
+  website: string | null;
+  tier: string | null;
+  productCategory: string | null;
+  instagramHandle: string | null;
+  followers: number | null;
+  city: string | null;
+  message: string | null;
+  adminNotes: string | null;
+  handledBy: string | null;
+  handledAt: string | null;
+  utmSource: string | null;
+  utmMedium: string | null;
+  utmCampaign: string | null;
+  createdAt: string;
+  /**
+   * T-FESTIVALBOX-0905 phase 2 — set once `provision()` below succeeds. All four provisioned*
+   * fields land together (the backend only ever writes them as one commit) — `provisionedAt`
+   * null means "never provisioned", not "provisioned but timestamp missing".
+   */
+  provisionedUserId: string | null;
+  provisionedWorkspaceId: string | null;
+  provisionedCampaignId: string | null;
+  provisionedAt: string | null;
+}
+
+/**
+ * `PagedFestivalEnquiriesDto` shape. `statusCounts` totals ACROSS the whole table (every
+ * `FestivalEnquiryStatus` name seeded at 0 server-side), not scoped to the current page or
+ * filter — the inbox header must not change as the admin pages forward or searches.
+ */
+export interface PagedFestivalEnquiries {
+  items: AdminFestivalEnquiry[];
+  page: number;
+  pageSize: number;
+  total: number;
+  hasMore: boolean;
+  statusCounts: Record<string, number>;
+}
+
+/**
+ * `UpdateEnquiryStatusRequest` shape. `status` is required on every call (the backend rejects a
+ * missing value, and separately rejects `NEW` as a target — see `updateStatus` below). Omitting
+ * `notes` LEAVES the existing note intact; sending `''` CLEARS it — never send a `notes` value
+ * the admin did not deliberately edit, or a status-only change will wipe a colleague's note.
+ */
+export interface UpdateFestivalEnquiryStatusRequest {
+  status: Exclude<FestivalEnquiryStatus, 'NEW'>;
+  notes?: string;
+}
+
+// AdminFestivalEnquiryController (Vikram) — mounted at /admin/festival-enquiries, resolving to
+// /api/v1/admin/festival-enquiries via API_BASE. Admin auth + audit-log-on-mutation are enforced
+// service-side, same discipline as creatorConnectionsApi above.
+export const festivalEnquiryApi = {
+  /** GET /admin/festival-enquiries?type=&status=&edition=&q=&page=&pageSize= */
+  list: (
+    filters: {
+      type?: FestivalEnquiryType;
+      status?: FestivalEnquiryStatus;
+      edition?: string;
+      q?: string;
+      page?: number;
+      pageSize?: number;
+    } = {},
+  ) => {
+    // Same "undefined must be an absent param, not the literal string 'undefined'" pitfall as
+    // creatorConnectionsApi.list above — build params manually rather than spreading filters.
+    const params = new URLSearchParams();
+    if (filters.type) params.set('type', filters.type);
+    if (filters.status) params.set('status', filters.status);
+    if (filters.edition) params.set('edition', filters.edition);
+    if (filters.q) params.set('q', filters.q);
+    params.set('page', String(filters.page ?? 1));
+    params.set('pageSize', String(filters.pageSize ?? 20));
+    return apiRequest<PagedFestivalEnquiries>(`/festival-enquiries?${params}`);
+  },
+
+  /**
+   * PATCH /admin/festival-enquiries/:id — move one enquiry along the pipeline. The backend
+   * rejects `NEW` as a target status (400, "An enquiry cannot be moved back to NEW") — the
+   * `Exclude<FestivalEnquiryStatus, 'NEW'>` type keeps that off the console's status control.
+   */
+  updateStatus: (id: string, body: UpdateFestivalEnquiryStatusRequest) =>
+    apiRequest<AdminFestivalEnquiry>(`/festival-enquiries/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  /**
+   * POST /admin/festival-enquiries/:id/provision — T-FESTIVALBOX-0905 phase 2. No request body.
+   * Turns a WON brand enquiry into a real sponsor account (user + workspace + starter campaign)
+   * and emails the brand a password-set link.
+   *
+   * <p>DOES NOT return the updated enquiry DTO. Verified 2026-09-05 against the real backend
+   * (`FestivalSponsorProvisioningService#provision`, `FestivalSponsorProvisioningDtos`, both
+   * landed on this branch by Vikram in parallel with this file): the success response is the
+   * narrow `ProvisionFestivalSponsorResponse` record — `enquiryId`/`userId`/`workspaceId`/
+   * `campaignId`/`provisionedAt` only, not a full `AdminFestivalEnquiry`. Typed here as
+   * `FestivalSponsorProvisionResult` to match what actually comes over the wire, not the
+   * original task spec's shape — see that type's doc comment for the full gap this leaves.
+   *
+   * <p>Error codes also differ from the original spec: the backend throws `ENQUIRY_NOT_WON` and
+   * `ENQUIRY_NOT_BRAND` (not `NOT_WON`/`NOT_A_BRAND`); `ALREADY_PROVISIONED` and
+   * `EMAIL_ALREADY_REGISTERED` match. `FestivalEnquiryProvisionErrorCode` below uses the real
+   * names so the fallback-message map actually keys on what the server sends.
+   *
+   * Bypasses the shared `apiRequest` helper for the error path on purpose, same reasoning as
+   * `financeApi.updateFeeConfig`/`emailApi.sendCustom` above: this call has multiple distinct,
+   * expected failure codes the caller must render as separate actionable messages, not one
+   * flattened string — `apiRequest` only surfaces `error.message` and drops `error.code`
+   * entirely. The fallback copy below only fires if the backend omits a message for a known
+   * code; the backend's own message (when present) always wins.
+   */
+  provision: async (
+    id: string,
+  ): Promise<{
+    success: boolean;
+    data?: FestivalSponsorProvisionResult;
+    error?: string;
+    /** The backend's error code, when the failure is one of the documented ones. */
+    code?: FestivalEnquiryProvisionErrorCode;
+  }> => {
+    const token = localStorage.getItem('admin_token');
+
+    const response = await fetch(`${API_BASE}/festival-enquiries/${id}/provision`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+
+    if (response.ok) {
+      let data: FestivalSponsorProvisionResult;
+      try {
+        data = (await response.json()) as FestivalSponsorProvisionResult;
+      } catch {
+        return { success: false, error: 'Malformed response from server' };
+      }
+      return { success: true, data };
+    }
+
+    const body = (await response.json().catch(() => null)) as {
+      error?: { code?: string; message?: string };
+    } | null;
+    const code = body?.error?.code as FestivalEnquiryProvisionErrorCode | undefined;
+    const message = body?.error?.message ?? (code ? FESTIVAL_PROVISION_FALLBACK_MESSAGES[code] : undefined)
+      ?? `Request failed (${response.status})`;
+
+    return { success: false, error: message, code };
+  },
+};
+
+/**
+ * Wire shape of a successful `festivalEnquiryApi.provision()` call — mirrors
+ * `FestivalSponsorProvisioningDtos.ProvisionFestivalSponsorResponse` exactly (verified by
+ * reading that file directly, not assumed from the task spec). Deliberately NOT
+ * `AdminFestivalEnquiry`: the backend does not re-fetch/echo the enquiry row, and separately,
+ * `AdminFestivalEnquiryDto` (the list/PATCH shape), which serves the four `provisioned*` fields
+ * separately.
+ *
+ * HISTORY — this comment used to say those four fields did NOT exist on the list DTO, and that
+ * a page reload would therefore show a just-provisioned row as un-provisioned forever. That was
+ * true when written: the entity had the columns, the TS interface declared them, and the Java
+ * record plus its `toDto()` mapper carried neither — so TypeScript compiled happily against
+ * fields the backend never sent. It has since been fixed (see `AdminFestivalEnquiryDtos`'
+ * own note on the same defect), and the read path now serves all four.
+ *
+ * Left in place rather than deleted because the failure mode is worth recognising: a TS type
+ * asserting a field the server never sends is invisible to `tsc`, to both test suites, and to
+ * review — it just renders an empty state forever. Do not restore the old wording; verify
+ * against `AdminFestivalEnquiryDtos` before trusting any claim here either way.
+ */
+export interface FestivalSponsorProvisionResult {
+  enquiryId: string;
+  userId: string;
+  workspaceId: string;
+  campaignId: string;
+  provisionedAt: string;
+}
+
+/** The documented failure codes for `festivalEnquiryApi.provision`, using the REAL backend
+ *  names (`ENQUIRY_NOT_WON`/`ENQUIRY_NOT_BRAND`), not the task spec's `NOT_WON`/`NOT_A_BRAND`. */
+export type FestivalEnquiryProvisionErrorCode =
+  | 'ALREADY_PROVISIONED'
+  | 'EMAIL_ALREADY_REGISTERED'
+  | 'ENQUIRY_NOT_WON'
+  | 'ENQUIRY_NOT_BRAND';
+
+/** Used only when the backend returns a known code without its own `message`. */
+const FESTIVAL_PROVISION_FALLBACK_MESSAGES: Record<FestivalEnquiryProvisionErrorCode, string> = {
+  ALREADY_PROVISIONED: 'This enquiry already has a workspace provisioned — nothing to do.',
+  EMAIL_ALREADY_REGISTERED:
+    'That email already has an Influora account. Provisioning refuses to graft a workspace onto an existing account — link it to this enquiry manually.',
+  ENQUIRY_NOT_WON: 'Only a Won enquiry can be provisioned. Move this enquiry to Won first.',
+  ENQUIRY_NOT_BRAND: 'Creator enquiries are never provisioned this way.',
+};
+
+// ============================================
+// FESTIVAL BOX — SPONSOR COUPON CODES, LIVE (T-FESTIVALBOX-0905 phase 12)
+// ============================================
+//
+// The phase-10 gap documented in this section's prior revision is now closed: Vikram shipped
+// `AdminCampaignCouponController` — a dedicated admin-scoped twin of
+// `CampaignTrackingController`'s coupon routes, mounted at
+// `/admin/campaigns/{campaignId}/coupons` (resolves to
+// `/api/v1/admin/campaigns/{campaignId}/coupons` via API_BASE, so the shared `apiRequest()`
+// helper reaches it correctly). It resolves the campaign's workspace by campaign id alone
+// (`AdminCampaignCouponService#requireCampaign` -> `campaign.getWorkspaceId()`), never through
+// `BrandContextService`, so an ADMIN-typed JWT is admitted where the brand-facing controller
+// would 403 it. Verified 2026-09-06 by reading `AdminCampaignCouponController.java` and
+// `AdminCampaignCouponService.java` directly, not assumed from the task brief.
+//
+// Mirrors `TrackingDtos.CreateCouponRequest`/`CouponResponse` field-for-field (verified against
+// the real records) — same brand-level/per-creator convention as the brand-facing surface: a
+// null/blank `creatorProfileId` issues the campaign's single brand-level ("page-exclusive")
+// code, a non-blank one issues that creator's own code. Success responses are a BARE DTO (no
+// `{success,data}` envelope) — the `Admin*Controller` convention this file's `apiRequest()`
+// already expects on its happy path.
+//
+// IMPORTANT — the code is Influora's, not the caller's: `CouponCodeService.generateCreatorCoupon`
+// / `generateBrandCoupon` mint the `code` string server-side; the request body carries only
+// discount terms. Whoever uses the response must create that EXACT code in the sponsor's own
+// Shopify/WooCommerce store — a code that exists in our table but not in their store is dead at
+// their checkout. This belongs in the admin UI copy (see `FestivalCouponsPanel.tsx`), not just
+// this comment.
+
+/** `TrackingDtos.CreateCouponRequest` shape. `usageLimit`/`expiresAt` omitted or null means
+ *  unlimited usage / no expiry — never send `0` for "unlimited". */
+export interface CreateFestivalCouponRequest {
+  creatorProfileId?: string | null;
+  discountType: string;
+  discountValue: number;
+  usageLimit?: number | null;
+  expiresAt?: string | null;
+}
+
+/** Mirrors `TrackingDtos.CouponResponse` field-for-field (verified against the real record).
+ *  `creatorProfileId: null` is a brand-level ("page-exclusive") code; non-null is a per-creator
+ *  code. */
+export interface FestivalSponsorCoupon {
+  id: string;
+  campaignId: string;
+  creatorProfileId: string | null;
+  code: string;
+  discountType: string;
+  discountValue: number;
+  usageLimit: number | null;
+  usageCount: number;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+/** `TrackingDtos.CouponListResponse` shape. */
+export interface FestivalCouponListResponse {
+  coupons: FestivalSponsorCoupon[];
+}
+
+/** The one documented failure code `AdminCampaignCouponService#issue` throws deliberately (not
+ *  caught/softened there — the admin needs to know the campaign already has one). Also
+ *  reachable: `CAMPAIGN_NOT_FOUND` (404), handled generically since it has no specific UI
+ *  affordance here (the panel is only ever rendered for an already-provisioned campaign id). */
+export type CreateFestivalCouponErrorCode = 'BRAND_CODE_EXISTS' | 'CAMPAIGN_NOT_FOUND';
+
+/** Used only when the backend returns a known code without its own `message`. */
+const CREATE_COUPON_FALLBACK_MESSAGES: Record<CreateFestivalCouponErrorCode, string> = {
+  BRAND_CODE_EXISTS:
+    'This campaign already has a brand-level coupon — only one is allowed per campaign.',
+  CAMPAIGN_NOT_FOUND: 'Campaign not found.',
+};
+
+export const festivalCouponApi = {
+  /** GET /admin/campaigns/{campaignId}/coupons — every coupon issued on this campaign. */
+  list: (campaignId: string) =>
+    apiRequest<FestivalCouponListResponse>(`/campaigns/${campaignId}/coupons`),
+
+  /**
+   * POST /admin/campaigns/{campaignId}/coupons — issue a coupon on the sponsor's behalf.
+   *
+   * Bypasses the shared `apiRequest()` helper for the error path on purpose, same reasoning as
+   * `festivalEnquiryApi.provision`/`emailApi.sendCustom`/`financeApi.updateFeeConfig` above:
+   * `BRAND_CODE_EXISTS` (409) is a distinct, expected, actionable outcome the caller must render
+   * specifically, not folded into one generic string — `apiRequest()` only surfaces
+   * `error.message` and drops `error.code` entirely.
+   */
+  create: async (
+    campaignId: string,
+    body: CreateFestivalCouponRequest,
+  ): Promise<{
+    success: boolean;
+    data?: FestivalSponsorCoupon;
+    error?: string;
+    /** The backend's error code, when the failure is one of the documented ones. */
+    code?: CreateFestivalCouponErrorCode;
+  }> => {
+    const token = localStorage.getItem('admin_token');
+
+    const response = await fetch(`${API_BASE}/campaigns/${campaignId}/coupons`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (response.ok) {
+      let data: FestivalSponsorCoupon;
+      try {
+        data = (await response.json()) as FestivalSponsorCoupon;
+      } catch {
+        return { success: false, error: 'Malformed response from server' };
+      }
+      return { success: true, data };
+    }
+
+    const responseBody = (await response.json().catch(() => null)) as {
+      error?: { code?: string; message?: string };
+    } | null;
+    const code = responseBody?.error?.code as CreateFestivalCouponErrorCode | undefined;
+    const message =
+      responseBody?.error?.message ??
+      (code ? CREATE_COUPON_FALLBACK_MESSAGES[code] : undefined) ??
+      `Request failed (${response.status})`;
+
+    return { success: false, error: message, code };
+  },
+};
+
+// ============================================
+// FESTIVAL BOX — COUPON-COPY METRICS (T-FESTIVALBOX-0905 phase 10, screen 3)
+// AdminFestivalMetricsController @ /admin/festival-metrics, resolving to
+// /api/v1/admin/festival-metrics via API_BASE. Mirrors `AdminFestivalMetricsDtos`
+// (influora-api/src/main/java/com/influora/web/dto/admin/AdminFestivalMetricsDtos.java)
+// field-for-field. Role gate (SUPER_ADMIN/ADMIN + MFA) lives server-side
+// (AdminFestivalMetricsService#getCopyMetrics), not here.
+//
+// This is a coupon-COPY count — how many times a visitor tapped "copy" on a code shown on the
+// public /festival-box page. It is an intent signal only: copying a code is not a purchase, and
+// this number runs several times higher than actual redemptions. Never render it next to a
+// revenue/sales figure in a way that implies it is one — see `CouponCopyMetricsResponse`'s
+// backend javadoc (kept out of any DTO that also carries redemption/sales numbers, by design).
+// For marketplace/Amazon sponsors, this is the ONLY signal available at all — redemption
+// tracking is structurally impossible off-platform, so a zero-copy sponsor there is not
+// necessarily doing badly, it may simply have no page presence yet.
+// ============================================
+
+/** Mirrors `AdminFestivalMetricsDtos.SponsorCopyTotal` — highest-copy-count sponsor first. */
+export interface FestivalSponsorCopyTotal {
+  sponsorSlug: string;
+  totalCopies: number;
+}
+
+/** Mirrors `AdminFestivalMetricsDtos.DailyCopyPoint` — one (sponsor, day) bucket. `day` is an
+ *  ISO `yyyy-MM-dd` date string (backend `LocalDate`, no time-of-day component). */
+export interface FestivalDailyCopyPoint {
+  sponsorSlug: string;
+  day: string;
+  copyCount: number;
+}
+
+/** Mirrors `AdminFestivalMetricsDtos.CouponCopyMetricsResponse` exactly. */
+export interface FestivalCouponCopyMetrics {
+  edition: string;
+  sponsorTotals: FestivalSponsorCopyTotal[];
+  dailySeries: FestivalDailyCopyPoint[];
+  /**
+   * [Kabir M-1/M-2] Sent by the backend with every response and rendered wherever these counts are
+   * shown. These are copy taps self-reported by an unauthenticated public page — not verified
+   * unique shoppers, not deduplicated per person, capped per origin rather than authenticated.
+   *
+   * Do not drop this from the UI because it makes the number look weaker. The failure it prevents
+   * is a figure like "2,431 copies" reaching a sponsorship deck or an invoice as though it were
+   * audited, because nothing between the table and the slide ever said otherwise.
+   */
+  measurementCaveat: string;
+}
+
+export const festivalMetricsApi = {
+  /** GET /admin/festival-metrics/copies?edition= — per-sponsor totals + the daily series for
+   *  one edition. `edition` is required by the backend (`@RequestParam String edition`, no
+   *  default) — there is no "list all editions" endpoint, so the caller supplies one directly
+   *  (same free-text-edition convention as `festivalEnquiryApi.list`'s `edition` filter). */
+  getCopyMetrics: (edition: string) => {
+    const params = new URLSearchParams({ edition });
+    return apiRequest<FestivalCouponCopyMetrics>(`/festival-metrics/copies?${params}`);
+  },
 };
 
 // ============================================

@@ -162,9 +162,24 @@ public class SecurityConfig {
                                         //   POST /portfolio/{username}/contact — brand contact form
                                         // Single-segment '*' (not '**') keeps this narrow: it cannot
                                         // match /me/portfolio/**. Only these two verbs+paths are
-                                        // opened; /me/portfolio/** stays authenticated. Server-side
-                                        // anti-spam on contact is enforced in PortfolioService, not
-                                        // here. See PortfolioController#getPublic / #contact.
+                                        // opened; /me/portfolio/** stays authenticated.
+                                        //
+                                        // T-FESTIVALBOX-0905 phase 9 [Kabir F-3] — this comment used
+                                        // to claim "server-side anti-spam on contact is enforced in
+                                        // PortfolioService". That was FALSE: PortfolioService#contact
+                                        // had no rate limit, no honeypot, no IP tracking and no
+                                        // persisted row — an unauthenticated caller could hit it as
+                                        // fast as the server would answer, and every accepted POST
+                                        // emailed a real creator with attacker-controlled
+                                        // name/reply-to/body. It is now actually true: this route is
+                                        // in AuthRateLimitFilter#bucketFor's "portfolio-contact"
+                                        // bucket (per source IP), AND PortfolioService#contact itself
+                                        // enforces a per-recipient-creator AbuseThrottleService cap
+                                        // (so a caller that rotates IP between requests is still
+                                        // bounded). No honeypot was added — this is a pre-existing
+                                        // public API with existing callers, and a new required field
+                                        // would break them. See PortfolioController#getPublic /
+                                        // #contact and PortfolioServiceContactThrottleTest.
                                         .requestMatchers(HttpMethod.GET, "/portfolio/*")
                                         .permitAll()
                                         .requestMatchers(HttpMethod.POST, "/portfolio/*/contact")
@@ -183,6 +198,44 @@ public class SecurityConfig {
                                         // wiki/tech/cr-11-client-error-contract.md (locked contract:
                                         // auth optional, always 202, never a 4xx).
                                         .requestMatchers(HttpMethod.POST, "/client-errors")
+                                        .permitAll()
+                                        // T-FESTIVALBOX-0905 — public enquiry form on /festival-box.
+                                        // The submitter is a brand or creator with no Influora account
+                                        // yet (that is the entire point of the page), so they cannot
+                                        // present a JWT and there is no shared secret to HMAC with,
+                                        // unlike every /webhooks/* route above.
+                                        //
+                                        // This is the only unauthenticated INSERT in the application,
+                                        // so the whole trust boundary is FestivalEnquiryService: bean
+                                        // validation, cross-field rules per type, a honeypot, a
+                                        // two-key (IP + email) atomic throttle, and http/https-only
+                                        // validation of the stored website so admin never renders a
+                                        // javascript: URL as a link — real and covered by
+                                        // FestivalEnquiryServiceTest (T-FESTIVALBOX-0905 phase 9
+                                        // made /portfolio/*/contact's throttle equally real; see the
+                                        // note above it).
+                                        //
+                                        // Named as the exact verb+path, never /festival-**, so a later
+                                        // festival endpoint (reads of the discovery page, admin
+                                        // exports) cannot inherit public access by accident — same
+                                        // discipline as the Meta callbacks above.
+                                        .requestMatchers(HttpMethod.POST, "/festival-enquiries")
+                                        .permitAll()
+                                        // T-FESTIVALBOX-0905 phase 6 — coupon-copy demand-signal tracking
+                                        // on the public Festival Box page. Same shopper-has-no-account
+                                        // reasoning as /festival-enquiries above, but this one is
+                                        // fire-and-forget from navigator.clipboard.writeText's success
+                                        // handler and always answers 204 (see
+                                        // FestivalCouponCopyController/Service). No honeypot, no
+                                        // cross-field validation — the trust boundary is this filter's
+                                        // "tracking" rate-limit bucket (AuthRateLimitFilter#bucketFor)
+                                        // plus FestivalCouponCopyService's charset/length checks and the
+                                        // bounded (edition, sponsor_slug, day) table shape.
+                                        //
+                                        // Named as the exact verb+path, never /festival/**, so a later
+                                        // festival endpoint cannot inherit public access by accident —
+                                        // same discipline as /festival-enquiries and the Meta callbacks.
+                                        .requestMatchers(HttpMethod.POST, "/festival/coupon-copied")
                                         .permitAll()
                                         // Wave-1 S3 — AdminAuthController is @RequestMapping("/admin/auth")
                                         // and was unreachable unauthenticated (fell through to

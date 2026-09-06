@@ -25,6 +25,7 @@ import com.influora.service.ErrorLogService;
 import com.influora.service.EscrowService;
 import com.influora.service.EscrowService.PagedEscrowHolds;
 import com.influora.service.PayoutService;
+import com.influora.web.dto.money.MoneyDtos.EscrowRefundRequest;
 import com.influora.web.dto.money.MoneyDtos.EscrowReleaseRequest;
 import com.influora.web.dto.money.MoneyDtos.EscrowStatusResponse;
 import java.math.BigDecimal;
@@ -112,9 +113,12 @@ class EscrowControllerTest {
   // --------------------------------------------------------------------------------------------
 
   private static final String MILESTONE_ID = "01HMILESTONE123456789";
+  private static final String IDEMPOTENCY_KEY = "idem-key-release-0001";
 
   @Test
-  @DisplayName("POST /wallet/escrow/release with milestoneId routes to EscrowService#release")
+  @DisplayName(
+      "POST /wallet/escrow/release with milestoneId + Idempotency-Key routes to the"
+          + " idempotency-aware EscrowService#release(..., idempotencyKey) overload (F-0652)")
   void testReleaseRoutesToMilestonePath() {
     when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
     when(workspace.getId()).thenReturn(WORKSPACE_ID);
@@ -122,21 +126,24 @@ class EscrowControllerTest {
         new EscrowStatusResponse(
             ESCROW_HOLD_ID, WORKSPACE_ID, "campaign", MILESTONE_ID, new BigDecimal("100"), "INR",
             EscrowStatus.RELEASED, null, null);
-    when(escrowService.release(principal, WORKSPACE_ID, MILESTONE_ID)).thenReturn(expected);
+    when(escrowService.release(principal, WORKSPACE_ID, MILESTONE_ID, IDEMPOTENCY_KEY))
+        .thenReturn(expected);
 
     ApiResponse<EscrowStatusResponse> response =
-        controller.release(principal, new EscrowReleaseRequest(MILESTONE_ID, null));
+        controller.release(
+            principal, IDEMPOTENCY_KEY, new EscrowReleaseRequest(MILESTONE_ID, null));
 
     assertEquals(expected, response.data());
-    verify(escrowService).release(principal, WORKSPACE_ID, MILESTONE_ID);
+    verify(escrowService).release(principal, WORKSPACE_ID, MILESTONE_ID, IDEMPOTENCY_KEY);
     verify(escrowService, org.mockito.Mockito.never())
-        .releaseByHoldId(any(), any(), any());
+        .releaseByHoldId(any(), any(), any(), any());
   }
 
   @Test
   @DisplayName(
-      "POST /wallet/escrow/release with escrowHoldId routes to the new"
-          + " EscrowService#releaseByHoldId path (P-1' fix)")
+      "POST /wallet/escrow/release with escrowHoldId + Idempotency-Key routes to the"
+          + " idempotency-aware EscrowService#releaseByHoldId(..., idempotencyKey) overload"
+          + " (P-1' fix / F-0652)")
   void testReleaseRoutesToHoldIdPath() {
     when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
     when(workspace.getId()).thenReturn(WORKSPACE_ID);
@@ -144,14 +151,17 @@ class EscrowControllerTest {
         new EscrowStatusResponse(
             ESCROW_HOLD_ID, WORKSPACE_ID, "campaign", null, new BigDecimal("100"), "INR",
             EscrowStatus.RELEASED, null, null);
-    when(escrowService.releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID)).thenReturn(expected);
+    when(escrowService.releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID, IDEMPOTENCY_KEY))
+        .thenReturn(expected);
 
     ApiResponse<EscrowStatusResponse> response =
-        controller.release(principal, new EscrowReleaseRequest(null, ESCROW_HOLD_ID));
+        controller.release(
+            principal, IDEMPOTENCY_KEY, new EscrowReleaseRequest(null, ESCROW_HOLD_ID));
 
     assertEquals(expected, response.data());
-    verify(escrowService).releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID);
-    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any());
+    verify(escrowService)
+        .releaseByHoldId(principal, WORKSPACE_ID, ESCROW_HOLD_ID, IDEMPOTENCY_KEY);
+    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any(), any());
   }
 
   @Test
@@ -162,11 +172,13 @@ class EscrowControllerTest {
     ApiException ex =
         assertThrows(
             ApiException.class,
-            () -> controller.release(principal, new EscrowReleaseRequest(null, null)));
+            () ->
+                controller.release(
+                    principal, IDEMPOTENCY_KEY, new EscrowReleaseRequest(null, null)));
 
     assertEquals("ESCROW_RELEASE_TARGET_REQUIRED", ex.getCode());
-    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any());
-    verify(escrowService, org.mockito.Mockito.never()).releaseByHoldId(any(), any(), any());
+    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any(), any());
+    verify(escrowService, org.mockito.Mockito.never()).releaseByHoldId(any(), any(), any(), any());
   }
 
   @Test
@@ -179,11 +191,140 @@ class EscrowControllerTest {
             ApiException.class,
             () ->
                 controller.release(
-                    principal, new EscrowReleaseRequest(MILESTONE_ID, ESCROW_HOLD_ID)));
+                    principal,
+                    IDEMPOTENCY_KEY,
+                    new EscrowReleaseRequest(MILESTONE_ID, ESCROW_HOLD_ID)));
 
     assertEquals("ESCROW_RELEASE_TARGET_REQUIRED", ex.getCode());
-    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any());
-    verify(escrowService, org.mockito.Mockito.never()).releaseByHoldId(any(), any(), any());
+    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any(), any());
+    verify(escrowService, org.mockito.Mockito.never()).releaseByHoldId(any(), any(), any(), any());
+  }
+
+  // --------------------------------------------------------------------------------------------
+  // [F-0652] /release and /refund must require Idempotency-Key exactly like /fund already does
+  // (EscrowController#fund, line ~71-78), and must forward it to the idempotency-aware
+  // EscrowService overloads rather than the plain 3-arg ones.
+  // --------------------------------------------------------------------------------------------
+
+  @Test
+  @DisplayName(
+      "POST /wallet/escrow/release with NO Idempotency-Key header is rejected the same way"
+          + " /fund already rejects one (F-0652)")
+  void testReleaseRejectsWhenIdempotencyKeyMissing() {
+    ApiException ex =
+        assertThrows(
+            ApiException.class,
+            () ->
+                controller.release(
+                    principal, null, new EscrowReleaseRequest(MILESTONE_ID, null)));
+
+    assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
+    verify(brandContext, org.mockito.Mockito.never()).requireBrandWorkspace(any());
+    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any(), any());
+    verify(escrowService, org.mockito.Mockito.never()).releaseByHoldId(any(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName(
+      "POST /wallet/escrow/release with a BLANK Idempotency-Key header is rejected (F-0652)")
+  void testReleaseRejectsWhenIdempotencyKeyBlank() {
+    ApiException ex =
+        assertThrows(
+            ApiException.class,
+            () ->
+                controller.release(
+                    principal, "   ", new EscrowReleaseRequest(MILESTONE_ID, null)));
+
+    assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
+    verify(escrowService, org.mockito.Mockito.never()).release(any(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName(
+      "POST /wallet/escrow/refund with NO Idempotency-Key header is rejected the same way"
+          + " /fund already rejects one (F-0652)")
+  void testRefundRejectsWhenIdempotencyKeyMissing() {
+    ApiException ex =
+        assertThrows(
+            ApiException.class,
+            () ->
+                controller.refund(
+                    principal, null, new EscrowRefundRequest(ESCROW_HOLD_ID, null)));
+
+    assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
+    verify(brandContext, org.mockito.Mockito.never()).requireBrandWorkspace(any());
+    verify(escrowService, org.mockito.Mockito.never()).refund(any(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName(
+      "POST /wallet/escrow/refund with a BLANK Idempotency-Key header is rejected (F-0652)")
+  void testRefundRejectsWhenIdempotencyKeyBlank() {
+    ApiException ex =
+        assertThrows(
+            ApiException.class,
+            () ->
+                controller.refund(
+                    principal, "", new EscrowRefundRequest(ESCROW_HOLD_ID, null)));
+
+    assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
+    verify(escrowService, org.mockito.Mockito.never()).refund(any(), any(), any(), any());
+  }
+
+  @Test
+  @DisplayName(
+      "POST /wallet/escrow/refund WITH an Idempotency-Key header forwards it to the"
+          + " idempotency-aware EscrowService#refund(..., idempotencyKey) overload, not the"
+          + " plain 3-arg one (F-0652)")
+  void testRefundWithHeaderRoutesToIdempotencyAwareOverload() {
+    when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+    when(workspace.getId()).thenReturn(WORKSPACE_ID);
+    EscrowStatusResponse expected =
+        new EscrowStatusResponse(
+            ESCROW_HOLD_ID, WORKSPACE_ID, "campaign", null, new BigDecimal("100"), "INR",
+            EscrowStatus.REFUNDED, null, null);
+    String refundKey = "idem-key-refund-0001";
+    when(escrowService.refund(principal, WORKSPACE_ID, ESCROW_HOLD_ID, refundKey))
+        .thenReturn(expected);
+
+    ApiResponse<EscrowStatusResponse> response =
+        controller.refund(
+            principal, refundKey, new EscrowRefundRequest(ESCROW_HOLD_ID, null));
+
+    assertEquals(expected, response.data());
+    verify(escrowService).refund(principal, WORKSPACE_ID, ESCROW_HOLD_ID, refundKey);
+    verify(escrowService, org.mockito.Mockito.never()).refund(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName(
+      "POST /wallet/escrow/refund: two requests with the SAME Idempotency-Key both reach the"
+          + " service, which is responsible for returning the original result on the retry"
+          + " without a second write (F-0652) — proves the controller forwards the key rather"
+          + " than swallowing it")
+  void testRefundDuplicateRequestsForwardSameKeyToService() {
+    when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+    when(workspace.getId()).thenReturn(WORKSPACE_ID);
+    EscrowStatusResponse expected =
+        new EscrowStatusResponse(
+            ESCROW_HOLD_ID, WORKSPACE_ID, "campaign", null, new BigDecimal("100"), "INR",
+            EscrowStatus.REFUNDED, null, null);
+    String refundKey = "idem-key-refund-dup-0001";
+    // The service is the layer that owns dedup (withRequestIdempotency); the controller's job is
+    // only to always forward the header through to the 4-arg overload, which this stub proves by
+    // returning the SAME result for the SAME key across two calls.
+    when(escrowService.refund(principal, WORKSPACE_ID, ESCROW_HOLD_ID, refundKey))
+        .thenReturn(expected);
+
+    EscrowRefundRequest body = new EscrowRefundRequest(ESCROW_HOLD_ID, null);
+    ApiResponse<EscrowStatusResponse> first = controller.refund(principal, refundKey, body);
+    ApiResponse<EscrowStatusResponse> second = controller.refund(principal, refundKey, body);
+
+    assertEquals(expected, first.data());
+    assertEquals(expected, second.data());
+    verify(escrowService, org.mockito.Mockito.times(2))
+        .refund(principal, WORKSPACE_ID, ESCROW_HOLD_ID, refundKey);
+    verify(escrowService, org.mockito.Mockito.never()).refund(any(), any(), any());
   }
 
   // --------------------------------------------------------------------------------------------

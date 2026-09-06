@@ -17,12 +17,35 @@ export interface ContractData {
     description: string;
     quantity: number;
   }>;
-  deadline: string;
-  usageRights: string;
-  exclusivity: string;
-  revisionCap: number;
+  /**
+   * F-0666: optional, not fabricated. A caller that does not actually know the
+   * real deadline/usage-rights/exclusivity/revision-cap (e.g. the FE has not
+   * received them from the server yet) must omit the field rather than invent
+   * a value — generateContractHTML renders an honest "Not specified" for any
+   * of these left undefined instead of a placeholder that looks like a real
+   * agreed term.
+   */
+  deadline?: string;
+  usageRights?: string;
+  exclusivity?: string;
+  revisionCap?: number;
   customClauses: string[];
   createdAt: Date;
+}
+
+/** F-0666: shared "don't fabricate, don't crash" formatter for the optional
+ * legal-term fields below — every missing field renders the same honest
+ * "Not specified" rather than a blank, "undefined", or an invented value. */
+function formatOptionalTerm(value: string | undefined): string {
+  return value && value.trim() ? value : 'Not specified';
+}
+
+/** Same principle as formatOptionalTerm, for the deadline: a missing or
+ * unparseable date must never render as "Invalid Date" or a fabricated one. */
+function formatOptionalDeadline(deadline: string | undefined): string {
+  if (!deadline) return 'Not specified';
+  const parsed = new Date(deadline);
+  return Number.isNaN(parsed.getTime()) ? 'Not specified' : parsed.toLocaleDateString('en-IN');
 }
 
 /**
@@ -122,13 +145,13 @@ export function generateContractHTML(data: ContractData): string {
       <div class="section">
         <div class="section-title">TERMS & CONDITIONS</div>
         <div class="terms-list">
-          <p>1. <strong>Delivery Deadline:</strong> Creator agrees to deliver all content by ${new Date(data.deadline).toLocaleDateString('en-IN')}</p>
-          
-          <p>2. <strong>Usage Rights:</strong> ${data.usageRights}</p>
-          
-          <p>3. <strong>Exclusivity:</strong> ${data.exclusivity}</p>
-          
-          <p>4. <strong>Revisions:</strong> Brand may request up to ${data.revisionCap} revision rounds. Additional revisions may incur additional fees as agreed.</p>
+          <p>1. <strong>Delivery Deadline:</strong> ${data.deadline ? `Creator agrees to deliver all content by ${formatOptionalDeadline(data.deadline)}` : 'Not specified.'}</p>
+
+          <p>2. <strong>Usage Rights:</strong> ${formatOptionalTerm(data.usageRights)}</p>
+
+          <p>3. <strong>Exclusivity:</strong> ${formatOptionalTerm(data.exclusivity)}</p>
+
+          <p>4. <strong>Revisions:</strong> ${data.revisionCap != null ? `Brand may request up to ${data.revisionCap} revision rounds. Additional revisions may incur additional fees as agreed.` : 'Not specified.'}</p>
           
           <p>5. <strong>Quality Standards:</strong> Content must be of professional quality, free from watermarks (unless agreed), and comply with platform guidelines.</p>
           

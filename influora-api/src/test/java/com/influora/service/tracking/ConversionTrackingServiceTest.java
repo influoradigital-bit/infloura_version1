@@ -10,6 +10,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -291,6 +292,65 @@ class ConversionTrackingServiceTest {
         verifyNoInteractions(auditLogService);
     }
 
+    // ------------------------------------------------------------------------------------------
+    // T-FESTIVALBOX-0905 phase 7, landmine 1: a page-level (creator-less) UtmCampaign must record
+    // a conversion cleanly, not throw. This is the CRITICAL test the task brief calls out --
+    // before the fix, ConversionTrackingWriter#doRecordConversion built its audit-detail map with
+    // Map.of(..., "creatorId", utm.getCreatorProfileId(), ...), and Map.of throws
+    // NullPointerException on a null VALUE. See the falsification note below this class's tests
+    // (and the task deliverable) for the proof that reverting the fix reproduces this exact NPE.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "recordConversion [T-FESTIVALBOX-0905 phase 7, landmine 1, CRITICAL]: a conversion on a"
+                    + " page-level (creator-less) link records cleanly -- no NullPointerException, no"
+                    + " lost sale, counters and revenue still increment")
+    void testPageLevelConversionRecordsWithoutThrowing() {
+        UtmCampaign pageLevelUtm = pageLevelUtm();
+        when(utmCampaignRepository.findById(UTM_ID)).thenReturn(Optional.of(pageLevelUtm));
+
+        // Must not throw -- this is the whole point of the fix.
+        service.recordConversion(UTM_ID, ORDER_ID, BigDecimal.valueOf(150));
+
+        assertEquals(1, pageLevelUtm.getConversionCount());
+        assertEquals(0, BigDecimal.valueOf(150).compareTo(pageLevelUtm.getRevenueAttributed()));
+        verify(utmCampaignRepository, times(1)).save(pageLevelUtm);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> detailCaptor =
+                ArgumentCaptor.forClass((Class<java.util.Map<String, Object>>) (Class<?>) java.util.Map.class);
+        verify(auditLogService)
+                .recordMoneyEvent(
+                        isNull(), eq("CONVERSION_TRACKED"), any(), isNull(), isNull(), anyString(), detailCaptor.capture());
+        java.util.Map<String, Object> detail = detailCaptor.getValue();
+        assertEquals(Boolean.TRUE, detail.get("pageLevel"));
+        // No creatorId key at all for a page-level conversion -- not a null value, an ABSENT key
+        // (same discipline as RedemptionWriter's brandLevel branch for CouponCode).
+        org.junit.jupiter.api.Assertions.assertFalse(detail.containsKey("creatorId"));
+    }
+
+    @Test
+    @DisplayName(
+            "recordConversion [regression pin]: a per-creator conversion still attributes to that"
+                    + " creator -- pageLevel=false and creatorId is present in the audit detail")
+    void testPerCreatorConversionStillAttributesToCreator() {
+        UtmCampaign utm = utm();
+        when(utmCampaignRepository.findById(UTM_ID)).thenReturn(Optional.of(utm));
+
+        service.recordConversion(UTM_ID, ORDER_ID, BigDecimal.valueOf(150));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> detailCaptor =
+                ArgumentCaptor.forClass((Class<java.util.Map<String, Object>>) (Class<?>) java.util.Map.class);
+        verify(auditLogService)
+                .recordMoneyEvent(
+                        isNull(), eq("CONVERSION_TRACKED"), any(), isNull(), isNull(), anyString(), detailCaptor.capture());
+        java.util.Map<String, Object> detail = detailCaptor.getValue();
+        assertEquals(Boolean.FALSE, detail.get("pageLevel"));
+        assertEquals(CREATOR_PROFILE_ID, detail.get("creatorId"));
+    }
+
     private static UtmCampaign utm() {
         return UtmCampaign.builder()
                 .id(UTM_ID)
@@ -298,6 +358,19 @@ class ConversionTrackingServiceTest {
                 .collaborationId("01HCOLLAB1234567890AB")
                 .creatorProfileId(CREATOR_PROFILE_ID)
                 .baseUrl("https://example.com")
+                .build();
+    }
+
+    /** T-FESTIVALBOX-0905 phase 7 -- a page-level ("Shop button") link: no creator, no collaboration. */
+    private static UtmCampaign pageLevelUtm() {
+        return UtmCampaign.pageLevelBuilder()
+                .id(UTM_ID)
+                .campaignId(CAMPAIGN_ID)
+                .baseUrl("https://example.com/shop")
+                .utmSource("web")
+                .utmMedium("shop")
+                .utmCampaign("festival-box")
+                .fullTrackingUrl("https://example.com/shop?utm_source=web")
                 .build();
     }
 }

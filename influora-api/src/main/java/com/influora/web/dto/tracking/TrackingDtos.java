@@ -1,8 +1,12 @@
 package com.influora.web.dto.tracking;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -46,6 +50,16 @@ public final class TrackingDtos {
      * parameter (see {@code CampaignTrackingController#createTrackingLink}) now rejects a
      * missing/blank field with a validation {@code 400} before the service is ever called.
      *
+     * <p>[T-FESTIVALBOX-0905 phase 7] {@code collaborationId}/{@code creatorProfileId} are no
+     * longer {@code @NotBlank} -- a blank/omitted {@code creatorProfileId} now requests the
+     * campaign's page-level ("Shop button") link instead of a per-creator one, mirroring {@code
+     * CreateCouponRequest}'s existing null-means-brand-level convention exactly (see {@code
+     * CampaignTrackingService#createTrackingLink}'s dispatch). {@code collaborationId} is ignored
+     * on that path (a page-level link has no collaboration by definition) but is still required
+     * whenever {@code creatorProfileId} IS supplied, since the per-creator path resolves and
+     * cross-checks it -- {@code CampaignLinkService#createTrackingLink} throws its own
+     * {@code COLLABORATION_NOT_FOUND} for a blank/unresolvable value in that case.
+     *
      * <p>[SECURITY, Kabir red-team] {@code baseUrl} additionally carries an http/https scheme
      * allowlist via {@code @Pattern} — a defense-in-depth layer only. The authoritative gate is
      * {@code CampaignLinkService#validateBaseUrl}, which runs in the service so it is enforced
@@ -55,8 +69,8 @@ public final class TrackingDtos {
      * stored open-redirect / stored-XSS primitive.
      */
     public record CreateTrackingLinkRequest(
-            @NotBlank String collaborationId,
-            @NotBlank String creatorProfileId,
+            String collaborationId,
+            String creatorProfileId,
             @NotBlank @Pattern(regexp = "^(?i)https?://\\S+$", message = "baseUrl must be an http or https URL")
                     String baseUrl,
             @NotBlank String platform) {}
@@ -96,9 +110,33 @@ public final class TrackingDtos {
      */
     public record CreateCouponRequest(
             String creatorProfileId,
-            String discountType,
-            BigDecimal discountValue,
-            Integer usageLimit,
+            /**
+             * [Kabir H-3] Constrained to the two values {@code RedemptionWriter#calculateDiscount}
+             * can actually handle. Before this, the field was unvalidated, so {@code "percent"} —
+             * an easy mistake, one letter from the real value — saved a perfectly valid-looking
+             * coupon row that then threw {@code UNSUPPORTED_DISCOUNT_TYPE} with a hardcoded
+             * {@code 500} on EVERY redemption, forever. No sale recorded, no commission paid, and
+             * the dead code sitting on a public Festival Box page. Validating at the door is the
+             * only place that catches it before a shopper does.
+             */
+            @NotBlank(message = "discountType is required")
+                    @Pattern(
+                            regexp = "percentage|fixed",
+                            message = "discountType must be 'percentage' or 'fixed'")
+                    String discountType,
+            /**
+             * [Kabir H-3] Bounded on both ends. Unbounded, {@code discountValue: 500} on a
+             * percentage coupon computed a discount of 5x the order amount, which was then stored
+             * and reported as a money event. The 100 ceiling is the meaningful one for percentages;
+             * a fixed amount is separately clamped to the order total at redemption
+             * ({@code calculateDiscount}'s {@code .min(orderAmount)}), so this bound is about
+             * catching the typo, not about the arithmetic.
+             */
+            @NotNull(message = "discountValue is required")
+                    @DecimalMin(value = "0.01", message = "discountValue must be greater than zero")
+                    @DecimalMax(value = "100000.00", message = "discountValue is implausibly large")
+                    BigDecimal discountValue,
+            @Positive(message = "usageLimit must be a positive number when set") Integer usageLimit,
             Instant expiresAt) {}
 
     /** Brand-facing view of a {@code CouponCode} row — created by or already existing for the campaign. */

@@ -143,7 +143,27 @@ public class AdminAuditLogService {
                     // invite mutations on creator_connection_requests, plus the ADMIN_IMPORT bulk
                     // import of external_creators rows. No secrets on either entity.
                     "CREATOR_CONNECTION_REQUEST",
-                    "EXTERNAL_CREATOR");
+                    "EXTERNAL_CREATOR",
+                    // T-FESTIVALBOX-0905 phase 2/8 (Vikram) — FestivalSponsorProvisioningService's
+                    // provision()/linkExisting(). This entry was missing when provision() first
+                    // shipped, so its record() call was silently swallowing every write (Rule 5
+                    // catches the ALLOWED_ENTITY_TYPES check's IllegalArgumentException and only
+                    // logs at ERROR) — added here so both write paths actually persist a row
+                    // instead of merely calling a mocked method in tests.
+                    "FESTIVAL_SPONSOR_PROVISIONING",
+                    // T-FESTIVALBOX-0905 phase 11 — AdminCampaignCouponService#issue.
+                    //
+                    // THIS ENTRY WAS MISSED ONCE ALREADY, in exactly the way the note directly
+                    // above describes for FESTIVAL_SPONSOR_PROVISIONING: the service called
+                    // record(), the entity type was absent here, Rule 5's catch swallowed the
+                    // IllegalArgumentException, and every coupon issuance was unaudited — while a
+                    // verify(adminAuditLogService).record(...) unit test passed, because record()
+                    // genuinely IS called; it just does nothing. Mocking the collaborator you are
+                    // trying to verify proves the call, never the effect.
+                    //
+                    // A coupon is a money-bearing artifact. "Which code did we hand this sponsor,
+                    // and who issued it" has to be answerable from the trail.
+                    "CAMPAIGN_COUPON");
 
     /**
      * Per-entity_type field allow-list for {@code old_value}/{@code new_value} snapshots — NEVER
@@ -176,7 +196,19 @@ public class AdminAuditLogService {
                                     "verificationStatus",
                                     "isSuspended",
                                     "suspendedReason",
-                                    "kycRejectionReason")),
+                                    "kycRejectionReason",
+                                    // T-FESTIVALBOX-0905 phase 6 (Vikram) — PATCH
+                                    // /admin/brands/{id}/meta-pixel. Not secret: same non-PII
+                                    // profile-field bar as industry/size/email above.
+                                    "metaPixelId")),
+                    // T-FESTIVALBOX-0905 phase 11 — AdminCampaignCouponService#issue's detail map.
+                    // Without this entry the entity type alone is not enough: filterFields falls
+                    // back to Set.of() and strips every key, so the row would persist with an empty
+                    // snapshot and still not answer "which code". None of these are secret — a
+                    // coupon code is printed on a public Festival Box page by design.
+                    Map.entry(
+                            "CAMPAIGN_COUPON",
+                            Set.of("id", "campaignId", "workspaceId", "code", "brandLevel")),
                     Map.entry("ADMIN_USER", Set.of("id", "email", "role", "isActive", "mfaEnabled")),
                     Map.entry("SUPPORT_TICKET", Set.of("id", "status", "priority", "assignedTo", "category")),
                     Map.entry(
@@ -234,7 +266,21 @@ public class AdminAuditLogService {
                             Set.of("id", "status", "adminNotes", "handledBy")),
                     Map.entry(
                             "EXTERNAL_CREATOR",
-                            Set.of("id", "status", "email", "linkedCreatorProfileId")));
+                            Set.of("id", "status", "email", "linkedCreatorProfileId")),
+                    // T-FESTIVALBOX-0905 phase 2/8 (Vikram) — FestivalSponsorProvisioningService.
+                    // provision() snapshots enquiryId/status (old) and userId/workspaceId/
+                    // campaignId (new); linkExisting() snapshots the same enquiryId/status (old)
+                    // and workspaceId/campaignId/linkedExisting (new), with no userId since no
+                    // User is created on that path. No secrets on any of these fields.
+                    Map.entry(
+                            "FESTIVAL_SPONSOR_PROVISIONING",
+                            Set.of(
+                                    "enquiryId",
+                                    "status",
+                                    "userId",
+                                    "workspaceId",
+                                    "campaignId",
+                                    "linkedExisting")));
 
     private final AdminAuditLogRepository adminAuditLogRepository;
     private final AdminUserRepository adminUserRepository;

@@ -69,5 +69,5 @@ Admin tests exist (`rbac-permission-matrix`, `AdminLayout`, `FlagQueue`, `BrandP
 
 ## Production Readiness
 - **Health**: 7/10 · **Completion**: ~80%
-- **Known issues**: billing console is mock (AdminBillingController partial); support escalate/stats endpoints missing; raw-DTO contract mismatches.
+- **Known issues**: billing console is real — AdminBillingController runs paged repository queries [CORRECTED 2026-09-06, doc-stale-doc-claim, F-0526]; support escalate/stats endpoints missing; raw-DTO contract mismatches.
 - **Last verified**: 2026-07-15

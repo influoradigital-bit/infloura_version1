@@ -218,6 +218,38 @@ class BrandDeliverableServiceTest {
         verify(escrowService).tryReleaseOnApproval(WORKSPACE_ID, null);
     }
 
+    /**
+     * F-0642 — the only prior coverage of a held release asserted on the internal {@code
+     * EscrowService.ReleaseOutcome} record (see {@code EscrowServiceReleaseOutcomeTest}), never on
+     * the actual response DTO field a controller serializes to the brand. This asserts on {@code
+     * ReviewResponse.paymentHeldReason()} itself — the field {@code BrandDeliverableService.java}
+     * maps {@code release.heldReason()} into at the return of {@code approve()} — so a broken
+     * mapping between the two is caught here even though the internal record is unaffected.
+     */
+    @Test
+    @DisplayName(
+            "approve: unfunded milestone — ReviewResponse.paymentHeldReason() carries"
+                    + " MILESTONE_NOT_FUNDED")
+    void testApproveReturnsPaymentHeldReasonWhenMilestoneNotFunded() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        String milestoneId = "01HMILESTONE1234567AB";
+        Deliverable deliverable = submittedDeliverableWithMilestone(milestoneId);
+        when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
+                .thenReturn(java.util.Optional.of(deliverable));
+        stubActiveCollaboration();
+        when(escrowService.tryReleaseOnApproval(WORKSPACE_ID, milestoneId))
+                .thenReturn(new com.influora.service.EscrowService.ReleaseOutcome(false, "MILESTONE_NOT_FUNDED"));
+
+        ReviewResponse response = service.approve(principal, DELIVERABLE_ID);
+
+        // The deliverable itself still approves — only the payment is held.
+        assertEquals(DeliverableStatus.APPROVED, response.status());
+        assertEquals(false, response.paymentReleased());
+        // The actual HTTP response field (api.ts / BrandDeliverableDtos#ReviewResponse), not the
+        // internal ReleaseOutcome record — that mapping is what F-0642 flagged as untested.
+        assertEquals("MILESTONE_NOT_FUNDED", response.paymentHeldReason());
+    }
+
     @Test
     @DisplayName("approve: an unexpected escrow-release failure propagates (rolls back the approval too)")
     void testApproveRollsBackWhenEscrowReleaseFailsUnexpectedly() {
@@ -326,6 +358,9 @@ class BrandDeliverableServiceTest {
         Deliverable deliverable = submittedDeliverable();
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
+        // F-0417 — requestRevision now reads Collaboration.maxRevisions to enforce the cap.
+        when(collaborationRepository.findById(COLLAB_ID))
+                .thenReturn(java.util.Optional.of(activeCollaboration()));
 
         ReviewResponse response =
                 service.requestRevision(
@@ -350,6 +385,10 @@ class BrandDeliverableServiceTest {
         deliverable.applySubmit(null, null, null, DeliverableStatus.RESUBMITTED);
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
+        // F-0417 — default maxRevisions is 2; this deliverable is already at revisionCount 1, so
+        // this second request is exactly the last one the cap allows (1 < 2, becomes 2).
+        when(collaborationRepository.findById(COLLAB_ID))
+                .thenReturn(java.util.Optional.of(activeCollaboration()));
 
         ReviewResponse response =
                 service.requestRevision(
@@ -363,6 +402,82 @@ class BrandDeliverableServiceTest {
         assertEquals("Second round tweaks", saved.getValue().getReviewNotes());
     }
 
+    // --- F-0417: Collaboration.maxRevisions cap was persisted but never enforced ---
+
+    @Test
+    @DisplayName(
+            "revise: a request at revisionCount == maxRevisions - 1 succeeds (last allowed"
+                    + " revision)")
+    void testReviseAllowedAtOneBelowRevisionLimit() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        Deliverable deliverable = submittedDeliverable();
+        deliverable.applyRevision("First round feedback");
+        deliverable.applySubmit(null, null, null, DeliverableStatus.RESUBMITTED);
+        assertEquals(1, deliverable.getRevisionCount());
+        when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
+                .thenReturn(java.util.Optional.of(deliverable));
+        Collaboration collaboration = activeCollaboration();
+        collaboration.applyDealTerms(
+                null,
+                false,
+                null,
+                null,
+                com.influora.domain.enums.ExclusivityScope.NONE,
+                null,
+                2);
+        when(collaborationRepository.findById(COLLAB_ID))
+                .thenReturn(java.util.Optional.of(collaboration));
+
+        ReviewResponse response =
+                service.requestRevision(
+                        principal, DELIVERABLE_ID, new ReviseRequest("Last allowed revision"));
+
+        assertEquals(DeliverableStatus.REVISION_REQUESTED, response.status());
+        ArgumentCaptor<Deliverable> saved = ArgumentCaptor.forClass(Deliverable.class);
+        verify(deliverableRepository).save(saved.capture());
+        assertEquals(2, saved.getValue().getRevisionCount());
+    }
+
+    @Test
+    @DisplayName(
+            "revise: a request at revisionCount == maxRevisions is rejected with 409"
+                    + " REVISION_LIMIT_REACHED")
+    void testReviseRejectedAtRevisionLimit() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        Deliverable deliverable = submittedDeliverable();
+        deliverable.applyRevision("First round feedback");
+        deliverable.applySubmit(null, null, null, DeliverableStatus.RESUBMITTED);
+        deliverable.applyRevision("Second round feedback");
+        deliverable.applySubmit(null, null, null, DeliverableStatus.RESUBMITTED);
+        assertEquals(2, deliverable.getRevisionCount());
+        when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
+                .thenReturn(java.util.Optional.of(deliverable));
+        Collaboration collaboration = activeCollaboration();
+        collaboration.applyDealTerms(
+                null,
+                false,
+                null,
+                null,
+                com.influora.domain.enums.ExclusivityScope.NONE,
+                null,
+                2);
+        when(collaborationRepository.findById(COLLAB_ID))
+                .thenReturn(java.util.Optional.of(collaboration));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.requestRevision(
+                                        principal,
+                                        DELIVERABLE_ID,
+                                        new ReviseRequest("One too many")));
+
+        assertEquals("REVISION_LIMIT_REACHED", ex.getCode());
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT, ex.getStatus());
+        verify(deliverableRepository, never()).save(any());
+    }
+
     @Test
     @DisplayName("revise: strips script tags from brand feedback before persistence")
     void testReviseStripsXssFeedback() {
@@ -370,6 +485,8 @@ class BrandDeliverableServiceTest {
         Deliverable deliverable = submittedDeliverable();
         when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
                 .thenReturn(java.util.Optional.of(deliverable));
+        when(collaborationRepository.findById(COLLAB_ID))
+                .thenReturn(java.util.Optional.of(activeCollaboration()));
 
         service.requestRevision(
                 principal,

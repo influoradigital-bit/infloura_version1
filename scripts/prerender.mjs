@@ -433,8 +433,54 @@ async function main() {
     // wildcard rule at this file so private zones (/brand/*, /creator/*,
     // /admin/*) and the /:handle catch-all keep rendering purely
     // client-side instead of flashing prerendered marketing content.
-    writeFileSync(resolve(DIST_DIR, 'app-shell.html'), originalIndexHtml, 'utf8');
-    console.log('  wrote dist/app-shell.html (pristine SPA fallback for private zones)');
+    //
+    // W6 + W7 (T-FRONTEND-REWORK-0905): the shell must not be indexable.
+    //
+    // public/_redirects sends every path with no physical dist file here: the
+    // private zones AND the /:handle public-portfolio catch-all, which is an
+    // UNBOUNDED set of URLs. Shipped as-is, one contentless 7.8 KB document
+    // would be offered to crawlers under unlimited URLs, each inheriting
+    // index.html's `index, follow` and its `canonical: https://influora.in/`.
+    //
+    // Why the rewrite happens HERE and not in the repo-root index.html:
+    // that file is the prerender template for every marketing route, and 11
+    // of them have NO <Seo> component, so this exact tag is the only robots
+    // meta they ship — /, /blog, the 8 blog posts, and /support. (<Seo> only
+    // ever emits the short 'index, follow' / 'noindex, nofollow' strings, so
+    // a long-form value surviving dedupeHead() in dist/<route>/index.html
+    // proves the template was its source.) Editing the template would
+    // de-index the homepage and the entire blog.
+    //
+    // Why noindex and NOT `Disallow:` rules in public/robots.txt: /:handle is
+    // a single root-level path segment with no prefix to match on — no
+    // pattern covers it short of `Disallow: /`, which would blind crawlers to
+    // the marketing site. Disallow also stops the fetch, so a crawler would
+    // never READ a noindex, and blocked URLs stay eligible for URL-only
+    // indexing. The two levers actively conflict; this one covers the whole
+    // set, so robots.txt deliberately keeps zero Disallow rules.
+    //
+    // The canonical is removed, not rewritten: no single correct canonical
+    // exists for an unbounded URL set, and noindex paired with a canonical
+    // pointing at a DIFFERENT url is a conflicting signal Google may resolve
+    // by applying the noindex to the canonical target — here "/", the
+    // homepage. noindex with no canonical is unambiguous.
+    const SHELL_ROBOTS_RE = /<meta\s+name="robots"\s+content="[^"]*"\s*\/?>/i;
+    const SHELL_CANONICAL_RE = /[ \t]*<link\s+rel="canonical"[^>]*>\n?/i;
+    if (!SHELL_ROBOTS_RE.test(originalIndexHtml)) {
+      throw new Error(
+        'prerender: no <meta name="robots"> found in index.html, so app-shell.html ' +
+          'cannot be forced to noindex and the SPA fallback would ship indexable ' +
+          'under every /brand/*, /creator/*, /admin/* and /:handle URL. ' +
+          'Fix the template or SHELL_ROBOTS_RE before shipping.',
+      );
+    }
+    const appShellHtml = originalIndexHtml
+      .replace(SHELL_ROBOTS_RE, '<meta name="robots" content="noindex, nofollow" />')
+      .replace(SHELL_CANONICAL_RE, '');
+    writeFileSync(resolve(DIST_DIR, 'app-shell.html'), appShellHtml, 'utf8');
+    console.log(
+      '  wrote dist/app-shell.html (noindex, no canonical — SPA fallback for private zones + /:handle)',
+    );
 
     browser = await puppeteer.launch({
       executablePath: CHROME,

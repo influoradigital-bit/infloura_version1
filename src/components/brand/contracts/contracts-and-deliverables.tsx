@@ -46,6 +46,7 @@ import {
   FileSignature,
   Pen,
   Loader2,
+  History,
 } from 'lucide-react';
 
 // Types
@@ -69,7 +70,12 @@ interface Contract {
   // F-0321: 'expired' renamed to 'cancelled' (backend CANCELLED is a party cancelling the
   // contract, not a date passing — see mapApiContractStatus) and 'disputed' removed — nothing
   // maps to it any more, and an unreachable status literal is dead config, not display coverage.
-  status: 'draft' | 'pending_signature' | 'signed' | 'cancelled';
+  // F-0659: 'completed' added — backend ContractStatus.COMPLETED became reachable for the first
+  // time when ContractService#retirePredecessorIfSuperseded started retiring a superseded
+  // contract's predecessor to COMPLETED on amendment sign-off (see mapApiContractStatus). It used
+  // to collapse onto 'signed', so a brand looking at a superseded contract saw the identical
+  // "Signed" badge as the live ACTIVE one and had no way to tell which agreement actually binds.
+  status: 'draft' | 'pending_signature' | 'signed' | 'completed' | 'cancelled';
   brandSigned: boolean;
   creatorSigned: boolean;
   signedDate?: string;
@@ -184,7 +190,11 @@ const mockContracts: Contract[] = [
       {
         id: 'c5',
         title: 'Revisions',
-        content: 'Up to 2 rounds of revisions are included. Additional revisions will be charged at INR 2,500 per round.',
+        // F-0669 round 3: this mock clause's revision cap (2) matches the fixture's own
+        // `maxRevisions: 2` on its deliverables below, but no field anywhere in this fixture
+        // (or the real Contract/ContractDeliverable types) backs an extra per-round fee —
+        // 'INR 2,500' was invented. Don't state a price nothing in the data model supports.
+        content: 'Up to 2 rounds of revisions are included. Additional revisions may incur additional fees as mutually agreed.',
         comments: [],
       },
     ],
@@ -396,6 +406,14 @@ interface ApiContractRow {
  * the same fact. The 'disputed' UI status this switch used to be documented as "left in for
  * display purposes" is removed outright (not just left unreachable) — see Contract['status'];
  * the backend has no contract-level disputed status (disputes are tracked separately).
+ *
+ * F-0659 — COMPLETED used to collapse onto the same 'signed' bucket as ACTIVE. It only ever
+ * reaches a contract row when ContractService#retirePredecessorIfSuperseded retires a
+ * now-superseded predecessor after its amendment is signed (see that method's javadoc) — i.e. a
+ * contract that WAS binding but no longer is, sitting right next to its still-ACTIVE replacement
+ * in the same list. Sharing the 'signed' bucket meant both rendered the identical "Active" badge,
+ * so a brand had no way to tell the live agreement from the one it replaced. COMPLETED now maps
+ * to its own 'completed' UI status — see statusConfig below for the distinct label/treatment.
  */
 export function mapApiContractStatus(status: string | undefined): Contract['status'] | undefined {
   switch (status) {
@@ -406,7 +424,7 @@ export function mapApiContractStatus(status: string | undefined): Contract['stat
     case 'ACTIVE':
       return 'signed';
     case 'COMPLETED':
-      return 'signed';
+      return 'completed';
     case 'CANCELLED':
       return 'cancelled';
     case undefined:
@@ -608,6 +626,14 @@ const statusConfig = {
   // F-0267: 'pending_review' entry removed with the type member — see Contract['status'].
   pending_signature: { label: 'Awaiting Signature', color: 'border bg-stage-contracted text-stage-contracted-fg border-stage-contracted-border', icon: FileSignature },
   signed: { label: 'Active', color: 'border bg-stage-approved text-stage-approved-fg border-stage-approved-border', icon: CheckCircle2 },
+  // F-0659: the only real backend value that reaches this entry is COMPLETED, and the only way a
+  // contract row becomes COMPLETED is by being retired as the predecessor of a signed amendment
+  // (see mapApiContractStatus/ContractService#retirePredecessorIfSuperseded) — i.e. this specific
+  // agreement ran its course and a newer, mutually-signed version replaced it. 'Superseded' says
+  // that plainly; reusing 'signed'/'Active' here (the old behavior) told the brand a retired
+  // contract was still the live one. Deliberately not the green 'stage-approved' tokens 'signed'
+  // uses — a distinct neutral treatment (stage-paused) so the two are never visually confusable.
+  completed: { label: 'Superseded', color: 'border bg-stage-paused text-stage-paused-fg border-stage-paused-border', icon: History },
   // F-0321: was 'expired' / label 'Expired' — the only real backend value that ever reaches
   // this entry is CANCELLED (see mapApiContractStatus), which is a party cancelling the
   // contract, not a date passing. Reusing the 'bg-stage-expired' color tokens is fine (visual
@@ -1071,7 +1097,15 @@ export function ContractsAndDeliverables() {
                           Awaiting Creator Signature
                         </Badge>
                       )}
-                      {selectedContract.status === 'signed' && (
+                      {/* F-0659 follow-up: 'completed' must be included here. A superseded
+                          contract WAS fully executed — it was signed by both parties and then
+                          retired when its amendment was signed — so its PDF is exactly the
+                          historical record a brand is most likely to want. Giving COMPLETED its
+                          own status (the F-0659 fix) silently dropped this button for those
+                          contracts, because the gate still tested only the 'signed' bucket they
+                          used to collapse into. */}
+                      {(selectedContract.status === 'signed' ||
+                        selectedContract.status === 'completed') && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -1195,8 +1229,12 @@ export function ContractsAndDeliverables() {
                     </div>
                   </div>
 
-                  {/* Signature Status */}
-                  {selectedContract.status === 'signed' && (
+                  {/* Signature Status — same F-0659 follow-up as the Download PDF gate above:
+                      a COMPLETED (superseded) contract genuinely reached full execution, so it
+                      keeps this block. The badge/label elsewhere is what distinguishes it from a
+                      still-live ACTIVE contract; hiding its execution record would overcorrect. */}
+                  {(selectedContract.status === 'signed' ||
+                    selectedContract.status === 'completed') && (
                     <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
                       <div className="flex items-center gap-3">
                         <Shield className="w-5 h-5 text-green-500" />

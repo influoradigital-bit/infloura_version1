@@ -28,7 +28,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import type { DealMessage, DealMessageStreamHandlers } from '@/lib/api';
+import { ApiError, type DealMessage, type DealMessageStreamHandlers } from '@/lib/api';
 import CreatorChatPage from './creator-chat';
 
 const toastMock = vi.fn();
@@ -112,6 +112,19 @@ const INVITED_DEAL = {
 };
 
 /**
+ * F-0670 (dead-control-from-new-guard) — same bare invite, but WITH an agreed rate already
+ * set (`dealValue` non-null/non-zero). `DealService.doAccept`'s `AGREED_RATE_REQUIRED` guard
+ * (CEO ruling F-0643) only fires when there is no negotiated rate, so this is the population
+ * where a bare Accept genuinely works — used to keep that path covered separately from the
+ * rate-less dead-end below.
+ */
+const PRICED_INVITED_DEAL = {
+  ...INVITED_DEAL,
+  id: 'deal_priced_bare',
+  dealValue: 45000,
+};
+
+/**
  * CR-02 fresh-context reject (Priya) — the creator's OWN pending application. `APPLIED` is
  * in `ACCEPTABLE_COLLABORATION_STATUSES` (so `canRespondToProposal` is true) and has zero
  * messages for the same structural reason INVITED does — but this collaboration was started
@@ -178,8 +191,12 @@ describe('CreatorChatPage — bare-invite Accept/Decline fallback', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
-  it('shows the invite-response card (not "No messages yet") for a zero-message, still-acceptable deal, and wires Accept to api.deals.accept', async () => {
-    renderRoom();
+  it('shows the invite-response card (not "No messages yet") for a zero-message, still-acceptable PRICED deal, and wires Accept to api.deals.accept', async () => {
+    dealsList.mockResolvedValue([PRICED_INVITED_DEAL]);
+    dealsGet.mockResolvedValue(PRICED_INVITED_DEAL);
+    dealsAccept.mockResolvedValue({ id: 'deal_priced_bare' });
+    dealsReject.mockResolvedValue({ id: 'deal_priced_bare' });
+    renderRoom('deal_priced_bare');
 
     // The old dead-end empty state must be gone.
     await waitFor(() =>
@@ -190,13 +207,16 @@ describe('CreatorChatPage — bare-invite Accept/Decline fallback', () => {
     expect(await screen.findByText('Campaign Invite')).toBeInTheDocument();
     expect(screen.getAllByText(/Diwali Skincare Reels/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Earnings Breakdown/i)).not.toBeInTheDocument();
+    // F-0670 — a priced invite has an agreed rate already, so the rate-less-only Counter
+    // affordance stays out of the DOM: offering it here would be a redundant control.
     expect(screen.queryByText('Counter')).not.toBeInTheDocument();
 
     const acceptButton = screen.getByRole('button', { name: /^Accept$/ });
+    expect(acceptButton).toBeEnabled();
     await userEvent.click(acceptButton);
 
     await waitFor(() =>
-      expect(dealsAccept).toHaveBeenCalledWith('deal_bare', 'creator'),
+      expect(dealsAccept).toHaveBeenCalledWith('deal_priced_bare', 'creator'),
     );
     await waitFor(() =>
       expect(toastMock).toHaveBeenCalledWith(
@@ -269,6 +289,112 @@ describe('CreatorChatPage — bare-invite Accept/Decline fallback', () => {
 });
 
 /**
+ * F-0670 (dead-control-from-new-guard) — remaining surface on this page.
+ *
+ * CEO ruling F-0643 made `DealService.doAccept` reject (409 `AGREED_RATE_REQUIRED`) any
+ * collaboration with no negotiated rate. `showBareInviteResponse` (creator-chat.tsx) is gated
+ * on `collaborationStatus === 'INVITED'` — exactly the population that always has no rate by
+ * construction (invite/apply never set one) — so before this fix the bare-invite card offered
+ * an Accept button that was guaranteed to 409, and the failure fell through
+ * `describeProposalActionError`'s generic `default` branch, which set `stale: true` and told
+ * the creator to "Refresh" — advice that cannot help, since refreshing does not create a rate.
+ *
+ * Mirrors the equivalent fix already shipped on creator-deals.tsx (`hasAgreedRate`,
+ * `deal.budget > 0`): disable Accept with a stated reason, keep Counter (propose a rate) live,
+ * and give `AGREED_RATE_REQUIRED` its own actionable copy instead of the stale/refresh message.
+ */
+describe('CreatorChatPage — F-0670: bare-invite card does not offer a guaranteed-409 Accept', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    messagesStream.mockImplementation(
+      (_role: string, _dealId: string, handlers: DealMessageStreamHandlers) => {
+        void handlers;
+        return { close: vi.fn() };
+      },
+    );
+    messagesList.mockResolvedValue([]);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('disables Accept on a rate-less INVITED deal, explains why, and still offers a working Counter', async () => {
+    dealsList.mockResolvedValue([INVITED_DEAL]); // dealValue: null — no agreed rate
+    dealsGet.mockResolvedValue(INVITED_DEAL);
+    renderRoom('deal_bare');
+
+    await screen.findByText('Campaign Invite');
+
+    const acceptButton = screen.getByRole('button', { name: /^Accept$/ });
+    expect(acceptButton).toBeDisabled();
+    expect(
+      screen.getByText(/No rate proposed yet.*use counter/i),
+    ).toBeInTheDocument();
+
+    // Belt-and-suspenders: a disabled button must not dispatch the accept call even if
+    // clicked (userEvent no-ops on a disabled element, but this guards a future regression
+    // that removes `disabled` while leaving the copy behind).
+    await userEvent.click(acceptButton);
+    expect(dealsAccept).not.toHaveBeenCalled();
+
+    // The action that actually works stays live.
+    const counterButton = screen.getByRole('button', { name: /^Counter$/ });
+    expect(counterButton).toBeEnabled();
+    await userEvent.click(counterButton);
+    // CounterProposalForm's step-1 heading — a single text node, unlike "Counter Proposal to
+    // {brandName}" which is split across sibling nodes and doesn't match a plain getByText.
+    expect(await screen.findByText('Original Proposal Details')).toBeInTheDocument();
+  });
+
+  it('still offers a working Accept on a priced bare invite (dealValue set)', async () => {
+    dealsList.mockResolvedValue([PRICED_INVITED_DEAL]);
+    dealsGet.mockResolvedValue(PRICED_INVITED_DEAL);
+    dealsAccept.mockResolvedValue({ id: 'deal_priced_bare' });
+    renderRoom('deal_priced_bare');
+
+    await screen.findByText('Campaign Invite');
+
+    const acceptButton = screen.getByRole('button', { name: /^Accept$/ });
+    expect(acceptButton).toBeEnabled();
+    await userEvent.click(acceptButton);
+
+    await waitFor(() =>
+      expect(dealsAccept).toHaveBeenCalledWith('deal_priced_bare', 'creator'),
+    );
+  });
+
+  it('gives AGREED_RATE_REQUIRED actionable copy instead of the generic stale/refresh message', async () => {
+    // A deal priced at load (Accept enabled) whose rate the server no longer honours by the
+    // time the click lands — the residual race the disabled-button gate alone can't cover.
+    dealsList.mockResolvedValue([PRICED_INVITED_DEAL]);
+    dealsGet.mockResolvedValue(PRICED_INVITED_DEAL);
+    dealsAccept.mockRejectedValue(
+      new ApiError(
+        'AGREED_RATE_REQUIRED',
+        'Negotiate a rate before accepting — an invite or application with no agreed amount cannot become a committed deal',
+        409,
+      ),
+    );
+    renderRoom('deal_priced_bare');
+
+    const acceptButton = await screen.findByRole('button', { name: /^Accept$/ });
+    await userEvent.click(acceptButton);
+
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Could not accept proposal',
+          description: expect.stringMatching(/counter/i),
+          variant: 'destructive',
+        }),
+      ),
+    );
+    // Not the generic 409 catch-all's "Refresh" advice, which cannot fix a missing rate.
+    expect(toastMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ description: expect.stringMatching(/refresh/i) }),
+    );
+  });
+});
+
+/**
  * F-0291 — the gate that keeps this card alive once an invite HAS messages.
  *
  * The original gate was `events.length === 0`, which was correct only by accident: a bare invite
@@ -290,10 +416,15 @@ describe('CreatorChatPage — F-0291: the invite card survives a non-empty room'
         return { close: vi.fn() };
       },
     );
-    dealsList.mockResolvedValue([INVITED_DEAL]);
-    dealsGet.mockResolvedValue(INVITED_DEAL);
-    dealsAccept.mockResolvedValue({ id: 'deal_bare' });
-    dealsReject.mockResolvedValue({ id: 'deal_bare' });
+    // F-0670 — priced (dealValue set), not the rate-less INVITED_DEAL: this suite's point is
+    // "a non-empty room doesn't cost the creator their Accept control", which is orthogonal to
+    // the AGREED_RATE_REQUIRED gate covered in the F-0670 describe block above. Using a
+    // rate-less deal here would make `still offers Accept...` fail for the gate reason, not the
+    // messages-present reason this test exists to check.
+    dealsList.mockResolvedValue([PRICED_INVITED_DEAL]);
+    dealsGet.mockResolvedValue(PRICED_INVITED_DEAL);
+    dealsAccept.mockResolvedValue({ id: 'deal_priced_bare' });
+    dealsReject.mockResolvedValue({ id: 'deal_priced_bare' });
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -302,7 +433,7 @@ describe('CreatorChatPage — F-0291: the invite card survives a non-empty room'
     messagesList.mockResolvedValue([
       {
         id: 'm_sys',
-        dealId: 'deal_bare',
+        dealId: 'deal_priced_bare',
         kind: 'system',
         senderType: 'system',
         senderId: 'system',
@@ -311,7 +442,7 @@ describe('CreatorChatPage — F-0291: the invite card survives a non-empty room'
       },
       {
         id: 'm_note',
-        dealId: 'deal_bare',
+        dealId: 'deal_priced_bare',
         kind: 'text',
         senderType: 'brand',
         senderId: 'brand_1',
@@ -320,19 +451,20 @@ describe('CreatorChatPage — F-0291: the invite card survives a non-empty room'
       },
     ] as unknown as DealMessage[]);
 
-    renderRoom();
+    renderRoom('deal_priced_bare');
 
     // The whole point: a non-empty room must NOT cost the creator their Accept control.
     const acceptButton = await screen.findByRole('button', { name: /^Accept$/ });
+    expect(acceptButton).toBeEnabled();
     await userEvent.click(acceptButton);
-    await waitFor(() => expect(dealsAccept).toHaveBeenCalledWith('deal_bare', 'creator'));
+    await waitFor(() => expect(dealsAccept).toHaveBeenCalledWith('deal_priced_bare', 'creator'));
   });
 
   it('stands down once a real proposal card exists, so Accept is not offered twice', async () => {
     messagesList.mockResolvedValue([
       {
         id: 'm_prop',
-        dealId: 'deal_bare',
+        dealId: 'deal_priced_bare',
         kind: 'proposal',
         senderType: 'brand',
         senderId: 'brand_1',
@@ -342,7 +474,7 @@ describe('CreatorChatPage — F-0291: the invite card survives a non-empty room'
       },
     ] as unknown as DealMessage[]);
 
-    renderRoom();
+    renderRoom('deal_priced_bare');
 
     await waitFor(() =>
       expect(screen.queryByText('Campaign Invite')).not.toBeInTheDocument(),

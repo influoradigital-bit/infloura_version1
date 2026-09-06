@@ -523,6 +523,28 @@ export const contractStatusLabel = (status?: ContractStatus): string => {
   }
 };
 
+/**
+ * Builds the `POST /deals/:id/counter` body for this page's Counter dialog (F-0432).
+ *
+ * `CounterRequest` (DealDtos.java) also carries a free-text `usageRights`, persisted onto the
+ * Collaboration exactly like `createProposal` already does — see `brand-chat.tsx:1602` for the
+ * one call site that maps a real value (`ProposalForm`'s duration picker). This dialog has no
+ * such control: the "Counter Proposal" dialog below collects only an amount and a free-text
+ * message, and neither `CampaignBid` nor `DetailCampaignView` carries any usage-rights field to
+ * fall back on either — there is nothing real to map here. Repurposing `message` (which can be
+ * about anything — "can we do 3 reels instead", a delivery-date ask, etc.) would silently
+ * overwrite the deal's actual usage-rights term with prose that was never meant to mean that,
+ * which is worse than sending nothing (TECH-STACK.md rule 7 — never fabricate). `usageRights` is
+ * therefore deliberately omitted, not dropped by oversight. Building a real usage-rights control
+ * on this dialog is a product decision outside a call-site fix.
+ */
+export function buildCounterOfferBody(
+  amount: number,
+  message: string,
+): { amount: number; message?: string } {
+  return { amount, message: message.trim() || undefined };
+}
+
 const PlatformIcon = ({ platform, size = 'h-4 w-4' }: { platform: string; size?: string }) => {
   switch (platform) {
     case 'INSTAGRAM': return <Instagram className={cn(size, 'text-pink-500')} />;
@@ -784,7 +806,7 @@ export default function BrandCampaignDetailPage() {
       try {
         await api.deals.counter(
           selectedBid.id,
-          { amount, message: counterMessage || undefined },
+          buildCounterOfferBody(amount, counterMessage),
           'brand',
           // Fresh key per submit. Without one the server derives a key from dealId + amount
           // (DealService.counter:290), so a brand re-countering at the SAME figure collides with

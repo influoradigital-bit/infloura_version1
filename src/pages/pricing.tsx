@@ -40,34 +40,61 @@ import {
 // never presented as active today. FAQ's Export/Templates timing question
 // deliberately omits a build date (Priya correction, 2026-07-14) — no
 // schedule is confirmed with engineering yet.
+//
+// CEO RULING (Swapnil, 2026-09-05): "platform is free, AI is paid".
+// ------------------------------------------------------------------
+// Four items — the campaign dashboard, auto-generated contracts + e-signature,
+// payment protection, and TDS-on-payout + dispute resolution — used to appear
+// verbatim in BOTH FREE_INCLUDED and PRO_INCLUDED, and as four identical rows
+// in the matrix. Repeating a baseline capability inside a paid tier's bullet
+// list reads as a paid unlock; a reader scanning the Pro card cannot tell that
+// Free has the same thing. They are now declared ONCE, in EVERY_PLAN_INCLUDED,
+// and rendered in a band that says so — and the matrix carries the same split,
+// because the cards and the matrix are separate structures in this file and a
+// reader who scrolls sees both.
+//
+// The tier lists below therefore hold ONLY what actually differs, AI first,
+// because AI credits are the differentiator the ruling names. No price, cap or
+// commission changed in this pass — only how they are grouped and described.
+//
+// HONEST-QUALIFIER RULE FOR THIS PAGE. Three of Pro's unlocks (seats, tracked
+// creators, analytics deep-dives) and the reduced per-deal brand fee are
+// platform gates, not AI. Copy therefore says "no subscription to use the
+// platform" and never a bare "the platform is free", and it never implies the
+// caps are gone. Removing those caps would be a revenue decision and is
+// Swapnil's alone — see the report filed with this change.
 
 interface IncludedItem {
   label: string;
   comingSoon?: boolean;
 }
 
+/**
+ * Platform baseline. Every workspace has these on day one, on Free, with no
+ * subscription. Never duplicate one of these into a tier list — that is the
+ * exact defect this constant exists to prevent.
+ */
+const EVERY_PLAN_INCLUDED: string[] = [
+  'Campaign performance dashboard (unlimited)',
+  'Auto-generated contracts + e-signature',
+  'Payment protection on every deal',
+  'TDS recorded on payouts + dispute resolution',
+];
+
 const FREE_INCLUDED: IncludedItem[] = [
-  { label: '1 workspace seat' },
-  { label: '5 tracked creators' },
   { label: '100 AI credits/month (150 after first funded campaign)' },
   { label: '1 creator analytics deep-dive/month' },
-  { label: 'Campaign performance dashboard (unlimited)' },
-  { label: 'Auto-generated contracts + e-signature' },
-  { label: 'Payment protection on every deal' },
-  { label: 'TDS recorded on payouts + dispute resolution' },
+  { label: '1 workspace seat' },
+  { label: '5 tracked creators' },
 ];
 
 const PRO_INCLUDED: IncludedItem[] = [
-  { label: '5 workspace seats' },
-  { label: 'Unlimited tracked creators' },
   { label: '400 AI credits/month' },
   { label: 'Unlimited creator analytics deep-dives' },
-  { label: 'Campaign performance dashboard (unlimited)' },
+  { label: '5 workspace seats' },
+  { label: 'Unlimited tracked creators' },
   { label: 'Export reports (CSV/PDF)', comingSoon: true },
   { label: 'Campaign templates library', comingSoon: true },
-  { label: 'Auto-generated contracts + e-signature' },
-  { label: 'Payment protection on every deal' },
-  { label: 'TDS recorded on payouts + dispute resolution' },
 ];
 
 const CREATOR_INCLUDED = [
@@ -90,76 +117,104 @@ interface MatrixRow {
   pro: MatrixCellValue;
 }
 
-const MATRIX_ROWS: MatrixRow[] = [
+interface MatrixGroup {
+  title: string;
+  note: string;
+  rows: MatrixRow[];
+}
+
+// The matrix is grouped so it tells the SAME story as the cards above it: what
+// a subscription actually buys, then what every workspace already has. Before
+// this pass the four baseline rows sat interleaved with the tier rows, so a
+// reader scanning the "Pro" column read fourteen consecutive Pro entitlements.
+const MATRIX_GROUPS: MatrixGroup[] = [
   {
-    feature: 'Monthly subscription',
-    free: { kind: 'text', value: '₹0' },
-    pro: { kind: 'text', value: '₹4,999' },
+    title: 'What a Pro subscription changes',
+    note: 'AI credits are the headline. The rest are limit increases.',
+    rows: [
+      {
+        feature: 'Monthly subscription',
+        free: { kind: 'text', value: '₹0' },
+        pro: { kind: 'text', value: '₹4,999' },
+      },
+      {
+        feature: 'AI credits/month',
+        free: { kind: 'text', value: '100 → 150 (after first funded campaign)' },
+        pro: { kind: 'text', value: '400' },
+      },
+      {
+        feature: 'Creator analytics deep-dives',
+        free: { kind: 'text', value: '1 view/month' },
+        pro: { kind: 'text', value: 'Unlimited' },
+      },
+      {
+        feature: 'Workspace seats',
+        free: { kind: 'text', value: '1' },
+        pro: { kind: 'text', value: '5' },
+      },
+      {
+        feature: 'Tracked creators',
+        free: { kind: 'text', value: 'Up to 5' },
+        pro: { kind: 'text', value: 'Unlimited' },
+      },
+      {
+        feature: 'Report export (CSV/PDF)',
+        free: { kind: 'dash' },
+        pro: { kind: 'comingSoon' },
+      },
+      {
+        feature: 'Campaign templates library',
+        free: { kind: 'dash' },
+        pro: { kind: 'comingSoon' },
+      },
+      {
+        feature: 'Platform fee per closed deal',
+        free: { kind: 'text', value: 'Included' },
+        pro: { kind: 'text', value: 'Reduced' },
+      },
+    ],
   },
   {
-    feature: 'Platform fee per closed deal',
-    free: { kind: 'text', value: 'Included' },
-    pro: { kind: 'text', value: 'Reduced' },
+    title: 'Included on every plan, including Free',
+    note: 'Not a Pro unlock. These are how the platform works for everyone.',
+    rows: [
+      {
+        feature: 'Campaign performance dashboard',
+        free: { kind: 'text', value: 'Unlimited (own campaigns)' },
+        pro: { kind: 'text', value: 'Unlimited (own campaigns)' },
+      },
+      {
+        feature: 'Auto-generated contracts + e-signature',
+        free: { kind: 'check' },
+        pro: { kind: 'check' },
+      },
+      {
+        feature: 'Payment protection',
+        free: { kind: 'text', value: 'Every deal' },
+        pro: { kind: 'text', value: 'Every deal' },
+      },
+      {
+        feature: 'TDS recorded on payouts + dispute resolution',
+        free: { kind: 'check' },
+        pro: { kind: 'check' },
+      },
+    ],
   },
   {
-    feature: 'Creator commission',
-    free: { kind: 'text', value: '15% (unchanged)' },
-    pro: { kind: 'text', value: '15% (unchanged)' },
-  },
-  {
-    feature: 'Workspace seats',
-    free: { kind: 'text', value: '1' },
-    pro: { kind: 'text', value: '5' },
-  },
-  {
-    feature: 'Tracked creators',
-    free: { kind: 'text', value: 'Up to 5' },
-    pro: { kind: 'text', value: 'Unlimited' },
-  },
-  {
-    feature: 'AI credits/month',
-    free: { kind: 'text', value: '100 → 150 (after first funded campaign)' },
-    pro: { kind: 'text', value: '400' },
-  },
-  {
-    feature: 'Campaign performance dashboard',
-    free: { kind: 'text', value: 'Unlimited (own campaigns)' },
-    pro: { kind: 'text', value: 'Unlimited (own campaigns)' },
-  },
-  {
-    feature: 'Creator analytics deep-dives',
-    free: { kind: 'text', value: '1 view/month' },
-    pro: { kind: 'text', value: 'Unlimited' },
-  },
-  {
-    feature: 'Report export (CSV/PDF)',
-    free: { kind: 'dash' },
-    pro: { kind: 'comingSoon' },
-  },
-  {
-    feature: 'Campaign templates library',
-    free: { kind: 'dash' },
-    pro: { kind: 'comingSoon' },
-  },
-  {
-    feature: 'Auto-generated contracts + e-signature',
-    free: { kind: 'check' },
-    pro: { kind: 'check' },
-  },
-  {
-    feature: 'Payment protection',
-    free: { kind: 'text', value: 'Every deal' },
-    pro: { kind: 'text', value: 'Every deal' },
-  },
-  {
-    feature: 'TDS recorded on payouts + dispute resolution',
-    free: { kind: 'check' },
-    pro: { kind: 'check' },
-  },
-  {
-    feature: 'Trial period',
-    free: { kind: 'text', value: 'None' },
-    pro: { kind: 'text', value: 'None' },
+    title: 'Identical on both plans',
+    note: 'Your plan does not move these.',
+    rows: [
+      {
+        feature: 'Creator commission',
+        free: { kind: 'text', value: '15% (unchanged)' },
+        pro: { kind: 'text', value: '15% (unchanged)' },
+      },
+      {
+        feature: 'Trial period',
+        free: { kind: 'text', value: 'None' },
+        pro: { kind: 'text', value: 'None' },
+      },
+    ],
   },
 ];
 
@@ -192,17 +247,17 @@ const FAQS = [
   {
     question: 'Is there a free plan?',
     answer:
-      'Yes. The Free plan is permanently usable — no time limit, no trial countdown. You pay only when deals close. Pro is an optional upgrade for brands running regular campaigns or needing team features.',
+      'Yes. The Free plan is permanently usable — no time limit, no trial countdown. The platform itself carries no subscription: you pay a fee only when a deal actually closes. Pro is an optional upgrade for brands who want more AI credits, and it lifts the seat, tracked-creator and analytics limits that Free caps.',
   },
   {
     question: 'Do I have to subscribe to use Influora?',
     answer:
-      'No. Free tier requires no subscription. You can discover creators, run deals, use Secure Payments, and generate contracts without ever paying a monthly fee. Pro is only for brands who want lower fees, more seats, and unlimited analytics.',
+      'No. Using the platform requires no subscription. Discovering creators, running deals, Secure Payments, auto-generated contracts, dispute resolution, TDS shown on payouts and your campaign dashboard are all on the Free tier, permanently. A subscription buys AI capacity — and, alongside it, higher limits on seats, tracked creators and analytics.',
   },
   {
     question: "What's the difference between Free and Pro?",
     answer:
-      'Pro gives you a lower brand fee on every closed deal, 5 workspace seats (vs. 1 on Free), unlimited tracked creators (vs. 5 on Free), unlimited creator analytics deep-dives (vs. 1/month on Free), 400 AI credits/month (vs. 100-150 on Free), report export (CSV/PDF), and campaign templates. See the comparison table above for the full breakdown.',
+      'The headline difference is AI: Pro gives you 400 AI credits a month instead of 100 (150 after your first funded campaign). Pro also raises the limits Free caps — unlimited creator analytics deep-dives (vs. 1/month), 5 workspace seats (vs. 1), unlimited tracked creators (vs. 5) — adds report export (CSV/PDF) and campaign templates when they launch, and reduces the brand fee on every closed deal. Everything else — contracts, payment protection, dispute resolution, TDS on payouts, the campaign dashboard — is the same on both. See the comparison table above.',
   },
   {
     question: 'Does upgrading to Pro change what creators earn?',
@@ -227,7 +282,16 @@ const FAQS = [
   {
     question: 'How is the brand fee different on Pro?',
     answer:
-      'Pro gives you a lower fee on every closed deal (shown transparently before you fund the deal and on every invoice). The exact rate is in the tier comparison table above. Free tier uses the standard rate.',
+      'Pro reduces the fee on every closed deal. Free uses the standard rate. We do not publish either rate on this page — you see the exact amount in rupees on the deal itself before you fund it, and again on the invoice after payout, so you are never estimating from a percentage.',
+  },
+  {
+    // The honest qualifier on "the platform is free". Free is genuinely
+    // permanent and genuinely carries the full protection stack — but it is
+    // capped, and a page that says "free" without saying where the ceiling is
+    // is selling a surprise. This answer names every cap in one place.
+    question: 'Is Free actually free, or is it a limited version?',
+    answer:
+      'Both, honestly. Every plan — Free included — gets auto-generated contracts, payment protection on every deal, dispute resolution, TDS shown on payouts and an unlimited campaign dashboard. None of that is behind the subscription. Free is capped, though: 1 workspace seat, up to 5 tracked creators, 1 creator analytics deep-dive a month, and 100 AI credits a month (150 after your first funded campaign). A platform fee applies when a deal completes, on either plan. Pro raises the caps and cuts that fee.',
   },
   {
     question: 'When do I actually pay (or get paid)?',
@@ -251,7 +315,7 @@ export default function PricingPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Pricing"
-        description="Two tiers for brands: Free (pay-per-deal, no subscription) and Pro (₹4,999/month, lower fees + team features). Creators join free. Transparent protection-backed pricing."
+        description="No subscription to use Influora: contracts, payment protection, dispute resolution, TDS on payouts and the campaign dashboard are on the Free tier. Pro (₹4,999/month) is for more AI credits and higher seat, creator and analytics limits. Creators join free."
         canonical="/pricing"
       />
       {/*
@@ -267,21 +331,21 @@ export default function PricingPage() {
       <JsonLd
         data={getSoftwareApplicationSchema({
           description:
-            'Influora pricing for brands and creators: a Free tier with no subscription, and Pro at ₹4,999/month with lower per-deal fees and team features. Creators join free.',
+            'Influora pricing for brands and creators: the platform carries no subscription — the Free tier includes contracts, payment protection, dispute resolution, TDS on payouts and the campaign dashboard. Pro at ₹4,999/month buys 400 AI credits a month and higher seat, creator and analytics limits. Creators join free.',
           url: 'https://influora.in/pricing',
           offers: [
             {
               name: 'Free',
               price: 0,
               description:
-                'No subscription. Discover creators, run deals, use protected payments and generate contracts; a platform fee applies only when a deal completes.',
+                'No subscription. Discover creators, run deals, use protected payments, generate contracts and resolve disputes; a platform fee applies only when a deal completes.',
             },
             {
               name: 'Pro',
               price: 4999,
               billingPeriod: 'MON',
               description:
-                'Reduced per-deal fee, 5 team seats, unlimited creator analytics.',
+                '400 AI credits a month, plus 5 team seats, unlimited tracked creators, unlimited creator analytics and a reduced per-deal fee.',
             },
           ],
         })}
@@ -290,7 +354,7 @@ export default function PricingPage() {
         data={getWebPageSchema({
           name: 'Influora Pricing',
           description:
-            'Influora has two brand tiers: Free with no subscription and a platform fee only on completed deals, and Pro at ₹4,999 per month with reduced fees and team features. Creators join and get paid for free.',
+            'Using Influora needs no subscription: the Free tier includes contracts, payment protection, dispute resolution, TDS on payouts and the campaign dashboard, with a platform fee only on completed deals. Pro at ₹4,999 per month buys more AI credits and raises the seat, tracked-creator and analytics limits. Creators join and get paid for free.',
           url: '/pricing',
         })}
       />
@@ -306,11 +370,12 @@ export default function PricingPage() {
                 <ShieldCheck className="h-3 w-3" aria-hidden="true" /> Simple, transparent pricing
               </Badge>
               <h1 className="mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-                Choose your tier — Free or Pro
+                No subscription to use Influora. AI is what you pay for.
               </h1>
               <p className="mt-4 text-lg text-muted-foreground">
-                Free to start, no subscription required. Upgrade to Pro for lower fees, more seats, and
-                unlimited analytics — designed for brands running regular campaigns.
+                Contracts, payment protection, dispute resolution, TDS shown on payouts and your campaign
+                dashboard are included on every plan — Free included. Pro adds AI credits and raises the
+                limits on seats, tracked creators and analytics.
               </p>
             </FadeUp>
           </div>
@@ -323,16 +388,58 @@ export default function PricingPage() {
           <div className="mx-auto max-w-5xl px-6">
             <FadeUp className="text-center">
               <Badge variant="outline">For brands</Badge>
-              <h2 className="mt-3 text-2xl font-semibold">Free or Pro — pick what fits your workflow</h2>
+              <h2 className="mt-3 text-2xl font-semibold">
+                Start with everything. Pay when you want more AI.
+              </h2>
             </FadeUp>
 
-            <div className="mt-10 grid gap-6 lg:grid-cols-2">
+            {/*
+              The universal band. These four used to be repeated inside both
+              tier bullet lists, which made a platform baseline look like a Pro
+              unlock. Stating them ONCE, above the tiers, is the whole point —
+              the reader learns what they already have before they are asked to
+              compare. The tier cards below must never restate one of these.
+            */}
+            <FadeUp delay={0.05} className="mt-8">
+              <div className="rounded-xl border border-accent-foreground/30 bg-card/50 p-6">
+                <div className="flex items-center justify-center gap-2 text-center">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-accent-foreground" aria-hidden="true" />
+                  <h3 className="text-sm font-semibold">Included on every plan, including Free</h3>
+                </div>
+                <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {EVERY_PLAN_INCLUDED.map((line) => (
+                    <li key={line} className="flex items-start gap-2.5 text-sm">
+                      <Check
+                        className="mt-0.5 h-4 w-4 shrink-0 text-accent-foreground"
+                        aria-hidden="true"
+                      />
+                      <span>{line}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-4 text-center text-xs text-muted-foreground">
+                  None of this sits behind the subscription. The tiers below differ only in AI credits and
+                  in how far the seat, tracked-creator and analytics limits go.
+                </p>
+              </div>
+            </FadeUp>
+
+            <div className="mt-8 grid gap-6 lg:grid-cols-2">
+              {/*
+                Card bullet lists hold ONLY what differs between the tiers, AI
+                credits first — everything universal lives in the band above.
+              */}
               <FadeUp>
                 <Card className="h-full">
                   <CardContent className="p-8">
                     <Badge variant="outline">Free</Badge>
                     <p className="mt-4 text-3xl font-bold">₹0/month</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Pay only when deals close.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      The full platform, no subscription. A fee applies only when a deal closes.
+                    </p>
+                    <p className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Monthly allowances
+                    </p>
                     <ul className="mt-6 space-y-3">
                       {FREE_INCLUDED.map((item) => (
                         <li key={item.label} className="flex items-start gap-2.5 text-sm">
@@ -368,7 +475,10 @@ export default function PricingPage() {
                     </Badge>
                     <p className="mt-4 text-3xl font-bold">₹4,999/month</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Lower fees + unlocked features for growth.
+                      400 AI credits a month — and the caps on Free lift with them.
+                    </p>
+                    <p className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      What Pro raises and adds
                     </p>
                     <ul className="mt-6 space-y-3">
                       {PRO_INCLUDED.map((item) => (
@@ -413,8 +523,8 @@ export default function PricingPage() {
 
             <FadeUp delay={0.15}>
               <p className="mt-6 text-center text-sm text-muted-foreground">
-                Pro pays for itself above ~₹2,10,000/month in campaign spend. Below that threshold, upgrade
-                for the analytics, export, and team seat unlocks.
+                Pro is priced for the AI credits. The reduced per-deal fee is a second effect: above
+                ~₹2,10,000/month in campaign spend it covers the subscription on its own.
               </p>
             </FadeUp>
           </div>
@@ -425,9 +535,13 @@ export default function PricingPage() {
           <div className="mx-auto max-w-5xl px-6">
             <FadeUp className="text-center">
               <h2 className="text-2xl font-semibold">Compare Free and Pro</h2>
+              <p className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground">
+                Grouped the way the plans actually work: what the subscription changes, then what every
+                workspace already has.
+              </p>
             </FadeUp>
             <FadeUp delay={0.1} className="mt-8">
-              <div className="rounded-xl border border-border/60">
+              <div className="overflow-x-auto rounded-xl border border-border/60">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -436,19 +550,36 @@ export default function PricingPage() {
                       <TableHead>Pro</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
-                    {MATRIX_ROWS.map((row) => (
-                      <TableRow key={row.feature}>
-                        <TableCell className="whitespace-normal font-medium">{row.feature}</TableCell>
-                        <TableCell>
-                          <MatrixCell value={row.free} />
-                        </TableCell>
-                        <TableCell>
-                          <MatrixCell value={row.pro} />
+                  {MATRIX_GROUPS.map((group) => (
+                    <TableBody key={group.title}>
+                      <TableRow className="bg-card/60 hover:bg-card/60">
+                        <TableCell colSpan={3} className="whitespace-normal py-3">
+                          <span className="text-sm font-semibold">{group.title}</span>
+                          {/*
+                            The separator is a literal character, not margin.
+                            Spacing alone runs the two spans together for a
+                            screen reader and for anything reading the DOM as
+                            text — including the answer engines this page is
+                            written for.
+                          */}
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            &middot; {group.note}
+                          </span>
                         </TableCell>
                       </TableRow>
-                    ))}
-                  </TableBody>
+                      {group.rows.map((row) => (
+                        <TableRow key={row.feature}>
+                          <TableCell className="whitespace-normal font-medium">{row.feature}</TableCell>
+                          <TableCell>
+                            <MatrixCell value={row.free} />
+                          </TableCell>
+                          <TableCell>
+                            <MatrixCell value={row.pro} />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  ))}
                 </Table>
               </div>
             </FadeUp>
@@ -465,24 +596,29 @@ export default function PricingPage() {
                   <div className="mt-6 space-y-4 text-left text-muted-foreground">
                     <p>
                       <span className="font-medium text-foreground">
-                        If you're running multiple campaigns a month or working with a team,
+                        When 100 AI credits a month stop being enough.
                       </span>{' '}
-                      Pro unlocks the features that make scaling easier: unlimited creator analytics (vet as
-                      many creators as you need), report export (share performance with stakeholders), 5
-                      seats (collaborate without seat-blocking), and campaign templates (launch faster).
+                      That is the honest trigger. If you're briefing, matching and drafting with Meera on
+                      every campaign, Free's allowance goes quickly; Pro's 400 credits are what the ₹4,999
+                      is for.
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">When Free's caps start blocking you.</span>{' '}
+                      One seat means nobody else in your team can be in the workspace. Five tracked creators
+                      and one analytics deep-dive a month are enough to run occasional campaigns, not enough
+                      to vet a shortlist. Pro lifts all three.
                     </p>
                     <p>
                       <span className="font-medium text-foreground">
-                        If your monthly campaign spend is above ₹2,10,000,
+                        When your spend is above ₹2,10,000 a month.
                       </span>{' '}
-                      the lower brand fee (shown on every deal before you fund the deal) compounds quickly —
-                      the subscription price pays for itself in fee savings alone.
+                      Above that, the reduced per-deal fee — shown in rupees on every deal before you fund
+                      it — covers the subscription by itself, whatever you do with the credits.
                     </p>
                     <p>
-                      <span className="font-medium text-foreground">Below that threshold?</span> You're
-                      still getting value from the analytics unlocks, export, and seat limits. Free tier
-                      works great if you're running occasional campaigns or testing the platform — upgrade
-                      when growth makes those limits feel tight.
+                      <span className="font-medium text-foreground">And when none of that is true,</span>{' '}
+                      stay on Free. It is not a trial and it does not expire: the contracts, the payment
+                      protection, the dispute process and the dashboard are the same ones Pro brands use.
                     </p>
                   </div>
                 </CardContent>
@@ -564,8 +700,8 @@ export default function PricingPage() {
         />
 
         <FunnelCta
-          heading="Start free — upgrade to Pro when you're ready to scale"
-          sub="No card required. The Free tier has no subscription and no time limit."
+          heading="Start on Free — subscribe when you want more AI"
+          sub="No card required. Contracts, payment protection and dispute resolution are included from the first deal."
           primary={{ label: 'Start free as a brand', to: '/brand/register' }}
           secondary={{ label: "I'm a creator — joining is free", to: '/creator/register' }}
           reassurances={['No subscription on Free', 'No setup fee', 'Cancel Pro anytime']}

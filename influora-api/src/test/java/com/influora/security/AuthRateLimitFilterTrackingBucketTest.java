@@ -101,6 +101,51 @@ class AuthRateLimitFilterTrackingBucketTest {
     }
 
     @Test
+    @DisplayName(
+            "POST /festival/coupon-copied shares the same per-IP tracking bucket as"
+                    + " /webhooks/redemption (T-FESTIVALBOX-0905 phase 6)")
+    void festivalCouponCopied_sharesTrackingBucketWithRedemption() throws Exception {
+        MockHttpServletRequest first = new MockHttpServletRequest("POST", "/api/v1/webhooks/redemption");
+        first.setRemoteAddr("10.0.0.21");
+        filter.doFilter(first, new MockHttpServletResponse(), new MockFilterChain());
+
+        MockHttpServletRequest second =
+                new MockHttpServletRequest("POST", "/api/v1/festival/coupon-copied");
+        second.setRemoteAddr("10.0.0.21");
+        filter.doFilter(second, new MockHttpServletResponse(), new MockFilterChain());
+
+        MockHttpServletRequest third =
+                new MockHttpServletRequest("POST", "/api/v1/festival/coupon-copied");
+        third.setRemoteAddr("10.0.0.21");
+        MockHttpServletResponse thirdResponse = new MockHttpServletResponse();
+        filter.doFilter(third, thirdResponse, new MockFilterChain());
+
+        assertEquals(429, thirdResponse.getStatus());
+    }
+
+    @Test
+    @DisplayName(
+            "POST /festival/coupon-copied is throttled per-IP once trackingLimit is exceeded on"
+                    + " its own")
+    void festivalCouponCopied_throttledAfterLimit() throws Exception {
+        for (int i = 0; i < 2; i++) {
+            MockHttpServletRequest request =
+                    new MockHttpServletRequest("POST", "/api/v1/festival/coupon-copied");
+            request.setRemoteAddr("10.0.0.22");
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            filter.doFilter(request, response, new MockFilterChain());
+            assertEquals(200, response.getStatus());
+        }
+
+        MockHttpServletRequest third = new MockHttpServletRequest("POST", "/api/v1/festival/coupon-copied");
+        third.setRemoteAddr("10.0.0.22");
+        MockHttpServletResponse thirdResponse = new MockHttpServletResponse();
+        filter.doFilter(third, thirdResponse, new MockFilterChain());
+
+        assertEquals(429, thirdResponse.getStatus());
+    }
+
+    @Test
     @DisplayName("A different client IP gets its own independent tracking-bucket allowance")
     void trackingBucket_isPerIp() throws Exception {
         for (int i = 0; i < 2; i++) {

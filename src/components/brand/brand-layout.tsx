@@ -16,7 +16,6 @@ import {
   HelpCircle,
   Plus,
   MessageCircle,
-  MessageSquare,
   KanbanSquare,
   FileText,
   BarChart3,
@@ -86,8 +85,13 @@ interface BrandNavGroup {
  * Reviews/Disputes were only reachable by direct URL). Settings stays in the
  * avatar menu, not here.
  *
- * MAIN mirrors the day-to-day brand workflow; MANAGE holds the ops/oversight
- * surfaces.
+ * Group spine — shared with `creator-layout.tsx`, which mirrors it:
+ *   MAIN     the day-to-day workflow
+ *   PAYMENTS money in/out and the agreement that governs it
+ *   MANAGE   ops/oversight surfaces you visit on a cadence, not daily
+ * The creator shell carries one extra group (PROFILE) because creators have a
+ * public artifact — a portfolio page — that brands have no equivalent of. The
+ * three groups above are in the same order and mean the same thing in both.
  *
  * D-8 (BrandF.md §24): "Deals" points at `/brand/chat` (`BrandChatPage`), not
  * `/brand/deals` (`DealRoomDashboard`) — this comment previously claimed the
@@ -95,8 +99,20 @@ interface BrandNavGroup {
  * `BrandChatPage` is the one with the shipment control, contract tab,
  * deliverables tab, and payments tab — sending brands to the thinner page
  * meant every deal's shipment control was one click further away than it
- * needed to be, reachable only via ⌘K or a deep link. `/brand/messages`
- * still covers pure messaging with no deal-room chrome.
+ * needed to be, reachable only via ⌘K or a deep link.
+ *
+ * W5 (T-FRONTEND-REWORK-0905 §3) — D-8 is preserved, not reversed: "Deals"
+ * still points at `/brand/chat`. What changed is that "Messages"
+ * (`/brand/messages`) no longer gets its own sidebar row. Three nav-visible
+ * doors onto the same `dealsApi`/`messagesApi` data made brands guess which
+ * one held their conversation. `BrandChatPage` is chat-first with a Messages
+ * tab (`brand-chat.tsx:112`) and its own deal list, so messaging is reachable
+ * *inside* the one Deals surface.
+ *
+ * Nothing was deleted. `/brand/messages`, `/brand/deals` and `/brand/deals/:id`
+ * are all still live routes (`App.tsx:365,474,483`); a bookmark still lands on
+ * a real page, `isActive` below lights "Deals" for all of them, and the command
+ * bar still offers Messages directly (`command-bar.tsx:75`).
  */
 const navGroups: BrandNavGroup[] = [
   {
@@ -107,15 +123,22 @@ const navGroups: BrandNavGroup[] = [
       { label: 'Campaigns', href: '/brand/campaigns', icon: Megaphone },
       { label: 'Creators', href: '/brand/discover', icon: Users2 },
       { label: 'Deals', href: '/brand/chat', icon: MessageCircle },
-      { label: 'Messages', href: '/brand/messages', icon: MessageSquare },
+      // Pipeline is the stage-board view of the same deals Deals opens one at a
+      // time — it belongs beside them, not filed under oversight.
+      { label: 'Pipeline', href: '/brand/pipeline', icon: KanbanSquare },
+    ],
+  },
+  {
+    label: 'Payments',
+    items: [
       { label: 'Wallet', href: '/brand/wallet', icon: Wallet },
+      // The contract is the document the money is released against — same errand.
+      { label: 'Contracts', href: '/brand/contracts', icon: FileText },
     ],
   },
   {
     label: 'Manage',
     items: [
-      { label: 'Pipeline', href: '/brand/pipeline', icon: KanbanSquare },
-      { label: 'Contracts', href: '/brand/contracts', icon: FileText },
       { label: 'Analytics', href: '/brand/analytics', icon: BarChart3 },
       { label: 'Reviews', href: '/brand/reviews', icon: Star },
       { label: 'Disputes', href: '/brand/disputes', icon: AlertTriangle },
@@ -205,11 +228,20 @@ export function BrandLayout({ children }: BrandLayoutProps) {
     // points into a deal room (Pipeline still navigates straight into
     // /brand/deals/:id — see brand-pipeline.tsx). Without this, opening a deal
     // from Pipeline landed on a page where no sidebar item lit up at all.
+    //
+    // W5 — /brand/messages joins that list. It lost its own sidebar row when
+    // the deal surfaces collapsed, but the route is still live and still
+    // linked from the command bar, so a brand who lands there must see *some*
+    // sidebar item lit rather than an orphaned-looking shell.
     if (href === '/brand/chat') {
-      return pathname.startsWith('/brand/chat') || pathname.startsWith('/brand/deals');
+      return (
+        pathname.startsWith('/brand/chat') ||
+        pathname.startsWith('/brand/deals') ||
+        pathname.startsWith('/brand/messages')
+      );
     }
-    // Contracts and Messages are separate nav items, each with their own real
-    // page, not sub-surfaces of Deals.
+    // Contracts is a separate nav item with its own real page, not a
+    // sub-surface of Deals.
     return pathname.startsWith(href);
   };
 

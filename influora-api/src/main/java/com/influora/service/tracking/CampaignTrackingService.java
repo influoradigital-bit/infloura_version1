@@ -68,9 +68,12 @@ public class CampaignTrackingService {
     }
 
     /**
-     * Create (or return the existing) tracking link. Delegates all authorization/validation to
-     * {@code CampaignLinkService#createTrackingLink}, which already resolves-then-scopes the
-     * campaign against {@code workspaceId}.
+     * Create (or return the existing) tracking link: per-creator when {@code creatorProfileId} is
+     * supplied (unchanged behavior, delegates to {@code CampaignLinkService#createTrackingLink}),
+     * or the campaign's single page-level "Shop button" link (T-FESTIVALBOX-0905 phase 7) when it
+     * is null/blank (delegates to {@code CampaignLinkService#createPageLevelTrackingLink}) --
+     * mirrors {@link #createCoupon}'s identical creator-present/absent dispatch. Either delegate
+     * already resolves-then-scopes the campaign against {@code workspaceId}.
      */
     @Transactional
     public TrackingLinkResponse createTrackingLink(
@@ -81,8 +84,11 @@ public class CampaignTrackingService {
             String baseUrl,
             String platform) {
         UtmCampaign utm =
-                campaignLinkService.createTrackingLink(
-                        workspaceId, campaignId, collaborationId, creatorProfileId, baseUrl, platform);
+                (creatorProfileId == null || creatorProfileId.isBlank())
+                        ? campaignLinkService.createPageLevelTrackingLink(
+                                workspaceId, campaignId, baseUrl, platform)
+                        : campaignLinkService.createTrackingLink(
+                                workspaceId, campaignId, collaborationId, creatorProfileId, baseUrl, platform);
         return toTrackingLinkResponse(utm);
     }
 
@@ -107,9 +113,12 @@ public class CampaignTrackingService {
     }
 
     /**
-     * Create (or return the existing) coupon for a creator's participation in a campaign.
-     * Delegates all authorization/validation to {@code CouponCodeService#addCreatorToCampaign},
-     * which already resolves-then-scopes the campaign against {@code workspaceId}.
+     * Create (or return the existing) coupon for a campaign: per-creator when {@code
+     * creatorProfileId} is supplied (unchanged behavior, delegates to {@code
+     * CouponCodeService#addCreatorToCampaign}), or the campaign's single brand-level
+     * "page-exclusive" coupon when it is null/blank (T-FESTIVALBOX-0905 phase 4, delegates to
+     * {@code CouponCodeService#addBrandLevelCoupon}). Either delegate already
+     * resolves-then-scopes the campaign against {@code workspaceId}.
      */
     @Transactional
     public CouponResponse createCoupon(
@@ -121,8 +130,17 @@ public class CampaignTrackingService {
             Integer usageLimit,
             java.time.Instant expiresAt) {
         CouponCode coupon =
-                couponCodeService.addCreatorToCampaign(
-                        workspaceId, campaignId, creatorProfileId, discountType, discountValue, usageLimit, expiresAt);
+                (creatorProfileId == null || creatorProfileId.isBlank())
+                        ? couponCodeService.addBrandLevelCoupon(
+                                workspaceId, campaignId, discountType, discountValue, usageLimit, expiresAt)
+                        : couponCodeService.addCreatorToCampaign(
+                                workspaceId,
+                                campaignId,
+                                creatorProfileId,
+                                discountType,
+                                discountValue,
+                                usageLimit,
+                                expiresAt);
         return toCouponResponse(coupon);
     }
 

@@ -77,7 +77,13 @@ describe('access-token renewal', () => {
     expect((dataCall![1] as RequestInit & { headers: Record<string, string> }).headers.Authorization).toBe(
       `Bearer ${REFRESHED}`,
     );
-    expect(localStorage.getItem('creator_token')).toBe(REFRESHED);
+    // F-0551 — live mode never writes the real access token to Storage, rotated or not; the
+    // Authorization header assertion above is what proves the rotated token actually reached
+    // the retried request. `creator_token` may hold a non-credential presence hint (see
+    // LIVE_SESSION_TOKEN_HINT, src/lib/auth-session.ts) for two out-of-ticket-scope call sites
+    // that gate on the key's mere presence — it must never be, or become, the token value.
+    expect(localStorage.getItem('creator_token')).not.toBe(REFRESHED);
+    expect(sessionStorage.getItem('creator_token')).not.toBe(REFRESHED);
   });
 
   it('does not refresh a token that is comfortably valid', async () => {

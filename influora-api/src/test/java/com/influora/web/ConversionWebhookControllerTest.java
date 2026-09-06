@@ -586,6 +586,31 @@ class ConversionWebhookControllerTest {
         verify(campaignLinkService, times(1)).recordClick(UTM_ID, null);
     }
 
+    @Test
+    @DisplayName(
+            "trackClick [T-FESTIVALBOX-0905 phase 7]: still 302s correctly for a page-level"
+                    + " (creator-less) link, exactly like an ordinary per-creator link -- this endpoint"
+                    + " never reads creatorProfileId/collaborationId at all")
+    void trackClick_pageLevelLink_stillRedirects() {
+        UtmCampaign pageLevelUtm =
+                UtmCampaign.pageLevelBuilder()
+                        .id(UTM_ID)
+                        .campaignId(CAMPAIGN_ID)
+                        .baseUrl("https://brand.example.com/shop")
+                        .utmSource("web")
+                        .utmMedium("shop")
+                        .utmCampaign("festival-box")
+                        .fullTrackingUrl("https://brand.example.com/shop?utm_source=web&utm_medium=shop")
+                        .build();
+        when(utmCampaignRepository.findById(UTM_ID)).thenReturn(Optional.of(pageLevelUtm));
+
+        ResponseEntity<Void> response = controller.trackClick(UTM_ID, "visitor-1");
+
+        assertEquals(HttpStatus.FOUND, response.getStatusCode());
+        assertEquals(pageLevelUtm.getFullTrackingUrl(), response.getHeaders().getLocation().toString());
+        verify(campaignLinkService, times(1)).recordClick(UTM_ID, "visitor-1");
+    }
+
     // ------------------------------------------------------------------------------------------
     // Payload builders -- literal JSON strings, mirroring ShopifyWebhookControllerTest/
     // WooCommerceWebhookControllerTest's raw-payload style (needed since HMAC verification is over

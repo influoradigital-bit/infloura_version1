@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en-IN"><head>
+    <meta charset="UTF-8">
+    <title>About Influora</title>
+    <!--
+      Priya's regression case: /about's baseline is 3 (1 static template
+      block + about.tsx's own 2 <JsonLd> calls). This fixture ships only 2 —
+      a real, healthy-looking <h1>, no ErrorBoundary fallback text or
+      controls, but one schema block quietly missing. Must FAIL: the
+      route's actual behavior is otherwise perfectly healthy, so this
+      isolates the ld+json floor check from the text/h1/structural checks —
+      only the baseline comparison should be the reason this fails.
+    -->
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"Organization","name":"Influora","url":"https://influora.in"}
+    </script>
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"WebPage","name":"About Influora","url":"https://influora.in/about"}
+    </script>
+</head>
+  <body>
+    <div id="root">
+      <main>
+        <h1>Real deals, without the chaos</h1>
+        <p class="max-w-md text-sm">Influora exists to replace the spreadsheet-WhatsApp-invoice mess of influencer marketing.</p>
+      </main>
+    </div>
+    <script type="module" crossorigin="" src="/assets/index-k05nFono.js"></script>
+  </body>
+</html>

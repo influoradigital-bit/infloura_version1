@@ -439,7 +439,6 @@ export function DealRoomDashboard() {
 
   const handleAcceptProposal = async () => {
     if (!selectedDeal) return;
-    setShowProposalDialog(false);
 
     if (isApiLive()) {
       setActionLoading(true);
@@ -456,6 +455,13 @@ export function DealRoomDashboard() {
         // so no dialog claiming either is shown. Creating the contract is a
         // separate, real action (POST /contracts) elsewhere in the product.
         setActionMessage('Proposal accepted.');
+        // F-0440 — only close the View Proposal dialog once the request has actually
+        // settled successfully, matching handleSendCounter/handleRejectProposal below.
+        // Closing this synchronously (as this used to) discarded the dialog — and the
+        // actionError text rendered inside it — the instant a failed accept resolved,
+        // leaving the brand with no visible retry path back into the proposal they were
+        // reviewing.
+        setShowProposalDialog(false);
       } catch {
         setActionError('Could not accept the proposal. Try again.');
       } finally {
@@ -464,6 +470,7 @@ export function DealRoomDashboard() {
       return;
     }
 
+    setShowProposalDialog(false);
     runDemoContractAnimation();
   };
 
@@ -1022,10 +1029,15 @@ export function DealRoomDashboard() {
                 <Separator />
                 <div>
                   <h4 className="font-medium mb-3">Terms</h4>
+                  {/* F-0669 round 3: the brand reads this as the actual contract terms.
+                      This dialog has no source at all for usage rights, exclusivity, or a
+                      revision cap (Deal carries no such fields — src/lib/api.ts) — render an
+                      honest 'Not specified' rather than an invented figure. Payment split is
+                      genuine platform policy, not a per-deal fabricated term, so it stays. */}
                   <ul className="text-sm space-y-2 text-muted-foreground">
-                    <li>Usage Rights: 3 months from delivery</li>
-                    <li>Exclusivity: 30 days (no competing brands)</li>
-                    <li>Revisions: Up to 2 rounds per deliverable</li>
+                    <li>Usage Rights: Not specified</li>
+                    <li>Exclusivity: Not specified</li>
+                    <li>Revisions: Not specified</li>
                     <li>Payment: 50% upfront, 50% on completion</li>
                   </ul>
                 </div>

@@ -16,6 +16,8 @@ import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
+import java.util.Optional;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -189,6 +191,106 @@ public class CampaignLinkService {
                         .utmMedium(utmMedium)
                         .utmCampaign(utmCampaign)
                         .utmContent(utmContent)
+                        .fullTrackingUrl(fullUrl)
+                        .build();
+
+        return utmCampaignRepository.save(entity);
+    }
+
+    /**
+     * Creates (or returns the existing) page-level ("Shop button") tracking link for {@code
+     * campaignId} -- T-FESTIVALBOX-0905 phase 7's page-level use case (see {@code
+     * UtmCampaign#isPageLevel} javadoc): a Festival Box page's brand Shop button has no creator
+     * and no collaboration to attribute the click to, unlike the per-creator links {@link
+     * #createTrackingLink} builds. Mirrors {@code CouponCodeService#addBrandLevelCoupon}'s
+     * idempotent-create + racing-constraint-to-409 shape exactly: {@code creatorProfileId}/{@code
+     * collaborationId} are left {@code null} via {@link UtmCampaign#pageLevelBuilder()}, so this
+     * link can never accidentally carry a creator or collaboration.
+     *
+     * <p><b>Idempotent</b> -- a second call for a campaign that already has a page-level link
+     * returns the existing row rather than creating a duplicate.
+     *
+     * <p><b>Refused, not 500'd, on a genuine second attempt</b> -- the pre-check below is an
+     * ordinary read-then-write (not itself race-proof), so a concurrent double-submit can still
+     * reach {@code utmCampaignRepository.save(...)} twice. The actual backstop is the schema's
+     * {@code UNIQUE(campaign_id, page_level_marker)} (V20260905180000); a {@link
+     * DataIntegrityViolationException} from that constraint is caught here and translated into the
+     * same {@code PAGE_LINK_EXISTS} (409) the pre-check throws, so a caller never sees a raw 500
+     * for what is, from the outside, an ordinary "already exists" conflict.
+     *
+     * @param workspaceId the calling brand's workspace -- MUST actually own {@code campaignId}
+     * @param campaignId the campaign to create the page-level link for
+     * @param baseUrl the destination URL (the Festival Box page's own Shop-button target)
+     * @param platform the platform label recorded as {@code utm_source} (e.g. "web")
+     * @throws ApiException {@code CAMPAIGN_NOT_FOUND} (404) if {@code campaignId} does not exist or
+     *     does not belong to {@code workspaceId}
+     * @throws ApiException {@code INVALID_TRACKING_URL} (400) -- same {@link #validateBaseUrl}
+     *     gate as {@link #createTrackingLink}
+     * @throws ApiException {@code PAGE_LINK_EXISTS} (409) if this campaign already has a
+     *     page-level link (whether observed via the pre-check or via the DB constraint)
+     */
+    @Transactional
+    public UtmCampaign createPageLevelTrackingLink(
+            String workspaceId, String campaignId, String baseUrl, String platform) {
+
+        // Workspace-ownership check FIRST -- same resolve-then-scope discipline as
+        // createTrackingLink.
+        Campaign campaign =
+                campaignRepository
+                        .findByIdAndWorkspaceId(campaignId, workspaceId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CAMPAIGN_NOT_FOUND", "Campaign not found", HttpStatus.NOT_FOUND));
+
+        Optional<UtmCampaign> existing =
+                utmCampaignRepository.findByCampaignIdAndCreatorProfileIdIsNull(campaign.getId());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        try {
+            return buildAndSavePageLevelTrackingLink(campaign, baseUrl, platform);
+        } catch (DataIntegrityViolationException raced) {
+            // Lost a concurrent race against another request creating this campaign's page-level
+            // link -- see javadoc above; the pre-check above is not race-proof on its own, the
+            // schema's UNIQUE(campaign_id, page_level_marker) is the real backstop. Deliberately
+            // NOT re-queried-and-returned-as-if-successful: the racing request may have used a
+            // different baseUrl/platform than this caller asked for, so silently handing back
+            // "some" page-level link under this caller's own request would misrepresent what was
+            // actually created. Refused as the same PAGE_LINK_EXISTS (409) the pre-check throws --
+            // not a raw 500.
+            throw new ApiException(
+                    "PAGE_LINK_EXISTS",
+                    "A page-level tracking link already exists for this campaign",
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    private UtmCampaign buildAndSavePageLevelTrackingLink(
+            Campaign campaign, String baseUrl, String platform) {
+        // Same write-time scheme gate as buildAndSaveTrackingLink -- see that method's javadoc.
+        validateBaseUrl(baseUrl);
+
+        String utmSource = platform == null ? "" : platform.toLowerCase();
+        // "shop" (not "influencer") -- this click is never attributed to a creator's post, so the
+        // medium must not claim it is one; distinguishes brand-owned Shop-button clicks from
+        // creator-attributed clicks in any downstream utm_medium-based reporting.
+        String utmMedium = "shop";
+        String utmCampaign = SlugUtils.slugify(campaign.getTitle());
+
+        // No creator -- utmContent (normally the creator's slugified display name) is left null,
+        // same as any other campaign without a creator identity to embed.
+        String fullUrl = buildTrackingUrl(baseUrl, utmSource, utmMedium, utmCampaign, null);
+
+        UtmCampaign entity =
+                UtmCampaign.pageLevelBuilder()
+                        .id(Ulids.newUlid())
+                        .campaignId(campaign.getId())
+                        .baseUrl(baseUrl)
+                        .utmSource(utmSource)
+                        .utmMedium(utmMedium)
+                        .utmCampaign(utmCampaign)
                         .fullTrackingUrl(fullUrl)
                         .build();
 

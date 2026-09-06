@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
+import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.CampaignIntentType;
@@ -184,6 +185,7 @@ class CampaignServiceTest {
         Campaign campaign = activatableCampaign(CampaignStatus.DRAFT);
         when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(any(Campaign.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(escrowHoldRepository.findByCampaignId(CAMPAIGN_ID)).thenReturn(List.of(fundedEscrowHold()));
 
         var response = service.update(principal, CAMPAIGN_ID, activateRequest());
 
@@ -203,6 +205,7 @@ class CampaignServiceTest {
         Campaign campaign = activatableCampaign(CampaignStatus.PAUSED);
         when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
         when(campaignRepository.save(any(Campaign.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(escrowHoldRepository.findByCampaignId(CAMPAIGN_ID)).thenReturn(List.of(fundedEscrowHold()));
 
         service.update(principal, CAMPAIGN_ID, activateRequest());
 
@@ -236,6 +239,7 @@ class CampaignServiceTest {
 
         Campaign campaign = activatableCampaign(CampaignStatus.DRAFT);
         when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(escrowHoldRepository.findByCampaignId(CAMPAIGN_ID)).thenReturn(List.of(fundedEscrowHold()));
         when(brandCampaignFeeService.chargeOnPublish(any(Campaign.class), eq(WORKSPACE_ID)))
                 .thenThrow(
                         new ApiException(
@@ -263,6 +267,7 @@ class CampaignServiceTest {
 
         Campaign campaign = activatableCampaign(CampaignStatus.DRAFT);
         when(campaignRepository.findByIdForUpdate(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        when(escrowHoldRepository.findByCampaignId(CAMPAIGN_ID)).thenReturn(List.of(fundedEscrowHold()));
         when(brandCampaignFeeService.chargeOnPublish(any(Campaign.class), eq(WORKSPACE_ID)))
                 .thenThrow(new RuntimeException("ledger unavailable"));
 
@@ -428,6 +433,19 @@ class CampaignServiceTest {
         return new CampaignPatchRequest(
                 null, null, null, CampaignStatus.ACTIVE, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null);
+    }
+
+    // F-0503 — requireFundedEscrow(campaign.getId()) now gates every ->ACTIVE transition (see
+    // CampaignActivationGatesTest for the dedicated coverage of that gate itself). Tests in this
+    // class that exercise OTHER behavior at the same transitioningToActive edge (fee charging,
+    // validation ordering) must stub a FUNDED hold so they reach their own intended code path
+    // instead of tripping ESCROW_NOT_FUNDED first.
+    private static EscrowHold fundedEscrowHold() {
+        return EscrowHold.builder()
+                .id("01HESCROW1234567890AB")
+                .campaignId(CAMPAIGN_ID)
+                .status(EscrowStatus.FUNDED)
+                .build();
     }
 
     private static CampaignWriteRequest writeRequest(CampaignIntentType campaignType) {

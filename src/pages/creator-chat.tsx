@@ -649,6 +649,18 @@ function describeProposalActionError(
             'You made the last offer, so the brand has to accept it. Send a new counter if you want to change the terms.',
           stale: false,
         };
+      // F-0670 — CEO ruling F-0643 made `DealService.doAccept` reject (409
+      // `AGREED_RATE_REQUIRED`) any collaboration with no negotiated rate. A brand invite
+      // and a creator's own application both create the `INVITED`/`APPLIED` row with none
+      // by construction, so this is not a "the deal moved on" case — `stale: true`'s
+      // "Refresh" affordance would re-fetch the identical rate-less deal and 409 again on
+      // the next attempt. The fix is to propose a rate via Counter, so say that instead
+      // of advising a refresh that cannot help.
+      case 'AGREED_RATE_REQUIRED':
+        return {
+          message: 'This invite has no agreed rate yet. Use Counter to propose one, then accept.',
+          stale: false,
+        };
       default:
         return { message: err.message, stale: true };
     }
@@ -662,6 +674,34 @@ function describeProposalActionError(
         ? 'Could not accept this proposal. Check your connection and try again.'
         : 'Could not decline this proposal. Check your connection and try again.',
     stale: false,
+  };
+}
+
+/**
+ * Builds the `POST /deals/:id/counter` body for the creator's counter-proposal form (F-0432).
+ *
+ * `deadline` is a real `CounterRequest` field since the DTO was aligned with `CreateDealRequest`
+ * (2026-07-26), so it travels here as a real field, not prose.
+ *
+ * `terms` deliberately stays OUT of `usageRights` and rides in `message` instead: the form's
+ * "Any Changes to Terms?" field (`CounterProposalForm`, step 3) is generic free text — its own
+ * placeholder reads "E.g., max 2 revisions, 30-day exclusive usage, etc." — not a dedicated
+ * usage-rights value. Mapping it onto `usageRights` would overwrite the deal's actual rights with
+ * whatever the creator typed, e.g. "can we do 3 reels instead" (TECH-STACK.md rule 7 — never
+ * fabricate). This form collects no dedicated usage-rights input at all, so `usageRights` is
+ * intentionally omitted from the request, not dropped by oversight. Building a real usage-rights
+ * control here is a product decision outside a call-site fix.
+ */
+export function buildCounterOfferBody(
+  data: CounterProposalFormData,
+): { amount: number; message?: string; deadline?: string } {
+  const message = [data.message, data.terms && `Terms: ${data.terms}`]
+    .filter(Boolean)
+    .join('\n\n');
+  return {
+    amount: data.proposedAmount,
+    message: message || undefined,
+    deadline: data.deadline || undefined,
   };
 }
 
@@ -1468,22 +1508,10 @@ export default function CreatorChatPage() {
     setIsSubmittingCounter(true);
     try {
       if (liveApi) {
-        // `deadline` is a real CounterRequest field since the DTO was aligned with
-        // CreateDealRequest (2026-07-26), so it no longer rides in the message prose.
-        //
-        // `terms` deliberately stays in the message: the form asks "Any Changes to Terms?" as
-        // free text, so it is NOT the usage-rights term. Mapping it onto `usageRights` would
-        // overwrite the deal's actual rights with a sentence like "can we do 3 reels instead".
-        const message = [data.message, data.terms && `Terms: ${data.terms}`]
-          .filter(Boolean)
-          .join('\n\n');
+        // See `buildCounterOfferBody` above for why `usageRights` is not part of this body.
         await api.deals.counter(
           selectedDeal.id,
-          {
-            amount: data.proposedAmount,
-            message: message || undefined,
-            deadline: data.deadline || undefined,
-          },
+          buildCounterOfferBody(data),
           'creator',
           // Fresh key per submit so a same-amount re-counter is a real event, not a no-op (Kabir).
           `${selectedDeal.id}-counter-${Date.now()}`,
@@ -1842,14 +1870,33 @@ export default function CreatorChatPage() {
     );
   }
   if (!selectedDeal) {
+    // F-0639 — this guard fires in two genuinely different situations that used to share
+    // one "No deals yet" message: (a) the creator really has zero deals, ever, and (b) the
+    // F-0629 fix above already found dealRooms non-empty but the specific ?deal=<id> that
+    // was requested (e.g. a stale link) matched none of them. "No deals yet" is false in
+    // case (b) — the creator has deals, just not the one the link asked for — so give it
+    // its own honest copy instead of implying the deal list is empty.
+    const staleLinkWithRealDeals = dealRooms.length > 0;
     return (
       <CreatorLayout>
         <div className="flex h-[calc(100vh-var(--app-header-h))] flex-col items-center justify-center gap-2 bg-background text-center">
           <MessageCircle className="h-10 w-10 text-muted-foreground/50" />
-          <p className="font-medium">No deals yet</p>
-          <p className="text-sm text-muted-foreground max-w-xs">
-            Brands you're talking to will show up here as deal rooms.
-          </p>
+          {staleLinkWithRealDeals ? (
+            <>
+              <p className="font-medium">Deal not found</p>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                We couldn't find that specific deal — it may have been removed, or the link
+                is out of date. Your other deals are still here.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="font-medium">No deals yet</p>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                Brands you're talking to will show up here as deal rooms.
+              </p>
+            </>
+          )}
         </div>
       </CreatorLayout>
     );
@@ -1932,6 +1979,23 @@ export default function CreatorChatPage() {
     !hasProposalCard &&
     canRespondToProposal &&
     selectedDeal.collaborationStatus === 'INVITED';
+  /**
+   * F-0670 (dead-control-from-new-guard) — mirrors `hasAgreedRate` in creator-deals.tsx.
+   * CEO ruling F-0643 made `DealService.doAccept` reject (409 `AGREED_RATE_REQUIRED`) any
+   * collaboration with no negotiated rate, and `showBareInviteResponse` is gated on
+   * `collaborationStatus === 'INVITED'` — exactly the population that always has none:
+   * a brand invite, a creator's own application, and Meera's confirm_launch all create
+   * this row with no rate by construction, and `Collaboration.getAgreedRate()` is only
+   * ever written by propose/counter, which land a different status.
+   *
+   * `selectedDeal.dealAmount` is `parseDealAmount(deal.dealValue)`
+   * (`mapDealToChatRoom`, creator-deal-mappers.ts), and `dealValue` is
+   * `collaboration.getAgreedRate()` verbatim (`DealService.toDealResponse`) — so
+   * `dealAmount > 0` is exactly "has an agreed rate", not a heuristic: every real
+   * proposal/counter amount is `@DecimalMin("0.01")` server-side, so a genuinely priced
+   * deal can never read 0 here.
+   */
+  const hasAgreedRate = selectedDeal.dealAmount > 0;
   /**
    * There is no real message id for a bare invite to key off — the deal has no
    * messages at all — so this is a stable per-deal pseudo-id used ONLY to pin
@@ -2242,8 +2306,7 @@ export default function CreatorChatPage() {
                     {/* No amount, no deliverables, no earnings breakdown here — a bare
                         invite has no offer terms to show. Fabricating a ₹0/breakdown off
                         an absent amount is exactly the UI-honesty defect this fix avoids;
-                        see the priced `type === 'proposal'` card below for that surface.
-                        Counter is intentionally absent too: there is no price to counter. */}
+                        see the priced `type === 'proposal'` card below for that surface. */}
                     <p className="text-sm text-muted-foreground mb-4">
                       <span className="font-medium text-foreground">{selectedDeal.brandName}</span>{' '}
                       invited you to collaborate
@@ -2256,15 +2319,22 @@ export default function CreatorChatPage() {
                           </span>
                         </>
                       ) : null}
-                      . No offer amount has been set yet — accept to start discussing terms,
-                      or decline if it's not a fit.
+                      .{' '}
+                      {hasAgreedRate
+                        ? "Accept to start discussing terms, or decline if it's not a fit."
+                        : 'No offer amount has been set yet — propose a rate with Counter before this can be accepted, or decline if it\'s not a fit.'}
                     </p>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
                         className="flex-1"
                         onClick={() => handleAcceptProposal(bareInviteFeedbackId)}
-                        disabled={isAcceptingProposal || isDecliningProposal}
+                        disabled={isAcceptingProposal || isDecliningProposal || !hasAgreedRate}
+                        title={
+                          hasAgreedRate
+                            ? undefined
+                            : 'Counter with a rate before this can be accepted'
+                        }
                       >
                         {isAcceptingProposal ? (
                           <>
@@ -2275,6 +2345,20 @@ export default function CreatorChatPage() {
                           'Accept'
                         )}
                       </Button>
+                      {/* F-0670 — a bare invite has no agreed rate to accept, so Counter is
+                          the action that actually works (propose one). Kept out of the DOM
+                          on priced invites so a deal that can genuinely be accepted as-is
+                          doesn't get an extra, redundant control. */}
+                      {!hasAgreedRate && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setShowCounterForm(true)}
+                          disabled={isAcceptingProposal || isDecliningProposal}
+                        >
+                          Counter
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -2291,6 +2375,14 @@ export default function CreatorChatPage() {
                         )}
                       </Button>
                     </div>
+                    {/* F-0670 — a silently-disabled Accept is its own dead-control defect on
+                        this repo, so a rate-less invite gets an explicit reason instead of a
+                        button that just doesn't respond as expected (mirrors creator-deals.tsx). */}
+                    {!hasAgreedRate && (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        No rate proposed yet — use Counter to propose one before accepting.
+                      </p>
+                    )}
                     {feedbackForThisRoom?.proposalId === bareInviteFeedbackId && (
                       <div
                         className={cn(
@@ -2859,6 +2951,12 @@ export default function CreatorChatPage() {
                       // C16: real signed contract total (server-summed) — takes
                       // priority over the deal's dealValue, which can be null/stale.
                       contractAmount={liveContract?.totalAmount ?? null}
+                      // F-0640 — the payment schedule the creator is about to countersign. The
+                      // tab has rendered milestones since the prior pass, but this call site (its
+                      // only caller) never passed them, so the block was dead in production and
+                      // every real creator saw "No payment milestones are on file" while signing.
+                      // `liveContract` was already in hand one line above for contractAmount.
+                      milestones={liveContract?.milestones}
                       status={contractStatus}
                       onStatusChange={(status) => updateContractStatus(selectedDeal.id, status)}
                     />

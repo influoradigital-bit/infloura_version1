@@ -1,0 +1,20 @@
+{
+  "uncited_claims": 19,
+  "per_file": {
+    "analytics.md": 2,
+    "brand-dashboard.md": 1,
+    "collaborations-deals.md": 1,
+    "contracts.md": 3,
+    "creator-dashboard.md": 2,
+    "creator-profiles-portfolio.md": 2,
+    "deliverables.md": 1,
+    "invoicing-gst.md": 1,
+    "marketplace-discovery.md": 2,
+    "meera-ai.md": 1,
+    "payouts.md": 1,
+    "shopify-integration.md": 1,
+    "support-tickets.md": 1
+  },
+  "recorded": "2026-09-06",
+  "note": "Pre-existing unevidenced negative claims in docs/docs/features. May fall, may not rise. Lowered 23 -> 19 when the doc-stale-doc claims were verified and cited."
+}

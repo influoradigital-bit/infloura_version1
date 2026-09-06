@@ -1,7 +1,9 @@
 package com.influora.service.tracking;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -26,6 +28,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * Phase 4 UTM/Coupon Tracking: unit tests for CampaignLinkService (the pure-Java, no-external-
@@ -602,6 +605,164 @@ class CampaignLinkServiceTest {
 
         assertEquals(3L, utm.getClickCount());
         assertEquals(2L, utm.getUniqueVisitors());
+    }
+
+    // ------------------------------------------------------------------
+    // T-FESTIVALBOX-0905 phase 7: createPageLevelTrackingLink -- one page-level ("Shop button")
+    // link per campaign
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("createPageLevelTrackingLink: rejects when the caller's workspace does not own the campaign")
+    void testCreatePageLevelRejectsWhenWorkspaceDoesNotOwnCampaign() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, OTHER_WORKSPACE_ID))
+                .thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.createPageLevelTrackingLink(
+                                        OTHER_WORKSPACE_ID, CAMPAIGN_ID, "https://brand.example.com/shop", "web"));
+
+        assertEquals("CAMPAIGN_NOT_FOUND", ex.getCode());
+        assertEquals(404, ex.getStatus().value());
+        org.mockito.Mockito.verifyNoInteractions(utmCampaignRepository);
+    }
+
+    @Test
+    @DisplayName("createPageLevelTrackingLink: creates a link with creatorProfileId and collaborationId both null")
+    void testCreatePageLevelCreatesLinkWithNullCreatorAndCollaboration() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        when(utmCampaignRepository.findByCampaignIdAndCreatorProfileIdIsNull(CAMPAIGN_ID))
+                .thenReturn(Optional.empty());
+        when(utmCampaignRepository.save(any(UtmCampaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UtmCampaign result =
+                service.createPageLevelTrackingLink(
+                        WORKSPACE_ID, CAMPAIGN_ID, "https://brand.example.com/shop", "web");
+
+        assertEquals(CAMPAIGN_ID, result.getCampaignId());
+        assertEquals(null, result.getCreatorProfileId());
+        assertEquals(null, result.getCollaborationId());
+        assertTrue(result.isPageLevel());
+        assertEquals("web", result.getUtmSource());
+        assertEquals("shop", result.getUtmMedium());
+        assertEquals("summer-sale-2026", result.getUtmCampaign());
+        assertEquals(
+                "https://brand.example.com/shop?utm_source=web&utm_medium=shop&utm_campaign=summer-sale-2026&utm_content=",
+                result.getFullTrackingUrl());
+        verify(utmCampaignRepository, times(1)).save(any(UtmCampaign.class));
+    }
+
+    @Test
+    @DisplayName("createPageLevelTrackingLink: idempotent -- returns the existing page-level link instead of creating a duplicate")
+    void testCreatePageLevelReturnsExistingWithoutDuplicating() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        UtmCampaign existing =
+                UtmCampaign.pageLevelBuilder()
+                        .id(UTM_ID)
+                        .campaignId(CAMPAIGN_ID)
+                        .baseUrl("https://brand.example.com/shop")
+                        .utmSource("web")
+                        .utmMedium("shop")
+                        .utmCampaign("summer-sale-2026")
+                        .fullTrackingUrl("https://brand.example.com/shop?utm_source=web")
+                        .build();
+        when(utmCampaignRepository.findByCampaignIdAndCreatorProfileIdIsNull(CAMPAIGN_ID))
+                .thenReturn(Optional.of(existing));
+
+        UtmCampaign result =
+                service.createPageLevelTrackingLink(
+                        WORKSPACE_ID, CAMPAIGN_ID, "https://brand.example.com/shop", "web");
+
+        assertEquals(UTM_ID, result.getId());
+        verify(utmCampaignRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "createPageLevelTrackingLink: a second page-level link for the same campaign is refused"
+                    + " as PAGE_LINK_EXISTS (409), not a raw 500, even when the pre-check race-loses"
+                    + " against a concurrent request and the UNIQUE(campaign_id, page_level_marker)"
+                    + " constraint is what actually catches it")
+    void testCreatePageLevelRefusesSecondLinkOnConstraintRace() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        // Pre-check sees no existing row (lost the race window).
+        when(utmCampaignRepository.findByCampaignIdAndCreatorProfileIdIsNull(CAMPAIGN_ID))
+                .thenReturn(Optional.empty());
+        // ...but the actual INSERT hits the schema's UNIQUE(campaign_id, page_level_marker) because
+        // a concurrent request won the race in between.
+        when(utmCampaignRepository.save(any(UtmCampaign.class)))
+                .thenThrow(new DataIntegrityViolationException("uq_utm_campaign_page_level"));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.createPageLevelTrackingLink(
+                                        WORKSPACE_ID, CAMPAIGN_ID, "https://brand.example.com/shop", "web"));
+
+        assertEquals("PAGE_LINK_EXISTS", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+    }
+
+    @Test
+    @DisplayName("createPageLevelTrackingLink: rejects javascript: scheme as INVALID_TRACKING_URL, same gate as createTrackingLink")
+    void testCreatePageLevelRejectsJavascriptScheme() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        when(utmCampaignRepository.findByCampaignIdAndCreatorProfileIdIsNull(CAMPAIGN_ID))
+                .thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.createPageLevelTrackingLink(
+                                        WORKSPACE_ID, CAMPAIGN_ID, "javascript:alert(1)", "web"));
+
+        assertEquals("INVALID_TRACKING_URL", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        verify(utmCampaignRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "createPageLevelTrackingLink + createTrackingLink: a page-level link and a per-creator"
+                    + " link coexist on the same campaign without either rejecting the other")
+    void testPageLevelAndPerCreatorLinksCoexistOnSameCampaign() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        when(utmCampaignRepository.findByCampaignIdAndCreatorProfileIdIsNull(CAMPAIGN_ID))
+                .thenReturn(Optional.empty());
+        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(collaboration()));
+        when(creatorProfileRepository.findById(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(creatorProfile(CREATOR_USER_ID, "Priya Sharma")));
+        when(utmCampaignRepository.findByCampaignIdAndCreatorProfileId(CAMPAIGN_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+        when(utmCampaignRepository.save(any(UtmCampaign.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UtmCampaign pageLevel =
+                service.createPageLevelTrackingLink(
+                        WORKSPACE_ID, CAMPAIGN_ID, "https://brand.example.com/shop", "web");
+        UtmCampaign perCreator =
+                service.createTrackingLink(
+                        WORKSPACE_ID,
+                        CAMPAIGN_ID,
+                        COLLAB_ID,
+                        CREATOR_PROFILE_ID,
+                        "https://brand.example.com/landing",
+                        "instagram");
+
+        assertTrue(pageLevel.isPageLevel());
+        assertFalse(perCreator.isPageLevel());
+        assertEquals(CAMPAIGN_ID, pageLevel.getCampaignId());
+        assertEquals(CAMPAIGN_ID, perCreator.getCampaignId());
+        verify(utmCampaignRepository, times(2)).save(any(UtmCampaign.class));
     }
 
     // ------------------------------------------------------------------

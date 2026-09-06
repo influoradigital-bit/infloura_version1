@@ -37,6 +37,7 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorContextService;
 import com.influora.service.CreatorProfileService;
 import com.influora.service.ExternalCreatorLinkService;
+import com.influora.service.security.AbuseThrottleService;
 import com.influora.service.security.NoOpMalwareScanService;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioAnalyticsResponse;
 import com.influora.web.dto.portfolio.PortfolioDtos.SyncPlatformsResponse;
@@ -78,6 +79,7 @@ class PortfolioServiceTest {
     @Mock private InstagramInsightsClient instagramInsightsClient;
     @Mock private CreatorMetricsRepository creatorMetricsRepository;
     @Mock private ExternalCreatorLinkService externalCreatorLinkService;
+    @Mock private AbuseThrottleService abuseThrottleService;
 
     private PortfolioService service;
 
@@ -105,7 +107,8 @@ class PortfolioServiceTest {
                         metaTokenStorage,
                         instagramInsightsClient,
                         creatorMetricsRepository,
-                        externalCreatorLinkService);
+                        externalCreatorLinkService,
+                        abuseThrottleService);
     }
 
     @Test

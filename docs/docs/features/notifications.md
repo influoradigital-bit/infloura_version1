@@ -71,5 +71,5 @@ Notification/outbox tests. Regression risks: idempotency, unsubscribe, backoff.
 
 ## Production Readiness
 - **Health**: 5/10 · **Completion**: ~65%
-- **Known issues**: **no realtime** (poll only); **5 events have no listener**; **most handlers pass `toEmail=null`** so emails no-op; **frontend UI is mock** and calls **nonexistent endpoints** (`/notifications/read-all`, `/preferences`); no SMS. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: **no realtime** (poll only); every one of the 34 concrete events implementing the sealed `NotificationEvent` marker is handled in `NotificationListener.java` [CORRECTED 2026-09-06, doc-stale-doc, F-0557: this claimed 5 had no listener; measured 0]; **most handlers pass `toEmail=null`** so emails no-op; **frontend UI is mock** and calls **nonexistent endpoints** (`/notifications/read-all`, `/preferences`); no SMS. See [../known-limitations.md](../known-limitations.md).
 - **Last verified**: 2026-07-15

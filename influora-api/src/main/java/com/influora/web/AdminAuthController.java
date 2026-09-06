@@ -20,6 +20,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -122,5 +123,19 @@ public class AdminAuthController {
             @Valid @RequestBody MfaVerifyRequest body) {
         adminAuthService.verifyMfa(principal, body.code());
         return ResponseEntity.ok().build();
+    }
+
+    /**
+     * ADMIN-BOOTSTRAP-0829 — SUPER_ADMIN-only recovery: clears a DIFFERENT admin's MFA enrollment
+     * so they can re-enroll on their next login. See {@code AdminAuthService#resetMfaForAdmin}
+     * javadoc for the full authorization writeup (caller must be SUPER_ADMIN with their own MFA
+     * satisfied, and may never target their own {@code adminId} — a self-reset is rejected there,
+     * not here, so it stays enforced even if this route is ever called some other way).
+     */
+    @PostMapping("/mfa/reset/{targetAdminId}")
+    public ResponseEntity<MessageResponse> resetMfaForAdmin(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String targetAdminId) {
+        adminAuthService.resetMfaForAdmin(principal, targetAdminId);
+        return ResponseEntity.ok(new MessageResponse("MFA reset for admin " + targetAdminId));
     }
 }

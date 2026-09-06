@@ -5,6 +5,7 @@ import com.influora.domain.entity.UtmCampaign;
 import com.influora.repository.UtmCampaignRepository;
 import com.influora.service.AuditLogService;
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -69,6 +70,25 @@ public class ConversionTrackingWriter {
                         ? idempotencyKey
                         : "conv:" + utm.getCampaignId() + ":" + orderId;
 
+        // [T-FESTIVALBOX-0905 phase 7, landmine 1, CRITICAL] This was Map.of(...), which throws
+        // NullPointerException on a null VALUE. Once utm_campaigns.creator_profile_id became
+        // nullable (V20260905180000), every conversion on a page-level Festival Box "Shop button"
+        // link would have thrown here — and because this runs inside the conversion write path,
+        // the throw does not just skip the audit entry, it LOSES THE SALE.
+        //
+        // Identical bug and identical fix to RedemptionWriter's coupon branch (phase 4): a
+        // null-safe mutable map with an explicit boolean flag, and creatorId added only when there
+        // actually is one. The key is ABSENT rather than null for a page-level conversion — an
+        // audit record should not assert "creatorId: null", it should simply not claim a creator.
+        Map<String, Object> auditDetail = new HashMap<>();
+        auditDetail.put("utmCampaignId", utmCampaignId);
+        auditDetail.put("campaignId", utm.getCampaignId());
+        auditDetail.put("orderId", orderId == null ? "" : orderId);
+        auditDetail.put("pageLevel", utm.isPageLevel());
+        if (utm.getCreatorProfileId() != null) {
+            auditDetail.put("creatorId", utm.getCreatorProfileId());
+        }
+
         auditLogService.recordMoneyEvent(
                 null,
                 "CONVERSION_TRACKED",
@@ -76,10 +96,6 @@ public class ConversionTrackingWriter {
                 null,
                 null,
                 auditIdempotencyKey,
-                Map.of(
-                        "utmCampaignId", utmCampaignId,
-                        "campaignId", utm.getCampaignId(),
-                        "creatorId", utm.getCreatorProfileId(),
-                        "orderId", orderId == null ? "" : orderId));
+                auditDetail);
     }
 }

@@ -91,3 +91,24 @@ Recommend displaying **inclusive** prices (299/599/999/1,999) — standard India
 3. Before this ships, raise the per-creator cap from $0.75 to at least $2.00 — Typical creators already sit at 88.5% of today's cap and Heavy creators are already 2.5x over it, independent of any pricing choice; this is a code-config change (`AI_CREATOR_MONTHLY_CAP_USD`), not a pricing one.
 4. Treat "Haiku for brief extraction" and "≥70% cache hit rate" as load-bearing engineering commitments, not tuning knobs — losing either one singly pushes Typical over even a raised cap, and losing both together on a Heavy creator blows past a $2 cap by 23%.
 5. Option A (pure commission) is the safest fallback if Option C's billing/credit-ledger work can't land in time — AI cost never exceeds ~21% of one fee and drops under 2% at higher deal cadence — but it forfeits the manager-seat and top-up revenue lines Option C opens up.
+
+## 9. Plan999 — Rs 999/month creator plan (recomputed 2026-09-04)
+
+Swapnil's proposal: Rs 999/month, 100 credits, plus 5 discovery searches and 100 outreach emails with follow-ups included **outside** the credit pool. Full formulas: sheet `Plan999` in the workbook (Assumptions rows 86–130 hold the new sourced constants).
+
+**Unit costs, recomputed.** A discovery run — 6–8 Perplexity Sonar calls (500 in / 700 out + $5/1,000 low-search-context fee; Perplexity Sonar pricing, verified 2026-09-04), 5 Gemini-classify site verifications (5,000 in / 300 out; `gemini-2.5-flash` in `pricing.py`), 10 second-stage contact calls, 1 Sonnet fit call (3,000 in / 600 out) — costs $0.128–$0.141 = **Rs 10.79–11.83/run** (mid Rs 11.31). That is well under the SPEC.md placeholder of Rs 25–40, mainly because that figure priced 12 site verifications; Priya's review capped it at 5. One pitch + 2 follow-ups (1 Sonnet draft 2,500/400 + 2 Haiku drafts 1,500/300 + 3 Mailgun sends; Mailgun Foundation $35/50,000 msgs, verified 2026-09-04) = $0.0216 = **Rs 1.81**.
+
+**"100 emails" is ambiguous, and the gap is 3x.** Reading A — 100 pitches + 200 follow-ups (300 sends) — costs **Rs 181/month**. Reading B — 100 total sends, ~34 pitches + 66 follow-ups — costs **Rs 61/month**. The plan text, "100 outreach emails with follow-ups," reads as Reading B (100 is the total, not the pitch count); Heavy's persona spec explicitly states Reading A, so both are modeled.
+
+**Persona cost and margin** (net revenue Rs 846.61 if Rs 999 is GST-inclusive, Rs 999 if exclusive):
+
+| Persona | Cost/month | Margin, GST-incl. | Margin, GST-excl. | Margin +Rs 750 deal |
+|---|--:|--:|--:|--:|
+| Light | Rs 59 | 93.0% | 94.1% | 96.3% |
+| Typical | Rs 159 | 81.2% | 84.0% | 90.0% |
+| Heavy | Rs 338 | **60.0%** | 66.1% | 78.8% |
+| Max abuse | Rs 303 | 64.2% | 69.7% | 81.0% |
+
+**Break-even.** At Typical usage, margin only falls below 60% past ~21 searches/month (emails held at 100) or ~393 emails/month (searches held at 5) — search and email volume are not the risk; both are sub-few-rupee line items next to a Rs 847–999 ticket.
+
+**Verdict: profitable, yes.** Margin runs 81–93% at Light/Typical, the loads most creators will actually hit. It stops being comfortably profitable exactly at Heavy usage, landing at precisely 60.0% margin (GST-inclusive) — and Heavy independently needs 140 credit-equivalents (100 turns + 20 voice × 2 credits) against only 100 included, so it breaches the credit pool before its email/search cost even matters. **Recommended change: meter voice turns out of the same 100-credit pool at their real 2-credit cost, instead of letting turns+voice run to 140-credit-equivalent usage under a "100 credits" label** — that keeps every persona's margin clear of the 60% floor, since Heavy is the only one that currently sits on it.

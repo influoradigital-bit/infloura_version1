@@ -6,6 +6,7 @@ import com.influora.common.PageMeta;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
+import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignIntentType;
 import com.influora.domain.enums.CampaignStatus;
@@ -345,6 +346,29 @@ public class CampaignService {
                 req.endBrandName(),
                 req.endBrandCategory());
 
+        // F-0503 — the funded-escrow precondition for going live used to be enforced ONLY on
+        // Meera's confirm_launch path (ConfirmLaunchExecutor.doExecute, which reads EscrowHold
+        // rows fresh from the DB and requires >=1 FUNDED hold before flipping status). This human
+        // PATCH path flipped straight to ACTIVE with no equivalent check, so a brand could PATCH
+        // status=ACTIVE on a campaign with zero funded escrow and the campaign would go live for
+        // real. Mirrored here at the same transitioningToActive edge, with the identical check
+        // (>=1 EscrowHold row in FUNDED status, read fresh from the repository — never anything
+        // client-supplied) and the identical error contract (ESCROW_NOT_FUNDED / 409 CONFLICT) so
+        // every path to ACTIVE — Meera's tool call and this PATCH — now shares one precondition
+        // instead of two that can silently drift apart.
+        //
+        // Placement: deliberately AFTER every validation branch above (budget/timeline/hype —
+        // so a malformed patch still surfaces its own VALIDATION_ERROR instead of being masked by
+        // ESCROW_NOT_FUNDED) and AFTER campaign.applyPatch (a pure in-memory mutation, not a
+        // commit), but BEFORE the publish-fee charge just below — the fee is real money movement,
+        // so escrow-funded is the last gate checked before that irreversible side effect and
+        // before the eventual repository.save() actually commits the ACTIVE transition. This also
+        // preserves the existing contract that chargeOnPublish is never invoked when escrow is not
+        // funded (CampaignActivationGatesTest).
+        if (transitioningToActive) {
+            requireFundedEscrow(campaign.getId());
+        }
+
         // [B1] Same @Transactional method as the status flip above — if this throws (insufficient
         // wallet balance, missing fee config), the whole PATCH rolls back and the campaign never
         // ends up ACTIVE without having paid the fee. No follow-up job, no refund path needed.
@@ -666,6 +690,26 @@ public class CampaignService {
                     "VALIDATION_ERROR",
                     "maxCollaborators must be greater than 0",
                     HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /**
+     * F-0503 — read fresh from {@link EscrowHoldRepository}, exactly like {@code
+     * ConfirmLaunchExecutor.doExecute} does for the Meera {@code confirm_launch} tool: at least one
+     * {@link EscrowHold} row for this campaign must be in {@link EscrowStatus#FUNDED} or the
+     * transition to ACTIVE is refused with the same {@code ESCROW_NOT_FUNDED}/409 contract that
+     * path already uses. Nothing client-supplied is consulted — there is no boolean on {@code
+     * CampaignPatchRequest} that could assert "it's funded" instead of it actually being so.
+     */
+    private void requireFundedEscrow(String campaignId) {
+        boolean hasFundedHold =
+                escrowHoldRepository.findByCampaignId(campaignId).stream()
+                        .anyMatch(h -> h.getStatus() == EscrowStatus.FUNDED);
+        if (!hasFundedHold) {
+            throw new ApiException(
+                    "ESCROW_NOT_FUNDED",
+                    "Campaign has no secured payment in FUNDED status — cannot activate",
+                    HttpStatus.CONFLICT);
         }
     }
 

@@ -50,7 +50,7 @@ Route render → BrandLayoutWrapper (ProtectedRoute + BrandLayout) → page → 
 ```
 
 ## Error Handling
-Session-expiry currently breaks (no auto-refresh — see [../known-limitations.md](../known-limitations.md)); most surfaces degrade to mock data if `VITE_API_MODE!=live`.
+Session-expiry is handled: the client refreshes proactively inside the expiry skew window and reactively once on a 401 before replaying the request (`src/lib/api.ts`, `refreshAccessToken`). [CORRECTED 2026-09-06, doc-stale-doc-claim, F-0529.] most surfaces degrade to mock data if `VITE_API_MODE!=live`.
 
 ## Security
 Guard checks token presence only; server enforces workspace scope and roles on every call.
@@ -63,5 +63,5 @@ Some page tests exist (several stale). Regression risks: layout/nav, guard behav
 
 ## Production Readiness
 - **Health**: 7/10 · **Completion**: ~80% (several sub-pages still mock-backed)
-- **Known issues**: session refresh half-wired; mock surfaces (campaign detail, wallet, messages).
+- **Known issues**: mock surfaces (messages). Campaign detail is real — the loader calls `api.campaigns.get(id)` against the campaign-by-id route (`src/pages/brand-campaign-detail.tsx:640`). [CORRECTED 2026-09-06, doc-stale-doc-claim, F-0529/F-0531: this line claimed session refresh was half-wired and campaign detail was mock.]
 - **Last verified**: 2026-07-15

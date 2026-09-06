@@ -26,6 +26,14 @@ public interface CouponCodeRepository extends JpaRepository<CouponCode, String> 
     /** One coupon per creator per campaign (enforced by {@code UNIQUE(campaign_id, creator_id)}). */
     Optional<CouponCode> findByCampaignIdAndCreatorId(String campaignId, String creatorId);
 
+    /**
+     * The campaign's brand-level ("page-exclusive") coupon, if one exists (T-FESTIVALBOX-0905
+     * phase 4). At most one row can ever match, per the {@code
+     * UNIQUE(campaign_id, brand_level_marker)} generated-column constraint added by
+     * V20260905160000 -- see that migration and {@code CouponCodeService#addBrandLevelCoupon}.
+     */
+    Optional<CouponCode> findByCampaignIdAndCreatorIdIsNull(String campaignId);
+
     /** Workspace-scoped uniqueness check backing {@code UNIQUE(workspace_id, code)}. */
     boolean existsByWorkspaceIdAndCode(String workspaceId, String code);
 

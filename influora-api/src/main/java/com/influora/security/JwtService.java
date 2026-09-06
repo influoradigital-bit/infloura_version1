@@ -54,8 +54,18 @@ public class JwtService {
         return props.getAccessExpirySeconds();
     }
 
+    /** Admin auth path (unaffected by F-0551) always uses the single "remembered" duration. */
     public long getRefreshExpirySeconds() {
-        return props.getRefreshExpirySeconds();
+        return getRefreshExpirySeconds(true);
+    }
+
+    /**
+     * F-0551 — the refresh-token lifetime to use for a given remember-me choice: the long
+     * ("remembered") duration or the short ("not remembered") one. See {@code JwtProperties} for
+     * the two configured values and their justification.
+     */
+    public long getRefreshExpirySeconds(boolean remembered) {
+        return remembered ? props.getRefreshExpirySeconds() : props.getRefreshExpiryNotRememberedSeconds();
     }
 
     public static String hashToken(String raw) {

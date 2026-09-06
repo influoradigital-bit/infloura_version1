@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/tooltip';
 import { TimelineEvent } from '@/lib/types';
 import { deliverables as deliverablesApi, ApiError } from '@/lib/api';
+import { paymentHeldMessage } from '@/lib/escrow-release-reason';
+import { toast } from '@/hooks/use-toast';
 import {
   Play, MessageSquare, CheckCircle2, AlertCircle, Upload,
   FileIcon, X, Download,
@@ -88,7 +90,23 @@ export function DeliverableReviewPanel({
     setSubmitError('');
     setIsSubmitting(true);
     try {
-      await deliverablesApi.approve(deliverableId);
+      // F-0471 — same reason as brand-chat.tsx: the release can be held server-side without
+      // throwing, and this panel discarded the outcome, closing on a cheerful success while the
+      // creator was not paid. The approval really did happen, so the sheet still closes; the
+      // held case is raised as a destructive toast rather than swallowed.
+      const result = await deliverablesApi.approve(deliverableId);
+      if (result.paymentReleased) {
+        toast({
+          title: 'Deliverable approved',
+          description: 'Payment has been released to the creator.',
+        });
+      } else {
+        toast({
+          title: 'Approved — but payment was NOT released',
+          description: paymentHeldMessage(result.paymentHeldReason),
+          variant: 'destructive',
+        });
+      }
       onApprove?.(event.id, feedback.trim());
       onReviewSuccess?.({ deliverableId, status: 'approved', feedback: feedback.trim() || undefined });
       onOpenChange(false);

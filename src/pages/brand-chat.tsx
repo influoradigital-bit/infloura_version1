@@ -50,6 +50,7 @@ import { allowsProposalResponse, mapCollaborationStatusToDealStage } from '@/lib
 import type { CollaborationStatus, DealTerms } from '@/lib/types';
 import { DealTermsSummary } from '@/components/shared/deal-terms-summary';
 import { useToast } from '@/hooks/use-toast';
+import { paymentHeldMessage } from '@/lib/escrow-release-reason';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -1287,7 +1288,24 @@ export default function BrandChatPage() {
     if (!dealId) return;
     setDeliverablesActionError(null);
     try {
-      await deliverablesApi.approve(id);
+      // F-0471 — approving is what pays the creator, and the server can skip the release without
+      // throwing (unfunded milestone, unmet release condition, dispute freeze). This call site
+      // discarded the outcome entirely, so a brand approving from the chat surface saw plain
+      // success while no money moved — the exact defect F-0406 fixed in the backend and on the
+      // other two surfaces. Branch on it here too.
+      const result = await deliverablesApi.approve(id);
+      if (result.paymentReleased) {
+        toast({
+          title: 'Deliverable approved',
+          description: 'Payment has been released to the creator.',
+        });
+      } else {
+        toast({
+          title: 'Approved — but payment was NOT released',
+          description: paymentHeldMessage(result.paymentHeldReason),
+          variant: 'destructive',
+        });
+      }
       await loadDeliverables(dealId);
     } catch (err) {
       // F-0346 — the server's own message ("deliverable is not awaiting review", etc.) is

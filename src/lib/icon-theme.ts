@@ -25,6 +25,10 @@ export const creatorNavIconVariant: Record<string, IconBadgeVariant> = {
   '/creator/active': 'progress',
   '/creator/wallet': 'approved',
   '/creator/profile': 'contracted',
+  // W5 — Public page joins Profile in the sidebar's PROFILE group. Without an entry
+  // here `getCreatorNavIconVariant` falls back to 'muted', which would render the
+  // promoted portfolio row greyer than the Profile row sitting directly under it.
+  '/creator/portfolio': 'review',
   '/creator/settings': 'muted',
   '/creator/reviews': 'approved',
   '/creator/disputes': 'disputed',

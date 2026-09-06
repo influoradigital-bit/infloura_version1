@@ -32,7 +32,6 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,26 +41,45 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 
 /**
- * F-0399 — regression coverage for {@code DealService#requireWithinRemainingBudget} (the
- * cumulative-budget gate {@code doAccept} runs before the TERMS_AGREED transition).
+ * F-0399 / F-0476 / F-0643 — regression coverage for {@code DealService#requireWithinRemainingBudget}
+ * and {@code DealService#requireAgreedRateForCommitment} (the price-before-commitment and
+ * cumulative-budget gates {@code doAccept} runs before the TERMS_AGREED transition).
  *
- * <p>The gate is defeated by a null {@code agreedRate}. {@code Collaboration.apply()} (creator
- * bids directly on a campaign) and {@code Collaboration.invite()} never set {@code agreedRate} —
- * it is only ever written by {@code propose()}/{@code updateAgreedRate()}, reached through {@code
- * createProposal}/{@code doCounter} — yet both {@code APPLIED} and {@code INVITED} pass {@link
- * Collaboration#canAccept()}. So a brand accepting a creator's bid directly, with no proposal
- * exchanged, reaches the gate with a null rate, which breaks it two ways at once:
+ * <p>F-0399 fixed the base defect: each offer used to be checked against {@code
+ * campaign.budgetMax} in isolation, so N creators could each be accepted at up to {@code
+ * budgetMax} and the campaign would commit N times its own cap. The gate now sums {@code
+ * agreedRate} across every OTHER committed collaboration on the campaign plus this offer. {@link
+ * #testAcceptRejectsWhenCumulativeCommitmentExceedsBudget} is the control case for this half —
+ * unchanged by everything below.
  *
- * <ul>
- *   <li>{@code thisOffer} folds to {@code BigDecimal.ZERO} when {@code agreedRate} is null, so
- *       the accept always clears the budget check regardless of what is already committed.
- *   <li>the {@code .filter(rate -> rate != null)} on the committed-sum stream permanently drops
- *       that row from the sum, so once accepted it never counts against the budget again either.
- * </ul>
+ * <p>F-0476 was a residual that fix left open, since fixed differently by F-0643 below: {@code
+ * Collaboration.apply()} (creator bids directly on a campaign) and {@code Collaboration.invite()}
+ * never set {@code agreedRate} — it is only ever written by {@code propose()}/{@code
+ * updateAgreedRate()}, reached through {@code createProposal}/{@code doCounter} — yet both {@code
+ * APPLIED} and {@code INVITED} pass {@link Collaboration#canAccept()}. A null rate used to fold to
+ * {@code BigDecimal.ZERO} for the offer being accepted (clearing the check regardless of what was
+ * already committed) and to be dropped entirely from the committed-sum stream (so it never
+ * counted against the cap afterwards either). F-0476 "fixed" this by valuing a null {@code
+ * agreedRate} at {@code budgetMax} — its worst-case draw once {@code
+ * EscrowService#deriveFundAmount} funds it on the pool path — instead of zero.
  *
- * <p>This class is deliberately test-only — see the F-0399 task brief. It does not touch {@code
- * DealService} or {@code Collaboration}, and every test here is expected to be RED until the
- * defect above is actually fixed.
+ * <p><b>F-0643 (CEO ruling, worst-case-valuation-blocks-legitimate-flow)</b> — F-0476's own fix was
+ * the actual bug this class now pins the correction for: valuing a rate-less accept at {@code
+ * budgetMax} meant a single invite-then-accept with no negotiated rate consumed the campaign's
+ * ENTIRE budget on its own, permanently blocking every other collaborator. The ruling removes the
+ * liability instead of pricing it: {@code DealService#requireAgreedRateForCommitment} now rejects
+ * the TERMS_AGREED transition outright when {@code agreedRate} is absent, so a rate-less
+ * collaboration can no longer reach a committed status at all and — going forward — never needs a
+ * worst-case valuation. {@link #testAcceptRejectsNullRateApplication} pins the new rejection
+ * (inverts what this class used to assert as the correct behavior); {@link
+ * #testAcceptAllowsSecondCollaboratorDespiteLegacyNullRateCommittedRow} pins the accounting
+ * consequence — a null-rate row already sitting in a committed status (this ruling's only route
+ * there is a row predating it) is now valued at {@code ZERO}, not {@code budgetMax}, so it no
+ * longer blocks every future accept on the campaign.
+ *
+ * <p>This class is deliberately test-only — see the F-0399/F-0476/F-0643 task briefs. It does not
+ * touch {@code Collaboration}. Every test in this class is expected to be GREEN against current
+ * {@code DealService}.
  */
 @ExtendWith(MockitoExtension.class)
 class DealServiceBudgetTest {
@@ -158,10 +176,11 @@ class DealServiceBudgetTest {
 
     /**
      * A collaboration already sitting in a budget-committed status ({@code TERMS_AGREED}) whose
-     * {@code agreedRate} is null — the state a prior null-rate accept (the very defect under test)
-     * leaves behind. Constructed directly via {@code apply()} + {@code transitionTo} rather than
-     * through {@code doAccept}, so this fixture stands on its own regardless of whether bullet one
-     * of the defect is ever fixed.
+     * {@code agreedRate} is null. Under F-0643, {@code doAccept} can no longer produce this state
+     * itself ({@code requireAgreedRateForCommitment} rejects the transition first), so this
+     * fixture stands for a row that predates the ruling (or was written outside {@code doAccept}).
+     * Constructed directly via {@code apply()} + {@code transitionTo} rather than through {@code
+     * doAccept}, so it exists independent of whatever {@code doAccept} currently does.
      */
     private static Collaboration nullRateAlreadyCommitted(String id, String creatorId) {
         Collaboration c = Collaboration.apply(id, CAMPAIGN_ID, creatorId, "Bid", "INR");
@@ -199,44 +218,52 @@ class DealServiceBudgetTest {
     }
 
     // ------------------------------------------------------------------
-    // 1. A null-rate accept must still be ALLOWED — the budget gate may not break the
-    //    invite-then-accept flow.
+    // 1. A null-rate accept must now be REJECTED — F-0643 replaces the F-0399/F-0476
+    //    "let it through, value it at budgetMax" approach with "it is not a commitment yet".
     // ------------------------------------------------------------------
 
     /**
      * A brand accepting a creator's direct bid — no proposal exchanged, so {@code agreedRate} is
-     * null. This MUST succeed.
+     * null. This MUST now be rejected with a typed error, and MUST NOT reach the budget gate at
+     * all (proved by the {@code campaignRepository} verify below): {@code
+     * DealService#requireAgreedRateForCommitment} runs before {@code
+     * DealService#requireWithinRemainingBudget} in {@code doAccept} and short-circuits first.
      *
-     * <p>This test exists because an earlier F-0399 pass made it fail. That pass reasoned that a
-     * deal with no agreed amount is not agreed terms, and rejected a null rate outright. The
-     * reasoning does not survive contact with the product: {@link Collaboration#invite} takes no
-     * amount ({@code id, campaignId, creatorUserId, message, currency}) and neither does {@code
-     * POST /creators/{creatorId}/invite}, so an {@code INVITED} deal legitimately carries no rate
-     * and accepting one before any rate is negotiated is a supported flow. Failing closed broke
-     * nine {@code DealServiceTest} accept cases including both happy paths.
-     *
-     * <p>So this is a regression guard pointing the opposite way to the rest of this class: the
-     * cumulative gate below must never be tightened in a way that makes a rate-less accept throw.
-     *
-     * <p>KNOWN RESIDUAL, deliberately not asserted here: because this collaboration has no amount,
-     * it contributes nothing to the campaign's committed sum and never counts against the cap
-     * afterwards. Closing that means enforcing where the amount first becomes known — proposal,
-     * counter or escrow funding — not at accept. Tracked in the ledger, not fixed here.
+     * <p>This inverts what this same test used to assert. Before F-0643, an earlier F-0399 pass
+     * had rejected a null rate outright, reasoning that a deal with no agreed amount is not agreed
+     * terms; that broke nine {@code DealServiceTest} accept cases (including both happy paths)
+     * because {@link Collaboration#invite}/{@code #apply} legitimately carry no rate, so F-0476
+     * let the accept through instead and valued the liability at {@code budgetMax}. The CEO ruling
+     * (worst-case-valuation-blocks-legitimate-flow) found THAT consequence worse — a single such
+     * accept could consume a campaign's entire budget alone — and restores the rejection, but this
+     * time as a first-class typed error the caller can act on (negotiate a rate, then accept),
+     * rather than accepting blind and hoping. {@code DealServiceTest}'s former happy-path fixtures
+     * were updated alongside this to set a real {@code agreedRate} before calling accept.
      */
     @Test
     @DisplayName(
-            "F-0399: accepting a rate-less invite/application still succeeds — the budget gate must"
-                    + " not break the invite-then-accept flow")
-    void testAcceptAllowsNullRateApplication() {
+            "F-0643: accepting a rate-less invite/application is rejected — an invite is not a"
+                    + " commitment; it stays in INVITED/APPLIED until a rate is negotiated")
+    void testAcceptRejectsNullRateApplication() {
         stubBrandWorkspace();
         Collaboration collaboration = nullRateApplication();
-        stubAcceptTarget(collaboration);
-        when(collaborationRepository.findByCampaignId(CAMPAIGN_ID))
-                .thenReturn(List.of(collaboration));
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(Optional.empty());
         stubIdempotencyExecutesAction();
 
-        assertDoesNotThrow(() -> service.accept(brandPrincipal, DEAL_ID, null));
-        assertEquals(CollaborationStatus.TERMS_AGREED, collaboration.getStatus());
+        ApiException ex =
+                assertThrows(ApiException.class, () -> service.accept(brandPrincipal, DEAL_ID, null));
+
+        assertEquals("AGREED_RATE_REQUIRED", ex.getCode());
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertNotEquals(CollaborationStatus.TERMS_AGREED, collaboration.getStatus());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+        // Proves this is rejected BEFORE the budget gate even looks at the campaign — the
+        // rate-less collaboration never becomes a priced liability to value in the first place.
+        verify(campaignRepository, never()).findById(any());
     }
 
     // ------------------------------------------------------------------
@@ -275,33 +302,37 @@ class DealServiceBudgetTest {
     }
 
     // ------------------------------------------------------------------
-    // 3. A null-rate row already sitting in a committed status must not be silently excluded
-    //    from the committed sum in a way that lets a later accept overshoot.
+    // 3. F-0643's whole point: a legacy null-rate committed row must NOT be valued at budgetMax
+    //    any more — doing so is exactly the bug that let one rate-less accept block every other
+    //    collaborator forever. It must now be valued at ZERO, so a second, real-rate collaborator
+    //    CAN be accepted where the old worst-case valuation would have blocked them.
     // ------------------------------------------------------------------
 
     /**
-     * A null-rate collaboration already sits in {@code TERMS_AGREED} (the state the first defect
-     * above leaves behind — an unknown amount of budget is committed, not a verified zero).
-     * Accepting a further, real-rate offer of 45000 against the same 50000 {@code budgetMax} must
-     * not be allowed to sail through on the assumption that the null-rate row committed nothing:
-     * that amount is unaccounted for, not proven to be zero, so the gate must fail closed.
+     * A null-rate collaboration already sits in {@code TERMS_AGREED} — under this ruling, {@code
+     * doAccept} can no longer produce such a row itself ({@code
+     * DealService#requireAgreedRateForCommitment} rejects a rate-less accept before it gets there),
+     * so the only way one exists here is a row predating F-0643 (or written outside {@code
+     * doAccept}). It represents exactly the failure mode the ruling was written to fix: a
+     * rate-less "collaborator #1" that, under the old F-0476 worst-case valuation, would have been
+     * priced at the full {@code budgetMax} and permanently blocked every subsequent collaborator.
      *
-     * <p>Currently RED: {@code .filter(rate -> rate != null)} drops the null-rate row from {@code
-     * alreadyCommitted} entirely (DealService.java:1663), so the sum reads as if only this new
-     * 45000 offer existed — under the 50000 cap — and the accept succeeds, permanently and
-     * silently under-counting what the campaign has actually committed.
+     * <p>Accepting a further, real-rate offer of 45000 ("collaborator #2") against the same 50000
+     * {@code budgetMax} MUST now succeed: {@code DealService#committedValue} values the legacy
+     * null-rate row at {@code ZERO}, so the sum is 0 (null-rate row) + 45000 (this offer) = 45000,
+     * under the 50000 cap.
+     *
+     * <p>This is the direct behavioral inverse of what this same test used to assert (95000, over
+     * cap, rejected) before F-0643 — pinned here specifically because falsifying it (reverting
+     * {@code committedValue} to the F-0476 {@code budgetMax}-on-null behavior) must turn this RED
+     * for the AMOUNT_EXCEEDS_BUDGET reason the old code gave, not some unrelated failure.
      */
     @Test
-    @Disabled(
-            "F-0476 — this asserts the residual gap is closed, and it is not. Kept, not deleted:"
-                + " it is an exact, working reproduction for whoever closes F-0476, and rewriting"
-                + " it from scratch later would cost more than leaving it here. Enable it as part"
-                + " of that fix. Do NOT make it pass by rejecting null rates at accept — that was"
-                + " tried (F-0477) and it breaks the invite-then-accept flow.")
     @DisplayName(
-            "F-0399: a null-rate row already TERMS_AGREED is not dropped from the committed sum —"
-                    + " a later accept must not be allowed to overshoot on top of it")
-    void testNullRateCommittedRowIsNotExcludedFromBudgetSum() {
+            "F-0643: a second, real-rate collaborator CAN now be accepted despite a legacy"
+                    + " null-rate row already TERMS_AGREED — the old worst-case valuation would have"
+                    + " blocked them")
+    void testAcceptAllowsSecondCollaboratorDespiteLegacyNullRateCommittedRow() {
         stubBrandWorkspace();
         Collaboration collaboration =
                 Collaboration.propose(DEAL_ID, CAMPAIGN_ID, CREATOR_USER_ID, new BigDecimal("45000"), "INR", "Deal");
@@ -312,12 +343,8 @@ class DealServiceBudgetTest {
                 .thenReturn(List.of(collaboration, nullRateCommitted));
         stubIdempotencyExecutesAction();
 
-        ApiException ex =
-                assertThrows(ApiException.class, () -> service.accept(brandPrincipal, DEAL_ID, null));
+        assertDoesNotThrow(() -> service.accept(brandPrincipal, DEAL_ID, null));
 
-        assertEquals("AMOUNT_EXCEEDS_BUDGET", ex.getCode());
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
-        assertNotEquals(CollaborationStatus.TERMS_AGREED, collaboration.getStatus());
-        verify(collaborationRepository, never()).save(any(Collaboration.class));
+        assertEquals(CollaborationStatus.TERMS_AGREED, collaboration.getStatus());
     }
 }

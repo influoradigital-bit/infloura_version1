@@ -36,6 +36,8 @@ import {
   X,
   Wallet,
   ArrowRight,
+  Radio,
+  Check,
   type LucideIcon,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -66,6 +68,7 @@ import { cn } from '@/lib/utils';
 import { useBrandDetail } from '../../hooks/useBrandDetail';
 import { brandApi } from '../../services/api-contracts';
 import KpiCard from '../dashboard/KpiCard';
+import { MetaPixelSection } from './MetaPixelSection';
 import { KycStatus } from '../../types/admin.types';
 import type { Brand } from '../../types/admin.types';
 
@@ -535,6 +538,16 @@ export default function BrandProfile({ brandId, className }: BrandProfileProps) 
           </div>
         </dl>
       </Card>
+
+      {/* Meta Pixel — T-FESTIVALBOX-0905 phase 10 (screen 2). Set/clear only; see
+          MetaPixelSection.tsx for the full set-vs-clear contract and the "this doesn't wire the
+          public page" framing that must stay next to this control. */}
+      <MetaPixelSection
+        brandId={brand.id}
+        brandName={brand.name}
+        metaPixelId={brand.metaPixelId}
+        refresh={refresh}
+      />
 
       {/* Team members */}
       <Card className="gap-3 p-5">

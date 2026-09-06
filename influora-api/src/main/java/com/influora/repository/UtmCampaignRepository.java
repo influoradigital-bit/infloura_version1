@@ -23,5 +23,13 @@ public interface UtmCampaignRepository extends JpaRepository<UtmCampaign, String
 
     Optional<UtmCampaign> findByCampaignIdAndCreatorProfileId(String campaignId, String creatorProfileId);
 
+    /**
+     * Resolves the (at most one, schema-enforced -- see V20260905180000's {@code
+     * uq_utm_campaign_page_level}) page-level ("Shop button") tracking link for a campaign,
+     * T-FESTIVALBOX-0905 phase 7. Mirrors {@code CouponCodeRepository
+     * #findByCampaignIdAndCreatorIdIsNull}'s identical idiom for the brand-level coupon case.
+     */
+    Optional<UtmCampaign> findByCampaignIdAndCreatorProfileIdIsNull(String campaignId);
+
     List<UtmCampaign> findByCampaignId(String campaignId);
 }

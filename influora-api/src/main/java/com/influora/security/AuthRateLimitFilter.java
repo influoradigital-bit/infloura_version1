@@ -60,6 +60,12 @@ import org.springframework.web.util.UriUtils;
  *   <li><b>{@code creator-withdraw}</b> uses its OWN window ({@link #withdrawWindowSeconds}, default
  *       one hour) instead of the shared {@link #windowSeconds} — a withdraw-abuse defense is
  *       meaningfully different in cadence from a login-brute-force defense.
+ *   <li><b>{@code admin-coupon-issue}</b> [Kabir M-3] ({@code POST
+ *       /admin/campaigns/&#123;campaignId&#125;/coupons}) — user-keyed, own hourly window
+ *       ({@link #adminCouponIssueWindowSeconds}). The first bucket here that throttles an ADMIN
+ *       action: RBAC settles who may mint discount codes, nothing settled how many, and each call
+ *       mints a live redeemable code plus a row. Keyed by admin identity rather than IP so the
+ *       bound cannot be reset by moving IP and one admin cannot throttle the team.
  *   <li><b>Percent-encoding</b> — {@code HttpServletRequest#getRequestURI()} returns the RAW,
  *       undecoded path; a request for {@code /wallet/%77ithdraw} would otherwise silently bypass
  *       every literal-path bucket match here. {@link #bucketFor} decodes the path before matching
@@ -111,6 +117,17 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
      */
     private static final Pattern PUBLIC_CREATOR_VERIFIED =
             Pattern.compile("^/public/creators/[^/]+/verified$");
+    /**
+     * T-FESTIVALBOX-0905 phase 9 [Kabir F-3] — {@code POST /portfolio/{username}/contact} was
+     * completely unthrottled at the edge: no bucket matched it at all, so an anonymous caller could
+     * hit it as fast as the server would answer, and every accepted hit emails a real creator. This
+     * IP-keyed bucket (default, since it is not in {@link #isUserKeyedBucket}) is the first of two
+     * layers this phase adds — see {@code PortfolioService#contact}'s
+     * {@code AbuseThrottleService} per-recipient-creator cap for the second, which bounds the
+     * endpoint even against a caller that rotates source IP between requests.
+     */
+    private static final Pattern PORTFOLIO_CONTACT =
+            Pattern.compile("^/portfolio/[^/]+/contact$");
 
     private final JwtService jwtService;
 
@@ -192,6 +209,17 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     @Value("${influora.public.creator-verified-rate-limit-per-window:30}")
     private int publicCreatorVerifiedLimit;
 
+    /**
+     * Requests per window, per IP, for {@code POST /portfolio/{username}/contact} (T-FESTIVALBOX-0905
+     * phase 9, Kabir F-3) — IP-keyed like {@code tracking}/{@code public-creator-verified}, since
+     * this route is {@code permitAll} and has no principal at all. Deliberately its OWN bucket
+     * rather than sharing {@code tracking}: this endpoint has a real side effect per accepted
+     * request (an email sent to a creator) that the webhook/tracking surface does not, so its limit
+     * is tuned independently rather than inheriting whatever {@code tracking} happens to be set to.
+     */
+    @Value("${influora.portfolio.contact-rate-limit-per-window:10}")
+    private int portfolioContactLimit;
+
     /** Requests per window, per user, for campaign apply. */
     @Value("${influora.campaign.apply-rate-limit-per-window:20}")
     private int campaignApplyLimit;
@@ -220,6 +248,24 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     /** Window (seconds) for the {@code creator-withdraw} bucket only — deliberately NOT {@link #windowSeconds}. */
     @Value("${influora.wallet.withdraw-rate-limit-window-seconds:3600}")
     private long withdrawWindowSeconds;
+
+    /**
+     * [Kabir M-3] Coupons an admin may mint per {@link #adminCouponIssueWindowSeconds}, per admin
+     * identity. 30/hour is set to be invisible during real use — issuing coupons is a deliberate,
+     * one-at-a-time act while setting up a campaign — while cutting a runaway script or a stolen
+     * session from "unlimited live discount codes" to at most 30 before it stops. Configurable, so
+     * a genuine bulk-issuance need is a config change rather than a reason to delete the bound.
+     */
+    @Value("${influora.admin.coupon-issue-rate-limit-per-window:30}")
+    private int adminCouponIssueLimit;
+
+    /**
+     * Window (seconds) for {@code admin-coupon-issue} only. Hourly like {@code creator-withdraw}
+     * and for the same reason: the default 60s window is meaningless for an action nobody performs
+     * in bursts — a 60-second window would reset far faster than any abuse would exhaust it.
+     */
+    @Value("${influora.admin.coupon-issue-rate-limit-window-seconds:3600}")
+    private long adminCouponIssueWindowSeconds;
 
     @Value("${influora.auth.rate-limit.window-seconds:60}")
     private long windowSeconds;
@@ -325,6 +371,35 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                 || path.equals("/webhooks/woocommerce")) {
             return "tracking";
         }
+        // T-FESTIVALBOX-0905 [Priya C2] — the public Festival Box enquiry form. Same trust boundary
+        // as the webhook block above (no principal exists; per-IP throttling at the edge is the only
+        // volume defense), so it shares the "tracking" bucket rather than getting its own.
+        //
+        // Registering it here is NOT redundant with FestivalEnquiryService's own two-key throttle.
+        // That one lives inside @Transactional and only runs AFTER two COUNT queries, so it caps
+        // ROWS WRITTEN while leaving REQUEST VOLUME uncapped — an attacker refused by it still costs
+        // ~2 DB round-trips per attempt, forever. This bucket is what bounds the attempts. Missing
+        // it also left the service's count-then-insert race unbounded, since nothing upstream
+        // limited how many requests could be in flight at once.
+        if (path.equals("/festival-enquiries")) {
+            return "tracking";
+        }
+        // T-FESTIVALBOX-0905 phase 6 — the coupon-copy demand-signal tracker. Same trust boundary
+        // as the block above: no principal exists (the caller is an anonymous shopper), and unlike
+        // /festival-enquiries this endpoint has no honeypot at all, so this edge cap is a larger
+        // share of its total abuse defense, not a backstop to a service-level throttle. Shares
+        // "tracking" rather than getting its own bucket for the same reason /festival-enquiries
+        // does — same shape of public, unauthenticated, high-volume-tolerant write.
+        if (path.equals("/festival/coupon-copied")) {
+            return "tracking";
+        }
+        // T-FESTIVALBOX-0905 phase 9 [Kabir F-3] — see PORTFOLIO_CONTACT's javadoc. Checked before
+        // the /woocommerce/connect literal below since both are exact-path checks with no shared
+        // prefix, so ordering here has no effect on correctness — kept close to the other
+        // public/no-principal POST routes above for readability.
+        if (PORTFOLIO_CONTACT.matcher(path).matches()) {
+            return "portfolio-contact";
+        }
         if (path.equals("/woocommerce/connect")) {
             return "meta-oauth";
         }
@@ -399,6 +474,25 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         if (path.equals("/me/password")) {
             return "sensitive";
         }
+        // [Kabir M-3] POST /admin/campaigns/{campaignId}/coupons — admin-issued coupon minting
+        // (T-FESTIVALBOX-0905 phase 11). RBAC (SUPER_ADMIN/ADMIN + MFA) controls WHO may call it and
+        // is not in question here; what was missing is any bound on HOW MANY times. Every call
+        // server-mints a real, immediately-redeemable discount code and inserts a coupon_codes row,
+        // so an unthrottled loop is both unbounded table growth and an unbounded supply of live
+        // discounts — from a stolen admin session or a scripting mistake, neither of which RBAC
+        // distinguishes from legitimate use.
+        //
+        // USER-KEYED below, unlike the "sensitive" bucket. The opposite reasoning to /me/password:
+        // there, IP-keying is right because the threat is an attacker with a stolen token trying
+        // credentials from anywhere. Here the actor is a *proven* admin identity and the thing
+        // worth bounding is what that identity can mint, which must not be resettable by changing
+        // IP. It also means one admin hitting the limit never throttles the rest of the team.
+        //
+        // Prefix match on the collection path so it covers the POST regardless of campaignId, and
+        // deliberately narrow: it must not catch other /admin/campaigns/... routes.
+        if (path.startsWith("/admin/campaigns/") && path.endsWith("/coupons")) {
+            return "admin-coupon-issue";
+        }
         return null;
     }
 
@@ -418,17 +512,26 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "discovery-invite" -> discoveryInviteLimit;
             case "discovery-search" -> discoverySearchLimit;
             case "public-creator-verified" -> publicCreatorVerifiedLimit;
+            case "portfolio-contact" -> portfolioContactLimit;
             case "campaign-apply" -> campaignApplyLimit;
             case "creator-withdraw" -> creatorWithdrawLimit;
+            case "admin-coupon-issue" -> adminCouponIssueLimit;
             case "meera-turn" -> meeraTurnLimit;
             case "meera-voice" -> meeraVoiceLimit;
             default -> sensitiveLimit;
         };
     }
 
-    /** {@code creator-withdraw} uses its own (default: hourly) window; every other bucket shares {@link #windowSeconds}. */
+    /**
+     * {@code creator-withdraw} and {@code admin-coupon-issue} each use their own (default: hourly)
+     * window; every other bucket shares {@link #windowSeconds}.
+     */
     private long windowSecondsFor(String bucket) {
-        return "creator-withdraw".equals(bucket) ? withdrawWindowSeconds : windowSeconds;
+        return switch (bucket) {
+            case "creator-withdraw" -> withdrawWindowSeconds;
+            case "admin-coupon-issue" -> adminCouponIssueWindowSeconds;
+            default -> windowSeconds;
+        };
     }
 
     /**
@@ -458,6 +561,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                     "discovery-search",
                     "campaign-apply",
                     "creator-withdraw",
+                    "admin-coupon-issue",
                     "meera-turn",
                     "meera-voice" ->
                     true;

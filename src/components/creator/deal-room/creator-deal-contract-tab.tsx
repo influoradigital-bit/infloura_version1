@@ -12,7 +12,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { downloadContractPDF, signContract } from '@/lib/contract-generator';
-import { api, ApiError, isApiLive } from '@/lib/api';
+import { api, ApiError, isApiLive, type ContractMilestone } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatINR } from '@/lib/utils';
 import type { DealContractStatus } from '@/components/brand/deal-room/deal-contract-tab';
@@ -32,8 +32,25 @@ interface CreatorDealContractTabProps {
    * mode) falls back to `amount`.
    */
   contractAmount?: number | null;
+  /**
+   * F-0640: ContractApiRecord.milestones — the real payment schedule the
+   * creator is agreeing to by signing. Undefined (no contract fetched yet,
+   * or the caller not wired to pass it) is treated the same as an empty
+   * array: an honest "no milestones on file" empty state, never a
+   * fabricated or placeholder schedule.
+   */
+  milestones?: ContractMilestone[];
   status: DealContractStatus;
   onStatusChange: (status: DealContractStatus) => void;
+}
+
+/** Best-effort human date for a milestone's dueDate. Falls back to the raw
+ * string rather than hiding a real due date just because it doesn't parse. */
+function formatMilestoneDueDate(dueDate: string): string {
+  const parsed = new Date(dueDate);
+  return Number.isNaN(parsed.getTime())
+    ? dueDate
+    : parsed.toLocaleDateString('en-IN', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 export function CreatorDealContractTab({
@@ -42,6 +59,7 @@ export function CreatorDealContractTab({
   campaignName,
   amount,
   contractAmount,
+  milestones,
   status,
   onStatusChange,
 }: CreatorDealContractTabProps) {
@@ -89,10 +107,13 @@ export function CreatorDealContractTab({
       // F-CONTRACT-VIEW: this component doesn't receive the real deliverable
       // list as a prop, so an honest empty array beats a fabricated one.
       deliverables: [],
-      deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      usageRights: '6 months',
-      exclusivity: 'Per brief',
-      revisionCap: 2,
+      // F-0666: this component never receives the real deadline, usage
+      // rights, exclusivity, or revision cap from the server — those fields
+      // are left undefined (ContractData now makes them optional) rather than
+      // filled with an invented date/values, so a document a creator can
+      // download before either party has signed never asserts a legal term
+      // the app was never actually told. generateContractHTML renders an
+      // honest "Not specified" for each of these instead.
       customClauses: [],
       createdAt: new Date(),
     };
@@ -206,6 +227,39 @@ export function CreatorDealContractTab({
             <span className="font-medium">You receive (est.)</span>
             <span className="font-bold text-success">{formatINR(netEarnings)}</span>
           </div>
+        </div>
+
+        {/* F-0640: the payment schedule the creator is agreeing to by signing.
+            Rendered from the real ContractApiRecord.milestones the parent holds —
+            nothing here is fabricated, and an empty/undefined list is an honest
+            "no milestones on file" state rather than a hidden or implied schedule. */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Payment schedule</p>
+          {milestones && milestones.length > 0 ? (
+            <ul className="space-y-2">
+              {milestones.map((milestone, index) => (
+                <li
+                  key={milestone.id ?? `${milestone.sequenceNo}-${index}`}
+                  className="flex items-start justify-between gap-3 rounded-lg border border-border p-3 text-sm"
+                >
+                  <div>
+                    <p className="font-medium">Milestone {milestone.sequenceNo}</p>
+                    <p className="text-muted-foreground mt-0.5">{milestone.description}</p>
+                    {milestone.dueDate && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Due {formatMilestoneDueDate(milestone.dueDate)}
+                      </p>
+                    )}
+                  </div>
+                  <span className="font-semibold shrink-0">{formatINR(milestone.amount)}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No payment milestones are on file for this contract yet.
+            </p>
+          )}
         </div>
 
         {canSign && (

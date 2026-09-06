@@ -115,17 +115,39 @@ export function CollaborationReviewsPanel({
     }
   }, [flagTarget, flagReason, reviewsClient]);
 
+  /**
+   * [F-0678] `mountedRef` guards every state write below.
+   *
+   * Both refreshers are fired as `void refresh...()` from a mount effect and from Retry buttons —
+   * fire-and-forget promises with no cancellation. When a test (or a real navigation) tears the
+   * component down before they settle, the setters ran against an unmounted tree; under jsdom
+   * teardown that surfaced as an unhandled rejection, "window is not defined". That made
+   * `npm test` exit 1 NON-DETERMINISTICALLY while all 1112 assertions passed — and since several
+   * proof-os gates shell out to `npm test`, a green run could be luck and a red one noise. The
+   * defect was never a test bug: writing state after unmount is a real leak, the test harness just
+   * made it visible.
+   */
+  const mountedRef = React.useRef(true);
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const refreshDeals = React.useCallback(async () => {
     setLoadingDeals(true);
     setDealsError(null);
     try {
       const deals = await loadRateableDeals(role);
+      if (!mountedRef.current) return;
       setRateableDeals(deals);
     } catch (err) {
+      if (!mountedRef.current) return;
       setRateableDeals([]);
       setDealsError(err instanceof ApiError ? err.message : 'Could not load completed deals.');
     } finally {
-      setLoadingDeals(false);
+      if (mountedRef.current) setLoadingDeals(false);
     }
   }, [role]);
 
@@ -135,8 +157,10 @@ export function CollaborationReviewsPanel({
     setReceivedNotImplemented(false);
     try {
       const rows = await reviewsClient.listReceived();
+      if (!mountedRef.current) return;
       setReceivedReviews(rows);
     } catch (err) {
+      if (!mountedRef.current) return;
       setReceivedReviews([]);
       if (err instanceof ApiError && err.code === 'NOT_IMPLEMENTED') {
         setReceivedNotImplemented(true);
@@ -146,7 +170,7 @@ export function CollaborationReviewsPanel({
         );
       }
     } finally {
-      setLoadingReceived(false);
+      if (mountedRef.current) setLoadingReceived(false);
     }
   }, [reviewsClient]);
 

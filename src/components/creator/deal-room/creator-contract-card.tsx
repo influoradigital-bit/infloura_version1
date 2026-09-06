@@ -154,17 +154,21 @@ export function CreatorContractCard({
                 {deliverableCountLabel(meta, 'item') ?? 'Not specified'}
               </p>
             </div>
+            {/* F-0669 round 3: render the real deadline when the app has it; never a
+                fabricated date, usage-rights term, or revision cap — 'Not specified'
+                matches the honest fallback contract-generator.ts already renders into
+                the PDF for these same terms. */}
             <div className="text-sm">
               <p className="text-gray-500 text-xs">Deadline</p>
-              <p className="font-medium text-gray-900">{meta?.deadline || '2024-02-15'}</p>
+              <p className="font-medium text-gray-900">{meta?.deadline || 'Not specified'}</p>
             </div>
             <div className="text-sm">
               <p className="text-gray-500 text-xs">Usage Rights</p>
-              <p className="font-medium text-gray-900">6 months</p>
+              <p className="font-medium text-gray-900">Not specified</p>
             </div>
             <div className="text-sm">
               <p className="text-gray-500 text-xs">Revisions</p>
-              <p className="font-medium text-gray-900">Up to 2</p>
+              <p className="font-medium text-gray-900">Not specified</p>
             </div>
           </div>
         </div>

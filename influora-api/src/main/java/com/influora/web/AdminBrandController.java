@@ -9,12 +9,14 @@ import com.influora.web.dto.admin.AdminBrandDtos.PaginatedBrandResponse;
 import com.influora.web.dto.admin.AdminBrandDtos.ReinstateRequest;
 import com.influora.web.dto.admin.AdminBrandDtos.SuspendRequest;
 import com.influora.web.dto.admin.AdminBrandDtos.UpdateBrandRequest;
+import com.influora.web.dto.admin.AdminBrandDtos.UpdateMetaPixelRequest;
 import com.influora.web.dto.admin.AdminBrandDtos.VerifyKycRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -109,6 +111,21 @@ public class AdminBrandController {
             @Valid @RequestBody BudgetOverrideRequest body) {
         adminBrandService.overrideCampaignBudget(principal, request, id, campaignId, body);
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /**
+     * PATCH /admin/brands/{id}/meta-pixel (T-FESTIVALBOX-0905 phase 6) — set or clear the brand's
+     * Meta pixel ID. See {@code AdminBrandService#updateMetaPixel} and {@code
+     * UpdateMetaPixelRequest} for the set-vs-clear contract (explicit {@code null} clears, it is
+     * NOT the "leave unchanged" convention {@link #update} uses).
+     */
+    @PatchMapping("/{id}/meta-pixel")
+    public BrandDetailDto updateMetaPixel(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            HttpServletRequest request,
+            @PathVariable String id,
+            @Valid @RequestBody UpdateMetaPixelRequest body) {
+        return adminBrandService.updateMetaPixel(principal, request, id, body.metaPixelId());
     }
 
     @PostMapping("/{id}/verify-kyc")

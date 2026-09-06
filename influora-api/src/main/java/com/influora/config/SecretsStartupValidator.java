@@ -121,7 +121,9 @@ public class SecretsStartupValidator {
                     "dev-brand-safety-service-token-secret-change-in-production-min-32-chars",
                     // [C3] influora.notification.unsubscribe-signing-secret dev default — treated
                     // as just another signing secret in this set/check, same as the others above.
-                    "change-me-unsubscribe-signing-secret-min-32-chars");
+                    "change-me-unsubscribe-signing-secret-min-32-chars",
+                    // T-FESTIVALBOX-0905 — application.yml influora.festival.ip-hash-salt.
+                    "change-me-festival-ip-hash-salt-min-32-chars");
 
     // Must match the literal influora.jwks.private-key-pem dev default in application.yml exactly
     // (with its \n escapes intact, matching the raw config-bound string, not the parsed PEM).
@@ -211,6 +213,23 @@ public class SecretsStartupValidator {
     @Value("${influora.notification.unsubscribe-signing-secret}")
     private String unsubscribeSigningSecret;
 
+    /**
+     * T-FESTIVALBOX-0905 — bound here for exactly the same reason as {@link
+     * #unsubscribeSigningSecret} above: {@code FestivalEnquiryService} binds this key via a bare
+     * {@code @Value} rather than a shared {@code @ConfigurationProperties} bean, and this validator
+     * checks a HAND-MAINTAINED map, so a new secret that nobody adds here is a secret nothing ever
+     * checks. Registered on the day it was introduced rather than after a deploy discovered it.
+     *
+     * <p>What it protects: this salts the SHA-256 of the client address stored as {@code
+     * festival_enquiries.source_ip_hash}. Left at the committed default, the hashes are computed
+     * with a value that is public in this repository, so anyone holding a dump of that column could
+     * confirm whether a guessed IP submitted an enquiry — the IPv4 space is small enough to
+     * enumerate offline. Lower blast radius than a signing secret (it forges nothing), which is why
+     * it sits in this list rather than in its own fail-closed check.
+     */
+    @Value("${influora.festival.ip-hash-salt}")
+    private String festivalIpHashSalt;
+
     public SecretsStartupValidator(
             JwtProperties jwtProperties,
             MeeraStreamProperties meeraStreamProperties,
@@ -261,6 +280,11 @@ public class SecretsStartupValidator {
         // default) — same problems-list accumulation as every entry above.
         secrets.put(
                 "influora.notification.unsubscribe-signing-secret", unsubscribeSigningSecret);
+        // T-FESTIVALBOX-0905 — same treatment as [C3] above: >=32 bytes and not the committed dev
+        // default. The duplicate-value check below applies to it too, so reusing another secret's
+        // value here (which would couple the enquiry-IP salt's rotation to a signing key's) is
+        // reported rather than quietly accepted.
+        secrets.put("influora.festival.ip-hash-salt", festivalIpHashSalt);
 
         // [I8] isDev now requires the 'dev' Spring profile to ALSO be active (InfluoraEnvironment,
         // profile-keyed), not just influora.env in isolation — see class javadoc "I8 fix".

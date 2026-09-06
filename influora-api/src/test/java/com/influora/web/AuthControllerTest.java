@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -137,7 +138,7 @@ class AuthControllerTest {
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertNull(response.getBody().data().refreshToken());
         assertEquals("access-jwt", response.getBody().data().accessToken());
-        verify(authCookieService).writeRefreshCookie(httpResponse, "refresh-raw");
+        verify(authCookieService).writeRefreshCookie(httpResponse, "refresh-raw", true);
     }
 
     @Test
@@ -150,7 +151,7 @@ class AuthControllerTest {
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertNull(response.getBody().data().refreshToken());
-        verify(authCookieService).writeRefreshCookie(httpResponse, "refresh-raw");
+        verify(authCookieService).writeRefreshCookie(httpResponse, "refresh-raw", true);
     }
 
     @Test
@@ -168,7 +169,7 @@ class AuthControllerTest {
                 assertThrows(ApiException.class, () -> controller.creatorLogin(body, httpResponse));
 
         assertEquals("INVALID_CREDENTIALS", ex.getCode());
-        verify(authCookieService, never()).writeRefreshCookie(any(), any());
+        verify(authCookieService, never()).writeRefreshCookie(any(), any(), anyBoolean());
     }
 
     @Test
@@ -191,14 +192,14 @@ class AuthControllerTest {
     void refresh_cookieHappyPath() {
         when(authCookieService.readRefreshToken(httpRequest)).thenReturn("old-refresh");
         when(authService.refresh("old-refresh"))
-                .thenReturn(new RefreshRotation("new-access", 900L, "new-refresh"));
+                .thenReturn(new RefreshRotation("new-access", 900L, "new-refresh", true));
 
         ResponseEntity<ApiResponse<RefreshResponse>> response =
                 controller.refresh(null, httpRequest, httpResponse);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("new-access", response.getBody().data().accessToken());
-        verify(authCookieService).writeRefreshCookie(httpResponse, "new-refresh");
+        verify(authCookieService).writeRefreshCookie(httpResponse, "new-refresh", true);
     }
 
     @Test
@@ -206,7 +207,7 @@ class AuthControllerTest {
     void refresh_bodyFallback() {
         when(authCookieService.readRefreshToken(httpRequest)).thenReturn(null);
         when(authService.refresh("body-refresh"))
-                .thenReturn(new RefreshRotation("new-access", 900L, "new-refresh"));
+                .thenReturn(new RefreshRotation("new-access", 900L, "new-refresh", true));
 
         ResponseEntity<ApiResponse<RefreshResponse>> response =
                 controller.refresh(

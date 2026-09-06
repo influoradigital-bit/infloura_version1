@@ -77,9 +77,18 @@ public class AdminUser {
     protected AdminUser() {}
 
     /**
-     * Seeds a new admin operator. There is no self-registration endpoint (Phase 1 scope is
-     * login/session only, per src/admin/TASK_ASSIGNMENTS.md) — rows are provisioned out-of-band
-     * (ops script / future AdminUserController) until that lands.
+     * Seeds a new admin operator. There is still no self-registration/general-admin-creation
+     * endpoint (Phase 1 scope is login/session only, per src/admin/TASK_ASSIGNMENTS.md; a future
+     * {@code AdminUserController} would cover creating ADMIN/SUPPORT rows once other admins
+     * already exist) — but the very FIRST {@code SUPER_ADMIN} row (the bootstrap chicken-and-egg
+     * case, ADMIN-BOOTSTRAP-0829) now has a real out-of-band provisioning path: {@code
+     * scripts/provision-super-admin.sh} (wraps {@code
+     * com.influora.ops.ProvisionSuperAdminRunner}, a one-shot {@code ApplicationRunner} gated
+     * behind {@code ops.provision-super-admin=true} so it never activates during normal boot).
+     * That runner pre-enrolls MFA (via the real {@code TotpService}/{@code AdminMfaSecretCipher}
+     * beans) and calls {@link #confirmMfa} itself before ever saving the row — it never leaves a
+     * SUPER_ADMIN row at {@code mfaEnabled = false}, which is exactly the state that caused
+     * ADMIN-BOOTSTRAP-0829's login lockout when {@code ADMIN_MFA_ENFORCE_ON_LOGIN} defaults true.
      */
     public static AdminUser create(String id, String email, String passwordHash, AdminRole role) {
         AdminUser u = new AdminUser();
@@ -238,6 +247,23 @@ public class AdminUser {
     /** Flips {@code mfaEnabled} true after the caller has verified a code against the staged secret. */
     public void confirmMfa() {
         this.mfaEnabled = true;
+        touch();
+    }
+
+    /**
+     * ADMIN-BOOTSTRAP-0829 — clears this admin's enrolled MFA (secret + enabled flag + MFA lockout
+     * counters), forcing them through {@code /admin/auth/mfa/setup} + {@code /mfa/verify} again on
+     * their next login/privileged request. Called ONLY by {@code AdminAuthService#resetMfaForAdmin}
+     * on a DIFFERENT admin's row after that service has verified the caller is an active
+     * SUPER_ADMIN who is not targeting themselves — this method itself enforces nothing about who
+     * may call it, by design (same split as {@link #stageMfaSecret}/{@link #confirmMfa}: the entity
+     * is a plain data holder, authorization lives in the service layer).
+     */
+    public void resetMfa() {
+        this.mfaEnabled = false;
+        this.encryptedMfaSecret = null;
+        this.failedMfaAttempts = 0;
+        this.mfaLockedUntil = null;
         touch();
     }
 

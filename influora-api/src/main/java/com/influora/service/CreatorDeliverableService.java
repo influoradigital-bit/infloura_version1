@@ -54,6 +54,7 @@ import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HexFormat;
@@ -352,6 +353,18 @@ public class CreatorDeliverableService {
                 deliverable.getRevisionCount() > 0
                         ? DeliverableStatus.RESUBMITTED
                         : DeliverableStatus.SUBMITTED;
+        // F-0418 (CEO ruling, unenforced-limit) — a submission made after the deadline is still
+        // accepted, unchanged: no auto-fail, no automatic penalty, no block. Evaluated BEFORE
+        // applySubmit below sets submittedAt (isOverdue is false once submittedAt is non-null,
+        // by design — see its javadoc), so this always reflects the true pre-submission state.
+        // Observability only; does not affect what happens next.
+        if (isOverdue(deliverable, LocalDate.now())) {
+            log.info(
+                    "Deliverable {} submitted after its deadline of {} — accepted per the F-0418"
+                            + " ruling (notify + visible overdue state only, no auto-fail/penalty)",
+                    deliverableId,
+                    deliverable.getDeadline());
+        }
         deliverable.applySubmit(
                 TextSanitizer.sanitizePlainText(body.finalCaption()),
                 JsonLists.toJson(TextSanitizer.sanitizeHashtags(body.hashtags())),
@@ -877,6 +890,42 @@ public class CreatorDeliverableService {
         return !readFilesJson(deliverable.getFilesJson()).isEmpty();
     }
 
+    /**
+     * F-0418 (CEO ruling, ledger class {@code unenforced-limit}) — {@link Deliverable#getDeadline()}
+     * already rode on this service's {@link DeliverableStatusResponse} ({@code deadline} and
+     * {@code submittedAt} were both already on the wire, see {@link #toStatusResponse}) but nothing
+     * computed the one derived fact either side actually needs: has this slot blown its deadline.
+     * {@link #toStatusResponse} now computes it fresh on every read and carries it as the
+     * response's {@code overdue} field — the fix for exactly that gap. A previous pass correctly
+     * refused to guess what a missed deadline should DO; the ruling that followed is narrow on
+     * purpose — notify + a VISIBLE overdue state, explicitly NO auto-fail and NO automatic
+     * penalty, no new persisted status. This is therefore a pure predicate, computed on every
+     * read, never persisted, and never a gate on {@link #submitForReview} — see that method's use
+     * of this, which only logs, never blocks.
+     *
+     * <p>"Not yet submitted" is keyed off {@link Deliverable#getSubmittedAt()} rather than {@link
+     * Deliverable#getStatus()}: {@code submittedAt} is set exactly once, on the creator's very
+     * first successful {@link #submitForReview} ({@link Deliverable#applySubmit}), and is never
+     * cleared afterward — including by a brand's {@code REVISION_REQUESTED}. So a deliverable
+     * that already met this same (single, non-resetting) {@code deadline} once by submitting on
+     * time is correctly never re-flagged OVERDUE later just because review/revision is still in
+     * progress past that date. A deliverable with no deadline at all is never overdue.
+     *
+     * <p>Package-visible (not {@code private}) purely so this exact predicate is unit-testable
+     * directly against the entity, the same pattern this class already uses for {@link
+     * #manualFallbackAllowed}. Not called from {@link BrandDeliverableService}: none of that
+     * service's methods (approve/reject/requestRevision) ever run on a deliverable this predicate
+     * could call overdue — all three require {@code SUBMITTED}/{@code RESUBMITTED}, which only
+     * exist once {@code submittedAt} is already non-null — and its {@code getDetail} read path has
+     * no {@code deadline} field on {@link com.influora.web.dto.deliverable.BrandDeliverableDtos
+     * .DeliverableDetailResponse} to carry this into (a DTO change, tracked separately).
+     */
+    static boolean isOverdue(Deliverable deliverable, LocalDate today) {
+        return deliverable.getDeadline() != null
+                && deliverable.getSubmittedAt() == null
+                && today.isAfter(deliverable.getDeadline());
+    }
+
     private String uploadOptionalThumbnail(Deliverable deliverable, int version, MultipartFile thumbnail) {
         if (thumbnail == null || thumbnail.isEmpty()) {
             return null;
@@ -1180,7 +1229,10 @@ public class CreatorDeliverableService {
                         canReportMetrics(status)),
                 metric != null ? metric.getSource() : null,
                 metric != null ? metric.getVerifiedAt() : null,
-                isMetaConnected(deliverable.getCreatorProfileId()));
+                isMetaConnected(deliverable.getCreatorProfileId()),
+                // F-0418 (CEO ruling) — the one derived fact isOverdue exists for, finally reaching
+                // the response instead of only the submitForReview log line.
+                isOverdue(deliverable, LocalDate.now()));
     }
 
     /**

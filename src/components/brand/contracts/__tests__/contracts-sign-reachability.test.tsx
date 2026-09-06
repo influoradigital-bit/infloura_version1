@@ -135,7 +135,7 @@ function extractButtonGatedStatusLiterals(src: string): string[] {
 }
 
 describe('F-0248 — every status gate is reachable', () => {
-  it('mapper output set is the 4 non-draft-collapsed UI statuses reachable from a real backend value (sanity)', () => {
+  it('mapper output set is the 5 non-draft-collapsed UI statuses reachable from a real backend value (sanity)', () => {
     // F-0252 — 'disputed' dropped: it was only ever produced by the dead 'DISPUTED' case,
     // which no real backend ContractStatus value could trigger.
     // F-0321 — 'disputed' is now removed from Contract['status'] entirely (an unreachable
@@ -143,7 +143,15 @@ describe('F-0248 — every status gate is reachable', () => {
     // the only real backend value that reaches this entry, CANCELLED, is a party cancelling the
     // contract, not a date passing (see contracts-and-deliverables.tsx's mapApiContractStatus
     // doc and src/pages/__tests__/contract-status-label-agreement.test.ts).
-    expect(mapperOutputSet()).toEqual(new Set(['draft', 'pending_signature', 'signed', 'cancelled']));
+    // F-0659 — 'completed' added. ContractStatus.COMPLETED was a defined-but-unreachable backend
+    // value until 2026-09-04, when ContractService#retirePredecessorIfSuperseded (F-0654) started
+    // retiring a superseded contract to COMPLETED once its amendment is fully signed. Before that
+    // fix nothing could ever emit it; now a real backend value reaches this entry, and the mapper
+    // gives it its own label rather than reusing 'signed' — which would have left a brand unable
+    // to tell a still-live contract from a superseded one.
+    expect(mapperOutputSet()).toEqual(
+      new Set(['draft', 'pending_signature', 'signed', 'completed', 'cancelled']),
+    );
   });
 
   it('every status literal the component gates a Button control on is a value the mapper can emit', () => {

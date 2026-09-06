@@ -221,7 +221,10 @@ public class AuthService {
         // NotificationListener never fired.
         eventPublisher.publishEvent(new UserCreatedEvent(userId, workspaceId, userId, displayName, "brand"));
 
-        return issueTokens(user, workspace);
+        // F-0551 — registration has no rememberMe concept on its request DTO; always issue the
+        // long-lived ("remembered") refresh token, matching the single fixed lifetime every
+        // register call issued before this change (no behavior change for this path).
+        return issueTokens(user, workspace, true);
     }
 
     @Transactional
@@ -273,7 +276,8 @@ public class AuthService {
 
         user.markLogin();
         userRepository.save(user);
-        return issueTokens(user, workspace);
+        // F-0551 — the login's rememberMe choice becomes this refresh token's lifetime.
+        return issueTokens(user, workspace, req.isRemembered());
     }
 
     /**
@@ -375,7 +379,9 @@ public class AuthService {
         // W3-1 — #18 "welcome after signup", same gap as brandRegister above.
         eventPublisher.publishEvent(new UserCreatedEvent(userId, null, userId, displayName, "creator"));
 
-        return issueTokens(user, null);
+        // F-0551 — same rationale as brandRegister: no rememberMe concept at registration, always
+        // issue the long-lived ("remembered") refresh token (unchanged prior behavior).
+        return issueTokens(user, null, true);
     }
 
     @Transactional
@@ -429,15 +435,23 @@ public class AuthService {
 
         user.markLogin();
         userRepository.save(user);
-        return issueTokens(user, null);
+        // F-0551 — the login's rememberMe choice becomes this refresh token's lifetime.
+        return issueTokens(user, null, req.isRemembered());
     }
 
     /**
      * Result of a refresh: a new access token plus a freshly-rotated refresh token. The controller
      * puts {@code newRefreshToken} into the HttpOnly cookie and returns only {@code access}/
      * {@code expiresIn} in the body (Kabir A1 — the refresh token never reaches JS).
+     *
+     * <p>F-0551 — {@code remembered} carries forward the ORIGINAL login's remember-me choice
+     * (read off the presented token's own {@code RefreshToken.remembered}, never re-derived from
+     * anything about the refresh call itself), so the controller can write the replacement cookie
+     * at the same Max-Age the session started with. A refresh must not silently upgrade a
+     * not-remembered session to a remembered one, or the reverse.
      */
-    public record RefreshRotation(String accessToken, long expiresIn, String newRefreshToken) {}
+    public record RefreshRotation(
+            String accessToken, long expiresIn, String newRefreshToken, boolean remembered) {}
 
     @Transactional
     public RefreshRotation refresh(String rawRefreshToken) {
@@ -524,18 +538,25 @@ public class AuthService {
         // is single-use and a replay after rotation fails.
         stored.revoke();
         refreshTokenRepository.save(stored);
+        // F-0551 — carry the ORIGINAL token's remembered flag onto its replacement. This must read
+        // from `stored` (the presented token), never from any per-request input, or a refresh call
+        // would have a way to silently upgrade a not-remembered session to a remembered one (or the
+        // reverse) rather than merely extending the session it already had.
+        boolean remembered = stored.isRemembered();
         String newRefreshRaw = jwtService.createRefreshTokenValue();
         refreshTokenRepository.save(
                 RefreshToken.create(
                         Ulids.newUlid(),
                         user.getId(),
                         JwtService.hashToken(newRefreshRaw),
-                        Instant.now().plusSeconds(jwtService.getRefreshExpirySeconds())));
+                        Instant.now().plusSeconds(jwtService.getRefreshExpirySeconds(remembered)),
+                        remembered));
 
         String access =
                 jwtService.createAccessToken(
                         user.getId(), user.getUserType(), user.getEmail(), workspaceId);
-        return new RefreshRotation(access, jwtService.getAccessExpirySeconds(), newRefreshRaw);
+        return new RefreshRotation(
+                access, jwtService.getAccessExpirySeconds(), newRefreshRaw, remembered);
     }
 
     @Transactional
@@ -671,7 +692,10 @@ public class AuthService {
                 new PasswordResetEvent(user.getId(), null, tokenId, user.getEmail(), resetLink));
     }
 
-    private TokenPair issueTokens(User user, Workspace workspace) {
+    // F-0551 — `remembered` decides this session's refresh-token lifetime (see JwtService and
+    // AuthCookieService). Login threads through the caller's actual rememberMe choice; register
+    // has no such input and always passes true (see brandRegister/creatorRegister call sites).
+    private TokenPair issueTokens(User user, Workspace workspace, boolean remembered) {
         String workspaceId = workspace != null ? workspace.getId() : null;
         String access =
                 jwtService.createAccessToken(
@@ -682,7 +706,8 @@ public class AuthService {
                         Ulids.newUlid(),
                         user.getId(),
                         JwtService.hashToken(refreshRaw),
-                        Instant.now().plusSeconds(jwtService.getRefreshExpirySeconds())));
+                        Instant.now().plusSeconds(jwtService.getRefreshExpirySeconds(remembered)),
+                        remembered));
 
         UserDto userDto =
                 new UserDto(

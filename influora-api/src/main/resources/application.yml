@@ -191,6 +191,9 @@ influora:
     refresh-secret: ${JWT_REFRESH_SECRET:dev-refresh-secret-change-in-production-min-32-chars}
     access-expiry-seconds: ${JWT_ACCESS_EXPIRY:900}
     refresh-expiry-seconds: ${JWT_REFRESH_EXPIRY:2592000}
+    # F-0551 — refresh-token lifetime when the login did NOT set rememberMe=true. 24h; see
+    # JwtProperties' javadoc on refreshExpiryNotRememberedSeconds for the reasoning.
+    refresh-expiry-not-remembered-seconds: ${JWT_REFRESH_EXPIRY_NOT_REMEMBERED:86400}
   meera:
     # Priya gate review defect 4 — Phase A rollback flag (MeeraCreatorFeatureProperties). true
     # (on) by default; set MEERA_CREATOR_ENABLED=false to 404 every CREATOR-audience Meera
@@ -285,6 +288,14 @@ influora:
     # nothing here ever throws for a missing address, same fail-open-for-notification discipline
     # as every other optional recipient config in this file.
     notification-email: ${ADMIN_NOTIFICATION_EMAIL:}
+    # [Kabir M-3] Throttle on POST /admin/campaigns/{campaignId}/coupons (AuthRateLimitFilter's
+    # "admin-coupon-issue" bucket). RBAC decides who may mint discount codes; this decides how
+    # many. Keyed by admin identity, own hourly window -- the shared 60s auth window is meaningless
+    # for an action nobody performs in bursts. Surfaced here rather than left as a bare @Value
+    # default so an operator can raise it for a genuine bulk-issuance need via env var, instead of
+    # needing a rebuild (or, worse, concluding the bound has to be deleted).
+    coupon-issue-rate-limit-per-window: ${ADMIN_COUPON_ISSUE_RATE_LIMIT:30}
+    coupon-issue-rate-limit-window-seconds: ${ADMIN_COUPON_ISSUE_RATE_LIMIT_WINDOW_SECONDS:3600}
   # Q3.5 (T-CREATORCONNECT-0902) -- per-workspace daily cap on NEW/reopened
   # POST /creators/external/{id}/connect requests (ExternalCreatorService#enforceDailyConnectCap);
   # each one fires an admin.creator_connection_requested email, so this bounds how many a single
@@ -336,6 +347,16 @@ influora:
     # Distinct from every other secret in the system, same blast-radius-isolation convention as
     # influora.internal-service-token.* below.
     unsubscribe-signing-secret: ${UNSUBSCRIBE_SIGNING_SECRET:change-me-unsubscribe-signing-secret-min-32-chars}
+  festival:
+    # T-FESTIVALBOX-0905 — salts the SHA-256 of the client address that FestivalEnquiryService
+    # stores as festival_enquiries.source_ip_hash to throttle the public form. Without a salt the
+    # IPv4 space is small enough to enumerate offline, so a bare hash would still confirm a guessed
+    # address. Distinct from every other secret in the system, same blast-radius-isolation
+    # convention as influora.notification.unsubscribe-signing-secret above.
+    #
+    # A rotated salt does NOT lose data: it only makes pre-rotation rows uncountable by the
+    # throttle, which self-heals once the 1-hour window passes.
+    ip-hash-salt: ${FESTIVAL_IP_HASH_SALT:change-me-festival-ip-hash-salt-min-32-chars}
   r2:
     account-id: ${R2_ACCOUNT_ID:REPLACE_WITH_YOUR_R2_ACCOUNT_ID}
     access-key-id: ${R2_ACCESS_KEY_ID:REPLACE_WITH_YOUR_R2_ACCESS_KEY}

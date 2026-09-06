@@ -18,6 +18,15 @@ public interface WorkspaceRepository
     boolean existsBySlugAndIdNot(String slug, String id);
 
     /**
+     * T-FESTIVALBOX-0905 phase 6 — {@code FestivalCouponCopyService}'s "is this a recognized
+     * sponsor" check. There is no dedicated Festival sponsor/edition registry in this codebase
+     * (see that service's class javadoc); a provisioned BRAND workspace is the only finite,
+     * backend-owned identity a "sponsor" maps to today, so this is what keeps the coupon-copy
+     * daily-bucket table bounded rather than growable by an arbitrary attacker-supplied slug.
+     */
+    boolean existsBySlugAndType(String slug, WorkspaceType type);
+
+    /**
      * Total workspaces of one type — powers {@code GET /admin/marketing/growth}'s {@code
      * conversionRates.brandSignupToFirstCampaign} denominator ({@code
      * AdminMarketingService.getGrowth}), called with {@code BRAND}.

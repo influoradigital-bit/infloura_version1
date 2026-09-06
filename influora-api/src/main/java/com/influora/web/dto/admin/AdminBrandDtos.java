@@ -3,6 +3,7 @@ package com.influora.web.dto.admin;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
@@ -110,7 +111,16 @@ public final class AdminBrandDtos {
             String billingAddress,
             List<TeamMemberDto> teamMembers,
             List<CampaignSummaryDto> campaigns,
-            List<PaymentRecordDto> paymentHistory) {}
+            List<PaymentRecordDto> paymentHistory,
+            /**
+             * T-FESTIVALBOX-0905 phase 6 — {@code workspaces.meta_pixel_id}, read-back for {@code
+             * PATCH /admin/brands/{id}/meta-pixel} ({@code AdminBrandService#updateMetaPixel}).
+             * {@code null} for the overwhelming majority of brands that have never set one — never
+             * a fabricated placeholder. Additive field, appended last: not yet in {@code
+             * src/admin/types/admin.types.ts}'s {@code BrandDetail} (frontend is out of scope for
+             * this task), but an extra JSON field a TS consumer does not declare is harmless.
+             */
+            String metaPixelId) {}
 
     public record TeamMemberDto(String id, String name, String email, String role) {}
 
@@ -187,4 +197,23 @@ public final class AdminBrandDtos {
     public record BudgetOverrideRequest(
             @NotNull @Positive BigDecimal newBudget,
             @NotBlank @Size(min = 10, max = 500) String reason) {}
+
+    /**
+     * PATCH /admin/brands/{id}/meta-pixel (T-FESTIVALBOX-0905 phase 6). Writes {@code
+     * Workspace.metaPixelId} — see that field's javadoc and {@code
+     * V20260905150000__workspace_meta_pixel_id.sql} for why it lives on the workspace.
+     *
+     * <p>Unlike {@link UpdateBrandRequest} (a {@code Partial} where an absent/null field means
+     * "leave unchanged"), {@code metaPixelId} here has exactly two valid states and both are
+     * meaningful: a digits-only string SETS the pixel, and an explicit {@code null} CLEARS it — a
+     * sponsor withdrawing consent must be able to return this to null, not be stuck unable to send
+     * a "no value" the field-omission convention would silently ignore. {@code @Pattern} treats
+     * {@code null} as valid per Bean Validation's null-is-valid rule, so only a non-null value has
+     * to match the shape; nothing here rejects {@code null} itself.
+     */
+    public record UpdateMetaPixelRequest(
+            @Pattern(
+                            regexp = "^[0-9]{8,20}$",
+                            message = "metaPixelId must be 8-20 digits, or null to clear")
+                    String metaPixelId) {}
 }

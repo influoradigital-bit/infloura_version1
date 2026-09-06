@@ -44,6 +44,10 @@ vi.mock('@/lib/api', async () => {
     api: {
       creators: {
         search: (...a: unknown[]) => creatorsSearch(...a),
+        // F-0660 — creator-discovery.tsx now calls `searchWithFacets` (facets-carrying sibling
+        // of `search`, same creators/meta shape); aliased to the same mock so existing
+        // `creatorsSearch.mockResolvedValue({ creators, meta })` setups keep working unchanged.
+        searchWithFacets: (...a: unknown[]) => creatorsSearch(...a),
         invite: (...a: unknown[]) => creatorsInvite(...a),
         toggleSaved: vi.fn().mockResolvedValue({ saved: true }),
         featured: vi.fn().mockResolvedValue({ featured: [] }),

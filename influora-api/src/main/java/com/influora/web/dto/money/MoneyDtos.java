@@ -233,6 +233,15 @@ public final class MoneyDtos {
      * captured (if any) at {@code ContractService#generate} time -- see {@link
      * ContractGenerateRequest#terms}. {@code null}/omitted (via {@code @JsonInclude.NON_NULL})
      * when no terms were supplied; never fabricated at this layer.
+     *
+     * <p><b>[F-0632, no-row-identity]</b> {@code campaignTitle}/{@code brandWorkspaceName} give
+     * the UI a human-readable identifier beyond the rupee total, so a creator with two pending
+     * contracts of similar value can tell them apart in a list without following the link.
+     * Resolved best-effort at {@code ContractService#toResponse} via the contract's
+     * collaboration -&gt; campaign (title) and the contract's own {@code workspaceId} (brand
+     * name) -- the same Campaign/Workspace lookup pattern {@code PortfolioService#buildCollabs}
+     * uses. {@code null}/omitted (via {@code @JsonInclude.NON_NULL}) when the campaign or
+     * workspace could not be resolved (e.g. deleted); never fabricated at this layer.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ContractResponse(
@@ -253,7 +262,9 @@ public final class MoneyDtos {
             String terms,
             List<MilestoneDto> milestones,
             Instant createdAt,
-            Instant updatedAt) {}
+            Instant updatedAt,
+            String campaignTitle,
+            String brandWorkspaceName) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record MilestoneDto(
@@ -361,6 +372,32 @@ public final class MoneyDtos {
      * client clock is not evidence of when a signature actually happened.
      */
     public record ContractSignRequest(String role, String name, Instant agreedAt) {}
+
+    /**
+     * [F-0414, missing-contract-amend-path] Amending a contract never mutates the signed row in
+     * place -- see {@code ContractService#amend}'s javadoc for why. This carries the FULL
+     * replacement terms/milestone set for the new version, the same shape {@link
+     * ContractGenerateRequest} carries for the first version (deliberately not a partial-patch
+     * shape -- a partial PATCH over milestones would leave it ambiguous whether an omitted
+     * milestone is unchanged or removed). {@code milestones} intentionally carries no
+     * {@code @NotNull}/{@code @NotEmpty} bean-validation annotation, mirroring {@link
+     * ContractGenerateRequest#milestones}'s own DTO shape -- the emptiness check lives in the
+     * service (`MILESTONES_REQUIRED`), not here, so both entry points enforce it identically.
+     */
+    public record ContractAmendRequest(
+            @Size(max = 16383) String terms, @Valid List<MilestoneWriteRequest> milestones) {}
+
+    /**
+     * [F-0403, missing-contract-cancel-path] No fields today -- the codebase's own
+     * cancel/reject precedent ({@code DealDtos.RejectRequest}) carries an optional free-text
+     * {@code reason}, but {@link com.influora.domain.entity.Contract} has no column to durably
+     * record one (unlike {@code Collaboration}, which gets a {@code DealMessage} system-message
+     * audit trail on reject) and this pass does not add one -- see {@code
+     * ContractService#cancel}'s javadoc. Kept as its own named type (not a bare {@code Void}/no
+     * body) so a reason field has an obvious, additive home if a future pass adds the column and
+     * the audit trail to go with it, without a breaking shape change to this endpoint.
+     */
+    public record ContractCancelRequest() {}
 
     // ---------------------------------------------------------------------
     // Payouts (Razorpay)

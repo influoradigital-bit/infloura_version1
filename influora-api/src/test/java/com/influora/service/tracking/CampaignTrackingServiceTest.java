@@ -125,6 +125,35 @@ class CampaignTrackingServiceTest {
         assertEquals("CAMPAIGN_NOT_FOUND", ex.getCode());
     }
 
+    @Test
+    @DisplayName(
+            "createTrackingLink [T-FESTIVALBOX-0905 phase 7]: a blank creatorProfileId dispatches to"
+                    + " CampaignLinkService#createPageLevelTrackingLink, not the per-creator path --"
+                    + " mirrors createCoupon's identical null-means-page/brand-level convention")
+    void testCreateTrackingLinkDispatchesToPageLevelWhenCreatorProfileIdBlank() {
+        UtmCampaign pageLevelUtm =
+                UtmCampaign.pageLevelBuilder()
+                        .id(UTM_ID)
+                        .campaignId(CAMPAIGN_ID)
+                        .baseUrl("https://example.com/shop")
+                        .utmSource("web")
+                        .utmMedium("shop")
+                        .utmCampaign("festival-box")
+                        .fullTrackingUrl("https://example.com/shop?utm_source=web")
+                        .build();
+        when(campaignLinkService.createPageLevelTrackingLink(WORKSPACE_ID, CAMPAIGN_ID, "https://example.com/shop", "web"))
+                .thenReturn(pageLevelUtm);
+
+        TrackingLinkResponse response =
+                service.createTrackingLink(WORKSPACE_ID, CAMPAIGN_ID, null, null, "https://example.com/shop", "web");
+
+        assertEquals(UTM_ID, response.id());
+        assertEquals(null, response.creatorProfileId());
+        assertEquals(null, response.collaborationId());
+        verify(campaignLinkService, never())
+                .createTrackingLink(anyString(), anyString(), any(), any(), any(), any());
+    }
+
     // ------------------------------------------------------------------
     // listTrackingLinks: workspace authorization (load-bearing)
     // ------------------------------------------------------------------

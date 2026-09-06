@@ -95,7 +95,7 @@ public class CampaignTrackingController {
     public ResponseEntity<ApiResponse<CouponResponse>> createCoupon(
             @AuthenticationPrincipal AuthPrincipal principal,
             @PathVariable String campaignId,
-            @RequestBody CreateCouponRequest request) {
+            @Valid @RequestBody CreateCouponRequest request) {
         String workspaceId = brandContextService.requireBrandWorkspace(principal).getId();
         CouponResponse response =
                 campaignTrackingService.createCoupon(

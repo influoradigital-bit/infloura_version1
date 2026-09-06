@@ -143,6 +143,12 @@ describe('BrandRegisterPage — F-0320 populates the shared auth store', () => {
     await user.click(await screen.findByRole('option', { name: /6–20 people/ }));
     await user.click(screen.getByRole('button', { name: /^Next$/i }));
 
+    // F-0463 — Step 2 now collects a REAL first/last name. Registration used to invent one by
+    // splitting the email local part ('rahul@…' became "Rahul Auditbrand"), which was then
+    // persisted and greeted. Both fields are required, so this form no longer submits without
+    // them — the assertion below on displayName is now checking a name a human actually typed.
+    await user.type(screen.getByLabelText(/First Name/i), 'Rahul');
+    await user.type(screen.getByLabelText(/Last Name/i), 'Mehta');
     await user.type(screen.getByLabelText(/Email Address/i), 'rahul@auditbrand.com');
     await user.type(screen.getByLabelText(/^Password/i), 'Passw0rd!!');
     await user.type(screen.getByLabelText(/^Confirm Password/i), 'Passw0rd!!');

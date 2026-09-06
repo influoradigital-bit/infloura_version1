@@ -452,6 +452,54 @@ public class AdminBrandService {
     }
 
     /**
+     * Meta pixel write path — PATCH /admin/brands/{id}/meta-pixel (T-FESTIVALBOX-0905 phase 6).
+     * SUPER_ADMIN/ADMIN (MFA-gated), same as every other mutation on this controller. Digits-only
+     * 8-20 char shape (or {@code null} to clear) is already enforced by {@code @Pattern} on {@link
+     * com.influora.web.dto.admin.AdminBrandDtos.UpdateMetaPixelRequest} before this method ever
+     * runs; {@link Workspace#applyMetaPixelId} itself does no further validation (see that method's
+     * javadoc — a pixel id cannot be verified as real, so it stores whatever passed the DTO shape
+     * check).
+     *
+     * <p>Audit-logs old-&gt;new UNLESS the value is unchanged (skips a no-op audit row, same
+     * convention as {@link #update} only writing when {@code newValues.size() > 1}).
+     */
+    @Transactional
+    public BrandDetailDto updateMetaPixel(
+            AuthPrincipal principal, HttpServletRequest request, String brandId, String metaPixelId) {
+        adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN);
+        Workspace workspace = requireBrandWorkspace(brandId);
+
+        String oldPixelId = workspace.getMetaPixelId();
+        if (java.util.Objects.equals(oldPixelId, metaPixelId)) {
+            return toDetailDto(workspace);
+        }
+
+        workspace.applyMetaPixelId(metaPixelId);
+        workspaceRepository.save(workspace);
+
+        Map<String, Object> oldValues = new LinkedHashMap<>();
+        Map<String, Object> newValues = new LinkedHashMap<>();
+        oldValues.put("id", workspace.getId());
+        newValues.put("id", workspace.getId());
+        oldValues.put("metaPixelId", oldPixelId);
+        newValues.put("metaPixelId", metaPixelId);
+
+        adminAuditLogService.record(
+                principal,
+                request,
+                "UPDATE",
+                "BRAND",
+                workspace.getId(),
+                oldValues,
+                newValues,
+                metaPixelId == null
+                        ? "Admin cleared brand Meta pixel ID"
+                        : "Admin set brand Meta pixel ID");
+
+        return toDetailDto(workspace);
+    }
+
+    /**
      * Campaign budget override — POST /admin/brands/{id}/campaigns/{campaignId}/budget-override
      * ({@code brandApi.overrideBudget}). <b>MONEY PATH — highest-risk endpoint in this controller.</b>
      * SUPER_ADMIN only (MFA-gated) — Kabir L-1: this money mutation is tightened one step above the
@@ -734,7 +782,8 @@ public class AdminBrandService {
                 workspace.getBillingAddress(),
                 teamMembers(workspace.getId()),
                 campaignDtos,
-                paymentHistory(workspace.getId()));
+                paymentHistory(workspace.getId()),
+                workspace.getMetaPixelId());
     }
 
     /**

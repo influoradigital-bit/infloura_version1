@@ -242,4 +242,98 @@ describe('deal message stream reconnect (CR-31)', () => {
     // background for as long as the tab lives.
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  // ---------------------------------------------------------------------------
+  // F-0442 — the transport never parsed the SSE `id` field or sent it back on reconnect, so
+  // `DealMessageStreamRegistry`'s replay support (CR-95, server-side) had no client half:
+  // messages published during a disconnect were unrecoverable even though the server could
+  // have replayed them.
+  // ---------------------------------------------------------------------------
+  describe('Last-Event-ID replay (F-0442)', () => {
+    function headersOf(call: unknown[]): Record<string, string> {
+      return (call[1] as RequestInit & { headers: Record<string, string> }).headers;
+    }
+
+    it("sends Last-Event-ID on reconnect, taken from the previous connection's last frame id", async () => {
+      const FRAME_WITH_ID = `id: 42\nevent: deal-message\ndata: ${MESSAGE_JSON}\n\n`;
+      fetchMock.mockImplementation(() => Promise.resolve(cleanlyClosingSseResponse(FRAME_WITH_ID)));
+      const handle = messages.stream('creator', 'd1', { onMessage: vi.fn() });
+
+      await settle();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // Nothing seen yet on the very first connect — no id to replay from.
+      expect(headersOf(fetchMock.mock.calls[0])['Last-Event-ID']).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(500);
+      await settle();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(headersOf(fetchMock.mock.calls[1])['Last-Event-ID']).toBe('42');
+
+      handle.close();
+    });
+
+    it('advances Last-Event-ID across multiple reconnects as new ids arrive', async () => {
+      let attempt = 0;
+      fetchMock.mockImplementation(() => {
+        attempt += 1;
+        const id = attempt === 1 ? '1' : '2';
+        const frame = `id: ${id}\nevent: deal-message\ndata: ${MESSAGE_JSON}\n\n`;
+        return Promise.resolve(cleanlyClosingSseResponse(frame));
+      });
+      const handle = messages.stream('creator', 'd1', { onMessage: vi.fn() });
+
+      await settle(); // connection #1 -> delivers id 1, then closes
+      await vi.advanceTimersByTimeAsync(500);
+      await settle(); // connection #2 -> should carry Last-Event-ID: 1, delivers id 2, then closes
+
+      expect(headersOf(fetchMock.mock.calls[1])['Last-Event-ID']).toBe('1');
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await settle(); // connection #3 -> should carry Last-Event-ID: 2
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(headersOf(fetchMock.mock.calls[2])['Last-Event-ID']).toBe('2');
+
+      handle.close();
+    });
+  });
+
+  /**
+   * F-0667 — the stream read `localStorage` alone for its bearer token. A creator who logged in
+   * with "remember me" UNCHECKED has that token in `sessionStorage` (CR-121), so the stream
+   * opened with NO Authorization header, the server 401'd, and 401 is in
+   * TERMINAL_STREAM_STATUSES — no reconnect is ever attempted. The deal room went permanently
+   * deaf to new messages, silently, for exactly the users who chose not to be remembered.
+   *
+   * Found by a zero-context tester pass reading the token call sites, not by any failing test:
+   * every OTHER consumer was taught the both-stores fallback when F-0459 landed, and this one
+   * was missed. Asserting on the outgoing header is what makes that miss visible.
+   */
+  describe('token storage split (F-0667)', () => {
+    it('sends the bearer token when it lives in sessionStorage (remember-me unchecked)', async () => {
+      sessionStorage.clear();
+      sessionStorage.setItem('creator_token', 'session_only_token');
+      fetchMock.mockImplementation(() => Promise.resolve(cleanlyClosingSseResponse(ONE_FRAME)));
+
+      const handle = messages.stream('creator', 'd1', {
+        onMessage: vi.fn(),
+        onReconnect: vi.fn(),
+        onStatusChange: vi.fn(),
+      });
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(fetchMock).toHaveBeenCalled();
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      expect(
+        headers.Authorization,
+        'the stream opened with no Authorization header: a remember-me-off creator 401s, and 401 ' +
+          'is terminal for this stream, so the deal room never reconnects',
+      ).toBe('Bearer session_only_token');
+
+      handle.close();
+      sessionStorage.clear();
+    });
+  });
 });

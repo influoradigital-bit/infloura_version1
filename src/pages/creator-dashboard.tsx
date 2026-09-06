@@ -58,11 +58,18 @@ function countSubmittableDeliverables(items: CreatorDeliverableListItem[]): numb
   ).length;
 }
 
+/**
+ * F-0631 (two-queries-can-disagree) — this breakdown deliberately does NOT carry a
+ * signature count or a total any more. The "awaiting signature" number now comes from
+ * `unsignedContracts` (component state, fed by `GET /contracts/unsigned` — the same F-0623
+ * query the "Contracts awaiting your signature" list below renders) rather than from a
+ * second, looser definition re-filtering `GET /deals` by `contractStatus`. See
+ * `awaitingSignatureCount`/`pendingTotal` in `CreatorDashboardPage` below, where the two are
+ * recombined for display.
+ */
 interface PendingBreakdown {
   unreadMessages: number;
-  awaitingSignature: number;
   submittableDeliverables: number;
-  total: number;
 }
 
 interface DashboardData {
@@ -83,9 +90,7 @@ const EMPTY_WALLET: WalletSummaryResponse = {
 
 const EMPTY_PENDING: PendingBreakdown = {
   unreadMessages: 0,
-  awaitingSignature: 0,
   submittableDeliverables: 0,
-  total: 0,
 };
 
 /**
@@ -124,13 +129,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
     const unreadMessages = deals.reduce((sum, d) => sum + d.unreadCount, 0);
     const activeIds = deals.filter(isActiveDeal).map((d) => d.id);
     const submittableDeliverables = await loadDeliverablePendingCount(activeIds);
-    const awaitingSignature = 0;
-    const pending: PendingBreakdown = {
-      unreadMessages,
-      awaitingSignature,
-      submittableDeliverables,
-      total: unreadMessages + awaitingSignature + submittableDeliverables,
-    };
+    const pending: PendingBreakdown = { unreadMessages, submittableDeliverables };
     return { wallet, deals, pending, ...extras };
   }
 
@@ -142,21 +141,21 @@ async function fetchDashboardData(): Promise<DashboardData> {
 
   const deals = dealRows.map(mapDealToDealsPageRow);
   const unreadMessages = deals.reduce((sum, d) => sum + d.unreadCount, 0);
-  // `GET /contracts/unsigned` (api.contracts.listUnsigned) now exists and is fetched separately
-  // below for the dedicated "Contracts awaiting your signature" section — but this summary tile
-  // count is cheaper to derive from data this call already has in hand: deal rows already carry
-  // `contractStatus` from `GET /deals`, so keep deriving the tile count from that rather than
-  // firing a second request for the same number.
-  const awaitingSignature = dealRows.filter((d) => d.contractStatus === 'PENDING_SIGNATURES').length;
+  // F-0631 (two-queries-can-disagree) — this used to derive its own "awaiting signature" count
+  // by filtering `dealRows` for `contractStatus === 'PENDING_SIGNATURES'`. That status alone
+  // (per ContractApiRecord's own doc comment in lib/api.ts) collapses "the brand is waiting on
+  // the OTHER party" and "this creator is signed but the collaboration was cancelled" into the
+  // same value as "this creator genuinely has a contract to sign" — so this tile and the
+  // "Contracts awaiting your signature" list below it (which reads the real `GET
+  // /contracts/unsigned` / F-0623 query: status=PENDING_SIGNATURES AND creatorSignedAt IS NULL
+  // AND the collaboration is not CANCELLED) could disagree. The ruling: an action tile counts
+  // only what the viewer can act on, so the signature figure is no longer computed here at
+  // all — `awaitingSignatureCount` below derives it from the SAME `unsignedContracts` state the
+  // list renders, which makes the two numbers structurally unable to drift apart again.
   const activeIds = deals.filter(isActiveDeal).map((d) => d.id);
   const submittableDeliverables = await loadDeliverablePendingCount(activeIds);
 
-  const pending: PendingBreakdown = {
-    unreadMessages,
-    awaitingSignature,
-    submittableDeliverables,
-    total: unreadMessages + awaitingSignature + submittableDeliverables,
-  };
+  const pending: PendingBreakdown = { unreadMessages, submittableDeliverables };
 
   return { wallet, deals, pending, ...extras };
 }
@@ -311,6 +310,37 @@ function PublicPageCard({
   );
 }
 
+/**
+ * F-0637: `ContractResponse` (backend) now returns `campaignTitle` and `brandWorkspaceName` so a
+ * creator can tell same-amount unsigned contracts apart without opening each one — added this same
+ * wave by the companion backend fix (`ContractService#resolveCampaignTitle` /
+ * `#resolveBrandWorkspaceName`), both best-effort: null when unresolvable, never thrown.
+ *
+ * Both fields are declared on `ContractApiRecord` itself (lib/api.ts). They were briefly read here
+ * through a local intersection type + `as` cast, which a fresh-context review correctly flagged as
+ * the very FE-type-vs-DTO drift class this wave was closing (F-0435/F-0464): a cast leaves `tsc`
+ * unable to notice if the server field is renamed.
+ *
+ * Prefers the campaign's own title; falls back to the brand workspace name; never fabricates a
+ * label when the backend's best-effort resolution came back with neither.
+ */
+function contractIdentityLabel(contract: ContractApiRecord): string | null {
+  const label = contract.campaignTitle?.trim() || contract.brandWorkspaceName?.trim();
+  return label ? label : null;
+}
+
+/**
+ * F-0638: `collaborationId` can come back null/missing for a contract (the same best-effort
+ * resolution above can fail to find a linked collaboration) even though `ContractApiRecord` types
+ * it as a required `string`. Interpolating it unguarded into the row's href used to produce a
+ * literal `/creator/chat?deal=undefined&tab=contract` (or `...=null...`) link instead of failing
+ * safely.
+ */
+function linkedDealId(contract: ContractApiRecord): string | null {
+  const id = contract.collaborationId as string | null | undefined;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
 export default function CreatorDashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
@@ -386,6 +416,24 @@ export default function CreatorDashboardPage() {
     };
   }, []);
 
+  /**
+   * F-0631 (two-queries-can-disagree) — the single source of truth for "how many contracts
+   * does this creator have to sign". `unsignedContracts` is the F-0623 `GET /contracts/unsigned`
+   * list (status=PENDING_SIGNATURES AND creatorSignedAt IS NULL AND collaboration not
+   * CANCELLED) — the exact same state the "Contracts awaiting your signature" card below
+   * renders row-for-row. Deriving the tile from its length rather than maintaining a second
+   * filter over `GET /deals`' `contractStatus` is what makes the tile and the list structurally
+   * unable to disagree: there is only one count in this component now, not two.
+   *
+   * `pendingLoading` folds in `unsignedLoading` alongside the main `loading` flag so the tile
+   * never displays a total computed before this count has actually arrived — the two fetches
+   * are independent (see the state declarations above), and without this the tile could flash
+   * a too-low number while `unsignedContracts` was still in flight.
+   */
+  const awaitingSignatureCount = unsignedContracts.length;
+  const pendingLoading = loading || unsignedLoading;
+  const pendingTotal = pending.unreadMessages + awaitingSignatureCount + pending.submittableDeliverables;
+
   const greeting = React.useMemo(() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
@@ -408,10 +456,10 @@ export default function CreatorDashboardPage() {
                 {greeting}, {displayName}
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                {loading
+                {pendingLoading
                   ? 'Loading your workspace…'
-                  : pending.total > 0
-                    ? `${pending.total} item${pending.total === 1 ? '' : 's'} need your attention`
+                  : pendingTotal > 0
+                    ? `${pendingTotal} item${pendingTotal === 1 ? '' : 's'} need your attention`
                     : isEmptyCreator
                       ? 'Welcome — your creator workspace is ready.'
                       : "You're all caught up."}
@@ -498,7 +546,7 @@ export default function CreatorDashboardPage() {
           <div>
             <Card
               className={cn(
-                pending.total > 0 && !loading && 'border-warning/40 bg-warning/5',
+                pendingTotal > 0 && !pendingLoading && 'border-warning/40 bg-warning/5',
               )}
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -508,13 +556,13 @@ export default function CreatorDashboardPage() {
                 <Sparkles className="h-4 w-4 text-primary" aria-hidden />
               </CardHeader>
               <CardContent>
-                {loading ? (
+                {pendingLoading ? (
                   <Skeleton className="h-8 w-12" />
                 ) : (
                   <>
-                    <p className="text-2xl font-semibold tabular-nums">{pending.total}</p>
+                    <p className="text-2xl font-semibold tabular-nums">{pendingTotal}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {pending.total === 0
+                      {pendingTotal === 0
                         ? 'Nothing waiting on you'
                         : 'Messages, contracts & deliverables'}
                     </p>
@@ -556,34 +604,70 @@ export default function CreatorDashboardPage() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {unsignedContracts.map((contract) => (
-                    <Link
-                      key={contract.id}
-                      to={`/creator/chat?deal=${contract.collaborationId}&tab=contract`}
-                      className="flex items-center gap-3 rounded-lg border border-border p-3 transition-[box-shadow,background-color] duration-150 ease-out hover:bg-muted/50 hover:shadow-sm"
-                    >
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning">
-                        <FileSignature className="h-4 w-4" aria-hidden />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium tabular-nums">
-                          {formatINR(contract.totalAmount)}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {contract.milestones?.length ?? 0} milestone
-                          {(contract.milestones?.length ?? 0) === 1 ? '' : 's'} ·{' '}
-                          {/* F-0623: this used to hardcode "brand signed, your turn" for every row.
-                              The backend list is now scoped to PENDING_SIGNATURES contracts (a real
-                              status transition only reached once someone has signed), but the FE
-                              tells the truth off the record's own brandSignedAt field rather than
-                              assume the backend invariant — a field this record already carries,
-                              never fabricated. */}
-                          {contract.brandSignedAt ? 'brand signed, your turn' : 'awaiting your signature'}
-                        </p>
-                      </div>
-                      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-                    </Link>
-                  ))}
+                  {unsignedContracts.map((contract) => {
+                    const contractLabel = contractIdentityLabel(contract);
+                    const dealId = linkedDealId(contract);
+
+                    const rowBody = (
+                      <>
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning">
+                          <FileSignature className="h-4 w-4" aria-hidden />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          {/* F-0637: campaignTitle (falling back to brandWorkspaceName) — the
+                              identifying line that used to be missing, leaving same-amount rows
+                              visually identical. Omitted, not fabricated, when the backend's
+                              best-effort resolution found neither. */}
+                          {contractLabel && (
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {contractLabel}
+                            </p>
+                          )}
+                          <p className="text-sm font-medium tabular-nums">
+                            {formatINR(contract.totalAmount)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {contract.milestones?.length ?? 0} milestone
+                            {(contract.milestones?.length ?? 0) === 1 ? '' : 's'} ·{' '}
+                            {/* F-0623: this used to hardcode "brand signed, your turn" for every row.
+                                The backend list is now scoped to PENDING_SIGNATURES contracts (a real
+                                status transition only reached once someone has signed), but the FE
+                                tells the truth off the record's own brandSignedAt field rather than
+                                assume the backend invariant — a field this record already carries,
+                                never fabricated. */}
+                            {contract.brandSignedAt
+                              ? 'brand signed, your turn'
+                              : 'awaiting your signature'}
+                          </p>
+                        </div>
+                      </>
+                    );
+
+                    // F-0638: no real collaboration id to link to — render the row's info without
+                    // a clickable wrapper rather than ship a link to the literal string
+                    // "undefined"/"null".
+                    if (!dealId) {
+                      return (
+                        <div
+                          key={contract.id}
+                          className="flex cursor-default items-center gap-3 rounded-lg border border-dashed border-border/60 p-3 opacity-80"
+                        >
+                          {rowBody}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <Link
+                        key={contract.id}
+                        to={`/creator/chat?deal=${dealId}&tab=contract`}
+                        className="flex items-center gap-3 rounded-lg border border-border p-3 transition-[box-shadow,background-color] duration-150 ease-out hover:bg-muted/50 hover:shadow-sm"
+                      >
+                        {rowBody}
+                        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+                      </Link>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
@@ -606,7 +690,7 @@ export default function CreatorDashboardPage() {
           </FadeUp>
         )}
 
-        {!loading && pending.total > 0 && (
+        {!pendingLoading && pendingTotal > 0 && (
           <FadeUp y={0} delay={0.05}>
             <Card>
               <CardHeader className="pb-3">
@@ -641,7 +725,7 @@ export default function CreatorDashboardPage() {
                     <p className="text-sm font-medium">Awaiting signature</p>
                     <p className="text-xs text-muted-foreground">Contracts to sign</p>
                   </div>
-                  <Badge variant="secondary">{pending.awaitingSignature}</Badge>
+                  <Badge variant="secondary">{awaitingSignatureCount}</Badge>
                 </button>
 
                 <button
@@ -722,7 +806,7 @@ export default function CreatorDashboardPage() {
           </FadeUp>
         )}
 
-        {!loading && !isEmptyCreator && pending.total === 0 && (
+        {!pendingLoading && !isEmptyCreator && pendingTotal === 0 && (
           <FadeUp y={0} delay={0.15}>
             <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
               <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />

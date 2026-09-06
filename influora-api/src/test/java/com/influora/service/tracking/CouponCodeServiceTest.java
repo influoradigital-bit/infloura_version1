@@ -1,15 +1,18 @@
 package com.influora.service.tracking;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
+import org.springframework.http.HttpStatus;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.CouponCode;
 import com.influora.domain.entity.CreatorProfile;
@@ -26,6 +29,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 /**
  * Phase 4 UTM/Coupon Tracking: unit tests for CouponCodeService -- code generation (uniqueness
@@ -342,6 +346,132 @@ class CouponCodeServiceTest {
     }
 
     // ------------------------------------------------------------------
+    // T-FESTIVALBOX-0905 phase 4: addBrandLevelCoupon -- one brand-level code per campaign
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("addBrandLevelCoupon: rejects when the caller's workspace does not own the campaign")
+    void testAddBrandLevelCouponRejectsWhenWorkspaceDoesNotOwnCampaign() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, OTHER_WORKSPACE_ID))
+                .thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.addBrandLevelCoupon(
+                                        OTHER_WORKSPACE_ID, CAMPAIGN_ID, "percentage", BigDecimal.valueOf(15), null, null));
+
+        assertEquals("CAMPAIGN_NOT_FOUND", ex.getCode());
+        assertEquals(404, ex.getStatus().value());
+        org.mockito.Mockito.verifyNoInteractions(couponCodeRepository);
+    }
+
+    @Test
+    @DisplayName("addBrandLevelCoupon: creates a coupon with creatorId null and code ending _EXCLUSIVE")
+    void testAddBrandLevelCouponCreatesCouponWithNullCreatorId() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        when(couponCodeRepository.findByCampaignIdAndCreatorIdIsNull(CAMPAIGN_ID)).thenReturn(Optional.empty());
+        when(couponCodeRepository.existsByWorkspaceIdAndCode(WORKSPACE_ID, "SUMMER-SALE-2026_EXCLUSIVE"))
+                .thenReturn(false);
+        when(couponCodeRepository.save(any(CouponCode.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CouponCode result =
+                service.addBrandLevelCoupon(WORKSPACE_ID, CAMPAIGN_ID, "percentage", BigDecimal.valueOf(15), null, null);
+
+        assertEquals(WORKSPACE_ID, result.getWorkspaceId());
+        assertEquals(CAMPAIGN_ID, result.getCampaignId());
+        assertEquals(null, result.getCreatorId());
+        assertTrue(result.isBrandLevel());
+        assertEquals("SUMMER-SALE-2026_EXCLUSIVE", result.getCode());
+        verify(couponCodeRepository, times(1)).save(any(CouponCode.class));
+    }
+
+    @Test
+    @DisplayName("addBrandLevelCoupon: idempotent -- returns the existing brand-level coupon instead of creating a duplicate")
+    void testAddBrandLevelCouponReturnsExistingWithoutDuplicating() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        CouponCode existing =
+                CouponCode.brandLevelBuilder()
+                        .id(COUPON_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .campaignId(CAMPAIGN_ID)
+                        .code("SUMMER-SALE-2026_EXCLUSIVE")
+                        .discountType("percentage")
+                        .discountValue(BigDecimal.valueOf(15))
+                        .build();
+        when(couponCodeRepository.findByCampaignIdAndCreatorIdIsNull(CAMPAIGN_ID)).thenReturn(Optional.of(existing));
+
+        CouponCode result =
+                service.addBrandLevelCoupon(WORKSPACE_ID, CAMPAIGN_ID, "percentage", BigDecimal.valueOf(15), null, null);
+
+        assertEquals(COUPON_ID, result.getId());
+        verify(couponCodeRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "addBrandLevelCoupon: a second brand-level code for the same campaign is refused as"
+                    + " BRAND_CODE_EXISTS (409), not a raw 500, even when the pre-check race-loses"
+                    + " against a concurrent request and the UNIQUE(campaign_id, brand_level_marker)"
+                    + " constraint is what actually catches it")
+    void testAddBrandLevelCouponRefusesSecondCodeOnConstraintRace() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        // Pre-check sees no existing row (lost the race window).
+        when(couponCodeRepository.findByCampaignIdAndCreatorIdIsNull(CAMPAIGN_ID)).thenReturn(Optional.empty());
+        when(couponCodeRepository.existsByWorkspaceIdAndCode(WORKSPACE_ID, "SUMMER-SALE-2026_EXCLUSIVE"))
+                .thenReturn(false);
+        // ...but the actual INSERT hits the schema's UNIQUE(campaign_id, brand_level_marker) because
+        // a concurrent request won the race in between.
+        when(couponCodeRepository.save(any(CouponCode.class)))
+                .thenThrow(new DataIntegrityViolationException("uq_coupon_campaign_brand_level"));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.addBrandLevelCoupon(
+                                        WORKSPACE_ID, CAMPAIGN_ID, "percentage", BigDecimal.valueOf(15), null, null));
+
+        assertEquals("BRAND_CODE_EXISTS", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+    }
+
+    @Test
+    @DisplayName(
+            "addBrandLevelCoupon + addCreatorToCampaign: a brand-level and a per-creator code coexist"
+                    + " on the same campaign without either rejecting the other")
+    void testBrandLevelAndPerCreatorCodesCoexistOnSameCampaign() {
+        when(campaignRepository.findByIdAndWorkspaceId(CAMPAIGN_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(campaign()));
+        when(couponCodeRepository.findByCampaignIdAndCreatorIdIsNull(CAMPAIGN_ID)).thenReturn(Optional.empty());
+        when(couponCodeRepository.existsByWorkspaceIdAndCode(WORKSPACE_ID, "SUMMER-SALE-2026_EXCLUSIVE"))
+                .thenReturn(false);
+        when(couponCodeRepository.save(any(CouponCode.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CouponCode brandCoupon =
+                service.addBrandLevelCoupon(WORKSPACE_ID, CAMPAIGN_ID, "percentage", BigDecimal.valueOf(15), null, null);
+
+        when(creatorProfileRepository.findById(CREATOR_ID)).thenReturn(Optional.of(creator()));
+        when(couponCodeRepository.findByCampaignIdAndCreatorId(CAMPAIGN_ID, CREATOR_ID)).thenReturn(Optional.empty());
+        when(couponCodeRepository.existsByWorkspaceIdAndCode(WORKSPACE_ID, "PRIYA-SHARMA_SUMMER-SALE-2026"))
+                .thenReturn(false);
+
+        CouponCode creatorCoupon =
+                service.addCreatorToCampaign(
+                        WORKSPACE_ID, CAMPAIGN_ID, CREATOR_ID, "percentage", BigDecimal.valueOf(15), null, null);
+
+        assertTrue(brandCoupon.isBrandLevel());
+        assertFalse(creatorCoupon.isBrandLevel());
+        assertEquals(CAMPAIGN_ID, brandCoupon.getCampaignId());
+        assertEquals(CAMPAIGN_ID, creatorCoupon.getCampaignId());
+        verify(couponCodeRepository, times(2)).save(any(CouponCode.class));
+    }
+
+    // ------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------
 
@@ -366,5 +496,110 @@ class CouponCodeServiceTest {
                 return "Priya Sharma";
             }
         };
+    }
+
+    // ==========================================================================================
+    // [Kabir H-3] Discount-term validation.
+    //
+    // discountType and discountValue were validated NOWHERE — not in the DTO (its @Valid was also
+    // missing on the brand controller) and not here. "percent" instead of "percentage" saved a
+    // valid-looking row that then threw UNSUPPORTED_DISCOUNT_TYPE as a hardcoded 500 on EVERY
+    // redemption, forever: no sale, no commission, and a dead code printed on a public page.
+    // Enforced in the service so BOTH doors (brand + admin) are covered regardless of annotations.
+    // ==========================================================================================
+
+    @Test
+    @DisplayName("addBrandLevelCoupon: a near-miss discountType ('percent') is refused at creation,"
+            + " not at every future redemption")
+    void invalidDiscountTypeIsRefused() {
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.addBrandLevelCoupon(
+                                        WORKSPACE_ID, CAMPAIGN_ID, "percent", BigDecimal.TEN, null, null));
+
+        assertEquals("INVALID_DISCOUNT_TYPE", ex.getCode());
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
+        // Refused before anything is looked up or written.
+        verifyNoInteractions(couponCodeRepository);
+    }
+
+    @Test
+    @DisplayName("addCreatorToCampaign: the same guard covers the per-creator door")
+    void invalidDiscountTypeIsRefusedOnCreatorPath() {
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.addCreatorToCampaign(
+                                        WORKSPACE_ID, CAMPAIGN_ID, CREATOR_ID, "PERCENT_OFF",
+                                        BigDecimal.TEN, null, null));
+
+        assertEquals("INVALID_DISCOUNT_TYPE", ex.getCode());
+    }
+
+    @Test
+    @DisplayName("a percentage over 100 is refused — it would refund more than the order")
+    void percentageOver100IsRefused() {
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.addBrandLevelCoupon(
+                                        WORKSPACE_ID, CAMPAIGN_ID, "percentage", BigDecimal.valueOf(500),
+                                        null, null));
+
+        assertEquals("INVALID_DISCOUNT_VALUE", ex.getCode());
+    }
+
+    @Test
+    @DisplayName("a zero or negative discountValue is refused")
+    void nonPositiveDiscountValueIsRefused() {
+        assertEquals(
+                "INVALID_DISCOUNT_VALUE",
+                assertThrows(
+                                ApiException.class,
+                                () ->
+                                        service.addBrandLevelCoupon(
+                                                WORKSPACE_ID, CAMPAIGN_ID, "percentage", BigDecimal.ZERO,
+                                                null, null))
+                        .getCode());
+        assertEquals(
+                "INVALID_DISCOUNT_VALUE",
+                assertThrows(
+                                ApiException.class,
+                                () ->
+                                        service.addBrandLevelCoupon(
+                                                WORKSPACE_ID, CAMPAIGN_ID, "fixed", BigDecimal.valueOf(-5),
+                                                null, null))
+                        .getCode());
+    }
+
+    @Test
+    @DisplayName("a fixed amount above 100 is allowed — the 100 ceiling is percentage-only")
+    void fixedAmountAbove100IsAllowed() {
+        // Not an exception test: this pins that the cross-field rule is genuinely conditional.
+        // A Rs.500 fixed discount is ordinary; redemption clamps it to the order total anyway.
+        assertDoesNotThrowOnValidation("fixed", BigDecimal.valueOf(500));
+    }
+
+    /**
+     * Drives validateDiscountTerms only — the campaign lookup that follows is unstubbed here, so a
+     * CAMPAIGN_NOT_FOUND means validation PASSED and execution reached the repository. Any
+     * INVALID_DISCOUNT_* code means it was rejected at the guard.
+     */
+    private void assertDoesNotThrowOnValidation(String discountType, BigDecimal value) {
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.addBrandLevelCoupon(
+                                        WORKSPACE_ID, CAMPAIGN_ID, discountType, value, null, null));
+        assertEquals(
+                "CAMPAIGN_NOT_FOUND",
+                ex.getCode(),
+                "expected validation to pass and execution to reach the campaign lookup, but got: "
+                        + ex.getCode());
     }
 }

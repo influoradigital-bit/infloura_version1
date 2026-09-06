@@ -81,12 +81,47 @@ interface CreatorNavGroup {
 }
 
 /**
- * Grouped navigation (mirrors brand-layout's Main/Manage split) — was a flat
- * 6-item list that left 4 fully-built creator pages orphaned — Reviews,
- * Disputes, Coupons, and Affiliate were only reachable by direct URL.
- * Inbox + Active + Deal Room stay collapsed into one Deals page (filtered by
- * status). Profile, Public Page, and Settings live in the avatar menu, not
- * here.
+ * Grouped navigation — was a flat 6-item list that left 4 fully-built creator
+ * pages orphaned (Reviews, Disputes, Coupons, and Affiliate were only
+ * reachable by direct URL). Inbox + Active + Deal Room stay collapsed into one
+ * Deals page (filtered by status). Settings stays in the avatar menu.
+ *
+ * Group spine — shared with `brand-layout.tsx`, in the same order, meaning the
+ * same thing:
+ *   MAIN     the day-to-day workflow
+ *   EARNINGS money in, and the two things that bring it in off-platform
+ *   PROFILE  what a brand sees before they hire you  — creator-only
+ *   MANAGE   ops/oversight surfaces you visit on a cadence, not daily
+ * PROFILE has no brand counterpart on purpose: a brand has no public artifact.
+ * The brand shell's third group is PAYMENTS, which is EARNINGS seen from the
+ * paying side.
+ *
+ * W5 (T-FRONTEND-REWORK-0905 §3) — two changes here.
+ *
+ * 1. Public page (`/creator/portfolio`, `App.tsx:604`, the portfolio editor)
+ *    and Profile (`/creator/profile`, `App.tsx:579`) were reachable *only*
+ *    from the avatar dropdown. The public portfolio is the artifact that gets
+ *    a creator hired, and it was filed behind the same menu as "Log out".
+ *    Both now have a sidebar row and are **moved**, not duplicated — the
+ *    dropdown keeps Settings / Help / Log out, which is exactly what the brand
+ *    shell's dropdown holds (`brand-layout.tsx`), so the two shells' account
+ *    menus now agree.
+ *
+ * 2. Coupons and Affiliate are two nav rows for one idea — "money I earn by
+ *    sending buyers to a brand". They are grouped under EARNINGS with Wallet
+ *    rather than merged into a single route: they are two live pages
+ *    (`App.tsx:668,676`) with no shared tabbed host, and pointing one nav row
+ *    at one of them would orphan the other from the UI entirely. Grouping
+ *    fixes the "which one do I want?" problem without deleting a reachable
+ *    surface. A true merge means a tabbed earnings page and belongs to whoever
+ *    owns those two pages — see the W5 report.
+ *
+ * Structural room for Phases C/D (`.proof-os/tasks/T-MEERA-CREATOR-PHASE-C/`,
+ * `-PHASE-D/`), so this is not re-cut in six weeks: the money timeline lands in
+ * EARNINGS, account-health flags in PROFILE, dispute evidence under the
+ * existing Disputes row in MANAGE, delivery-proof cards inside Deals, and
+ * WhatsApp preferences in Settings. Every one of those has a labelled home
+ * already; none needs a new group.
  */
 const navGroups: CreatorNavGroup[] = [
   {
@@ -98,7 +133,21 @@ const navGroups: CreatorNavGroup[] = [
       { label: 'Applications', href: '/creator/applications', icon: ClipboardList },
       { label: 'Co-pilot', href: '/creator/copilot', icon: Sparkles },
       { label: 'Analytics', href: '/creator/analytics', icon: BarChart3 },
+    ],
+  },
+  {
+    label: 'Earnings',
+    items: [
       { label: 'Wallet', href: '/creator/wallet', icon: Wallet },
+      { label: 'Coupons', href: '/creator/coupons', icon: Ticket },
+      { label: 'Affiliate', href: '/creator/affiliate', icon: TrendingUp },
+    ],
+  },
+  {
+    label: 'Profile',
+    items: [
+      { label: 'Public page', href: '/creator/portfolio', icon: Globe },
+      { label: 'My profile', href: '/creator/profile', icon: User },
     ],
   },
   {
@@ -106,8 +155,6 @@ const navGroups: CreatorNavGroup[] = [
     items: [
       { label: 'Reviews', href: '/creator/reviews', icon: Star },
       { label: 'Disputes', href: '/creator/disputes', icon: AlertTriangle },
-      { label: 'Coupons', href: '/creator/coupons', icon: Ticket },
-      { label: 'Affiliate', href: '/creator/affiliate', icon: TrendingUp },
       // Mirrors the brand shell — a standing route back to the flow, not only a first-run one.
       { label: 'How it works', href: '/creator/how-it-works', icon: HelpCircle },
     ],
@@ -213,7 +260,10 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
             </button>
           </div>
 
-          {/* Nav items — grouped (Main / Manage), mirrors brand-layout */}
+          {/* Nav items — grouped (Main / Earnings / Profile / Manage). Same rendering
+              and same group spine as brand-layout; see the navGroups comment above for
+              why the creator shell carries one group the brand shell does not.
+              Scrollable so 14 items + 4 headers never clip on a short viewport. */}
           <nav role="navigation" className="flex-1 overflow-y-auto px-3 py-2">
             {navGroups.map((group) => (
               <div key={group.label} className="mb-3 last:mb-0">
@@ -326,14 +376,12 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
                   )}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => handleNavigate('/creator/profile')}>
-                  <User className="mr-2 h-4 w-4" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleNavigate('/creator/portfolio')}>
-                  <Globe className="mr-2 h-4 w-4" />
-                  Public Page
-                </DropdownMenuItem>
+                {/* W5 — Profile and Public Page moved OUT of this menu and into the
+                    sidebar's PROFILE group (see navGroups above). Moved, not copied:
+                    the portfolio was buried in the same menu as Log out, and leaving a
+                    second copy here would just be two doors onto one page. What's left
+                    is Settings / Help / Log out, which is exactly the brand shell's
+                    account menu. */}
                 <DropdownMenuItem onClick={() => handleNavigate('/creator/settings')}>
                   <Settings className="mr-2 h-4 w-4" />
                   Settings
@@ -463,12 +511,10 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
                     )}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => handleNavigate('/creator/profile')}>
-                    <User className="mr-2 h-4 w-4" /> Profile
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleNavigate('/creator/portfolio')}>
-                    <Globe className="mr-2 h-4 w-4" /> Public Page
-                  </DropdownMenuItem>
+                  {/* W5 — same move as the desktop menu above. Both Profile and Public
+                      Page are sidebar rows now; on mobile the sidebar is the hamburger
+                      sheet, which renders the identical `navGroups`, so nothing became
+                      unreachable on a phone. */}
                   <DropdownMenuItem onClick={() => handleNavigate('/creator/settings')}>
                     <Settings className="mr-2 h-4 w-4" /> Settings
                   </DropdownMenuItem>

@@ -28,6 +28,23 @@ import java.time.Instant;
  * (coupon redemption / Shopify-WooCommerce webhooks) is deliberately deferred to a later slice (see
  * V23 migration comment). The increment helper for conversions intentionally does not exist yet;
  * whoever builds that follow-up should add it here rather than mutating the field directly.
+ *
+ * <p><b>[T-FESTIVALBOX-0905 phase 7] {@code creatorProfileId} and {@code collaborationId} are now
+ * NULLABLE</b> -- see the V20260905180000 migration header for the full relationship to V23's
+ * original NOT NULL constraints. In short, two new link shapes exist alongside the original
+ * per-creator-per-collaboration link:
+ *
+ * <ul>
+ *   <li>A per-creator Festival Box link: {@code creatorProfileId} set, {@code collaborationId}
+ *       {@code null} -- Festival Box creators are drawn from a roster, not a {@code Collaboration}
+ *       row, so there is nothing to put in {@code collaborationId} for this case.
+ *   <li>A page-level ("Shop button") link: both {@code null}. {@link #isPageLevel()} is the single
+ *       source of truth for this case, and only this case -- see that method's javadoc for why it
+ *       is keyed on {@code creatorProfileId} alone.
+ * </ul>
+ *
+ * {@link #pageLevelBuilder()} makes it structurally impossible to accidentally construct a
+ * page-level instance that also carries a creator or collaboration id.
  */
 @Entity
 @Table(name = "utm_campaigns")
@@ -40,10 +57,16 @@ public class UtmCampaign {
     @Column(name = "campaign_id", nullable = false, length = 26)
     private String campaignId;
 
-    @Column(name = "collaboration_id", nullable = false, length = 26)
+    // [T-FESTIVALBOX-0905 phase 7] Nullable since V20260905180000 -- NULL on a page-level link
+    // (see #isPageLevel) and also on a per-creator Festival Box link, which has a creator but no
+    // Collaboration row to reference. See class javadoc.
+    @Column(name = "collaboration_id", length = 26)
     private String collaborationId;
 
-    @Column(name = "creator_profile_id", nullable = false, length = 26)
+    // [T-FESTIVALBOX-0905 phase 7] Nullable since V20260905180000 -- NULL means a page-level
+    // ("Shop button") link. See class javadoc and that migration's header for the full
+    // relationship this does NOT undo.
+    @Column(name = "creator_profile_id", length = 26)
     private String creatorProfileId;
 
     @Column(name = "base_url", nullable = false, length = 1000)
@@ -209,6 +232,22 @@ public class UtmCampaign {
         this.updatedAt = Instant.now();
     }
 
+    /**
+     * True when this tracking link has no associated creator -- a page-level, "Shop button" link
+     * (V20260905180000 migration, T-FESTIVALBOX-0905 phase 7). Deliberately keyed on {@code
+     * creatorProfileId} ALONE, not {@code collaborationId}: a per-creator Festival Box link (a
+     * roster creator, not backed by a {@code Collaboration} row) has a real {@code
+     * creatorProfileId} but a {@code null collaborationId}, and is NOT page-level -- it is still
+     * attributed to that creator. A page-level link attributes a click to the brand only (there is
+     * no creator to pay/attribute to), which is why {@code ConversionTrackingWriter} checks this
+     * before ever putting a {@code creatorId} into an audit-log detail map (landmine 1 in the task
+     * brief -- {@code Map.of} throws on a null value). See class javadoc for the full relationship
+     * to V23's original NOT NULL constraints.
+     */
+    public boolean isPageLevel() {
+        return creatorProfileId == null;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -281,6 +320,84 @@ public class UtmCampaign {
             return this;
         }
 
+        public UtmCampaign build() {
+            u.clickCount = 0L;
+            u.uniqueVisitors = 0L;
+            u.conversionCount = 0L;
+            u.revenueAttributed = BigDecimal.ZERO;
+            Instant now = Instant.now();
+            u.createdAt = now;
+            u.updatedAt = now;
+            return u;
+        }
+    }
+
+    /**
+     * Builder for a page-level, "Shop button" tracking link (T-FESTIVALBOX-0905 phase 7) --
+     * deliberately has NO {@code collaborationId(...)}/{@code creatorProfileId(...)} setters, so a
+     * page-level link can never be constructed with a creator or collaboration attached by
+     * accident (mirrors {@code CouponCode.BrandLevelBuilder}'s identical discipline). Field-for-
+     * field identical to {@link Builder} otherwise. {@link #isPageLevel()} on the result is always
+     * {@code true}.
+     */
+    public static PageLevelBuilder pageLevelBuilder() {
+        return new PageLevelBuilder();
+    }
+
+    public static final class PageLevelBuilder {
+        private final UtmCampaign u = new UtmCampaign();
+
+        public PageLevelBuilder id(String id) {
+            u.id = id;
+            return this;
+        }
+
+        public PageLevelBuilder campaignId(String campaignId) {
+            u.campaignId = campaignId;
+            return this;
+        }
+
+        public PageLevelBuilder baseUrl(String baseUrl) {
+            u.baseUrl = baseUrl;
+            return this;
+        }
+
+        public PageLevelBuilder utmSource(String utmSource) {
+            u.utmSource = utmSource;
+            return this;
+        }
+
+        public PageLevelBuilder utmMedium(String utmMedium) {
+            u.utmMedium = utmMedium;
+            return this;
+        }
+
+        public PageLevelBuilder utmCampaign(String utmCampaign) {
+            u.utmCampaign = utmCampaign;
+            return this;
+        }
+
+        public PageLevelBuilder utmTerm(String utmTerm) {
+            u.utmTerm = utmTerm;
+            return this;
+        }
+
+        public PageLevelBuilder fullTrackingUrl(String fullTrackingUrl) {
+            u.fullTrackingUrl = fullTrackingUrl;
+            return this;
+        }
+
+        public PageLevelBuilder shortUrl(String shortUrl) {
+            u.shortUrl = shortUrl;
+            return this;
+        }
+
+        public PageLevelBuilder expiresAt(Instant expiresAt) {
+            u.expiresAt = expiresAt;
+            return this;
+        }
+
+        /** {@code collaborationId}/{@code creatorProfileId} are never set -- there is no setter for either on this builder. */
         public UtmCampaign build() {
             u.clickCount = 0L;
             u.uniqueVisitors = 0L;

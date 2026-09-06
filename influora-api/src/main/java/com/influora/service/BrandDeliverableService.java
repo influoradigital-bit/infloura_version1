@@ -337,6 +337,19 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
             throw new ApiException(
                     "INVALID_REQUEST", "feedback is required", HttpStatus.BAD_REQUEST);
         }
+        // F-0417 — Collaboration.maxRevisions (int, non-null, default 2, settable per-deal via
+        // applyDealTerms) is a persisted, per-deal revision cap that this method never enforced:
+        // applyRevision below increments Deliverable.revisionCount unconditionally, with no
+        // ceiling, so a brand could request revisions on the same slot indefinitely. Reject once
+        // the deliverable has already reached the cap, before the count is bumped again — a
+        // request at revisionCount == maxRevisions - 1 is still the allowed "last" revision.
+        Collaboration collaboration = requireCollaborationForRevisionCap(deliverable.getCollaborationId());
+        if (deliverable.getRevisionCount() >= collaboration.getMaxRevisions()) {
+            throw new ApiException(
+                    "REVISION_LIMIT_REACHED",
+                    "This deliverable has already reached its maximum number of revisions",
+                    HttpStatus.CONFLICT);
+        }
         String sanitizedFeedback = TextSanitizer.sanitizePlainText(feedback.trim());
         deliverable.applyRevision(sanitizedFeedback);
         deliverableRepository.save(deliverable);
@@ -416,6 +429,25 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
                     "This deal was cancelled and its deliverables can no longer be approved",
                     HttpStatus.CONFLICT);
         }
+    }
+
+    /**
+     * F-0417 — resolves the {@link Collaboration} backing a revision-cap check. Deliberately
+     * separate from {@link #requireNotCancelled}: that guard's not-found/cancelled semantics
+     * exist for approve/reject's escrow-adjacent defense-in-depth (CR-22a), a different concern
+     * from this lookup, which exists purely to read {@link Collaboration#getMaxRevisions()}. In
+     * practice a Deliverable's {@code collaborationId} always resolves (FK-backed relationship),
+     * so COLLABORATION_NOT_FOUND here is the same defensive branch it is elsewhere in this class.
+     */
+    private Collaboration requireCollaborationForRevisionCap(String collaborationId) {
+        return collaborationRepository
+                .findById(collaborationId)
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "COLLABORATION_NOT_FOUND",
+                                        "Collaboration not found",
+                                        HttpStatus.NOT_FOUND));
     }
 
     private Deliverable requireBrandDeliverable(AuthPrincipal principal, String deliverableId) {

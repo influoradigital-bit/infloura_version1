@@ -2,6 +2,7 @@ package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -107,6 +108,18 @@ class AffiliateEarningsServiceTest {
                 .campaignId(CAMPAIGN_ID)
                 .creatorId(CREATOR_ID)
                 .code("PRIYA_SUMMER25")
+                .discountType("percentage")
+                .discountValue(BigDecimal.valueOf(15))
+                .build();
+    }
+
+    /** T-FESTIVALBOX-0905 phase 4 -- a brand-level coupon, built via the no-creatorId-setter builder. */
+    private CouponCode brandLevelCoupon() {
+        return CouponCode.brandLevelBuilder()
+                .id(COUPON_ID)
+                .workspaceId(WORKSPACE_ID)
+                .campaignId(CAMPAIGN_ID)
+                .code("SUMMER-SALE-2026_EXCLUSIVE")
                 .discountType("percentage")
                 .discountValue(BigDecimal.valueOf(15))
                 .build();
@@ -268,6 +281,45 @@ class AffiliateEarningsServiceTest {
         assertEquals(404, ex.getStatus().value());
         verifyNoInteractions(idempotencyService);
         verify(affiliateEarningRepository, never()).save(any());
+    }
+
+    // ------------------------------------------------------------------
+    // T-FESTIVALBOX-0905 phase 4: brand-level coupons earn no creator commission (landmine 1)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "recordEarning: a brand-level coupon (creator_id IS NULL) records NO AffiliateEarning and"
+                    + " never throws -- there is no creator to pay a commission to")
+    void testBrandLevelCouponRecordsNoEarningAndDoesNotThrow() {
+        when(affiliateEarningRepository.findByRedemptionId(REDEMPTION_ID)).thenReturn(Optional.empty());
+        when(couponCodeRepository.findById(COUPON_ID)).thenReturn(Optional.of(brandLevelCoupon()));
+
+        AffiliateEarning result = service.recordEarning(redemption(BigDecimal.valueOf(200)));
+
+        assertNull(result);
+        verify(affiliateEarningRepository, never()).save(any());
+        // The brand-level short-circuit happens before commission calc/idempotency reservation --
+        // campaignRepository (only touched by validateAndCompute) and idempotencyService/
+        // auditLogService (only touched once past the brand-level check) must never be hit.
+        verifyNoInteractions(campaignRepository, idempotencyService, auditLogService);
+    }
+
+    @Test
+    @DisplayName(
+            "recordEarning: per-creator coupon (regression pin) still creates an AffiliateEarning"
+                    + " exactly as before the brand-level guard was added")
+    void testPerCreatorCouponStillRecordsEarningRegressionPin() {
+        when(affiliateEarningRepository.findByRedemptionId(REDEMPTION_ID)).thenReturn(Optional.empty());
+        when(couponCodeRepository.findById(COUPON_ID)).thenReturn(Optional.of(coupon()));
+        mockIdempotencyExecuteOnce();
+        when(affiliateEarningRepository.save(any(AffiliateEarning.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AffiliateEarning result = service.recordEarning(redemption(BigDecimal.valueOf(200)));
+
+        assertEquals(CREATOR_ID, result.getCreatorId());
+        assertEquals(0, BigDecimal.valueOf(20.00).compareTo(result.getCommissionAmount()));
+        verify(affiliateEarningRepository, times(1)).save(any(AffiliateEarning.class));
     }
 
     // ------------------------------------------------------------------

@@ -39,7 +39,7 @@ Renewal/dunning jobs advance/halt periods
 Plan sets AI credit allotments (Free 100 / Pro 400) consumed by Meera; separate from the `UsageCounter` plan-cap mechanism.
 
 ## Notifications
-`SubscriptionHaltedEvent`, `SubscriptionPaymentFailedEvent` (**both currently have no listener** — see [../known-limitations.md](../known-limitations.md)).
+`SubscriptionHaltedEvent`, `SubscriptionPaymentFailedEvent` (**both now have after-commit listeners** in `NotificationListener.java` — they send billing email to the resolved billing address) [CORRECTED 2026-09-06, doc-stale-doc, F-0557: this line claimed neither had one — see [../known-limitations.md](../known-limitations.md)).
 
 ## Dependencies
 - **Depends on**: Razorpay subscriptions, workspaces, plan gating.

@@ -670,14 +670,23 @@ export interface TimelineEvent {
 export interface PortfolioItem {
   id: string;
   title: string;
-  description?: string;
+  /**
+   * F-0661 — `CreatorDtos.PortfolioItemResponse` has no `@JsonInclude(NON_NULL)` (class- or
+   * field-level), and no global `spring.jackson.default-property-inclusion` is set, so this key
+   * is always present on the wire — never omitted. `CreatorMapper.toPortfolioItem` always passes
+   * a literal `null` here (the only server-side source, `PortfolioPinnedPost.caption`, is already
+   * mapped into `title` — there is no second, distinct description text in this domain). `string
+   * | null`, not optional: an absent key is not a shape this endpoint ever sends.
+   */
+  description: string | null;
   thumbnailUrl: string;
   mediaUrl?: string;
   platform?: Platform;
-  metrics?: {
-    views?: number;
-    likes?: number;
-    comments?: number;
-    shares?: number;
-  };
+  // F-0661 — `metrics` removed. No producer of PortfolioItemResponse has ever sent this field
+  // (CreatorDtos.java declares id/title/description/thumbnailUrl/mediaUrl/platform only, full
+  // stop). The nearest real data, `PortfolioPinnedPost.views`/`likes`, is self-reported and
+  // creator-typed, not verified analytics — bolting it on under this key would misrepresent
+  // creator claims as analytics on the brand-facing discovery card, and `comments`/`shares` have
+  // no server-side counterpart anywhere in this domain regardless. See the F-0661 backend
+  // investigation (CreatorMapper.java, CreatorDtos.java) before reintroducing this field.
 }

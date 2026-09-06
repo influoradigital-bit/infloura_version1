@@ -66,9 +66,13 @@ class ContractControllerTest {
         // [F-0283] ContractResponse gained a `terms` component (positioned between
         // expirationDate and milestones) -- the extra `null` below is that new field, not a
         // fabricated value; this fake response never supplies terms.
+        // [F-0632] ContractResponse gained trailing `campaignTitle`/`brandWorkspaceName`
+        // components -- the two extra `null`s below are those new fields, not fabricated values;
+        // this fake response never supplies campaign/brand identity.
         return new ContractResponse(
                 CONTRACT_ID, "collab-1", WORKSPACE_ID, 1, status,
-                null, "INR", null, null, null, null, null, null, null, null, null, null, null);
+                null, "INR", null, null, null, null, null, null, null, null, null, null, null,
+                null, null);
     }
 
     @Test

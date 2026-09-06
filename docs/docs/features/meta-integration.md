@@ -67,5 +67,5 @@ Meta client/OAuth tests. Regression risks: token refresh, rate-limit deferral, e
 
 ## Production Readiness
 - **Health**: 6/10 · **Completion**: ~72%
-- **Known issues**: "No real Meta app exists yet — placeholders only" (config must be injected; token bean throws on blank key); per-post `media_metrics` polling not wired; `InstagramMetricsFetcher` built but not invoked by the job; no YouTube equivalent. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: "No real Meta app exists yet — placeholders only" (config must be injected; token bean throws on blank key); per-post `media_metrics` polling IS wired (`MetricsPollingJob`, F-0479 — it maps `InstagramInsightsResponse` to `MediaMetric` and bulk-saves one row per post); [CORRECTED 2026-09-06, doc-stale-doc-claim, F-0516.] `InstagramMetricsFetcher` built but not invoked by the job; no YouTube equivalent. See [../known-limitations.md](../known-limitations.md).
 - **Last verified**: 2026-07-15

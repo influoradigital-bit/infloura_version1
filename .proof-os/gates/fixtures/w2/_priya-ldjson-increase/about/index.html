@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en-IN"><head>
+    <meta charset="UTF-8">
+    <title>About Influora</title>
+    <!--
+      Priya's increase case: /about's baseline is 3. This fixture ships 4 —
+      a real, healthy <h1>, no ErrorBoundary fallback signals, and one MORE
+      schema block than the baseline (say, a BreadcrumbList added later).
+      Must PASS: an increase over baseline is not a regression.
+    -->
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"Organization","name":"Influora","url":"https://influora.in"}
+    </script>
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"WebPage","name":"About Influora","url":"https://influora.in/about"}
+    </script>
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[]}
+    </script>
+    <script type="application/ld+json">
+    {"@context":"https://schema.org","@type":"FAQPage","mainEntity":[]}
+    </script>
+</head>
+  <body>
+    <div id="root">
+      <main>
+        <h1>Real deals, without the chaos</h1>
+        <p class="max-w-md text-sm">Influora exists to replace the spreadsheet-WhatsApp-invoice mess of influencer marketing.</p>
+      </main>
+    </div>
+    <script type="module" crossorigin="" src="/assets/index-k05nFono.js"></script>
+  </body>
+</html>

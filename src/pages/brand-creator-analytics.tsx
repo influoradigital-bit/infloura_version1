@@ -18,6 +18,7 @@ import { ContentPerformancePanel } from '@/components/analytics/ContentPerforman
 import { useCreatorMetrics } from '@/hooks/analytics/useCreatorMetrics';
 import { useCreatorScores } from '@/hooks/analytics/useCreatorScores';
 import { useContentPerformance } from '@/hooks/analytics/useContentPerformance';
+import { isApiLive } from '@/lib/api';
 import { demoCreators } from '@/lib/demo-data';
 import type { AnalyticsDateRange } from '@/lib/types';
 
@@ -44,6 +45,12 @@ import type { AnalyticsDateRange } from '@/lib/types';
  * creator (job hasn't run / disabled by default), which BrandSafetyBadge
  * already renders as an explicit "not yet available" empty state, so no
  * placeholder/fake data is introduced here.
+ *
+ * F-0441: `demoCreators` is a hardcoded fixture (fake displayName/isVerified/location). It
+ * is gated on `isApiLive()` — the same live-mode check this codebase already uses elsewhere
+ * (e.g. brand-analytics.tsx's `live` const) — so a fabricated creator identity can never
+ * render in the header when the app is talking to the real backend, even if a demo id ever
+ * collided with a real `creatorId`.
  */
 export default function BrandCreatorAnalyticsPage() {
   const { creatorId } = useParams();
@@ -67,7 +74,9 @@ export default function BrandCreatorAnalyticsPage() {
     notImplemented: contentNotImplemented,
   } = useContentPerformance(creatorId);
 
-  const creator = demoCreators.find((c) => c.id === creatorId);
+  // F-0441: never surface the demo fixture while the app is in live mode — a brand on a real
+  // backend must never see a fabricated creator identity (name/verified badge/location).
+  const creator = isApiLive() ? undefined : demoCreators.find((c) => c.id === creatorId);
 
   if (!creatorId) {
     return (

@@ -184,6 +184,13 @@ services:
       SMTP_SSL_ENABLE: ${SMTP_SSL_ENABLE}
       # Signs one-click unsubscribe links (F-0390 A3) — no default is the git-committed placeholder
       UNSUBSCRIBE_SIGNING_SECRET: ${UNSUBSCRIBE_SIGNING_SECRET}
+      # T-FESTIVALBOX-0905 -- salts the SHA-256 of the client address stored as
+      # festival_enquiries.source_ip_hash, which is what throttles the PUBLIC enquiry form
+      # (FestivalEnquiryService). SecretsStartupValidator checks this key and FAILS CLOSED outside
+      # the dev profile, so omitting it does not degrade the form -- it aborts context refresh and
+      # the WHOLE API fails to boot. generate-env.sh generates a real value via the same mechanism
+      # as UNSUBSCRIBE_SIGNING_SECRET above.
+      FESTIVAL_IP_HASH_SALT: ${FESTIVAL_IP_HASH_SALT}
       # Q5.5 (T-CREATORCONNECT-0902) — signs the creator-invite link RegistrationService
       # #consumeInviteToken verifies at registration. generate-env.sh generates a real value with
       # the same random-secret mechanism as JWT_ACCESS_SECRET/UNSUBSCRIBE_SIGNING_SECRET above;

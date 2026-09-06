@@ -58,6 +58,10 @@ INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY=$(aes32)
 INFLUORA_JWKS_PRIVATEKEYPEM="$JWKS_PRIV"
 INFLUORA_JWKS_PUBLICKEYPEM="$JWKS_PUB"
 UNSUBSCRIBE_SIGNING_SECRET=$(secret)
+# T-FESTIVALBOX-0905 -- salts festival_enquiries.source_ip_hash (public enquiry-form throttle).
+# SecretsStartupValidator fails CLOSED on the committed default outside dev, so a missing value
+# here does not just weaken the throttle -- the API will not boot.
+FESTIVAL_IP_HASH_SALT=$(secret)
 TREND_TAG_INGEST_SECRET=$(secret)
 # Q5.5 (T-CREATORCONNECT-0902) -- signs the creator-invite link consumed by
 # RegistrationService#consumeInviteToken. InviteTokenService.java fails CLOSED (rejects every

@@ -935,8 +935,10 @@ class ContractServiceTest {
         assertNotNull(response.brandSignedAt());
         assertNotNull(response.creatorSignedAt());
         verify(contractRepository, times(1)).save(contract);
-        // generateAndDeliverContractPdf + promptEscrowFundingIfNeeded both look up collaboration.
-        verify(collaborationRepository, times(2)).findById(COLLABORATION_ID);
+        // generateAndDeliverContractPdf + promptEscrowFundingIfNeeded both look up collaboration;
+        // [F-0632] toResponse's resolveCampaignTitle adds a third, to populate the response's
+        // campaignTitle for the frontend.
+        verify(collaborationRepository, times(3)).findById(COLLABORATION_ID);
     }
 
     /**
@@ -991,11 +993,14 @@ class ContractServiceTest {
 
     /**
      * Distinct from {@code testRetriedCreatorSignatureForCreatorIsNoOp} below: there the contract
-     * is only creator-signed, here it is FULLY executed (ACTIVE). That is the case the {@code
-     * verifyNoInteractions(.., collaborationRepository)} guards — an idempotent replay of an
-     * already-executed signature must touch nothing beyond the contract itself, in particular it
-     * must not take the CR-22a collaboration row lock (see {@code doRecordSignature}'s javadoc,
-     * which names this test by name for exactly that reason).
+     * is only creator-signed, here it is FULLY executed (ACTIVE). That is the case this test
+     * guards — an idempotent replay of an already-executed signature must never re-trigger
+     * PDF/email delivery, and in particular must not take the CR-22a collaboration row lock (see
+     * {@code doRecordSignature}'s javadoc, which names this test by name for exactly that reason).
+     * [F-0632] {@code toResponse} now does a plain (non-locking) {@code collaborationRepository
+     * .findById} on every response build, including this no-op replay, to resolve {@code
+     * campaignTitle} for the frontend -- that read is expected and asserted below; only the
+     * locking {@code findByIdForUpdate} remains forbidden.
      *
      * <p>[Swapnil ruling 2026-08-20] Retried through {@link
      * ContractService#recordSignatureForCreator} since the brand-relayed CREATOR role no longer
@@ -1021,7 +1026,12 @@ class ContractServiceTest {
 
         assertEquals(ContractStatus.ACTIVE, response.status());
         verify(contractRepository, never()).save(any());
-        verifyNoInteractions(contractPdfService, r2StorageService, eventPublisher, collaborationRepository);
+        verifyNoInteractions(contractPdfService, r2StorageService, eventPublisher);
+        // [F-0632] toResponse's resolveCampaignTitle takes exactly one plain findById to populate
+        // campaignTitle -- but the row lock (findByIdForUpdate) that would gate a real signature
+        // write is never taken on a no-op replay.
+        verify(collaborationRepository, times(1)).findById(COLLABORATION_ID);
+        verify(collaborationRepository, never()).findByIdForUpdate(anyString());
     }
 
     @Test
@@ -1242,6 +1252,71 @@ class ContractServiceTest {
         assertEquals(CONTRACT_ID, responses.get(0).id());
         assertEquals(null, responses.get(0).creatorSignedAt());
         verify(creatorContext).requireCreator(principal);
+    }
+
+    /**
+     * [F-0632, no-row-identity -- fixed] {@code ContractResponse} previously carried no brand or
+     * campaign name, so a creator with two pending contracts of similar value could not tell them
+     * apart on the unsigned-contracts row without following the link. Proves
+     * {@code listUnsignedForCreator} -- the exact response {@code findUnsignedByCreatorId} feeds
+     * the frontend -- now resolves a real, non-null {@code campaignTitle} (via
+     * collaboration -&gt; campaign) and {@code brandWorkspaceName} (via the contract's own
+     * workspaceId) for a properly-set-up contract, not just the rupee total and milestone count.
+     */
+    @Test
+    @DisplayName(
+            "listUnsignedForCreator: ContractResponse carries a non-null campaignTitle and"
+                    + " brandWorkspaceName (F-0632)")
+    void testListUnsignedForCreatorCarriesCampaignAndBrandIdentity() {
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        Contract awaiting = unsignedContract();
+        when(contractRepository.findUnsignedByCreatorId(CREATOR_USER_ID))
+                .thenReturn(List.of(awaiting));
+        when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.findById(COLLABORATION_ID))
+                .thenReturn(Optional.of(collaborationForCampaign(CAMPAIGN_ID)));
+        Campaign campaign = Campaign.builder().id(CAMPAIGN_ID).title("Diwali Launch Campaign").build();
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign));
+        com.influora.domain.entity.Workspace workspace =
+                com.influora.domain.entity.Workspace.newBrand(
+                        WORKSPACE_ID, "Acme Skincare", "acme-skincare", "Beauty", "11-50");
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(workspace));
+
+        List<ContractResponse> responses = service.listUnsignedForCreator(principal);
+
+        assertEquals(1, responses.size());
+        ContractResponse response = responses.get(0);
+        assertEquals("Diwali Launch Campaign", response.campaignTitle());
+        assertEquals("Acme Skincare", response.brandWorkspaceName());
+        assertNotNull(response.campaignTitle());
+        assertNotNull(response.brandWorkspaceName());
+    }
+
+    /**
+     * Best-effort guard for F-0632: a missing collaboration/campaign must never break the
+     * unsigned-contracts list render -- {@code campaignTitle} degrades to {@code null} instead of
+     * throwing, while the rest of the response is still returned.
+     */
+    @Test
+    @DisplayName(
+            "listUnsignedForCreator: missing collaboration/campaign degrades campaignTitle to null"
+                    + " without throwing (F-0632)")
+    void testListUnsignedForCreatorCampaignTitleNullWhenCollaborationMissing() {
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        Contract awaiting = unsignedContract();
+        when(contractRepository.findUnsignedByCreatorId(CREATOR_USER_ID))
+                .thenReturn(List.of(awaiting));
+        when(milestoneRepository.findByContractIdOrderBySequenceNoAsc(CONTRACT_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.empty());
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
+
+        List<ContractResponse> responses = service.listUnsignedForCreator(principal);
+
+        assertEquals(1, responses.size());
+        assertEquals(null, responses.get(0).campaignTitle());
+        assertEquals(null, responses.get(0).brandWorkspaceName());
     }
 
     /**

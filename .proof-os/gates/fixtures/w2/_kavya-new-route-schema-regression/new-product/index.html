@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>New Product - Influora</title>
+  <!-- Only the static Organization block — no WebPage, no Product, no BreadcrumbList -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Influora",
+    "url": "https://influora.in"
+  }
+  </script>
+</head>
+<body>
+  <!-- Real content, real h1, NO ErrorBoundary -->
+  <main>
+    <h1>Introducing Our New Product</h1>
+    <p>This is a real product page with real content. No ErrorBoundary. No crash.</p>
+    <p>But it's missing all the schema blocks it should have — WebPage, Product, BreadcrumbList, maybe FAQ.</p>
+    <p>It has ONLY the 1 static template Organization schema.</p>
+    <p>Under DEFAULT_MIN = 1, this PASSES even though it's a schema regression.</p>
+  </main>
+</body>
+</html>

@@ -54,18 +54,25 @@ export function ContractPanel({
     }
     const contractData = {
       contractId: meta?.contractId || 'CONT-001',
-      brandName: 'Influora Brand',
-      creatorName: 'Priya Sharma',
+      // F-0669 round 3: use the real brand name from event metadata when the
+      // app has it; 'Brand' is an honest generic role label — never an
+      // invented company name like 'Influora Brand'.
+      brandName: meta?.brandName || 'Brand',
+      // F-0669: no fabricated human name on a legal document. Use the real
+      // creator name when the app actually has it (event metadata); otherwise
+      // an honest role label — never an invented person like 'Priya Sharma'.
+      creatorName: meta?.creatorName || 'Creator',
       campaignName: meta?.campaignName || 'Summer Fashion',
       amount,
       deliverables: [
         { title: 'Instagram Reel', description: 'High-quality reel', quantity: 2 },
         { title: 'Instagram Story', description: 'Story series', quantity: 1 },
       ],
-      deadline: meta?.deadline || '2024-02-15',
-      usageRights: '6 months on social media platforms',
-      exclusivity: 'No exclusivity agreement',
-      revisionCap: 2,
+      // F-0669: this component never receives the real deadline, usage rights,
+      // exclusivity, or revision cap from the server — leave them undefined
+      // (ContractData makes them optional) rather than invent a past date or a
+      // fake policy. generateContractHTML renders an honest "Not specified".
+      deadline: meta?.deadline,
       customClauses: [],
       createdAt: new Date(),
     }
@@ -175,10 +182,16 @@ export function ContractPanel({
                       Creator shall deliver {deliverableCountLabel(meta) ?? 'the agreed pieces'} of
                       content as agreed
                     </li>
-                    <li>Content must be delivered by {meta?.deadline || '2024-02-15'}</li>
-                    <li>Brand retains usage rights for 6 months from delivery</li>
+                    {/* F-0669 round 3: this on-screen clause list is what the brand actually
+                        reads as the agreement. Render the real deadline when the app has it;
+                        never a fabricated date, usage-rights term, or revision cap. 'Not
+                        specified' matches the honest fallback contract-generator.ts already
+                        renders into the PDF for these same optional legal terms — same
+                        wording whether the brand reads the panel or the downloaded PDF. */}
+                    <li>Content must be delivered by {meta?.deadline || 'Not specified'}</li>
+                    <li>Usage rights: Not specified</li>
                     <li>Payment will be released upon approval of final deliverables</li>
-                    <li>Either party may request revisions up to 2 times</li>
+                    <li>Revisions: Not specified</li>
                     <li>Disputes will be resolved through platform arbitration</li>
                   </ol>
                 </div>

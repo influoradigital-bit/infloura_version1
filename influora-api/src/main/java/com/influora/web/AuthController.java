@@ -65,7 +65,9 @@ public class AuthController {
     public ResponseEntity<ApiResponse<TokenPair>> brandRegister(
             @Valid @RequestBody BrandRegisterRequest body, HttpServletResponse response) {
         TokenPair pair = authService.brandRegister(body);
-        authCookieService.writeRefreshCookie(response, pair.refreshToken());
+        // F-0551 — registration has no rememberMe input; AuthService#brandRegister always issues a
+        // long-lived ("remembered") refresh token, so the cookie is written at that same duration.
+        authCookieService.writeRefreshCookie(response, pair.refreshToken(), true);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.ok(pair.withoutRefresh()));
     }
@@ -74,7 +76,9 @@ public class AuthController {
     public ResponseEntity<ApiResponse<TokenPair>> brandLogin(
             @Valid @RequestBody LoginRequest body, HttpServletResponse response) {
         TokenPair pair = authService.brandLogin(body);
-        authCookieService.writeRefreshCookie(response, pair.refreshToken());
+        // F-0551 — cookie Max-Age follows the same rememberMe choice AuthService just used to
+        // create the backing refresh_tokens row (LoginRequest#isRemembered's null-safe default).
+        authCookieService.writeRefreshCookie(response, pair.refreshToken(), body.isRemembered());
         return ResponseEntity.ok(ApiResponse.ok(pair.withoutRefresh()));
     }
 
@@ -95,7 +99,8 @@ public class AuthController {
     public ResponseEntity<ApiResponse<TokenPair>> creatorRegister(
             @Valid @RequestBody CreatorRegisterRequest body, HttpServletResponse response) {
         TokenPair pair = authService.creatorRegister(body);
-        authCookieService.writeRefreshCookie(response, pair.refreshToken());
+        // F-0551 — same rationale as brandRegister above: register always issues "remembered".
+        authCookieService.writeRefreshCookie(response, pair.refreshToken(), true);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.ok(pair.withoutRefresh()));
     }
@@ -104,7 +109,8 @@ public class AuthController {
     public ResponseEntity<ApiResponse<TokenPair>> creatorLogin(
             @Valid @RequestBody LoginRequest body, HttpServletResponse response) {
         TokenPair pair = authService.creatorLogin(body);
-        authCookieService.writeRefreshCookie(response, pair.refreshToken());
+        // F-0551 — same rationale as brandLogin above.
+        authCookieService.writeRefreshCookie(response, pair.refreshToken(), body.isRemembered());
         return ResponseEntity.ok(ApiResponse.ok(pair.withoutRefresh()));
     }
 
@@ -128,7 +134,10 @@ public class AuthController {
                     "INVALID_REFRESH_TOKEN", "Refresh token is missing", HttpStatus.UNAUTHORIZED);
         }
         RefreshRotation rotation = authService.refresh(raw);
-        authCookieService.writeRefreshCookie(response, rotation.newRefreshToken());
+        // F-0551 — rotation.remembered() is the ORIGINAL login's choice, carried forward by
+        // AuthService#refresh; never re-derive it here, or a refresh could silently change a
+        // session's remember-me duration instead of preserving it.
+        authCookieService.writeRefreshCookie(response, rotation.newRefreshToken(), rotation.remembered());
         return ResponseEntity.ok(
                 ApiResponse.ok(new RefreshResponse(rotation.accessToken(), rotation.expiresIn())));
     }

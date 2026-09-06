@@ -228,8 +228,14 @@ export default function LandingPage() {
         SoftwareApplication + AggregateOffer. "What does it cost" is the single
         most-asked commercial query in this category, and without a priced offer
         an answer engine either omits us from a cost comparison or invents a
-        number. The prices here must stay in step with /pricing — see the
-        PRICING_OFFERS constant there, which is the same data.
+        number. There is no shared PRICING_OFFERS constant — the offers below
+        are hand-duplicated JSX, independently maintained in two places:
+        this block's `offers` array and the Pro/Free cards in
+        src/pages/pricing.tsx (plus the `## Answers` cost entry in
+        public/llms.txt, a third hand-written copy of the same facts). When
+        either the prices, the Pro description, or what Pro includes changes,
+        update all three by hand and re-read the others before committing —
+        nothing enforces agreement between them.
       */}
       <JsonLd
         data={getSoftwareApplicationSchema({
@@ -254,7 +260,8 @@ export default function LandingPage() {
               name: 'Pro',
               price: 4999,
               billingPeriod: 'MON',
-              description: 'Lower per-deal fee, 5 seats, unlimited creator analytics.',
+              description:
+                '400 AI credits a month, plus 5 seats, unlimited tracked creators and a reduced per-deal fee.',
             },
           ],
         })}
@@ -666,7 +673,7 @@ export default function LandingPage() {
                 <div>
                   <p className="text-2xl font-bold">₹4,999<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Brand Pro — lower fees, 5 seats, unlimited creator analytics
+                    Brand Pro — 400 AI credits/month, 5 seats, unlimited tracked creators
                   </p>
                 </div>
                 <div>

@@ -26,7 +26,11 @@ import org.springframework.stereotype.Service;
 @Service
 public class AuthCookieService {
 
-    private final long maxAgeSeconds;
+    /** F-0551 — Max-Age when the login set rememberMe=true (or omitted it; see LoginRequest). */
+    private final long rememberedMaxAgeSeconds;
+
+    /** F-0551 — Max-Age when the login explicitly set rememberMe=false. */
+    private final long notRememberedMaxAgeSeconds;
 
     @Value("${influora.auth.refresh-cookie.name:influora_refresh}")
     private String cookieName;
@@ -43,11 +47,20 @@ public class AuthCookieService {
     private String path;
 
     public AuthCookieService(JwtProperties jwtProperties) {
-        this.maxAgeSeconds = jwtProperties.getRefreshExpirySeconds();
+        this.rememberedMaxAgeSeconds = jwtProperties.getRefreshExpirySeconds();
+        this.notRememberedMaxAgeSeconds = jwtProperties.getRefreshExpiryNotRememberedSeconds();
     }
 
-    /** Sets (or replaces, on rotation) the refresh cookie. */
-    public void writeRefreshCookie(HttpServletResponse response, String rawRefreshToken) {
+    /**
+     * Sets (or replaces, on rotation) the refresh cookie. F-0551 — {@code remembered} picks the
+     * cookie's Max-Age: the long (remembered) or short (not remembered) duration. Callers must
+     * pass the SAME value the backing {@code refresh_tokens} row was created/rotated with
+     * ({@code AuthService#issueTokens}/{@code #refresh}), so the cookie never outlives or
+     * underlives the server-side token it carries.
+     */
+    public void writeRefreshCookie(
+            HttpServletResponse response, String rawRefreshToken, boolean remembered) {
+        long maxAgeSeconds = remembered ? rememberedMaxAgeSeconds : notRememberedMaxAgeSeconds;
         ResponseCookie cookie =
                 ResponseCookie.from(cookieName, rawRefreshToken)
                         .httpOnly(true)

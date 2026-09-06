@@ -86,6 +86,7 @@ import { FundEscrowStatus } from '@/components/brand/wallet/FundEscrowStatus';
 // dashboard-page.tsx uses (F-0245), extracted to src/components/shared/ so both pages share
 // one implementation instead of two.
 import { DashboardCardError } from '@/components/shared/DashboardCardError';
+import { useToast } from '@/hooks/use-toast';
 
 // Types
 interface Transaction {
@@ -421,6 +422,10 @@ export default function BrandWalletPage() {
   const [escrowRows, setEscrowRows] = React.useState<EscrowHoldRow[]>([]);
   const [escrowStatus, setEscrowStatus] = React.useState<LoadStatus>(isApiLive() ? 'loading' : 'ready');
   const [escrowError, setEscrowError] = React.useState<string | null>(null);
+  // F-0489 — the escrowHoldId of the release currently in flight (there's at most one at a
+  // time from this list, one release button per row), so only that row's button shows "Releasing…".
+  const [releasingHoldId, setReleasingHoldId] = React.useState<string | null>(null);
+  const { toast } = useToast();
 
   // P-2: direct "Fund Escrow" — a brand's own ACTIVE campaigns to pick from.
   const [fundableCampaigns, setFundableCampaigns] = React.useState<Campaign[]>([]);
@@ -511,6 +516,38 @@ export default function BrandWalletPage() {
     // state stays visible until the human deliberately moves on.
     await Promise.all([loadWallet(), loadEscrow()]);
   }, [loadWallet, loadEscrow]);
+
+  /**
+   * F-0489 (unreachable-endpoint) — the release side of a milestone-less/campaign-level FUNDED
+   * hold. `deal-payments-tab.tsx` already covers per-milestone release; a hold funded via the
+   * campaign-level pool path (no `milestoneId`, see that file's funding comment) never reaches a
+   * deal room at all, so this is its only release surface. Deliberately not gated on the
+   * server's own release preconditions (dispute freeze, funded state) — same reasoning as the
+   * milestone release control: the server's refusal is surfaced verbatim rather than re-derived
+   * here.
+   */
+  const handleReleaseHold = React.useCallback(
+    async (escrowHoldId: string) => {
+      setReleasingHoldId(escrowHoldId);
+      try {
+        await api.payments.releasePayout({ escrowHoldId });
+        toast({
+          title: 'Payment released',
+          description: 'The funds are on their way to the creator.',
+        });
+        await Promise.all([loadWallet(), loadEscrow()]);
+      } catch (err) {
+        toast({
+          title: 'Could not release payment',
+          description: err instanceof ApiError ? err.message : 'Please try again.',
+          variant: 'destructive',
+        });
+      } finally {
+        setReleasingHoldId(null);
+      }
+    },
+    [loadWallet, loadEscrow, toast],
+  );
 
   // Priya review (P-2): campaigns that already have a PENDING or FUNDED hold are excluded —
   // without this, re-selecting an already-locked campaign mints a fresh idempotency key
@@ -1557,13 +1594,27 @@ export default function BrandWalletPage() {
                               </div>
                             </div>
 
-                            <div className="text-right">
+                            <div className="flex flex-col items-end gap-2">
                               <p className="text-lg font-semibold text-amber-500">
                                 {formatCurrency(row.amount, row.currency)}
                               </p>
                               <Badge variant="secondary" className={badge.className}>
                                 {badge.label}
                               </Badge>
+                              {/* F-0489 — the only release path for a milestone-less FUNDED hold:
+                                  a hold WITH a milestoneId belongs to a deal room and is released
+                                  from deal-payments-tab.tsx instead, so this button is withheld
+                                  there to avoid two controls doing the same job from two screens. */}
+                              {row.status === 'FUNDED' && !row.milestoneId && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={releasingHoldId === row.escrowHoldId}
+                                  onClick={() => void handleReleaseHold(row.escrowHoldId)}
+                                >
+                                  {releasingHoldId === row.escrowHoldId ? 'Releasing…' : 'Release'}
+                                </Button>
+                              )}
                             </div>
                           </div>
                         );

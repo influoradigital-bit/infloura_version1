@@ -14,7 +14,7 @@
 - **Phase 1 (Domain A money core)** — `V9__escrow_holds.sql`, `V10__contracts_and_milestones.sql`; entities `EscrowHold`/`Contract`/`PaymentMilestone` (+ enums); repos; `EscrowService`/`ContractService`/`PayoutService`/`PlatformWalletService`; `WalletController`/`EscrowController`/`ContractController`; hand-rolled `RazorpayClient`/`RazorpayXClient`/`RazorpayWebhookController`/`WebhookSignatureVerifier` (+ `RazorpayProperties`); `MoneyDtos`. Both Kabir money findings (webhook amount validation + nested-JSON parse + injection-resistant body build) are fixed and verified in source.
 - **Phase 2 (Domain C AI data layer + read-only Meera)** — `V11`–`V14` migrations; entities `BrandProfile`/`AiConversation`/`AiMessage`/`CampaignIntent`/`BrandAiCredit`/`MeeraToolCall` (+ 8 enums); 6 tenant-scoped repos; services `MeeraSessionService`/`BrandContextAssembler`/`AICreditService`/`StreamTokenService`; `MeeraController` (real) + `MeeraInternalController` (**501 stub — Phase 4 makes it real**); `MeeraDtos`; `MeeraStreamProperties`.
 
-**Known placeholders standing in for remaining work:** `MeeraSessionService.sendTurn` persists a placeholder/echo ASSISTANT message (no real LLM — that's Domain D). `MeeraInternalController` returns 501 on all five executor endpoints (that's Phase 4).
+**Known placeholders standing in for remaining work:** `MeeraSessionService.sendTurn` persists a placeholder/echo ASSISTANT message (no real LLM — that's Domain D). `MeeraInternalController` now implements all five executor endpoints (context, show_creators, calculate_budget, create_campaign, request_payment) [CORRECTED 2026-09-06, doc-stale-doc-claim: the class carries no 501 anywhere] (that's Phase 4).
 
 ---
 
@@ -114,7 +114,7 @@
 
 # PHASE 4 — MEERA TOOL EXECUTORS (Domain C remainder, ~13 files) 🔴 HIGH
 
-**Now unblocked** (Phase 1 money core landed). `MeeraInternalController` returns 501 stubs — this phase makes it real. Build the Spring side of the `/internal/meera/*` contract that Domain D's `loop.py` calls into. Reads with `11-AI-FLOW-DETAILED.md` Flow 3 (the critical path) and `06-MEERA-PERMISSIONS-MATRIX.md` (R/D/C tiers).
+**Now unblocked** (Phase 1 money core landed). `MeeraInternalController` is implemented [CORRECTED 2026-09-06, doc-stale-doc-claim: no 501 remains in the class] — this phase makes it real. Build the Spring side of the `/internal/meera/*` contract that Domain D's `loop.py` calls into. Reads with `11-AI-FLOW-DETAILED.md` Flow 3 (the critical path) and `06-MEERA-PERMISSIONS-MATRIX.md` (R/D/C tiers).
 
 **Governing rule (matrix):** Meera proposes; Spring disposes; the human commits money. "The customer said yes" in chat is **not** authorization. C-tier commit endpoints are **public** browser endpoints on the human JWT — **never** reachable from `/internal/meera/*`. `request_payment` returns `PENDING_CONFIRM` only; it never debits.
 

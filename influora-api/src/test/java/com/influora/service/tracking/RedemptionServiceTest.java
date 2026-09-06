@@ -1,8 +1,10 @@
 package com.influora.service.tracking;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -24,6 +26,7 @@ import com.influora.service.IdempotencyService;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +59,14 @@ class RedemptionServiceTest {
     @Mock private AuditLogService auditLogService;
     @Mock private IdempotencyService idempotencyService;
 
+    /**
+     * [Wave D D4, revised by Kabir H-4] The commission is no longer written inside the redemption
+     * transaction. {@code RedemptionWriter} publishes {@link CouponRedeemedEvent}; a
+     * {@code @TransactionalEventListener(AFTER_COMMIT)} records the earning afterwards. So these
+     * tests assert the EVENT is published, not that a service was called.
+     */
+    @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
+
     private RedemptionService service;
 
     @BeforeEach
@@ -66,7 +77,8 @@ class RedemptionServiceTest {
         // log, so every existing assertion below — which verifies interactions on those mocks —
         // continues to exercise the actual business logic end-to-end exactly as before extraction.
         RedemptionWriter redemptionWriter =
-                new RedemptionWriter(redemptionRepository, couponCodeRepository, auditLogService);
+                new RedemptionWriter(
+                        redemptionRepository, couponCodeRepository, auditLogService, eventPublisher);
         service = new RedemptionService(redemptionRepository, idempotencyService, redemptionWriter);
     }
 
@@ -563,8 +575,68 @@ class RedemptionServiceTest {
     }
 
     // ------------------------------------------------------------------
+    // T-FESTIVALBOX-0905 phase 4: brand-level coupon redemption (landmine 3)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "redeem: a brand-level coupon (creator_id IS NULL) redeems successfully -- redemption"
+                    + " saved, usage_count incremented, audit written -- and does NOT throw building the"
+                    + " audit detail map (Map.of(...) would NPE on a null creatorId value here)")
+    void testBrandLevelCouponRedeemsSuccessfullyWithoutNpeOnAuditMap() {
+        CouponCode brandCoupon = brandLevelPercentageCoupon(15, null, null, 0);
+        when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        mockIdempotencyExecuteOnce();
+        when(couponCodeRepository.findByCode("SUMMER-SALE-2026_EXCLUSIVE")).thenReturn(Optional.of(brandCoupon));
+        when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CouponRedemption result =
+                service.redeem(
+                        "summer-sale-2026_exclusive",
+                        ORDER_ID,
+                        BigDecimal.valueOf(200),
+                        CUSTOMER_ID,
+                        IDEMPOTENCY_KEY);
+
+        assertEquals(COUPON_ID, result.getCouponId());
+        assertEquals(1, brandCoupon.getUsageCount());
+        verify(redemptionRepository, times(1)).save(any(CouponRedemption.class));
+        verify(couponCodeRepository, times(1)).save(brandCoupon);
+
+        ArgumentCaptor<Map<String, Object>> detailCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(auditLogService, times(1))
+                .recordMoneyEvent(
+                        eq(WORKSPACE_ID),
+                        eq("COUPON_REDEEMED"),
+                        any(),
+                        isNull(),
+                        isNull(),
+                        eq(IDEMPOTENCY_KEY),
+                        detailCaptor.capture());
+        assertEquals(Boolean.TRUE, detailCaptor.getValue().get("brandLevel"));
+        assertFalse(detailCaptor.getValue().containsKey("creatorId"));
+    }
+
+    // ------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------
+
+    private static CouponCode brandLevelPercentageCoupon(
+            int percentValue, Integer usageLimit, Instant expiresAt, int existingUsageCount) {
+        CouponCode coupon =
+                CouponCode.brandLevelBuilder()
+                        .id(COUPON_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .campaignId(CAMPAIGN_ID)
+                        .code("SUMMER-SALE-2026_EXCLUSIVE")
+                        .discountType("percentage")
+                        .discountValue(BigDecimal.valueOf(percentValue))
+                        .usageLimit(usageLimit)
+                        .expiresAt(expiresAt)
+                        .build();
+        bumpUsageCount(coupon, existingUsageCount);
+        return coupon;
+    }
 
     private static CouponCode percentageCoupon(
             int percentValue, Integer usageLimit, Instant expiresAt, int existingUsageCount) {
@@ -606,5 +678,91 @@ class RedemptionServiceTest {
         for (int i = 0; i < times; i++) {
             coupon.incrementUsageCount();
         }
+    }
+
+    // ==========================================================================================
+    // Wave D task D4 — synchronous affiliate commission
+    //
+    // wiki/tech/tracking-subsystem-ruling.md Q1 (Priya, CTO, binding) calls these two "blocking".
+    // Their whole reason to exist: the synchronous recordEarning call was written, reviewed and
+    // documented in FOUR other files, then never actually committed to the redemption path — and
+    // nothing failed, because no test asserted it. The hourly reconciliation cron silently became
+    // the only thing paying creators, up to ~90 minutes late. These are the guard that would have
+    // caught that, and will catch it if the wiring is lost again.
+    // ==========================================================================================
+
+    @Test
+    @DisplayName(
+            "redeem [Wave D D4]: publishes CouponRedeemedEvent for THIS redemption, so the"
+                    + " commission is recorded at AFTER_COMMIT instead of by the hourly cron")
+    void testCommissionEventIsPublished() {
+        CouponCode coupon = percentageCoupon(15, 100, null, 3);
+        when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        mockIdempotencyExecuteOnce();
+        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CouponRedemption result =
+                service.redeem(
+                        "priya_summer25", ORDER_ID, BigDecimal.valueOf(200), CUSTOMER_ID, IDEMPOTENCY_KEY);
+
+        ArgumentCaptor<Object> published = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(published.capture());
+        assertTrue(
+                published.getValue() instanceof CouponRedeemedEvent,
+                "must publish CouponRedeemedEvent, got: " + published.getValue());
+        assertEquals(result.getId(), ((CouponRedeemedEvent) published.getValue()).redemptionId());
+    }
+
+    @Test
+    @DisplayName(
+            "redeem [Wave D D4]: the event is published AFTER the redemption row is saved — an"
+                    + " AFTER_COMMIT listener must never see an id that was not written")
+    void testCommissionEventPublishedAfterRedemptionSaved() {
+        CouponCode coupon = percentageCoupon(15, 100, null, 3);
+        when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        mockIdempotencyExecuteOnce();
+        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.redeem("priya_summer25", ORDER_ID, BigDecimal.valueOf(200), CUSTOMER_ID, IDEMPOTENCY_KEY);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(redemptionRepository, eventPublisher);
+        order.verify(redemptionRepository).save(any(CouponRedemption.class));
+        order.verify(eventPublisher).publishEvent(any(CouponRedeemedEvent.class));
+    }
+
+    @Test
+    @DisplayName(
+            "redeem [Kabir H-4]: the SALE no longer depends on commission bookkeeping — publishing"
+                    + " is the last thing doRedeem does, and it cannot fail the redemption")
+    void testSaleIsNotAtRiskFromCommissionAccounting() {
+        // This test replaces one that asserted the OPPOSITE: that a recordEarning failure must
+        // propagate and roll the redemption back. That was the ruling's Part B, and it was wrong —
+        // recordEarning throws IDEMPOTENCY_KEY_IN_PROGRESS on any transient reservation failure,
+        // which then destroyed a real sale, its coupon usage increment and its money-audit event.
+        // The reconciliation cron could not recover it either: that cron sweeps redemptions that
+        // EXIST without an earning, and a rolled-back redemption does not exist.
+        //
+        // Now the commission is a post-commit concern. Pinned here by asserting the redemption is
+        // fully written and returned with only the event published — no commission service is
+        // reachable from this transaction at all.
+        CouponCode coupon = percentageCoupon(15, 100, null, 3);
+        when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        mockIdempotencyExecuteOnce();
+        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CouponRedemption result =
+                service.redeem(
+                        "priya_summer25", ORDER_ID, BigDecimal.valueOf(200), CUSTOMER_ID, IDEMPOTENCY_KEY);
+
+        assertEquals(COUPON_ID, result.getCouponId());
+        // Fixture starts at 3 uses; exactly one redemption must have been counted.
+        assertEquals(4, coupon.getUsageCount());
+        verify(redemptionRepository).save(any(CouponRedemption.class));
+        verify(auditLogService)
+                .recordMoneyEvent(any(), eq("COUPON_REDEEMED"), any(), isNull(), isNull(), anyString(), anyMap());
+        verify(eventPublisher).publishEvent(any(CouponRedeemedEvent.class));
     }
 }

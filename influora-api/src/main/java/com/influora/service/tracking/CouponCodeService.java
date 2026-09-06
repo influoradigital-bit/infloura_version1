@@ -13,16 +13,22 @@ import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Locale;
+import java.util.Optional;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Generates and stores unique, per-creator coupon codes for a campaign (Phase 4 UTM/Coupon
- * Tracking, VIKRAM_BACKEND_IMPLEMENTATION_SPEC.md §10 "Unique Coupons Per Creator (CRITICAL
- * FIX)"). Code generation + storage only -- {@code ConversionTrackingService}/{@code
- * RedemptionService} (processing a redemption against a code) are a deliberately deferred
- * follow-up, same scope cut discipline as {@code CampaignLinkService}'s UTM foundation slice.
+ * Generates and stores unique coupon codes for a campaign (Phase 4 UTM/Coupon Tracking,
+ * VIKRAM_BACKEND_IMPLEMENTATION_SPEC.md §10 "Unique Coupons Per Creator (CRITICAL FIX)") -- either
+ * per-creator ({@link #addCreatorToCampaign}, §10's original shape) or, as of T-FESTIVALBOX-0905
+ * phase 4, a single brand-level "page-exclusive" code per campaign ({@link #addBrandLevelCoupon},
+ * {@code creator_id IS NULL} -- see {@code CouponCode} javadoc and the V20260905160000 migration
+ * for why this does not reopen the ambiguity §10 closed). Code generation + storage only -- {@code
+ * ConversionTrackingService}/{@code RedemptionService} (processing a redemption against a code) are
+ * a deliberately deferred follow-up, same scope cut discipline as {@code CampaignLinkService}'s UTM
+ * foundation slice.
  *
  * <p><b>Adapted from spec pseudocode to real fields.</b> §10's pseudocode calls {@code
  * campaign.getCouponPrefix()} and {@code creator.getSlug()} -- neither field exists on {@code
@@ -99,13 +105,36 @@ public class CouponCodeService {
 
         String baseCode = creatorSlug + "_" + campaignSlug;
 
-        if (!couponCodeRepository.existsByWorkspaceIdAndCode(campaign.getWorkspaceId(), baseCode)) {
+        return generateUniqueCode(campaign.getWorkspaceId(), baseCode);
+    }
+
+    /**
+     * Generates a unique coupon code string for {@code campaign}'s brand-level ("page-exclusive")
+     * coupon (T-FESTIVALBOX-0905 phase 4). Pattern: {@code CAMPAIGN_EXCLUSIVE} (e.g. {@code
+     * "SUMMER-SALE-2026_EXCLUSIVE"}) -- mirrors {@link #generateCreatorCoupon}'s shape but with a
+     * fixed {@code "EXCLUSIVE"} suffix in place of a creator slug, since there is no creator to
+     * derive one from. Same collision-retry discipline via {@link #generateUniqueCode}.
+     */
+    public String generateBrandCoupon(Campaign campaign) {
+        String campaignSlug = SlugUtils.slugify(campaign.getTitle()).toUpperCase(Locale.ROOT);
+        String baseCode = campaignSlug + "_EXCLUSIVE";
+
+        return generateUniqueCode(campaign.getWorkspaceId(), baseCode);
+    }
+
+    /**
+     * Shared collision-retry loop behind both {@link #generateCreatorCoupon} and {@link
+     * #generateBrandCoupon} -- see {@link #generateCreatorCoupon} javadoc for the retry-loop
+     * reasoning, unchanged here.
+     */
+    private String generateUniqueCode(String workspaceId, String baseCode) {
+        if (!couponCodeRepository.existsByWorkspaceIdAndCode(workspaceId, baseCode)) {
             return baseCode;
         }
 
         for (int attempt = 1; attempt <= MAX_COLLISION_RETRIES; attempt++) {
             String candidate = baseCode + "_" + randomSuffix();
-            if (!couponCodeRepository.existsByWorkspaceIdAndCode(campaign.getWorkspaceId(), candidate)) {
+            if (!couponCodeRepository.existsByWorkspaceIdAndCode(workspaceId, candidate)) {
                 return candidate;
             }
         }
@@ -144,6 +173,8 @@ public class CouponCodeService {
             BigDecimal discountValue,
             Integer usageLimit,
             Instant expiresAt) {
+
+        validateDiscountTerms(discountType, discountValue);
 
         // Workspace-ownership check FIRST -- resolve-then-scope, never trust the caller-supplied
         // campaignId on its own (same discipline as CampaignLinkService#createTrackingLink).
@@ -196,11 +227,148 @@ public class CouponCodeService {
         return couponCodeRepository.save(entity);
     }
 
+    /**
+     * Creates (or returns the existing) brand-level, page-exclusive coupon for {@code campaignId}
+     * (T-FESTIVALBOX-0905 phase 4) -- the "ONE brand-level code per campaign" counterpart to {@link
+     * #addCreatorToCampaign}. {@code creator_id} is left NULL via {@link
+     * CouponCode#brandLevelBuilder()}; the sale attributes to the brand only and earns no creator
+     * affiliate commission (see {@code AffiliateEarningsService#recordEarning}).
+     *
+     * <p><b>Idempotent, like {@link #addCreatorToCampaign}</b> -- a second call for a campaign that
+     * already has a brand-level coupon returns the existing row rather than attempting a duplicate
+     * insert.
+     *
+     * <p><b>Refused, not 500'd, on a genuine second attempt</b> -- the pre-check above is an
+     * ordinary read-then-write (not itself race-proof), so a concurrent double-submit can still
+     * reach {@code couponCodeRepository.save(...)} twice. The actual backstop is the schema's {@code
+     * UNIQUE(campaign_id, brand_level_marker)} (V20260905160000); a {@link
+     * DataIntegrityViolationException} from that constraint is caught here and translated into the
+     * same {@code BRAND_CODE_EXISTS} (409) the pre-check throws, so a caller never sees a raw 500
+     * for what is, from the outside, an ordinary "already exists" conflict.
+     *
+     * @param workspaceId the calling brand's workspace -- MUST actually own {@code campaignId}
+     * @param campaignId the campaign to create the brand-level coupon for
+     * @param discountType e.g. {@code "percentage"} or {@code "fixed"}
+     * @param discountValue the discount amount (15 for 15%, or 500 for a fixed INR 500)
+     * @param usageLimit optional max total redemptions; {@code null} = unlimited
+     * @param expiresAt optional expiry instant; {@code null} = does not expire
+     * @throws ApiException {@code CAMPAIGN_NOT_FOUND} (404) if {@code campaignId} does not exist or
+     *     does not belong to {@code workspaceId}
+     * @throws ApiException {@code BRAND_CODE_EXISTS} (409) if this campaign already has a
+     *     brand-level coupon (whether observed via the pre-check or via the DB constraint)
+     */
+    @Transactional
+    public CouponCode addBrandLevelCoupon(
+            String workspaceId,
+            String campaignId,
+            String discountType,
+            BigDecimal discountValue,
+            Integer usageLimit,
+            Instant expiresAt) {
+
+        validateDiscountTerms(discountType, discountValue);
+
+        // Workspace-ownership check FIRST -- same resolve-then-scope discipline as
+        // addCreatorToCampaign.
+        Campaign campaign =
+                campaignRepository
+                        .findByIdAndWorkspaceId(campaignId, workspaceId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CAMPAIGN_NOT_FOUND", "Campaign not found", HttpStatus.NOT_FOUND));
+
+        Optional<CouponCode> existing = couponCodeRepository.findByCampaignIdAndCreatorIdIsNull(campaign.getId());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
+        try {
+            return buildAndSaveBrandLevelCoupon(campaign, discountType, discountValue, usageLimit, expiresAt);
+        } catch (DataIntegrityViolationException raced) {
+            // Lost a concurrent race against another request creating the same campaign's
+            // brand-level coupon -- see javadoc above; the pre-check above is not race-proof on its
+            // own, the schema's UNIQUE(campaign_id, brand_level_marker) is the real backstop.
+            // Deliberately NOT re-queried-and-returned-as-if-successful: the racing request may have
+            // used different discountType/discountValue/usageLimit/expiresAt than this caller asked
+            // for, so silently handing back "some" brand-level coupon under this caller's own
+            // request would misrepresent what was actually created. Refused as the same
+            // BRAND_CODE_EXISTS (409) the pre-check above throws -- not a raw 500.
+            throw new ApiException(
+                    "BRAND_CODE_EXISTS",
+                    "A brand-level coupon already exists for this campaign",
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    private CouponCode buildAndSaveBrandLevelCoupon(
+            Campaign campaign,
+            String discountType,
+            BigDecimal discountValue,
+            Integer usageLimit,
+            Instant expiresAt) {
+        String code = generateBrandCoupon(campaign);
+
+        CouponCode entity =
+                CouponCode.brandLevelBuilder()
+                        .id(Ulids.newUlid())
+                        .workspaceId(campaign.getWorkspaceId())
+                        .campaignId(campaign.getId())
+                        .code(code)
+                        .discountType(discountType)
+                        .discountValue(discountValue)
+                        .usageLimit(usageLimit)
+                        .expiresAt(expiresAt)
+                        .build();
+
+        return couponCodeRepository.save(entity);
+    }
+
     private static String randomSuffix() {
         StringBuilder sb = new StringBuilder(SUFFIX_LENGTH);
         for (int i = 0; i < SUFFIX_LENGTH; i++) {
             sb.append(SUFFIX_ALPHABET.charAt(RANDOM.nextInt(SUFFIX_ALPHABET.length())));
         }
         return sb.toString();
+    }
+
+    /**
+     * Rejects discount terms that would mint a coupon nobody can redeem, or one that refunds more
+     * than the order [Kabir H-3].
+     *
+     * <p>WHY HERE AND NOT ONLY IN BEAN VALIDATION: this service has TWO doors — {@code
+     * CampaignTrackingController} (brand) and {@code AdminCampaignCouponController} (admin). The
+     * brand door was missing {@code @Valid} entirely, so its constraints never fired at all. A rule
+     * this consequential should not depend on every present and future caller remembering an
+     * annotation, so it is enforced at the one place both doors pass through.
+     *
+     * <p>The specific failure this prevents: {@code discountType} was previously unchecked, so
+     * {@code "percent"} — one letter from the real value — saved a valid-looking row that then threw
+     * {@code UNSUPPORTED_DISCOUNT_TYPE} as a hardcoded 500 on EVERY redemption forever
+     * ({@code RedemptionWriter#calculateDiscount}'s {@code default} branch). No sale, no commission,
+     * and a dead code printed on a public Festival Box page. The percentage ceiling is the
+     * cross-field rule bean validation cannot express: 100 is only meaningful for percentages, and a
+     * fixed amount is separately clamped to the order total at redemption.
+     */
+    private static void validateDiscountTerms(String discountType, BigDecimal discountValue) {
+        String normalized = discountType == null ? "" : discountType.trim().toLowerCase(java.util.Locale.ROOT);
+        if (!normalized.equals("percentage") && !normalized.equals("fixed")) {
+            throw new ApiException(
+                    "INVALID_DISCOUNT_TYPE",
+                    "discountType must be 'percentage' or 'fixed'",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (discountValue == null || discountValue.signum() <= 0) {
+            throw new ApiException(
+                    "INVALID_DISCOUNT_VALUE",
+                    "discountValue must be greater than zero",
+                    HttpStatus.BAD_REQUEST);
+        }
+        if (normalized.equals("percentage") && discountValue.compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new ApiException(
+                    "INVALID_DISCOUNT_VALUE",
+                    "a percentage discount cannot exceed 100",
+                    HttpStatus.BAD_REQUEST);
+        }
     }
 }

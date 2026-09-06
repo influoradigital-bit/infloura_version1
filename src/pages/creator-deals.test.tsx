@@ -21,13 +21,18 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import CreatorDealsPage from './creator-deals';
-import { api, type Deal } from '@/lib/api';
+import { api, ApiError, type Deal } from '@/lib/api';
 
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return { ...actual, useNavigate: () => navigateMock };
 });
+
+// F-0670 — assertions on the toast copy need the real call args, not whatever
+// react-hot-toast-style DOM the (unmounted, per the memory bank) Toaster would render.
+const toastFn = vi.fn();
+vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: toastFn }) }));
 
 vi.mock('@/components/creator/creator-layout', () => ({
   CreatorLayout: ({ children }: { children: React.ReactNode }) => (
@@ -75,6 +80,115 @@ describe('CreatorDealsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(api.deals, 'list').mockResolvedValue([]);
+  });
+
+  describe('F-0670 (dead-control-from-new-guard)', () => {
+    // Real live shape: `DealService.toDealResponse` sends `dealValue` straight off
+    // `collaboration.getAgreedRate()`, which is null for a bare INVITED row — `dealValue`
+    // has no `@JsonInclude(NON_NULL)`, so the field IS present on the wire, just `null`.
+    const rateLessInvite: Deal = {
+      id: 'deal-rateless-1',
+      campaignId: 'camp-1',
+      campaignName: 'Diwali Skincare Reels',
+      counterpartyId: 'brand-1',
+      counterpartyName: 'Rateless Brand Co',
+      status: 'INVITED',
+      dealValue: null as unknown as number, // wire shape: JSON `null`, not omitted
+      currency: 'INR',
+      unreadCount: 1,
+      deliverablesDone: 0,
+      deliverablesTotal: 0,
+      escrowFunded: false,
+    };
+
+    const pricedInvite: Deal = {
+      ...rateLessInvite,
+      id: 'deal-priced-1',
+      counterpartyName: 'Priced Brand Co',
+      dealValue: 45000,
+    };
+
+    it('does not offer a bare Accept on a rate-less invite, and explains why', async () => {
+      vi.spyOn(api.deals, 'list').mockResolvedValue([rateLessInvite]);
+      const acceptSpy = vi.spyOn(api.deals, 'accept');
+      const user = userEvent.setup({ delay: null });
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText('Rateless Brand Co')).toBeInTheDocument();
+      });
+
+      const acceptButton = screen.getByRole('button', { name: 'Accept' });
+      expect(acceptButton).toBeDisabled();
+      expect(
+        screen.getByText(/No rate proposed yet.*use counter/i),
+      ).toBeInTheDocument();
+
+      // Belt-and-suspenders against a future regression that removes `disabled` but
+      // leaves the copy: a disabled button must not actually dispatch the accept call.
+      await user.click(acceptButton);
+      expect(acceptSpy).not.toHaveBeenCalled();
+
+      // The action the creator CAN take stays live.
+      expect(screen.getByRole('button', { name: 'Counter' })).toBeEnabled();
+    });
+
+    it('still accepts a priced invite normally', async () => {
+      vi.spyOn(api.deals, 'list').mockResolvedValue([pricedInvite]);
+      vi.spyOn(api.deals, 'accept').mockResolvedValue({ ...pricedInvite, status: 'TERMS_AGREED' });
+      const user = userEvent.setup({ delay: null });
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText('Priced Brand Co')).toBeInTheDocument();
+      });
+
+      const acceptButton = screen.getByRole('button', { name: 'Accept' });
+      expect(acceptButton).toBeEnabled();
+
+      await user.click(acceptButton);
+      await waitFor(() => {
+        expect(api.deals.accept).toHaveBeenCalledWith('deal-priced-1');
+      });
+      await waitFor(() => {
+        expect(navigateMock).toHaveBeenCalledWith('/creator/chat?deal=deal-priced-1');
+      });
+    });
+
+    it('surfaces an actionable message when AGREED_RATE_REQUIRED comes back anyway (race)', async () => {
+      // A priced-at-load deal (Accept enabled) whose rate the server no longer honours by
+      // the time the click lands — the residual race the disabled-button gate can't cover.
+      vi.spyOn(api.deals, 'list').mockResolvedValue([pricedInvite]);
+      vi.spyOn(api.deals, 'accept').mockRejectedValue(
+        new ApiError(
+          'AGREED_RATE_REQUIRED',
+          'Negotiate a rate before accepting — an invite or application with no agreed amount cannot become a committed deal',
+          409,
+        ),
+      );
+      const user = userEvent.setup({ delay: null });
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText('Priced Brand Co')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByRole('button', { name: 'Accept' }));
+
+      await waitFor(() => {
+        expect(toastFn).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: 'Propose a rate first',
+            description: expect.stringMatching(/counter/i),
+            variant: 'destructive',
+          }),
+        );
+      });
+      // Not the generic failure copy the old catch-all always sent.
+      expect(toastFn).not.toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Couldn’t accept this deal' }),
+      );
+    });
   });
 
   it('renders deals header and status filter chips', async () => {

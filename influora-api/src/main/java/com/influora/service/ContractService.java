@@ -38,6 +38,7 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.notification.event.ContractPendingSignatureEvent;
 import com.influora.service.notification.event.ContractReadyForEscrowEvent;
 import com.influora.service.notification.event.ContractSignedEvent;
+import com.influora.web.dto.money.MoneyDtos.ContractAmendRequest;
 import com.influora.web.dto.money.MoneyDtos.ContractGenerateRequest;
 import com.influora.web.dto.money.MoneyDtos.ContractPdfDownloadResponse;
 import com.influora.web.dto.money.MoneyDtos.ContractResponse;
@@ -46,10 +47,12 @@ import com.influora.web.dto.money.MoneyDtos.MilestoneWriteRequest;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -294,6 +297,13 @@ public class ContractService {
                         // blank-only value to null so an empty-string terms field does not read
                         // back as "terms exist" later.
                         .termsText(normalizeTerms(req.terms()))
+                        // [F-0413, contract-expiration-date-never-populated] Real, queryable
+                        // value derived from data the caller actually supplied -- see
+                        // #latestMilestoneDueDate's own javadoc for why this is the deadline
+                        // this field means (the FE's own "Content due by"/"Expires" labels,
+                        // contracts-and-deliverables.tsx, already read expirationDate that way)
+                        // and why automatic expiry ENFORCEMENT is deliberately out of scope here.
+                        .expirationDate(latestMilestoneDueDate(milestoneReqs))
                         .build();
         contractRepository.save(contract);
 
@@ -383,6 +393,305 @@ public class ContractService {
         }
 
         return toResponse(contract, milestones);
+    }
+
+    /**
+     * [F-0414, missing-contract-amend-path] Brand-initiated amendment of an existing contract's
+     * terms/milestones. {@code ContractController} previously exposed only generate/list/get/
+     * sign/pdf-download-url -- no PUT, PATCH or amend route at any stage, so a contract's
+     * milestones could never be revised once generated, signed or not.
+     *
+     * <p><b>Why a NEW versioned row, never an in-place mutation.</b> A contract that either party
+     * has already signed carries their signature over a SPECIFIC set of terms/milestones ({@code
+     * termsText} is deliberately {@code updatable = false} on the entity for exactly this
+     * reason -- see F-0283's note on {@link Contract#getTermsText()}). Rewriting {@code
+     * totalAmount}/milestones on that same row out from under an existing {@code brandSignedAt}/
+     * {@code creatorSignedAt} would silently change what someone already signed -- the document
+     * the e-sign UI calls legally binding under the IT Act 2000 would no longer say what it said
+     * at signing time, with no trace anything changed. Instead this follows the SAME versioning
+     * pattern the codebase already has for "the current contract for a collaboration" --
+     * {@code version} + {@code createdAt}, resolved via {@link
+     * ContractRepository#findByCollaborationIdOrderByVersionDescCreatedAtDesc} (see that method's
+     * own javadoc and {@code DealService#toDealResponse}, its only other reader) -- rather than
+     * inventing a second versioning shape. Amending inserts a new {@code Contract} row at {@code
+     * version = current.getVersion() + 1}, fresh and unsigned ({@link ContractStatus#DRAFT}); the
+     * existing "most recent (version, createdAt) wins" lookup picks it up as "the" contract with
+     * no other call site needing to change.
+     *
+     * <p><b>What happens to the row being superseded.</b> If it was never fully executed ({@link
+     * Contract#canCancel()} -- {@code DRAFT}/{@code PENDING_SIGNATURES}), it is cancelled outright
+     * via the same legal-transition path {@link #doCancel} uses (F-0403) -- an unsigned or
+     * half-signed draft has nothing binding riding on it, so being superseded by a fresh version
+     * is exactly what cancelling it before it was ever completed means. If it was already {@link
+     * ContractStatus#ACTIVE} (both parties signed), it is deliberately left untouched: {@link
+     * Contract#canCancel()} excludes {@code ACTIVE} for the same reason {@link #doCancel} does --
+     * a fully-executed agreement stays valid and binding until the amendment itself is signed by
+     * both parties, not silently voided the moment someone drafts a change.
+     *
+     * <p><b>Only the LATEST version may be amended</b> -- amending a superseded/stale version
+     * would branch the version history rather than extend it, and the "most recent (version,
+     * createdAt) wins" lookup every other caller relies on has no way to represent two live
+     * branches from the same predecessor.
+     *
+     * <p>Milestone validation (non-empty, each amount positive, total positive, total does not
+     * exceed the collaboration's {@code agreedRate}) mirrors {@link #generate} exactly -- an
+     * amendment is not a lesser-validated path to the same money-bearing rows.
+     */
+    @Transactional
+    public ContractResponse amend(
+            AuthPrincipal principal, String workspaceId, String contractId, ContractAmendRequest req) {
+        WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN, MemberRole.MANAGER);
+
+        Contract current = requireContract(contractId, workspaceId);
+
+        if (current.getStatus() == ContractStatus.CANCELLED
+                || current.getStatus() == ContractStatus.COMPLETED) {
+            throw new ApiException(
+                    "CONTRACT_NOT_AMENDABLE",
+                    "This contract cannot be amended in its current state",
+                    HttpStatus.CONFLICT);
+        }
+
+        List<Contract> versions =
+                contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(
+                        current.getCollaborationId());
+        if (versions.isEmpty() || !versions.get(0).getId().equals(current.getId())) {
+            throw new ApiException(
+                    "CONTRACT_NOT_LATEST_VERSION",
+                    "Only the current version of a contract can be amended",
+                    HttpStatus.CONFLICT);
+        }
+
+        List<MilestoneWriteRequest> milestoneReqs = req.milestones();
+        if (milestoneReqs == null || milestoneReqs.isEmpty()) {
+            throw new ApiException(
+                    "MILESTONES_REQUIRED", "At least one milestone is required", HttpStatus.BAD_REQUEST);
+        }
+        for (MilestoneWriteRequest m : milestoneReqs) {
+            if (m.amount() == null || m.amount().signum() <= 0) {
+                throw new ApiException(
+                        "INVALID_MILESTONE_AMOUNT",
+                        "Each milestone amount must be positive",
+                        HttpStatus.BAD_REQUEST);
+            }
+        }
+        BigDecimal totalAmount =
+                milestoneReqs.stream()
+                        .map(MilestoneWriteRequest::amount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (totalAmount.signum() <= 0) {
+            throw new ApiException(
+                    "INVALID_CONTRACT_TOTAL", "Contract total must be positive", HttpStatus.BAD_REQUEST);
+        }
+
+        Collaboration collaboration =
+                collaborationRepository
+                        .findById(current.getCollaborationId())
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "COLLABORATION_NOT_FOUND",
+                                                "Collaboration not found",
+                                                HttpStatus.NOT_FOUND));
+        if (collaboration.getAgreedRate() != null
+                && totalAmount.compareTo(collaboration.getAgreedRate()) > 0) {
+            throw new ApiException(
+                    "CONTRACT_TOTAL_EXCEEDS_AGREED_RATE",
+                    "Milestone total exceeds the collaboration's agreed rate",
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        // Supersede the predecessor -- see this method's own javadoc for why ACTIVE is left
+        // untouched while DRAFT/PENDING_SIGNATURES are cancelled outright.
+        if (current.canCancel()) {
+            current.setStatus(ContractStatus.CANCELLED);
+            contractRepository.save(current);
+        }
+
+        Contract amended =
+                Contract.builder()
+                        .id(Ulids.newUlid())
+                        .collaborationId(current.getCollaborationId())
+                        .workspaceId(workspaceId)
+                        .version(current.getVersion() + 1)
+                        .totalAmount(totalAmount)
+                        .termsText(normalizeTerms(req.terms()))
+                        .expirationDate(latestMilestoneDueDate(milestoneReqs))
+                        .build();
+        contractRepository.save(amended);
+
+        List<PaymentMilestone> milestones =
+                milestoneReqs.stream()
+                        .map(
+                                m ->
+                                        PaymentMilestone.builder()
+                                                .id(Ulids.newUlid())
+                                                .contractId(amended.getId())
+                                                .collaborationId(current.getCollaborationId())
+                                                .sequenceNo(m.sequenceNo())
+                                                .description(m.description())
+                                                .amount(m.amount())
+                                                .dueDate(m.dueDate())
+                                                .build())
+                        .toList();
+        milestoneRepository.saveAll(milestones);
+
+        // Best-effort, same discipline as #generate -- a notification hiccup must never fail an
+        // amendment that already succeeded.
+        try {
+            promptCreatorToSignIfPossible(collaboration, amended, workspaceId);
+        } catch (Exception e) {
+            log.error(
+                    "Contract-amended notification failed for contract {} — amendment itself"
+                            + " already succeeded",
+                    amended.getId(),
+                    e);
+        }
+
+        return toResponse(amended, milestones);
+    }
+
+    /**
+     * [F-0413, contract-expiration-date-never-populated] The one honest, already-supplied source
+     * for "when this contract's work is due": the LATEST due date among the milestones the caller
+     * actually supplied. Never fabricated -- a contract whose milestones carry no due dates at
+     * all returns {@code null}, which {@link Contract#getExpirationDate()} already reads back as
+     * honestly absent (same discipline as F-0283's {@code termsText} null-vs-fabricated rule).
+     *
+     * <p>The frontend's own e-sign surface already reads {@code expirationDate} this way --
+     * {@code contracts-and-deliverables.tsx} labels it "Expires" / "Content due by" / "Due", never
+     * "must be signed by" -- so binding it to the deliverable due dates rather than inventing an
+     * arbitrary N-days-from-generation signature deadline is what the field already means to the
+     * one caller that reads it, not a new interpretation invented for this fix.
+     *
+     * <p><b>What this does NOT do</b> [F-0413 scope line]: no {@code @Scheduled} job reads this
+     * value to auto-expire/auto-decline anything. This codebase already has substantial
+     * {@code @Scheduled} infrastructure ({@code com.influora.job.*}, {@code TaskSchedulerConfig},
+     * {@code SchedulerLockConfig}), so building a fresh scheduler subsystem from scratch is not
+     * the constraint -- the constraint is that a new job class lives outside
+     * {@code com.influora.service}/{@code .web}/{@code .domain.entity}/{@code .web.dto}, the file
+     * boundary this pass was scoped to. Populating the DATA so it is finally real and queryable is
+     * in scope; wiring an enforcement job against it is a follow-up for whoever owns
+     * {@code com.influora.job}.
+     */
+    private static LocalDate latestMilestoneDueDate(List<MilestoneWriteRequest> milestoneReqs) {
+        return milestoneReqs.stream()
+                .map(MilestoneWriteRequest::dueDate)
+                .filter(Objects::nonNull)
+                .max(LocalDate::compareTo)
+                .orElse(null);
+    }
+
+    /**
+     * [F-0653, conflicting-current-contract-definitions — fixed] THE canonical "current contract
+     * for a collaboration" resolution. A previous pass shipped F-0644 and F-0645 in the same wave
+     * with two DIFFERENT, DISAGREEING answers to this question — this method (moved here from a
+     * private helper that used to live only in {@code DealService}) is now the ONE definition
+     * both {@code DealService#toDealResponse} and {@code DeliverableMetricService
+     * #getCampaignAnalytics} call, rather than two independent re-derivations that happened to
+     * agree on the day they were written and quietly diverged the next time either was touched.
+     * That silent disagreement is exactly what the fresh-context CTO review that rejected the
+     * previous attempt caught: {@code DeliverableMetricService} took {@code findFirst()} on the
+     * version-desc list — the newest row EVEN WHEN IT WAS AN UNSIGNED DRAFT superseding a
+     * still-funded {@link ContractStatus#ACTIVE} predecessor — silently dropping that
+     * predecessor's milestones (and their {@code RELEASED} metrics) from the campaign aggregate,
+     * while this method already knew to keep surfacing the funded predecessor as "current"
+     * through that exact window.
+     *
+     * <p>{@code contracts} must already be sorted newest-first by {@code (version, createdAt)} —
+     * i.e. {@link ContractRepository#findByCollaborationIdOrderByVersionDescCreatedAtDesc}'s own
+     * result, unmodified.
+     *
+     * <p><b>The rule.</b> The newest version wins UNLESS it is still unsigned ({@link
+     * ContractStatus#DRAFT}/{@link ContractStatus#PENDING_SIGNATURES}) — an unsigned amendment is
+     * never "the" contract while its predecessor is still the one actually binding (see {@link
+     * #amend}'s own javadoc, "What happens to the row being superseded"). In that window, the
+     * most recent still-{@link ContractStatus#ACTIVE} version is preferred instead. Once the
+     * amendment is genuinely signed by both parties, {@link #retirePredecessorIfSuperseded}
+     * retires that predecessor out of {@code ACTIVE} (to {@link ContractStatus#COMPLETED}) in the
+     * SAME transaction the amendment itself becomes {@code ACTIVE} in — so by the time any caller
+     * reads again, the amendment is both the newest row AND the only {@code ACTIVE} one, and this
+     * method returns it via the first branch with no special-casing needed. Every other case — no
+     * contracts, a single contract of any status, or the newest version already being
+     * active/original with no ACTIVE predecessor to prefer — returns {@code contracts.get(0)}.
+     */
+    public static Contract resolveCurrentContract(List<Contract> contracts) {
+        if (contracts.isEmpty()) {
+            return null;
+        }
+        Contract newest = contracts.get(0);
+        boolean newestUnsigned =
+                newest.getStatus() == ContractStatus.DRAFT
+                        || newest.getStatus() == ContractStatus.PENDING_SIGNATURES;
+        if (!newestUnsigned) {
+            return newest;
+        }
+        return contracts.stream()
+                .filter(c -> c.getStatus() == ContractStatus.ACTIVE)
+                .findFirst()
+                .orElse(newest);
+    }
+
+    /**
+     * [F-0654, terminal-status-never-reached — fixed] The other half of the amendment lifecycle
+     * F-0645 only partially closed: F-0645 correctly keeps a superseded but still-{@code ACTIVE}
+     * predecessor "current" (see {@link #resolveCurrentContract}) for as long as its amendment
+     * sits unsigned — but nothing previously transitioned that predecessor OUT of {@code ACTIVE}
+     * once the amendment itself became genuinely, fully executed. {@link
+     * Contract#setStatus(ContractStatus)} had exactly two call sites before this fix ({@link
+     * #doCancel}, both {@code -> CANCELLED}); a contract could reach {@code ACTIVE} and then stay
+     * there forever, even after a signed amendment fully replaced it — {@link
+     * #resolveCurrentContract} would then find TWO {@code ACTIVE} rows for the same collaboration,
+     * and any caller trusting "at most one ACTIVE contract per collaboration" (escrow-funded
+     * checks, {@code DealService#toDealResponse}'s {@code escrowFunded} flag) would silently stay
+     * scoped to whichever one it happened to see.
+     *
+     * <p><b>Why here, not in a read path.</b> The transition belongs at the moment the
+     * amendment's OWN signature flow completes — called from {@link #doRecordSignature} right
+     * where {@link Contract#advanceIfFullySigned()} (via {@link Contract#recordBrandSignature}/
+     * {@link Contract#recordCreatorSignature}) has just moved {@code contract} itself to {@link
+     * ContractStatus#ACTIVE} — not derived after the fact by a read-side "pick the newest" query
+     * (the exact shape of bug F-0644/F-0653 already showed is fragile: two independent read-side
+     * derivations quietly disagreeing). Writing the retirement once, here, at the single place a
+     * contract becomes {@code ACTIVE}, is what makes "at most one ACTIVE contract per
+     * collaboration" an invariant every reader can rely on instead of something each read-side
+     * caller redundantly tries to reconstruct.
+     *
+     * <p><b>Why {@link ContractStatus#COMPLETED}, not a new enum value.</b> {@link
+     * ContractStatus#CANCELLED} is not honest here — {@link #amend}'s own javadoc already
+     * establishes that an ACTIVE predecessor is deliberately NOT cancelled when an amendment is
+     * merely drafted, precisely because it stays valid and binding, not voided; retroactively
+     * calling it CANCELLED once the amendment is signed would contradict that same reasoning and
+     * risks misrouting anything that treats CANCELLED as "this never actually bound anyone" (e.g.
+     * refund/dispute logic). {@code COMPLETED} was already defined on {@link ContractStatus} with
+     * zero call sites anywhere (the exact gap F-0654's own report named) and is the closer
+     * semantic fit: THIS VERSION of the agreement ran its full course and was superseded by a
+     * new, mutually-signed one — a form of the contract concluding, not of it being voided.
+     * Flagging for Priya: a dedicated {@code SUPERSEDED} status would be a cleaner label for this
+     * specific case (vs. an engagement that concluded because every deliverable was paid out),
+     * but adding one touches {@code ContractStatus.java}/{@code Contract.java}, both outside this
+     * pass's assigned file boundary ({@code ContractService.java}/{@code DealService.java}/
+     * {@code DeliverableMetricService.java} plus tests).
+     *
+     * <p>Scoped to contracts genuinely superseded by THIS one: any OTHER {@code ACTIVE} row for
+     * the same collaboration (there should be at most one, by construction — {@link #amend} only
+     * ever allows amending the latest version, and {@link #generate}'s {@code
+     * existsByCollaborationIdAndStatusNot} guard blocks a second contract from ever being created
+     * outside the amend path). A first-ever contract (no predecessor) simply finds nothing to
+     * retire, so this is a correct no-op on the common case.
+     */
+    private void retirePredecessorIfSuperseded(Contract contract) {
+        List<Contract> versions =
+                contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(
+                        contract.getCollaborationId());
+        for (Contract predecessor : versions) {
+            if (!predecessor.getId().equals(contract.getId())
+                    && predecessor.getStatus() == ContractStatus.ACTIVE) {
+                predecessor.setStatus(ContractStatus.COMPLETED);
+                contractRepository.save(predecessor);
+            }
+        }
     }
 
     private void promptCreatorToSignIfPossible(
@@ -676,6 +985,79 @@ public class ContractService {
     }
 
     /**
+     * [F-0403, missing-contract-cancel-path] Brand-initiated cancellation of a not-yet-fully-
+     * executed contract. Before this fix, {@link Contract#setStatus(ContractStatus)} had zero
+     * call sites anywhere in {@code src/main} -- {@code ContractRepository}'s own javadoc on
+     * {@link #findUnsignedByCreatorId} documented the resulting gap directly: "There is no
+     * contract-cancel endpoint anywhere in this codebase — a Contract row itself can never BE
+     * cancelled." A contract signed by only one party (or by neither) had no way to ever leave
+     * {@link ContractStatus#PENDING_SIGNATURES}/{@link ContractStatus#DRAFT} except by eventually
+     * being signed -- there was no way to call it off.
+     *
+     * <p><b>Who may cancel, and why brand OR creator.</b> Mirrors {@code DealService#reject}, the
+     * codebase's own precedent for "either party may walk away from a not-yet-executed
+     * agreement" -- that method is deliberately role-aware (brand OR creator; see its own javadoc,
+     * B-4) rather than brand-only, because a pre-completion deal is not yet a one-sided
+     * commitment either party made TO the other. A generated-but-unsigned/half-signed Contract is
+     * the same shape: neither party is bound to it yet (full execution requires BOTH
+     * signatures -- {@link Contract#advanceIfFullySigned()}), so this follows the same dual-role
+     * authorization shape rather than inventing a brand-only or creator-only one. The brand side
+     * additionally requires the same {@code OWNER}/{@code ADMIN}/{@code MANAGER} membership tier
+     * {@link #generate} and {@code DealService}'s own brand mutations require (CR-37) -- managing
+     * whether a contract exists is the same class of action as managing what it says.
+     *
+     * <p><b>Legal-transition check, not a denylist.</b> {@link Contract#canCancel()} admits only
+     * {@code DRAFT}/{@code PENDING_SIGNATURES} -- see that method's own javadoc for why {@code
+     * ACTIVE} (fully executed) is deliberately excluded rather than silently cancellable, the
+     * exact failure mode this ticket's own report called out ("...does not exist" implicitly
+     * meant "does not exist SAFELY" -- a denylist-shaped cancel that also reached {@code ACTIVE}
+     * would have been worse than no cancel path at all, the same lesson {@code
+     * Collaboration#canReject()}'s CR-22a narrowing already encodes for the collaboration side).
+     *
+     * <p><b>Known scope limitation, stated so it is not rediscovered as a bug.</b> Unlike {@code
+     * DealService#doReject} (which takes a {@code PESSIMISTIC_WRITE} lock via {@code
+     * CollaborationRepository#findByIdForUpdate} before its check-then-write), this method does
+     * NOT take an equivalent row lock on the {@link Contract} row -- {@link ContractRepository}
+     * has no {@code findByIdForUpdate}-shaped method today, and adding one is outside this pass's
+     * assigned file boundary (only {@code Contract.java}/{@code ContractService.java}/{@code
+     * ContractController.java}/the money DTOs). A genuinely concurrent cancel racing a genuinely
+     * concurrent {@link #recordSignature}/{@link #recordSignatureForCreator} for the SAME contract
+     * is therefore not fully closed the way the equivalent collaboration-level race is (see
+     * {@code doRecordSignature}'s own CR-22a note). Flagged here as a follow-up for whoever next
+     * touches {@code ContractRepository}, not silently left undocumented.
+     */
+    @Transactional
+    public ContractResponse cancel(
+            AuthPrincipal principal, String workspaceId, String contractId) {
+        WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN, MemberRole.MANAGER);
+        Contract contract = requireContract(contractId, workspaceId);
+        return doCancel(contract);
+    }
+
+    /** Creator-authenticated cancellation — same legal-transition gate, scoped via {@link #requireContractForCreator}. */
+    @Transactional
+    public ContractResponse cancelForCreator(AuthPrincipal principal, String contractId) {
+        creatorContext.requireCreator(principal);
+        Contract contract = requireContractForCreator(contractId, principal.getUserId());
+        return doCancel(contract);
+    }
+
+    private ContractResponse doCancel(Contract contract) {
+        if (!contract.canCancel()) {
+            throw new ApiException(
+                    "CONTRACT_NOT_CANCELLABLE",
+                    "This contract cannot be cancelled in its current state",
+                    HttpStatus.CONFLICT);
+        }
+        contract.setStatus(ContractStatus.CANCELLED);
+        contractRepository.save(contract);
+        List<PaymentMilestone> milestones =
+                milestoneRepository.findByContractIdOrderBySequenceNoAsc(contract.getId());
+        return toResponse(contract, milestones);
+    }
+
+    /**
      * Runs inside {@code executeOnce} (see {@link #recordSignature}, E2 LOW-3) — the already-signed
      * short-circuit still runs first as a fast, non-error idempotent-replay path for a genuine
      * sequential retry (the original E2 audit finding #10 scenario); {@code executeOnce} additionally
@@ -742,6 +1124,14 @@ public class ContractService {
         // this side-effect chain failing the whole request — a PDF/email hiccup must never block
         // the signature itself from being recorded, so failures here are logged, not thrown.
         if (contract.getBrandSignedAt() != null && contract.getCreatorSignedAt() != null) {
+            // [F-0654 fix] Retire any predecessor this contract has just superseded BEFORE any
+            // other fully-signed side effect — see #retirePredecessorIfSuperseded's own javadoc.
+            // Not best-effort: unlike the notification/PDF side effects below, a failure to write
+            // this transition must roll back with the signature itself, since a partially-applied
+            // retirement (contract ACTIVE but predecessor still ACTIVE too) is the exact bug this
+            // fix closes.
+            retirePredecessorIfSuperseded(contract);
+
             // W2-1 — both signatures are in; the collaboration is now CONTRACTED.
             collaborationLifecycleService.onContractFullySigned(contract.getCollaborationId());
 
@@ -1080,7 +1470,7 @@ public class ContractService {
         }
     }
 
-    private static ContractResponse toResponse(Contract contract, List<PaymentMilestone> milestones) {
+    private ContractResponse toResponse(Contract contract, List<PaymentMilestone> milestones) {
         List<MilestoneDto> milestoneDtos =
                 milestones.stream()
                         .map(
@@ -1115,6 +1505,35 @@ public class ContractService {
                 contract.getTermsText(),
                 milestoneDtos,
                 contract.getCreatedAt(),
-                contract.getUpdatedAt());
+                contract.getUpdatedAt(),
+                resolveCampaignTitle(contract),
+                resolveBrandWorkspaceName(contract));
+    }
+
+    /**
+     * [F-0632, no-row-identity] Contract -&gt; Collaboration -&gt; Campaign -&gt; title, the same
+     * lookup pattern {@code PortfolioService#buildCollabs} uses to resolve a campaign title for
+     * its DTO. Best-effort: returns {@code null} (never throws) when the collaboration or
+     * campaign is missing so an unsigned-contracts list render never breaks over a stale row.
+     */
+    private String resolveCampaignTitle(Contract contract) {
+        Collaboration collaboration =
+                collaborationRepository.findById(contract.getCollaborationId()).orElse(null);
+        if (collaboration == null) {
+            return null;
+        }
+        Campaign campaign = campaignRepository.findById(collaboration.getCampaignId()).orElse(null);
+        return campaign != null ? campaign.getTitle() : null;
+    }
+
+    /**
+     * [F-0632, no-row-identity] Contract's own {@code workspaceId} -&gt; Workspace name -- the
+     * brand's workspace name, same field {@code PortfolioService#buildCollabs} reads off {@link
+     * Workspace#getName()}. Best-effort: returns {@code null} (never throws) when the workspace
+     * is missing.
+     */
+    private String resolveBrandWorkspaceName(Contract contract) {
+        Workspace workspace = workspaceRepository.findById(contract.getWorkspaceId()).orElse(null);
+        return workspace != null ? workspace.getName() : null;
     }
 }

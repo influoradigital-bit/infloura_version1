@@ -114,7 +114,7 @@ Also state what happens to any raw files: whether the brand receives them, wheth
 
 ## Making this easier
 
-Writing all of this per deal is real work, which is why most creators skip it, and why platforms have started standardising it. On Influora, a collaboration carries its scope, milestones, revision limits and payment terms as structured fields rather than prose, with the brand's payment held in escrow before the work starts, so "will I get paid" stops being a question.
+Writing all of this per deal is real work, which is why most creators skip it, and why platforms have started standardising it. On Influora, a collaboration carries its scope, milestones, revision limits and payment terms as structured fields rather than prose, with the brand's payment secured before the work starts, so "will I get paid" stops being a question.
 
 That said, do not let any platform — ours included — replace reading your own agreement. A contract you did not read is not protection, whoever generated it.
 

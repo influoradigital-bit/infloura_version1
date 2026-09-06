@@ -56,6 +56,8 @@ vi.mock('@/lib/api', async () => {
     api: {
       creators: {
         search: (...a: unknown[]) => creatorsSearch(...a),
+        // F-0660 — see creator-discovery.test.tsx's identical comment.
+        searchWithFacets: (...a: unknown[]) => creatorsSearch(...a),
         invite: vi.fn(),
         toggleSaved: vi.fn().mockResolvedValue({ saved: true }),
         featured: vi.fn().mockResolvedValue({ featured: [] }),

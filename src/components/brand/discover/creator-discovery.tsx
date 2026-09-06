@@ -36,6 +36,7 @@ import {
   type FeaturedCreatorSection,
   type ExternalCreator,
   type ConnectionRequest,
+  type CreatorCategoryFacet,
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -150,7 +151,10 @@ function DiscoverHero() {
   );
 }
 
-// Indian cities for filter
+// F-0660 — deliberately hardcoded, unlike the Categories filter below (`categoryOptions`). The
+// only facets `GET /creators/search` returns are `categories` and `followerRanges`
+// (`DiscoveryDtos.AvailableFiltersMeta`, verified server-side) — there is no city facet anywhere
+// on the backend to wire this list from, so it stays a fixed reference list until one exists.
 const INDIAN_CITIES = [
   'Mumbai',
   'Delhi',
@@ -347,6 +351,30 @@ const mockCreators: CreatorProfile[] = [
     languages: ['Hindi', 'Gujarati', 'English'],
     contentStyles: ['Educational', 'Explainer', 'Data-driven'],
   },
+  {
+    // F-0409 — newly onboarded, not priced yet. The only mock-mode fixture with `averageRate`
+    // unset; needed so the price-range filter's OR-isNull path (mirroring the server's
+    // `rateOverlap` spec) has a real row to keep once the price slider is touched.
+    id: '9',
+    userId: 'u9',
+    displayName: 'Rahul Verma',
+    bio: 'Just joined Influora. Comedy sketches and relatable everyday content from Jaipur.',
+    avatarUrl: undefined,
+    coverImageUrl: undefined,
+    location: 'Jaipur, Rajasthan',
+    categories: ['Entertainment', 'Comedy'],
+    platforms: [
+      { platform: 'INSTAGRAM', handle: '@rahulvermacomedy', followers: 150000, engagementRate: 3.5, isVerified: false },
+    ],
+    totalFollowers: 150000,
+    engagementRate: 3.5,
+    averageRate: undefined,
+    currency: 'INR',
+    isVerified: false,
+    portfolioItems: [],
+    languages: ['Hindi', 'English'],
+    contentStyles: ['Comedy', 'Relatable'],
+  },
 ];
 
 // Mock campaigns for invite modal
@@ -415,7 +443,18 @@ const categories = [
   'Gaming',
 ];
 
+// F-0660 — same ruling as INDIAN_CITIES above: no language facet exists on the backend, so this
+// stays a fixed reference list rather than being wired to something that doesn't exist.
 const languages = ['Hindi', 'English', 'Tamil', 'Telugu', 'Kannada', 'Malayalam', 'Bengali', 'Marathi', 'Gujarati', 'Punjabi'];
+
+/**
+ * F-0660 — the live category facet (`api.creators.searchWithFacets`) returns lowercase ids
+ * (`CreatorDiscoveryService#buildAvailableFacets` lowercases every stored category before
+ * counting it). Title-cased purely for display; `toggleCategory`/the `verticals` query param
+ * both round-trip it straight back to lowercase, so this never changes what gets selected or
+ * sent — only how it reads on the badge.
+ */
+const titleCaseCategory = (id: string): string => id.replace(/\b\w/g, (ch) => ch.toUpperCase());
 
 export function CreatorDiscovery() {
   const navigate = useNavigate();
@@ -429,6 +468,13 @@ export function CreatorDiscovery() {
   const [apiHasMore, setApiHasMore] = React.useState(false);
   /** F-0410 — server total for the current filter set; `undefined` when the envelope omits it. */
   const [apiTotal, setApiTotal] = React.useState<number | undefined>(undefined);
+  /**
+   * F-0660 — real category counts from `GET /creators/search`'s facets (categories only; the
+   * backend has no city/language facet — see `CreatorSearchFacets`'s doc comment in api.ts).
+   * Empty until the first live fetch resolves, which is exactly when the Categories filter below
+   * falls back to the hardcoded `categories` list rather than rendering nothing.
+   */
+  const [categoryFacets, setCategoryFacets] = React.useState<CreatorCategoryFacet[]>([]);
   // F-0256 — the mock fixture used to seed this as unconditional initial state, so in live mode
   // a brand could pick one of three fabricated campaigns (fake ids `c1`/`c2`/`c3`) before
   // `GET /campaigns` had a chance to resolve, and submit an invite/offer against a campaignId
@@ -660,7 +706,7 @@ export function CreatorDiscovery() {
         // language was really narrowing the current page, not the creator base. Each `undefined`
         // below is the "untouched" sentinel — the server treats an absent param as no filter, so
         // an untouched slider must not be sent as its own default bounds.
-        const result = await api.creators.search({
+        const result = await api.creators.searchWithFacets({
           q: searchQuery || undefined,
           city: selectedCities.length ? selectedCities.join(',') : undefined,
           platforms: selectedPlatforms.length ? selectedPlatforms : undefined,
@@ -685,6 +731,11 @@ export function CreatorDiscovery() {
         // creators actually match rather than how many rows this page happened to return.
         setApiTotal(result.meta.total);
         setApiPage(pageNum);
+        // F-0660 — real category counts, replacing nothing that worked before (this call used to
+        // be plain `search`, which returned no facets at all). Optional-chained: defensive
+        // against any caller still resolving the pre-F-0660 `{ creators, meta }` shape with no
+        // `facets` at all.
+        if (result.facets?.categories?.length) setCategoryFacets(result.facets.categories);
         const saved = result.creators
           .filter((c) => (c as CreatorProfile & { saved?: boolean }).saved)
           .map((c) => c.id);
@@ -893,6 +944,20 @@ export function CreatorDiscovery() {
     sortBy,
   ]);
 
+  /**
+   * F-0660 — the Categories filter badges. Live mode sources them from the real `categories`
+   * facet (`categoryFacets`) once the first search resolves; mock mode, and live mode before
+   * that first resolve, fall back to the hardcoded `categories` list so the panel is never
+   * empty. Facet ids are already lowercase (`toggleCategory`/the `verticals` query param expect
+   * exactly that), so `label` is the only thing title-cased for display.
+   */
+  const categoryOptions = React.useMemo<{ id: string; label: string; count?: number }[]>(() => {
+    if (liveApi && categoryFacets.length) {
+      return categoryFacets.map((f) => ({ id: f.id, label: titleCaseCategory(f.id), count: f.count }));
+    }
+    return categories.map((label) => ({ id: label, label }));
+  }, [liveApi, categoryFacets]);
+
   const activeFilterCount =
     selectedPlatforms.length +
     selectedCategories.length +
@@ -999,18 +1064,24 @@ export function CreatorDiscovery() {
 
                       <Separator />
 
-                      {/* Categories */}
+                      {/* Categories — F-0660: real facet counts in live mode (categoryOptions
+                          falls back to the hardcoded list in mock mode / before the first fetch
+                          resolves). No city/language facet exists on the backend to match this
+                          against — those two filters below stay hardcoded on purpose. */}
                       <div className="space-y-3">
                         <Label className="text-sm font-medium">Categories</Label>
                         <div className="flex flex-wrap gap-2">
-                          {categories.map((category) => (
+                          {categoryOptions.map((option) => (
                             <Badge
-                              key={category}
-                              variant={selectedCategories.includes(category) ? 'default' : 'outline'}
+                              key={option.id}
+                              variant={selectedCategories.includes(option.id) ? 'default' : 'outline'}
                               className="cursor-pointer"
-                              onClick={() => toggleCategory(category)}
+                              onClick={() => toggleCategory(option.id)}
                             >
-                              {category}
+                              {option.label}
+                              {option.count != null && (
+                                <span className="ml-1 text-xs opacity-70">({option.count})</span>
+                              )}
                             </Badge>
                           ))}
                         </div>
@@ -1212,7 +1283,9 @@ export function CreatorDiscovery() {
               ))}
               {selectedCategories.map((category) => (
                 <Badge key={category} variant="secondary" className="gap-1">
-                  {category}
+                  {/* F-0660 — live mode stores the lowercase facet id (see categoryOptions);
+                      title-case it back for display, same as the filter panel's own badges. */}
+                  {liveApi ? titleCaseCategory(category) : category}
                   <X
                     className="h-3 w-3 cursor-pointer"
                     onClick={() => toggleCategory(category)}

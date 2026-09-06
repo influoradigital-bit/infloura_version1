@@ -1,5 +1,63 @@
 import type { User } from './types';
 
+// ---------------------------------------------------------------------------
+// F-0551 — in-memory access token store (live mode only)
+// ---------------------------------------------------------------------------
+//
+// CEO ruling F-0551 (2026-09-05): the access token lives in memory only; the refresh token
+// stays exactly where it already was, an HttpOnly cookie this SPA never reads (Kabir A1). This
+// closes the bug class F-0459/F-0667 both came from — the access token sitting in TWO different
+// JS-readable web stores (localStorage vs sessionStorage per "remember me", CR-121) with call
+// sites that disagreed about which one to check.
+//
+// The store lives HERE, not in api.ts's HttpClient, for one reason: `persistBrandSession` below
+// is the ONLY place a brand's real access token ever reaches the client at all — `mapBrandAuth`
+// (src/lib/api.ts) never calls `HttpClient.setToken` for brand login/register the way
+// `creator-login.tsx` explicitly does for creator (see that function's own doc comment) — so this
+// module has to be able to write the live-mode slot directly. `api.ts` already imports FROM this
+// module (`persistBrandSession`/`persistCreatorSession`); importing `isApiLive` the other way
+// would make that a genuine cycle, so `isLiveMode` below is a deliberate one-line duplicate of
+// `api.ts`'s `isApiLive`, the same way `clearCreatorSession`'s `meta_connection` cleanup
+// deliberately duplicates api.ts's literal key rather than importing it (see that function's own
+// comment) — both pairs stay in lockstep by construction (a single `import.meta.env` read),
+// not by a shared import.
+//
+// Mock mode is deliberately untouched: nothing minted there (`mock_brand_token` /
+// `mock_creator_token`) is ever a real, server-issued bearer credential — `assertMockAuthAllowed`
+// (api.ts) fails closed before one could reach a production build — so there is no XSS blast
+// radius to close, and changing it would only risk breaking dev/demo flows for zero security
+// benefit.
+type TokenRole = 'brand' | 'creator';
+
+const isLiveMode = (): boolean => import.meta.env?.VITE_API_MODE === 'live';
+
+const memoryAccessTokens: Partial<Record<TokenRole, string>> = {};
+
+/**
+ * Written under the SAME storage key the pre-F-0551 access token used to occupy
+ * (`brand_token` / `creator_token`) — but this is NOT a credential, never the token itself. It
+ * exists solely so two call sites outside this ticket's file boundary that gate on that key's
+ * mere presence (never its value) keep working: `src/hooks/use-creator-identity.ts` and
+ * `src/hooks/use-creator-unread-count.ts`, both of which do
+ * `if (!localStorage.getItem('creator_token')) return;` and read the value nowhere. An XSS
+ * payload reading this key gets an inert string it cannot replay as an `Authorization` header —
+ * the real token is only ever in `memoryAccessTokens` above, never in any `Storage`.
+ */
+export const LIVE_SESSION_TOKEN_HINT = 'session-active';
+
+/** The live-mode access token for `role`, or `null` if nothing has been set (or it was cleared). */
+export function getMemoryAccessToken(role: TokenRole): string | null {
+  return memoryAccessTokens[role] ?? null;
+}
+
+export function setMemoryAccessToken(role: TokenRole, token: string): void {
+  memoryAccessTokens[role] = token;
+}
+
+export function clearMemoryAccessToken(role: TokenRole): void {
+  delete memoryAccessTokens[role];
+}
+
 /**
  * Maps backend TokenPair (§4) to client session + localStorage keys used by the UI.
  */
@@ -57,6 +115,13 @@ const ONBOARDING_KEY = 'brand_onboarding_complete';
  *
  * Same rule as the creator helper: the refresh token is NEVER written to JS-readable storage
  * (Kabir A1) — it arrives as an HttpOnly cookie.
+ *
+ * F-0551 — the ACCESS token is now subject to the same rule in live mode. Brand has no separate
+ * `api.auth.setToken('brand', ...)` call site the way creator does (see `creatorLogin`'s doc in
+ * api.ts), so this is the ONLY place a brand's real access token ever reaches the client at all,
+ * and therefore where the memory-only rule has to be enforced for this role. See the
+ * `memoryAccessTokens` file-level comment above for why the store lives in this module and how
+ * mock mode stays untouched.
  */
 export function persistBrandSession(data: BackendTokenPair): BrandSession {
   const token = data.accessToken;
@@ -66,7 +131,12 @@ export function persistBrandSession(data: BackendTokenPair): BrandSession {
   const onboardingComplete = data.onboardingCompleted ?? false;
   const displayName = data.user.displayName;
 
-  localStorage.setItem('brand_token', token);
+  if (isLiveMode()) {
+    setMemoryAccessToken('brand', token);
+    localStorage.setItem('brand_token', LIVE_SESSION_TOKEN_HINT);
+  } else {
+    localStorage.setItem('brand_token', token);
+  }
   // Kabir A1 — the refresh token is NEVER stored in JS-readable storage. It is delivered by the
   // backend as an HttpOnly cookie (see AuthCookieService) and this SPA never sees it. Storing it in
   // localStorage would turn any XSS into durable account takeover.
@@ -198,7 +268,22 @@ export function getCreatorSession(): CreatorSession | null {
 }
 
 export function clearCreatorSession(): void {
+  // F-0551 — belt and suspenders, same spirit as the two removeItem calls right below: the
+  // primary clear path is `api.auth.logout('creator')` -> `HttpClient.clearToken`, but that call
+  // is gated behind `isApiLive()` at both real call sites (see the F-0459 residual note a few
+  // lines down), so this must not depend on it running. Clearing here too means a skipped
+  // `logout()` call can never leave a previous creator's live-mode access token reachable in
+  // memory for the rest of this page's life.
+  clearMemoryAccessToken('creator');
   localStorage.removeItem('creator_token');
+  // F-0459 review residual: api.auth.logout('creator') is the only code that clears
+  // creator_token out of sessionStorage (via http.clearToken), and both real logout call
+  // sites gate that call behind isApiLive() — so in mock/demo mode the whole call, and with
+  // it the sessionStorage clear, never runs. A remember-me-off session (creator_token in
+  // sessionStorage per CR-121) survived a mock-mode logout: clearCreatorSession() only ever
+  // touched localStorage, and F-0459's fixed auth guard now reads sessionStorage too, so the
+  // leftover token kept the "logged out" tab looking logged in until the tab actually closed.
+  sessionStorage.removeItem('creator_token');
   localStorage.removeItem('creator_user_id');
   localStorage.removeItem('creator_email');
   localStorage.removeItem('creator_display_name');

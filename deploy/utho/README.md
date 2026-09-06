@@ -19,6 +19,13 @@ Caddyfile's global block. Every service, image, env var, volume and site block i
 
 - DNS is done: `app` / `api` / `ai.influora.in` all resolve to `150.241.245.242` (verified
   2026-08-21). Records live in the **GoDaddy** panel — nameservers are `ns35/ns36.domaincontrol.com`.
+- **PRECONDITION — `APP_DOMAIN`, `ROOT_DOMAIN` and `API_DOMAIN` must stay on ONE registrable
+  domain (`influora.in`).** This is load-bearing, not cosmetic: since F-0551 the access token is
+  memory-only, so every page reload recovers the session from the `SameSite=Strict` refresh
+  cookie. Move the SPA or the API to a different registrable domain and that cookie stops being
+  sent — **every logged-in user is logged out on their next reload, and cannot log back in past
+  it.** Read §5b.1 before changing any of the three domain vars, before fronting the SPA with a
+  different apex, and before putting the API behind a vendor hostname. 
 - **Rebuild the web image first.** `influora-web` bakes `VITE_API_BASE_URL` into the JS bundle at
   build time and currently defaults to `http://200.141.1.6/api/v1`. Run `publish-images.yml` via
   `workflow_dispatch` with `vite_api_base_url=https://api.influora.in/api/v1` and
@@ -140,6 +147,10 @@ Open a real browser with the **devtools console visible** and keep it open throu
    and the check proves nothing.
 3. **Register a new account, then log in.** Watch for `blocked by CORS policy` and for a failed
    `/auth/refresh` — the latter means the session cookie is not being sent.
+3b. **Press F5 on a logged-in page.** You must stay logged in. Since F-0551 the access token is
+   memory-only, so this is the one check that proves the `SameSite=Strict` refresh cookie is
+   actually reaching the API — if it is not, this bounces to `/login` with a clean console and
+   an ordinary-looking `/auth/refresh` response in the log. See §5b.1.
 4. **Land on a dashboard** (`/brand/dashboard` or `/creator/dashboard`), and confirm data loads
    rather than empty cards. Empty panels with a clean console usually mean the API returned an
    error the UI swallowed — check the Network tab, not just the console.
@@ -186,10 +197,80 @@ Two things to know:
   Meera in production independently of the apex change. It is now set.
 
 **The session cookie is fine and needs no change.** `AuthCookieService` issues it
-`HttpOnly; Secure; SameSite=Strict` with `Path=/auth` and no explicit `Domain`, so it is host-only
-to the API. `SameSite=Strict` is judged on the registrable domain, and `influora.in`,
-`www.influora.in`, `app.influora.in` and `api.influora.in` all share `influora.in` — so the cookie
-is still sent from every one of them. Only CORS needed widening, not the cookie scope.
+`HttpOnly; Secure; SameSite=Strict` with `Path=/api/v1/auth` (the `application.yml` default,
+`server.servlet.context-path` included) and no explicit `Domain`, so it is host-only to the API.
+`SameSite=Strict` is judged on the registrable domain, and `influora.in`, `www.influora.in`,
+`app.influora.in` and `api.influora.in` all share `influora.in` — so the cookie is still sent from
+every one of them. Only CORS needed widening, not the cookie scope.
+
+### 5b.1 · Precondition: one registrable domain, or everyone is logged out (F-0551 / F-0672)
+
+The paragraph above says the cookie "needs no change". That was written when the access token
+still lived in `localStorage`. **It does not any more**, and the same-domain fact it relies on has
+since become a deploy precondition rather than a convenience.
+
+What changed (CEO ruling F-0551, 2026-09-05): the access token is now held **in memory only** in
+live mode (`src/lib/auth-session.ts`). Nothing about the session survives a page reload in the
+browser. So on every cold load the route guards in `src/App.tsx` (`useAuthGuardState`) call
+`api.auth.bootstrap(role)`, which fires exactly one `POST /auth/refresh` with
+`credentials: 'include'` (`src/lib/api.ts` — `refreshAccessToken`) and treats a non-OK answer as
+"unauthenticated". **The refresh cookie reaching the API is now the only thing standing between a
+logged-in user and the login page.**
+
+That cookie is `SameSite=Strict`. A `Strict` cookie is attached only when the page's site and the
+request's site match, compared on the **registrable domain** (eTLD+1) — not the origin. Today:
+
+| host | serves | registrable domain |
+|---|---|---|
+| `influora.in`, `www.influora.in` | SPA (apex/marketing) | `influora.in` |
+| `app.influora.in` | SPA (app) | `influora.in` |
+| `api.influora.in` | Java API, sets the cookie | `influora.in` |
+
+All four collapse to `influora.in`, so the browser attaches the cookie to `/auth/refresh` from any
+of them. **Silent refresh works today only because of that.** It is not something the code
+arranges; it is something this deploy topology happens to satisfy.
+
+**The failure mode, concretely.** Serve the SPA (or the API) from a different registrable domain —
+`influora.app`, `influora.pages.dev`, `influora.vercel.app`, a client-branded host, an
+`*.onrender.com`/`*.cloudfront.net` API hostname, a staging box on a scratch domain — and the
+`POST /auth/refresh` becomes a cross-**site** request. The browser silently omits the cookie. The
+API sees no refresh token, answers non-OK, `bootstrap()` resolves `false`, and the guard routes to
+login. Symptoms, in the order you will hit them:
+
+- **Every existing user is logged out the moment they reload**, on every device, with no error.
+- **They cannot get back in past a reload.** Login itself still succeeds (the access token is
+  handed back in the JSON body and put in memory), so it looks fine — until the first refresh,
+  navigation-that-remounts, or F5, which drops them at login again. An endless login loop, not a
+  visible failure.
+- **Nothing in the server logs looks wrong.** `/auth/refresh` returns a perfectly ordinary
+  unauthenticated response; the request simply carried no cookie. There is no error to grep for.
+- **CORS being correct will not save you.** `credentials: 'include'` plus a correct
+  `CORS_ALLOWED_ORIGINS` gets the *request* allowed; `SameSite=Strict` decides separately whether
+  the *cookie* is attached at all. Widening the CORS allowlist changes nothing here.
+
+**The only supported escape hatch, and its cost.** `AUTH_REFRESH_COOKIE_SAMESITE` (`application.yml`
+→ `influora.auth.refresh-cookie.same-site`, default `Strict`) can be set to `None`, which needs
+`AUTH_REFRESH_COOKIE_SECURE=true` — already set in all three compose files. **Do not do this
+casually.** `SecurityConfig.java` disables CSRF protection *explicitly because* this cookie is
+`SameSite=Strict` and path-scoped; the comment there says so and says not to weaken it. Setting
+`None` re-opens the CSRF surface on `/auth/refresh` and `/auth/logout` with no CSRF token
+machinery behind it. A cross-registrable-domain deploy therefore is not a config flip — it is a
+security change that needs CSRF protection enabled in the same commit.
+
+**Check before you change any domain var:**
+
+```bash
+# The registrable domain of APP_DOMAIN, ROOT_DOMAIN and API_DOMAIN must be identical.
+grep -E '^(ROOT|APP|API)_DOMAIN=' /opt/influora/.env
+```
+
+and after deploying, exercise it in a real browser — curl will not catch this, because curl has no
+`SameSite` concept and will happily send a cookie a browser would drop:
+
+1. Log in at `https://app.influora.in`.
+2. **Press F5.** You must stay logged in. Landing on `/login` is this failure, live.
+3. Repeat from `https://influora.in` (click through to Login, do not type the app URL — same
+   reasoning as §5.2 step 2).
 
 ## 6 · The apex, and why there is no WordPress to migrate
 

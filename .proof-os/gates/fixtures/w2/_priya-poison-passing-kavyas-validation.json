@@ -1,0 +1,5 @@
+{
+  "_comment": "Every value is an integer >= 1, so Kavya's proposed validation ACCEPTS this. But /about is set to 1, which is exactly what a crashed route ships.",
+  "DEFAULT_MIN": 1,
+  "/about": 1
+}

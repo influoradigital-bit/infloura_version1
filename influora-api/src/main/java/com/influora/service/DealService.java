@@ -21,7 +21,6 @@ import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
-import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
 import com.influora.domain.enums.DeliverableStatus;
@@ -1124,6 +1123,13 @@ public class DealService {
                     HttpStatus.CONFLICT);
         }
 
+        // F-0643 (CEO ruling, worst-case-valuation-blocks-legitimate-flow) — a collaboration must
+        // be priced before it can become a budget commitment. Must run before the budget/cap gates
+        // below: those gates now assume every BUDGET_COMMITTED_STATUSES row (this one included) has
+        // a real agreedRate, and this is what makes that assumption true. See
+        // requireAgreedRateForCommitment's own javadoc for the full rationale.
+        requireAgreedRateForCommitment(collaboration);
+
         // F-0399 — validateProposalAmount only ever checked THIS offer's amount against
         // campaign.budgetMax in isolation, both at creation and (implicitly, since accept
         // never re-checked anything) at accept time. Nothing summed what the campaign had
@@ -1726,10 +1732,30 @@ public class DealService {
      * this, each offer was compared to {@code budgetMax} in isolation, so N creators could each be
      * offered the full budget and a campaign could commit N times its own cap.
      *
-     * <p>What it deliberately does NOT do: reject a null {@code agreedRate}. See the comment at
-     * the null check in the body — an INVITED deal carries no rate by design, so failing closed
-     * there breaks the invite-then-accept flow. The null-rate accounting gap is a known, recorded
-     * residual, not an oversight.
+     * <p><b>F-0476/F-0643 history — how a rate-less collaboration is valued, and why that changed
+     * twice.</b> An {@code agreedRate} of null can reach this gate two ways: {@code
+     * Collaboration#invite}/{@code #apply} carry no amount at all, and {@code
+     * EscrowService#deriveFundAmount} funds a no-milestone ("pool") hold at {@code
+     * campaign.getBudgetMax()} itself regardless of {@code agreedRate} — so a rate-less committed
+     * collaboration is a real, unbounded-up-to-{@code budgetMax} liability, not a harmless zero.
+     *
+     * <p>F-0476 valued that liability at its worst case: {@link #committedValue} priced a
+     * rate-less collaboration at {@code budgetMax}, both for rows already committed and for the
+     * offer currently being accepted. That was correct about the liability but wrong about the
+     * consequence — a single invite-then-accept with no negotiated rate valued at exactly {@code
+     * budgetMax} on its own, so it consumed the campaign's ENTIRE budget and permanently blocked
+     * every other collaborator from ever being accepted.
+     *
+     * <p>F-0643 (CEO ruling, worst-case-valuation-blocks-legitimate-flow) removes the liability
+     * instead of pricing it: {@link #doAccept} now calls {@link #requireAgreedRateForCommitment}
+     * before this gate, which rejects the TERMS_AGREED transition outright when {@code
+     * agreedRate} is absent. An invite is not a commitment — it stays in INVITED/APPLIED, which is
+     * not a {@link #BUDGET_COMMITTED_STATUSES} member, so it is excluded from {@code
+     * committedOthers} entirely and never reaches {@link #committedValue} in the first place. This
+     * gate therefore only ever sums priced, genuinely-committed collaborations. {@link
+     * #committedValue} still has to decide what to do with a rate-less row that is somehow already
+     * sitting in a committed status (a row written before this ruling shipped, or by a path outside
+     * {@link #doAccept}) — see its own javadoc for that residual case.
      */
     private void requireWithinRemainingBudget(Collaboration collaboration) {
         Campaign campaign =
@@ -1741,7 +1767,8 @@ public class DealService {
                                                 "CAMPAIGN_NOT_FOUND",
                                                 "Campaign not found",
                                                 HttpStatus.NOT_FOUND));
-        if (campaign.getBudgetMax() == null) {
+        BigDecimal budgetMax = campaign.getBudgetMax();
+        if (budgetMax == null) {
             return;
         }
         List<Collaboration> committedOthers =
@@ -1749,34 +1776,79 @@ public class DealService {
                         .filter(c -> !c.getId().equals(collaboration.getId()))
                         .filter(c -> BUDGET_COMMITTED_STATUSES.contains(c.getStatus()))
                         .collect(Collectors.toList());
-        // [F-0399] A null agreedRate is NOT rejected here, and that is deliberate. An earlier pass
-        // failed this gate closed on a null rate, on the reasoning that a deal with no agreed
-        // amount is not agreed terms. That reasoning was wrong for this product: Collaboration
-        // #invite takes no amount (id, campaignId, creatorUserId, message, currency) and neither
-        // does POST /creators/{id}/invite, so an INVITED deal legitimately carries no rate and a
-        // creator accepting an invite before any rate is negotiated is a supported flow. Failing
-        // closed here broke it — nine DealServiceTest accept cases, including both happy paths.
-        //
-        // The residual gap is recorded rather than papered over: a null-rate collaboration
-        // contributes nothing to the committed sum, so it neither trips the cap on the way in nor
-        // counts against it afterwards. Closing that means enforcing where the amount first becomes
-        // known — proposal, counter, or escrow funding — not at accept, where there may be no
-        // number to check. See the open ledger entry for that follow-up.
-        if (collaboration.getAgreedRate() == null) {
-            return;
-        }
         BigDecimal alreadyCommitted =
                 committedOthers.stream()
-                        .map(Collaboration::getAgreedRate)
-                        .filter(rate -> rate != null)
+                        .map(DealService::committedValue)
                         .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal thisOffer = collaboration.getAgreedRate();
-        if (alreadyCommitted.add(thisOffer).compareTo(campaign.getBudgetMax()) > 0) {
+        BigDecimal thisOffer = committedValue(collaboration);
+        if (alreadyCommitted.add(thisOffer).compareTo(budgetMax) > 0) {
             throw new ApiException(
                     "AMOUNT_EXCEEDS_BUDGET",
                     "Proposed amount exceeds campaign budget",
                     HttpStatus.BAD_REQUEST);
         }
+    }
+
+    /**
+     * F-0643 (CEO ruling, worst-case-valuation-blocks-legitimate-flow) — {@link #doAccept}'s
+     * price-before-commitment gate, run before {@link #requireWithinRemainingBudget} and {@link
+     * #requireWithinCollaboratorCap}. An invite ({@code Collaboration#invite}) or a creator's
+     * direct application ({@code Collaboration#apply}) carries no {@code agreedRate} — it is only
+     * ever written by {@code propose}/{@code updateAgreedRate}, reached through {@code
+     * createProposal}/{@code doCounter} — yet both statuses pass {@link Collaboration#canAccept()}
+     * straight through to this method.
+     *
+     * <p>Accepting a rate-less collaboration used to be a supported flow (see the F-0476 history
+     * on {@link #requireWithinRemainingBudget}): the reasoning was that an {@code INVITED} deal
+     * legitimately carries no rate, so rejecting the accept broke real usage. That reasoning did
+     * not account for {@code EscrowService#deriveFundAmount}, which funds a no-milestone ("pool")
+     * hold at {@code campaign.getBudgetMax()} itself regardless of {@code agreedRate} — so a
+     * rate-less TERMS_AGREED collaboration can still draw the campaign's ENTIRE budget once a
+     * contract is signed and escrow is funded. Valuing that liability at its worst case ({@code
+     * budgetMax}, F-0476's fix) kept the accounting honest but meant a single such accept alone
+     * consumed the whole cap and permanently blocked every other collaborator from ever being
+     * accepted — trading an undercount bug for an equally real over-blocking one.
+     *
+     * <p>This ruling removes the liability at its source instead of pricing it: an invite is not a
+     * commitment — every marketplace separates "invited" from "contracted" for budget purposes —
+     * so the TERMS_AGREED transition is rejected outright when no rate has been negotiated. The
+     * collaboration stays in INVITED/APPLIED, which is not a {@link #BUDGET_COMMITTED_STATUSES}
+     * member, so it already counts as zero against both {@link #requireWithinRemainingBudget} and
+     * {@link #requireWithinCollaboratorCap} — no separate zero-valuation logic is needed for it.
+     * A real proposal/counter (which sets {@code agreedRate} immediately, before accept is ever
+     * called) or a plain rate negotiation must happen first; a subsequent accept then commits the
+     * real, already-known number.
+     */
+    private void requireAgreedRateForCommitment(Collaboration collaboration) {
+        if (collaboration.getAgreedRate() == null) {
+            throw new ApiException(
+                    "AGREED_RATE_REQUIRED",
+                    "Negotiate a rate before accepting — an invite or application with no agreed"
+                            + " amount cannot become a committed deal",
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    /**
+     * F-0643 — the budget-committed value of a single collaboration, used by {@link
+     * #requireWithinRemainingBudget}. Under this ruling every collaboration {@code doAccept} can
+     * still turn into a fresh {@link #BUDGET_COMMITTED_STATUSES} row has a real {@code agreedRate}
+     * — {@link #requireAgreedRateForCommitment} rejects the TERMS_AGREED transition before a
+     * rate-less one ever gets here.
+     *
+     * <p>A null {@code agreedRate} can therefore only reach this method on a row that was already
+     * sitting in a committed status before this ruling shipped (written under the old F-0476
+     * worst-case-valuation regime, or by a path outside {@link #doAccept}). Such a row is valued
+     * at {@code ZERO}, not {@code budgetMax}: it cannot be re-priced or un-committed from here, and
+     * treating an already-inconsistent row as a live budgetMax-sized liability would only make it
+     * permanently block every future accept on the campaign — exactly the over-blocking failure
+     * this ruling exists to remove. The cost of that leniency is a genuine but bounded blind spot
+     * (a pre-ruling rate-less commitment's real draw is undercounted here), which is the accepted
+     * trade-off per the ruling rather than an oversight; it is not a live risk for anything {@code
+     * doAccept} can produce going forward.
+     */
+    private static BigDecimal committedValue(Collaboration c) {
+        return c.getAgreedRate() != null ? c.getAgreedRate() : BigDecimal.ZERO;
     }
 
     /**
@@ -2014,16 +2086,41 @@ public class DealService {
         List<Contract> contracts =
                 contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(
                         collaboration.getId());
-        Contract latest = contracts.isEmpty() ? null : contracts.get(0);
+        // [F-0653 fix] Delegates to the ONE shared "current contract" definition — see
+        // ContractService#resolveCurrentContract's own javadoc for why this used to be a private
+        // helper duplicated here and why that was the bug (F-0653: this method and
+        // DeliverableMetricService#getCampaignAnalytics silently disagreed on what "current"
+        // means for the exact same input).
+        Contract latest = ContractService.resolveCurrentContract(contracts);
 
         // [CR-49, renamed CR-50] Milestone-aware existence check, not the direct collaboration_id-
         // column one -- see ContractService#promptEscrowFundingIfNeeded and EscrowHoldRepository's
         // javadoc (CR-35/CR-39): the direct column is NULL on every ordinary brand-funded hold, so
         // the derived query would silently report this read-only "escrow funded" flag as false on a
         // genuinely funded deal. CR-50 consolidated the repository to this one method.
+        //
+        // [F-0656 fix, collaboration-scoped-not-contract-scoped] That CR-49/CR-50 reasoning is
+        // about finding a hold that legitimately exists; it says nothing about which CONTRACT
+        // VERSION the hold's milestone belongs to. hasEscrowForCollaboration filters only
+        // PaymentMilestone.collaborationId, so it is satisfied by a milestone under ANY contract
+        // version ever created here. ContractService#amend creates fresh, UNFUNDED milestone rows
+        // for the new version while the original still-FUNDED hold stays bound to the superseded
+        // version's milestone (nothing refunds or re-links it); once retirePredecessorIfSuperseded
+        // promotes the amendment to `latest`, the old query kept reporting funded=true off the
+        // predecessor's untouched hold even though `latest`'s own payment plan was never funded —
+        // the deal room stating, to both parties, that money was secured when it was not.
+        //
+        // Scoped to `latest` when a contract exists. When it does NOT (pre-contract negotiation),
+        // there is no version to scope to and the collaboration-wide answer is the only correct
+        // one — a hold funded before any contract was drafted is still real money held.
         boolean escrowFunded =
-                escrowHoldRepository.hasEscrowForCollaboration(
-                        collaboration.getId(), Set.of(EscrowStatus.FUNDED));
+                latest != null
+                        ? escrowHoldRepository.hasEscrowForContract(
+                                collaboration.getId(),
+                                latest.getId(),
+                                Set.of(EscrowStatus.FUNDED))
+                        : escrowHoldRepository.hasEscrowForCollaboration(
+                                collaboration.getId(), Set.of(EscrowStatus.FUNDED));
 
         // PL-1 (BrandF.md §69) / creatorF.md C-4: deliverablesDone/Total/nextDeadline used to be
         // hardcoded 0/0/null here regardless of real deliverable state, which is why the brand

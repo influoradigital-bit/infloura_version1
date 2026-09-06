@@ -128,5 +128,16 @@ public final class PortfolioDtos {
             List<PortfolioCustomLink> customLinks,
             List<PortfolioPinnedPost> pinnedPosts,
             List<PortfolioRateRow> rateCard,
+            /**
+             * F-0665/F-0434 — the "Past collabs — what shows on your page" control. Reuses {@link
+             * PortfolioCollab}, the exact type {@link PortfolioPageResponse#collabs} already returns
+             * (same convention as {@code rateCard} above reusing {@link PortfolioRateRow}), rather than
+             * a second PATCH-only shape. Only {@link PortfolioCollab#id()} and {@link
+             * PortfolioCollab#displayMode()} are trusted/persisted server-side — the rest of each row
+             * (brandName, campaignTitle, rating, ...) is business data {@code PortfolioService}
+             * recomputes live from {@code Collaboration}/{@code Campaign}/{@code Workspace}, never
+             * something a client PATCH may overwrite.
+             */
+            List<PortfolioCollab> collabs,
             PortfolioVisibility visibility) {}
 }

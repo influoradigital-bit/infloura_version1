@@ -1,0 +1,7 @@
+{
+  "_comment": "Malicious baseline that sets DEFAULT_MIN to 0",
+  "DEFAULT_MIN": 0,
+  "/": 0,
+  "/about": 0,
+  "/pricing": 0
+}

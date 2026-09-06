@@ -15,6 +15,10 @@
  * - /admin/moderation → ModerationPage (Content Flags + Approvals tabs, A7)
  * - /admin/creator-connections → CreatorConnectionsPage (Instagram "Connect this creator"
  *   enquiries + import, T-CREATORCONNECT-0902)
+ * - /admin/festival-enquiries → FestivalEnquiriesPage (/festival-box brand + creator enquiry
+ *   inbox, T-FESTIVALBOX-0905)
+ * - /admin/festival-metrics → FestivalMetricsPage (coupon-copy demand-signal metrics per
+ *   sponsor/edition, T-FESTIVALBOX-0905 phase 10)
  * - /admin/disputes → DisputesPage (Task #9)
  * - /admin/billing → BillingPage (Subscription billing console, Task #25 — UI shell,
  *   mock data until AdminBillingController ships)
@@ -40,6 +44,8 @@ import RevenuePage from '@/admin/pages/RevenuePage';
 import TicketList from '@/admin/components/support/TicketList';
 import ModerationPage from '@/admin/pages/ModerationPage';
 import CreatorConnectionsPage from '@/admin/pages/CreatorConnectionsPage';
+import FestivalEnquiriesPage from '@/admin/pages/FestivalEnquiriesPage';
+import FestivalMetricsPage from '@/admin/pages/FestivalMetricsPage';
 import DisputesPage from '@/admin/pages/DisputesPage';
 import BillingPage from '@/admin/pages/BillingPage';
 import AuditLogPage from '@/admin/pages/AuditLogPage';
@@ -68,6 +74,8 @@ export default function AdminConsolePage() {
         <Route path="support" element={<TicketList />} />
         <Route path="moderation" element={<ModerationPage />} />
         <Route path="creator-connections" element={<CreatorConnectionsPage />} />
+        <Route path="festival-enquiries" element={<FestivalEnquiriesPage />} />
+        <Route path="festival-metrics" element={<FestivalMetricsPage />} />
         <Route path="disputes" element={<DisputesPage />} />
         <Route path="billing" element={<BillingPage />} />
         <Route path="audit" element={<AuditLogPage />} />

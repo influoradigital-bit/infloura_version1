@@ -1,0 +1,26 @@
+-- T-FESTIVALBOX-0905 phase 2 — a brand's own Meta pixel ID, stored so the Festival Box page can
+-- fire the sponsor's retargeting pixel for visitors to that page.
+--
+-- WHY IT LIVES ON `workspaces` AND NOT ON `festival_enquiries` OR A PER-EDITION TABLE:
+-- a Meta pixel belongs to the BRAND, not to an event. The same sponsor returning for a second or
+-- third edition uses the same pixel, the same Meta Business account and the same workspace.
+-- Hanging it off the enquiry would make a returning brand re-enter it every edition and leave us
+-- with divergent copies of one value and no way to tell which is current. Editions come and go
+-- around the workspace; the workspace is the durable owner.
+--
+-- NULLABLE, and null is meaningful: most workspaces will never have a pixel, and a sponsor who
+-- declines tracking must stay NULL rather than be coerced to '' (same not-asked-vs-answered-with-
+-- nothing discipline as festival_enquiries).
+--
+-- VARCHAR(32) is a bound, not a format check. A Meta pixel ID is ~15-16 digits today, but we
+-- cannot verify an ID is real or currently owned by that brand, and rejecting an unusual-but-valid
+-- value would be worse than storing what the brand told us. Charset/length are enforced app-side.
+--
+-- STORAGE ONLY at this point: nothing reads this column yet. The Festival Box page that would
+-- consume it does not exist, and whether the pixel may fire at all depends on an unresolved
+-- consent decision (DPDP Act 2023 notice+consent; GDPR prior consent for EU visitors). Writing a
+-- pixel ID here does NOT mean a pixel is live anywhere.
+--
+-- DIALECT: MySQL 8.0, matching the newest V2026* migrations.
+ALTER TABLE workspaces
+  ADD COLUMN meta_pixel_id VARCHAR(32) NULL COMMENT 'Brand-owned Meta pixel ID for Festival Box page retargeting; NULL = none/declined. Storage only until consent gating is decided.' AFTER kyc_rejection_reason;

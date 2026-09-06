@@ -157,6 +157,13 @@ class SecretsStartupValidatorTest {
                 validator,
                 "unsubscribeSigningSecret",
                 "real-unsubscribe-signing-secret-at-least-32-bytes-long!!!");
+        // T-FESTIVALBOX-0905 — same reason as the [C3] entry above: a real, distinct, >=32-byte
+        // value for the "everything is fine" baseline, so the prod-boot cases stay about their own
+        // subject. The committed dev-default and the too-short case are asserted by their own tests
+        // below. Must stay DISTINCT from every other secret here, or the validator's
+        // duplicate-value check fires and every prod-boot case fails for the wrong reason.
+        setField(
+                validator, "festivalIpHashSalt", "real-festival-ip-hash-salt-at-least-32-bytes-long!!!");
         return validator;
     }
 
@@ -763,6 +770,61 @@ class SecretsStartupValidatorTest {
     @DisplayName("validate: real, distinct unsubscribe-signing-secret boots clean in prod")
     void testRealUnsubscribeSigningSecretBootsCleanInProd() throws Exception {
         SecretsStartupValidator validator = buildValidator("prod");
+        assertDoesNotThrow(validator::validate);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // T-FESTIVALBOX-0905 — influora.festival.ip-hash-salt
+    //
+    // This validator checks a HAND-MAINTAINED map of property names, so a newly added secret is
+    // covered only if someone remembers to register it. These four cases are what prove the
+    // festival salt was actually registered: delete the secrets.put(...) line in the validator and
+    // the first three of them fail.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("validate: committed dev-default festival ip-hash-salt fails closed in prod")
+    void testDevDefaultFestivalIpHashSaltFailsClosedInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        setField(validator, "festivalIpHashSalt", "change-me-festival-ip-hash-salt-min-32-chars");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.festival.ip-hash-salt"));
+        assertTrue(ex.getMessage().contains("dev default"));
+    }
+
+    @Test
+    @DisplayName("validate: too-short festival ip-hash-salt fails closed in prod")
+    void testTooShortFestivalIpHashSaltFailsClosedInProd() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        setField(validator, "festivalIpHashSalt", "too-short");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.festival.ip-hash-salt"));
+        assertTrue(ex.getMessage().contains("32 bytes"));
+    }
+
+    @Test
+    @DisplayName("validate: festival ip-hash-salt reusing another secret's value is reported as a duplicate")
+    void testFestivalIpHashSaltDuplicateIsReported() throws Exception {
+        SecretsStartupValidator validator = buildValidator("prod");
+        // Coupling the enquiry-IP salt to a signing key means rotating one silently rotates the
+        // other's behaviour. The validator already catches this for every other secret; assert it
+        // covers the new one too.
+        setField(
+                validator,
+                "festivalIpHashSalt",
+                "real-unsubscribe-signing-secret-at-least-32-bytes-long!!!");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("duplicates the value of another signing secret"));
+    }
+
+    @Test
+    @DisplayName("validate: dev-default festival ip-hash-salt only WARNS (does not throw) in env=dev")
+    void testDevDefaultFestivalIpHashSaltOnlyWarnsInDev() throws Exception {
+        SecretsStartupValidator validator = buildValidator("dev");
+        setField(validator, "festivalIpHashSalt", "change-me-festival-ip-hash-salt-min-32-chars");
         assertDoesNotThrow(validator::validate);
     }
 }

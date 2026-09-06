@@ -229,7 +229,23 @@ export default function CreatorPortfolioPublicPage() {
     };
   }, [username]);
 
-  // Set document title + meta for SEO (also re-rendered server-side in prod)
+  // Sets document.title + a description meta on the CLIENT ONLY. Crawlers and
+  // AI search never see any of it: /:handle has no physical file in dist/, so
+  // public/_redirects serves it dist/app-shell.html, and this effect only runs
+  // in a browser that executes JS. What it computes below reaches real
+  // visitors and nobody else.
+  //
+  // (A previous version of this comment claimed the page was "also re-rendered
+  // server-side in prod". That was false. There is no SSR on this project, and
+  // /:handle is not in PRERENDER_ROUTES in scripts/marketing-routes.mjs.)
+  //
+  // Making these tags crawlable requires prerendering the profile, which
+  // requires a public backend endpoint to enumerate handles at build time.
+  // Swapnil scoped that out of T-FRONTEND-REWORK-0905, so it is deferred; until
+  // it lands, app-shell.html is deliberately noindex so this route is not
+  // indexable-and-empty.
+  //
+  // Keep the effect regardless: it still gives real users a correct tab title.
   React.useEffect(() => {
     if (!page) return;
     const title = `${page.displayName} — ${page.niches.join(' & ')} Creator${page.city ? ' | ' + page.city : ''} | Influora`;

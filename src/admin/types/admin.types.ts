@@ -191,6 +191,15 @@ export interface BrandDetail extends Brand {
   teamMembers: TeamMember[];
   campaigns: CampaignSummary[];
   paymentHistory: PaymentRecord[];
+  /**
+   * T-FESTIVALBOX-0905 phase 6/10 — `workspaces.meta_pixel_id`, confirmed on `BrandDetailDto`
+   * (AdminBrandDtos.java) but deliberately NOT on `BrandSummaryDto`/`Brand` above — the backend
+   * only returns it on the single-brand detail read (`GET /admin/brands/{id}`), not the list.
+   * `null` for the overwhelming majority of brands that have never set one — never a fabricated
+   * placeholder. Storing a value here does NOT switch anything on: the pixel only fires on
+   * `/festival-box/*` after a visitor accepts the consent bar (FestivalPixelConsent).
+   */
+  metaPixelId: string | null;
 }
 
 export interface TeamMember {

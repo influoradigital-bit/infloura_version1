@@ -5,11 +5,13 @@ import com.influora.common.ProofObjectKeys;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
+import com.influora.domain.entity.Contract;
 import com.influora.domain.entity.DeliverableMetric;
 import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.enums.MilestoneStatus;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
+import com.influora.repository.ContractRepository;
 import com.influora.repository.DeliverableMetricRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.security.AuthPrincipal;
@@ -19,8 +21,13 @@ import com.influora.web.dto.analytics.AnalyticsDtos.DeliverableMetricResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.DeliverableMetricSubmitRequest;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +55,7 @@ public class DeliverableMetricService {
     private final PaymentMilestoneRepository milestoneRepository;
     private final CollaborationRepository collaborationRepository;
     private final CampaignRepository campaignRepository;
+    private final ContractRepository contractRepository;
     private final BrandContextService brandContext;
 
     public DeliverableMetricService(
@@ -55,11 +63,13 @@ public class DeliverableMetricService {
             PaymentMilestoneRepository milestoneRepository,
             CollaborationRepository collaborationRepository,
             CampaignRepository campaignRepository,
+            ContractRepository contractRepository,
             BrandContextService brandContext) {
         this.deliverableMetricRepository = deliverableMetricRepository;
         this.milestoneRepository = milestoneRepository;
         this.collaborationRepository = collaborationRepository;
         this.campaignRepository = campaignRepository;
+        this.contractRepository = contractRepository;
         this.brandContext = brandContext;
     }
 
@@ -162,17 +172,102 @@ public class DeliverableMetricService {
         List<Collaboration> collaborations = collaborationRepository.findByCampaignId(campaign.getId());
         List<String> collaborationIds = collaborations.stream().map(Collaboration::getId).toList();
 
-        List<PaymentMilestone> milestones =
+        List<PaymentMilestone> allMilestones =
                 collaborationIds.isEmpty()
                         ? List.of()
                         : milestoneRepository.findByCollaborationIdIn(collaborationIds);
+
+        // [F-0644, dropped-field / F-0653, conflicting-current-contract-definitions — fixed]
+        // Amending a contract inserts a NEW Contract row and NEW PaymentMilestone rows for the
+        // same collaboration, but leaves the superseded contract's milestone rows persisted
+        // (collaboration-keyed, not contract-keyed — see ContractService#amend's javadoc, "What
+        // happens to the row being superseded"). Counting every milestone for the collaboration
+        // therefore double-counts across contract versions on every amendment.
+        //
+        // A previous attempt at this fix resolved "current" here with a bare
+        // findByCollaborationIdOrderByVersionDescCreatedAtDesc(...).findFirst() — the newest
+        // (version, createdAt) row, full stop. That silently disagreed with
+        // DealService#toDealResponse's own "current contract" resolution for the SAME
+        // collaboration whenever the newest row was an unsigned amendment draft superseding a
+        // still-ACTIVE, funded predecessor: drafting an amendment made a RELEASED milestone's
+        // metrics vanish from this aggregate the instant the draft existed, before anyone signed
+        // anything. A fresh-context CTO review rejected that pass specifically for shipping two
+        // independently-derived, disagreeing definitions of "current" in the same wave.
+        //
+        // Fixed by calling the SAME resolution DealService uses — literally the same method,
+        // ContractService#resolveCurrentContract, not a second implementation that happens to
+        // agree today. See that method's javadoc for the full rule (newest wins unless it's an
+        // unsigned draft, in which case the still-ACTIVE predecessor is preferred) and
+        // ContractService#retirePredecessorIfSuperseded for how the ACTIVE predecessor is
+        // actually retired once the amendment is genuinely signed, so this converges back to the
+        // amendment's own milestones at that point rather than staying pinned to the retired
+        // predecessor's. The OLD milestone rows are left untouched either way (deleting/mutating
+        // them would corrupt payment history), just excluded from this aggregate.
+        //
+        // [F-0657, n-plus-one-query — fixed] Resolving "current" used to call
+        // ContractRepository#findByCollaborationIdOrderByVersionDescCreatedAtDesc once PER
+        // collaboration inside this stream — one round trip per row of `collaborationIds`, so a
+        // campaign with N collaborations issued N contract queries. Batched into the single
+        // `findByWorkspaceId` call below (every collaboration here already belongs to `campaign`,
+        // which belongs to `workspaceId`, so filtering that one result set down to
+        // `collaborationIds` is exact, not an approximation) and grouped in memory; per-group
+        // ordering is reproduced locally (version desc, createdAt desc — the same tie-break the
+        // batched repository method itself documents) so resolveCurrentContract sees the identical
+        // shape it always has. No new ContractRepository method was needed to do this within this
+        // file's boundary; a dedicated `findByCollaborationIdIn` would be tighter (avoids pulling
+        // in contracts from the workspace's OTHER campaigns) but that change lives in
+        // ContractRepository, outside this pass's file scope.
+        List<Contract> workspaceContracts =
+                collaborationIds.isEmpty() ? List.of() : contractRepository.findByWorkspaceId(workspaceId);
+        Map<String, List<Contract>> contractsByCollaborationId =
+                workspaceContracts.stream()
+                        .filter(c -> collaborationIds.contains(c.getCollaborationId()))
+                        .collect(Collectors.groupingBy(Contract::getCollaborationId));
+
+        Set<String> currentContractIds =
+                collaborationIds.stream()
+                        .flatMap(
+                                id ->
+                                        Stream.ofNullable(
+                                                ContractService.resolveCurrentContract(
+                                                        sortedByVersionThenCreatedAtDesc(
+                                                                contractsByCollaborationId.getOrDefault(
+                                                                        id, List.of())))))
+                        .map(Contract::getId)
+                        .collect(Collectors.toSet());
+
+        // [F-0655, dropped-field — fixed] Once an amendment is signed,
+        // ContractService#retirePredecessorIfSuperseded retires the predecessor to COMPLETED and
+        // it drops out of `currentContractIds` entirely (see resolveCurrentContract above) — that
+        // correctly stops its still-open FUNDED milestones from counting (they were superseded by
+        // the amendment's renegotiated terms), but it ALSO silently dropped any RELEASED milestone
+        // the predecessor had, even though RELEASED means the money was already paid out and the
+        // deliverable already completed under that version — a historical fact the amendment does
+        // not and cannot undo. A milestone that has actually been RELEASED must keep counting
+        // regardless of which contract version it happens to sit on; only non-terminal
+        // (FUNDED-but-not-yet-released) milestones are scoped to the current contract, since those
+        // are the ones an amendment can still supersede/renegotiate away.
+        List<PaymentMilestone> milestones =
+                allMilestones.stream()
+                        .filter(
+                                m ->
+                                        currentContractIds.contains(m.getContractId())
+                                                || m.getStatus() == MilestoneStatus.RELEASED)
+                        .toList();
         int deliverablesTotal =
                 (int) milestones.stream().filter(m -> REPORTABLE_STATUSES.contains(m.getStatus())).count();
 
-        List<DeliverableMetric> metrics =
+        Set<String> currentMilestoneIds =
+                milestones.stream().map(PaymentMilestone::getId).collect(Collectors.toSet());
+
+        List<DeliverableMetric> allMetrics =
                 collaborationIds.isEmpty()
                         ? List.of()
                         : deliverableMetricRepository.findByCollaborationIdIn(collaborationIds);
+        List<DeliverableMetric> metrics =
+                allMetrics.stream()
+                        .filter(dm -> currentMilestoneIds.contains(dm.getMilestoneId()))
+                        .toList();
 
         long totalReach = sumNullable(metrics, DeliverableMetric::getReach);
         long totalImpressions = sumNullable(metrics, DeliverableMetric::getImpressions);
@@ -198,6 +293,22 @@ public class DeliverableMetricService {
                 deliverablesTotal,
                 com.influora.web.dto.analytics.AnalyticsDtos.SOURCE_CREATOR_REPORTED,
                 deliverableResponses);
+    }
+
+    /**
+     * Reproduces, in memory, the exact ordering {@code
+     * ContractRepository#findByCollaborationIdOrderByVersionDescCreatedAtDesc} would give for one
+     * collaboration's contracts — version DESC, createdAt DESC as the tie-break — so batching that
+     * query (see F-0657 note above) doesn't change what {@link
+     * ContractService#resolveCurrentContract} sees.
+     */
+    private static List<Contract> sortedByVersionThenCreatedAtDesc(List<Contract> contracts) {
+        return contracts.stream()
+                .sorted(
+                        Comparator.comparingInt(Contract::getVersion)
+                                .thenComparing(Contract::getCreatedAt)
+                                .reversed())
+                .toList();
     }
 
     private static long sumNullable(

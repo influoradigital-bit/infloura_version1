@@ -149,10 +149,15 @@ export function DealContractTab({
         { title: 'Instagram Reel', description: 'Campaign content', quantity: 2 },
         { title: 'Instagram Story', description: 'Story series', quantity: 3 },
       ],
-      deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-      usageRights: '6 months on social media platforms',
-      exclusivity: 'As per campaign brief',
-      revisionCap: 2,
+      // F-0669 (brand-side twin of F-0666): this panel never receives the real
+      // deadline, usage rights, exclusivity, or revision cap from the server —
+      // neither as props nor on the fetched `contractRecord` (which only carries
+      // `terms`/`effectiveDate`/`expirationDate`, none of which are the same claim
+      // as these four clauses). Leave them undefined (ContractData makes them
+      // optional) instead of inventing a date/value, so this brand-side copy of
+      // the contract can never assert a legal term the creator-side copy (F-0666)
+      // doesn't also assert. generateContractHTML renders an honest
+      // "Not specified" for each of these instead.
       customClauses: [],
       createdAt: new Date(),
     };

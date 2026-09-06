@@ -221,6 +221,29 @@ public class Contract {
         touch();
     }
 
+    /**
+     * [F-0403, missing-contract-cancel-path] Legal predecessor states for a transition to {@link
+     * ContractStatus#CANCELLED} -- mirrors the allowlist idiom {@code Collaboration#canReject()}
+     * already uses in this codebase (a positive list of states a terminal transition may leave
+     * from, rather than a denylist of states it may not -- see that method's own javadoc for why
+     * a denylist is the wrong default for a terminal verb).
+     *
+     * <p>A contract not yet signed by both parties ({@link ContractStatus#DRAFT} or {@link
+     * ContractStatus#PENDING_SIGNATURES}) can be walked away from cleanly -- nothing durable
+     * (escrow, a completed deliverable) is riding on it yet. {@link ContractStatus#ACTIVE} is
+     * deliberately excluded: it means BOTH signatures are already recorded ({@link
+     * #advanceIfFullySigned()} is the only path that ever sets it), so cancelling it would
+     * silently void a binding, possibly escrow-funded agreement with no compensating settlement
+     * -- the same reasoning {@code Collaboration#canReject()} draws its own {@code
+     * CONTRACT_PENDING} cut line from. {@link ContractStatus#COMPLETED} and {@link
+     * ContractStatus#CANCELLED} itself are terminal and likewise excluded (a cancelled contract
+     * cannot be cancelled again through this path -- see {@code ContractService#doCancel}, which
+     * treats a fresh cancel attempt on either as a 409, not a silent no-op).
+     */
+    public boolean canCancel() {
+        return status == ContractStatus.DRAFT || status == ContractStatus.PENDING_SIGNATURES;
+    }
+
     public void touch() {
         this.updatedAt = Instant.now();
     }

@@ -241,6 +241,32 @@ function clampToBudgetStep(n: number): number {
   return Math.min(500000, Math.max(1000, stepped));
 }
 
+/**
+ * [F-0280 / F-0675] The Publish button's disabled rule, as ONE exported function.
+ *
+ * It lived inline as `isSubmitting || (!verificationLoading && isVerified === false)` at the
+ * button, and F-0280's regression test re-declared that same expression as local consts and
+ * asserted on its own copy — importing nothing from this file. So the test could never fail
+ * against a change here: edit the real condition and it stays green forever. A gate written for
+ * exactly that class (F-0663) flagged it as reaching its subject through no import path at all.
+ *
+ * Extracting it is the fix: the component and the test now evaluate the SAME function, so
+ * changing this rule moves the test. Same remedy already used in this codebase for
+ * `buildCounterOfferBody` (F-0432).
+ *
+ * `isVerified` is deliberately compared to `=== false`, not falsy: `null`/`undefined` mean "not
+ * known yet", which must NOT disable the button — that is the fail-open behaviour F-0280 fixed,
+ * and collapsing it to `!isVerified` would silently block every user whose verification status is
+ * still loading.
+ */
+export function isPublishDisabled(opts: {
+  isSubmitting: boolean;
+  verificationLoading: boolean;
+  isVerified: boolean | null | undefined;
+}): boolean {
+  return opts.isSubmitting || (!opts.verificationLoading && opts.isVerified === false);
+}
+
 export function CampaignForm({
   campaignId,
   initialValues,
@@ -1667,7 +1693,7 @@ export function CampaignForm({
                       <Button
                         type="button"
                         onClick={() => handleSubmit('ACTIVE')}
-                        disabled={isSubmitting || (!verificationLoading && isVerified === false)}
+                        disabled={isPublishDisabled({ isSubmitting, verificationLoading, isVerified })}
                       >
                         {isSubmitting ? (
                           <>

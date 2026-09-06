@@ -6,6 +6,8 @@ import com.influora.domain.enums.UserType;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.BrandContextService;
 import com.influora.service.ContractService;
+import com.influora.web.dto.money.MoneyDtos.ContractAmendRequest;
+import com.influora.web.dto.money.MoneyDtos.ContractCancelRequest;
 import com.influora.web.dto.money.MoneyDtos.ContractGenerateRequest;
 import com.influora.web.dto.money.MoneyDtos.ContractPdfDownloadResponse;
 import com.influora.web.dto.money.MoneyDtos.ContractResponse;
@@ -110,6 +112,42 @@ public class ContractController {
         return ApiResponse.ok(
                 contractService.recordSignature(
                         principal, workspace.getId(), contractId, "BRAND", signerName));
+    }
+
+    /**
+     * [F-0403] Cancels a not-yet-fully-executed contract. Role-aware like {@link #sign} — either
+     * party to an unsigned/half-signed contract may call this off; see {@code
+     * ContractService#cancel}'s javadoc for the full authorization and legal-transition rationale.
+     * The request body is accepted but currently carries no fields (see {@link
+     * ContractCancelRequest}'s own javadoc) and is optional for the same reason {@link #sign}'s
+     * body is.
+     */
+    @PostMapping("/{contractId}/cancel")
+    public ApiResponse<ContractResponse> cancel(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String contractId,
+            @Valid @RequestBody(required = false) ContractCancelRequest body) {
+        if (principal.getUserType() == UserType.CREATOR) {
+            return ApiResponse.ok(contractService.cancelForCreator(principal, contractId));
+        }
+        var workspace = brandContext.requireBrandWorkspace(principal);
+        return ApiResponse.ok(contractService.cancel(principal, workspace.getId(), contractId));
+    }
+
+    /**
+     * [F-0414] Amends a contract's terms/milestones by generating a new, versioned Contract row
+     * rather than mutating the existing one in place — see {@code ContractService#amend}'s
+     * javadoc for why. Brand-only, same elevated membership tier as {@link #generate}: authoring
+     * a contract's terms is a brand action, mirroring {@code ContractService#generate}'s own
+     * authorization exactly rather than inventing a second shape for it.
+     */
+    @PostMapping("/{contractId}/amend")
+    public ApiResponse<ContractResponse> amend(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @PathVariable String contractId,
+            @Valid @RequestBody ContractAmendRequest body) {
+        var workspace = brandContext.requireBrandWorkspace(principal);
+        return ApiResponse.ok(contractService.amend(principal, workspace.getId(), contractId, body));
     }
 
     /**

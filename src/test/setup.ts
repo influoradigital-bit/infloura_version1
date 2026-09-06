@@ -20,6 +20,39 @@ import '@testing-library/jest-dom/vitest';
 // is the right shape here: nothing under test asserts on observed sizes, it only needs the
 // constructor to exist. Only defined when absent, so a real implementation (or a per-test spy)
 // always wins.
+// [F-0678] READ THIS BEFORE TRUSTING THE BLOCK BELOW: it does NOT fix F-0678, and under this
+// project's config it never executes at all.
+//
+// The original note here claimed this shim closed F-0678 (`npm test` exiting 1 with every
+// assertion green). It did not, for a reason the guard makes plain: vitest's jsdom environment
+// defaults to `pretendToBeVisual: true`, and jsdom-with-pretendToBeVisual DEFINES
+// `requestAnimationFrame`. In a jsdom test `globalThis` IS the jsdom window, so
+// `typeof globalThis.requestAnimationFrame` is `'function'`, the condition is false, and the
+// assignment never runs. Every test file in this repo uses the jsdom environment (there is no
+// `@vitest-environment node` anywhere in src/), so this is dead code today — which is exactly
+// why adding it did not change the observed failure rate.
+//
+// The real cause was an import-time side effect, and it is fixed at its source in
+// `src/lib/scroll/smooth-scroll.ts`: `gsap.registerPlugin(ScrollTrigger)` used to run at MODULE
+// SCOPE, and `ScrollTrigger.register()` arms a permanent `setInterval(_sync, 250)`
+// (ScrollTrigger.js:2115) — an INTERVAL, not the `setTimeout` the old note described. That timer
+// lives in the Node queue, outlives jsdom's window, and each post-teardown tick calls a bare
+// `requestAnimationFrame` (ScrollTrigger.js:372) that died with the window. Registration is now
+// deferred into `initSmoothScroll()`, so importing `@/App` arms nothing.
+// Proof: src/lib/scroll/__tests__/smooth-scroll-import-side-effect.f0678.test.ts
+//
+// The block is kept only as a genuine safety net for a future `@vitest-environment node` test,
+// where jsdom's rAF really would be absent. It is not load-bearing for F-0678 — do not read a
+// green suite as evidence that it works.
+if (typeof globalThis.requestAnimationFrame === 'undefined') {
+  globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) =>
+    setTimeout(() => cb(Date.now()), 0) as unknown as number) as typeof requestAnimationFrame;
+}
+if (typeof globalThis.cancelAnimationFrame === 'undefined') {
+  globalThis.cancelAnimationFrame = ((handle: number) =>
+    clearTimeout(handle as unknown as NodeJS.Timeout)) as typeof cancelAnimationFrame;
+}
+
 if (typeof globalThis.ResizeObserver === 'undefined') {
   globalThis.ResizeObserver = class {
     observe() {}

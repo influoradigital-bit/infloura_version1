@@ -92,6 +92,49 @@ function getPlatformIconWrapClass(platform: string): string {
   return 'bg-muted-foreground/60';
 }
 
+/**
+ * F-0681 — the set of `CreatorProfilePatchRequest` field names this dialog actually renders an
+ * inline error for. It exists to keep the toast HONEST: F-0668 wired six fields and then titled
+ * every validation failure "Please fix the highlighted fields", including the seven constrained
+ * fields it never wired (categories, languages, contentStyles, avatarUrl, coverImageUrl, phone).
+ * `categories` is one Enter keypress away — the add handler applies no cap while the DTO declares
+ * `@Size(max = 3)` — so a creator could be told to fix a highlight that did not exist anywhere on
+ * screen. That is strictly worse than the single generic toast F-0668 replaced.
+ *
+ * Anything NOT in this set is named explicitly in the toast body instead of being silently
+ * swallowed, so a DTO constraint added later degrades to a readable message rather than a lie.
+ */
+const HIGHLIGHTED_FIELD_KEYS = new Set([
+  'displayName',
+  'username',
+  'bio',
+  'city',
+  'rateMin',
+  'rateMax',
+  'categories',
+  'languages',
+]);
+
+/** Human labels for fields this dialog cannot highlight, so the toast can still name them. */
+const FIELD_LABELS: Record<string, string> = {
+  categories: 'Categories',
+  languages: 'Languages',
+  contentStyles: 'Content styles',
+  avatarUrl: 'Avatar image',
+  coverImageUrl: 'Cover image',
+  phone: 'Phone',
+};
+
+/**
+ * F-0681 — Spring names a violation on a LIST ELEMENT `categories[0]`, not `categories`
+ * (`@Size(max = 80) String` inside `List<String>`). Matching the raw wire name against a UI key
+ * would therefore miss every per-item violation and swallow it exactly the way F-0668 swallowed
+ * the unwired fields. Collapsing the index maps it back onto the control the creator can see.
+ */
+function baseFieldName(field: string): string {
+  return field.replace(/\[\d+\]/g, '');
+}
+
 export default function CreatorProfilePage() {
   const [profile, setProfile] = React.useState<CreatorProfileSelfResponse | null>(null);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -111,6 +154,25 @@ export default function CreatorProfilePage() {
     discoverable: true,
   });
   const [categoryDraft, setCategoryDraft] = React.useState('');
+  /**
+   * F-0668 — `PATCH /me/creator-profile` (`CreatorProfilePatchRequest`, CreatorProfileDtos.java)
+   * carries real `@Size`/`@DecimalMin` bean validation (displayName ≤100, bio ≤2000, city ≤100,
+   * username ≤500, rateMin/rateMax ≥0), which `GlobalExceptionHandler.handleValidation` turns
+   * into a `VALIDATION_ERROR` envelope with a `fields: [{field, message}]` array keyed by these
+   * exact record component names. `ApiError` has carried `field`/`fields` through since F-0466,
+   * but nothing in the app ever read them — every server-named field error still surfaced as one
+   * generic toast, telling a creator something was wrong without saying what. Wired end to end
+   * here: this dialog is the one real form on a page this agent can edit whose PATCH endpoint
+   * actually emits per-field validation errors (confirmed server-side above), so it becomes the
+   * first real consumer instead of new UI invented to justify the wiring.
+   */
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string | undefined>>({});
+  const openEditDialog = () => {
+    setFieldErrors({});
+    setShowEditDialog(true);
+  };
+  const clearFieldError = (field: string) =>
+    setFieldErrors((prev) => (prev[field] === undefined ? prev : { ...prev, [field]: undefined }));
   const [isSaving, setIsSaving] = React.useState(false);
   const [syncingPlatform, setSyncingPlatform] = React.useState<string | null>(null);
   const [lastSynced, setLastSynced] = React.useState<Record<string, Date>>({});
@@ -242,6 +304,7 @@ export default function CreatorProfilePage() {
 
   const handleSave = async () => {
     setIsSaving(true);
+    setFieldErrors({});
     try {
       const payload: CreatorProfilePatchPayload = {
         displayName: editData.displayName,
@@ -259,11 +322,37 @@ export default function CreatorProfilePage() {
       setShowEditDialog(false);
       toast({ title: 'Profile updated' });
     } catch (err) {
-      toast({
-        title: 'Could not save changes',
-        description: err instanceof ApiError ? err.message : 'Please try again.',
-        variant: 'destructive',
-      });
+      // F-0668 — `fields` (plural) is what the server actually sends for this endpoint's
+      // `@Valid` failures (see the state's doc comment above); map it onto the matching input
+      // instead of leaving it to a single generic toast that names no field at all.
+      if (err instanceof ApiError && err.fields?.length) {
+        // F-0681 — collapse `categories[0]` onto `categories` first, then split the errors into
+        // the ones this dialog can highlight and the ones it cannot. The title only promises a
+        // highlight when at least one really exists; everything else is named in the body.
+        const normalised = err.fields.map((f) => ({
+          field: baseFieldName(f.field),
+          message: f.message,
+        }));
+        setFieldErrors(Object.fromEntries(normalised.map((f) => [f.field, f.message])));
+        const highlighted = normalised.filter((f) => HIGHLIGHTED_FIELD_KEYS.has(f.field));
+        const unhighlighted = normalised.filter((f) => !HIGHLIGHTED_FIELD_KEYS.has(f.field));
+        const unhighlightedText = unhighlighted
+          .map((f) => `${FIELD_LABELS[f.field] ?? f.field}: ${f.message}`)
+          .join(' · ');
+        toast({
+          title: highlighted.length
+            ? 'Please fix the highlighted fields'
+            : 'Please fix the following',
+          description: unhighlightedText || err.message,
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Could not save changes',
+          description: err instanceof ApiError ? err.message : 'Please try again.',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setIsSaving(false);
     }
@@ -364,7 +453,7 @@ export default function CreatorProfilePage() {
               <div className="flex-1 text-center sm:text-left">
                 <div className="flex items-center justify-center sm:justify-start gap-2">
                   <h1 className="text-2xl font-bold">{profile.displayName || 'Unnamed creator'}</h1>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowEditDialog(true)}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={openEditDialog}>
                     <Edit2 className="h-4 w-4" />
                   </Button>
                 </div>
@@ -428,7 +517,15 @@ export default function CreatorProfilePage() {
                         <p className="text-sm text-muted-foreground">
                           {formatNumber(social.followers)} followers
                           {' • '}
-                          {social.engagementRate}% engagement
+                          {/* F-0664 — sibling of the F-0662 fix above: this PER-PLATFORM
+                              engagementRate is null until this platform's own stats sync
+                              (CreatorDtos.PlatformStatResponse.engagementRate is a nullable
+                              BigDecimal). Interpolating it raw rendered a fabricated "null%"/
+                              "undefined% engagement" for an unsynced platform instead of the
+                              same honest "not available yet" idiom used just below. */}
+                          {social.engagementRate != null
+                            ? `${social.engagementRate}% engagement`
+                            : 'Engagement not available yet'}
                         </p>
                       </div>
                     </div>
@@ -542,7 +639,15 @@ export default function CreatorProfilePage() {
               <div className="text-center p-4 bg-muted/50 rounded-lg">
                 <div className="flex items-center justify-center gap-1">
                   <TrendingUp className="h-5 w-5 text-stage-approved-fg" />
-                  <p className="text-3xl font-bold">{profile.engagementRate}%</p>
+                  {/* F-0662 — engagementRate is null until a platform is actually synced
+                      (F-0464). A bare "%" with no number would present absent data as a
+                      measurement; render the same honest "Not available yet" idiom used
+                      elsewhere in this codebase (see creator-verified-metrics.tsx). */}
+                  {profile.engagementRate != null ? (
+                    <p className="text-3xl font-bold">{profile.engagementRate}%</p>
+                  ) : (
+                    <p className="text-sm font-normal text-muted-foreground">Not available yet</p>
+                  )}
                 </div>
                 <p className="text-sm text-muted-foreground">Engagement Rate</p>
               </div>
@@ -580,7 +685,7 @@ export default function CreatorProfilePage() {
                 <p className="text-sm text-muted-foreground">
                   Set your rate range so brands know your budget.
                 </p>
-                <Button size="sm" variant="outline" onClick={() => setShowEditDialog(true)}>
+                <Button size="sm" variant="outline" onClick={openEditDialog}>
                   Add rates
                 </Button>
               </div>
@@ -625,8 +730,15 @@ export default function CreatorProfilePage() {
               <Input
                 id="displayName"
                 value={editData.displayName}
-                onChange={(e) => setEditData({ ...editData, displayName: e.target.value })}
+                onChange={(e) => {
+                  setEditData({ ...editData, displayName: e.target.value });
+                  clearFieldError('displayName');
+                }}
+                aria-invalid={!!fieldErrors.displayName}
               />
+              {fieldErrors.displayName && (
+                <p className="text-xs text-destructive-foreground">{fieldErrors.displayName}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -634,9 +746,14 @@ export default function CreatorProfilePage() {
               <Textarea
                 id="bio"
                 value={editData.bio}
-                onChange={(e) => setEditData({ ...editData, bio: e.target.value })}
+                onChange={(e) => {
+                  setEditData({ ...editData, bio: e.target.value });
+                  clearFieldError('bio');
+                }}
                 rows={4}
+                aria-invalid={!!fieldErrors.bio}
               />
+              {fieldErrors.bio && <p className="text-xs text-destructive-foreground">{fieldErrors.bio}</p>}
             </div>
 
             <div className="space-y-2">
@@ -644,8 +761,13 @@ export default function CreatorProfilePage() {
               <Input
                 id="city"
                 value={editData.city}
-                onChange={(e) => setEditData({ ...editData, city: e.target.value })}
+                onChange={(e) => {
+                  setEditData({ ...editData, city: e.target.value });
+                  clearFieldError('city');
+                }}
+                aria-invalid={!!fieldErrors.city}
               />
+              {fieldErrors.city && <p className="text-xs text-destructive-foreground">{fieldErrors.city}</p>}
             </div>
 
             {/* CR-92 — username, categories, languages, discoverable were all patchable
@@ -655,14 +777,20 @@ export default function CreatorProfilePage() {
               <Input
                 id="username"
                 value={editData.username}
-                onChange={(e) =>
-                  setEditData({ ...editData, username: e.target.value.trim().toLowerCase() })
-                }
+                onChange={(e) => {
+                  setEditData({ ...editData, username: e.target.value.trim().toLowerCase() });
+                  clearFieldError('username');
+                }}
                 placeholder="e.g. priya_creates"
+                aria-invalid={!!fieldErrors.username}
               />
-              <p className="text-xs text-muted-foreground">
-                Your public page is influora.com/@{editData.username || 'username'}
-              </p>
+              {fieldErrors.username ? (
+                <p className="text-xs text-destructive-foreground">{fieldErrors.username}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  Your public page is influora.com/@{editData.username || 'username'}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -700,7 +828,11 @@ export default function CreatorProfilePage() {
                   setCategoryDraft('');
                 }}
                 placeholder="Type a category and press Enter"
+                aria-invalid={!!fieldErrors.categories}
               />
+              {fieldErrors.categories && (
+                <p className="text-xs text-destructive-foreground">{fieldErrors.categories}</p>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -727,6 +859,9 @@ export default function CreatorProfilePage() {
                   );
                 })}
               </div>
+              {fieldErrors.languages && (
+                <p className="text-xs text-destructive-foreground">{fieldErrors.languages}</p>
+              )}
             </div>
 
             <div className="flex items-center justify-between rounded-lg border p-3">
@@ -752,10 +887,17 @@ export default function CreatorProfilePage() {
                     id="rateMin"
                     type="number"
                     value={editData.rateMin}
-                    onChange={(e) => setEditData({ ...editData, rateMin: e.target.value })}
+                    onChange={(e) => {
+                      setEditData({ ...editData, rateMin: e.target.value });
+                      clearFieldError('rateMin');
+                    }}
                     className="pl-9"
+                    aria-invalid={!!fieldErrors.rateMin}
                   />
                 </div>
+                {fieldErrors.rateMin && (
+                  <p className="text-xs text-destructive-foreground">{fieldErrors.rateMin}</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="rateMax">Max Rate</Label>
@@ -765,10 +907,17 @@ export default function CreatorProfilePage() {
                     id="rateMax"
                     type="number"
                     value={editData.rateMax}
-                    onChange={(e) => setEditData({ ...editData, rateMax: e.target.value })}
+                    onChange={(e) => {
+                      setEditData({ ...editData, rateMax: e.target.value });
+                      clearFieldError('rateMax');
+                    }}
                     className="pl-9"
+                    aria-invalid={!!fieldErrors.rateMax}
                   />
                 </div>
+                {fieldErrors.rateMax && (
+                  <p className="text-xs text-destructive-foreground">{fieldErrors.rateMax}</p>
+                )}
               </div>
             </div>
           </div>

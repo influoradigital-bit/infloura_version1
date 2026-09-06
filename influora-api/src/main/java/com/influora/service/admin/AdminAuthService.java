@@ -58,13 +58,19 @@ import org.springframework.transaction.annotation.Transactional;
  *       mirroring {@code AdminContextService#requireMfaSatisfied}'s identical role split.
  * </ul>
  *
- * <p><b>Known gaps (flagged, not silently fixed — out of scope this cycle):</b>
+ * <p><b>ADMIN-BOOTSTRAP-0829 (closed this cycle):</b> the two gaps below are now fixed.
  * <ul>
- *   <li>No admin self-registration / seeding endpoint exists — rows must be inserted out-of-band
- *       until a future {@code AdminUserController} (P1, not in this cycle's scope) ships. This is
- *       exactly why the MFA-enforce-on-login default above carries real lockout risk for any
- *       pre-existing unenrolled SUPER_ADMIN/ADMIN row — there is no endpoint to fix it from inside
- *       the app once locked out.
+ *   <li>The very first {@code SUPER_ADMIN} row is provisioned by {@code
+ *       scripts/provision-super-admin.sh} (a one-shot ops runner, {@code
+ *       com.influora.ops.ProvisionSuperAdminRunner}) — it pre-enrolls MFA before ever saving the
+ *       row, so it can never recreate the {@code mfaEnabled = false} + {@code
+ *       ADMIN_MFA_ENFORCE_ON_LOGIN = true} deadlock that locked out {@code
+ *       influoradigital@gmail.com}. General ADMIN/SUPPORT row creation still has no endpoint
+ *       (future {@code AdminUserController}, P1, not this cycle's scope) — only the first-admin
+ *       bootstrap case is covered.
+ *   <li>{@link #resetMfaForAdmin} lets a SUPER_ADMIN clear ANOTHER admin's MFA enrollment (never
+ *       their own — see that method's javadoc) so a legitimately locked-out admin can be recovered
+ *       in-app instead of via a direct DB edit.
  * </ul>
  */
 @Service
@@ -297,6 +303,54 @@ public class AdminAuthService {
         }
         admin.confirmMfa();
         adminUserRepository.save(admin);
+    }
+
+    /**
+     * ADMIN-BOOTSTRAP-0829 — SUPER_ADMIN-only recovery path for an admin locked out of MFA (lost
+     * device, etc.) that does not require a direct DB edit. Clears the TARGET's MFA enrollment,
+     * forcing them through {@code /mfa/setup} + {@code /mfa/verify} again on their next
+     * login/privileged request.
+     *
+     * <p>Authorization, deliberately strict given this is a privilege-escalation-shaped surface:
+     *
+     * <ul>
+     *   <li>Caller must be an active SUPER_ADMIN <b>with their own MFA already satisfied</b> —
+     *       {@link AdminContextService#requireRoleWithMfaSatisfied} enforces both, so a compromised
+     *       password alone (without the caller's own working MFA) can never reach this endpoint.
+     *   <li>Caller may NOT target their own {@code adminId}. Without this, a SUPER_ADMIN could
+     *       reset their OWN MFA at will — defeating the entire point of mandatory MFA enforcement,
+     *       since "forgot my second factor" would always have a self-service bypass. Checked AFTER
+     *       loading the caller's id fresh from {@link AdminContextService}, not from anything
+     *       caller-supplied, so it cannot be spoofed via the request body.
+     *   <li>Target must be an active admin row ({@link #loadActive}) — resetting a suspended or
+     *       nonexistent admin's MFA is meaningless and rejected the same way {@code /me} rejects it.
+     * </ul>
+     *
+     * <p>No role restriction on the TARGET (SUPER_ADMIN can reset another SUPER_ADMIN's, an
+     * ADMIN's, or a SUPPORT's MFA) — the only restriction is caller-tier and not-self.
+     *
+     * <p><b>F-0648 (fixed):</b> clearing {@code mfaEnabled} alone left any refresh token the
+     * target already held valid until its natural expiry — a compromised admin session (the exact
+     * scenario this recovery path exists to contain) kept working after the "recovery". This is
+     * especially true for {@code SUPPORT}, which is exempt from {@link
+     * AdminContextService#requireMfaSatisfied}'s MFA gate and so previously had zero session-side
+     * effect from this call at all. Reuses the same {@link
+     * AdminRefreshTokenRepository#revokeAllForAdmin} bulk-revoke {@link #logout} already uses —
+     * same mechanism, applied to the TARGET's id instead of the caller's — for every target role.
+     */
+    @Transactional
+    public void resetMfaForAdmin(AuthPrincipal principal, String targetAdminId) {
+        AdminUser caller = adminContext.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN);
+        if (caller.getId().equals(targetAdminId)) {
+            throw new ApiException(
+                    "CANNOT_RESET_OWN_MFA",
+                    "Use a different SUPER_ADMIN account to reset your own MFA",
+                    HttpStatus.FORBIDDEN);
+        }
+        AdminUser target = loadActive(targetAdminId);
+        target.resetMfa();
+        adminUserRepository.save(target);
+        adminRefreshTokenRepository.revokeAllForAdmin(target.getId());
     }
 
     private AdminUser loadActive(String adminId) {

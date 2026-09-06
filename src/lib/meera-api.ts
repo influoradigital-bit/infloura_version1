@@ -19,6 +19,10 @@ import {
   isMoneyActionBlocked,
   type ApiErrorPayload,
 } from './api';
+// F-0551 — the shared in-memory access-token store. Imported from auth-session (not api.ts) for
+// the same reason api.ts reads it from there: that module is the single owner of the live-mode
+// token slot, so both API layers resolve the same credential instead of each keeping its own.
+import { getMemoryAccessToken, LIVE_SESSION_TOKEN_HINT } from './auth-session';
 
 // ---------------------------------------------------------------------------
 // Environment / config
@@ -399,7 +403,22 @@ export function isOptionsPayload(data: unknown): data is OptionsPayload {
 type MeeraRole = 'brand' | 'creator';
 
 function getToken(role: MeeraRole = 'brand'): string | null {
-  return localStorage.getItem(role === 'creator' ? 'creator_token' : 'brand_token');
+  // F-0551 SHIP-BLOCKER, caught by a fresh-context review before this shipped. When the access
+  // token moved to memory-only in live mode, `brand_token`/`creator_token` stopped holding a
+  // credential — they now hold the inert LIVE_SESSION_TOKEN_HINT sentinel ('session-active'),
+  // kept only so two out-of-scope hooks that gate on the key's PRESENCE keep working. Reading
+  // that key here sent `Authorization: Bearer session-active` on every Meera REST call and the
+  // voice endpoints, i.e. the entire Meera surface would have gone anonymous in live mode.
+  //
+  // This is the documented "two API layers" trap in this repo: api.ts and meera-api.ts each keep
+  // their own auth accessor, so a change made in one silently misses the other. The memory store
+  // lives in auth-session.ts precisely so BOTH layers can share it.
+  const inMemory = getMemoryAccessToken(role);
+  if (inMemory) return inMemory;
+  // Mock/demo mode still keeps its (non-credential) token in localStorage — see the
+  // memoryAccessTokens comment in auth-session.ts for why mock mode is deliberately untouched.
+  const stored = localStorage.getItem(role === 'creator' ? 'creator_token' : 'brand_token');
+  return stored === LIVE_SESSION_TOKEN_HINT ? null : stored;
 }
 
 /**

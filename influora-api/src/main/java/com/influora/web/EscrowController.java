@@ -106,7 +106,15 @@ public class EscrowController {
      */
     @PostMapping("/release")
     public ApiResponse<EscrowStatusResponse> release(
-            @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody EscrowReleaseRequest body) {
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody EscrowReleaseRequest body) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new ApiException(
+                    "IDEMPOTENCY_KEY_REQUIRED",
+                    "Idempotency-Key header is required",
+                    HttpStatus.BAD_REQUEST);
+        }
         var workspace = brandContext.requireBrandWorkspace(principal);
         boolean hasMilestone = body.milestoneId() != null && !body.milestoneId().isBlank();
         boolean hasHold = body.escrowHoldId() != null && !body.escrowHoldId().isBlank();
@@ -119,10 +127,12 @@ public class EscrowController {
         // Payee is resolved inside EscrowService from the collaboration — not accepted from the
         // request, so an attacker cannot redirect a release to another user, on either path.
         if (hasMilestone) {
-            return ApiResponse.ok(escrowService.release(principal, workspace.getId(), body.milestoneId()));
+            return ApiResponse.ok(
+                    escrowService.release(principal, workspace.getId(), body.milestoneId(), idempotencyKey));
         }
         return ApiResponse.ok(
-                escrowService.releaseByHoldId(principal, workspace.getId(), body.escrowHoldId()));
+                escrowService.releaseByHoldId(
+                        principal, workspace.getId(), body.escrowHoldId(), idempotencyKey));
     }
 
     /**
@@ -141,9 +151,18 @@ public class EscrowController {
      */
     @PostMapping("/refund")
     public ApiResponse<EscrowStatusResponse> refund(
-            @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody EscrowRefundRequest body) {
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody EscrowRefundRequest body) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            throw new ApiException(
+                    "IDEMPOTENCY_KEY_REQUIRED",
+                    "Idempotency-Key header is required",
+                    HttpStatus.BAD_REQUEST);
+        }
         var workspace = brandContext.requireBrandWorkspace(principal);
-        return ApiResponse.ok(escrowService.refund(principal, workspace.getId(), body.escrowHoldId()));
+        return ApiResponse.ok(
+                escrowService.refund(principal, workspace.getId(), body.escrowHoldId(), idempotencyKey));
     }
 
     @PostMapping("/payout")

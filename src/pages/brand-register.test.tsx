@@ -68,6 +68,10 @@ async function completeStep1(user: ReturnType<typeof userEvent.setup>) {
 }
 
 async function completeStep2(user: ReturnType<typeof userEvent.setup>) {
+  // F-0463 — first/last name are real required inputs now (BrandRegisterRequest is @NotBlank
+  // on both), not guessed from the email local part, so this helper must fill them in.
+  await user.type(screen.getByPlaceholderText('Jane'), 'Priya');
+  await user.type(screen.getByPlaceholderText('Doe'), 'Sharma');
   await user.type(screen.getByPlaceholderText('you@company.com'), 'brand@example.com');
   await user.type(screen.getByPlaceholderText(/Create a strong password/i), 'Passw0rdy');
   await user.type(screen.getByPlaceholderText('Confirm your password'), 'Passw0rdy');

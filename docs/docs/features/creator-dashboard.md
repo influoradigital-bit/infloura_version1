@@ -64,5 +64,5 @@ Multiple creator page tests exist. Regression risks: self-scoping, deal/delivera
 
 ## Production Readiness
 - **Health**: 7/10 · **Completion**: ~78%
-- **Known issues**: mock surfaces (dashboard/chat/inbox/wallet); affiliate earnings placeholder; coupons "not implemented" banner in places.
+- **Known issues**: mock surfaces (dashboard/chat/inbox); coupons "not implemented" banner in places. The creator wallet is real — `WalletController` branches on the principal's user type on summary/balance/transactions (lines 63, 75, 148) — and affiliate earnings ships at `/creator/affiliate-earnings` (`CreatorAffiliateEarningController`). [CORRECTED 2026-09-06, doc-stale-doc-claim, F-0532/F-0533.]
 - **Last verified**: 2026-07-15

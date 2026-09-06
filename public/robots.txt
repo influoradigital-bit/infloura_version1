@@ -1,5 +1,25 @@
 # Influora.in - robots.txt
 # GEO strategy: we WANT AI crawlers here. Do not block them.
+#
+# Why there are ZERO `Disallow:` rules here, deliberately (T-FRONTEND-REWORK-0905 W6/W7):
+#
+# The private SPA zones (/brand/*, /creator/*, /admin/*) and every /:handle
+# creator profile have no physical file in dist/, so public/_redirects serves
+# them all dist/app-shell.html - a single contentless bootstrap shell. That
+# shell is forced to `noindex, nofollow` at build time in scripts/prerender.mjs,
+# and THAT is what keeps those URLs out of the index.
+#
+# `Disallow:` was considered for those zones and rejected, for two reasons:
+#   1. /:handle is a single root-level path segment with no prefix to match on.
+#      No pattern covers it short of `Disallow: /`, which would hide the entire
+#      marketing site.
+#   2. Disallow blocks the FETCH, so a crawler would never get to read the
+#      noindex, and blocked URLs stay eligible for URL-only indexing. The two
+#      levers conflict: adding Disallow here would WEAKEN the shell's noindex,
+#      not reinforce it.
+#
+# So do not add Disallow rules for those zones. To change this behaviour,
+# change the app-shell noindex in scripts/prerender.mjs instead.
 
 User-agent: *
 Allow: /

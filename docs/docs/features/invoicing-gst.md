@@ -74,5 +74,5 @@ Invoice/GST split tests. Regression risks: FY boundary (Apr-1 IST), intra/inter-
 
 ## Production Readiness
 - **Health**: 6/10 · **Completion**: ~70% (structurally complete, not filing-ready)
-- **Known issues**: placeholder company GSTIN forces **IGST** for everything; `company.state-code` is dead (split uses GSTIN prefixes); Doc#2 emits no GST for registered creators; Doc#3 split recomputed at render (not persisted); HSN/SAC placeholders pending CA; `CreatorTaxRegistrationStatus` stored but unused. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: the split is real, not always IGST — `GstSplitUtil.java:28` compares supplier and customer GSTIN state codes and renders CGST+SGST when they match; it happens to yield IGST today only because the placeholder company GSTIN carries a different state code [CORRECTED 2026-09-06, doc-stale-doc, F-0547]; `company.state-code` is dead (split uses GSTIN prefixes); Doc#2 emits no GST for registered creators; Doc#3 split recomputed at render (not persisted); HSN/SAC placeholders pending CA; `CreatorTaxRegistrationStatus` stored but unused. See [../known-limitations.md](../known-limitations.md).
 - **Last verified**: 2026-07-15

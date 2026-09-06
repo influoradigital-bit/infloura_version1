@@ -106,6 +106,27 @@ public class Workspace {
     @Column(name = "kyc_rejection_reason", length = 2000)
     private String kycRejectionReason;
 
+    /**
+     * The brand's own Meta pixel ID (T-FESTIVALBOX-0905 phase 2, V20260905150000), used so the
+     * Festival Box page can fire that sponsor's retargeting pixel for its visitors.
+     *
+     * <p>It lives on the workspace rather than on the enquiry or a per-edition row because a pixel
+     * belongs to the BRAND, not to an event: the same sponsor returning for a second or third
+     * edition uses the same pixel and the same Meta Business account. Storing it per-edition would
+     * make a returning brand re-enter it each time and leave divergent copies with no way to tell
+     * which is current.
+     *
+     * <p>Null is meaningful — most workspaces will never have one, and a sponsor who declines
+     * tracking stays null rather than {@code ""}.
+     *
+     * <p><b>Storage only.</b> Nothing reads this yet: the Festival Box page that would consume it
+     * does not exist, and whether the pixel may fire at all is gated on an unresolved consent
+     * decision (DPDP Act 2023 notice+consent; GDPR prior consent for EU visitors). A value here
+     * does NOT mean a pixel is live.
+     */
+    @Column(name = "meta_pixel_id", length = 32)
+    private String metaPixelId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -226,6 +247,23 @@ public class Workspace {
 
     public String getKycRejectionReason() {
         return kycRejectionReason;
+    }
+
+    public String getMetaPixelId() {
+        return metaPixelId;
+    }
+
+    /**
+     * Sets or clears the brand's Meta pixel ID. Pass {@code null} to clear — a sponsor withdrawing
+     * consent must be able to return this to null, not to {@code ""}.
+     *
+     * <p>Deliberately does NOT validate the value as a real Meta pixel: we cannot verify an ID
+     * exists or is owned by this brand, so rejecting an unusual-but-valid value would lose real
+     * data. Callers are responsible for length/charset bounds; the column caps it at 32.
+     */
+    public void applyMetaPixelId(String metaPixelId) {
+        this.metaPixelId = metaPixelId;
+        touch();
     }
 
     public String getGstin() {

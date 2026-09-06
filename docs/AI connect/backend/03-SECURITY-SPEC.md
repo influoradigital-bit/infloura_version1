@@ -31,7 +31,7 @@ The remediation pass already hardened the *existing* auth surface. Confirmed by 
 | Security headers (HSTS, frame DENY, CSP, Referrer-Policy) | Built | `config/SecurityConfig.java:49-63` |
 | Object-level authz on existing `:id` routes | Built + audited clean | `CampaignService.loadOwned`, `BrandContextService.requireBrandWorkspace` |
 | `wallets` table / `Wallet` entity (ULID `VARCHAR(26)`) | Entity exists | `domain/entity/Wallet.java:17-19` |
-| **`escrow_holds`, `wallet_transactions`, any WalletController/DealController/PaymentController** | **DOES NOT EXIST** | no controller found; confirmed in remediation doc §"NET-NEW, NOT BUILT" |
+| **`escrow_holds`, `wallet_transactions`, any WalletController/DealController/PaymentController** | **PARTLY SHIPPED: WalletController and DealController now exist; PaymentController still does not** [CORRECTED 2026-09-06, doc-stale-doc-claim] | no controller found; confirmed in remediation doc §"NET-NEW, NOT BUILT" |
 | **`/internal/meera/*` endpoints** | **DOES NOT EXIST** | contract only, this doc + API spec |
 | **`INTERNAL_API_KEY`** | **NOT in the app** — only in `BACKEND-API-SPEC.md:2613` as an env var | grep of `influora-api` finds no usage |
 | **The Python/Meera service** | **DOES NOT EXIST** | net-new |

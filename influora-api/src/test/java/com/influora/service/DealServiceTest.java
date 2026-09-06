@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
+import com.influora.domain.entity.Contract;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DealMessage;
 import com.influora.domain.entity.Deliverable;
@@ -26,6 +27,7 @@ import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.ContractStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.MemberRole;
 import com.influora.domain.enums.DealSenderType;
@@ -427,6 +429,10 @@ class DealServiceTest {
     void testAcceptHappyPath() {
         stubCreatorPrincipal();
         Collaboration collaboration = invitedDeal();
+        // F-0643 — accept now requires a negotiated rate before it can commit budget; a bare
+        // invite/application no longer clears doAccept (see DealServiceBudgetTest for the
+        // rejection case this fixture used to also cover before that ruling).
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
         when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(collaboration));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
@@ -467,6 +473,8 @@ class DealServiceTest {
     void testAcceptRecordsApplicationHistoryEvent() {
         stubCreatorPrincipal();
         Collaboration collaboration = invitedDeal();
+        // F-0643 — accept now requires a negotiated rate before it can commit budget.
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
         when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(collaboration));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
@@ -526,6 +534,8 @@ class DealServiceTest {
     void testAcceptReportsEscrowFundedForMilestoneLinkedHold() {
         stubCreatorPrincipal();
         Collaboration collaboration = invitedDeal();
+        // F-0643 — accept now requires a negotiated rate before it can commit budget.
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
         when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(collaboration));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
@@ -816,6 +826,11 @@ class DealServiceTest {
         stubBrandWorkspace();
         when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
         Collaboration collaboration = invitedDeal();
+        // F-0643 — accept now requires a negotiated rate before it can commit budget. Mirrors what
+        // the real doCounter would already have set on this collaboration by the time a counter
+        // message like the one stubbed below exists (updateAgreedRate runs immediately, not at
+        // accept time) — this unit test stubs the message but never runs doCounter itself.
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
         when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(collaboration));
         // Last offer on the table was the creator's counter — brand (the counterparty) may
@@ -1392,6 +1407,8 @@ class DealServiceTest {
         stubBrandWorkspace();
         when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
         Collaboration collaboration = invitedDeal();
+        // F-0643 — accept now requires a negotiated rate before it can commit budget.
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
         when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(collaboration));
         when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
@@ -1529,6 +1546,8 @@ class DealServiceTest {
         stubBrandWorkspace();
         when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
         Collaboration collaboration = invitedDeal();
+        // F-0643 — accept now requires a negotiated rate before it can commit budget.
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
         when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(collaboration));
         when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
@@ -2080,6 +2099,8 @@ class DealServiceTest {
         stubBrandWorkspace();
         when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
         Collaboration collaboration = invitedDeal();
+        // F-0643 — accept now requires a negotiated rate before it can commit budget.
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
         when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(collaboration));
         when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
@@ -2229,6 +2250,8 @@ class DealServiceTest {
     void testCreatorAcceptRecordsNoApplicationViewed() {
         stubCreatorPrincipal();
         Collaboration collaboration = invitedDeal();
+        // F-0643 — accept now requires a negotiated rate before it can commit budget.
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
         when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(collaboration));
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
@@ -2349,6 +2372,8 @@ class DealServiceTest {
         stubBrandWorkspace();
         when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
         Collaboration collaboration = invitedDeal();
+        // F-0643 — accept now requires a negotiated rate before it can commit budget.
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
         when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(collaboration));
         when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
@@ -2443,5 +2468,144 @@ class DealServiceTest {
         assertEquals(null, responses.get(0).dealTerms());
         String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(responses.get(0));
         assertFalse(json.contains("dealTerms"), "expected dealTerms to be omitted, got: " + json);
+    }
+
+    // ------------------------------------------------------------------
+    // F-0645, stale-binding-after-amend — ContractService#amend leaves a superseded ACTIVE
+    // contract untouched (still signed, still what any funded escrow is bound to) while inserting
+    // a fresh, unsigned DRAFT amendment as the newest (version, createdAt) row. toDealResponse
+    // previously took contracts.get(0) unconditionally, so a brand's funded, binding contract
+    // would silently vanish behind the unsigned draft -- contractStatus=DRAFT sitting right next
+    // to escrowFunded=true, a contradiction with no explanation, until the amendment was itself
+    // signed by both parties.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "get(): amending a funded ACTIVE contract keeps surfacing that funded ACTIVE contract as"
+                    + " current, not the newer unsigned amendment draft")
+    void testGetKeepsFundedActiveContractCurrentWhileAmendmentDraftIsUnsigned() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID)).thenReturn(Optional.empty());
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(DEAL_ID))
+                .thenReturn(List.of());
+
+        String activeContractId = "01HCONTRACTACTIVE1234";
+        String draftAmendmentId = "01HCONTRACTDRAFT12345";
+        Contract activeContract =
+                Contract.builder()
+                        .id(activeContractId)
+                        .collaborationId(DEAL_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .version(1)
+                        .status(ContractStatus.ACTIVE)
+                        .totalAmount(new BigDecimal("1000"))
+                        .build();
+        Contract draftAmendment =
+                Contract.builder()
+                        .id(draftAmendmentId)
+                        .collaborationId(DEAL_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .version(2)
+                        .status(ContractStatus.DRAFT)
+                        .totalAmount(new BigDecimal("1200"))
+                        .build();
+        // Newest-first, exactly what findByCollaborationIdOrderByVersionDescCreatedAtDesc returns.
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of(draftAmendment, activeContract));
+        // [F-0656] escrowFunded is now scoped to the RESOLVED current contract, so this stubs the
+        // funded answer for v1 specifically — which is also the stronger assertion: the hold really
+        // is bound to v1's milestone here, and v1 is what resolveCurrentContract returns.
+        when(escrowHoldRepository.hasEscrowForContract(eq(DEAL_ID), eq(activeContractId), any()))
+                .thenReturn(true);
+
+        DealResponse response = service.get(brandPrincipal, DEAL_ID);
+
+        assertEquals(
+                activeContractId,
+                response.contractId(),
+                "the funded ACTIVE contract must stay \"current\" while the amendment is unsigned");
+        assertEquals(ContractStatus.ACTIVE, response.contractStatus());
+        assertTrue(response.escrowFunded());
+    }
+
+    /**
+     * [F-0654 correction] Before the F-0654 fix, this test hand-constructed its predecessor as
+     * {@code CANCELLED} — exactly the shape a later fresh-context CTO review named by name as the
+     * defect in a REJECTED attempt at this same finding ("a state amend() cannot produce for an
+     * ACTIVE predecessor being superseded"): {@code ContractService#amend}'s own javadoc is
+     * explicit that an ACTIVE predecessor is deliberately left untouched (never cancelled) while
+     * its amendment sits unsigned, so a CANCELLED v1 next to an ACTIVE v2 modeled a state the real
+     * system could never actually reach. Now that {@link ContractService
+     * #retirePredecessorIfSuperseded} exists and fires at the real moment an amendment's signature
+     * flow completes, the predecessor here is {@code COMPLETED} — the actual terminal status the
+     * production code now writes (see that method's own javadoc for why {@code COMPLETED}, not
+     * {@code CANCELLED}, is the honest label).
+     */
+    @Test
+    @DisplayName(
+            "get(): once the amendment itself becomes ACTIVE (signed) and the predecessor is"
+                    + " retired to COMPLETED, the amendment becomes current — no ACTIVE predecessor"
+                    + " left to prefer")
+    void testGetSurfacesNewestContractOnceAmendmentIsSigned() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID)).thenReturn(Optional.empty());
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(DEAL_ID))
+                .thenReturn(List.of());
+
+        String retiredOriginalId = "01HCONTRACTRETIRED123";
+        String nowActiveAmendmentId = "01HCONTRACTNOWACTIVE1";
+        Contract retiredOriginal =
+                Contract.builder()
+                        .id(retiredOriginalId)
+                        .collaborationId(DEAL_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .version(1)
+                        .status(ContractStatus.COMPLETED)
+                        .totalAmount(new BigDecimal("1000"))
+                        .build();
+        Contract nowActiveAmendment =
+                Contract.builder()
+                        .id(nowActiveAmendmentId)
+                        .collaborationId(DEAL_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .version(2)
+                        .status(ContractStatus.ACTIVE)
+                        .totalAmount(new BigDecimal("1200"))
+                        .build();
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of(nowActiveAmendment, retiredOriginal));
+        // [F-0656] This is that finding's exact scenario, so the escrow answer belongs here too.
+        // The original FUNDED hold is still bound to the RETIRED predecessor's milestone — nothing
+        // refunds or re-links it on amend — so the contract-scoped query answers false for the
+        // amendment. Before F-0656 this stubbed hasEscrowForCollaboration(true) and the response
+        // reported escrowFunded=true for a contract whose own payment plan was never funded.
+        when(escrowHoldRepository.hasEscrowForContract(eq(DEAL_ID), eq(nowActiveAmendmentId), any()))
+                .thenReturn(false);
+
+        DealResponse response = service.get(brandPrincipal, DEAL_ID);
+
+        assertEquals(nowActiveAmendmentId, response.contractId());
+        assertEquals(ContractStatus.ACTIVE, response.contractStatus());
+        assertFalse(
+                response.escrowFunded(),
+                "F-0656: the amendment's own payment plan was never funded — the predecessor's"
+                        + " stale hold must not report it as funded");
     }
 }

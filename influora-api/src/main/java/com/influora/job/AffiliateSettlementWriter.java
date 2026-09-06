@@ -10,6 +10,8 @@ import com.influora.service.PlatformWalletService;
 import com.influora.service.WalletLedgerService;
 import com.influora.service.WalletService;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Component
 public class AffiliateSettlementWriter {
+
+    private static final Logger log = LoggerFactory.getLogger(AffiliateSettlementWriter.class);
 
     private final AffiliateEarningRepository affiliateEarningRepository;
     private final WalletLedgerService walletLedgerService;
@@ -95,11 +99,32 @@ public class AffiliateSettlementWriter {
      *
      * <p>{@code walletLedgerService}/{@code walletService}/{@code platformWalletService} are null
      * only when this instance was built through the legacy narrower constructor above (the two
-     * locked pre-F-0402 test files) — in that case this is a no-op, matching this class's
-     * pre-fix behaviour (status flip only).
+     * locked pre-F-0402 test files) — production always goes through the {@code @Autowired}
+     * four-arg constructor, which never leaves them null, so this branch should never fire outside
+     * that sanctioned test path. [F-0641] It used to no-op there completely silently: the earning
+     * was already marked SETTLED by {@link #doSettleCreator} one line above the call into this
+     * method, so a null collaborator here left money durably recorded as paid while nothing was
+     * ever posted to {@code wallet_transactions} — a state an operator had no way to see. Rather
+     * than throw (which would break the two locked tests that construct this class with the
+     * narrower constructor specifically to exercise the status-flip-only path), this now logs at
+     * ERROR so the gap is visible instead of silent, matching the loud-failure convention {@code
+     * PlatformWalletService#requireClearingWallet} / {@code WalletService#requireOrCreateUserWallet}
+     * use for their own "should never happen" cases.
      */
     private void creditCreatorWallet(AffiliateEarning earning) {
         if (walletLedgerService == null || walletService == null || platformWalletService == null) {
+            log.error(
+                    "[F-0641] Skipping wallet credit for AffiliateEarning id={} creatorId={}"
+                            + " redemptionId={} idempotencyKey={} -- this writer was constructed"
+                            + " without wallet collaborators (walletLedgerService/walletService/"
+                            + "platformWalletService are null). The earning is already marked SETTLED"
+                            + " but commissionAmount={} {} was NOT credited to the creator's wallet.",
+                    earning.getId(),
+                    earning.getCreatorId(),
+                    earning.getRedemptionId(),
+                    earning.getIdempotencyKey(),
+                    earning.getCommissionAmount(),
+                    earning.getCurrency());
             return;
         }
         Wallet clearingWallet = platformWalletService.requireClearingWallet();

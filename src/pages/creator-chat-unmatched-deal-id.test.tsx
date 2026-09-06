@@ -93,7 +93,7 @@ const REAL_DEAL_A = {
 const REAL_DEAL_B = { ...REAL_DEAL_A, id: 'deal_real_b', campaignName: 'Real Campaign B' };
 
 describe('CreatorChatPage — an unmatched ?deal= id must not substitute a different deal', () => {
-  it('shows "No deals yet", not the first real deal, when the id in the URL matches nothing', async () => {
+  it('shows "Deal not found" (not the generic "No deals yet"), and not the first real deal, when the id in the URL matches nothing', async () => {
     dealsList.mockResolvedValue([REAL_DEAL_A, REAL_DEAL_B]);
 
     render(
@@ -104,9 +104,29 @@ describe('CreatorChatPage — an unmatched ?deal= id must not substitute a diffe
 
     // The wrong-deal failure mode this guards against: silently rendering deal_real_a's
     // campaign name as if it were the one the link asked for.
-    expect(await screen.findByText(/no deals yet/i)).toBeInTheDocument();
+    //
+    // F-0639: this creator genuinely HAS deals — "No deals yet" is false and misleading for
+    // a stale/unmatched link. The copy must say the specific deal wasn't found, not imply
+    // the deal list is empty.
+    expect(await screen.findByText(/deal not found/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no deals yet/i)).not.toBeInTheDocument();
     expect(screen.queryByText('Real Campaign A')).not.toBeInTheDocument();
     expect(screen.queryByText('Real Campaign B')).not.toBeInTheDocument();
+  });
+
+  it('F-0639: shows the genuine "No deals yet" copy (not "Deal not found") when the creator has zero deals ever', async () => {
+    dealsList.mockResolvedValue([]);
+
+    render(
+      <MemoryRouter initialEntries={['/creator/chat?deal=stale_or_wrong_id_123']}>
+        <CreatorChatPage />
+      </MemoryRouter>,
+    );
+
+    // Same unmatched-id URL as the test above, but with a genuinely empty deal list — the
+    // two situations must render distinct copy, not the same message.
+    expect(await screen.findByText(/no deals yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/deal not found/i)).not.toBeInTheDocument();
   });
 
   it('still falls back to the first deal when NO id is requested at all', async () => {

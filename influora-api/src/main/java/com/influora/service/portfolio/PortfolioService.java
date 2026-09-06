@@ -1,7 +1,11 @@
 package com.influora.service.portfolio;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.influora.common.ApiException;
 import com.influora.common.JsonLists;
 import com.influora.common.LimitedInputStream;
@@ -21,12 +25,14 @@ import com.influora.domain.entity.Review;
 import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.DeliverableType;
 import com.influora.domain.enums.PortfolioEventType;
 import com.influora.domain.enums.ReviewerType;
 import com.influora.integration.meta.client.InstagramInsightsClient;
 import com.influora.integration.meta.dto.InstagramUserResponse;
 import com.influora.integration.meta.oauth.MetaTokenStorage;
 import com.influora.integration.storage.R2StorageService;
+import com.influora.service.security.AbuseThrottleService;
 import com.influora.service.security.MalwareScanService;
 import com.influora.service.notification.event.PortfolioContactEvent;
 import com.influora.repository.AudienceDemographicsRepository;
@@ -67,7 +73,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,9 +90,39 @@ import org.springframework.web.multipart.MultipartFile;
 public class PortfolioService {
 
     private static final Logger log = LoggerFactory.getLogger(PortfolioService.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /**
+     * F-0498 — {@code withExactBigDecimals(true)} because plain {@code JsonNodeFactory}'s {@code
+     * numberNode(BigDecimal)} calls {@code stripTrailingZeros()} on the way into a tree node
+     * (JsonNode-databind's long-standing surprise: a scale-0 5000 becomes 5E+3, still numerically
+     * equal but a different scale/representation once read back). Only surfaces once a BigDecimal
+     * round-trips through {@link #loadRateCard}/{@link #writeSettings(PortfolioSettings, List)}'s
+     * tree-node merge — nothing else on this MAPPER carries a BigDecimal through tree nodes.
+     */
+    private static final ObjectMapper MAPPER =
+            new ObjectMapper().setNodeFactory(JsonNodeFactory.withExactBigDecimals(true));
     /** Spec 12 §5.1 image cap (10 MB) — same as deliverable proof screenshots. */
     private static final long MAX_COVER_BYTES = 10_485_760L;
+    /**
+     * F-0498 — no cap existed before, so a client could persist an unbounded array into
+     * {@code portfolio_settings_json}. {@link DeliverableType} is the platform's own catalog of
+     * deliverable formats (INSTAGRAM_POST..TIKTOK_VIDEO, 9 values); a legitimate rate card has at
+     * most one row per format, so this mirrors that existing catalog instead of picking an
+     * arbitrary number.
+     */
+    private static final int MAX_RATE_CARD_ROWS = DeliverableType.values().length;
+
+    /**
+     * F-0665/F-0434 — the exact 4 values {@code creator-portfolio-editor.tsx}'s "Past collabs —
+     * what shows on your page" Select offers (mirrored in the frontend's {@code
+     * PortfolioCollab.displayMode} union in {@code src/lib/api.ts}). A PATCH naming any other value
+     * is rejected outright ({@link #validateCollabDisplayModes}) rather than silently defaulted —
+     * same discipline {@link #validateRateCard} already applies to rate-card rows.
+     */
+    private static final Set<String> ALLOWED_COLLAB_DISPLAY_MODES =
+            Set.of("logo", "name_only", "category", "hidden");
+
+    /** F-0665/F-0434 — what a collab with no stored preference (or a pre-fix profile) shows. */
+    private static final String DEFAULT_COLLAB_DISPLAY_MODE = "logo";
 
     private final CreatorContextService creatorContext;
     private final CreatorProfileService creatorProfileService;
@@ -107,9 +145,31 @@ public class PortfolioService {
     private final InstagramInsightsClient instagramInsightsClient;
     private final CreatorMetricsRepository creatorMetricsRepository;
     private final ExternalCreatorLinkService externalCreatorLinkService;
+    private final AbuseThrottleService abuseThrottleService;
 
     /** Trailing window for the "Page views (30d)" analytics number and its period-over-period delta. */
     private static final Duration ANALYTICS_WINDOW = Duration.ofDays(30);
+
+    /**
+     * T-FESTIVALBOX-0905 phase 9 [Kabir F-3] — {@link #contact} was an unauthenticated mail-injection
+     * amplifier: no rate limit, no honeypot, no IP tracking, not even a persisted row, and every
+     * accepted POST emails a real creator with attacker-controlled name/reply-to/body. The edge
+     * {@code AuthRateLimitFilter} "portfolio-contact" bucket (per source IP) is one layer; this is
+     * the second, keyed by the RECIPIENT creator rather than the sender's IP, specifically so a
+     * caller that rotates IP between requests (defeating the edge bucket entirely) is still bounded
+     * — no matter how many origins an attacker sources from, one creator's inbox cannot be flooded
+     * past this cap in one window. Reuses {@link AbuseThrottleService} (the same atomic upsert
+     * counter {@code FestivalEnquiryService#enforceThrottle} uses) rather than inventing a second
+     * throttle mechanism.
+     *
+     * <p>No honeypot is added here (unlike {@code FestivalEnquiryService}): this is a pre-existing
+     * public API with existing callers, and a new required field would break them. Throttling alone
+     * is the fix for this endpoint.
+     */
+    private static final long MAX_CONTACT_PER_CREATOR_PER_WINDOW = 20;
+
+    /** Same fixed-hour bucket shape as {@code FestivalEnquiryService#THROTTLE_WINDOW}. */
+    private static final Duration CONTACT_THROTTLE_WINDOW = Duration.ofHours(1);
 
     public PortfolioService(
             CreatorContextService creatorContext,
@@ -132,7 +192,8 @@ public class PortfolioService {
             MetaTokenStorage metaTokenStorage,
             InstagramInsightsClient instagramInsightsClient,
             CreatorMetricsRepository creatorMetricsRepository,
-            ExternalCreatorLinkService externalCreatorLinkService) {
+            ExternalCreatorLinkService externalCreatorLinkService,
+            AbuseThrottleService abuseThrottleService) {
         this.creatorContext = creatorContext;
         this.creatorProfileService = creatorProfileService;
         this.creatorProfileRepository = creatorProfileRepository;
@@ -154,6 +215,7 @@ public class PortfolioService {
         this.instagramInsightsClient = instagramInsightsClient;
         this.creatorMetricsRepository = creatorMetricsRepository;
         this.externalCreatorLinkService = externalCreatorLinkService;
+        this.abuseThrottleService = abuseThrottleService;
     }
 
     @Transactional(readOnly = true)
@@ -209,6 +271,9 @@ public class PortfolioService {
             creatorProfileService.applyUsername(profile, patch.username().trim());
         }
 
+        validateRateCard(patch.rateCard());
+        validateCollabDisplayModes(patch.collabs());
+
         profile.applySelfEdit(
                 patch.displayName(),
                 patch.bio(),
@@ -232,7 +297,24 @@ public class PortfolioService {
         if (patch.pinnedPosts() != null) {
             settings.setPinnedPosts(patch.pinnedPosts());
         }
-        profile.applyPortfolioSettingsJson(writeSettings(settings));
+        // F-0498 — persist the real per-row rate card (id/label/min/max/currency for every row
+        // the client sent) into the portfolio_settings_json blob instead of collapsing it down to
+        // the single rateMin/rateMax pair above; see buildRateCard for the read-back side. Reads
+        // the CURRENT stored rows first (before the applyPortfolioSettingsJson below overwrites
+        // them) so an update that doesn't touch the rate card — e.g. just editing the bio — never
+        // wipes it, matching how every other settings.set*() call above only fires when patch
+        // actually supplied that field.
+        List<PortfolioRateRow> effectiveRateCard =
+                patch.rateCard() != null ? patch.rateCard() : loadRateCard(profile);
+        // F-0665/F-0434 — same never-wipe-if-not-supplied discipline as effectiveRateCard above:
+        // only recompute the id->displayMode map when this patch actually included a collabs
+        // array, otherwise keep whatever was previously persisted.
+        Map<String, String> effectiveCollabDisplayModes =
+                patch.collabs() != null
+                        ? extractCollabDisplayModes(patch.collabs())
+                        : loadCollabDisplayModes(profile);
+        profile.applyPortfolioSettingsJson(
+                writeSettings(settings, effectiveRateCard, effectiveCollabDisplayModes));
         try {
             creatorProfileRepository.save(profile);
         } catch (DataIntegrityViolationException dup) {
@@ -516,6 +598,24 @@ public class PortfolioService {
             throw new ApiException("MESSAGE_TOO_LONG", "Message must be under 2000 characters", HttpStatus.BAD_REQUEST);
         }
 
+        // T-FESTIVALBOX-0905 phase 9 [Kabir F-3] — see MAX_CONTACT_PER_CREATOR_PER_WINDOW's javadoc.
+        // Keyed by the RECIPIENT creator, not the sender's IP: the edge AuthRateLimitFilter
+        // "portfolio-contact" bucket already bounds one IP, so this bounds one creator's inbox
+        // regardless of how many IPs an attacker sends from. Runs AFTER field validation (an
+        // obviously-malformed request should not consume a real creator's budget) but BEFORE the
+        // event is published, same "validated attempts consume budget" discipline as
+        // FestivalEnquiryService#enforceThrottle.
+        if (!abuseThrottleService.tryConsume(
+                "portfolio-contact:" + profile.getId(),
+                CONTACT_THROTTLE_WINDOW,
+                MAX_CONTACT_PER_CREATOR_PER_WINDOW)) {
+            log.warn("Portfolio contact throttled: per-creator cap reached for profile={}", profile.getId());
+            throw new ApiException(
+                    "TOO_MANY_REQUESTS",
+                    "This creator has received several messages recently. Please try again later.",
+                    HttpStatus.TOO_MANY_REQUESTS);
+        }
+
         // W3-1 — publish through the event bus like every other domain event instead of calling
         // NotificationService directly. Previously this constructed the event record purely as
         // metadata to hand to NotificationService.notify() and never actually published it — the
@@ -532,7 +632,11 @@ public class PortfolioService {
                         message);
         eventPublisher.publishEvent(event);
 
-        log.info("Portfolio contact delivered to creator={} from sender={}", profile.getId(), email);
+        // T-FESTIVALBOX-0905 phase 9 [Kabir F-3] — this used to log the sender's email address
+        // (`from sender={}`, email). That is PII in an application log, exactly what
+        // FestivalEnquiryService deliberately avoids (see its submit() javadoc) — an application
+        // log is not access-controlled the way the eventual notification / admin record is.
+        log.info("Portfolio contact delivered to creator={}", profile.getId());
         return new PortfolioContactResponse(true);
     }
 
@@ -550,10 +654,11 @@ public class PortfolioService {
                 collaborationRepository.findByCreatorIdAndStatus(
                         profile.getUserId(), CollaborationStatus.COMPLETED);
         Map<String, Review> brandReviewsByCollab = loadBrandReviewsByCollab(profile.getUserId());
+        Map<String, String> collabDisplayModes = loadCollabDisplayModes(profile);
 
         PortfolioStats stats = computeStats(completed, brandReviewsByCollab);
         List<PortfolioCollab> collabs =
-                buildCollabs(completed, publicView, settings, brandReviewsByCollab);
+                buildCollabs(completed, publicView, settings, brandReviewsByCollab, collabDisplayModes);
         List<String> badges = computeBadges(profile, platformStats, stats);
         List<String> topCities = loadTopAudienceCities(profile.getId());
 
@@ -597,7 +702,8 @@ public class PortfolioService {
             List<Collaboration> completed,
             boolean publicView,
             PortfolioSettings settings,
-            Map<String, Review> brandReviewsByCollab) {
+            Map<String, Review> brandReviewsByCollab,
+            Map<String, String> collabDisplayModes) {
         if (publicView && !settings.getVisibility().pastCollabs()) {
             return List.of();
         }
@@ -608,26 +714,62 @@ public class PortfolioService {
             if (campaign == null) {
                 continue;
             }
+            // F-0674 (privacy-leak-client-side-only) — server-side enforcement of the "Past
+            // collabs — what shows on your page" choice, mirroring the pattern
+            // getVisiblePinnedPosts already uses for section-level visibility. The public,
+            // unauthenticated GET /portfolio/{username} path (publicView=true) previously
+            // returned every collab's real brandName regardless of displayMode — the browser
+            // (creator-portfolio-public.tsx) filtered "hidden" and swapped in a label for
+            // "category" purely cosmetically, so an unauthenticated curl of the endpoint still
+            // exposed the brand names a creator had explicitly chosen to hide or anonymise.
+            // getMine (publicView=false) is UNCHANGED: the creator must still see and edit their
+            // own real collab names, including ones they've marked hidden.
+            String displayMode =
+                    collabDisplayModes.getOrDefault(collab.getId(), DEFAULT_COLLAB_DISPLAY_MODE);
+            if (publicView && "hidden".equals(displayMode)) {
+                continue;
+            }
             Workspace workspace =
                     workspaceRepository.findById(campaign.getWorkspaceId()).orElse(null);
             Review brandReview = brandReviewsByCollab.get(collab.getId());
             Double rating = brandReview != null ? (double) brandReview.getStars() : null;
             String quote = brandReview != null ? brandReview.getReviewText() : null;
+            boolean anonymize = publicView && "category".equals(displayMode);
             out.add(
                     new PortfolioCollab(
                             collab.getId(),
-                            campaign.getWorkspaceId(),
-                            workspace != null ? workspace.getName() : "Brand",
-                            workspace != null ? workspace.getLogoUrl() : null,
+                            // brandId/brandLogoUrl are just as identifying as brandName (a real
+                            // logo image or an id a client could look up elsewhere) — anonymising
+                            // only the name string while leaving those intact would still leak
+                            // the brand's identity, so all three are withheld together.
+                            anonymize ? null : campaign.getWorkspaceId(),
+                            anonymize
+                                    ? anonymizedBrandLabel(workspace)
+                                    : (workspace != null ? workspace.getName() : "Brand"),
+                            anonymize ? null : (workspace != null ? workspace.getLogoUrl() : null),
                             campaign.getTitle(),
                             "Campaign collaboration",
                             "INSTAGRAM",
                             collab.getCreatedAt().toString(),
                             rating,
                             quote,
-                            "logo"));
+                            // F-0665/F-0434 — was hardcoded "logo" regardless of what the creator
+                            // chose; now the creator's own persisted preference for THIS collab id,
+                            // falling back to the default only when none was ever set.
+                            displayMode));
         }
         return out;
+    }
+
+    /**
+     * F-0674 — the public payload's substitute for a real brand name on a "category" collab.
+     * Derived from the workspace's own {@code industry} (e.g. "Beauty Brand") so the
+     * anonymisation stays informative without naming the actual brand; falls back to a bare
+     * "Brand" when the workspace lookup failed or has no industry recorded.
+     */
+    private static String anonymizedBrandLabel(Workspace workspace) {
+        String industry = workspace != null ? workspace.getIndustry() : null;
+        return (industry != null && !industry.isBlank()) ? industry + " Brand" : "Brand";
     }
 
     private PortfolioStats computeStats(
@@ -724,6 +866,15 @@ public class PortfolioService {
         if (publicView && !"public".equals(rateCardVisibility)) {
             return List.of();
         }
+        // F-0498 — real per-deliverable rows persisted via updateMine win over the fabricated
+        // fallback below. The fallback stays for profiles whose only rate data is the
+        // profile-level rateMin/rateMax pair (set via CreatorOnboardingService or
+        // CreatorProfileService.patchMyProfile, never routed through this portfolio rate-card
+        // editor), so their public page still shows pricing instead of going blank.
+        List<PortfolioRateRow> storedRows = loadRateCard(profile);
+        if (!storedRows.isEmpty()) {
+            return storedRows;
+        }
         List<PortfolioRateRow> rows = new ArrayList<>();
         if (profile.getRateMin() != null || profile.getRateMax() != null) {
             BigDecimal min = profile.getRateMin() != null ? profile.getRateMin() : profile.getRateMax();
@@ -801,6 +952,123 @@ public class PortfolioService {
         }
     }
 
+    /**
+     * F-0498 — same as {@link #writeSettings(PortfolioSettings)}, plus the real per-row rate card
+     * merged in as an extra top-level {@code "rateCard"} array. This stays a tree-level merge
+     * rather than a new field on {@link PortfolioSettings} so the fix is scoped to this service
+     * class; see {@link #loadRateCard} for the read-back side.
+     *
+     * <p>F-0665/F-0434 — same tree-level-merge convention now carries the collab display-mode
+     * preferences too, as a second extra top-level {@code "collabDisplayModes"} object (collab id
+     * -> display mode); see {@link #loadCollabDisplayModes} for the read-back side.
+     */
+    private String writeSettings(
+            PortfolioSettings settings,
+            List<PortfolioRateRow> rateCard,
+            Map<String, String> collabDisplayModes) {
+        try {
+            ObjectNode node = (ObjectNode) MAPPER.valueToTree(settings);
+            node.set("rateCard", MAPPER.valueToTree(rateCard != null ? rateCard : List.of()));
+            node.set(
+                    "collabDisplayModes",
+                    MAPPER.valueToTree(collabDisplayModes != null ? collabDisplayModes : Map.of()));
+            return MAPPER.writeValueAsString(node);
+        } catch (JsonProcessingException | RuntimeException e) {
+            throw new ApiException(
+                    "INVALID_PORTFOLIO_SETTINGS",
+                    "Could not save portfolio settings",
+                    HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /**
+     * F-0498 — reads the real per-row rate card directly out of the {@code
+     * portfolio_settings_json} blob's {@code "rateCard"} array. Not a field on {@link
+     * PortfolioSettings} (kept untouched — this fix is scoped to PortfolioService.java); see
+     * {@link #writeSettings(PortfolioSettings, List)} for the write side. Mirrors {@link
+     * #loadSettings}'s fail-open behaviour: missing/blank/unparseable JSON, or no {@code
+     * "rateCard"} key, all yield an empty list rather than throwing.
+     */
+    private List<PortfolioRateRow> loadRateCard(CreatorProfile profile) {
+        String json = profile.getPortfolioSettingsJson();
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            // USE_BIG_DECIMAL_FOR_FLOATS — plain MAPPER.readTree parses a bare numeric literal like
+            // 5000 through a double, which turned rateMin/rateMax into 5000.0 on read-back (caught
+            // by this fix's own round-trip test). Scoped to this one reader so it doesn't change
+            // behaviour for loadSettings' non-numeric fields elsewhere in this class.
+            JsonNode root =
+                    MAPPER.reader()
+                            .with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
+                            .readTree(json);
+            JsonNode rateCardNode = root.get("rateCard");
+            if (rateCardNode == null || !rateCardNode.isArray()) {
+                return List.of();
+            }
+            List<PortfolioRateRow> rows =
+                    MAPPER.convertValue(
+                            rateCardNode,
+                            MAPPER.getTypeFactory()
+                                    .constructCollectionType(List.class, PortfolioRateRow.class));
+            return rows != null ? rows : List.of();
+        } catch (JsonProcessingException | IllegalArgumentException e) {
+            return List.of();
+        }
+    }
+
+    /**
+     * F-0665/F-0434 — reads the persisted collab id -> display-mode map out of the {@code
+     * portfolio_settings_json} blob's {@code "collabDisplayModes"} object, same convention as
+     * {@link #loadRateCard}'s {@code "rateCard"} array. Not a field on {@link PortfolioSettings}
+     * (scoped to this service, like the rate card); see {@link #writeSettings(PortfolioSettings,
+     * List, Map)} for the write side. Same fail-open behaviour: missing/blank/unparseable JSON, or
+     * no {@code "collabDisplayModes"} key, all yield an empty map (every collab then falls back to
+     * {@link #DEFAULT_COLLAB_DISPLAY_MODE} in {@link #buildCollabs}) rather than throwing.
+     */
+    private Map<String, String> loadCollabDisplayModes(CreatorProfile profile) {
+        String json = profile.getPortfolioSettingsJson();
+        if (json == null || json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode modesNode = root.get("collabDisplayModes");
+            if (modesNode == null || !modesNode.isObject()) {
+                return Map.of();
+            }
+            Map<String, String> modes =
+                    MAPPER.convertValue(
+                            modesNode,
+                            MAPPER.getTypeFactory()
+                                    .constructMapType(HashMap.class, String.class, String.class));
+            return modes != null ? modes : Map.of();
+        } catch (JsonProcessingException | IllegalArgumentException e) {
+            return Map.of();
+        }
+    }
+
+    /**
+     * F-0665/F-0434 — the write-side counterpart of {@link #loadCollabDisplayModes}: pulls
+     * {@code (id, displayMode)} out of the client-sent {@link PortfolioCollab} rows. Only these two
+     * fields are trusted — everything else on each row (brandName, campaignTitle, rating, ...) is
+     * recomputed live from {@code Collaboration}/{@code Campaign}/{@code Workspace} in {@link
+     * #buildCollabs} and is never read from the patch. A row with a blank id or a null
+     * displayMode is skipped rather than persisted as noise; {@link #validateCollabDisplayModes}
+     * has already rejected any row with a displayMode outside {@link
+     * #ALLOWED_COLLAB_DISPLAY_MODES} by the time this runs.
+     */
+    private static Map<String, String> extractCollabDisplayModes(List<PortfolioCollab> collabs) {
+        Map<String, String> modes = new HashMap<>();
+        for (PortfolioCollab collab : collabs) {
+            if (collab.id() != null && !collab.id().isBlank() && collab.displayMode() != null) {
+                modes.put(collab.id(), collab.displayMode());
+            }
+        }
+        return modes;
+    }
+
     private PlatformStatResponse toPlatform(PlatformStat ps) {
         return new PlatformStatResponse(
                 ps.getPlatform(),
@@ -811,18 +1079,79 @@ public class PortfolioService {
                 ps.getProfileUrl());
     }
 
+    /**
+     * F-0498 — the profile-level {@code rateMin} column feeds {@code CreatorDiscoveryService}'s
+     * rate filter, so it still needs a single aggregate value even now that the full per-row rate
+     * card is preserved (see {@link #buildRateCard}). Was {@code rateCard.get(0).min()}, which
+     * silently discarded every row past the first; now the true floor across all rows.
+     */
     private static BigDecimal extractRateMin(List<PortfolioRateRow> rateCard) {
         if (rateCard == null || rateCard.isEmpty()) {
             return null;
         }
-        return rateCard.get(0).min();
+        return rateCard.stream()
+                .map(PortfolioRateRow::min)
+                .filter(Objects::nonNull)
+                .min(BigDecimal::compareTo)
+                .orElse(null);
     }
 
+    /** F-0498 — see {@link #extractRateMin}; the true ceiling across all rows. */
     private static BigDecimal extractRateMax(List<PortfolioRateRow> rateCard) {
         if (rateCard == null || rateCard.isEmpty()) {
             return null;
         }
-        return rateCard.get(0).max();
+        return rateCard.stream()
+                .map(PortfolioRateRow::max)
+                .filter(Objects::nonNull)
+                .max(BigDecimal::compareTo)
+                .orElse(null);
+    }
+
+    /**
+     * F-0498 — same {@code INVALID_RATE_RANGE} check {@code CreatorOnboardingService#saveProfile}
+     * and {@code CreatorProfileService#patchMyProfile} already enforce on the single profile-level
+     * rateMin/rateMax pair (same code, message, and status), applied per row now that the
+     * portfolio rate card persists real per-deliverable rows instead of one collapsed pair. Also
+     * enforces {@link #MAX_RATE_CARD_ROWS}, which this PATCH path never capped before.
+     */
+    private static void validateRateCard(List<PortfolioRateRow> rateCard) {
+        if (rateCard == null) {
+            return;
+        }
+        if (rateCard.size() > MAX_RATE_CARD_ROWS) {
+            throw new ApiException(
+                    "RATE_CARD_TOO_LARGE",
+                    "A portfolio rate card can have at most " + MAX_RATE_CARD_ROWS + " rows",
+                    HttpStatus.BAD_REQUEST);
+        }
+        for (PortfolioRateRow row : rateCard) {
+            if (row.min() != null && row.max() != null && row.min().compareTo(row.max()) > 0) {
+                throw new ApiException(
+                        "INVALID_RATE_RANGE", "rateMin cannot exceed rateMax", HttpStatus.BAD_REQUEST);
+            }
+        }
+    }
+
+    /**
+     * F-0665/F-0434 — rejects a PATCH naming a collab display mode outside {@link
+     * #ALLOWED_COLLAB_DISPLAY_MODES} outright, rather than silently defaulting it (the frontend's
+     * Select only ever offers those 4 values, so anything else is either a stale client or a
+     * fabricated request). No-ops when {@code collabs} is absent from the patch (nothing to
+     * validate), same as {@link #validateRateCard} no-ops on an absent {@code rateCard}.
+     */
+    private static void validateCollabDisplayModes(List<PortfolioCollab> collabs) {
+        if (collabs == null) {
+            return;
+        }
+        for (PortfolioCollab collab : collabs) {
+            if (!ALLOWED_COLLAB_DISPLAY_MODES.contains(collab.displayMode())) {
+                throw new ApiException(
+                        "INVALID_COLLAB_DISPLAY_MODE",
+                        "Unknown collab display mode: " + collab.displayMode(),
+                        HttpStatus.BAD_REQUEST);
+            }
+        }
     }
 
     private static void validateCoverImageMime(MultipartFile file) {

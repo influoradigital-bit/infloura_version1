@@ -47,8 +47,10 @@ import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -96,6 +98,31 @@ public class EscrowService {
     private final EscrowBackend escrowBackend;
     /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
     private final ApplicationHistoryService applicationHistoryService;
+
+    /**
+     * [F-0652] Request-level idempotency for {@code release}/{@code releaseByHoldId}/{@code
+     * refund} — see the {@code idempotencyKey}-accepting overloads of those methods below and
+     * {@link #withRequestIdempotency}. Before this, {@code IdempotencyService} had zero references
+     * anywhere in this class: a duplicated HTTP call (client timeout/retry, double-click) had no
+     * request-replay key here — only the ledger-level key derived from the hold's own server-
+     * generated id ({@code "release:" + hold.getId()}, etc.), which stops double MONEY MOVEMENT but
+     * not the whole operation being re-run. This reuses the SAME shared building block the
+     * WooCommerce/Shopify webhook idempotency paths and {@code WalletService
+     * #requestCreatorWithdrawal} already rely on, not a bespoke parallel mechanism.
+     *
+     * <p>Field-injected ({@code @Autowired} on the field, not a constructor parameter) so this can
+     * be added without changing this class's public constructor signature — several existing tests
+     * ({@code EscrowServiceTest}, {@code EscrowServiceReleaseTest},
+     * {@code EscrowServiceReleaseOutcomeTest}, {@code DisputeEscrowConcurrencyTest}) construct this
+     * class directly via {@code new EscrowService(...)} outside a Spring context and only exercise
+     * the pre-existing (no-idempotency-key) overloads, which never read this field. Same rationale
+     * {@code BrandDeliverableService#eventPublisher} documents for its own non-constructor
+     * injection. Spring wires this automatically in the running application; {@link
+     * #withRequestIdempotency} treats a {@code null} value (only reachable outside Spring) the same
+     * as "no key supplied" — run the write path directly, relying on the pre-existing
+     * RELEASED/REFUNDED entity-state no-op as the floor, same as before this fix.
+     */
+    @Autowired private IdempotencyService idempotencyService;
 
     /**
      * CR-51 step 2 — cutover for the {@link #assertReleaseConditionSatisfied} gate. ISO-8601
@@ -705,7 +732,17 @@ public class EscrowService {
         }
         var maybeMilestone = milestoneRepository.findById(milestoneId);
         if (maybeMilestone.isEmpty()) {
-            return ReleaseOutcome.held("MILESTONE_NOT_FOUND");
+            // [F-0406] NOT a "not yet eligible" state — the caller supplied a non-blank
+            // milestoneId that resolves to no row anywhere. Unlike an unfunded milestone (which
+            // will fund and become releasable later), a dangling milestoneId cannot self-resolve
+            // on retry: it means the deliverable/approval flow was wired to a milestone that does
+            // not exist. Silently returning "held" here is exactly the F-0406 defect — the caller
+            // (approve()) would still mark the deliverable APPROVED with no way for anyone to ever
+            // notice the release never happened. Fail loudly instead so approve()'s transaction
+            // rolls back. Same code (and message) releaseInternal's own workspace-scoped lookup
+            // throws for the equivalent condition — see isExpectedReleaseSkip below, which no
+            // longer whitelists this code for exactly this reason.
+            throw new ApiException("MILESTONE_NOT_FOUND", "Milestone not found", HttpStatus.NOT_FOUND);
         }
         if (maybeMilestone.get().getEscrowHoldId() == null) {
             // F-0222's exact signature: the campaign-level pool path never stamps the hold onto
@@ -734,10 +771,17 @@ public class EscrowService {
      *
      * <p>This used to be a bare {@code boolean} that {@code BrandDeliverableService#approve}
      * discarded, so approving a deliverable returned {@code APPROVED} whether the creator had
-     * just been paid or not. Eight distinct conditions land in the "held" branch — an unfunded
+     * just been paid or not. Several distinct conditions land in the "held" branch — an unfunded
      * milestone, a release condition not yet met, a dispute freeze — and every one of them was
      * indistinguishable from success at the API and in the UI. The reason travels with the
      * result now so the caller can say which happened.
+     *
+     * <p>[F-0406] Held only covers reasons that are genuinely "not yet eligible" and safe to
+     * retry later — see {@link #isExpectedReleaseSkip} for the full held-vs-loud breakdown. A
+     * reason that indicates corrupted/mismatched data instead propagates as a thrown {@link
+     * ApiException} out of {@link #tryReleaseOnApproval}, which — per that method's own javadoc —
+     * rolls back the whole {@code approve()} transaction rather than letting a brand see
+     * "approved" while no money moved for a reason that will never resolve on its own.
      */
     public record ReleaseOutcome(boolean released, String heldReason) {
         public static final ReleaseOutcome RELEASED = new ReleaseOutcome(true, null);
@@ -747,15 +791,56 @@ public class EscrowService {
         }
     }
 
+    /**
+     * [F-0406] Which of {@link #releaseInternal}'s "release did not happen" reasons are genuinely
+     * "not yet eligible" — safe to swallow into a silent {@link ReleaseOutcome#held} so {@code
+     * BrandDeliverableService#approve} still succeeds (deliverable marked APPROVED, no money moved
+     * yet, but nothing is wrong) — versus which represent an actual invariant violation that must
+     * FAIL LOUDLY (propagate out of {@link #tryReleaseOnApproval}, rolling back the whole approve()
+     * transaction per that method's own javadoc) so a brand can never see "approved" while release
+     * silently did nothing for a reason that will not resolve on retry.
+     *
+     * <p>Previously ALL eight reachable reasons were whitelisted here unconditionally — the actual
+     * F-0406 defect. Held vs. loud, with justification:
+     *
+     * <ul>
+     *   <li><b>Held</b> {@code MILESTONE_NOT_FUNDED} — escrow genuinely not funded yet; this
+     *       method's own javadoc gives the exact example ("a brand may approve creative before
+     *       escrow is even funded"). Resolves itself once funding happens.
+     *   <li><b>Held</b> {@code RELEASE_CONDITION_NOT_MET} — the collaboration's deliverable(s)
+     *       have not yet reached the milestone's configured {@code release_condition}. Resolves
+     *       itself as deliverables progress (posted, verified, etc.).
+     *   <li><b>Held</b> {@code ESCROW_BLOCKED_BY_DISPUTE} — an active dispute is in progress by
+     *       design; release must wait for {@code DisputeService} to resolve it, not this path.
+     *   <li><b>Held</b> {@code INVALID_ESCROW_STATE} — by the time {@code escrowHoldId} is
+     *       non-null on the milestone the hold can only be FUNDED, FROZEN (same dispute-freeze
+     *       reason as above), or REFUNDED (the deal was already cancelled and its funds sent back
+     *       to the brand). Both non-FUNDED cases are legitimate "nothing left to release right
+     *       now" states, not bugs.
+     *   <li><b>Loud</b> {@code MILESTONE_NOT_FOUND} — reachable here only when the milestone
+     *       exists (proved by {@link #tryReleaseOnApproval}'s own unscoped lookup above) but
+     *       {@code releaseInternal}'s workspace-scoped re-lookup cannot find it in the caller's
+     *       workspace — a real cross-tenant/data mismatch, never a "wait and retry" state.
+     *   <li><b>Loud</b> {@code ESCROW_NOT_FOUND} — {@code releaseInternal}'s own comment on this
+     *       defense-in-depth check says it plainly: "should never fire ... if it ever does, that
+     *       indicates a data inconsistency", not a normal skip.
+     *   <li><b>Loud</b> {@code COLLABORATION_NOT_FOUND} — {@code PaymentMilestone.collaborationId}
+     *       is {@code NOT NULL} and documented elsewhere in this class as always resolving; a miss
+     *       here means corrupted data, not a timing issue that will fix itself.
+     * </ul>
+     *
+     * <p>Deliberately not blanket-throwing on all eight: {@code MILESTONE_NOT_FUNDED}, {@code
+     * RELEASE_CONDITION_NOT_MET}, {@code ESCROW_BLOCKED_BY_DISPUTE}, and {@code
+     * INVALID_ESCROW_STATE} are exactly the idempotent/expected retry cases this method's own
+     * javadoc describes — approving a deliverable ahead of funding, or while a dispute or an
+     * unmet release condition is in play, must keep succeeding without throwing.
+     */
     private static boolean isExpectedReleaseSkip(String code) {
         return switch (code) {
             case "MILESTONE_NOT_FUNDED",
-                    "MILESTONE_NOT_FOUND",
                     "INVALID_ESCROW_STATE",
                     "RELEASE_CONDITION_NOT_MET",
-                    "ESCROW_BLOCKED_BY_DISPUTE",
-                    "ESCROW_NOT_FOUND",
-                    "COLLABORATION_NOT_FOUND" -> true;
+                    "ESCROW_BLOCKED_BY_DISPUTE" -> true;
             default -> false;
         };
     }
@@ -861,7 +946,30 @@ public class EscrowService {
     public EscrowStatusResponse refund(AuthPrincipal principal, String workspaceId, String escrowHoldId) {
         WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
         brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN);
+        return refundInternal(workspaceId, escrowHoldId);
+    }
 
+    /**
+     * [F-0652] Same auth (brand OWNER/ADMIN) as {@link #refund}, plus request-level idempotency:
+     * a retried refund carrying the SAME {@code idempotencyKey} returns the original result instead
+     * of re-running {@link #refundInternal} against a possibly-stale read. See {@link
+     * #withRequestIdempotency} for the mechanism and {@link #idempotencyService}'s javadoc for why
+     * this is a new overload rather than a change to {@link #refund}'s existing signature.
+     */
+    @Transactional
+    public EscrowStatusResponse refund(
+            AuthPrincipal principal, String workspaceId, String escrowHoldId, String idempotencyKey) {
+        WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN);
+        return withRequestIdempotency(
+                workspaceId,
+                idempotencyKey,
+                "escrow-refund",
+                () -> refundInternal(workspaceId, escrowHoldId),
+                () -> currentStatusByHold(workspaceId, escrowHoldId));
+    }
+
+    private EscrowStatusResponse refundInternal(String workspaceId, String escrowHoldId) {
         EscrowHold hold = requireHoldForUpdate(escrowHoldId);
         if (!hold.getWorkspaceId().equals(workspaceId)) {
             throw new ApiException("ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND);
@@ -904,6 +1012,115 @@ public class EscrowService {
         }
 
         return toStatusResponse(hold);
+    }
+
+    /**
+     * [F-0652] Same auth + gates as {@link #release}, plus request-level idempotency — see {@link
+     * #withRequestIdempotency}.
+     */
+    @Transactional
+    public EscrowStatusResponse release(
+            AuthPrincipal principal, String workspaceId, String milestoneId, String idempotencyKey) {
+        WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN);
+        return withRequestIdempotency(
+                workspaceId,
+                idempotencyKey,
+                "escrow-release",
+                () -> releaseInternal(workspaceId, milestoneId),
+                () -> currentReleaseStatusByMilestone(workspaceId, milestoneId));
+    }
+
+    /**
+     * [F-0652] Same auth + gates as {@link #releaseByHoldId}, plus request-level idempotency — see
+     * {@link #withRequestIdempotency}.
+     */
+    @Transactional
+    public EscrowStatusResponse releaseByHoldId(
+            AuthPrincipal principal, String workspaceId, String escrowHoldId, String idempotencyKey) {
+        WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN);
+        return withRequestIdempotency(
+                workspaceId,
+                idempotencyKey,
+                "escrow-release-by-hold",
+                () -> releaseByHoldIdInternal(workspaceId, escrowHoldId),
+                () -> currentStatusByHold(workspaceId, escrowHoldId));
+    }
+
+    /**
+     * [F-0652] Shared request-level idempotency wrapper for the {@code idempotencyKey}-accepting
+     * release/refund overloads above. Mirrors the {@code Idempotency-Key} contract {@code
+     * EscrowController#fund}/{@code WalletController#topup} already expose to clients, via the SAME
+     * {@link IdempotencyService} building block the webhook idempotency paths use — not a new,
+     * bespoke mechanism (see {@link #idempotencyService}'s javadoc).
+     *
+     * <p>On a fresh key, {@code writeAction} runs exactly once, reserved first via {@code
+     * IdempotencyService#executeOnce}'s insert-first-wins DB constraint. On a key that is already
+     * {@code COMPLETED} (this exact operation already ran to success for this exact key),
+     * {@code writeAction} is deliberately NOT re-invoked — re-running it would re-derive state from
+     * a fresh read that, absent this guard, could be stale relative to the first call's own commit
+     * (e.g. read-replica lag, or a caller that races two identical requests), which is precisely
+     * the "duplicated HTTP call retries the whole operation" gap F-0652 describes. Instead {@code
+     * readCurrentStatus} performs a plain, non-locking status read of the now-committed hold and
+     * that is what the retry gets back — the ORIGINAL result, per {@link
+     * IdempotencyService.AlreadyCompletedException}'s own contract. A key still {@code IN_PROGRESS}
+     * (a genuinely concurrent duplicate) is rejected with a 409 rather than silently retried or
+     * blocked, matching that exception's documented contract too.
+     *
+     * <p>No key supplied, or {@link #idempotencyService} not wired (only outside a Spring context —
+     * see its javadoc): runs {@code writeAction} directly, same as this class's behavior before this
+     * fix. Every {@code writeAction} here still carries its own entity-state idempotent no-op
+     * (RELEASED/REFUNDED short-circuit) as an independent floor, so this is additive protection,
+     * not the only line of defense.
+     */
+    private EscrowStatusResponse withRequestIdempotency(
+            String workspaceId,
+            String idempotencyKey,
+            String scope,
+            Supplier<EscrowStatusResponse> writeAction,
+            Supplier<EscrowStatusResponse> readCurrentStatus) {
+        if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyService == null) {
+            return writeAction.get();
+        }
+        try {
+            return idempotencyService.executeOnce(idempotencyKey, workspaceId, scope, writeAction);
+        } catch (IdempotencyService.AlreadyCompletedException e) {
+            return readCurrentStatus.get();
+        } catch (IdempotencyService.AlreadyInProgressException e) {
+            throw new ApiException(
+                    "IDEMPOTENCY_KEY_IN_PROGRESS",
+                    "A request with this Idempotency-Key is already being processed",
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    /**
+     * [F-0652] Read-only replay path for {@link #release}'s idempotency-key overload — resolves the
+     * milestone's current hold WITHOUT the {@link #requireHoldForUpdate} row lock {@link
+     * #releaseInternal} takes, since a replay must never re-attempt the write.
+     */
+    private EscrowStatusResponse currentReleaseStatusByMilestone(String workspaceId, String milestoneId) {
+        PaymentMilestone milestone =
+                milestoneRepository
+                        .findByIdAndWorkspaceId(milestoneId, workspaceId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "MILESTONE_NOT_FOUND", "Milestone not found", HttpStatus.NOT_FOUND));
+        if (milestone.getEscrowHoldId() == null) {
+            throw new ApiException(
+                    "MILESTONE_NOT_FUNDED", "Milestone has no secured payment", HttpStatus.CONFLICT);
+        }
+        return toStatusResponse(requireHoldForWorkspace(milestone.getEscrowHoldId(), workspaceId));
+    }
+
+    /**
+     * [F-0652] Read-only replay path for {@link #releaseByHoldId}'s and {@link #refund}'s
+     * idempotency-key overloads — same rationale as {@link #currentReleaseStatusByMilestone}.
+     */
+    private EscrowStatusResponse currentStatusByHold(String workspaceId, String escrowHoldId) {
+        return toStatusResponse(requireHoldForWorkspace(escrowHoldId, workspaceId));
     }
 
     @Transactional(readOnly = true)

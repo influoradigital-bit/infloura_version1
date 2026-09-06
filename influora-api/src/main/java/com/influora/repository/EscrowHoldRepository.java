@@ -154,6 +154,42 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
             @Param("collaborationId") String collaborationId,
             @Param("statuses") Collection<EscrowStatus> statuses);
 
+    /**
+     * [F-0656 fix] Contract-scoped counterpart to {@link #hasEscrowForCollaboration}.
+     *
+     * <p>The collaboration-scoped query above answers "does a hold exist anywhere on this
+     * collaboration", which is right for the funding PROMPT but wrong for the read-only
+     * {@code escrowFunded} flag on a deal. {@code ContractService#amend} creates fresh, UNFUNDED
+     * {@code PaymentMilestone} rows for the new contract version while the original still-FUNDED
+     * hold stays bound to the SUPERSEDED version's milestone — nothing refunds or re-links it.
+     * Once {@code retirePredecessorIfSuperseded} promotes the amendment to current, the
+     * collaboration-scoped query keeps answering true off that untouched predecessor hold, so the
+     * deal room told both parties an amended contract was funded when its own payment plan never
+     * was. That is a false statement about money, which is why this exists.
+     *
+     * <p>The milestone branch is narrowed by {@code m.contractId}, so only holds bound to THIS
+     * contract version's milestones count. The direct {@code e.collaborationId} branch is kept
+     * deliberately and is NOT version-scoped: a hold carrying the collaboration id with no
+     * milestone (the pool path) was never bound to any contract version, so an amendment does not
+     * invalidate it — narrowing that branch too would swing the bug the other way and start
+     * reporting genuinely funded deals as unfunded. See CR-49/CR-50 for why the direct column is
+     * NULL on ordinary brand-funded holds and cannot be the only branch.
+     */
+    @Query(
+            "SELECT CASE WHEN COUNT(e) > 0 THEN TRUE ELSE FALSE END FROM EscrowHold e "
+                    + "WHERE e.status IN :statuses AND ("
+                    + "  e.collaborationId = :collaborationId "
+                    + "  OR e.milestoneId IN ("
+                    + "       SELECT m.id FROM PaymentMilestone m "
+                    + "       WHERE m.collaborationId = :collaborationId "
+                    + "         AND m.contractId = :contractId"
+                    + "  )"
+                    + ")")
+    boolean hasEscrowForContract(
+            @Param("collaborationId") String collaborationId,
+            @Param("contractId") String contractId,
+            @Param("statuses") Collection<EscrowStatus> statuses);
+
     List<EscrowHold> findByCollaborationIdAndStatus(String collaborationId, EscrowStatus status);
 
     /** Row lock for FUNDED → {FROZEN|RELEASED|REFUNDED} transitions (H-T34-1). */

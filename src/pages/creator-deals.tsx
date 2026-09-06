@@ -379,11 +379,20 @@ export default function CreatorDealsPage() {
       setAllDeals((prev) => prev.map(toNegotiating));
       openDeal(deal.id);
     } catch (err) {
-      // Previously a try/finally with NO catch — an accept failure was an unhandled
-      // rejection and the button just stopped spinning with zero feedback.
+      // F-0670 — CEO ruling F-0643 made `DealService.doAccept` 409 `AGREED_RATE_REQUIRED`
+      // for any collaboration with no negotiated rate (every fresh INVITED/APPLIED row —
+      // brand invite, creator apply, and Meera's confirm_launch all create these by
+      // construction). The `isNew` CTA branch below already keeps Accept disabled for a
+      // rate-less row, so this mainly catches the race — a rate that was cleared, or a
+      // stale row — with copy that names the actual fix instead of a generic failure.
+      const isRateRequired = err instanceof ApiError && err.code === 'AGREED_RATE_REQUIRED';
       toast({
-        title: 'Couldn’t accept this deal',
-        description: err instanceof ApiError ? err.message : 'Please try again.',
+        title: isRateRequired ? 'Propose a rate first' : 'Couldn’t accept this deal',
+        description: isRateRequired
+          ? 'This invite has no agreed rate yet. Use Counter to propose one, then accept.'
+          : err instanceof ApiError
+            ? err.message
+            : 'Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -562,6 +571,22 @@ interface DealRowProps {
 function DealRow({ deal, actionLoading, onOpen, onAccept, onCounter, onReject }: DealRowProps) {
   const isNew = deal.status === 'new';
   const isFresh = deal.receivedAt && Date.now() - deal.receivedAt.getTime() < 1000 * 60 * 30;
+  /**
+   * F-0670 (dead-control-from-new-guard) — F-0643's CEO ruling made
+   * `DealService.doAccept` reject (409 `AGREED_RATE_REQUIRED`) any collaboration with no
+   * negotiated rate. A brand invite, a creator's own application, and Meera's
+   * confirm_launch all create the `'new'` (INVITED) row with none by construction —
+   * `Collaboration.getAgreedRate()` is only ever written by propose/counter, which land a
+   * different status. So on THIS status, "no rate" isn't an edge case to check for, it's
+   * the default, and Accept unconditionally 409s for every fresh invite.
+   *
+   * `deal.budget` is `parseDealAmount(deal.dealValue)` (`creator-deal-mappers.ts`), and
+   * `dealValue` is `collaboration.getAgreedRate()` verbatim (`DealService.toDealResponse`)
+   * — so `budget > 0` is exactly "has an agreed rate", not a heuristic: every real
+   * proposal/counter amount is `@DecimalMin("0.01")` server-side, so a genuinely priced
+   * deal can never read 0 here.
+   */
+  const hasAgreedRate = deal.budget > 0;
   const progress = deal.deliverablesTotal
     ? Math.round((deal.deliverablesDone / deal.deliverablesTotal) * 100)
     : 0;
@@ -656,20 +681,21 @@ function DealRow({ deal, actionLoading, onOpen, onAccept, onCounter, onReject }:
             )}
 
             {/* Status-specific CTAs */}
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               {isNew ? (
                 <>
                   <Button
                     size="sm"
                     onClick={onAccept}
-                    disabled={actionLoading}
+                    disabled={actionLoading || !hasAgreedRate}
+                    title={hasAgreedRate ? undefined : 'Counter with a rate before this can be accepted'}
                     className="h-8 text-xs"
                   >
                     {actionLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Accept'}
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant={hasAgreedRate ? 'outline' : 'default'}
                     onClick={onCounter}
                     disabled={actionLoading}
                     className="h-8 text-xs"
@@ -685,6 +711,14 @@ function DealRow({ deal, actionLoading, onOpen, onAccept, onCounter, onReject }:
                   >
                     Decline
                   </Button>
+                  {/* F-0670 — a silently-disabled Accept is its own dead-control defect on
+                      this repo, so a rate-less invite gets an explicit reason instead of a
+                      button that just doesn't respond as expected. */}
+                  {!hasAgreedRate && (
+                    <p className="basis-full text-xs text-muted-foreground">
+                      No rate proposed yet — use Counter to propose one before accepting.
+                    </p>
+                  )}
                 </>
               ) : (
                 <Button

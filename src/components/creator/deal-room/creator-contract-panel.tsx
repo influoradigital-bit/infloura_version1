@@ -72,18 +72,25 @@ export function CreatorContractPanel({
     }
     const contractData = {
       contractId: meta?.contractId || 'CONT-001',
-      brandName: meta?.brandName || 'Influora Brand',
-      creatorName: 'You (Creator)',
+      // F-0669 round 3: 'Influora Brand' was an invented company name on a contract
+      // document — the same fabrication the sibling brand panel was fixed for, missed here
+      // because only the sibling was named. 'Brand' is an honest generic role label.
+      brandName: meta?.brandName || 'Brand',
+      // F-0669: prefer the real creator name from event metadata when the app
+      // has it. 'You (Creator)' is an honest role label for this self-view
+      // (the viewer IS the creator) — never a fabricated person's name.
+      creatorName: meta?.creatorName || 'You (Creator)',
       campaignName: meta?.campaignName || 'Summer Fashion',
       amount,
       deliverables: [
         { title: 'Instagram Reel', description: 'High-quality reel', quantity: 2 },
         { title: 'Instagram Story', description: 'Story series', quantity: 1 },
       ],
-      deadline: meta?.deadline || '2024-02-15',
-      usageRights: '6 months on social media platforms',
-      exclusivity: 'No exclusivity agreement',
-      revisionCap: 2,
+      // F-0669: this component never receives the real deadline, usage rights,
+      // exclusivity, or revision cap from the server — leave them undefined
+      // (ContractData makes them optional) rather than invent a past date or a
+      // fake policy. generateContractHTML renders an honest "Not specified".
+      deadline: meta?.deadline,
       customClauses: [],
       createdAt: new Date(),
     };
@@ -257,17 +264,21 @@ export function CreatorContractPanel({
                 <p className="text-gray-600">Deliverables</p>
                 <p className="font-medium">2 Instagram Reels, 1 Instagram Story</p>
               </div>
+              {/* F-0669 round 3: the creator reads this as the actual signed terms. Render the
+                  real deadline when the app has it; never a fabricated date, usage-rights term,
+                  or revision cap — 'Not specified' matches the honest fallback
+                  contract-generator.ts already renders into the PDF for these same terms. */}
               <div>
                 <p className="text-gray-600">Deadline</p>
-                <p className="font-medium">{meta?.deadline || '2024-02-15'}</p>
+                <p className="font-medium">{meta?.deadline || 'Not specified'}</p>
               </div>
               <div>
                 <p className="text-gray-600">Usage Rights</p>
-                <p className="font-medium">6 months on social media platforms</p>
+                <p className="font-medium">Not specified</p>
               </div>
               <div>
                 <p className="text-gray-600">Revision Cap</p>
-                <p className="font-medium">2 revisions per deliverable</p>
+                <p className="font-medium">Not specified</p>
               </div>
             </div>
           </div>

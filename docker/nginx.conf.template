@@ -22,6 +22,40 @@ map $uri $influora_cache_control {
     ~^/assets/     "public, max-age=31536000, immutable";
 }
 
+# [Kabir H-5] Per-path Content-Security-Policy, computed here for exactly the same reason
+# Cache-Control is: a second `add_header` inside a `location` block would RESET this server's
+# whole inherited add_header list and silently drop the other six security headers (see the I1
+# fix note below). One map, one add_header, no resets.
+#
+# WHY THIS EXISTS AT ALL — public/_headers is NOT served. That file is Cloudflare-Pages/Netlify
+# syntax; every real deploy proxies to this nginx (deploy/hostinger/Caddyfile,
+# deploy/utho/Caddyfile -> reverse_proxy frontend:80). So the per-path festival CSP written there
+# has never reached a browser, and the sponsor Meta pixel on /festival-box/* was blocked in
+# production while the landing-page copy sold it as working.
+#
+# WHY NOT JUST ADD connect.facebook.net TO THE DEFAULT — because that is the trap. Doing so would
+# permit Facebook script loading on /brand/*, /creator/*, /admin/* and every public creator
+# portfolio, to fix one marketing page. The whole point of the festival pixel design is that the
+# rest of influora.in stays tracker-free; the ONLY difference between these two values is the
+# single https://connect.facebook.net entry in script-src.
+#
+# img-src/connect-src need no festival-specific widening: the default already carries a bare
+# `https:` for img-src, and pixel event beacons go to www.facebook.com over that. Adding them
+# again would be theatre — a wider policy that changes nothing.
+#
+# NOTE for whoever edits this next: these two values must stay identical apart from that one
+# entry. If you change a directive in the default, change it here too. They are written out in
+# full rather than composed from a variable because envsubst runs over this file and nested
+# variable expansion inside a map value is a footgun that fails silently.
+map $uri $influora_csp {
+    default "default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ${CSP_API_ORIGIN} ${CSP_MEERA_ORIGIN} https://api.razorpay.com https://lumberjack.razorpay.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
+
+    # The public Festival Box shopper pages only. Note the trailing-segment anchor: this matches
+    # /festival-box/mumbai-2026 and deeper, NOT the /festival-box sponsorship landing page, which
+    # has no pixel and must not be permitted one.
+    ~^/festival-box/ "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://connect.facebook.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ${CSP_API_ORIGIN} ${CSP_MEERA_ORIGIN} https://api.razorpay.com https://lumberjack.razorpay.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
+}
+
 server {
     listen 80;
     server_name _;
@@ -70,7 +104,7 @@ server {
     # tighter. `ws:`/`wss:` also deliberately left out: src/admin/services/websocket.ts exists but
     # is gated OFF by default (VITE_ADMIN_WS_ENABLED unset) and has no backend endpoint yet per
     # that file's own header comment — add the real wss:// origin here once that ships.
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ${CSP_API_ORIGIN} ${CSP_MEERA_ORIGIN} https://api.razorpay.com https://lumberjack.razorpay.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    add_header Content-Security-Policy $influora_csp always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;

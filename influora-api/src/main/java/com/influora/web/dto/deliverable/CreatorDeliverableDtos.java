@@ -46,7 +46,63 @@ public final class CreatorDeliverableDtos {
             /** Verified-analytics cached state (verified-analytics-0804). */
             String metricSource,
             Instant lastVerifiedAt,
-            boolean metaConnected) {}
+            boolean metaConnected,
+            /**
+             * F-0418 (CEO ruling) — {@code CreatorDeliverableService.isOverdue(deliverable,
+             * today)}, computed fresh on every read. Never persisted, never a status value: purely
+             * a visible flag alongside the existing {@code deadline}/{@code submittedAt} fields.
+             * True only past-deadline with nothing submitted yet; never true once submitted, even
+             * late. Carries no auto-fail/penalty semantics — see the predicate's own javadoc.
+             */
+            boolean overdue) {
+
+        /**
+         * Pre-F-0418 arity, kept so existing call sites that predate the {@code overdue} field
+         * keep compiling unchanged; defaults it to {@code false}.
+         */
+        public DeliverableStatusResponse(
+                String id,
+                String collaborationId,
+                DeliverableType type,
+                String title,
+                DeliverableStatus status,
+                LocalDate deadline,
+                int versionNumber,
+                int revisionCount,
+                List<DeliverableFileResponse> files,
+                String caption,
+                List<String> hashtags,
+                String creatorNotes,
+                String reviewNotes,
+                Instant submittedAt,
+                Instant reviewedAt,
+                DeliverableActions actions,
+                String metricSource,
+                Instant lastVerifiedAt,
+                boolean metaConnected) {
+            this(
+                    id,
+                    collaborationId,
+                    type,
+                    title,
+                    status,
+                    deadline,
+                    versionNumber,
+                    revisionCount,
+                    files,
+                    caption,
+                    hashtags,
+                    creatorNotes,
+                    reviewNotes,
+                    submittedAt,
+                    reviewedAt,
+                    actions,
+                    metricSource,
+                    lastVerifiedAt,
+                    metaConnected,
+                    false);
+        }
+    }
 
     public record DeliverableActions(boolean canUploadNewVersion, boolean canSubmit, boolean canReportMetrics) {}
 

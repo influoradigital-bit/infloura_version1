@@ -39,6 +39,7 @@ import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.SubmitResponse;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.UploadResponse;
 import org.springframework.http.HttpStatus;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1192,5 +1193,205 @@ class CreatorDeliverableServiceTest {
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
         assertEquals(DeliverableStatus.APPROVED, deliverable.getStatus());
         verify(deliverableRepository, never()).save(any());
+    }
+
+    // --- F-0418 (CEO ruling, unenforced-limit) — visible OVERDUE state, no auto-fail/penalty ---
+
+    @Test
+    @DisplayName("isOverdue: true when the deadline has passed and nothing was ever submitted")
+    void testIsOverduePastDeadlineNotSubmittedIsTrue() {
+        LocalDate today = LocalDate.of(2026, 9, 5);
+        Deliverable deliverable =
+                Deliverable.builder()
+                        .id(DELIVERABLE_ID)
+                        .collaborationId(COLLAB_ID)
+                        .creatorProfileId("profile1")
+                        .title("Workout Reel 1")
+                        .status(DeliverableStatus.DRAFT)
+                        .deadline(today.minusDays(1))
+                        .build();
+
+        assertEquals(true, CreatorDeliverableService.isOverdue(deliverable, today));
+    }
+
+    @Test
+    @DisplayName("isOverdue: false when the deadline is still in the future")
+    void testIsOverdueFutureDeadlineIsFalse() {
+        LocalDate today = LocalDate.of(2026, 9, 5);
+        Deliverable deliverable =
+                Deliverable.builder()
+                        .id(DELIVERABLE_ID)
+                        .collaborationId(COLLAB_ID)
+                        .creatorProfileId("profile1")
+                        .title("Workout Reel 1")
+                        .status(DeliverableStatus.PENDING)
+                        .deadline(today.plusDays(1))
+                        .build();
+
+        assertEquals(false, CreatorDeliverableService.isOverdue(deliverable, today));
+    }
+
+    @Test
+    @DisplayName("isOverdue: false on the deadline day itself — only strictly-after counts")
+    void testIsOverdueOnDeadlineDayIsFalse() {
+        LocalDate today = LocalDate.of(2026, 9, 5);
+        Deliverable deliverable =
+                Deliverable.builder()
+                        .id(DELIVERABLE_ID)
+                        .collaborationId(COLLAB_ID)
+                        .creatorProfileId("profile1")
+                        .title("Workout Reel 1")
+                        .status(DeliverableStatus.PENDING)
+                        .deadline(today)
+                        .build();
+
+        assertEquals(false, CreatorDeliverableService.isOverdue(deliverable, today));
+    }
+
+    @Test
+    @DisplayName("isOverdue: false when the slot has no deadline at all")
+    void testIsOverdueNoDeadlineIsFalse() {
+        Deliverable deliverable = pendingDeliverable(); // builder default: no deadline
+
+        assertEquals(
+                false, CreatorDeliverableService.isOverdue(deliverable, LocalDate.of(2099, 1, 1)));
+    }
+
+    @Test
+    @DisplayName(
+            "isOverdue: false once submitted, even if that very submission was itself late — a"
+                    + " late SUBMISSION is accepted, not held open as still-overdue")
+    void testIsOverdueFalseOnceSubmittedEvenLate() {
+        LocalDate today = LocalDate.of(2026, 9, 5);
+        Deliverable deliverable =
+                Deliverable.builder()
+                        .id(DELIVERABLE_ID)
+                        .collaborationId(COLLAB_ID)
+                        .creatorProfileId("profile1")
+                        .title("Workout Reel 1")
+                        .status(DeliverableStatus.DRAFT)
+                        .deadline(today.minusDays(3))
+                        .build();
+        deliverable.applyUpload(1, "[{\"id\":\"f1\"}]", null, null, null);
+        // Submitting three days late must still succeed and immediately clear the OVERDUE
+        // predicate — it must never read as "still overdue" once accepted.
+        deliverable.applySubmit(null, null, null, DeliverableStatus.SUBMITTED);
+
+        assertEquals(false, CreatorDeliverableService.isOverdue(deliverable, today));
+    }
+
+    @Test
+    @DisplayName(
+            "submit: a submission made after the deadline is still accepted unchanged — no"
+                    + " auto-fail, no penalty, no block (F-0418 ruling)")
+    void testSubmitPastDeadlineStillAccepted() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        Deliverable deliverable =
+                Deliverable.builder()
+                        .id(DELIVERABLE_ID)
+                        .collaborationId(COLLAB_ID)
+                        .creatorProfileId("profile1")
+                        .title("Workout Reel 1")
+                        .status(DeliverableStatus.DRAFT)
+                        .deadline(LocalDate.now().minusDays(2))
+                        .build();
+        deliverable.applyUpload(
+                1,
+                "[{\"id\":\"f1\",\"fileType\":\"VIDEO\",\"fileName\":\"reel.mp4\",\"url\":\"https://x\"}]",
+                "Draft caption",
+                null,
+                null);
+        when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(deliverable));
+        stubActiveCollaboration();
+
+        SubmitResponse response =
+                service.submitForReview(
+                        principal,
+                        DELIVERABLE_ID,
+                        new SubmitRequest("Final caption", List.of("#fit"), "Sorry for the delay"));
+
+        assertEquals(DeliverableStatus.SUBMITTED, response.status());
+        assertEquals("Submitted for brand review", response.message());
+        ArgumentCaptor<Deliverable> saved = ArgumentCaptor.forClass(Deliverable.class);
+        verify(deliverableRepository).save(saved.capture());
+        assertEquals(DeliverableStatus.SUBMITTED, saved.getValue().getStatus());
+        assertNotNull(saved.getValue().getSubmittedAt());
+    }
+
+    @Test
+    @DisplayName(
+            "getStatus: a slot past deadline with nothing submitted reads overdue=true on the"
+                    + " response DTO (F-0418)")
+    void testGetStatusOverdueTrueOnResponse() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        Deliverable deliverable =
+                Deliverable.builder()
+                        .id(DELIVERABLE_ID)
+                        .collaborationId(COLLAB_ID)
+                        .creatorProfileId("profile1")
+                        .type(DeliverableType.INSTAGRAM_REEL)
+                        .title("Workout Reel 1")
+                        .status(DeliverableStatus.DRAFT)
+                        .deadline(LocalDate.now().minusDays(1))
+                        .build();
+        when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(deliverable));
+
+        DeliverableStatusResponse status = service.getStatus(principal, DELIVERABLE_ID);
+
+        assertEquals(true, status.overdue());
+    }
+
+    @Test
+    @DisplayName(
+            "getStatus: a slot still within its deadline reads overdue=false on the response DTO"
+                    + " (F-0418)")
+    void testGetStatusOverdueFalseWithinDeadlineOnResponse() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        Deliverable deliverable =
+                Deliverable.builder()
+                        .id(DELIVERABLE_ID)
+                        .collaborationId(COLLAB_ID)
+                        .creatorProfileId("profile1")
+                        .type(DeliverableType.INSTAGRAM_REEL)
+                        .title("Workout Reel 1")
+                        .status(DeliverableStatus.PENDING)
+                        .deadline(LocalDate.now().plusDays(1))
+                        .build();
+        when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(deliverable));
+
+        DeliverableStatusResponse status = service.getStatus(principal, DELIVERABLE_ID);
+
+        assertEquals(false, status.overdue());
+    }
+
+    @Test
+    @DisplayName(
+            "getStatus: a late submission clears overdue=false on the response even though the"
+                    + " deadline it blew off is already in the past (F-0418)")
+    void testGetStatusOverdueFalseAfterLateSubmissionOnResponse() {
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        Deliverable deliverable =
+                Deliverable.builder()
+                        .id(DELIVERABLE_ID)
+                        .collaborationId(COLLAB_ID)
+                        .creatorProfileId("profile1")
+                        .type(DeliverableType.INSTAGRAM_REEL)
+                        .title("Workout Reel 1")
+                        .status(DeliverableStatus.DRAFT)
+                        .deadline(LocalDate.now().minusDays(3))
+                        .build();
+        deliverable.applyUpload(1, "[{\"id\":\"f1\"}]", null, null, null);
+        deliverable.applySubmit(null, null, null, DeliverableStatus.SUBMITTED);
+        when(deliverableRepository.findByIdAndCreatorUserId(DELIVERABLE_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(deliverable));
+
+        DeliverableStatusResponse status = service.getStatus(principal, DELIVERABLE_ID);
+
+        assertEquals(false, status.overdue());
+        assertEquals(DeliverableStatus.SUBMITTED, status.status());
+        assertNotNull(status.submittedAt());
     }
 }

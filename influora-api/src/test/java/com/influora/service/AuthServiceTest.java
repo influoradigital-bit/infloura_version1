@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -152,7 +153,7 @@ class AuthServiceTest {
                 .thenReturn("access-jwt");
         when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
         when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
-        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
@@ -224,7 +225,7 @@ class AuthServiceTest {
                 .thenReturn("access-jwt");
         when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
         when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
-        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
 
         authService.brandRegister(req);
@@ -378,7 +379,7 @@ class AuthServiceTest {
                 .thenReturn("access-jwt");
         when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
         when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
-        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TokenPair pair = authService.creatorRegister(CREATOR_REQUEST);
@@ -422,7 +423,7 @@ class AuthServiceTest {
                 .thenReturn("access-jwt");
         when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
         when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
-        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
 
         authService.creatorRegister(withInvite);
@@ -470,7 +471,7 @@ class AuthServiceTest {
                 .thenReturn("access-jwt");
         when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
         when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
-        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TokenPair pair = authService.creatorRegister(CREATOR_REQUEST);
@@ -586,6 +587,168 @@ class AuthServiceTest {
         assertEquals(403, ex.getStatus().value());
     }
 
+    // ── F-0551: rememberMe controls refresh-token lifetime server-side ──────
+
+    @Test
+    @DisplayName(
+            "F-0551: creatorLogin(rememberMe=true) persists a refresh token flagged remembered=true"
+                    + " with an expiry drawn from the REMEMBERED (long) lifetime")
+    void testCreatorLoginRememberedUsesLongLifetime() {
+        User user = creatorUser(true);
+        LoginRequest remembered = new LoginRequest("riya@example.com", "Supersecret1", true);
+        when(userRepository.findByEmailIgnoreCase(remembered.email())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Supersecret1", "hashed-pw")).thenReturn(true);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.CREATOR), anyString(), isNull()))
+                .thenReturn("access-jwt");
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds(true)).thenReturn(2_592_000L);
+        ArgumentCaptor<RefreshToken> tokenCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+        when(refreshTokenRepository.save(tokenCaptor.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.creatorLogin(remembered);
+
+        RefreshToken saved = tokenCaptor.getValue();
+        assertTrue(saved.isRemembered());
+        long secondsUntilExpiry =
+                java.time.Duration.between(Instant.now(), saved.getExpiresAt()).getSeconds();
+        assertTrue(
+                secondsUntilExpiry > 86_400L,
+                "remembered login must get the long (30-day) lifetime, not the short one");
+        verify(jwtService, never()).getRefreshExpirySeconds(false);
+    }
+
+    @Test
+    @DisplayName(
+            "F-0551: creatorLogin(rememberMe=false) persists a refresh token flagged"
+                    + " remembered=false with a SHORTER expiry than a remembered login gets --"
+                    + " distinct Max-Age from the remembered case")
+    void testCreatorLoginNotRememberedUsesShortLifetime() {
+        User user = creatorUser(true);
+        LoginRequest notRemembered = new LoginRequest("riya@example.com", "Supersecret1", false);
+        when(userRepository.findByEmailIgnoreCase(notRemembered.email())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Supersecret1", "hashed-pw")).thenReturn(true);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.CREATOR), anyString(), isNull()))
+                .thenReturn("access-jwt");
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds(false)).thenReturn(86_400L);
+        ArgumentCaptor<RefreshToken> tokenCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+        when(refreshTokenRepository.save(tokenCaptor.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.creatorLogin(notRemembered);
+
+        RefreshToken saved = tokenCaptor.getValue();
+        assertFalse(saved.isRemembered());
+        long secondsUntilExpiry =
+                java.time.Duration.between(Instant.now(), saved.getExpiresAt()).getSeconds();
+        assertTrue(
+                secondsUntilExpiry <= 86_400L,
+                "not-remembered login must get the short (24h) lifetime, never the 30-day one");
+        verify(jwtService, never()).getRefreshExpirySeconds(true);
+    }
+
+    @Test
+    @DisplayName(
+            "F-0551: creatorLogin with rememberMe omitted from the request (legacy 2-arg"
+                    + " LoginRequest) defaults to remembered -- unchanged behavior for a client"
+                    + " that predates this field")
+    void testCreatorLoginAbsentRememberMeDefaultsToRemembered() {
+        User user = creatorUser(true);
+        LoginRequest legacy = new LoginRequest("riya@example.com", "Supersecret1");
+        assertNull(legacy.rememberMe(), "fixture must actually omit the field to prove the default");
+        when(userRepository.findByEmailIgnoreCase(legacy.email())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Supersecret1", "hashed-pw")).thenReturn(true);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.CREATOR), anyString(), isNull()))
+                .thenReturn("access-jwt");
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds(true)).thenReturn(2_592_000L);
+        ArgumentCaptor<RefreshToken> tokenCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+        when(refreshTokenRepository.save(tokenCaptor.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.creatorLogin(legacy);
+
+        assertTrue(
+                tokenCaptor.getValue().isRemembered(),
+                "an absent rememberMe field must default to remembered=true (back-compat)");
+    }
+
+    @Test
+    @DisplayName(
+            "F-0551: refresh() preserves a NOT-remembered session's choice across rotation -- must"
+                    + " NOT silently upgrade it to remembered")
+    void testRefreshPreservesNotRememberedAcrossRotation() {
+        User user = creatorUser(true);
+        String raw = "old-refresh-raw";
+        String hash = JwtService.hashToken(raw);
+        RefreshToken stored =
+                RefreshToken.create(
+                        "01HREFRESHTOKEN123456789A",
+                        user.getId(),
+                        hash,
+                        Instant.now().plusSeconds(3600),
+                        false); // issued as NOT remembered
+        when(refreshTokenRepository.findByTokenHashAndRevokedFalse(hash))
+                .thenReturn(Optional.of(stored));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(Optional.empty());
+        when(jwtService.createRefreshTokenValue()).thenReturn("new-refresh-raw");
+        when(jwtService.getRefreshExpirySeconds(false)).thenReturn(86_400L);
+        when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.CREATOR), anyString(), isNull()))
+                .thenReturn("new-access");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        ArgumentCaptor<RefreshToken> tokenCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+        when(refreshTokenRepository.save(tokenCaptor.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+        AuthService.RefreshRotation rotation = authService.refresh(raw);
+
+        assertFalse(rotation.remembered(), "rotation must report the ORIGINAL not-remembered choice");
+        // save() #1 is the revoked `stored` row being re-saved; save() #2 is the new replacement.
+        RefreshToken newToken = tokenCaptor.getAllValues().get(1);
+        assertFalse(newToken.isRemembered(), "rotated replacement token must stay NOT-remembered");
+        verify(jwtService, never()).getRefreshExpirySeconds(true);
+    }
+
+    @Test
+    @DisplayName(
+            "F-0551: refresh() preserves a REMEMBERED session's choice across rotation")
+    void testRefreshPreservesRememberedAcrossRotation() {
+        User user = creatorUser(true);
+        String raw = "old-refresh-raw";
+        String hash = JwtService.hashToken(raw);
+        RefreshToken stored =
+                RefreshToken.create(
+                        "01HREFRESHTOKEN123456789A",
+                        user.getId(),
+                        hash,
+                        Instant.now().plusSeconds(3600),
+                        true); // issued as remembered
+        when(refreshTokenRepository.findByTokenHashAndRevokedFalse(hash))
+                .thenReturn(Optional.of(stored));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(Optional.empty());
+        when(jwtService.createRefreshTokenValue()).thenReturn("new-refresh-raw");
+        when(jwtService.getRefreshExpirySeconds(true)).thenReturn(2_592_000L);
+        when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.CREATOR), anyString(), isNull()))
+                .thenReturn("new-access");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        ArgumentCaptor<RefreshToken> tokenCaptor = ArgumentCaptor.forClass(RefreshToken.class);
+        when(refreshTokenRepository.save(tokenCaptor.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+        AuthService.RefreshRotation rotation = authService.refresh(raw);
+
+        assertTrue(rotation.remembered(), "rotation must report the ORIGINAL remembered choice");
+        RefreshToken newToken = tokenCaptor.getAllValues().get(1);
+        assertTrue(newToken.isRemembered(), "rotated replacement token must stay remembered");
+        verify(jwtService, never()).getRefreshExpirySeconds(false);
+    }
+
     // ── Refresh + password reset (spec §2) ──────────────────────────────────
 
     @Test
@@ -599,14 +762,14 @@ class AuthServiceTest {
                         "01HREFRESHTOKEN123456789A",
                         user.getId(),
                         hash,
-                        Instant.now().plusSeconds(3600));
+                        Instant.now().plusSeconds(3600), true);
         when(refreshTokenRepository.findByTokenHashAndRevokedFalse(hash))
                 .thenReturn(Optional.of(stored));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
                 .thenReturn(Optional.empty());
         when(jwtService.createRefreshTokenValue()).thenReturn("new-refresh-raw");
-        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
         when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.CREATOR), anyString(), isNull()))
                 .thenReturn("new-access");
         when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
@@ -645,7 +808,7 @@ class AuthServiceTest {
         String hash = JwtService.hashToken(raw);
         RefreshToken stored =
                 RefreshToken.create(
-                        "01HREFRESHTOKEN123456789A", user.getId(), hash, Instant.now().plusSeconds(3600));
+                        "01HREFRESHTOKEN123456789A", user.getId(), hash, Instant.now().plusSeconds(3600), true);
         when(refreshTokenRepository.findByTokenHashAndRevokedFalse(hash))
                 .thenReturn(Optional.of(stored));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
@@ -669,7 +832,7 @@ class AuthServiceTest {
         String hash = JwtService.hashToken(raw);
         RefreshToken stored =
                 RefreshToken.create(
-                        "01HREFRESHTOKEN123456789A", user.getId(), hash, Instant.now().plusSeconds(3600));
+                        "01HREFRESHTOKEN123456789A", user.getId(), hash, Instant.now().plusSeconds(3600), true);
         when(refreshTokenRepository.findByTokenHashAndRevokedFalse(hash))
                 .thenReturn(Optional.of(stored));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
@@ -691,7 +854,7 @@ class AuthServiceTest {
         String hash = JwtService.hashToken(raw);
         RefreshToken stored =
                 RefreshToken.create(
-                        "01HREFRESHTOKEN123456789A", user.getId(), hash, Instant.now().plusSeconds(3600));
+                        "01HREFRESHTOKEN123456789A", user.getId(), hash, Instant.now().plusSeconds(3600), true);
         when(refreshTokenRepository.findByTokenHashAndRevokedFalse(hash))
                 .thenReturn(Optional.of(stored));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
@@ -714,14 +877,14 @@ class AuthServiceTest {
         String hash = JwtService.hashToken(raw);
         RefreshToken stored =
                 RefreshToken.create(
-                        "01HREFRESHTOKEN123456789A", user.getId(), hash, Instant.now().plusSeconds(3600));
+                        "01HREFRESHTOKEN123456789A", user.getId(), hash, Instant.now().plusSeconds(3600), true);
         when(refreshTokenRepository.findByTokenHashAndRevokedFalse(hash))
                 .thenReturn(Optional.of(stored));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
         when(workspaceMemberRepository.findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
                 .thenReturn(Optional.empty());
         when(jwtService.createRefreshTokenValue()).thenReturn("new-refresh-raw");
-        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
         when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.CREATOR), anyString(), isNull()))
                 .thenReturn("new-access");
         when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
@@ -799,7 +962,7 @@ class AuthServiceTest {
         String tokenHash = JwtService.hashToken(rawRefreshToken);
         RefreshToken callersToken =
                 RefreshToken.create(
-                        "01HKEEPTOKEN123456789ABCD", user.getId(), tokenHash, Instant.now().plusSeconds(3600));
+                        "01HKEEPTOKEN123456789ABCD", user.getId(), tokenHash, Instant.now().plusSeconds(3600), true);
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("OldSecret1", "hashed-pw")).thenReturn(true);
         when(passwordEncoder.encode("NewSecret9")).thenReturn("new-hash");
@@ -938,7 +1101,7 @@ class AuthServiceTest {
                         "01HREFRESH1234567890AA",
                         user.getId(),
                         JwtService.hashToken("refresh-raw"),
-                        Instant.now().plusSeconds(3600));
+                        Instant.now().plusSeconds(3600), true);
         when(refreshTokenRepository.findByTokenHashAndRevokedFalse(JwtService.hashToken("refresh-raw")))
                 .thenReturn(Optional.of(stored));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
@@ -971,7 +1134,7 @@ class AuthServiceTest {
                         "01HREFRESH1234567890AB",
                         user.getId(),
                         JwtService.hashToken("refresh-raw"),
-                        Instant.now().plusSeconds(3600));
+                        Instant.now().plusSeconds(3600), true);
         when(refreshTokenRepository.findByTokenHashAndRevokedFalse(JwtService.hashToken("refresh-raw")))
                 .thenReturn(Optional.of(stored));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
@@ -1010,7 +1173,7 @@ class AuthServiceTest {
                 .thenReturn("access-jwt");
         when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
         when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
-        when(jwtService.getRefreshExpirySeconds()).thenReturn(2_592_000L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TokenPair pair = authService.brandLogin(BRAND_LOGIN);

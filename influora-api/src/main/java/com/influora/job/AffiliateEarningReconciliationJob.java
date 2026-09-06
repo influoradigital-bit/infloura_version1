@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
  * re-invoking {@link AffiliateEarningsService#recordEarning}.
  *
  * <p><b>Why this exists even after the self-invocation transactional fix</b> -- {@code
- * RedemptionService#doRedeem} now runs inside a real, proxy-honored {@code @Transactional}
+ * RedemptionWriter#doRedeem} runs inside a real, proxy-honored {@code @Transactional}
  * boundary (see that class's javadoc for the "[SEC: Kabir ... FIXED]" history), so a {@code
  * RuntimeException} thrown by {@code affiliateEarningsService.recordEarning} correctly rolls back
  * the whole redemption and is retried in full on the next webhook delivery. This job is the
@@ -123,11 +123,18 @@ public class AffiliateEarningReconciliationJob {
             }
         }
 
-        // [Priya's ruling, wiki/tech/tracking-subsystem-ruling.md, P1 monitoring] Post-fix, a
-        // nonzero backfill count is no longer "routine belt-and-suspenders" -- it means the
-        // synchronous RedemptionService#performRedemption -> AffiliateEarningsService#recordEarning
-        // path MISSED a redemption (a real defect signal), not an expected residual gap. Log at
-        // WARN with the count so this is visible in aggregate, not just per-item.
+        // [Priya's ruling, wiki/tech/tracking-subsystem-ruling.md, P1 monitoring] A nonzero
+        // backfill count is not "routine belt-and-suspenders" -- it means the synchronous
+        // RedemptionWriter#doRedeem -> AffiliateEarningsService#recordEarning path MISSED a
+        // redemption (a real defect signal), not an expected residual gap. Log at WARN with the
+        // count so this is visible in aggregate, not just per-item.
+        //
+        // The synchronous call this monitors was itself missing until the Wave D task D4 fix
+        // landed; while it was absent this job was the ONLY path creating commissions, so every
+        // run backfilled everything and this warning would have fired constantly. If it is quiet
+        // now, that is the fix working. (The method named here was previously written as
+        // "RedemptionService#performRedemption", which has never existed in this codebase -- the
+        // write lives on RedemptionWriter since the W1-7/H15/H16 extraction.)
         if (backfilled > 0) {
             log.warn(
                     "AffiliateEarningReconciliationJob: backfilled {} missing affiliate earning(s) this run"

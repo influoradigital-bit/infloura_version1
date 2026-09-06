@@ -40,6 +40,7 @@ import {
   api,
   ApiError,
   type PortfolioAnalytics,
+  type PortfolioCollab,
   type PortfolioCustomLink,
   type PortfolioPage,
   type PortfolioVisibility,
@@ -129,6 +130,20 @@ export default function CreatorPortfolioEditorPage() {
     setDirty(true);
   };
 
+  // F-0665/F-0434 — the backend now persists a per-collab displayMode (PortfolioPatchRequest.collabs,
+  // PortfolioDtos.java:119-142 / PortfolioService#extractCollabDisplayModes+loadCollabDisplayModes,
+  // PortfolioService.java). Only `id` and `displayMode` are read server-side; every other field on
+  // each row is recomputed live and ignored, so it's safe to send the array back exactly as GET
+  // returned it with just this one field edited.
+  const updateCollabDisplayMode = (id: string, displayMode: PortfolioCollab['displayMode']) => {
+    if (!page) return;
+    setPage({
+      ...page,
+      collabs: page.collabs.map((c) => (c.id === id ? { ...c, displayMode } : c)),
+    });
+    setDirty(true);
+  };
+
   const handleSave = async () => {
     if (!page) return;
     setSaving(true);
@@ -140,6 +155,13 @@ export default function CreatorPortfolioEditorPage() {
         customLinks: page.customLinks,
         rateCard: page.rateCard,
         coverUrl: page.coverUrl,
+        // F-0434 (fixed): PortfolioPatchRequest now has a `collabs: List<PortfolioCollab>` field
+        // (PortfolioDtos.java:119-142) and PortfolioService persists id->displayMode into
+        // portfolio_settings_json (extractCollabDisplayModes/loadCollabDisplayModes,
+        // PortfolioService.java) instead of hardcoding "logo" on every read. Send the array back
+        // exactly as GET returned it — only `displayMode` may have changed via the Select below;
+        // every other field is recomputed server-side and ignored on write.
+        collabs: page.collabs,
       });
       setDirty(false);
       toast({ title: 'Saved', description: 'Your public page is updated.' });
@@ -501,11 +523,22 @@ export default function CreatorPortfolioEditorPage() {
         {/* Custom links editor */}
         <CustomLinksEditor links={page.customLinks} onChange={(links) => update({ customLinks: links })} />
 
-        {/* Past collabs per-row controls */}
+        {/* Past collabs per-row controls
+            F-0434 (fixed): re-enabled now that the backend genuinely persists this. Previously
+            this Select was disabled because PortfolioPatchRequest had no `collabs` field (Jackson
+            silently dropped it) and PortfolioService#buildCollabs hardcoded "logo" on every read —
+            changing it "worked" locally but the choice silently reverted on next load. Now
+            PortfolioPatchRequest.collabs + PortfolioService's collabDisplayModes persistence
+            (PortfolioDtos.java:119-142 / PortfolioService.java) actually store and read back the
+            per-collab choice, verified by a real save -> independent re-read round trip
+            (PortfolioServiceCollabDisplayModeTest.java). */}
         {page.collabs.length > 0 && (
           <Card className="mb-5">
             <CardContent className="p-4">
-              <p className="text-sm font-medium mb-3">Past collabs — what shows on your page</p>
+              <p className="text-sm font-medium">Past collabs — what shows on your page</p>
+              <p className="text-xs text-muted-foreground mb-3">
+                Choose what each brand collab shows on your public page.
+              </p>
               <div className="space-y-1.5">
                 {page.collabs.map((c) => (
                   <div key={c.id} className="flex items-center gap-3 py-2 border-b border-border last:border-0">
@@ -516,13 +549,7 @@ export default function CreatorPortfolioEditorPage() {
                     <Select
                       value={c.displayMode}
                       onValueChange={(v) =>
-                        update({
-                          collabs: page.collabs.map((x) =>
-                            x.id === c.id
-                              ? { ...x, displayMode: v as typeof c.displayMode }
-                              : x,
-                          ),
-                        })
+                        updateCollabDisplayMode(c.id, v as PortfolioCollab['displayMode'])
                       }
                     >
                       <SelectTrigger className="w-36 h-7 text-xs">

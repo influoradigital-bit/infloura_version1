@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# PROJECT-LOCAL FORK: this copy deliberately differs from the plugin's gates/build.sh. It carries
+# the F-0229 budget MEASUREMENT taken on this machine against this tree, which is project data and
+# cannot live in the shared plugin. Declared so the stale-runtime-copy gate can tell an intended
+# fork from silent drift. CAUTION: the drift runs BOTH ways - the plugin copy has law-5 content
+# this one lacks (a NOT CHECKED line on every exit path via an EXIT trap, and exit 64 for bad
+# arguments). That gap is recorded as its own finding rather than silently blessed here.
 # gates/build.sh — meera's oracle. Exit codes, not opinion.
 # origin: registry grants meera may_claim=proved; PROOFOS.md roadmap item 2.
 #         An oracle with no gate is the silent-oracle trap (F-0023).

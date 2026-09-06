@@ -655,3 +655,138 @@ NEXT: Arjun — ready to route to Swapnil/next gate on the code-level pass; the 
 - 2026-09-04 vikram → arjun | PHONE-0904 sign-off items 1 (Q1) + 2 (Q8) | influora-api/src/main/java/com/influora/service/AuthService.java, UserService.java, web/dto/user/UserDtos.java, web/dto/auth/BrandRegisterRequest.java; new test influora-api/src/test/java/com/influora/service/UserServiceTest.java; log at wiki/processes/api-docs.md (2026-09-04 entry) | STATUS: DONE — brand phone now REQUIRED at POST /auth/brand/register with its own PHONE_REQUIRED/400 (distinct from INVALID_PHONE/400 and PHONE_ALREADY_EXISTS/409); GET+PATCH /users/me self endpoint now reads/writes the brand's own phone via the existing UserPhoneService (no new write path); Q10 no-leak re-verified; creator phone untouched (still optional, no 4th write path). mvn -o -q compile/test-compile clean; AuthServiceTest+UserServiceTest+CreatorProfileServiceTest+CreatorOnboardingServiceTest+AdminCreatorServiceTest = 81 run/0 failures, reproduced on clean re-run (no flake this pass). | NEXT: Ananya — wire brand-onboarding.tsx inline PHONE_REQUIRED/PHONE_ALREADY_EXISTS mapping (Q6, already flagged to her) and a brand Settings phone read/edit UI against the new /users/me phone field; then Priya re-verifies against wiki/reports/phone-0904-signoff-qa.md for sign-off.
 
 - 2026-09-04 meera → arjun | PHONE-0904 FINAL Stage 4 verification | wiki/processes/verification-log.md (2026-09-04 13:44-13:48 IST entry, "FINAL") | STATUS: ✅ ALL PASS, all claimed results reproduced exactly from scratch, no un-updated BrandRegisterRequest fixture found (only AuthServiceTest constructs it, confirmed updated). FE: tsc 0 errors; vitest 939 passed/2 failed (941) — both pre-existing in creator-disputes.test.tsx (named). BE: mvn clean compile + test-compile clean; full `mvn -o test` (no filter) = 2306 run/2 failures/0 errors/13 skipped — the 2 failures are the same pre-existing ConversionTrackingServiceTest + WooCommerceWebhookControllerTest (named); the 13 skips are all Docker-gated integration tests, unrelated to phone. Named classes all executed with exact claimed counts: AuthServiceTest 39, UserServiceTest 10, CreatorProfileServiceTest 13, CreatorOnboardingServiceTest 15, AdminCreatorServiceTest 4 (81 total), IndianPhoneUtilsTest 29 — every one 0 failures. No "cannot find symbol" flake hit. | NEXT: Arjun — ready to route to Swapnil/next gate; no blockers found.
+
+---
+
+## ARJUN → TEAM | T-FRONTEND-REWORK-0905 | 2026-09-05
+
+**TASK** Brand + creator frontend rework. Opened on Priya's ruling after the audit found a P0 that outranks the original request: `dist/index.html` ships the ErrorBoundary fallback (4,953 B) because the hero WebGL globe crashes the GPU-less prerender. Homepage has no static content and zero structured data in production.
+
+**FILES**
+- `.proof-os/tasks/T-FRONTEND-REWORK-0905/SPEC.md` — 12 work items, assignments, sequence
+- `.proof-os/tasks/T-FRONTEND-REWORK-0905/facts/verified-state.md` — fact sheet; wins over SPEC on conflict
+
+**STATUS** ASSIGNED, not started. Blocked on two Swapnil calls (SPEC §6).
+
+**ASSIGNMENTS** W1/W4/W5 ananya · W2/W6/W7 vikram · W8/W10 ishaan · verification meera + neha (oracles, only agents who may claim `proved`) · QA kavya · security kabir · SEO judge aditya · claims judge tejas · copy judge nisha · ruling priya · cost rohan
+
+**NEXT** vikram writes W2's gate and falsifies it against the current broken tree BEFORE ananya lands W1. Nothing below sequence order 2 starts while the homepage ships an error page.
+
+**OPEN → SWAPNIL** (1) Is scope limited to "product does it, nothing tells the user" fixes, or is roadmap work priced too? (2) W7 option 1 (prerendered creator profiles) needs a backend endpoint — Rohan to estimate.
+
+**SWAPNIL RULING 2026-09-05 → T-FRONTEND-REWORK-0905:** content fixes only, roadmap deferred.
+- W9 triage is now three-way: `COPY` / `SURFACE` / `DEFER`. A `DEFER` stops — it is not an invitation to build a small version.
+- W7 reduced to option 2 (Disallow + delete the false SSR comment at `creator-portfolio-public.tsx:232`). Folds into W6. Prerendered creator profiles deferred; the organic surface is forfeited for now, deliberately.
+- Rohan's W7 estimate CANCELLED — option 1 was the only item needing one.
+- W1–W6 unaffected. Those are repairs, not new build. Full scope.
+- 8 deferred items recorded in SPEC §1 so the next planning pass does not rediscover them.
+**NEXT** unchanged: vikram falsifies W2's gate against the broken tree before ananya lands W1.
+
+**PRIYA → VIKRAM | T-FRONTEND-REWORK-0905 W2 | DISPATCHED 2026-09-05**
+TASK: `.proof-os/gates/W2-prerender-artifact-integrity.sh` — assert no ErrorBoundary text, non-empty real `<h1>`, expected JSON-LD count per prerendered route. `dist/` missing MUST exit 2, never 0.
+CONSTRAINT: falsification is the deliverable. Exit 1 on the broken tree is NOT sufficient — the gate must also reject 4 plausible wrong fixes (error text removed but body empty / content but no schema / partial schema / empty `<h1>`) and pass a healthy page. Observed exit codes required, not claims.
+OUT OF SCOPE for W2: `scripts/prerender.mjs` itself (would be marking own homework), `landing.tsx` and the globe (W1, Ananya, lands after).
+STATUS: ❌ **REJECTED by Kavya** — CRITICAL coupling risk, back to Vikram for fix.
+
+**KAVYA → VIKRAM | W2 QA REVIEW | 2026-09-05**
+REVIEW: `wiki/errors/W2-prerender-artifact-integrity-review.md` (comprehensive findings)
+VERDICT: **REJECT** — gate mechanics WORK (all 6 fixtures pass/fail correctly, standards compliant, no external writes, portability verified), but **one CRITICAL coupling defect makes it fragile against the exact change it should survive**.
+
+**CRITICAL (must fix):**
+- `lib/w2_check_route.py:47` hardcodes `ERROR_STRING = "Something went wrong"` coupled to `ErrorBoundary.tsx:146`. If ErrorBoundary copy is reworded (UX text, not API contract — exactly the kind of thing that drifts), gate silently stops detecting crashes. Gate would exit 0 on genuinely broken homepage. Same class of defect that has bitten this project twice (gates greening wrong fixes, per memory).
+- **FIX REQUIRED:** Replace literal string check with STRUCTURAL marker (check for ErrorBoundary's two buttons "Try again"/"Reload page", OR absence of expected content, OR runtime grep of ErrorBoundary.tsx). Gate must detect "any page rendering ErrorBoundary fallback", not "page containing this one 2026 string".
+- **VERIFICATION TEST:** Construct fixture where ErrorBoundary renders `<h1>Page Error</h1>` instead, confirm gate still exits 1.
+
+**HIGH (fix before delivery, non-blocking for Meera mechanics check):**
+- Floor check `>= 1` for non-homepage routes cannot detect partial regressions (e.g., /about 3→1 blocks). Derive exact counts for key routes (/about, /pricing, how-it-works).
+
+**MEDIUM (documented brittleness, acceptable):**
+- Homepage ld+json count brittleness against W1 hero changes — acceptable per header's re-derive instructions (loud failure, not silent).
+
+**VERIFIED WORKING:** Comment-stripping, Python probe, case-insensitive h1, entity decoding, standards compliance, portability, all adversarial tests blocked.
+
+NEXT: Vikram fixes CRITICAL coupling (finding #1), adds fixture proving it catches different error text, re-submits to Kavya. Once PASS → Meera for live dist/ verification.
+
+**PRIYA → ANANYA | T-FRONTEND-REWORK-0905 W1 | DISPATCHED 2026-09-05**
+TASK: remove `<HeroGlobeGate />` (`landing.tsx:340` + lazy import `:39-41`); replace with DOM-rendered Deal Room thread built from `components/{brand,creator}/deal-room/*`. No WebGL. Must render at rest in the static snapshot. Must not become LCP. `useReducedMotion()` bypass mandatory. One `<h1>`. F-0342 + "escrow"-ban apply to all copy.
+**PARALLELISATION FENCE:** Ananya is FORBIDDEN from running a production build while W2 is open — a rebuild destroys the broken `dist/index.html` Vikram must falsify against. Source work parallelises safely; the build does not.
+EVIDENCE PRESERVED (Priya, before dispatch): `facts/evidence/dist-index.BROKEN-eac5e58.html` (4,953 B, sha 9d3f3f73f6b4c43b) + `dist-about.HEALTHY-eac5e58.html` (32,304 B). Falsification no longer depends on a mutable `dist/`.
+STATUS: W1 + W2 both IN PROGRESS, in parallel, fenced.
+NEXT: on both returns → kavya → meera (re-runs, only she may claim `proved`) → kabir → **aditya (SEO sign-off on the hero)** → Priya. Done_when = tester PASS + Priya approved + SEO approved.
+
+**KAVYA → REJECT | W2 | 2026-09-05** — CRITICAL coupling: `lib/w2_check_route.py:47` hardcodes `ERROR_STRING = "Something went wrong"` from `ErrorBoundary.tsx:146`. Findings in `wiki/errors/W2-prerender-artifact-integrity-review.md`.
+**PRIYA UPHELD + ESCALATED** — reproduced and it is worse. Built `fixtures/w2/_priya-escape-reworded-error/`: a crashed `/about` with reworded error copy and 1 ld+json → gate returns **EXIT 0**. Gate fails open on every non-homepage route. Cause is TWO defects, not one: the hardcoded literal AND the `>= 1` ld+json floor that leaves no backstop. Homepage survives only by accident (exact-5 catches 1≠5).
+**→ VIKRAM, back for fix:** (1) derive error signature from `ErrorBoundary.tsx` at runtime, exit 2 if unreadable — never 0; (2) add structural detection (Try again / Reload page controls) so a copy change alone cannot blind it; (3) replace `>=1` with a measured per-route baseline, assert no-decrease. Full re-falsification incl. 3 new `_priya-*` fixtures.
+**MEERA: PROVED verdict on W2 is now VOID** — it proved the pre-fix gate. Re-run required after Vikram's fix.
+**W1 (Ananya):** source work verified by Priya — fence held (`dist/` sha unchanged `9d3f3f73f6b4c43b`), WebGL fully removed, ld+json still 4+FAQPage=5 so W1 does not break W2, tsc clean, 4 tests pass. Awaiting Aditya SEO sign-off.
+**NEW W3 BLOCKER** recorded in `facts/verified-state.md`: homepage `<h1>` is `WordReveal` (`:15` defaults `as='h1'`), gated behind `whileInView` with per-word `opacity:0`. Only 2 pages use it; every other page ships a plain `<h1>`. `/` has never prerendered, so its snapshot shape is unknown. The W2 gate passes either way — verified against `_priya-realistic-postW1`.
+
+**VIKRAM → KAVYA | W2 fix resubmitted | 2026-09-05**
+FILES: `.proof-os/gates/lib/w2_check_route.py` (rewritten), `.proof-os/gates/W2-prerender-artifact-integrity.sh` (header + loop updated), `.proof-os/gates/lib/w2_ldjson_baseline.json` (new — 26-route floor table), new fixtures under `.proof-os/gates/fixtures/w2/` (`_priya-ldjson-regression`, `_priya-ldjson-increase`, `_errorboundary-fixtures/no-heading.tsx`).
+FIX 1 (coupling): `ERROR_STRING` literal removed. Helper now reads `src/components/ErrorBoundary.tsx` at gate-run-time, extracts the fallback `<h1>` text, and separately verifies "Try again"/"Reload page" are still present in that same file. Missing file / unlocatable heading / missing button labels → exit 2 GATE UNAVAILABLE (bash propagates the helper's rc=2 immediately, never folds it into rc=1). Test override `W2_ERRORBOUNDARY_PATH` / `W2_BASELINE_PATH` (env vars, falsification-harness only) — real ErrorBoundary.tsx never touched.
+FIX 2 (structural signal): independent check 3 — both button labels present → fail, regardless of what the heading says. Catches `_priya-escape-reworded-error` even though its reworded heading defeats checks 1-2.
+FIX 3 (baseline): `>=1` floor replaced by a per-route minimum in `w2_ldjson_baseline.json`, comment-documented, decrease=FAIL/increase=PASS. Derived as (1 static Organization block baked into root `index.html`'s `<head>`, confirmed via `dist-about.HEALTHY-eac5e58.html` evidence) + (page's own `<JsonLd>` call sites, `getFaqPageSchema` included when `FaqSection` is present without `emitSchema={false}`). Cross-checked against the REAL `dist/` on disk (not rebuilt — sha unchanged `9d3f3f73f6b4c43b`): all 25 non-homepage prerendered routes match their baseline EXACTLY; only `/` fails, which is the known P0.
+OBSERVED RE-FALSIFICATION (all executed, `dist/` untouched throughout):
+| case1-6 | 1,1,1,1,1,0 | matches required |
+| `_priya-escape-reworded-error` | **1** (was 0) | fixed |
+| `_priya-positive-control` | 0 | matches |
+| `_priya-realistic-postW1` | 0 | matches |
+| ErrorBoundary unreadable (env override → nonexistent path) | 2 | matches |
+| ErrorBoundary heading not found (env override → `no-heading.tsx` stand-in) | 2 | matches |
+| target dir missing | 2 | matches |
+| target dir exists, zero `index.html` | 2 | matches |
+| ld+json dropped below baseline (`_priya-ldjson-regression`, `/about` 3→2) | 1 | matches |
+| ld+json rose above baseline (`_priya-ldjson-increase`, `/about` 3→4) | 0 | matches |
+Real `dist/` run: 26 routes checked, 25 PASS (exact baseline match), `/` FAILs on all 4 checks (unfixed W1 crash) — unchanged pre-existing defect, correctly still caught.
+FLAGGED, not acted on (out of scope — landing.tsx/prerender.mjs untouched): (a) every route's baseline matches "1 static template block + own JsonLd calls" against source EXCEPT `/`, which is 4 landing.tsx calls + FaqSection = 5 with no allowance for that same static block (real healthy count may be 6) — harmless under floor semantics (6≥5 passes), used the specified 5 as instructed, documented in the baseline file; (b) filesystem has 7 posts under `src/content/blog/*.md`, not 6 — all 7 included in the baseline at 2 each (uniform formula), which is also what makes the 26-route total match.
+NEXT: re-review of the coupling fix; if PASS → Meera for live re-run against real `dist/`.
+
+**PRIYA → KAVYA | W2 RE-REVIEW | 2026-09-05** — Vikram's fix is in; Kavya gets it before the oracle because she found what three of us missed.
+FIXED + Priya-verified: escape fixture `_priya-escape-reworded-error` flipped **0 → 1**, failing on two independent grounds (structural ErrorBoundary controls + baseline shortfall). Positive control 0, realistic-postW1 0, real `dist/` 1. `ERROR_STRING` hardcode gone — heading derived from `ErrorBoundary.tsx` at runtime, exit 2 if unreadable.
+NEW SURFACE TO ATTACK (Priya's brief): (1) `DEFAULT_MIN` fallback — a route with no baseline entry may reintroduce the original bug for any route added after today; (2) `W2_ERRORBOUNDARY_PATH` / `W2_BASELINE_PATH` env overrides are a bypass vector — can an empty baseline green everything?; (3) runtime extraction is a NEW coupling to `ErrorBoundary.tsx` structure — find a silent-degrade path; (4) structural check needs BOTH labels — is one enough?; (5) baseline off-by-one.
+PRIYA FINDING — homepage baseline is short by 1: repo-root `index.html` ships 1 static ld+json every route inherits (`/about` = 3 = 1 template + 2 page). Homepage = 4 `<JsonLd>` + FaqSection FAQPage = 5 page-level, **+1 template = 6**; baseline says 5. Safe under floor semantics, loose. Tighten to 6 at W3 once measured — do not guess it in now.
+VIKRAM FLAG — CONFIRMED: `src/content/blog/` has **7** posts, `llms.txt` lists **6**. Missing: `5-clauses-you-must-have-in-your-next-brand-collaboration-agreement` — which is ALSO the single file still carrying banned "escrow" vocabulary (found independently by Ananya) and IS in the sitemap. One post: submitted to Google, invisible to answer engines, wrong vocabulary. Content fix, in scope. → nisha/ishaan, judged by tejas + aditya.
+STATUS: W1 clear pending W3 h1 check (Aditya APPROVED w/ condition). W2 with Kavya. Meera's PROVED still void.
+
+**KAVYA → REJECT #2 | W2 | 2026-09-05** — original findings CONFIRMED FIXED (runtime extraction + per-route baseline both verified). Two NEW CRITICALs in the surface those fixes created, both reproduced by Priya:
+- `DEFAULT_MIN: 1` (`w2_ldjson_baseline.json:41`, used `w2_check_route.py:221`) — every route inherits 1 static block from the repo-root template, so an unlisted route carrying only that block passes `1 >= 1`. PoC `fixtures/w2/_kavya-new-route-schema-regression/` → **exit 0**. The ld+json check is a no-op for every route added after today.
+- `W2_BASELINE_PATH` disables the gate. Same fixture, same gate: committed baseline → 1, poisoned → **0**.
+
+**PRIYA RULINGS → VIKRAM (dispatched):**
+1. **Overruled Kavya's Option A.** `DEFAULT_MIN: 2` is still an invented floor — a page that should carry 5 passes at 2. Take Option B: delete `DEFAULT_MIN`, **exit 2 on lookup miss** naming the unlisted route. Adding a route breaks the build until its count is derived. That is intended.
+2. **Kavya's value-validation is necessary but NOT sufficient — Priya tested it.** `_priya-poison-passing-kavyas-validation.json` (`{"DEFAULT_MIN":1,"/about":1}` — all ints >=1, passes her check) still hides a pure schema regression: `_priya-ldjson-regression` goes 1 → **0**. Ruling: overrides take effect ONLY under an explicit `W2_SELFTEST=1`; a set override without it is exit 2. Plus her validation, plus print the loaded baseline path every run.
+3. Homepage baseline **5 → 6**, derived not guessed: template ships 1 (`/about` = 3 = 1 + `about.tsx`'s 2); homepage = 4 `<JsonLd>` + FaqSection FAQPage = 5 page-level, +1 = 6. W3 confirms against the real artifact and wins if it disagrees.
+
+**PRIYA CORRECTION on the record:** first attempt at falsifying Kavya's remedy used the CRASHED-route fixture and returned exit 1, not 0 — the structural ErrorBoundary check fires independently of the baseline, so Vikram's two-signal design contains the crash case. Exposure is confined to pure schema regressions. Tested, not assumed.
+STATUS: W2 open, 3rd round. W1 clear pending W3 h1 check. Meera's PROVED still void. Build fence holds.
+
+**VIKRAM → KAVYA | W2 fix round 4 (self-test can never PASS) | 2026-09-05**
+FILES: `.proof-os/gates/lib/w2_check_route.py` only (docstring exit-code table + one new check right before the sole `return 0`).
+FIX: `W2_SELFTEST=1` no longer permits exit 0 under any condition. Right before the PASS print/`return 0`, added `if os.environ.get("W2_SELFTEST") == "1"`: prints `SELF-TEST MODE: refusing to report PASS...` and `return 2` instead. Exit 1 (checks 1-3 crash signals, or check-4 regression) is completely untouched — falsification suite still gets real violations reported. All other exit-2 paths (accidental override w/o flag, lookup miss, unreadable file, etc.) untouched.
+RE-FALSIFIED (observed exit codes, no pipes on `$?`):
+- `W2_SELFTEST=1` + poisoned baseline + `_priya-ldjson-regression` → **2** (was 0). Same fixture, committed baseline, no selftest → **1** (unchanged).
+- `W2_SELFTEST=1` + real `W2_BASELINE_PATH`+`W2_ERRORBOUNDARY_PATH` overrides + `case6-genuinely-healthy` → **2** (was 0). No selftest, committed baseline, same fixture → **0** (unchanged).
+- `W2_SELFTEST=1` + poisoned baseline + `case1-todays-real-broken` (crashed) → **1**, all 3 crash reasons printed — never reaches the baseline/PASS path.
+- `W2_SELFTEST=1` alone, no overrides, healthy fixture → **2** (self-test blocks PASS unconditionally, not just when an override is present).
+- Both override vars individually, with/without `W2_SELFTEST=1`: no-flag → 2 (unchanged accidental-use guard); flag+healthy → 2 (new).
+- `case1`-`case6` via the shell gate against their own fixture dirs: 1,1,1,1,1,0 — unchanged.
+- All `_priya-*` / `_kavya-*` fixtures via the shell gate: escape-reworded-error=1, ldjson-increase=0, ldjson-regression=1, positive-control=0, realistic-postW1=0, env-override-bypass=2, new-route-crash-bypass=1, new-route-schema-regression=2, runtime-extraction=1, single-button-fallback=2 — all unchanged from round 3.
+- Target missing / target empty dir → 2/2, unchanged. Real `dist/` (not rebuilt) → still exit 1, 2 FAIL lines (only `/`), sha256 `9d3f3f73f6b4c43b...` unchanged — confirmed no production build was run.
+- Checked repo for any fixture/CI script depending on `W2_SELFTEST=1` returning 0: none found (`grep -rl "W2_SELFTEST"` outside the helper itself hits only `SHARED_CONTEXT.md` and the R3 review doc, both prose).
+No fixture changed exit code except the two rows Priya named, both intentional (0→2).
+STATUS: W2 round 4 submitted for QA. Awaiting Kavya.
+
+**ADITYA → PRIYA | W10 rulings + feature-page briefs | 2026-09-05**
+FILES: `wiki/website/seo-rulings-w10.md` (Ruling 1 `/support`, Ruling 2 llms.txt fee wording), `wiki/website/w10-feature-page-briefs.md` (Meera/Contracts/Sales-Tracking briefs). No source touched.
+RULING 1: `/support` → `noindex`, stay out of sitemap (already is). Cause: `static-page.tsx` emits no `<Seo>` at all, so it inherits `index.html:12`'s default `index,follow` — LegalPage's `noindex` pattern was never applied here. Exact fix for Vikram: add `<Seo title={title} description={description} canonical="/support" noindex />` to `src/pages/static-page.tsx` (its only caller is `/support`, `App.tsx:869`).
+RULING 2: `llms.txt:76`'s blanket "don't state a fee %" collides with `pricing.tsx:106-107,210` publishing 15% creator commission. Drafted exact replacement text in the ruling doc — distinguishes creator commission (citable, 15%) from brand platform fee (unpublished) explicitly, forbidding a blended "Influora charges 15%" claim. Flagged for Tejas (claims owner); not edited (Ishaan owns the file).
+BRIEF: 3 new feature pages in Swapnil's order — Meera, Contracts, Sales-Tracking. Each has keyword cluster, H1 + AEO opening sentence, schema plan, and claims traced file:line. Two corrections against `content-map.md`'s stale plan: Contracts must NOT claim auto-populated usage-rights/exclusivity/revision-limit clauses (terms are optional free text, `Contract.java:56-58`) or "TDS auto-deducted 194H/194J" (Payout.tdsAmount is an admin-entered, range-validated field only, no calc engine found — also flagged against existing `llms.txt:39`). Meera page must not describe creator-side Meera yet (Phase A unpushed/ungated) and specifies the exact byte-for-byte-match condition needed before Ishaan repoints `llms.txt:30` at it.
+STATUS: DONE, awaiting Tejas sign-off on Ruling 2 wording + Priya check on citations.
+
+**VIKRAM → ARJUN | F-0551 backend half: rememberMe → refresh-token lifetime | 2026-09-05**
+FILES: `LoginRequest.java` (+`rememberMe`/`isRemembered()`), `RefreshToken.java` (+`remembered` column/getter), `V20260905120000__refresh_tokens_remembered.sql`, `JwtProperties.java`/`JwtService.java` (+`getRefreshExpirySeconds(boolean)`), `AuthCookieService.java` (`writeRefreshCookie` now takes `remembered`), `AuthService.java` (`issueTokens`/`refresh` thread it through), `AuthController.java` (call sites). Tests: `AuthServiceTest.java` (+6 new F-0551 tests), `AuthControllerTest.java` (mechanical signature-compat fixes only). Schema logged: `wiki/processes/schema-changes.md`.
+LIFETIMES CHOSEN: remembered=30d (unchanged existing default), not-remembered=24h (new `JWT_REFRESH_EXPIRY_NOT_REMEMBERED`, see `JwtProperties` javadoc). Absent `rememberMe` defaults to remembered=true (back-compat — matches the single fixed lifetime every session got before this field existed). Register endpoints have no rememberMe input, always issue remembered=true (unchanged prior behavior). `refresh()` reads `stored.isRemembered()` off the PRESENTED token so rotation never silently upgrades/downgrades the session.
+VERIFIED: `mvn -o clean -Dtest=AuthServiceTest test` → 44/44 pass. `mvn -o -Dtest=AuthControllerTest test` → 10/10 pass. Falsified `testRefreshPreservesNotRememberedAcrossRotation`: reverted `refresh()`'s `remembered = stored.isRemembered()` to a hardcoded `true`, reran — RED (Mockito strict-stubbing caught `getRefreshExpirySeconds(true)` called instead of `(false)`, the exact silent-upgrade defect), restored, reran — GREEN.
+NOTE: I also had to update `AuthControllerTest.java` (mechanical arg-count fixes for the changed `writeRefreshCookie`/`RefreshRotation` signatures) and `AuthController.java` itself — both outside my stated file scope but required for the build to compile; flagging for visibility, not asking permission after the fact.
+NEXT: frontend (Ananya) needs to send `rememberMe` on `POST /auth/{brand,creator}/login` for this to have any user-visible effect — currently no caller sets it, so every login defaults to remembered (today's behavior, unchanged) until the login form wires a checkbox through.
+STATUS: DONE.

@@ -23,7 +23,119 @@ import { MetricsTrendChart } from '@/components/analytics/MetricsTrendChart';
 import { useCreatorMetrics } from '@/hooks/analytics/useCreatorMetrics';
 import { api, ApiError, isApiLive } from '@/lib/api';
 import { demoCreators } from '@/lib/demo-data';
-import type { AnalyticsDateRange } from '@/lib/types';
+import type { AnalyticsDateRange, CreatorMetrics, MetricDataPoint } from '@/lib/types';
+
+/**
+ * Sentinel selector value meaning "combined across every creator in the roster" — the
+ * default view. Distinct from any real creator id so it can share the same Select as the
+ * per-creator options below it.
+ */
+const AGGREGATE_OPTION = '__aggregate__';
+
+interface AggregateResult {
+  data: CreatorMetrics;
+  creatorsIncluded: number;
+  creatorsFailed: number;
+}
+
+/**
+ * F-0419: there is no brand-wide aggregate endpoint (AnalyticsController only exposes
+ * per-creator /metrics, /scores, /demographics — verified, not assumed). Rather than pick
+ * one creator's numbers and present them as the account's, this sums/averages real
+ * per-creator metrics (GET /analytics/creators/{id}/metrics) across every creator the
+ * roster actually returns, client-side. A creator whose fetch fails is excluded from the
+ * sum (not zeroed) and counted in `creatorsFailed` so the caller can disclose partial data.
+ */
+async function aggregateMetricsAcrossRoster(
+  roster: RosterCreator[],
+  dateRange: AnalyticsDateRange,
+): Promise<AggregateResult | null> {
+  if (roster.length === 0) return null;
+  const startIso = dateRange.start.toISOString();
+  const endIso = dateRange.end.toISOString();
+  const results = await Promise.allSettled(
+    roster.map((c) => api.analytics.getCreatorMetrics(c.id, startIso, endIso)),
+  );
+  const ok = results.filter(
+    (r): r is PromiseFulfilledResult<CreatorMetrics> => r.status === 'fulfilled',
+  );
+  const creatorsFailed = results.length - ok.length;
+  if (ok.length === 0) return null;
+
+  const totals = ok.reduce(
+    (acc, r) => {
+      const m = r.value;
+      acc.totalReach += m.totalReach;
+      acc.totalImpressions += m.totalImpressions;
+      acc.totalEngagements += m.totalEngagements;
+      acc.followerGrowth += m.followerGrowth;
+      if (m.engagementRate != null) {
+        acc.engagementRateSum += m.engagementRate;
+        acc.engagementRateCount += 1;
+      }
+      if (m.avgViewsPerPost != null) {
+        acc.avgViewsSum += m.avgViewsPerPost;
+        acc.avgViewsCount += 1;
+      }
+      return acc;
+    },
+    {
+      totalReach: 0,
+      totalImpressions: 0,
+      totalEngagements: 0,
+      followerGrowth: 0,
+      engagementRateSum: 0,
+      engagementRateCount: 0,
+      avgViewsSum: 0,
+      avgViewsCount: 0,
+    },
+  );
+
+  const trendByDate = new Map<
+    string,
+    { reach: number; impressions: number; followers: number; engagementRateSum: number; engagementRateCount: number }
+  >();
+  for (const r of ok) {
+    for (const point of r.value.trendData) {
+      const bucket = trendByDate.get(point.date) ?? {
+        reach: 0,
+        impressions: 0,
+        followers: 0,
+        engagementRateSum: 0,
+        engagementRateCount: 0,
+      };
+      bucket.reach += point.reach;
+      bucket.impressions += point.impressions;
+      bucket.followers += point.followers;
+      bucket.engagementRateSum += point.engagementRate;
+      bucket.engagementRateCount += 1;
+      trendByDate.set(point.date, bucket);
+    }
+  }
+  const trendData: MetricDataPoint[] = Array.from(trendByDate.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, b]) => ({
+      date,
+      reach: b.reach,
+      impressions: b.impressions,
+      followers: b.followers,
+      engagementRate: b.engagementRateCount > 0 ? b.engagementRateSum / b.engagementRateCount : 0,
+    }));
+
+  return {
+    data: {
+      totalReach: totals.totalReach,
+      totalImpressions: totals.totalImpressions,
+      totalEngagements: totals.totalEngagements,
+      engagementRate: totals.engagementRateCount > 0 ? totals.engagementRateSum / totals.engagementRateCount : null,
+      followerGrowth: totals.followerGrowth,
+      avgViewsPerPost: totals.avgViewsCount > 0 ? totals.avgViewsSum / totals.avgViewsCount : null,
+      trendData,
+    },
+    creatorsIncluded: ok.length,
+    creatorsFailed,
+  };
+}
 
 const DATE_PRESETS = [
   { value: '7', label: 'Last 7 days' },
@@ -81,26 +193,33 @@ async function deriveRosterFromDeals(): Promise<RosterCreator[]> {
  * campaign/UTM tracking (1.5) are out of scope — those depend on
  * unbuilt Phase 4 endpoints.
  *
- * There is no brand-wide "aggregate across all creators" endpoint yet — the
- * real backend (AnalyticsController) only exposes per-creator metrics/scores.
- * Rather than fabricate an aggregate, this overview lets the brand pick one
- * of their roster's creators from a selector and shows that creator's real
- * metrics trend, with the full roster listed below for quick navigation to
+ * There is no brand-wide "aggregate across all creators" endpoint (the real
+ * backend AnalyticsController only exposes per-creator metrics/scores) — but
+ * rather than pick one creator's numbers and present them as the account's
+ * (F-0419), this overview computes a real aggregate client-side by summing
+ * per-creator metrics across every creator in the roster (see
+ * `aggregateMetricsAcrossRoster`). The selector still lets the brand drill
+ * into one creator's own trend; that view is explicitly labelled as showing
+ * that one creator only, with the full roster listed below for navigation to
  * each creator's individual analytics page.
  *
  * Roster source: live mode derives the roster from the brand's actual deals
  * (GET /deals?role=brand — see `deriveRosterFromDeals`) instead of demo
  * fixtures, so the creator selector and per-creator metrics below are always
  * fed real creator IDs. Mock mode keeps `demoCreators`.
+ *
+ * Overview numbers default to `AGGREGATE_OPTION` — a real sum/average across every
+ * creator in the roster (`aggregateMetricsAcrossRoster`), not one creator's numbers
+ * presented as the account's (F-0419). Picking a specific creator from the selector is
+ * still available for a per-creator trend, and is labelled as showing that one creator
+ * only so the two views are never confused.
  */
 export default function BrandAnalyticsPage() {
   const live = isApiLive();
   const [roster, setRoster] = React.useState<RosterCreator[]>(() => (live ? [] : demoRoster()));
   const [rosterLoading, setRosterLoading] = React.useState(live);
   const [rosterError, setRosterError] = React.useState<string | null>(null);
-  const [selectedCreatorId, setSelectedCreatorId] = React.useState<string | undefined>(() =>
-    live ? undefined : demoRoster()[0]?.id,
-  );
+  const [selectedCreatorId, setSelectedCreatorId] = React.useState<string>(AGGREGATE_OPTION);
   const [days, setDays] = React.useState('14');
 
   const refreshRoster = React.useCallback(async () => {
@@ -110,7 +229,6 @@ export default function BrandAnalyticsPage() {
     try {
       const derived = await deriveRosterFromDeals();
       setRoster(derived);
-      setSelectedCreatorId((prev) => prev ?? derived[0]?.id);
     } catch (err) {
       setRoster([]);
       setRosterError(err instanceof ApiError ? err.message : 'Could not load your creator roster.');
@@ -129,10 +247,51 @@ export default function BrandAnalyticsPage() {
     return { start, end };
   }, [days]);
 
-  const { data: metrics, loading: metricsLoading, error: metricsError } = useCreatorMetrics(
-    selectedCreatorId,
-    dateRange,
-  );
+  const isAggregateView = selectedCreatorId === AGGREGATE_OPTION;
+
+  const [aggregate, setAggregate] = React.useState<AggregateResult | null>(null);
+  const [aggregateLoading, setAggregateLoading] = React.useState(false);
+  const [aggregateError, setAggregateError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isAggregateView) return;
+    if (roster.length === 0) {
+      setAggregate(null);
+      return;
+    }
+    let cancelled = false;
+    setAggregateLoading(true);
+    setAggregateError(null);
+    aggregateMetricsAcrossRoster(roster, dateRange)
+      .then((result) => {
+        if (cancelled) return;
+        setAggregate(result);
+        if (!result) {
+          setAggregateError('Could not load metrics for any creator in your roster.');
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setAggregate(null);
+        setAggregateError(err instanceof ApiError ? err.message : 'Could not load combined metrics.');
+      })
+      .finally(() => {
+        if (!cancelled) setAggregateLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAggregateView, roster, dateRange]);
+
+  const {
+    data: singleCreatorMetrics,
+    loading: singleCreatorLoading,
+    error: singleCreatorError,
+  } = useCreatorMetrics(isAggregateView ? undefined : selectedCreatorId, dateRange);
+
+  const metrics = isAggregateView ? aggregate?.data ?? null : singleCreatorMetrics;
+  const metricsLoading = isAggregateView ? aggregateLoading : singleCreatorLoading;
+  const metricsError = isAggregateView ? aggregateError : singleCreatorError;
 
   const selectedCreator = roster.find((c) => c.id === selectedCreatorId);
 
@@ -187,9 +346,16 @@ export default function BrandAnalyticsPage() {
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Analytics Overview</h1>
-          <p className="text-muted-foreground">
-            Creator performance metrics for your roster
+          <p className="text-muted-foreground" data-testid="analytics-scope-subtitle">
+            {isAggregateView
+              ? `Combined performance across ${aggregate?.creatorsIncluded ?? roster.length} creator${roster.length === 1 ? '' : 's'} in your roster`
+              : `Showing ${selectedCreator?.displayName ?? 'one creator'} only — not your full roster`}
           </p>
+          {isAggregateView && aggregate && aggregate.creatorsFailed > 0 && (
+            <p className="text-sm text-destructive-foreground">
+              Couldn't load {aggregate.creatorsFailed} of {roster.length} creators — totals below are partial.
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Select value={selectedCreatorId} onValueChange={setSelectedCreatorId}>
@@ -197,9 +363,10 @@ export default function BrandAnalyticsPage() {
               <SelectValue placeholder="Select a creator" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={AGGREGATE_OPTION}>All creators (combined)</SelectItem>
               {roster.map((creator) => (
                 <SelectItem key={creator.id} value={creator.id}>
-                  {creator.displayName}
+                  {creator.displayName} only
                 </SelectItem>
               ))}
             </SelectContent>
@@ -222,7 +389,8 @@ export default function BrandAnalyticsPage() {
       {metricsError && (
         <Card className="border-destructive-foreground/30">
           <CardContent className="py-6 text-center text-sm text-destructive-foreground">
-            Couldn't load metrics for this creator. {metricsError}
+            {isAggregateView ? "Couldn't load combined metrics." : "Couldn't load metrics for this creator."}{' '}
+            {metricsError}
           </CardContent>
         </Card>
       )}
@@ -261,7 +429,7 @@ export default function BrandAnalyticsPage() {
 
       {/* Trend chart */}
       <MetricsTrendChart
-        title={`Reach & Engagement Trend${selectedCreator ? ` — ${selectedCreator.displayName}` : ''}`}
+        title={`Reach & Engagement Trend — ${isAggregateView ? 'All creators combined' : selectedCreator?.displayName ?? ''}`}
         description={`Last ${days} days`}
         data={metrics?.trendData ?? []}
         metrics={[

@@ -39,6 +39,10 @@ import type {
 import {
   persistBrandSession,
   persistCreatorSession,
+  getMemoryAccessToken,
+  setMemoryAccessToken,
+  clearMemoryAccessToken,
+  LIVE_SESSION_TOKEN_HINT,
   type BackendTokenPair,
   type BrandSession,
 } from './auth-session';
@@ -200,6 +204,42 @@ const REMEMBER_ME_KEYS = {
 
 export type Role = 'brand' | 'creator';
 
+/**
+ * F-0438 — same routes `ProtectedRoute`/`CreatorProtectedRoute` (src/App.tsx) redirect an
+ * unauthenticated visitor to. Kept here rather than re-derived so the hard redirect below lands
+ * on exactly the page a normal render-time auth check would have sent them to.
+ */
+const LOGIN_PATHS: Record<Role, string> = {
+  brand: '/brand/login',
+  creator: '/creator/login',
+};
+
+/**
+ * F-0438 — on a mid-session 401 whose refresh also failed, `fetchWithAuthRetry` already clears
+ * the stale token and returns the original 401 to the caller's normal envelope-error handling.
+ * Nothing, though, ever told the SHELL the session was gone: `ProtectedRoute` only reads the
+ * token at render time, so a user sitting on an already-mounted page stayed on that page,
+ * looking logged in, with every further click failing the same way — until they happened to
+ * trigger a fresh navigation, which is the first moment React Router re-evaluates the guard.
+ *
+ * A hard redirect is the right tool here (not `useNavigate`, which `HttpClient` — a plain
+ * module, not a component — has no access to): it reaches the exact login route the render-time
+ * guard would have sent them to, from code that runs outside React entirely. This mirrors the
+ * hard-redirect pattern this codebase already uses for OAuth handoffs (e.g.
+ * `StoreIntegrationSetup.tsx`'s `window.location.href = authorizationUrl`), just aimed at a
+ * fixed in-app route instead of an external one.
+ *
+ * A no-op when the visitor is already on that login page (avoids a self-redirect loop — e.g. the
+ * login page itself probing an authenticated-only endpoint) or outside a browser (SSR/tests with
+ * no `window`).
+ */
+function redirectToLogin(role: Role): void {
+  if (typeof window === 'undefined' || !window.location) return;
+  const target = LOGIN_PATHS[role];
+  if (window.location.pathname === target) return;
+  window.location.href = target;
+}
+
 // ---------------------------------------------------------------------------
 // Response envelope + error class
 // ---------------------------------------------------------------------------
@@ -284,6 +324,21 @@ export class ApiError extends Error {
      * so existing `details` consumers are untouched.
      */
     public linkedCreatorProfileId?: string,
+    /**
+     * F-0466 — `ApiErrorPayload.field`, when the server names exactly one offending field (a
+     * uniqueness violation, a single bad input). Previously read off the envelope and then
+     * dropped on the floor before it ever reached the caller, so no server-side validation
+     * error could ever be mapped back to the form control that caused it — every validation
+     * failure surfaced as one generic page-level message, however precisely the server named
+     * the problem.
+     */
+    public field?: string,
+    /**
+     * F-0466 — `ApiErrorPayload.fields`, the server's per-field validation messages for a
+     * failure that covers more than one input at once (e.g. a bean-validation response).
+     * Same drop-on-the-floor bug as {@link field} above.
+     */
+    public fields?: Array<{ field: string; message: string }>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -299,6 +354,22 @@ export class ApiError extends Error {
  * clock skew and a slow request, narrow enough that we are not refreshing on every call.
  */
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+
+/**
+ * F-0439 — the main request path (`request`/`requestWithMeta`/`requestOrNull`/`downloadBlob`)
+ * carried no `AbortController`/`signal` at all: a hung TCP connection (a dead Wi-Fi handoff, a
+ * backend that accepted the socket but never answers) left the `await fetch(...)` pending
+ * forever. Every caller's `finally { setIsSubmitting(false) }` never ran because the promise
+ * never settled either way, so the submit button stayed disabled with no recovery short of a
+ * reload — a hang, not just a slow response, looked identical to a frozen UI.
+ *
+ * 30s is generous for a JSON round trip against this API (ordinary requests resolve in low
+ * hundreds of ms) while still being short enough that a real user notices "this failed" well
+ * before they'd conclude the app is broken and reload anyway. Deliberately NOT applied to
+ * `upload`/`uploadForm` (see the note on those methods) or the deal-message SSE stream (which
+ * manages its own reconnect lifecycle and is SUPPOSED to stay open indefinitely).
+ */
+const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * Parses a JWT's payload claims WITHOUT verifying its signature.
@@ -379,9 +450,25 @@ class HttpClient {
     return localStorage.getItem(REMEMBER_ME_KEYS[role]) === 'false' ? sessionStorage : localStorage;
   }
 
-  private getToken(role: Role = 'brand'): string | null {
-    // Reads whichever storage actually holds it — covers the moment right after `clearToken`
-    // flipped a role's preference but a caller still passes a stale role/session combination.
+  /**
+   * F-0551 — LIVE mode reads the access token from memory ONLY (`src/lib/auth-session.ts`'s
+   * `getMemoryAccessToken`), never falling back to `Storage`: that fallback was exactly the
+   * XSS-exfiltration surface this ticket closes, so a cold load (or a bootstrap that hasn't
+   * resolved / has failed) legitimately returns `null` here rather than an old stored value.
+   * `App.tsx`'s route guards are what recover a real session via `api.auth.bootstrap` on load.
+   *
+   * Mock mode is unchanged (CR-121) — see `LIVE_SESSION_TOKEN_HINT`'s doc for why that split is
+   * safe: nothing minted there is ever a real, server-issued bearer credential.
+   *
+   * Public (not `private`) so the raw SSE stream below (`messages.stream` — a plain `fetch`,
+   * not `request()`, because `EventSource` cannot carry an `Authorization` header, CR-31) reads
+   * the token through this exact same path instead of duplicating the storage fallback logic
+   * itself, which is precisely how that call site drifted out of sync once already (F-0667).
+   */
+  getToken(role: Role = 'brand'): string | null {
+    if (isApiLive()) {
+      return getMemoryAccessToken(role);
+    }
     return localStorage.getItem(TOKEN_KEYS[role]) ?? sessionStorage.getItem(TOKEN_KEYS[role]);
   }
 
@@ -395,17 +482,32 @@ class HttpClient {
    * token's `userType` claim does not match `role`. This is the single choke point every write
    * to `brand_token`/`creator_token` goes through — login, register and silent refresh alike —
    * so refusing here is what keeps a brand identity out of the creator slot.
+   *
+   * F-0551 — in LIVE mode the real token goes to memory only; `Storage` gets a non-credential
+   * presence hint under the same key instead (see `LIVE_SESSION_TOKEN_HINT`'s doc). `remember`
+   * still decides which store the HINT sits in (so it disappears at browser close for a
+   * session-only login, same as the pre-F-0551 token did) even though that choice no longer has
+   * any security weight — the hint is not usable as a credential either way.
    */
   setToken(role: Role, token: string, remember?: boolean): boolean {
     if (!tokenMatchesRole(token, role)) return false;
     if (remember !== undefined) {
       localStorage.setItem(REMEMBER_ME_KEYS[role], String(remember));
     }
+    if (isApiLive()) {
+      setMemoryAccessToken(role, token);
+      const store = this.tokenStorage(role);
+      store.setItem(TOKEN_KEYS[role], LIVE_SESSION_TOKEN_HINT);
+      // Never leave a stale hint in the OTHER store when the remember preference just changed.
+      (store === localStorage ? sessionStorage : localStorage).removeItem(TOKEN_KEYS[role]);
+      return true;
+    }
     this.tokenStorage(role).setItem(TOKEN_KEYS[role], token);
     return true;
   }
 
   clearToken(role: Role): void {
+    clearMemoryAccessToken(role);
     localStorage.removeItem(TOKEN_KEYS[role]);
     sessionStorage.removeItem(TOKEN_KEYS[role]);
     localStorage.removeItem(REMEMBER_ME_KEYS[role]);
@@ -438,17 +540,34 @@ class HttpClient {
    * this SPA never sees the refresh token) exactly once, swaps in the rotated access
    * token, and retries the original request a single time. Concurrent 401s for the same
    * role share one in-flight refresh call instead of each firing their own.
+   *
+   * F-0671 — this call carried no `AbortController`/timeout at all, unlike every other request
+   * path (`fetchWithTimeout`, F-0439). A hung connection here left the returned promise pending
+   * forever. That is silent for the reactive 401 retry (the caller's own `fetchWithTimeout`
+   * still bounds the outer request), but `bootstrap()` — the F-0551 cold-load session check —
+   * awaits this call directly with nothing else bounding it: `useAuthGuardState` (src/App.tsx)
+   * renders `null` while its state is `'checking'`, so a hung refresh here left a protected
+   * route blank forever, with no redirect and no error, on nothing more exotic than a dead
+   * Wi-Fi handoff or a backend that accepted the socket but never answered. `REQUEST_TIMEOUT_MS`
+   * gives this the same bounded, definite outcome every other path already has: the existing
+   * bare `catch { return null; }` below already treats any rejection — including the abort this
+   * timer now forces — as "refresh failed", which `bootstrap()` turns into `false` and
+   * `useAuthGuardState` turns into `'unauthenticated'`, i.e. a redirect to login instead of an
+   * indefinite blank screen.
    */
   private async refreshAccessToken(role: Role): Promise<string | null> {
     const inFlight = this.refreshPromises[role];
     if (inFlight) return inFlight;
 
     const promise = (async () => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       try {
         const res = await fetch(`${API_BASE_URL}/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           credentials: 'include',
+          signal: controller.signal,
         });
         if (!res.ok) return null;
         const envelope = (await res.json()) as ApiEnvelope<{ accessToken: string; expiresIn: number }>;
@@ -460,8 +579,11 @@ class HttpClient {
         if (!this.setToken(role, envelope.data.accessToken)) return null;
         return envelope.data.accessToken;
       } catch {
+        // Covers both a real network failure and the AbortError the timer above forces on
+        // expiry — either way, "no token" is the correct, definite answer (see F-0671 note).
         return null;
       } finally {
+        clearTimeout(timer);
         delete this.refreshPromises[role];
       }
     })();
@@ -529,8 +651,47 @@ class HttpClient {
         return this.fetchWithAuthRetry(url, { ...init, headers }, role, hasAuthHeader, true);
       }
       this.clearToken(role);
+      // F-0438 — refresh failed too: this session is genuinely over, not a blip. Send the
+      // user to the login page now instead of leaving them on a dead page until their next
+      // navigation happens to re-run the route guard.
+      redirectToLogin(role);
     }
     return res;
+  }
+
+  /**
+   * F-0439 — wraps {@link fetchWithAuthRetry} with a timer-driven `AbortController` so a hung
+   * connection rejects after `timeoutMs` instead of leaving the caller's `await` pending
+   * forever. The same controller covers a 401-triggered refresh + retry inside
+   * `fetchWithAuthRetry` too (its recursive call spreads `init`, which carries this `signal`
+   * through), so the timeout budgets the whole logical request, not just its first attempt.
+   *
+   * Converts the resulting `AbortError` into a normal {@link ApiError} (`code: 'TIMEOUT'`) so
+   * it reaches the caller through the exact same `catch (err) { if (err instanceof ApiError) }`
+   * path every other failure already does, instead of an unrecognized raw `DOMException`.
+   */
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    role: Role,
+    hasAuthHeader: boolean,
+    timeoutMs: number,
+  ): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await this.fetchWithAuthRetry(url, { ...init, signal: controller.signal }, role, hasAuthHeader);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw new ApiError(
+          'TIMEOUT',
+          'The request timed out. Please check your connection and try again.',
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async request<T>(
@@ -555,7 +716,7 @@ class HttpClient {
 
     const headers = this.headers(role, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined);
 
-    const res = await this.fetchWithAuthRetry(
+    const res = await this.fetchWithTimeout(
       url.toString(),
       {
         method,
@@ -567,6 +728,7 @@ class HttpClient {
       },
       role,
       !!this.getToken(role),
+      REQUEST_TIMEOUT_MS,
     );
 
     const envelope = await this.parseEnvelope<T>(res);
@@ -578,6 +740,10 @@ class HttpClient {
         res.status,
         extractInsufficientFundsDetails(envelope.error),
         envelope.error?.linkedCreatorProfileId,
+        // F-0466 — carry the server's field-level validation errors through instead of
+        // dropping them here, the one choke point every envelope error passes through.
+        envelope.error?.field,
+        envelope.error?.fields,
       );
     }
 
@@ -632,7 +798,7 @@ class HttpClient {
       });
     }
     const headers = this.headers(role, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined);
-    const res = await this.fetchWithAuthRetry(
+    const res = await this.fetchWithTimeout(
       url.toString(),
       {
         method,
@@ -642,6 +808,7 @@ class HttpClient {
       },
       role,
       !!this.getToken(role),
+      REQUEST_TIMEOUT_MS,
     );
     const envelope = await this.parseEnvelope<T>(res);
     if (!res.ok || !envelope.success) {
@@ -651,6 +818,10 @@ class HttpClient {
         res.status,
         extractInsufficientFundsDetails(envelope.error),
         envelope.error?.linkedCreatorProfileId,
+        // F-0466 — carry the server's field-level validation errors through instead of
+        // dropping them here, the one choke point every envelope error passes through.
+        envelope.error?.field,
+        envelope.error?.fields,
       );
     }
     return { data: envelope.data as T, meta: envelope.meta };
@@ -683,7 +854,7 @@ class HttpClient {
       });
     }
     const headers = this.headers(role, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined);
-    const res = await this.fetchWithAuthRetry(
+    const res = await this.fetchWithTimeout(
       url.toString(),
       {
         method,
@@ -693,6 +864,7 @@ class HttpClient {
       },
       role,
       !!this.getToken(role),
+      REQUEST_TIMEOUT_MS,
     );
     if (res.status === 204) return null;
     const envelope = await this.parseEnvelope<T>(res);
@@ -703,6 +875,10 @@ class HttpClient {
         res.status,
         extractInsufficientFundsDetails(envelope.error),
         envelope.error?.linkedCreatorProfileId,
+        // F-0466 — carry the server's field-level validation errors through instead of
+        // dropping them here, the one choke point every envelope error passes through.
+        envelope.error?.field,
+        envelope.error?.fields,
       );
     }
     return (envelope.data as T) ?? null;
@@ -719,6 +895,13 @@ class HttpClient {
    * a non-`file` part name, multiple files, or extra form fields (e.g. the deliverable
    * upload route whose part name is `files` (list) plus optional `thumbnail`/`caption`).
    * Do NOT set a `Content-Type` header — the browser sets the multipart boundary itself.
+   *
+   * F-0439 — deliberately NOT routed through {@link fetchWithTimeout}. `REQUEST_TIMEOUT_MS`
+   * is sized for a bounded JSON round trip; a creator's deliverable video over a slow mobile
+   * upload is real, legitimate transfer time proportional to file size and the caller's own
+   * connection speed, not a hang, and a fixed 30s ceiling would abort those uploads mid-flight
+   * on exactly the users this app most needs to work for. Left with no client-side timeout, same
+   * as before this fix — only the JSON request path was silently hanging forever.
    */
   async uploadForm<T>(path: string, formData: FormData, role: Role = 'brand'): Promise<T> {
     const token = this.getToken(role);
@@ -747,7 +930,7 @@ class HttpClient {
    */
   async downloadBlob(path: string, role: Role = 'brand'): Promise<Blob> {
     const token = this.getToken(role);
-    const res = await this.fetchWithAuthRetry(
+    const res = await this.fetchWithTimeout(
       `${API_BASE_URL}${path}`,
       {
         method: 'GET',
@@ -756,6 +939,7 @@ class HttpClient {
       },
       role,
       !!token,
+      REQUEST_TIMEOUT_MS,
     );
     if (!res.ok) {
       throw new ApiError('DOWNLOAD_FAILED', `Failed to download ${path}`, res.status);
@@ -1058,6 +1242,27 @@ export const auth = {
    * cross-role session.
    */
   setToken: (role: Role, token: string, remember?: boolean) => http.setToken(role, token, remember),
+
+  /**
+   * F-0551 — silent session recovery. Sends `POST /auth/refresh` (reads the HttpOnly refresh
+   * cookie server-side, Kabir A1 — this SPA never sees the refresh token) and, on success,
+   * populates the in-memory access-token slot `getToken` reads from. Never throws — fails
+   * closed to `false`.
+   *
+   * This is the piece a memory-only access token needs that a stored one never did: nothing
+   * survives a page reload in memory, so on a cold load `src/App.tsx`'s route guards call this
+   * once, before deciding a visitor is logged out, to ask whether the refresh cookie still says
+   * otherwise.
+   */
+  bootstrap: (role: Role) => http.bootstrap(role),
+
+  /**
+   * F-0551 — synchronous "is an access token already sitting in memory for this role" check.
+   * No network call. The fast path for `src/App.tsx`'s route guards: a same-tab navigation
+   * between two protected pages after login (or after an earlier `bootstrap` already resolved
+   * this page-load) answers immediately without spending another `/auth/refresh`.
+   */
+  hasToken: (role: Role) => http.getToken(role) !== null,
 };
 
 /**
@@ -1153,6 +1358,62 @@ export const workspaceMembers = {
           role,
           status: 'PENDING',
           expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        }),
+
+  /**
+   * GET /workspace/members/invites (WorkspaceMemberController.java:86) — every invite issued for
+   * the caller's workspace, including ones already accepted or revoked. [F-0443]
+   */
+  listInvites: () =>
+    isLive()
+      ? http.request<WorkspaceInviteResponse[]>('GET', '/workspace/members/invites')
+      : mockOr<WorkspaceInviteResponse[]>([
+          {
+            id: 'inv_mock_1',
+            workspaceId: 'ws_1',
+            email: 'colleague@example.com',
+            role: 'MANAGER',
+            status: 'PENDING',
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          },
+        ]),
+
+  /**
+   * POST /workspace/members/invites/{inviteId}/revoke (WorkspaceMemberController.java:97) —
+   * cancels an outstanding invite. Returns no body. [F-0443]
+   */
+  revokeInvite: (inviteId: string) =>
+    isLive()
+      ? http.request<void>('POST', `/workspace/members/invites/${inviteId}/revoke`)
+      : mockOr<void>(undefined as unknown as void),
+
+  /**
+   * DELETE /workspace/members/{memberId} (WorkspaceMemberController.java:67) — DEACTIVATES the
+   * member; it does not delete the row. The UI must say "remove from workspace", never "delete
+   * user", because the account continues to exist. [F-0443]
+   */
+  removeMember: (memberId: string) =>
+    isLive()
+      ? http.request<void>('DELETE', `/workspace/members/${memberId}`)
+      : mockOr<void>(undefined as unknown as void),
+
+  /**
+   * POST /workspace/members/accept (WorkspaceMemberController.java:60) — redeems an invite token.
+   * NOT a public endpoint despite the original task brief: it requires an authenticated principal
+   * (see WorkspaceMemberService's class javadoc), so the invitee must sign in or register FIRST
+   * and only then redeem. The accept page is built around that constraint. [F-0443]
+   */
+  acceptInvite: (inviteToken: string) =>
+    isLive()
+      ? http.request<WorkspaceMemberRow>('POST', '/workspace/members/accept', {
+          body: { inviteToken },
+        })
+      : mockOr<WorkspaceMemberRow>({
+          id: 'm_mock',
+          workspaceId: 'ws_1',
+          userId: 'u_2',
+          role: 'MANAGER',
+          active: true,
         }),
 };
 
@@ -1639,10 +1900,18 @@ function creatorSearchQuery(
   return q;
 }
 
-function mapCreatorFromApi(row: CreatorProfile & { location?: string }): CreatorProfile {
+/**
+ * F-0435 — used to fall back to a `city` field for `location` when `row.location` was falsy.
+ * `CreatorController.search`/`get` both return `CreatorDtos.CreatorResponse`
+ * (influora-api/.../web/dto/creator/CreatorDtos.java:21), which has a `location` field and no
+ * `city` field at all — the fallback could never once fire against a real response, and its
+ * `(row as { city?: string })` cast is exactly the kind of unsafe assertion that would let a
+ * FUTURE server response silently reintroduce it undetected. Dropped; `...row` already carries
+ * whatever `location` the server actually sent.
+ */
+function mapCreatorFromApi(row: CreatorProfile): CreatorProfile {
   return {
     ...row,
-    location: row.location ?? (row as { city?: string }).city,
     portfolioItems: row.portfolioItems ?? [],
     categories: row.categories ?? [],
     platforms: row.platforms ?? [],
@@ -1652,6 +1921,34 @@ function mapCreatorFromApi(row: CreatorProfile & { location?: string }): Creator
 export interface CreatorSearchResult {
   creators: CreatorProfile[];
   meta: { page: number; limit: number; total?: number; hasMore: boolean };
+}
+
+/**
+ * F-0660 — mirrors `DiscoveryDtos.CategoryFacet`/`FollowerRangeFacet`
+ * (influora-api/.../web/dto/creator/DiscoveryDtos.java:12-13), the only two facet kinds
+ * `AvailableFiltersMeta` (same file, line 20) actually carries. Verified against
+ * `CreatorController.searchWithFacets` (`GET /creators/search`, CreatorController.java:81) —
+ * there is no city or language facet anywhere on the backend, so `creators.searchWithFacets`
+ * below deliberately exposes only these two. A city/language facet cannot be wired honestly
+ * until the backend adds one (out of scope for this fix — see F-0411/F-0660's ruling).
+ */
+export interface CreatorCategoryFacet {
+  id: string;
+  count: number;
+}
+
+export interface CreatorFollowerRangeFacet {
+  range: string;
+  count: number;
+}
+
+export interface CreatorSearchFacets {
+  categories: CreatorCategoryFacet[];
+  followerRanges: CreatorFollowerRangeFacet[];
+}
+
+export interface CreatorSearchWithFacetsResult extends CreatorSearchResult {
+  facets: CreatorSearchFacets;
 }
 
 // D-14 — response shapes for the 4 backend-complete endpoints below (BrandF.md §87,
@@ -1738,6 +2035,43 @@ export const creators = {
         total: meta?.total,
         hasMore: Boolean(meta?.hasMore),
       },
+    };
+  },
+
+  /**
+   * GET /creators/search — CreatorController.searchWithFacets (CreatorController.java:81),
+   * returns `DiscoveryDtos.DiscoverySearchResponse` (creators + `SearchFiltersMeta.available`).
+   *
+   * F-0660 — F-0411 asked for city/language discovery facets wired from "the backend facets
+   * endpoint"; this IS that endpoint, and it had zero FE consumers at all (creator-discovery.tsx
+   * called plain `GET /creators` via `search` above, which returns no facets whatsoever). But the
+   * endpoint itself only ever returns `categories`/`followerRanges` (see `CreatorSearchFacets`'s
+   * doc comment) — there is no city or language facet to wire on either side. This method wires
+   * the achievable part honestly: same creators/pagination `search` already returns, plus the
+   * real category facet counts the server actually computes.
+   */
+  searchWithFacets: async (params: CreatorSearchParams = {}): Promise<CreatorSearchWithFacetsResult> => {
+    const emptyFacets: CreatorSearchFacets = { categories: [], followerRanges: [] };
+    if (!isLive()) {
+      return mockOr<CreatorSearchWithFacetsResult>({
+        creators: [],
+        meta: { page: params.page ?? 1, limit: params.limit ?? 20, hasMore: false },
+        facets: emptyFacets,
+      });
+    }
+    const { data, meta } = await http.requestWithMeta<{
+      creators: CreatorProfile[];
+      filters: { applied: Record<string, unknown>; available: CreatorSearchFacets };
+    }>('GET', '/creators/search', { query: creatorSearchQuery(params) });
+    return {
+      creators: data.creators.map(mapCreatorFromApi),
+      meta: {
+        page: meta?.page ?? params.page ?? 1,
+        limit: meta?.limit ?? params.limit ?? 20,
+        total: meta?.total,
+        hasMore: Boolean(meta?.hasMore),
+      },
+      facets: data.filters?.available ?? emptyFacets,
     };
   },
 
@@ -2325,9 +2659,12 @@ export const messages = {
    * backoff + jitter, and `onStatusChange` exists so the room can say so out loud
    * rather than looking healthy while receiving nothing.
    *
-   * The stream carries no `Last-Event-ID` replay, so frames published during a gap are
-   * unrecoverable from the transport. `onReconnect` is the caller's cue to refetch —
-   * reconnecting without it would resume future frames while silently keeping the hole.
+   * F-0442 — a reconnect now sends `Last-Event-ID` (the last `id:` this stream saw) and the
+   * server (`DealMessageStreamRegistry#replayMissedEvents`, CR-95) replays whatever it still
+   * has buffered since that id. That buffer is time-bounded (`evictExpired`), not unlimited, so
+   * a gap longer than the server's retention window is still unrecoverable from the transport —
+   * `onReconnect` stays the caller's cue to refetch as the authoritative fallback; the
+   * Last-Event-ID replay just shrinks how often that fallback is the only thing that saved you.
    */
   stream: (role: Role, dealId: string, handlers: DealMessageStreamHandlers): DealMessageStreamHandle => {
     const controller = new AbortController();
@@ -2338,6 +2675,14 @@ export const messages = {
     let everOpened = false;
     /** At most one 401-driven token refresh per connection generation. */
     let authRetried = false;
+    /**
+     * F-0442 — the most recent SSE `id:` seen on this stream, sent back as `Last-Event-ID` on
+     * the next reconnect so `DealMessageStreamRegistry#replayMissedEvents` (CR-95,
+     * DealController.java:145) can replay whatever was published during the gap. Persists across
+     * reconnects for the life of this `stream()` call (reset only by a fresh call, i.e. a deal
+     * switch) — each reconnect should extend the same replay window, not restart it.
+     */
+    let lastEventId: string | undefined;
 
     const stopped = () => controller.signal.aborted;
 
@@ -2360,12 +2705,27 @@ export const messages = {
 
       let response: Response;
       try {
-        const token = localStorage.getItem(TOKEN_KEYS[role]);
+        // F-0667 — reads through `http.getToken` (public specifically so this call site can),
+        // not a duplicated storage fallback. This call site used to read localStorage alone, so
+        // a creator who logged in with "remember me" UNCHECKED — whose token lived in
+        // sessionStorage per CR-121 — opened the stream with no Authorization header at all. The
+        // 401 that follows is in TERMINAL_STREAM_STATUSES, so no reconnect is ever attempted: the
+        // deal room went permanently deaf to new messages, silently. F-0551 then moved the
+        // LIVE-mode token out of Storage entirely (memory only) — duplicating the old
+        // localStorage-or-sessionStorage fallback here would have quietly gone back to sending no
+        // real token at all (or, worse, the non-credential presence hint) on every live-mode
+        // stream connect. Going through the one shared accessor is what keeps this from drifting
+        // out of sync with `getToken` a second time.
+        const token = http.getToken(role);
         response = await fetch(`${API_BASE_URL}/deals/${dealId}/messages/stream`, {
           method: 'GET',
           headers: {
             Accept: 'text/event-stream',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            // F-0442 — standard SSE reconnect header (browsers set this for free on a native
+            // EventSource; this transport is fetch-based, so it must be sent explicitly).
+            // Absent on the very first connect, when there is nothing yet to replay from.
+            ...(lastEventId ? { 'Last-Event-ID': lastEventId } : {}),
           },
           credentials: 'include',
           signal: controller.signal,
@@ -2413,8 +2773,11 @@ export const messages = {
       authRetried = false;
       handlers.onStatusChange?.('open');
       handlers.onOpen?.();
-      // Anything published while we were down is gone — no replay on this transport. The
-      // caller refetches here or keeps the hole forever.
+      // F-0442 — the server now replays whatever it still has buffered for `lastEventId`
+      // (best-effort, time-bounded — see the class-level comment above), but that replay lands
+      // as ordinary `onMessage` calls before the loop below reaches new frames, not as a
+      // distinct signal. `onReconnect` remains the caller's cue to also refetch, which is the
+      // only way to recover anything the server's buffer already evicted.
       if (isReconnect) handlers.onReconnect?.();
 
       const reader = response.body.getReader();
@@ -2436,7 +2799,12 @@ export const messages = {
             buffer = buffer.slice(sep).replace(/^\r?\n\r?\n/, '');
 
             const frame = parseDealMessageSseFrame(rawFrame);
-            if (!frame || frame.event !== 'deal-message') continue; // heartbeat/other events
+            if (!frame) continue;
+            // F-0442 — per the SSE spec an `id:` line updates the stream's last-event-id
+            // regardless of which named event it rides on, so this happens before the
+            // `deal-message`-only filter below (a heartbeat can carry an id too).
+            if (frame.id !== undefined) lastEventId = frame.id;
+            if (frame.event !== 'deal-message') continue; // heartbeat/other events
             try {
               const dto = JSON.parse(frame.data) as DealMessage;
               handlers.onMessage(dto);
@@ -2508,9 +2876,10 @@ export interface DealMessageStreamHandlers {
    */
   onStatusChange?: (status: DealMessageStreamStatus) => void;
   /**
-   * CR-31 — a connection opened after a previous one dropped. **Refetch here.** This
-   * transport has no `Last-Event-ID` replay, so frames published during the gap are gone;
-   * reconnecting without refetching resumes future messages and keeps the hole.
+   * CR-31 — a connection opened after a previous one dropped. **Refetch here.** F-0442 added a
+   * server-side, time-bounded `Last-Event-ID` replay, but it is best-effort, not a guarantee —
+   * a gap longer than the server's buffer retention still has no way back through the
+   * transport; reconnecting without refetching resumes future messages and keeps that hole.
    */
   onReconnect?: () => void;
 }
@@ -2523,6 +2892,13 @@ export interface DealMessageStreamHandle {
 interface DealMessageSseFrame {
   event: string;
   data: string;
+  /**
+   * F-0442 — the frame's `id:` line, when present. `DealMessageStreamRegistry` (server) stamps
+   * this on every real `deal-message` event (`.id(Long.toString(eventId))`,
+   * DealMessageStreamRegistry.java:154/206) so a reconnecting client can hand it back as
+   * `Last-Event-ID` and get everything published since replayed instead of silently losing it.
+   */
+  id?: string;
 }
 
 /**
@@ -2534,6 +2910,7 @@ interface DealMessageSseFrame {
  */
 function parseDealMessageSseFrame(rawFrame: string): DealMessageSseFrame | null {
   let event = 'message';
+  let id: string | undefined;
   const dataLines: string[] = [];
 
   for (const rawLine of rawFrame.split(/\r?\n/)) {
@@ -2545,10 +2922,12 @@ function parseDealMessageSseFrame(rawFrame: string): DealMessageSseFrame | null 
 
     if (field === 'event') event = value;
     else if (field === 'data') dataLines.push(value);
+    // F-0442 — was parsed nowhere at all; every frame's id was silently discarded.
+    else if (field === 'id') id = value;
   }
 
   if (dataLines.length === 0) return null;
-  return { event, data: dataLines.join('\n') };
+  return { event, data: dataLines.join('\n'), id };
 }
 
 // ---------------------------------------------------------------------------
@@ -2742,6 +3121,20 @@ export interface ContractApiRecord {
    * contract — that input path does not exist yet.
    */
   terms?: string | null;
+  /**
+   * [F-0632/F-0637] Human-readable identity for a contract row, sourced from
+   * `ContractResponse.campaignTitle` / `.brandWorkspaceName` (`MoneyDtos.java`). Both are
+   * resolved best-effort server-side (`ContractService#resolveCampaignTitle` /
+   * `#resolveBrandWorkspaceName`) and are genuinely nullable: a contract whose collaboration or
+   * workspace lookup misses degrades to `null` rather than throwing. Callers must omit the line
+   * when absent — never fabricate a name (F-0237's class of defect).
+   *
+   * Declared here rather than read through an `as` cast at the call site: the cast is exactly the
+   * FE-type-vs-DTO drift this same wave was fixing (F-0435/F-0464), and it leaves `tsc` unable to
+   * police the binding if the server field is ever renamed.
+   */
+  campaignTitle?: string | null;
+  brandWorkspaceName?: string | null;
 }
 
 /** Body for `POST /contracts` — `ContractGenerateRequest` (`MoneyDtos.java:188`). */
@@ -3386,12 +3779,22 @@ export const wallet = {
 // Creator self-profile — MeCreatorProfileController (/me/creator-profile)
 // ---------------------------------------------------------------------------
 
-/** Mirrors CreatorProfileDtos.PlatformStatResponse (CreatorDtos.java). */
+/**
+ * Mirrors CreatorDtos.PlatformStatResponse (influora-api CreatorDtos.java:13-18).
+ *
+ * F-0664 — `engagementRate` there is a `BigDecimal` column (CreatorDtos.java:17), same as the
+ * profile-level `CreatorProfileSelfResponse.engagementRate` field the F-0662 fix below already
+ * made honest — but this PER-PLATFORM sibling was left typed as a plain `number`, claiming a
+ * value the server does not guarantee. A platform row before its own stats have ever synced
+ * reads this endpoint with a null column, which this type let TypeScript silently coerce into
+ * a fabricated 0%/undefined render at creator-profile.tsx instead of an explicit
+ * "not available yet" state.
+ */
 export interface CreatorPlatformStat {
   platform: string;
   handle: string;
   followers: number;
-  engagementRate: number;
+  engagementRate: number | null;
   isVerified: boolean;
   profileUrl: string | null;
 }
@@ -3420,7 +3823,17 @@ export interface CreatorProfileSelfResponse {
   discoverable: boolean;
   verified: boolean;
   totalFollowers: number;
-  engagementRate: number;
+  /**
+   * F-0464 — `CreatorProfileDtos.CreatorProfileSelfResponse.engagementRate` is a `BigDecimal`
+   * column (influora-api/.../CreatorProfile.java:90) that is never initialised at profile
+   * creation and is set only by `applyAggregatedStats` once a platform actually syncs. A
+   * creator who registers and never connects a platform reads this endpoint with the column
+   * still null — typing it as a plain `number` claimed a value the server had not sent, which
+   * would have TypeScript accept `0 as number` here (a fabricated "0% engagement" reading — the
+   * exact TECH-STACK.md "UI Honesty" violation this app forbids elsewhere) instead of the
+   * honest "not yet scored" the server actually means.
+   */
+  engagementRate: number | null;
   onboardingComplete: boolean;
   profileCompleteness: number;
 }
@@ -3587,6 +4000,19 @@ export const me = {
       : mockOr<{ success: boolean }>({ success: true }),
 };
 
+/**
+ * `crypto.randomUUID` only exists in secure contexts (https / localhost) — an http:// staging
+ * host would throw. Idempotency keys just need per-submission uniqueness, not crypto strength,
+ * so fall back to a timestamp+random id. Mirrors the same guarded pattern already duplicated in
+ * src/lib/meera-api.ts, src/pages/brand-wallet.tsx and src/pages/creator-wallet.tsx.
+ */
+function safeRandomUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export const payments = {
   /**
    * POST /wallet/escrow/fund — brand funds escrow before delivery (EscrowController.fund).
@@ -3613,13 +4039,41 @@ export const payments = {
           status: 'PENDING',
         }),
 
-  /** POST /wallet/escrow/release — brand releases a funded milestone's escrow to the creator. */
-  releasePayout: (milestoneId: string) =>
-    isLive()
+  /**
+   * POST /wallet/escrow/release — brand releases a FUNDED hold to the creator.
+   *
+   * F-0489 (unreachable-endpoint) — the server (EscrowController, already correct) requires
+   * exactly one of `milestoneId` / `escrowHoldId`, never both, never neither. This wrapper used
+   * to hardcode `{ milestoneId }`, so a Meera-funded campaign-level hold — which has no
+   * milestone row by construction (see `deal-payments-tab.tsx`'s funding-without-a-milestoneId
+   * comment) — had no way to ever be released from any caller.
+   *
+   * A bare string keeps every existing per-milestone caller (`deal-payments-tab.tsx`) unchanged
+   * byte-for-byte. `{ escrowHoldId }` is the new variant a milestone-less FUNDED hold needs
+   * (`/brand/wallet`). Mirrors the backend's XOR: exactly one key is ever sent.
+   *
+   * F-0652 — `EscrowController` now REQUIRES `Idempotency-Key` on this endpoint (mirrors
+   * `/wallet/escrow/fund`), so every real call without one now 400s with `MISSING_HEADER`.
+   * Minted fresh on every call, same as `dealsApi.counter`'s "fresh key per user action"
+   * convention — a release is a one-shot button click with no caller-held retry state (unlike
+   * `withdraw`/`topUp`, which retain one key across an explicit multi-step retry), so there is
+   * no key to reuse across separate clicks. What the key still protects is the auth-refresh
+   * retry inside `fetchWithAuthRetry`, which resends the SAME request (same headers, same key)
+   * on a single 401 — a true network-level duplicate of one user action, not two.
+   */
+  releasePayout: (request: string | { escrowHoldId: string }) => {
+    const escrowHoldId = typeof request === 'string' ? undefined : request.escrowHoldId;
+    if (typeof request !== 'string' && !escrowHoldId) {
+      throw new Error('payments.releasePayout: escrowHoldId is required when not releasing by milestoneId');
+    }
+    const body = typeof request === 'string' ? { milestoneId: request } : { escrowHoldId };
+    return isLive()
       ? http.request<{ escrowHoldId: string; status: string }>('POST', '/wallet/escrow/release', {
-          body: { milestoneId },
+          body,
+          idempotencyKey: safeRandomUUID(),
         })
-      : mockOr({ escrowHoldId: 'escrow_new', status: 'RELEASED' }),
+      : mockOr({ escrowHoldId: 'escrow_new', status: 'RELEASED' });
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -6252,6 +6706,59 @@ function capNullableString(value: string | null, max: number): string | null {
   return value == null ? null : capString(value, max);
 }
 
+/** Request body for `festivalEnquiry.submit`. Mirrors `FestivalEnquiryDtos.SubmitEnquiryRequest`. */
+export interface FestivalEnquiryPayload {
+  /** Which half of the /festival-box toggle produced this. Decides which fields are required. */
+  type: 'BRAND' | 'CREATOR';
+  edition?: string;
+  name: string;
+  email: string;
+  phone?: string;
+  /** BRAND only — required server-side for a BRAND submission. */
+  company?: string;
+  website?: string;
+  /** BRAND only. One of GIFTING | FEATURED | TITLE | UNDECIDED. */
+  tier?: string;
+  productCategory?: string;
+  /** CREATOR only — required server-side for a CREATOR submission. */
+  instagramHandle?: string;
+  followers?: number;
+  city?: string;
+  message?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
+  /** Anti-bot decoy. Always send whatever the hidden input held, including undefined. */
+  honeypot?: string;
+}
+
+export interface FestivalEnquiryResult {
+  received: boolean;
+  message?: string;
+}
+
+/**
+ * T-FESTIVALBOX-0905 — the public enquiry form on /festival-box.
+ *
+ * POST /festival-enquiries (PUBLIC — no auth; honeypot + per-IP/per-email throttle enforced in
+ * FestivalEnquiryService).
+ */
+export const festivalEnquiry = {
+  /**
+   * Submit one enquiry.
+   *
+   * <p><b>This has no mock branch, unlike almost every other call in this file — deliberately.</b>
+   * Elsewhere `mockOr(...)` returns plausible data so the UI can be developed without a backend.
+   * Here the "plausible data" would be a fake success on a form whose entire purpose is to capture a
+   * sales lead: with `VITE_API_MODE` unset or misconfigured, every brand that filled this in would
+   * see "Enquiry received" and nothing would ever reach admin, with no error anywhere to notice.
+   * A lead lost that way is unrecoverable — the visitor believes they contacted us. So this always
+   * hits the network and always surfaces the failure to the person typing.
+   */
+  submit: (payload: FestivalEnquiryPayload): Promise<FestivalEnquiryResult> =>
+    http.request<FestivalEnquiryResult>('POST', '/festival-enquiries', { body: payload }),
+};
+
 export const clientErrors = {
   /**
    * POST /client-errors — reports an uncaught render crash. Response is `202 Accepted`
@@ -6277,8 +6784,12 @@ export const clientErrors = {
     if (!isLive()) return Promise.resolve();
     return (async () => {
       try {
-        const token =
-          localStorage.getItem(TOKEN_KEYS.brand) ?? localStorage.getItem(TOKEN_KEYS.creator);
+        // F-0551 — same ship-blocker as meera-api.ts's getToken: since the access token moved to
+        // memory-only in live mode, TOKEN_KEYS holds the inert LIVE_SESSION_TOKEN_HINT sentinel,
+        // not a credential. Reading it here would attach `Bearer session-active` to every crash
+        // report, costing the attribution this endpoint exists for. This path is live-mode only
+        // (isLive() guard above), so the memory store is the correct and only source.
+        const token = getMemoryAccessToken('brand') ?? getMemoryAccessToken('creator');
         const body = {
           message: capString(input.message, CLIENT_ERROR_CAPS.message),
           stack: capNullableString(input.stack, CLIENT_ERROR_CAPS.stack),
@@ -6357,6 +6868,7 @@ export const api = {
   creatorAgentPrefs,
   publicCreators,
   clientErrors,
+  festivalEnquiry,
 };
 
 export default api;

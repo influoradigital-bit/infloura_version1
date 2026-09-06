@@ -106,6 +106,12 @@ describe('CreatorLayout — mobile avatar menu accessible name (F-0169)', () => 
     );
 
     await user.click(screen.getByRole('button', { name: 'Account menu' }));
-    expect(await screen.findByText('Profile')).toBeInTheDocument();
+    // W5 — this asserted `findByText('Profile')`, which stopped proving anything the
+    // moment Profile moved out of this dropdown and into the sidebar: jsdom renders the
+    // `lg:flex` sidebar and the `lg:hidden` mobile menu at once with no breakpoint
+    // evaluation, so a "Profile" string is in the document whether or not the dropdown
+    // ever opened. Assert on `menuitem` role instead — only Radix dropdown items carry
+    // it, the sidebar nav rows are plain buttons — so this fails if the menu stays shut.
+    expect(await screen.findByRole('menuitem', { name: /Settings/ })).toBeInTheDocument();
   });
 });

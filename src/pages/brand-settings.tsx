@@ -4,13 +4,12 @@ import { Settings, Bell, Lock, Users, LogOut, Save, Crown, ArrowRight, UserPlus,
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StoreIntegrationSetup } from '@/components/brand/settings/StoreIntegrationSetup';
+import { TeamMembersPanel } from '@/components/brand/settings/team-members-panel';
 import { ConversionWebhookSecretCard } from '@/components/brand/settings/ConversionWebhookSecretCard';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   Dialog,
   DialogContent,
@@ -19,13 +18,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { api, isApiLive, ApiError, type NotificationPreference, type WorkspaceMeResponse } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
@@ -71,6 +63,57 @@ type CategoryPrefKey = keyof typeof CATEGORY_EVENT_TYPES;
 // keeps the group ON. Deterministic and idempotent regardless of preference-row ordering.
 function isCategoryGroupOff(prefs: NotificationPreference[], eventTypes: readonly string[]): boolean {
   return eventTypes.every((eventType) => prefs.find((p) => p.eventType === eventType)?.unsubscribed === true);
+}
+
+/**
+ * F-0636 — GET /users/me (the account Mobile Number card below) used to render the same
+ * "Could not load your mobile number." for every failure mode: an expired session, a real
+ * server error, and a dropped network connection all looked identical and offered the same
+ * dead-end Retry button. They need different reactions from the user:
+ *  - auth: `fetchWithAuthRetry` (src/lib/api.ts) already attempted one silent refresh+retry
+ *    before this ever throws, so a 401/403 here means the session is genuinely gone — retrying
+ *    the same request will just 401 again. The user needs to sign back in, not press Retry.
+ *  - server: a 5xx (or the `SERVER_UNAVAILABLE` code `parseEnvelope` raises for a 502/503/504
+ *    non-JSON body) is the backend's problem, not the user's — Retry is the right affordance and
+ *    the copy says so rather than implying something is wrong with their account.
+ *  - offline: `fetch()` itself rejects (a plain `TypeError`, e.g. "Failed to fetch") when the
+ *    request never reaches the network at all — this is NEVER wrapped in `ApiError` (see
+ *    `HttpClient#request`), so it is the only branch that must be reached without one.
+ * `unknown` is the pre-existing generic message, kept as the fallback for anything else (a 4xx
+ * this endpoint doesn't otherwise return, etc.) so no failure mode goes unhandled.
+ */
+type AccountPhoneLoadFailure = {
+  kind: 'auth' | 'server' | 'offline' | 'unknown';
+  message: string;
+  /** Whether Retry can plausibly help — false for 'auth', where the same request just 401s again. */
+  retryable: boolean;
+};
+
+function classifyAccountPhoneLoadFailure(err: unknown): AccountPhoneLoadFailure {
+  if (err instanceof ApiError) {
+    if (err.status === 401 || err.status === 403) {
+      return {
+        kind: 'auth',
+        message: 'Your session has expired. Please sign in again to view your mobile number.',
+        retryable: false,
+      };
+    }
+    if ((err.status !== undefined && err.status >= 500) || err.code === 'SERVER_UNAVAILABLE') {
+      return {
+        kind: 'server',
+        message: "Something went wrong on our end. This isn't a problem with your account — please try again in a moment.",
+        retryable: true,
+      };
+    }
+    return { kind: 'unknown', message: 'Could not load your mobile number.', retryable: true };
+  }
+  // Not an ApiError at all: the request never reached (or heard back from) the server —
+  // fetch() rejecting outright, e.g. no network, DNS failure, or a CORS/mixed-content block.
+  return {
+    kind: 'offline',
+    message: "You appear to be offline. Check your connection and try again.",
+    retryable: true,
+  };
 }
 
 export default function BrandSettingsPage() {
@@ -243,7 +286,7 @@ export default function BrandSettingsPage() {
   // these two — different columns, different owners, different validation.
   const [savedPhone, setSavedPhone] = React.useState<string | null>(null);
   const [phoneLoading, setPhoneLoading] = React.useState(true);
-  const [phoneLoadError, setPhoneLoadError] = React.useState<string | null>(null);
+  const [phoneLoadError, setPhoneLoadError] = React.useState<AccountPhoneLoadFailure | null>(null);
   const [showPhoneDialog, setShowPhoneDialog] = React.useState(false);
   const [phoneDraft, setPhoneDraft] = React.useState('');
   const [phoneError, setPhoneError] = React.useState<string | null>(null);
@@ -262,7 +305,7 @@ export default function BrandSettingsPage() {
       .catch((err) => {
         if (cancelled) return;
         console.error('Failed to load account mobile number', err);
-        setPhoneLoadError('Could not load your mobile number.');
+        setPhoneLoadError(classifyAccountPhoneLoadFailure(err));
       })
       .finally(() => {
         if (!cancelled) setPhoneLoading(false);
@@ -290,6 +333,25 @@ export default function BrandSettingsPage() {
   // client-side with the same reason the server would give, rather than round-tripping to learn
   // it. The Save button below is also disabled on an empty normalized draft (primary guard); this
   // check keeps the handler safe even if that's ever bypassed.
+  //
+  // F-0634 — UpdateProfileRequest/UsersMeUpdatePayload carry firstName/lastName/displayName/
+  // timezone/avatarUrl/phone, and this is the only call site, sending `{ phone }` alone. That is
+  // NOT the F-0462 bug: UsersMeUpdatePayload's own doc comment (src/lib/api.ts) and
+  // UserService#updateProfile (influora-api) both apply each field only `if (x != null)` — a
+  // genuine partial-merge PATCH, unlike WorkspaceMeUpdatePayload's full-replace. Omitting the
+  // other five fields here cannot wipe them. This page's Security tab simply has no inputs for
+  // first/last/display name, timezone, or avatar — that's the profile-editing UI not existing
+  // yet, not a defect in the phone-editing UI that does. Not adding those five fields here: this
+  // ticket is about the phone flow, and inventing a profile-editor as a side effect would be
+  // scope creep the page doesn't otherwise support (no avatar upload, no timezone picker, etc.).
+  //
+  // F-0635 — `setSavedPhone(updated.phone)` trusts the PATCH response instead of re-fetching via
+  // GET /users/me. That's correct here, not a shortcut: `updated` IS the server's fresh
+  // UserProfileMeResponse for this exact write, over the same authenticated connection, in the
+  // same request/response pair — there is no separate "did it really persist" question a second
+  // GET could answer that the 2xx response doesn't already answer. A forced re-fetch would only
+  // add a second round trip and a second failure mode (what does a GET failure right after a
+  // successful PATCH even mean to the user?) for zero added correctness.
   const handleSavePhone = async () => {
     const normalized = normalizePhone(phoneDraft);
     if (!normalized) {
@@ -433,79 +495,10 @@ export default function BrandSettingsPage() {
     }
   };
 
-  // BR-05 — GET /workspace/members is real (WorkspaceMemberController.java:74,
-  // api.workspaceMembers.list() at src/lib/api.ts). Live mode renders the actual roster; the
-  // response has no name/email per row (MemberResponse = id/workspaceId/userId/role/active),
-  // so non-self rows are labelled by a truncated userId rather than inventing a display name.
-  const mockWorkspaceMembers = [
-    { name: 'Amit Singh', role: 'Workspace Owner', email: 'amit@techbrands.in' },
-    { name: 'Priya Kumar', role: 'Manager', email: 'priya@techbrands.in' },
-    { name: 'Rahul Verma', role: 'Editor', email: 'rahul@techbrands.in' },
-  ];
+  // [F-0443] The member roster and invite handler that lived here were removed with the
+  // duplicate Workspace Members card below: TeamMembersPanel owns both now, and keeping a
+  // second loader would have left this page fetching a roster nothing renders.
 
-  const [memberRows, setMemberRows] = React.useState<
-    { id: string; userId: string; role: string; active: boolean; isYou: boolean }[]
-  >([]);
-  const [membersLoading, setMembersLoading] = React.useState(false);
-  const [membersError, setMembersError] = React.useState<string | null>(null);
-
-  const loadMembers = React.useCallback(() => {
-    if (!liveApi) return;
-    setMembersLoading(true);
-    setMembersError(null);
-    const myUserId = localStorage.getItem('brand_user_id');
-    api.workspaceMembers
-      .list()
-      .then((rows) => {
-        setMemberRows(
-          rows.map((r) => ({
-            id: r.id,
-            userId: r.userId,
-            role: r.role,
-            active: r.active,
-            isYou: r.userId === myUserId,
-          })),
-        );
-      })
-      .catch((err) => {
-        console.error('Failed to load workspace members', err);
-        setMembersError('Could not load workspace members.');
-      })
-      .finally(() => setMembersLoading(false));
-  }, [liveApi]);
-
-  React.useEffect(() => {
-    loadMembers();
-  }, [loadMembers]);
-
-  // Invite Member dialog — POST /workspace/members/invite (Vikram, WorkspaceMemberController.java:51).
-  const [isInviteOpen, setIsInviteOpen] = React.useState(false);
-  const [inviteEmail, setInviteEmail] = React.useState('');
-  const [inviteRole, setInviteRole] = React.useState<'ADMIN' | 'MANAGER' | 'MEMBER' | 'VIEWER'>('MEMBER');
-  const [inviteSubmitting, setInviteSubmitting] = React.useState(false);
-  const [inviteError, setInviteError] = React.useState<string | null>(null);
-
-  const handleInviteMember = async () => {
-    const email = inviteEmail.trim();
-    if (!email) {
-      setInviteError('Email is required.');
-      return;
-    }
-    setInviteSubmitting(true);
-    setInviteError(null);
-    try {
-      await api.workspaceMembers.invite(email, inviteRole);
-      toast({ title: 'Invite sent', description: `${email} has been invited as ${inviteRole.toLowerCase()}.` });
-      setIsInviteOpen(false);
-      setInviteEmail('');
-      setInviteRole('MEMBER');
-    } catch (err) {
-      console.error('Failed to invite workspace member', err);
-      setInviteError(err instanceof ApiError ? err.message : 'Could not send the invite. Try again.');
-    } finally {
-      setInviteSubmitting(false);
-    }
-  };
 
   // Change Password dialog — POST /me/password (Vikram, landing in parallel with this change).
   const [isPasswordOpen, setIsPasswordOpen] = React.useState(false);
@@ -576,7 +569,7 @@ export default function BrandSettingsPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 lg:w-auto">
+          <TabsList className="grid w-full grid-cols-6 lg:w-auto">
             <TabsTrigger value="general" className="gap-2">
               <Users className="h-4 w-4" />
               <span className="hidden sm:inline">General</span>
@@ -584,6 +577,11 @@ export default function BrandSettingsPage() {
             <TabsTrigger value="notifications" className="gap-2">
               <Bell className="h-4 w-4" />
               <span className="hidden sm:inline">Notifications</span>
+            </TabsTrigger>
+            {/* [F-0443] Team management had no surface at all until this tab. */}
+            <TabsTrigger value="team" className="gap-2">
+              <UserPlus className="h-4 w-4" />
+              <span className="hidden sm:inline">Team</span>
             </TabsTrigger>
             <TabsTrigger value="billing" className="gap-2">
               <Crown className="h-4 w-4" />
@@ -598,6 +596,11 @@ export default function BrandSettingsPage() {
               <span className="hidden sm:inline">Integrations</span>
             </TabsTrigger>
           </TabsList>
+
+          {/* [F-0443] Team */}
+          <TabsContent value="team" className="space-y-6">
+            <TeamMembersPanel />
+          </TabsContent>
 
           {/* General Settings */}
           <TabsContent value="general" className="space-y-6">
@@ -695,61 +698,11 @@ export default function BrandSettingsPage() {
               </div>
             </Card>
 
-            <Card className="p-6">
-              <h3 className="font-semibold mb-6">Workspace Members</h3>
-              <div className="space-y-3">
-                {liveApi && membersLoading && (
-                  <p className="text-xs text-muted-foreground">Loading members…</p>
-                )}
-                {liveApi && !membersLoading && membersError && (
-                  <p className="text-xs text-destructive-foreground">{membersError}</p>
-                )}
-                {liveApi && !membersLoading && !membersError &&
-                  memberRows.map((member) => (
-                    <div key={member.id} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback>
-                            {(member.isYou ? settings.email || 'Y' : member.userId).charAt(0).toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium text-sm">
-                            {member.isYou ? 'You' : `Member ${member.userId.slice(0, 8)}`}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {member.isYou
-                              ? settings.email || 'No email on file'
-                              : member.active
-                                ? 'Active'
-                                : 'Deactivated'}
-                          </p>
-                        </div>
-                      </div>
-                      <Badge>{member.role}</Badge>
-                    </div>
-                  ))}
-                {!liveApi &&
-                  mockWorkspaceMembers.map((member) => (
-                    <div key={member.email} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback>{member.name.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium text-sm">{member.name}</p>
-                          <p className="text-xs text-muted-foreground">{member.email}</p>
-                        </div>
-                      </div>
-                      <Badge>{member.role}</Badge>
-                    </div>
-                  ))}
-              </div>
-              <Button variant="outline" className="w-full mt-4" onClick={() => setIsInviteOpen(true)}>
-                <UserPlus className="h-4 w-4" />
-                Invite Member
-              </Button>
-            </Card>
+          {/* [F-0443] Team management moved to the Team tab (TeamMembersPanel). The roster and
+              Invite dialog that used to sit here were a SECOND copy of the same two calls, so
+              the page briefly shipped two invite forms; the Team tab is the single home now,
+              and it also carries the pending-invite list, revoke and remove that this section
+              never had. */}
           </TabsContent>
 
           {/* Notification Settings */}
@@ -900,10 +853,21 @@ export default function BrandSettingsPage() {
               {phoneLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
               {!phoneLoading && phoneLoadError && (
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs text-destructive-foreground">{phoneLoadError}</p>
-                  <Button type="button" variant="outline" size="sm" onClick={loadAccountPhone}>
-                    Retry
-                  </Button>
+                  <p role="alert" className="text-xs text-destructive-foreground">
+                    {phoneLoadError.message}
+                  </p>
+                  {/* F-0636 — an expired session (retryable: false) needs a fresh sign-in, not
+                      another attempt at the same request that will just 401 again; every other
+                      failure mode (server error, offline) is worth an actual Retry. */}
+                  {phoneLoadError.retryable ? (
+                    <Button type="button" variant="outline" size="sm" onClick={loadAccountPhone}>
+                      Retry
+                    </Button>
+                  ) : (
+                    <Button type="button" variant="outline" size="sm" onClick={() => navigate('/brand/login')}>
+                      Sign In
+                    </Button>
+                  )}
                 </div>
               )}
               {!phoneLoading && !phoneLoadError && (
@@ -975,70 +939,6 @@ export default function BrandSettingsPage() {
           </TabsContent>
         </Tabs>
 
-        {/* Invite Member dialog */}
-        <Dialog
-          open={isInviteOpen}
-          onOpenChange={(open) => {
-            setIsInviteOpen(open);
-            if (!open) {
-              setInviteError(null);
-              setInviteEmail('');
-              setInviteRole('MEMBER');
-            } else if (liveApi) {
-              loadMembers();
-            }
-          }}
-        >
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Invite a team member</DialogTitle>
-              <DialogDescription>
-                They&apos;ll receive an email invite to join this workspace.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              <div>
-                <Label htmlFor="invite-email">Email</Label>
-                <Input
-                  id="invite-email"
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="teammate@company.com"
-                  className="mt-2"
-                  disabled={inviteSubmitting}
-                />
-              </div>
-              <div>
-                <Label htmlFor="invite-role">Role</Label>
-                <Select
-                  value={inviteRole}
-                  onValueChange={(v) => setInviteRole(v as typeof inviteRole)}
-                  disabled={inviteSubmitting}
-                >
-                  <SelectTrigger id="invite-role" className="mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ADMIN">Admin</SelectItem>
-                    <SelectItem value="MANAGER">Manager</SelectItem>
-                    <SelectItem value="MEMBER">Member</SelectItem>
-                    <SelectItem value="VIEWER">Viewer</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {inviteError && <p className="text-xs text-destructive-foreground">{inviteError}</p>}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsInviteOpen(false)} disabled={inviteSubmitting}>
-                Cancel
-              </Button>
-              <Button onClick={handleInviteMember} disabled={inviteSubmitting}>
-                {inviteSubmitting ? 'Sending…' : 'Send Invite'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         {/* Change Password dialog */}
         <Dialog

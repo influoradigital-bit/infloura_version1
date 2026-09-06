@@ -43,7 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p><b>Extension point, not a new idempotency mechanism [task instruction: "don't duplicate their
  * idempotency logic, extend it"]</b> -- {@link #recordEarning} is called by {@code
- * RedemptionService#doRedeem} AFTER {@code redemptionRepository.save(redemption)} has already run
+ * RedemptionWriter#doRedeem} AFTER {@code redemptionRepository.save(redemption)} has already run
  * inside {@code RedemptionService}'s own {@code IdempotencyService.executeOnce} wrapper (see {@code
  * RedemptionService#redeem} javadoc). This means: (1) this method never needs to re-derive "was this
  * redemption processed" -- {@code RedemptionService} already answered that; a redemption row only
@@ -299,12 +299,36 @@ public class AffiliateEarningsService {
      * existing {@link AffiliateEarning} row instead, exactly like {@code RedemptionService#redeem}'s
      * own replay semantics.
      *
-     * <p>Called from {@code RedemptionService#doRedeem} immediately after the redemption row is
-     * saved (still inside that method's own transaction/idempotency wrapper) -- see class javadoc
-     * for why this does not duplicate {@code RedemptionService}'s idempotency guarantee, only adds
-     * its own independent one for this table.
+     * <p><b>Callers -- there are exactly two, and the distinction matters:</b>
+     *
+     * <ol>
+     *   <li>{@link com.influora.service.tracking.RedemptionWriter#doRedeem} -- SYNCHRONOUS, in the
+     *       same transaction, immediately after the redemption row is saved and the money event is
+     *       audited. This is the primary path: it is how a creator's commission actually gets
+     *       created in production.
+     *   <li>{@code AffiliateEarningReconciliationJob#runReconciliation} -- the hourly
+     *       belt-and-suspenders sweep, for any redemption past its grace period with no matching
+     *       earning. Post-fix a nonzero backfill is a DEFECT SIGNAL, not routine.
+     * </ol>
+     *
+     * <p><b>History, because this doc has been wrong in both directions.</b> Caller (1) was
+     * documented across several files as an accomplished fact long before it existed -- the Wave D
+     * task D4 fix was written and reviewed but the redemption-side half was never committed. A
+     * verification note added here during T-FESTIVALBOX-0905 phase 4 correctly recorded that
+     * absence ("that call does NOT exist"). {@code wiki/tech/tracking-subsystem-ruling.md} Q1
+     * (Priya, CTO, binding) then ruled the synchronous call was the intended design all along and
+     * its absence a P0 regression, and it has since been wired into {@code RedemptionWriter}. So
+     * BOTH earlier versions of this paragraph are now historical: the original was aspirational,
+     * the phase-4 correction was accurate when written and is no longer true. This one describes
+     * the code as it actually is -- verify before trusting it, as ever.
+     *
+     * <p>The brand-level guard below is load-bearing for both callers: a page-level Festival Box
+     * coupon has no creator, so there is nobody to pay a commission to.
      *
      * @param redemption the just-recorded (or already-existing, on replay) {@link CouponRedemption}
+     * @return the recorded (or already-existing, on replay) {@link AffiliateEarning}, or {@code
+     *     null} if {@code redemption}'s coupon is brand-level ({@link CouponCode#isBrandLevel()}) --
+     *     see "Brand-level coupons" below. Never throws for that case.
      * @throws ApiException {@code COUPON_NOT_FOUND} (404) if the redemption's {@code couponId} does
      *     not resolve -- should not happen in practice (the coupon must have existed for the
      *     redemption to have been created), kept as a fail-closed guard rather than an assumption
@@ -320,10 +344,24 @@ public class AffiliateEarningsService {
             return replay;
         }
 
+        CouponCode coupon = findCoupon(redemption);
+
+        // [T-FESTIVALBOX-0905 phase 4, task brief "landmine 1"] A brand-level coupon
+        // (CouponCode#isBrandLevel(), creator_id IS NULL) has no creator to pay a commission to.
+        // AffiliateEarning.creatorId is, and remains, NOT NULL -- so this MUST be checked here,
+        // before validateAndCompute/executeOnce ever run, exactly like the COUPON_NOT_FOUND check
+        // below: skip cleanly and return null, never throw, never reserve an idempotency key for a
+        // commission that structurally cannot exist. The redemption itself (and its usage-count
+        // increment) already happened in RedemptionWriter#doRedeem before this method is ever
+        // called -- skipping here only skips the (nonexistent) commission, not the sale record.
+        if (coupon.isBrandLevel()) {
+            return null;
+        }
+
         // [mirrors PayoutService E2 HIGH-1] ALL validation + the commission calculation run here,
         // BEFORE executeOnce reserves the idempotency key -- a validation failure must never
         // reserve-then-FAIL a key and wedge a later legitimate retry.
-        EarningContext ctx = validateAndCompute(redemption);
+        EarningContext ctx = validateAndCompute(redemption, coupon);
         String idempotencyKey = deriveIdempotencyKey(redemption.getId());
 
         try {
@@ -360,17 +398,25 @@ public class AffiliateEarningsService {
     private record EarningContext(
             String redemptionId, CouponCode coupon, BigDecimal commissionRate, BigDecimal commissionAmount) {}
 
-    private EarningContext validateAndCompute(CouponRedemption redemption) {
-        CouponCode coupon =
-                couponCodeRepository
-                        .findById(redemption.getCouponId())
-                        .orElseThrow(
-                                () ->
-                                        new ApiException(
-                                                "COUPON_NOT_FOUND",
-                                                "Coupon for this redemption was not found",
-                                                HttpStatus.NOT_FOUND));
+    /**
+     * Resolves {@code redemption}'s coupon. Extracted so {@link #recordEarning} can check {@link
+     * CouponCode#isBrandLevel()} BEFORE calling {@link #validateAndCompute} -- both need the coupon,
+     * but only one lookup should happen per call.
+     *
+     * @throws ApiException {@code COUPON_NOT_FOUND} (404) -- see {@link #recordEarning} javadoc
+     */
+    private CouponCode findCoupon(CouponRedemption redemption) {
+        return couponCodeRepository
+                .findById(redemption.getCouponId())
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "COUPON_NOT_FOUND",
+                                        "Coupon for this redemption was not found",
+                                        HttpStatus.NOT_FOUND));
+    }
 
+    private EarningContext validateAndCompute(CouponRedemption redemption, CouponCode coupon) {
         // P2-13 (wiki/decisions/2026-07-12-P2-13-affiliate-commission-rate-model.md): resolve the
         // campaign's configured override rate, falling back to the flat DEFAULT_COMMISSION_RATE
         // when the campaign has none set (null) OR — fail-safe — when the campaign row itself
@@ -395,9 +441,47 @@ public class AffiliateEarningsService {
      * idempotency key was reserved (see {@link #recordEarning} javadoc above). The only things that
      * can throw from this point on are the persistence calls themselves, which SHOULD mark the key
      * FAILED (and remain retryable, per {@link IdempotencyService}) on failure.
+     *
+     * <p><b>[Kabir M-4] {@code public}, and it has to be — {@code protected} made the
+     * {@code @Transactional} below a silent no-op.</b> The self-proxy call in {@link
+     * #recordEarning} fixed the self-invocation half of this problem (HIGH-1, see class javadoc)
+     * and the annotation still did nothing, because Spring's default {@code
+     * AnnotationTransactionAttributeSource} is constructed with {@code publicMethodsOnly = true}:
+     * it returns no transaction attribute for a non-public method, no warning, no error. Verified
+     * for this project rather than assumed — Spring Boot 3.3.5 with no custom {@code
+     * TransactionAttributeSource} and no {@code @EnableTransactionManagement} override anywhere in
+     * {@code src/main}, so the auto-configured default is what applies.
+     *
+     * <p>WHAT THAT ACTUALLY COST, and why it was not visible in testing: this method makes two
+     * writes — the {@link AffiliateEarning} row and the {@code AFFILIATE_EARNING_RECORDED} money
+     * audit event. Whether they are atomic depended entirely on the CALLER's ambient transaction:
+     *
+     * <ul>
+     *   <li>{@code AffiliateEarningRecordingListener#onCouponRedeemed} is {@code
+     *       @Transactional(REQUIRES_NEW)}, so on the normal redemption path the two writes were
+     *       atomic — by accident of the caller, not because of the annotation here.
+     *   <li>{@code AffiliateEarningReconciliationJob#reconcileMissingAffiliateEarnings} is {@code
+     *       @Scheduled} with NO transaction (and delegates to a private method, so annotating it
+     *       would have been self-invocation anyway). On that path the two writes were independent:
+     *       a failure in {@code recordMoneyEvent} left a committed commission with no money-audit
+     *       entry — an unauditable payout.
+     * </ul>
+     *
+     * <p>The cron is the RECOVERY path — it exists precisely because the synchronous path can miss
+     * — so the weaker guarantee sat on the path that runs when something has already gone wrong.
+     * Making this method public gives it its own transaction and makes both callers atomic without
+     * either of them having to know.
+     *
+     * <p>Widened visibility is not an invitation: this still must only be called through {@code
+     * executeOnce}, because nothing in here re-checks the idempotency key. {@code
+     * RedemptionWriter#doRedeem} is public under the same contract for the same reason. In this
+     * case the compiler happens to enforce it for free — {@link EarningContext} is a PRIVATE nested
+     * record, so no code outside this class can construct the argument, and the method is reachable
+     * in practice only through the proxy. Keep it that way: making {@code EarningContext} public
+     * would quietly turn this into a genuinely callable unguarded write path.
      */
     @Transactional
-    protected AffiliateEarning doRecordEarning(EarningContext ctx, String idempotencyKey) {
+    public AffiliateEarning doRecordEarning(EarningContext ctx, String idempotencyKey) {
         CouponCode coupon = ctx.coupon();
 
         AffiliateEarning earning =

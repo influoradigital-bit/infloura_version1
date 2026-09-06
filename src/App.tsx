@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { api, isApiLive } from '@/lib/api';
+import { api, isApiLive, type Role } from '@/lib/api';
 import { Toaster } from '@/components/ui/toaster';
 import { DemoModeBanner } from '@/components/DemoModeBanner';
 import BrandLoginPage from '@/pages/brand-login';
@@ -23,6 +23,7 @@ import BrandEditCampaignPage from '@/pages/brand-edit-campaign';
 import BrandCreatorProfilePage from '@/pages/brand-creator-profile';
 import BrandWalletPage from '@/pages/brand-wallet';
 import BrandSettingsPage from '@/pages/brand-settings';
+import BrandAcceptInvitePage from '@/pages/brand-accept-invite';
 import BrandVerificationPage from '@/pages/brand-verification';
 import BrandBillingSettingsPage from '@/pages/brand-billing-settings';
 import BrandChatPage from '@/pages/brand-chat';
@@ -49,6 +50,9 @@ import BrandHowItWorksPage from '@/pages/brand-how-it-works';
 import CreatorHowItWorksPage from '@/pages/creator-how-it-works';
 import HowItWorksBrandsPage from '@/pages/how-it-works-brands';
 import HowItWorksCreatorsPage from '@/pages/how-it-works-creators';
+import MeeraForCreatorsPage from '@/pages/meera-for-creators';
+import FestivalBoxPage from '@/pages/festival-box';
+import FestivalBoxEditionPage from '@/pages/festival-box-edition';
 import SecurePaymentsFeaturePage from '@/pages/features/secure-payments';
 import DealRoomFeaturePage from '@/pages/features/deal-room';
 import HypeFeaturePage from '@/pages/features/hype';
@@ -86,11 +90,62 @@ import DevMotionSkillsPage from '@/pages/dev-motion-skills';
 // token in localStorage when checked but sessionStorage when unchecked; api.ts's own private
 // getToken() already reads both, so the guards below do the same rather than checking
 // localStorage alone and bouncing a just-logged-in, unremembered session back to the login form.
-const readAuthToken = (key: string): string | null => localStorage.getItem(key) ?? sessionStorage.getItem(key);
+// Exported (in addition to the module-local usages below) solely so
+// F-0459's regression test (src/__tests__/creator-protected-route.test.tsx)
+// can exercise the exact function/component the router uses, rather than a
+// reimplementation that could drift from production behavior.
+export const readAuthToken = (key: string): string | null => localStorage.getItem(key) ?? sessionStorage.getItem(key);
+
+const TOKEN_KEY_BY_ROLE: Record<Role, string> = { brand: 'brand_token', creator: 'creator_token' };
+
+/**
+ * F-0551 — access token in memory only (`HttpClient.getToken`/`setToken`, src/lib/api.ts). A
+ * fresh page load starts with nothing in memory even for a genuinely still-logged-in visitor —
+ * unlike the pre-F-0551 stored token, memory cannot itself prove a session survived a reload —
+ * so the guards below can no longer answer synchronously from `Storage` the way F-0459's
+ * `readAuthToken` did. This hook is what replaces that synchronous read in LIVE mode:
+ *
+ *   1. Check memory first (`api.auth.hasToken`) — the fast path for a same-tab navigation
+ *      between two protected pages after login, or after an earlier bootstrap this page-load
+ *      already resolved. No network call.
+ *   2. Only when memory is empty, spend exactly one `POST /auth/refresh` (`api.auth.bootstrap`)
+ *      to ask whether the HttpOnly refresh cookie still holds a valid session before concluding
+ *      the visitor is logged out. This is the "silent refresh on page load" the ruling calls
+ *      for — nothing pre-existing did this; the only other caller of `bootstrap` is the deal
+ *      message stream's reactive 401 handler (src/lib/api.ts), which fires mid-session, not on
+ *      load.
+ *
+ * Mock mode is untouched by F-0551 (see `HttpClient.getToken`'s own mode split) and keeps the
+ * exact pre-existing synchronous, storage-based check (F-0459's `readAuthToken`) — no network
+ * call, no `'checking'` state — so every mock-mode page, and every test that runs under the
+ * default (mock) vitest config, keeps its exact prior behavior unchanged.
+ */
+function useAuthGuardState(role: Role): 'checking' | 'authenticated' | 'unauthenticated' {
+  const [state, setState] = React.useState<'checking' | 'authenticated' | 'unauthenticated'>(() => {
+    if (!isApiLive()) {
+      return readAuthToken(TOKEN_KEY_BY_ROLE[role]) ? 'authenticated' : 'unauthenticated';
+    }
+    return api.auth.hasToken(role) ? 'authenticated' : 'checking';
+  });
+
+  React.useEffect(() => {
+    if (!isApiLive() || state !== 'checking') return;
+    let cancelled = false;
+    api.auth.bootstrap(role).then((recovered) => {
+      if (!cancelled) setState(recovered ? 'authenticated' : 'unauthenticated');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [role, state]);
+
+  return state;
+}
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const isAuthenticated = readAuthToken('brand_token');
+  const authState = useAuthGuardState('brand');
+  const isAuthenticated = authState === 'authenticated';
   // Demo/test bypass — dev-only. `import.meta.env.DEV` is a compile-time
   // constant (Vite `define`s it to a literal boolean per mode), so a
   // production build statically resolves this branch to `false` and the
@@ -120,6 +175,10 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     retry: false,
   });
 
+  // F-0551 — a live-mode cold load with no in-memory token yet: one silent /auth/refresh is in
+  // flight (see useAuthGuardState). Render nothing rather than an instant bounce to
+  // /brand/login that a moment later turns out to have been a real, still-valid session.
+  if (!isDemoMode && authState === 'checking') return null;
   if (!isAuthenticated && !isDemoMode) return <Navigate to="/brand/login" />;
   // Brief server round-trip on first mount of a session — avoid a flash of dashboard content
   // that a moment later turns out to be gated.
@@ -140,10 +199,15 @@ const BrandLayoutWrapper = ({ children }: { children: React.ReactNode }) => {
 };
 
 // Creator Protected Route Component
-const CreatorProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const isAuthenticated = readAuthToken('creator_token');
+// Exported for F-0459's regression test — see readAuthToken's comment above.
+export const CreatorProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const authState = useAuthGuardState('creator');
+  const isAuthenticated = authState === 'authenticated';
   // Demo/test bypass — dev-only, see ProtectedRoute above (Kabir A2).
   const isDemoMode = import.meta.env.DEV && new URLSearchParams(window.location.search).get('demo') === 'true';
+  // F-0551 — see ProtectedRoute's comment: a live-mode cold load spends one silent
+  // /auth/refresh before this can honestly answer authenticated-or-not.
+  if (!isDemoMode && authState === 'checking') return null;
   return isAuthenticated || isDemoMode ? <>{children}</> : <Navigate to="/creator/login" />;
 };
 
@@ -202,6 +266,10 @@ export default function App() {
 
         {/* Onboarding Routes */}
         <Route path="/brand/onboarding" element={<BrandOnboardingPage />} />
+        {/* [F-0443] Invite redemption. Intentionally OUTSIDE BrandLayoutWrapper: the invitee may
+            not belong to any workspace yet, so the brand chrome has nothing to render for them.
+            The page handles the signed-out case itself rather than 401-ing. */}
+        <Route path="/brand/invite" element={<BrandAcceptInvitePage />} />
 
         {/* Protected Routes with Layout */}
         <Route
@@ -649,6 +717,13 @@ export default function App() {
         <Route path="/contact" element={<ContactPage />} />
         <Route path="/how-it-works/brands" element={<HowItWorksBrandsPage />} />
         <Route path="/how-it-works/creators" element={<HowItWorksCreatorsPage />} />
+        <Route path="/meera-for-creators" element={<MeeraForCreatorsPage />} />
+        <Route path="/festival-box" element={<FestivalBoxPage />} />
+        {/*
+          Two path segments, so this can never collide with the single-segment /:handle
+          catch-all below regardless of declaration order — kept here anyway, alongside
+          /festival-box, for readability. */}
+        <Route path="/festival-box/:edition" element={<FestivalBoxEditionPage />} />
         <Route path="/features/secure-payments" element={<SecurePaymentsFeaturePage />} />
         {/*
           T-SEOCRO-0819: /features/escrow was the canonical URL until the term was

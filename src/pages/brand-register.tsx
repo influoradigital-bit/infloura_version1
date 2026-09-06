@@ -33,6 +33,8 @@ export default function BrandRegisterPage() {
   const [teamSize, setTeamSize] = useState('');
 
   // Step 2 fields
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -72,6 +74,12 @@ export default function BrandRegisterPage() {
 
   const validateStep2 = () => {
     const errs: Record<string, string> = {};
+    if (!firstName.trim()) {
+      errs.firstName = 'First name is required';
+    }
+    if (!lastName.trim()) {
+      errs.lastName = 'Last name is required';
+    }
     if (!email.trim()) {
       errs.email = 'Email address is required';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -110,16 +118,14 @@ export default function BrandRegisterPage() {
     setErrors({});
 
     try {
-      const [firstName, ...rest] = email.includes('@')
-        ? email.split('@')[0].split(/[._-]/).filter(Boolean)
-        : ['Brand', 'User'];
-      const lastName = rest.length > 0 ? rest.join(' ') : 'User';
-
+      // F-0463 — firstName/lastName are the person's own name, required by BrandRegisterRequest
+      // (@NotBlank server-side). They must come from what the user typed in Step 2, never be
+      // guessed from the email's local part (sales@acme.com is not "Sales User").
       const result = await api.auth.brandRegister({
         email,
         password,
-        firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1),
-        lastName: lastName.charAt(0).toUpperCase() + lastName.slice(1),
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         companyName,
         industry: industry || 'other',
         companySize: teamSize || '1-5',
@@ -301,6 +307,46 @@ export default function BrandRegisterPage() {
                     {errors.form}
                   </p>
                 )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="first-name" className="block text-sm font-medium text-foreground mb-1.5">
+                      First Name <span className="text-red-400">*</span>
+                    </Label>
+                    <Input
+                      id="first-name"
+                      type="text"
+                      autoComplete="given-name"
+                      value={firstName}
+                      onChange={(e) => {
+                        setFirstName(e.target.value);
+                        if (errors.firstName) setErrors((prev) => ({ ...prev, firstName: '' }));
+                      }}
+                      placeholder="Jane"
+                      className={`${inputClassName} ${inputErrorClass('firstName')}`}
+                    />
+                    <FieldError message={errors.firstName} />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="last-name" className="block text-sm font-medium text-foreground mb-1.5">
+                      Last Name <span className="text-red-400">*</span>
+                    </Label>
+                    <Input
+                      id="last-name"
+                      type="text"
+                      autoComplete="family-name"
+                      value={lastName}
+                      onChange={(e) => {
+                        setLastName(e.target.value);
+                        if (errors.lastName) setErrors((prev) => ({ ...prev, lastName: '' }));
+                      }}
+                      placeholder="Doe"
+                      className={`${inputClassName} ${inputErrorClass('lastName')}`}
+                    />
+                    <FieldError message={errors.lastName} />
+                  </div>
+                </div>
+
                 <div>
                   <Label htmlFor="email" className="block text-sm font-medium text-foreground mb-1.5">
                     Email Address <span className="text-red-400">*</span>
