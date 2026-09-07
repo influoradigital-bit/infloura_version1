@@ -4,6 +4,7 @@ import com.influora.common.ApiResponse;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.portfolio.PortfolioService;
 import com.influora.web.dto.portfolio.PortfolioDtos.CoverUploadResponse;
+import com.influora.web.dto.portfolio.PortfolioDtos.PlatformDeclarationRequest;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioAnalyticsResponse;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioContactRequest;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioContactResponse;
@@ -76,6 +77,18 @@ public class PortfolioController {
     public ResponseEntity<ApiResponse<SyncPlatformsResponse>> syncPlatforms(
             @AuthenticationPrincipal AuthPrincipal principal) {
         return ResponseEntity.ok(ApiResponse.ok(portfolioService.syncPlatforms(principal)));
+    }
+
+    /**
+     * F-0694/F-0695 — the no-Meta-connection sibling of {@code /sync}. Writes a creator-reported
+     * {@code platform_stats} row so the brand's {@code platforms=INSTAGRAM} Discover filter can
+     * find this creator at all; the row never reads as platform-verified.
+     */
+    @PostMapping("/me/portfolio/platforms")
+    public ResponseEntity<ApiResponse<SyncPlatformsResponse>> declarePlatform(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestBody PlatformDeclarationRequest body) {
+        return ResponseEntity.ok(ApiResponse.ok(portfolioService.declarePlatform(principal, body)));
     }
 
     @PostMapping("/me/portfolio/cover")

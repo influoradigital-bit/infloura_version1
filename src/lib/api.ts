@@ -4728,6 +4728,21 @@ export const portfolio = {
       ? http.request<{ syncedAt: string }>('POST', '/me/portfolio/sync', { role: 'creator' })
       : mockOr({ syncedAt: new Date().toISOString() }),
 
+  /**
+   * POST /me/portfolio/platforms — F-0694/F-0695. The no-Meta-connection sibling of
+   * `syncPlatforms`: writes a creator-reported platform_stats row so the brand's
+   * `platforms=INSTAGRAM` Discover filter can find this creator at all. The row is stored
+   * unverified and the brand-facing verified badge stays dark — only a real Meta sync sets it.
+   * Rejects with PLATFORM_ALREADY_VERIFIED if a Meta sync already owns that platform.
+   */
+  declarePlatform: (body: { platform: string; handle: string; followers: number }) =>
+    isLive()
+      ? http.request<{ syncedAt: string }>('POST', '/me/portfolio/platforms', {
+          role: 'creator',
+          body,
+        })
+      : mockOr({ syncedAt: new Date().toISOString() }),
+
   /** POST /me/portfolio/cover  — upload cover photo, returns CDN url */
   uploadCover: (file: File) =>
     isLive()
@@ -5356,10 +5371,21 @@ export const metaOAuth = {
   /**
    * GET /meta/oauth/authorize (MetaOAuthController.java:54)
    *
-   * Omitting `authPath` lets the backend default to FACEBOOK_LOGIN, which keeps every existing
-   * caller behaving exactly as before this parameter existed.
+   * `authPath` is REQUIRED (T-IGTRUST-0907). It was optional so that callers predating
+   * T-IGLOGIN-0820 kept working, and the backend defaults an omitted value to FACEBOOK_LOGIN —
+   * the configuration that demands an Instagram professional account already linked to a
+   * Facebook Page the creator can administer. That convenience default silently became the
+   * behaviour of four of the seven call sites, including creator onboarding Step 1, the one
+   * screen every creator passes through: a creator without a Page dead-ended inside Meta's own
+   * UI with nothing explaining why (ledger F-0700).
+   *
+   * Making it required moves the invariant from a grep-based gate to the type checker. A gate
+   * that greps for the literal `authorize()` cannot see `authorize(x)` where `x` is an optional
+   * variable holding `undefined` — which was exactly the shape of the second instance, the
+   * callback page's generic "Try Again". `tsc` sees both. The backend default is untouched and
+   * remains the server-side contract; this is about no caller reaching it by accident.
    */
-  authorize: (authPath?: MetaAuthPath) =>
+  authorize: (authPath: MetaAuthPath) =>
     isLive()
       ? http.request<MetaAuthorizeResponse>('GET', '/meta/oauth/authorize', {
           role: 'creator',

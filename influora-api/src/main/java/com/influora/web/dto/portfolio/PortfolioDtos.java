@@ -114,6 +114,17 @@ public final class PortfolioDtos {
 
     public record SyncPlatformsResponse(String syncedAt) {}
 
+    /**
+     * F-0694/F-0695 — what a creator types when they have no Meta connection. Deliberately carries
+     * no engagement rate: {@code PlatformStat.engagementRate} feeds discovery ranking and the
+     * brand's engagement filter, and a self-declared number there would be a claim competing with
+     * measured ones. Followers is the minimum a creator needs for the brand's {@code
+     * platforms=INSTAGRAM} filter to find them at all, and it lands marked {@code CREATOR_REPORTED}
+     * (see {@link com.influora.domain.entity.CreatorMetric#DATA_SOURCE_CREATOR_REPORTED}) so it
+     * never reads as platform-verified.
+     */
+    public record PlatformDeclarationRequest(String platform, String handle, Long followers) {}
+
     public record CoverUploadResponse(String url) {}
 
     public record PortfolioPatchRequest(

@@ -67,6 +67,14 @@ export default function CreatorPortfolioEditorPage() {
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [syncing, setSyncing] = React.useState(false);
+  // F-0694/F-0695 — the manual-declaration form below. A creator with no Meta connection had no
+  // way to get a platform_stats row at all, and the brand's `platforms=INSTAGRAM` Discover filter
+  // is an EXISTS subquery over exactly that table, so they were invisible to the one search a
+  // brand runs to find Instagram influencers.
+  const [declarePlatform, setDeclarePlatform] = React.useState('INSTAGRAM');
+  const [declareHandle, setDeclareHandle] = React.useState('');
+  const [declareFollowers, setDeclareFollowers] = React.useState('');
+  const [declaring, setDeclaring] = React.useState(false);
   const [coverUploading, setCoverUploading] = React.useState(false);
   const [dirty, setDirty] = React.useState(false);
 
@@ -217,6 +225,58 @@ export default function CreatorPortfolioEditorPage() {
       });
     } finally {
       setSyncing(false);
+    }
+  };
+
+  /**
+   * F-0694/F-0695 — the no-OAuth path onto the brand's Discover results. Deliberately asks for
+   * followers but NOT engagement rate: engagement feeds discovery ranking and the brand's
+   * engagement filter, so it stays measured-only. The row lands unverified — `Sync now` above is
+   * still the only thing that can earn the Verified badge.
+   */
+  const handleDeclarePlatform = async () => {
+    const followers = Number(declareFollowers.replace(/[,\s]/g, ''));
+    if (!declareHandle.trim() || !Number.isFinite(followers) || followers < 0) {
+      toast({
+        title: 'Add a username and follower count',
+        description: 'Both are needed before brands can find you by platform.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setDeclaring(true);
+    try {
+      await api.portfolio.declarePlatform({
+        platform: declarePlatform,
+        handle: declareHandle.trim(),
+        followers,
+      });
+      const p = await api.portfolio.getMine();
+      setPage(p as PortfolioPage);
+      setDeclareHandle('');
+      setDeclareFollowers('');
+      toast({
+        title: 'Platform added',
+        description: 'Brands filtering by this platform can now find you. Connect it to get verified.',
+      });
+    } catch (err) {
+      const code = err instanceof ApiError ? err.code : undefined;
+      const messages: Record<string, string> = {
+        PLATFORM_ALREADY_VERIFIED:
+          "That account is already connected — its numbers come straight from the platform, so they can't be typed over.",
+        INVALID_HANDLE: "That doesn't look like a valid username.",
+        INVALID_FOLLOWERS: 'Enter a real follower count.',
+        INVALID_PLATFORM: 'Pick one of the listed platforms.',
+      };
+      toast({
+        title: "Couldn't add that platform",
+        description:
+          (code && messages[code]) ||
+          (err instanceof ApiError ? err.message : 'Please try again in a moment.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setDeclaring(false);
     }
   };
 
@@ -516,6 +576,57 @@ export default function CreatorPortfolioEditorPage() {
                   <span className="text-xs text-muted-foreground">{formatN(p.followers)} followers</span>
                 </div>
               ))}
+            </div>
+
+            {/* F-0694/F-0695 — manual declaration. Before this, the only writer of platform_stats
+                was a Meta sync, so a creator who couldn't or wouldn't connect had no row at all
+                and never appeared when a brand filtered Discover by platform. */}
+            <div className="mt-4 border-t pt-4">
+              <p className="text-sm font-medium">Add a platform manually</p>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-3">
+                No Instagram connection? Add your handle so brands filtering by platform can still
+                find you. It shows as unverified until you connect the account.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Select value={declarePlatform} onValueChange={setDeclarePlatform}>
+                  <SelectTrigger className="sm:w-36" aria-label="Platform">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="INSTAGRAM">Instagram</SelectItem>
+                    <SelectItem value="YOUTUBE">YouTube</SelectItem>
+                    <SelectItem value="TIKTOK">TikTok</SelectItem>
+                    <SelectItem value="TWITTER">X / Twitter</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={declareHandle}
+                  onChange={(e) => setDeclareHandle(e.target.value)}
+                  placeholder="@yourhandle"
+                  aria-label="Username on that platform"
+                  className="sm:flex-1"
+                />
+                <Input
+                  value={declareFollowers}
+                  onChange={(e) => setDeclareFollowers(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="Followers"
+                  aria-label="Follower count"
+                  className="sm:w-36"
+                />
+                <Button
+                  size="sm"
+                  onClick={handleDeclarePlatform}
+                  disabled={declaring}
+                  className="gap-1.5 shrink-0"
+                  // The custom-links editor further down this page has its own "Add" button, so
+                  // an accessible-name query alone is ambiguous here.
+                  data-testid="declare-platform-add"
+                >
+                  {declaring && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  Add
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

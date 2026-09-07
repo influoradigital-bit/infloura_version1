@@ -52,6 +52,7 @@ import com.influora.service.CreatorContextService;
 import com.influora.service.CreatorProfileService;
 import com.influora.service.ExternalCreatorLinkService;
 import com.influora.web.dto.creator.CreatorDtos.PlatformStatResponse;
+import com.influora.web.dto.portfolio.PortfolioDtos.PlatformDeclarationRequest;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioAnalyticsResponse;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioCollab;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioContactResponse;
@@ -76,6 +77,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -123,6 +125,24 @@ public class PortfolioService {
 
     /** F-0665/F-0434 — what a collab with no stored preference (or a pre-fix profile) shows. */
     private static final String DEFAULT_COLLAB_DISPLAY_MODE = "logo";
+
+    /**
+     * F-0694 — exactly the four values the brand's Discover platform chips offer (the {@code
+     * platforms} array in {@code creator-discovery.tsx}). Declaring anything outside this set could
+     * never be filtered on, so accepting it would only write a row nothing reads.
+     */
+    private static final Set<String> SELF_DECLARABLE_PLATFORMS =
+            Set.of("INSTAGRAM", "YOUTUBE", "TIKTOK", "TWITTER");
+
+    /**
+     * F-0694 — the intersection of what Instagram, YouTube, TikTok and X allow, kept deliberately
+     * narrow because this string is persisted and rendered on a brand-facing card. Mirrors the
+     * shape {@code ExternalCreatorService.USERNAME_PATTERN} already enforces on the lookup path.
+     */
+    private static final Pattern SELF_DECLARED_HANDLE_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{1,60}$");
+
+    /** F-0694 — above any real account; a larger number is a typo or a test, not a creator. */
+    private static final long MAX_SELF_DECLARED_FOLLOWERS = 1_000_000_000L;
 
     private final CreatorContextService creatorContext;
     private final CreatorProfileService creatorProfileService;
@@ -402,6 +422,86 @@ public class PortfolioService {
     }
 
     /**
+     * F-0694/F-0695 — the second door into {@code platform_stats}, for the creator who has no Meta
+     * connection to walk through the first one.
+     *
+     * <p>A brand narrowing Discover to {@code platforms=INSTAGRAM} runs {@code
+     * CreatorProfileSpecifications#hasPlatforms}, an {@code EXISTS} subquery over {@code
+     * platform_stats}. Until this method existed, that table's only writers were {@link
+     * #syncPlatforms} and {@code PlatformStatsAggregationJob}, both fed by a Meta {@code
+     * CreatorMetric} — so the filter that reads as "creators on Instagram" actually meant "creators
+     * who completed Meta OAuth", and everyone else was invisible to the single most obvious search
+     * a brand performs.
+     *
+     * <p>Three things keep this honest rather than just permissive. The snapshot is written {@link
+     * CreatorMetric#DATA_SOURCE_CREATOR_REPORTED}, so {@code CreatorMetric#isPlatformVerified} — the
+     * only thing allowed to set {@code PlatformStat.verified} (CR-119) — returns false and the
+     * brand-facing verified badge stays dark. A row a Meta sync already verified is never
+     * overwritten, so a typed number can never downgrade measured data. And the {@code JOINED}
+     * cross-link hook is skipped, because a typed handle is a claim of ownership, not proof of it.
+     */
+    @Transactional
+    public SyncPlatformsResponse declarePlatform(AuthPrincipal principal, PlatformDeclarationRequest request) {
+        CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+
+        String platform = request == null || request.platform() == null ? "" : request.platform().trim().toUpperCase();
+        if (!SELF_DECLARABLE_PLATFORMS.contains(platform)) {
+            throw new ApiException(
+                    "INVALID_PLATFORM",
+                    "Choose one of " + String.join(", ", SELF_DECLARABLE_PLATFORMS),
+                    HttpStatus.BAD_REQUEST);
+        }
+
+        String handle = request.handle() == null ? "" : request.handle().trim();
+        if (handle.startsWith("@")) {
+            handle = handle.substring(1);
+        }
+        if (!SELF_DECLARED_HANDLE_PATTERN.matcher(handle).matches()) {
+            throw new ApiException(
+                    "INVALID_HANDLE", "That doesn't look like a valid username", HttpStatus.BAD_REQUEST);
+        }
+
+        long followers = request.followers() == null ? 0L : request.followers();
+        if (followers < 0 || followers > MAX_SELF_DECLARED_FOLLOWERS) {
+            throw new ApiException(
+                    "INVALID_FOLLOWERS", "Enter a follower count we can believe", HttpStatus.BAD_REQUEST);
+        }
+
+        // A Meta sync already proved this account. Refuse rather than silently keeping the better
+        // data and returning 200 — the creator asked to change something and deserves to be told
+        // it did not change, and why.
+        Optional<PlatformStat> existing =
+                platformStatRepository.findByCreatorProfileIdAndPlatform(profile.getId(), platform);
+        if (existing.isPresent() && existing.get().isVerified()) {
+            throw new ApiException(
+                    "PLATFORM_ALREADY_VERIFIED",
+                    "This account is already connected — its numbers come straight from the platform",
+                    HttpStatus.CONFLICT);
+        }
+
+        CreatorMetric metric =
+                CreatorMetric.builder()
+                        .id(Ulids.newUlid())
+                        .time(Instant.now())
+                        .creatorProfileId(profile.getId())
+                        .platform(platform)
+                        .username(handle)
+                        .followers(followers)
+                        .dataSource(CreatorMetric.DATA_SOURCE_CREATOR_REPORTED)
+                        .fetchedAt(Instant.now())
+                        .build();
+        creatorMetricsRepository.save(metric);
+
+        upsertPlatformStat(profile, platform, metric, null, false);
+
+        log.info(
+                "Creator-reported platform declared for creator={} platform={} (unverified)",
+                profile.getId(),
+                platform);
+        return new SyncPlatformsResponse(Instant.now().toString());
+    }
+
+    /**
      * Same upsert shape as {@code PlatformStatsAggregationJob#upsertPlatformStat} (not shared code
      * — that job's method is package-private to {@code com.influora.job} and carries its own
      * batch-run javadoc; duplicating the small upsert here keeps this on-demand sync independent of
@@ -411,6 +511,22 @@ public class PortfolioService {
      */
     private void upsertPlatformStat(
             CreatorProfile profile, String platform, CreatorMetric metric, String igAccountId) {
+        upsertPlatformStat(profile, platform, metric, igAccountId, true);
+    }
+
+    /**
+     * F-0694/F-0695 — {@code crossLink} exists only so {@link #declarePlatform} can reuse this
+     * upsert without firing the {@code JOINED} hook at the bottom. A Meta sync proves the creator
+     * owns the account it read; a typed handle proves nothing, and letting one mark an
+     * admin-imported {@code external_creators} row as joined would let any creator claim any
+     * Instagram account and inherit its brand-facing "Verified with Influora" state.
+     */
+    private void upsertPlatformStat(
+            CreatorProfile profile,
+            String platform,
+            CreatorMetric metric,
+            String igAccountId,
+            boolean crossLink) {
         Optional<PlatformStat> existing =
                 platformStatRepository.findByCreatorProfileIdAndPlatform(profile.getId(), platform);
         if (existing.isPresent()) {
@@ -459,7 +575,7 @@ public class PortfolioService {
         // even though the hook's internal try/catch already logged it. Without this, that would
         // still fail the surrounding syncPlatforms() request (and its own already-good writes to
         // platform_stats/creator_profiles above) over a best-effort cross-link.
-        if ("INSTAGRAM".equals(platform)) {
+        if (crossLink && "INSTAGRAM".equals(platform)) {
             try {
                 externalCreatorLinkService.onCreatorIdentified(profile.getId(), metric.getUsername(), igAccountId);
             } catch (RuntimeException e) {
