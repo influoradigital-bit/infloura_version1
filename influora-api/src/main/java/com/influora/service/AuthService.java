@@ -630,7 +630,51 @@ public class AuthService {
                                         new ApiException(
                                                 "USER_NOT_FOUND", "User not found", HttpStatus.BAD_REQUEST));
 
+        // Same guard, same code and message as brandLogin/creatorLogin/refresh above: a locked
+        // account could otherwise still rotate its own password.
+        //
+        // This does NOT make the class uniformly covered, and an earlier draft of this comment
+        // wrongly said it did. changePassword below (the logged-in path) rotates a password hash
+        // with no status check either, and is deliberately left alone here rather than fixed in
+        // passing. Its exposure is narrower — it needs a live access token, and refresh's guard
+        // above stops renewal — so the window is one access-token lifetime, but it is open.
+        //
+        // READ THIS BEFORE DELETING IT AS DEAD CODE. Nothing in src/main ever WRITES
+        // UserStatus.SUSPENDED or DEACTIVATED — User has no setStatus, UserRepository has no
+        // @Modifying update, and no migration sets them. Product-level suspension lives somewhere
+        // else entirely: Workspace.isSuspended() for brands (AdminBrandService.suspend) and
+        // CreatorProfile.isSuspended() for creators (AdminCreatorService.suspend), and those are
+        // checked separately in the login paths. So this branch, and the three it mirrors, are
+        // reachable by exactly one route: an operator setting users.status by hand in SQL, which
+        // is a thing this team does (the F-0601 stuck-row repair). That is the case it defends,
+        // and it is why "no code sets this, delete the check" is the wrong conclusion.
+        //
+        // Deliberately NOT extended to the reachable Workspace/CreatorProfile suspension flags:
+        // resetPassword loads only the User, and rotating a password never grants access on its
+        // own — every login path blocks a suspended account independently. Widening it to freeze
+        // credentials on suspension is a product decision, not a drive-by here.
+        if (user.getStatus() == UserStatus.SUSPENDED || user.getStatus() == UserStatus.DEACTIVATED) {
+            throw new ApiException("ACCOUNT_SUSPENDED", "Your account has been suspended", HttpStatus.FORBIDDEN);
+        }
+
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+
+        // A completed reset proves control of the mailbox, which is the whole claim email
+        // verification makes — the token was delivered to this address and came back. Without this
+        // line the reset succeeded and login still threw EMAIL_NOT_VERIFIED (see brandLogin /
+        // creatorLogin: `requireEmailVerification && !isEmailVerified() && status ==
+        // PENDING_VERIFICATION`), so the account stayed locked while every screen reported success:
+        // the API returned "Password reset successfully", the new hash really was persisted, and
+        // the user was left with a password that works against a door that will not open. That is
+        // also the only self-service exit for the accounts stranded by F-0601, whose verification
+        // mail was never sent — forgot-password is the one flow that can still reach them.
+        //
+        // User.setEmailVerified performs the PENDING_VERIFICATION -> ACTIVE promotion itself
+        // (User.java:278-283); do NOT also set the status here, and note this deliberately cannot
+        // revive a SUSPENDED or DEACTIVATED account — that guard runs earlier in login and the
+        // entity only promotes out of PENDING_VERIFICATION.
+        user.setEmailVerified(true);
+
         token.markUsed();
         userRepository.save(user);
         passwordResetTokenRepository.save(token);

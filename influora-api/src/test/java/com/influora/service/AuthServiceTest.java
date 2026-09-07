@@ -1044,6 +1044,141 @@ class AuthServiceTest {
     }
 
     @Test
+    @DisplayName(
+            "resetPassword F-FORGOTPW-0907: a PENDING_VERIFICATION user is verified and ACTIVE after reset")
+    void testResetPasswordVerifiesPendingAccount() {
+        // creatorUser(false) leaves the account exactly as User.newCreator builds it:
+        // emailVerified=false, status=PENDING_VERIFICATION — the state every account stranded by
+        // F-0601 is sitting in, and the state the login gate refuses.
+        User user = creatorUser(false);
+        assertFalse(user.isEmailVerified());
+        assertEquals(UserStatus.PENDING_VERIFICATION, user.getStatus());
+
+        String rawToken = "reset-raw-token-pending";
+        PasswordResetToken token =
+                PasswordResetToken.create(
+                        "01HRESETTOKENPENDING12345",
+                        user.getId(),
+                        JwtService.hashToken(rawToken),
+                        Instant.now().plusSeconds(3600));
+        when(passwordResetTokenRepository.findByTokenHashAndUsedFalse(JwtService.hashToken(rawToken)))
+                .thenReturn(Optional.of(token));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.encode("NewSecret9")).thenReturn("new-hash");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(passwordResetTokenRepository.save(any(PasswordResetToken.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        authService.resetPassword(rawToken, "NewSecret9");
+
+        // Before this fix both assertions below failed: the password really was changed, and the
+        // account stayed PENDING_VERIFICATION, so the very next login threw EMAIL_NOT_VERIFIED.
+        assertTrue(user.isEmailVerified(), "a completed reset proves control of the mailbox");
+        assertEquals(
+                UserStatus.ACTIVE,
+                user.getStatus(),
+                "the account must be loginable after a successful reset");
+        assertEquals("new-hash", user.getPasswordHash());
+    }
+
+    /**
+     * The token is deliberately VALID in both cases below. A reset that dies on a bad token proves
+     * nothing about the status guard — it would pass just as happily with the guard deleted. These
+     * drive a good token at a locked account so the only thing that can refuse it is the status
+     * check itself.
+     */
+    @Test
+    @DisplayName("resetPassword F-0693: SUSPENDED account → ACCOUNT_SUSPENDED 403, nothing mutated")
+    void testResetPasswordSuspendedAccount() throws Exception {
+        User user = creatorUser(true);
+        setUserStatus(user, UserStatus.SUSPENDED);
+        String rawToken = "reset-raw-token-suspended";
+        PasswordResetToken token =
+                PasswordResetToken.create(
+                        "01HRESETTOKENSUSPEND12345",
+                        user.getId(),
+                        JwtService.hashToken(rawToken),
+                        Instant.now().plusSeconds(3600));
+        when(passwordResetTokenRepository.findByTokenHashAndUsedFalse(JwtService.hashToken(rawToken)))
+                .thenReturn(Optional.of(token));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> authService.resetPassword(rawToken, "NewSecret9"));
+
+        assertEquals("ACCOUNT_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        // The refusal must leave no trace: an unburned token (so a later reinstated user can still
+        // use it), the old password, and no revoked sessions.
+        assertFalse(token.isUsed());
+        assertEquals("hashed-pw", user.getPasswordHash());
+        assertEquals(UserStatus.SUSPENDED, user.getStatus());
+        verify(userRepository, never()).save(any(User.class));
+        verify(refreshTokenRepository, never()).revokeAllForUser(anyString());
+    }
+
+    @Test
+    @DisplayName("resetPassword F-0693: DEACTIVATED account → ACCOUNT_SUSPENDED 403, nothing mutated")
+    void testResetPasswordDeactivatedAccount() throws Exception {
+        User user = creatorUser(true);
+        setUserStatus(user, UserStatus.DEACTIVATED);
+        String rawToken = "reset-raw-token-deactivated";
+        PasswordResetToken token =
+                PasswordResetToken.create(
+                        "01HRESETTOKENDEACTIV12345",
+                        user.getId(),
+                        JwtService.hashToken(rawToken),
+                        Instant.now().plusSeconds(3600));
+        when(passwordResetTokenRepository.findByTokenHashAndUsedFalse(JwtService.hashToken(rawToken)))
+                .thenReturn(Optional.of(token));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> authService.resetPassword(rawToken, "NewSecret9"));
+
+        assertEquals("ACCOUNT_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        assertFalse(token.isUsed());
+        assertEquals("hashed-pw", user.getPasswordHash());
+        verify(userRepository, never()).save(any(User.class));
+        verify(refreshTokenRepository, never()).revokeAllForUser(anyString());
+    }
+
+    /**
+     * The counterpart to the two above: the guard must refuse ONLY the two locked states. Without
+     * this, "reject everything" would satisfy both tests above and silently break every real reset
+     * — including the PENDING_VERIFICATION recovery path F-0693 exists to keep working.
+     */
+    @Test
+    @DisplayName("resetPassword F-0693: an ACTIVE account is still allowed through the guard")
+    void testResetPasswordActiveAccountUnaffected() throws Exception {
+        User user = creatorUser(true);
+        setUserStatus(user, UserStatus.ACTIVE);
+        String rawToken = "reset-raw-token-active";
+        PasswordResetToken token =
+                PasswordResetToken.create(
+                        "01HRESETTOKENACTIVE123456",
+                        user.getId(),
+                        JwtService.hashToken(rawToken),
+                        Instant.now().plusSeconds(3600));
+        when(passwordResetTokenRepository.findByTokenHashAndUsedFalse(JwtService.hashToken(rawToken)))
+                .thenReturn(Optional.of(token));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.encode("NewSecret9")).thenReturn("new-hash");
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(passwordResetTokenRepository.save(any(PasswordResetToken.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        authService.resetPassword(rawToken, "NewSecret9");
+
+        assertEquals("new-hash", user.getPasswordHash());
+        assertTrue(token.isUsed());
+        verify(refreshTokenRepository).revokeAllForUser(user.getId());
+    }
+
+    @Test
     @DisplayName("resetPassword G-Kv3-1: invalid/expired token → INVALID_RESET_TOKEN 400")
     void testResetPasswordInvalidToken() {
         when(passwordResetTokenRepository.findByTokenHashAndUsedFalse(anyString()))
