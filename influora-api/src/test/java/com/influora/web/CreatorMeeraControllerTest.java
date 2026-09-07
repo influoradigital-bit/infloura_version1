@@ -18,6 +18,7 @@ import com.influora.domain.entity.AiConversation;
 import com.influora.domain.entity.CreatorAgentPreferences;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.enums.ConversationStatus;
+import com.influora.domain.enums.ConversationTenantType;
 import com.influora.domain.enums.UserType;
 import com.influora.integration.ai.MeeraVoiceAiClient;
 import com.influora.security.AuthPrincipal;
@@ -112,6 +113,7 @@ class CreatorMeeraControllerTest {
                 AiConversation.builder()
                         .id(CONVERSATION_ID)
                         .workspaceId(CREATOR_USER_ID)
+                        .tenantType(ConversationTenantType.CREATOR)
                         .startedBy(CREATOR_USER_ID)
                         .status(ConversationStatus.ACTIVE)
                         .build();
@@ -140,6 +142,7 @@ class CreatorMeeraControllerTest {
                 AiConversation.builder()
                         .id(CONVERSATION_ID)
                         .workspaceId(CREATOR_USER_ID)
+                        .tenantType(ConversationTenantType.CREATOR)
                         .startedBy(CREATOR_USER_ID)
                         .status(ConversationStatus.ACTIVE)
                         .build();
@@ -167,6 +170,7 @@ class CreatorMeeraControllerTest {
                 AiConversation.builder()
                         .id(CONVERSATION_ID)
                         .workspaceId(CREATOR_USER_ID)
+                        .tenantType(ConversationTenantType.CREATOR)
                         .startedBy(CREATOR_USER_ID)
                         .status(ConversationStatus.ACTIVE)
                         .build();

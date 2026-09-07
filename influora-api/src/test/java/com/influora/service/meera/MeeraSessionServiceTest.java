@@ -24,6 +24,7 @@ import com.influora.domain.entity.BrandAiCredit;
 import com.influora.domain.entity.BrandProfile;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.ConversationStatus;
+import com.influora.domain.enums.ConversationTenantType;
 import com.influora.domain.enums.MessageRole;
 import com.influora.domain.enums.UserType;
 import com.influora.repository.AiConversationRepository;
@@ -105,6 +106,7 @@ class MeeraSessionServiceTest {
         return AiConversation.builder()
                 .id(CONVERSATION_ID)
                 .workspaceId(WORKSPACE_ID)
+                .tenantType(ConversationTenantType.WORKSPACE)
                 .startedBy("01HUSER1234567890ABCD")
                 .status(ConversationStatus.ACTIVE)
                 .build();
@@ -644,6 +646,7 @@ class MeeraSessionServiceTest {
         return AiConversation.builder()
                 .id(CONVERSATION_ID)
                 .workspaceId(CREATOR_USER_ID)
+                .tenantType(ConversationTenantType.CREATOR)
                 .startedBy(CREATOR_USER_ID)
                 .status(ConversationStatus.ACTIVE)
                 .build();

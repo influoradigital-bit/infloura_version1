@@ -8,6 +8,7 @@ import com.influora.domain.entity.AiMessage;
 import com.influora.domain.entity.BrandProfile;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.ConversationStatus;
+import com.influora.domain.enums.ConversationTenantType;
 import com.influora.domain.enums.MessageRole;
 import com.influora.domain.enums.UserType;
 import com.influora.repository.AiConversationRepository;
@@ -134,6 +135,8 @@ public class MeeraSessionService {
                                         AiConversation.builder()
                                                 .id(Ulids.newUlid())
                                                 .workspaceId(workspaceId)
+                                                // F-0751 — workspaceId here is a real workspaces.id.
+                                                .tenantType(ConversationTenantType.WORKSPACE)
                                                 .startedBy(userId)
                                                 .status(ConversationStatus.ACTIVE)
                                                 .build()));
@@ -194,7 +197,12 @@ public class MeeraSessionService {
                 conversationRepository.save(
                         AiConversation.builder()
                                 .id(Ulids.newUlid())
+                                // F-0751 — this is a users.id, NOT a workspaces.id. The column is a
+                                // polymorphic tenant key; tenantType is what makes that legible in
+                                // SQL, and ck_conv_creator_tenant_is_starter requires this to equal
+                                // startedBy so the value stays FK-checked through fk_conv_user.
                                 .workspaceId(creatorUserId)
+                                .tenantType(ConversationTenantType.CREATOR)
                                 .startedBy(userId)
                                 .status(ConversationStatus.ACTIVE)
                                 .build());

@@ -1,6 +1,7 @@
 package com.influora.domain.entity;
 
 import com.influora.domain.enums.ConversationStatus;
+import com.influora.domain.enums.ConversationTenantType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -36,6 +37,15 @@ public class AiConversation {
     @Column(name = "last_message_at")
     private Instant lastMessageAt;
 
+    /**
+     * F-0751 — what {@link #workspaceId} points at. {@code WORKSPACE} means a {@code workspaces.id};
+     * {@code CREATOR} means a {@code users.id}. There is no database default and none here: see
+     * {@link Builder#build()}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tenant_type", nullable = false)
+    private ConversationTenantType tenantType;
+
     protected AiConversation() {}
 
     public String getId() {
@@ -44,6 +54,10 @@ public class AiConversation {
 
     public String getWorkspaceId() {
         return workspaceId;
+    }
+
+    public ConversationTenantType getTenantType() {
+        return tenantType;
     }
 
     public String getStartedBy() {
@@ -110,10 +124,29 @@ public class AiConversation {
             return this;
         }
 
+        /**
+         * F-0751 — REQUIRED. Declares whether {@link #workspaceId(String)} was given a
+         * {@code workspaces.id} or a creator's {@code users.id}.
+         */
+        public Builder tenantType(ConversationTenantType tenantType) {
+            c.tenantType = tenantType;
+            return this;
+        }
+
         public AiConversation build() {
             c.createdAt = Instant.now();
             if (c.status == null) {
                 c.status = ConversationStatus.ACTIVE;
+            }
+            // F-0751 — deliberately NOT defaulted, here or in the schema. Defaulting to WORKSPACE
+            // would make a creator row that forgot the discriminator indistinguishable from a
+            // brand row, in exactly the DPDP export and deletion path V74 exists to serve. That
+            // silent-wrong-value shape is what caused F-0751 in the first place. Fail at
+            // construction instead, where the stack trace names the caller, rather than at INSERT.
+            if (c.tenantType == null) {
+                throw new IllegalStateException(
+                        "AiConversation.tenantType is required (F-0751): say whether workspaceId is a"
+                                + " workspaces.id (WORKSPACE) or a creator's users.id (CREATOR)");
             }
             return c;
         }
