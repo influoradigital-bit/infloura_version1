@@ -99,7 +99,7 @@ The current hero already reflects the Free+Pro model correctly. It's honest, dig
 ### C. Breakeven Note (below plan cards)
 
 **Body copy:**
-> Pro pays for itself above ~₹2,10,000/month in campaign spend. Below that threshold, upgrade for the analytics, export, and team seat unlocks.
+> Pro pays for itself above ~₹1,66,600/month in published campaign budget. Below that threshold, upgrade for the analytics, export, and team seat unlocks.
 
 **Status:** Already live in `pricing.tsx` line 191-193. Keep verbatim — it's honest and trust-building.
 
@@ -141,13 +141,13 @@ The current hero already reflects the Free+Pro model correctly. It's honest, dig
 
 > **If you're running multiple campaigns a month or working with a team,** Pro unlocks the features that make scaling easier: unlimited creator analytics (vet as many creators as you need), report export (share performance with stakeholders), 5 seats (collaborate without seat-blocking), and campaign templates (launch faster).
 >
-> **If your monthly campaign spend is above ₹2,10,000,** the lower brand fee (shown on every deal before you fund escrow) compounds quickly — the subscription price pays for itself in fee savings alone.
+> **If your monthly published campaign budget is above ₹1,66,600,** the lower brand fee compounds quickly — the subscription price pays for itself in fee savings alone.
 >
 > **Below that threshold?** You're still getting value from the analytics unlocks, export, and seat limits. Free tier works great if you're running occasional campaigns or testing the platform — upgrade when growth makes those limits feel tight.
 
 **Trust framing notes:**
 - No hype ("10x your ROI!" / "Game-changing unlocks!"). Keep it plainspoken and helpful.
-- Breakeven transparency: the ₹2,10,000 figure is already public in the plan doc (§2) and on the pricing page — repeating it here is trust-building, not a leak.
+- Breakeven transparency: the ₹1,66,600 figure is already public in the plan doc (§2) and on the pricing page — repeating it here is trust-building, not a leak. Corrected 2026-09-07 from ₹2,10,000, which did not follow from the plan's own rates (see SUBSCRIPTION-BILLING-PLAN.md §2).
 - Acknowledge Free is permanently viable ("works great if…") — we're not forcing anyone to upgrade via FUD.
 
 ---
@@ -283,7 +283,7 @@ Before this copy ships, Nisha (Content Lead) confirms:
 - [ ] **No trial language anywhere** — FAQ Q5 explicitly kills it, plan cards omit it, matrix shows "None."
 - [ ] **Creator commission clarity** — every fee mention stresses "15% creator commission unchanged" so creators aren't confused.
 - [ ] **Free is permanently viable** — no FUD framing ("trial expired" / "limited time"). FAQ Q1/Q2 confirm it.
-- [ ] **Breakeven transparency** — ₹2,10,000 threshold mentioned twice (plan-card note + "Is Pro worth it?" section) with honest context.
+- [ ] **Breakeven transparency** — ₹1,66,600 threshold mentioned twice (plan-card note + "Is Pro worth it?" section) with honest context.
 - [ ] **Voice consistency** — plain-English per `policy-content-strategy.md`, no hype/jargon, trust-framing on escrow/TDS/transparency.
 - [ ] **Cross-file messaging check** — Ananya confirms §6's 4-file grep/fix is complete before merging.
 

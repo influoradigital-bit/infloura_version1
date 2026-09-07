@@ -620,7 +620,7 @@ export default function PricingPage() {
             <FadeUp delay={0.15}>
               <p className="mt-6 text-center text-sm text-muted-foreground">
                 Pro is priced for the AI credits. The reduced fee is a second effect: above
-                ~₹2,10,000/month in published campaign budget it covers the subscription on its own.
+                ~₹1,66,600/month in published campaign budget it covers the subscription on its own.
               </p>
             </FadeUp>
           </div>
@@ -706,7 +706,7 @@ export default function PricingPage() {
                     </p>
                     <p>
                       <span className="font-medium text-foreground">
-                        When your published campaign budget is above ₹2,10,000 a month.
+                        When your published campaign budget is above ₹1,66,600 a month.
                       </span>{' '}
                       Above that, the reduced fee — applied to every campaign budget you publish — covers
                       the subscription by itself, whatever you do with the credits.
