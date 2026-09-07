@@ -2,9 +2,11 @@ package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
+import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.UserType;
 import com.influora.repository.UserRepository;
@@ -49,6 +51,21 @@ class BrandContextServiceTest {
     void setUp() {
         service =
                 new BrandContextService(workspaceRepository, workspaceMemberRepository, userRepository);
+        // F-0708: requireBrand now reads the user row to check deletedAt, and every entry point
+        // funnels through it. Default the mocks to a LIVE brand user so the pre-existing
+        // suspension tests keep testing suspension; the deletion tests below override this.
+        // lenient because the WRONG_USER_TYPE case throws before the lookup.
+        lenient().when(principal.getUserId()).thenReturn(USER_ID);
+        lenient().when(userRepository.findById(USER_ID)).thenReturn(Optional.of(brandUser(false)));
+    }
+
+    /** @param deleted whether {@code softDelete()} has been applied. */
+    private User brandUser(boolean deleted) {
+        User u = User.newBrand(USER_ID, "brand@example.com", "hashed-pw", "Bee", "Rand", "Bee Rand");
+        if (deleted) {
+            u.softDelete();
+        }
+        return u;
     }
 
     private Workspace workspace(boolean suspended) {
@@ -71,6 +88,78 @@ class BrandContextServiceTest {
 
         assertEquals("WORKSPACE_SUSPENDED", ex.getCode());
         assertEquals(403, ex.getStatus().value());
+    }
+
+    // ── F-0708: account deletion must take effect for BRANDS, not only creators ──
+    // AccountController's javadoc claimed both context gates re-checked deletedAt. Only the creator
+    // one did. These pin the brand half, at all three entry points, because requireBrandWorkspace
+    // and requireMember inherit the check from requireBrand rather than repeating it — a future
+    // refactor that stops delegating would silently reopen the hole at the inheriting sites while
+    // the requireBrand test stayed green.
+
+    @Test
+    @DisplayName("F-0708: requireBrand refuses a soft-deleted brand user -> ACCOUNT_DELETED 401")
+    void requireBrand_softDeleted_rejected() {
+        when(principal.getUserType()).thenReturn(UserType.BRAND);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(brandUser(true)));
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.requireBrand(principal));
+
+        assertEquals("ACCOUNT_DELETED", ex.getCode());
+        assertEquals(401, ex.getStatus().value());
+    }
+
+    @Test
+    @DisplayName("F-0708: requireBrandWorkspace inherits the deletion check -> ACCOUNT_DELETED 401")
+    void requireBrandWorkspace_softDeleted_rejected() {
+        when(principal.getUserType()).thenReturn(UserType.BRAND);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(brandUser(true)));
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> service.requireBrandWorkspace(principal));
+
+        // Refused BEFORE the workspace is even resolved: no stub for workspaceRepository is needed
+        // here, which is itself the proof that the gate runs first.
+        assertEquals("ACCOUNT_DELETED", ex.getCode());
+        assertEquals(401, ex.getStatus().value());
+    }
+
+    @Test
+    @DisplayName("F-0708: requireMember inherits the deletion check -> ACCOUNT_DELETED 401")
+    void requireMember_softDeleted_rejected() {
+        when(principal.getUserType()).thenReturn(UserType.BRAND);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(brandUser(true)));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.requireMember(principal, WORKSPACE_ID));
+
+        assertEquals("ACCOUNT_DELETED", ex.getCode());
+        assertEquals(401, ex.getStatus().value());
+    }
+
+    /**
+     * The safe default copied from {@code CreatorContextService.requireCreator}: a principal whose
+     * user row cannot be found is refused, not waved through. Without this, {@code orElse(true)}
+     * could be flipped to {@code orElse(false)} and every test above would still pass.
+     */
+    @Test
+    @DisplayName("F-0708: a principal with no user row at all is refused, not admitted")
+    void requireBrand_missingUserRow_rejected() {
+        when(principal.getUserType()).thenReturn(UserType.BRAND);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.empty());
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.requireBrand(principal));
+
+        assertEquals("ACCOUNT_DELETED", ex.getCode());
+    }
+
+    @Test
+    @DisplayName("F-0708: a live brand user still passes requireBrand (no false positive)")
+    void requireBrand_liveUser_allowed() {
+        when(principal.getUserType()).thenReturn(UserType.BRAND);
+
+        service.requireBrand(principal); // must not throw
     }
 
     @Test

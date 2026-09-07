@@ -40,14 +40,19 @@ import org.springframework.web.bind.annotation.RestController;
  * worth doing (they stop new access tokens being minted from the refresh token) but are not
  * sufficient alone.
  *
- * <p><b>Only the creator gate actually does that.</b> An earlier version of this paragraph said
- * both gates re-check {@code deletedAt} and called H-1 fixed. Verified 2026-09-07: that is false.
- * {@code CreatorContextService.requireCreator} does check it ({@code ACCOUNT_DELETED} / 401).
- * {@code BrandContextService} does not, anywhere — {@code requireBrand} checks only {@code
- * UserType}, {@code requireBrandWorkspace} only {@code workspace.isSuspended()}, {@code
- * requireMember} only membership. So a soft-deleted BRAND user keeps full brand-scoped access,
- * wallet and payout endpoints included, until their access token expires on its own. Tracked
- * separately; do not read this class as evidence that deletion takes effect immediately for brands.
+ * <p><b>Both gates now do that — the brand half only since 2026-09-07 (F-0708).</b> This paragraph
+ * claimed for months that both re-checked {@code deletedAt}; that was false, and it is worth
+ * recording why it survived: the comment asserting the work was done is exactly what stopped anyone
+ * looking. {@code CreatorContextService.requireCreator} always did check it. {@code
+ * BrandContextService} did not, anywhere, so a soft-deleted BRAND user kept full brand-scoped
+ * access — wallet and payout endpoints included — until their access token expired. {@code
+ * BrandContextService.requireBrand} now performs the same check, and because {@code
+ * requireBrandWorkspace} and {@code requireMember} both delegate to it, all three entry points
+ * inherit it. Pinned by {@code BrandContextServiceTest} and gated by
+ * {@code .proof-os/gates/brand-deletion-enforced.sh}.
+ *
+ * <p>Admin sessions are unaffected either way: {@code AdminContextService} resolves a separate
+ * {@code AdminUser} entity, which {@link User#softDelete()} never touches.
  */
 @RestController
 @RequestMapping("/me")

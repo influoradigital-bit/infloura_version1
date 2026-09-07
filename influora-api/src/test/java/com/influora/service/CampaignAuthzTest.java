@@ -90,6 +90,14 @@ class CampaignAuthzTest {
     void setUp() {
         brandContext =
                 new BrandContextService(workspaceRepository, workspaceMemberRepository, userRepository);
+        // requireBrand re-checks deletedAt (F-0708), so every brand path now reads the user row.
+        // lenient: the WRONG_USER_TYPE cases throw before reaching the lookup.
+        org.mockito.Mockito.lenient()
+                .when(userRepository.findById(USER_ID))
+                .thenReturn(
+                        java.util.Optional.of(
+                                com.influora.domain.entity.User.newBrand(
+                                        USER_ID, "brand@test.com", "hash", "Bee", "Rand", "Bee Rand")));
         // Real CampaignValidator: no dependencies of its own (see CampaignServiceTest's identical
         // rationale) — a mock would add noise without changing what this test is asserting.
         service =
