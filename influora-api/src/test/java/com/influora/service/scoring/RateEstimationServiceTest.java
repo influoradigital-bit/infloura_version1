@@ -15,7 +15,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for {@link RateEstimationService} (VIKRAM_BACKEND_IMPLEMENTATION_SPEC.md &sect;4.4,
+ * Gate for F-0749 — a present {@link CreatorMetric} with a null {@code avgEngagementRate} threw
+ * NPE out of {@code estimate()} and 500'd the creator Co-pilot page on production. The two
+ * null-engagement tests at the bottom of this class are that gate: one proves it does not throw,
+ * the other proves absent is scored neutral rather than penalised as low.
+ *
+ * <p>Unit tests for {@link RateEstimationService} (VIKRAM_BACKEND_IMPLEMENTATION_SPEC.md &sect;4.4,
  * Phase 3 Algorithms). Pure deterministic math over already-fetched metrics and an
  * already-computed quality score — no mocking required, matching {@code
  * QualityScoreServiceTest}/{@code FakeFollowerDetectionServiceTest}'s conventions.
@@ -345,6 +350,40 @@ class RateEstimationServiceTest {
     private RateEstimation estimateWithFollowersAndNeutralEverything(long followers) {
         CreatorMetric metric = creatorMetric(followers, new BigDecimal("2"), "MANUAL");
         return service.estimate(Optional.of(metric), NEUTRAL_QUALITY, List.of());
+    }
+
+    // === null engagement rate (F-0749) ===
+
+    @Test
+    @DisplayName("estimate: a present metric with a NULL engagement rate does not throw")
+    void testNullEngagementRateDoesNotThrow() {
+        // avg_engagement_rate is nullable (CreatorMetric:91 has no nullable=false), so a row can
+        // carry followers with engagement not yet computed. Before F-0749 this line threw NPE out
+        // of estimate() and 500'd GET /api/v1/creator/agent-preferences, which is the request the
+        // creator Co-pilot page issues on load — the page died and "Open Meera" showed
+        // "An unexpected error occurred". Observed live on production 2026-09-07.
+        CreatorMetric metric = creatorMetric(10_000L, null, "MANUAL");
+
+        RateEstimation result = service.estimate(Optional.of(metric), NEUTRAL_QUALITY, List.of());
+
+        assertEquals("MICRO", result.tier());
+    }
+
+    @Test
+    @DisplayName("estimate: a NULL engagement rate is neutral (1.0), NOT the <1 low-engagement penalty")
+    void testNullEngagementRateIsNeutralNotPenalised() {
+        // The distinction this test exists for: absent is not low. Falling through to the `< 1`
+        // branch would apply 0.7 to a creator we have no reading for and quietly lower the rate
+        // floor computed from this estimate — a money-path effect from missing data. A regression
+        // that returned 0.7 here would still not throw, so the no-throw test above cannot catch it.
+        CreatorMetric metric = creatorMetric(10_000L, null, "MANUAL");
+
+        RateEstimation result = service.estimate(Optional.of(metric), NEUTRAL_QUALITY, List.of());
+
+        assertEquals(1.0, (double) result.factors().get("engagementMultiplier"));
+        // base [5000, 25000] untouched — identical to the neutral-rate case above
+        assertEquals(BigDecimal.valueOf(5000), result.min());
+        assertEquals(BigDecimal.valueOf(25000), result.max());
     }
 
     private CreatorMetric creatorMetric(long followers, BigDecimal engagementRate, String dataSource) {

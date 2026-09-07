@@ -91,11 +91,29 @@ public class RateEstimationService {
 
         // === Engagement multiplier ===
         // High engagement (>5%) = +30%, Low (<1%) = -30%
-        double engagementRate = metric.get().getAvgEngagementRate().doubleValue();
+        //
+        // F-0749 — avgEngagementRate is NULLABLE (CreatorMetric:91 declares no
+        // nullable=false), so a row can carry a follower count with the engagement figure
+        // not yet computed. This line dereferenced it unguarded, threw NPE out of
+        // estimate(), and 500'd GET /api/v1/creator/agent-preferences — the request the
+        // creator Co-pilot page issues on load. Observed live 2026-09-07: the page died
+        // and "Open Meera" rendered "An unexpected error occurred". The method already
+        // guards metric.isEmpty() above; a present row with a null column was the gap.
+        //
+        // Absent is NOT low. Letting null fall through to the `< 1` branch would apply the
+        // 0.7 penalty to a creator we simply have no reading for, quietly lowering the rate
+        // floor computed from this estimate — a money-path consequence of missing data.
+        // Neutral 1.0 leaves the tier base range untouched, which is what "we don't know"
+        // should cost. This matches the confidence block below, which already declines to
+        // credit an absent quality score for the same reason.
+        BigDecimal avgEngagement = metric.get().getAvgEngagementRate();
         double engagementMultiplier = 1.0;
-        if (engagementRate > 5) engagementMultiplier = 1.3;
-        else if (engagementRate > 3) engagementMultiplier = 1.15;
-        else if (engagementRate < 1) engagementMultiplier = 0.7;
+        if (avgEngagement != null) {
+            double engagementRate = avgEngagement.doubleValue();
+            if (engagementRate > 5) engagementMultiplier = 1.3;
+            else if (engagementRate > 3) engagementMultiplier = 1.15;
+            else if (engagementRate < 1) engagementMultiplier = 0.7;
+        }
 
         minRate *= engagementMultiplier;
         maxRate *= engagementMultiplier;
