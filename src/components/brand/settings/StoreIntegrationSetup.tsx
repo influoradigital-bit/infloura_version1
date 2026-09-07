@@ -11,6 +11,32 @@ import {
 
 import { cn } from '@/lib/utils';
 import { api, ApiError, type StoreProvider } from '@/lib/api';
+
+/**
+ * The WooCommerce webhook Delivery URL a brand pastes into their own store admin.
+ *
+ * DERIVED, never hardcoded — this string was previously the literal
+ * `https://api.influora.com/webhooks/woocommerce`, which was wrong twice over and had therefore
+ * never worked:
+ *
+ *  1. Wrong TLD. The API is `api.influora.in` (deploy/utho/generate-env.sh, the certbot cert, and
+ *     publish-images.yml all agree); `.com` is not ours.
+ *  2. Missing the context path. `server.servlet.context-path` is `/api/v1`, and
+ *     `WooCommerceWebhookController` maps `/webhooks/woocommerce` beneath it — so even on the
+ *     right host, the URL as printed would have 404'd.
+ *
+ * The failure mode is the quiet kind: the brand pastes it, WooCommerce accepts any URL, deliveries
+ * fail out of sight in their store's webhook log, and Influora records no orders while the brand
+ * believes tracking is live. Nothing on either side reports a problem.
+ *
+ * Building it from VITE_API_BASE_URL (same expression and fallback as `API_BASE_URL` in
+ * `src/lib/api.ts`) means the instructions now say whatever this build actually talks to. A
+ * hardcoded copy is a second source of truth for the deployment's own address, and it drifted the
+ * moment the domain was decided.
+ */
+const WOOCOMMERCE_WEBHOOK_URL = `${
+  import.meta.env?.VITE_API_BASE_URL || 'http://localhost:8080/api/v1'
+}/webhooks/woocommerce`;
 import { useStoreIntegration } from '@/hooks/brand/useStoreIntegration';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -243,7 +269,7 @@ export function StoreIntegrationSetup() {
             <li>
               Delivery URL:{' '}
               <code className="rounded bg-muted px-2 py-1 text-xs">
-                https://api.influora.com/webhooks/woocommerce
+                {WOOCOMMERCE_WEBHOOK_URL}
               </code>
             </li>
             <li>Set (or copy) the webhook Secret, then paste your site URL and that secret below</li>
