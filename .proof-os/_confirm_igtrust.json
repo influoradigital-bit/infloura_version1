@@ -1,0 +1,19 @@
+{
+ "verb": "CREATE",
+ "what": "Rewrite creator onboarding Step 1 as a trust screen for the Instagram connect, and route its Connect button through the same Facebook-Page path-choice that Settings already uses.",
+ "done_when": "npx vitest run src/pages/creator-onboarding.trust.test.tsx exits 0 and npx tsc --noEmit exits 0",
+ "owner": "ananya",
+ "reviewer": "kavya",
+ "scope": [
+  "src/pages/creator-onboarding.tsx",
+  "src/components/creator/connected-accounts.tsx"
+ ],
+ "oracles": [
+  "npm",
+  "tsc"
+ ],
+ "not_checked": [
+  "whether more creators actually complete the connect in production"
+ ],
+ "skipped": []
+}

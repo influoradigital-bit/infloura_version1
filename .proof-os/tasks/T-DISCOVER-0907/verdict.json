@@ -1,0 +1,18 @@
+{
+ "verdict": "believed",
+ "oracle": "regex",
+ "isolation": "oracle",
+ "done_when": "each available oracle ran over the scope and its raw output is recorded",
+ "not_checked": [
+  "whether the live production database actually has zero creators with an INSTAGRAM platform_stats row - no live DB or API probe was run",
+  "whether external_creators has any admin-imported rows in production",
+  "whether a brand sees the empty state or the error state on the live Instagram tab right now",
+  "the runtime behaviour of the Meta Graph calls - every Meta client was read, never invoked"
+ ],
+ "skipped": [
+  {
+   "step": "dispatch a fresh-context checker (SKILL.md \u00a76)",
+   "reason": "resolve.py returned verb=CHECK with oracle_first=true; FLOW law 4 forbids dispatching judgment agents when an oracle can decide, so mvn/npm/regex ran instead and no checker existed to isolate"
+  }
+ ]
+}

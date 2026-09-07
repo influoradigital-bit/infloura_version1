@@ -1,9 +1,52 @@
 # SHARED CONTEXT — Active Pipeline
 
-**Last update:** 2026-09-02 by Tejas (CMO)
-**Current tasks:** 
-1. FIX-WAVE-0828 ✅ DONE (awaiting Swapnil commit decision)
-2. **FESTIVAL BOX CMO REVIEW** — marketing strategy assessment complete, needs CEO approval
+**Last update:** 2026-09-07 by Ananya (Frontend)
+**Current tasks:**
+1. **STITCH PORT — about + blog** — READY FOR QA (see entry below)
+2. **BRAND LIFECYCLE FILM** — built, needs CEO sign-off before it goes on the site
+3. FIX-WAVE-0828 ✅ DONE (awaiting Swapnil commit decision)
+4. FESTIVAL BOX CMO REVIEW — marketing strategy assessment complete, needs CEO approval
+
+---
+
+## 🎨 STITCH DESIGN PORT — about + blog (2026-09-07)
+
+**FROM:** Ananya (Frontend) **TO:** Kavya (QA)
+**TASK:** Port Stitch designs "about-us-leadership" → `/about` and "blog-insights-hub" → `/blog`
+onto the existing pages, our palette, honest claims only (per task brief from Arjun).
+**FILES:** `src/pages/about.tsx` (rewritten), `src/pages/blog/index.tsx` (rewritten — now reuses
+`SiteHeader`/`SiteFooter`/`Seo` instead of a hand-rolled header/footer/meta block)
+**STATUS:** READY FOR QA — `npx tsc -p tsconfig.json --noEmit` exits 0. Visual/responsive/browser
+verification NOT done (Browser pane was hidden for this task — screenshots/clientWidth unusable).
+**CUT vs. the design (see in-file comments for the full list):** all invented traction stats
+(850+/14,000+/&lt;3s/₹0 hidden fees/4,200+ subscribers), "escrow"/RBI-licensed/nodal-trustee/ISO
+27001 language, "sovereign" as a house adjective, "100% payout retention"/"zero fee" claims (we
+charge creators 15%), automated TDS-filing claims, the fabricated second entity name +
+CIN/GSTIN, the founder portrait (AI-generated image captioned as the real CEO — text-only founder
+section instead, code comment left in place), every fabricated blog post/author/stat in the blog
+design (real posts from `src/content/blog/*.md` only, all authored "Influora Team"), and the
+non-functional newsletter signup (no subscribe endpoint exists in `src/lib/api.ts` — omitted
+rather than built unwired, per TECH-STACK.md UI Honesty).
+**Images placed:** 5 of the 6 provided `public/stitch-media/*.jpg` files (all decorative,
+`alt=""`, `loading="lazy"`); the 6th (`swapnil-maruti-shinde-...jpg`, the blocked CEO portrait)
+was not used anywhere.
+**NEXT:** Kavya reviews → Meera local-run verify (`npm run build`/`npm run dev`) → someone with a
+working Browser pane confirms 375px no-horizontal-overflow and dark/light theming.
+
+---
+
+## 🎬 BRAND LIFECYCLE FILM (2026-09-06)
+
+**FROM:** Tejas (CMO)
+**TO:** Swapnil (CEO)
+**TASK:** Full brand campaign lifecycle explainer — brief → applications → contract → secure funds → deliver → pay → results
+**FILES:** `wiki/decisions/campaigns/brand-lifecycle-film.md` (brief), `src/remotion/campaign/` (source), `_export/campaign-lifecycle.mp4` (2:17), `_export/how-to-create-a-campaign.mp4` (1:34)
+**STATUS:** ✅ BUILT & RENDERED — awaiting CEO sign-off on 3 open items in the brief
+**NEXT:** Swapnil rules on the invented sample numbers + happy-path-only scope; then Ananya adds burned-in subtitles for paid social; audio assets need `git add` (see brief)
+
+**Positioning:** the wedge is the MIDDLE of the deal, not discovery. Two-thirds of runtime goes to contract → secured funds → review → release → proof.
+
+**Claims discipline (do not let copy drift on these):** analytics are creator-reported and the film says so on screen; approval genuinely releases that milestone's payment (verified in code); publishing does NOT secure funds.
 
 ---
 

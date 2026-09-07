@@ -1,0 +1,18 @@
+{
+  "verdict": "believed",
+  "oracle": "mvn",
+  "isolation": "fresh-context",
+  "done_when": "a new AuthServiceTest case proves resetPassword sets emailVerified=true and status ACTIVE for a PENDING_VERIFICATION user, and mvn test run with cwd influora-api exits 0",
+  "not_checked": [
+    "whether a real user on the live VPS can now complete reset then login — nothing here ran against a deployed instance",
+    "the live stack runs /usr/local/App/docker-compose.prod.yml, which was never opened; INFLUORA_WEB_BASE_URL is set in deploy/utho compose but that is not proof the live container has it",
+    "whether the reset email is delivered at all (MSG91 / Utho outbound port) — this change assumes the mail arrives, and for the F-0601 stranded accounts that assumption is the whole fix",
+    "the 15 skipped tests are the Testcontainers classes: no DB ran, so the Hibernate mapping and ddl-auto=validate boot path are untested here",
+    "resetPassword against a SUSPENDED or DEACTIVATED account is untested and unguarded (independent-check finding); login still blocks those states, so it does not grant access, but the password rotates with no status check",
+    "resetPassword on a BRAND user is untested; the code has no UserType branch, which is read from source rather than proven",
+    "whether any other path can leave emailVerified=false with status other than PENDING_VERIFICATION, which would skip the login gate entirely — flagged unverified by the independent check"
+  ],
+  "skipped": [
+    {"step": "lookup-after-confirm ordering", "reason": "read the auth source before the confirm screen so the single question to the human could name the real symptom instead of guessing; confirm.py was then run and passed before any edit"}
+  ]
+}

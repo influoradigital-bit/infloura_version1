@@ -1,0 +1,76 @@
+{
+ "rows": [
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o -Dtest=CreatorDiscoveryServiceTest test",
+    "result": "23 tests run, all 23 passing (surefire report for CreatorDiscoveryServiceTest)",
+    "where": "influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java:146"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/CreatorProfileSpecifications.java",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -rln 'platformStatRepository.save' influora-api/src/main/java",
+    "result": "2 writers only: PlatformStatsAggregationJob, portfolio/PortfolioService - both build PlatformStat from a Meta CreatorMetric; no self-report write path exists, so hasPlatforms(INSTAGRAM) EXISTS-subquery can only match creators who completed Meta OAuth",
+    "where": "influora-api/src/main/java/com/influora/service/CreatorProfileSpecifications.java:163"
+   }
+  },
+  {
+   "subject": "src/pages/creator-onboarding.tsx",
+   "owner": "ananya",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -n -i 'instagram|handle' src/pages/creator-onboarding.tsx",
+    "result": "the only Instagram branch is handleConnectInstagram -> full-page Meta OAuth redirect; no field captures a handle or follower count, so a creator who declines or fails OAuth carries zero Instagram data",
+    "where": "src/pages/creator-onboarding.tsx:121"
+   }
+  },
+  {
+   "subject": "src/components/brand/discover/creator-discovery.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "npm",
+    "command": "npx vitest run src/components/brand/discover",
+    "result": "Test Files 8 passed (8), Tests 27 passed (27)",
+    "where": "src/components/brand/discover/creator-discovery.tsx:695"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/ExternalCreatorService.java",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -n 'META_CREATOR_MARKETPLACE_ENABLED' influora-api/src/main/resources/application.yml deploy/utho/docker-compose.utho.yml deploy/hostinger/docker-compose.hostinger.yml",
+    "result": "application.yml:433 enabled: ${META_CREATOR_MARKETPLACE_ENABLED:false}; utho:253 and hostinger:228 both pass :-false - the marketplace enrichment branch in list() is dead in every shipped deploy",
+    "where": "influora-api/src/main/java/com/influora/service/ExternalCreatorService.java:188"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/resources/application.yml",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "regex",
+    "command": "grep -n 'system-ig' influora-api/src/main/resources/application.yml",
+    "result": "system-ig-user-id and system-ig-access-token both default to empty, so resolveSystemCaller() returns null and handle lookup falls through to borrowing an arbitrary creator's FACEBOOK_LOGIN token or 503 INSTAGRAM_LOOKUP_UNAVAILABLE",
+    "where": "influora-api/src/main/resources/application.yml:438"
+   }
+  }
+ ]
+}

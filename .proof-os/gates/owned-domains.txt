@@ -1,0 +1,15 @@
+# Registrable domains this deployment owns and serves from.
+# Read by .proof-os/gates/allowlist-domain-owned.py. One per line, no scheme.
+# A host is accepted if it equals a line here or is a subdomain of one.
+#
+# Adding a line here is the ONLY way to bless a new domain, which is the point:
+# it puts the decision in a diff rather than inside a config value nobody reads.
+#
+# Deliberately absent, and why:
+#   influora.com   NOT OURS. Resolves to 44.232.173.249 / 52.40.42.113
+#                  (verified 2026-09-07). Third-party infrastructure. This is
+#                  the domain F-0722 and F-0721 were misconfigured onto, and
+#                  earlier fixes in this repo record the same slip for a help
+#                  host and an object-storage host.
+#   snapsby.com    A co-tenant product on the same VPS. Not this product.
+influora.in

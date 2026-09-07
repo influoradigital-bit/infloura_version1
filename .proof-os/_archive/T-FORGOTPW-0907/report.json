@@ -1,0 +1,18 @@
+{"rows": [
+  {"subject": "influora-api/src/main/java/com/influora/service/AuthService.java",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "mvn",
+                "command": "mvn -o test (influora-api module, full suite)",
+                "result": "BUILD SUCCESS: 2621 tests, 0 failures, 0 errors, 15 skipped",
+                "where": "influora-api/src/main/java/com/influora/service/AuthService.java:649"}},
+  {"subject": "influora-api/src/test/java/com/influora/service/AuthServiceTest.java",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "mvn",
+                "command": "mvn -o test -Dtest=AuthServiceTest",
+                "result": "50 tests, 0 failures, 0 errors, 0 skipped",
+                "where": "influora-api/src/test/java/com/influora/service/AuthServiceTest.java:1047"}}
+]}

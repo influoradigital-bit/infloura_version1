@@ -1,0 +1,12 @@
+# Everything under deploy/ is executed on Linux servers, but this repo is developed on
+# Windows with core.autocrlf=true. Without this, a fresh clone checks these out with CRLF
+# and `scp`ing one to the box produces `bash: $'\r': command not found` on the shebang
+# line - a failure that never reproduces for whoever committed it, because their existing
+# working copy is already LF.
+#
+# Scoped to deploy/ deliberately: a repo-wide rule would rewrite line endings under other
+# people's in-progress work.
+
+*.sh   text eol=lf
+*.conf text eol=lf
+Caddyfile text eol=lf
