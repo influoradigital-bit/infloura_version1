@@ -19,6 +19,31 @@
       Light and dark artwork is deliberately identical: per Swapnil's 2026-09-05
       ruling the logo keeps its own colours, and the orchid reads on either ground.
     -->
+    <!--
+      F-0709 — /favicon.ico MUST exist as a real file. It is the path Google requests first and
+      the one browsers request unprompted, and it is not covered by any <link> below. While it was
+      absent the SPA history fallback answered it with a 200 and this very document
+      (Content-Type: text/html, 97kB), so Google received something that was not an image, could
+      not fall back, and rendered the generic globe next to influora.in in search results. A 404
+      would have been strictly better than that 200 — it would have sent Google to the PNGs. Do
+      not delete this file, and do not let it become a route.
+      Multi-size (16/32/48) so the tab, the SERP and the bookmark bar each take the entry nearest
+      what they render at instead of all three downscaling one bitmap.
+    -->
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <!--
+      F-0709 — 48px and 96px exist because Google recommends a multiple of 48px square for the
+      search favicon and the largest entry here used to be 32x32; apple-icon.png was 180x180 but
+      sat outside the rel="icon" list, so Google never saw it. Both are cut from apple-icon.png
+      with its ~8% padding removed: at 16px that padding is a whole dead pixel per edge, which is
+      the margin logo-usage.md §6 shows the mark cannot spare. Ground is transparent, not white,
+      so the mark does not read as a white tile in dark UI.
+      Known debt: this is still a mechanical downscale. logo-usage.md §6 measures why that is not
+      good enough below ~48px (channels go sub-pixel and the pinwheel closes into a lozenge) and
+      calls for a separately drawn small-size mark. Replace these when that vector exists.
+    -->
+    <link rel="icon" href="/icon-96x96.png" sizes="96x96" type="image/png" />
+    <link rel="icon" href="/icon-48x48.png" sizes="48x48" type="image/png" />
     <link rel="icon" href="/icon-light-16x16.png" sizes="16x16" type="image/png" />
     <link rel="icon" href="/icon-dark-16x16.png" sizes="16x16" type="image/png" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="/icon-light-32x32.png" sizes="32x32" type="image/png" />
