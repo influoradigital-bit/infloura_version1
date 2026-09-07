@@ -15,6 +15,7 @@ import com.influora.domain.enums.ExternalCreatorSource;
 import com.influora.repository.CreatorConnectionRequestRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.ExternalCreatorRepository;
+import com.influora.repository.PlatformStatRepository;
 import com.influora.service.notification.event.ConnectedCreatorJoinedEvent;
 import java.util.List;
 import java.util.Optional;
@@ -40,6 +41,7 @@ class ExternalCreatorLinkServiceTest {
     @Mock private ExternalCreatorRepository externalCreatorRepository;
     @Mock private CreatorConnectionRequestRepository connectionRequestRepository;
     @Mock private CreatorProfileRepository creatorProfileRepository;
+    @Mock private PlatformStatRepository platformStatRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private CreatorProfile creatorProfile;
 
@@ -54,6 +56,7 @@ class ExternalCreatorLinkServiceTest {
                         externalCreatorRepository,
                         connectionRequestRepository,
                         creatorProfileRepository,
+                        platformStatRepository,
                         eventPublisher);
     }
 

@@ -4,10 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.influora.domain.entity.CreatorConnectionRequest;
 import com.influora.domain.entity.CreatorProfile;
+import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.entity.ExternalCreator;
 import com.influora.domain.enums.ExternalCreatorSource;
 import com.influora.repository.CreatorConnectionRequestRepository;
 import com.influora.repository.CreatorProfileRepository;
+import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.ExternalCreatorRepository;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -89,13 +91,28 @@ import org.springframework.transaction.support.TransactionTemplate;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.ANY)
 @EntityScan(
-        basePackageClasses = {CreatorProfile.class, ExternalCreator.class, CreatorConnectionRequest.class})
+        basePackageClasses = {
+            CreatorProfile.class,
+            ExternalCreator.class,
+            CreatorConnectionRequest.class,
+            // F-0701 — finishLinking now adopts the external row's Instagram identity onto
+            // platform_stats, so this entity must be mapped for the context to start.
+            PlatformStat.class
+        })
 @EnableJpaRepositories(
-        basePackageClasses = {CreatorProfileRepository.class, CreatorConnectionRequestRepository.class},
+        basePackageClasses = {
+            CreatorProfileRepository.class,
+            CreatorConnectionRequestRepository.class,
+            // F-0701 — a real repository, not a proxy: PlatformStatRepository carries only
+            // derived finders (no @Query), so it does not hit the eager-JPQL-validation
+            // problem that forces ExternalCreatorRepository to be hand-proxied above.
+            PlatformStatRepository.class
+        },
         excludeFilters =
                 @ComponentScan.Filter(
                         type = FilterType.REGEX,
-                        pattern = "com\\.influora\\.repository\\.(?!CreatorProfileRepository$|CreatorConnectionRequestRepository$).*"))
+                        pattern =
+                                "com\\.influora\\.repository\\.(?!CreatorProfileRepository$|CreatorConnectionRequestRepository$|PlatformStatRepository$).*"))
 @Import({ExternalCreatorLinkService.class, ExternalCreatorLinkServiceRollbackIsolationTest.TestRepoConfig.class})
 @TestPropertySource(
         properties = {

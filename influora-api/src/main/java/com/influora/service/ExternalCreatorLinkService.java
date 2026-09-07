@@ -1,12 +1,15 @@
 package com.influora.service;
 
+import com.influora.common.Ulids;
 import com.influora.domain.entity.CreatorConnectionRequest;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.ExternalCreator;
+import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.enums.ConnectionRequestStatus;
 import com.influora.repository.CreatorConnectionRequestRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.ExternalCreatorRepository;
+import com.influora.repository.PlatformStatRepository;
 import com.influora.service.notification.event.ConnectedCreatorJoinedEvent;
 import java.util.List;
 import java.util.Optional;
@@ -52,19 +55,26 @@ public class ExternalCreatorLinkService {
 
     private static final Logger log = LoggerFactory.getLogger(ExternalCreatorLinkService.class);
 
+    /** F-0701 — the only platform an external_creators row can describe today. */
+    private static final String INSTAGRAM = "INSTAGRAM";
+
     private final ExternalCreatorRepository externalCreatorRepository;
     private final CreatorConnectionRequestRepository connectionRequestRepository;
     private final CreatorProfileRepository creatorProfileRepository;
+    /** F-0701 — see {@link #adoptExternalPlatformStat}. */
+    private final PlatformStatRepository platformStatRepository;
     private final ApplicationEventPublisher eventPublisher;
 
     public ExternalCreatorLinkService(
             ExternalCreatorRepository externalCreatorRepository,
             CreatorConnectionRequestRepository connectionRequestRepository,
             CreatorProfileRepository creatorProfileRepository,
+            PlatformStatRepository platformStatRepository,
             ApplicationEventPublisher eventPublisher) {
         this.externalCreatorRepository = externalCreatorRepository;
         this.connectionRequestRepository = connectionRequestRepository;
         this.creatorProfileRepository = creatorProfileRepository;
+        this.platformStatRepository = platformStatRepository;
         this.eventPublisher = eventPublisher;
     }
 
@@ -208,6 +218,12 @@ public class ExternalCreatorLinkService {
         external.markJoined(creatorProfileId);
         externalCreatorRepository.save(external);
 
+        // F-0701 — must run BEFORE the early return below. A creator can be linked with no open
+        // connection request at all (an admin invite nobody had a PENDING request against), and
+        // this method returns as soon as it finds none; putting the adoption after that point
+        // would leave exactly those creators undiscoverable.
+        adoptExternalPlatformStat(external, creatorProfileId);
+
         List<CreatorConnectionRequest> openRequests =
                 connectionRequestRepository.findByExternalCreatorIdAndStatusIn(
                         external.getId(),
@@ -233,6 +249,98 @@ public class ExternalCreatorLinkService {
                             creatorName,
                             external.getIgUsername(),
                             creatorProfileId));
+        }
+    }
+
+    /**
+     * F-0701 — carries the Instagram identity we already hold onto the creator's own profile, so a
+     * creator the brand personally recruited actually appears when that brand searches for them.
+     *
+     * <p>Before this, {@link #finishLinking} marked the row JOINED and emailed the brand "they
+     * joined" while writing no {@code platform_stats} row. The brand's Discover filter for {@code
+     * platforms=INSTAGRAM} is an EXISTS subquery over that table ({@code
+     * CreatorProfileSpecifications#hasPlatforms}), so the creator was absent from the results —
+     * with the handle, follower count and engagement rate sitting unused on the {@link
+     * ExternalCreator} row, already fetched from Business Discovery.
+     *
+     * <p><b>Why the adopted row is never {@code verified}.</b> The invite proves the creator
+     * controls the email address an admin associated with that handle. It does not prove they own
+     * the Instagram account — the identity binding is an admin's assertion, while the numbers are
+     * genuinely Meta's. {@code PlatformStat.verified} is read by brands as platform-confirmed
+     * ownership before they spend money (CR-119), so it fails closed here and the creator earns it
+     * by connecting Meta themselves.
+     *
+     * <p><b>Why this creates but never updates.</b> A creator who connected Meta before accepting
+     * the invite already holds a genuinely verified row built from their own token; overwriting it
+     * with an admin's older copy of the same numbers would be a downgrade. Absent-only is the whole
+     * contract, which is also why this is a small create rather than a third copy of the
+     * upsert-with-update in {@code PortfolioService}/{@code PlatformStatsAggregationJob}.
+     *
+     * <p>Best-effort by construction: a failure to make someone discoverable must never stop them
+     * joining, so this swallows its own exceptions rather than letting them reach the JOINED write
+     * above — the same discipline the cross-link hook in {@code PortfolioService} already applies.
+     */
+    private void adoptExternalPlatformStat(ExternalCreator external, String creatorProfileId) {
+        try {
+            String handle = external.getIgUsername();
+            if (handle == null || handle.isBlank()) {
+                return;
+            }
+            if (platformStatRepository
+                    .findByCreatorProfileIdAndPlatform(creatorProfileId, INSTAGRAM)
+                    .isPresent()) {
+                return;
+            }
+
+            Long followers = external.getFollowers();
+            platformStatRepository.save(
+                    PlatformStat.builder()
+                            .id(Ulids.newUlid())
+                            .creatorProfileId(creatorProfileId)
+                            .platform(INSTAGRAM)
+                            .handle(handle)
+                            // An ADMIN_IMPORT stub that Meta never enriched has no follower count.
+                            // 0 keeps the creator findable by the platform chip while claiming
+                            // nothing; inventing a number here would be worse than the bug.
+                            .followers(followers == null ? 0L : followers)
+                            .engagementRate(external.getEngagementRate())
+                            .verified(false)
+                            .build());
+
+            // CreatorProfileSpecifications#followersBetween reads CreatorProfile.totalFollowers,
+            // NOT the platform row — without this roll-up the creator appears for the platform chip
+            // and then vanishes the moment a brand touches the follower slider, which looks like an
+            // unrelated bug.
+            creatorProfileRepository
+                    .findById(creatorProfileId)
+                    .ifPresent(
+                            profile -> {
+                                long total =
+                                        platformStatRepository.findByCreatorProfileId(creatorProfileId).stream()
+                                                .mapToLong(PlatformStat::getFollowers)
+                                                .sum();
+                                profile.applyAggregatedStats(
+                                        total,
+                                        external.getEngagementRate() != null
+                                                ? external.getEngagementRate()
+                                                : profile.getEngagementRate());
+                                creatorProfileRepository.save(profile);
+                            });
+
+            log.info(
+                    "Adopted external Instagram identity onto creatorProfileId={} from"
+                            + " externalCreatorId={} (unverified — invite proves email control, not"
+                            + " account ownership)",
+                    creatorProfileId,
+                    external.getId());
+        } catch (RuntimeException e) {
+            log.error(
+                    "adoptExternalPlatformStat failed for creatorProfileId={} externalCreatorId={}"
+                            + " (swallowed — the JOINED write above already succeeded and the"
+                            + " creator is linked; they are just not yet discoverable by platform)",
+                    creatorProfileId,
+                    external.getId(),
+                    e);
         }
     }
 
