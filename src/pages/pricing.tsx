@@ -58,11 +58,26 @@ import {
 // commission changed in this pass — only how they are grouped and described.
 //
 // HONEST-QUALIFIER RULE FOR THIS PAGE. Three of Pro's unlocks (seats, tracked
-// creators, analytics deep-dives) and the reduced per-deal brand fee are
+// creators, analytics deep-dives) and the reduced brand publish fee are
 // platform gates, not AI. Copy therefore says "no subscription to use the
 // platform" and never a bare "the platform is free", and it never implies the
 // caps are gone. Removing those caps would be a revenue decision and is
 // Swapnil's alone — see the report filed with this change.
+//
+// BRAND-FEE TIMING RULE FOR THIS PAGE. The brand-side platform fee is
+// charged ONCE PER CAMPAIGN, at the moment the campaign goes live, and it
+// is computed on the campaign's committed budget (budgetMax), not on what
+// the campaign actually spends. It is a wallet debit inside the same
+// transaction as the DRAFT -> ACTIVE flip, so an underfunded wallet blocks
+// the publish; there is deliberately no refund path if the campaign later
+// spends less. See BrandCampaignFeeService.chargeOnPublish and its two
+// callers (CampaignService.update, ConfirmLaunchExecutor.doExecute).
+// Copy on this page must therefore say "when a campaign goes live" and
+// never phrase the BRAND fee as something taken once a deal finishes or
+// closes. That per-transaction phrasing belongs to the CREATOR commission,
+// a separate charge deducted at escrow release
+// (PlatformFeeService.deductAtRelease); the creator-facing wording further
+// down this file is correct and must stay.
 //
 // STITCH PORT (2026-09-07). Two Stitch designs targeted this page and
 // contradicted each other:
@@ -234,7 +249,7 @@ const MATRIX_GROUPS: MatrixGroup[] = [
         pro: { kind: 'comingSoon' },
       },
       {
-        feature: 'Platform fee per closed deal',
+        feature: 'Platform fee when a campaign goes live',
         free: { kind: 'text', value: 'Included' },
         pro: { kind: 'text', value: 'Reduced' },
       },
@@ -313,7 +328,7 @@ const FAQS = [
   {
     question: 'Is there a free plan?',
     answer:
-      'Yes. The Free plan is permanently usable — no time limit, no trial countdown. The platform itself carries no subscription: you pay a fee only when a deal actually closes. Pro is an optional upgrade for brands who want more AI credits, and it lifts the seat, tracked-creator and analytics limits that Free caps.',
+      'Yes. The Free plan is permanently usable — no time limit, no trial countdown. The platform itself carries no subscription: you pay a platform fee when you take a campaign live. Pro is an optional upgrade for brands who want more AI credits, and it lifts the seat, tracked-creator and analytics limits that Free caps.',
   },
   {
     question: 'Do I have to subscribe to use Influora?',
@@ -323,7 +338,7 @@ const FAQS = [
   {
     question: "What's the difference between Free and Pro?",
     answer:
-      'The headline difference is AI: Pro gives you 400 AI credits a month instead of 100 (150 after your first funded campaign). Pro also raises the limits Free caps — unlimited creator analytics deep-dives (vs. 1/month), 5 workspace seats (vs. 1), unlimited tracked creators (vs. 5) — adds report export (CSV/PDF) and campaign templates when they launch, and reduces the brand fee on every closed deal. Everything else — contracts, payment protection, dispute resolution, TDS on payouts, the campaign dashboard — is the same on both. See the comparison table above.',
+      'The headline difference is AI: Pro gives you 400 AI credits a month instead of 100 (150 after your first funded campaign). Pro also raises the limits Free caps — unlimited creator analytics deep-dives (vs. 1/month), 5 workspace seats (vs. 1), unlimited tracked creators (vs. 5) — adds report export (CSV/PDF) and campaign templates when they launch, and reduces the brand fee charged when a campaign goes live. Everything else — contracts, payment protection, dispute resolution, TDS on payouts, the campaign dashboard — is the same on both. See the comparison table above.',
   },
   {
     question: 'Does upgrading to Pro change what creators earn?',
@@ -348,7 +363,7 @@ const FAQS = [
   {
     question: 'How is the brand fee different on Pro?',
     answer:
-      'Pro reduces the fee on every closed deal. Free uses the standard rate. We do not publish either rate on this page — you see the exact amount in rupees on the deal itself before you fund it, and again on the invoice after payout, so you are never estimating from a percentage.',
+      'Pro reduces the brand fee. Free uses the standard rate. We do not publish either rate on this page — your workspace’s current rate is shown on the campaign before you take it live, and the fee itself appears in rupees on the invoice raised at that moment, so you are never estimating from a percentage.',
   },
   {
     // The honest qualifier on "the platform is free". Free is genuinely
@@ -357,12 +372,12 @@ const FAQS = [
     // is selling a surprise. This answer names every cap in one place.
     question: 'Is Free actually free, or is it a limited version?',
     answer:
-      'Both, honestly. Every plan — Free included — gets auto-generated contracts, payment protection on every deal, dispute resolution, TDS shown on payouts and an unlimited campaign dashboard. None of that is behind the subscription. Free is capped, though: 1 workspace seat, up to 5 tracked creators, 1 creator analytics deep-dive a month, and 100 AI credits a month (150 after your first funded campaign). A platform fee applies when a deal completes, on either plan. Pro raises the caps and cuts that fee.',
+      'Both, honestly. Every plan — Free included — gets auto-generated contracts, payment protection on every deal, dispute resolution, TDS shown on payouts and an unlimited campaign dashboard. None of that is behind the subscription. Free is capped, though: 1 workspace seat, up to 5 tracked creators, 1 creator analytics deep-dive a month, and 100 AI credits a month (150 after your first funded campaign). A platform fee applies when a campaign goes live, on either plan. Pro raises the caps and cuts that fee.',
   },
   {
     question: 'When do I actually pay (or get paid)?',
     answer:
-      'Brands: nothing is charged until a deal is funded and completed through Secure Payments. Creators: payout releases automatically once the brand approves the deliverable, usually within 24 hours.',
+      'Brands: the platform fee is charged once, from your wallet, at the moment you take a campaign live — it is calculated on the campaign budget you commit, and it is not refunded if the campaign later spends less. Creator payments are separate: they stay in Secure Payments until you approve the work. Creators: payout releases automatically once the brand approves the deliverable, usually within 24 hours.',
   },
   {
     question: 'What if the deal falls through?',
@@ -404,14 +419,14 @@ export default function PricingPage() {
               name: 'Free',
               price: 0,
               description:
-                'No subscription. Discover creators, run deals, use protected payments, generate contracts and resolve disputes; a platform fee applies only when a deal completes.',
+                'No subscription. Discover creators, run deals, use protected payments, generate contracts and resolve disputes; a platform fee applies when you take a campaign live.',
             },
             {
               name: 'Pro',
               price: 4999,
               billingPeriod: 'MON',
               description:
-                '400 AI credits a month, plus 5 team seats, unlimited tracked creators, unlimited creator analytics and a reduced per-deal fee.',
+                '400 AI credits a month, plus 5 team seats, unlimited tracked creators, unlimited creator analytics and a reduced platform fee on every campaign you take live.',
             },
           ],
         })}
@@ -420,7 +435,7 @@ export default function PricingPage() {
         data={getWebPageSchema({
           name: 'Influora Pricing',
           description:
-            'Using Influora needs no subscription: the Free tier includes contracts, payment protection, dispute resolution, TDS on payouts and the campaign dashboard, with a platform fee only on completed deals. Pro at ₹4,999 per month buys more AI credits and raises the seat, tracked-creator and analytics limits. Creators join and get paid for free.',
+            'Using Influora needs no subscription: the Free tier includes contracts, payment protection, dispute resolution, TDS on payouts and the campaign dashboard, with a platform fee charged when a campaign goes live. Pro at ₹4,999 per month buys more AI credits and raises the seat, tracked-creator and analytics limits. Creators join and get paid for free.',
           url: '/pricing',
         })}
       />
@@ -516,7 +531,7 @@ export default function PricingPage() {
                     <Badge variant="outline">Free</Badge>
                     <p className="mt-4 text-3xl font-bold">₹0/month</p>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      The full platform, no subscription. A fee applies only when a deal closes.
+                      The full platform, no subscription. A fee applies when you take a campaign live.
                     </p>
                     <p className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Monthly allowances
@@ -530,9 +545,9 @@ export default function PricingPage() {
                       ))}
                     </ul>
                     <div className="mt-6 rounded-lg border border-border/60 bg-card/50 p-4">
-                      <p className="text-sm font-semibold">Platform fee per closed deal</p>
+                      <p className="text-sm font-semibold">Platform fee when a campaign goes live</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        Transparent pricing shown before you fund. Creator commission unchanged.
+                        Your rate is shown on the campaign before you publish. Creator commission unchanged.
                       </p>
                     </div>
                     <Button
@@ -577,9 +592,9 @@ export default function PricingPage() {
                       ))}
                     </ul>
                     <div className="mt-6 rounded-lg border border-accent-foreground/30 bg-card/50 p-4">
-                      <p className="text-sm font-semibold">Lower platform fee on every deal</p>
+                      <p className="text-sm font-semibold">Lower platform fee on every campaign you take live</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        Transparent savings shown upfront. Creator commission unchanged.
+                        Your reduced rate is shown before you publish. Creator commission unchanged.
                       </p>
                     </div>
                     {/*
@@ -604,8 +619,8 @@ export default function PricingPage() {
 
             <FadeUp delay={0.15}>
               <p className="mt-6 text-center text-sm text-muted-foreground">
-                Pro is priced for the AI credits. The reduced per-deal fee is a second effect: above
-                ~₹2,10,000/month in campaign spend it covers the subscription on its own.
+                Pro is priced for the AI credits. The reduced fee is a second effect: above
+                ~₹2,10,000/month in published campaign budget it covers the subscription on its own.
               </p>
             </FadeUp>
           </div>
@@ -691,10 +706,10 @@ export default function PricingPage() {
                     </p>
                     <p>
                       <span className="font-medium text-foreground">
-                        When your spend is above ₹2,10,000 a month.
+                        When your published campaign budget is above ₹2,10,000 a month.
                       </span>{' '}
-                      Above that, the reduced per-deal fee — shown in rupees on every deal before you fund
-                      it — covers the subscription by itself, whatever you do with the credits.
+                      Above that, the reduced fee — applied to every campaign budget you publish — covers
+                      the subscription by itself, whatever you do with the credits.
                     </p>
                     <p>
                       <span className="font-medium text-foreground">And when none of that is true,</span>{' '}
@@ -766,7 +781,9 @@ export default function PricingPage() {
             <FadeUp>
               <h2 className="text-3xl font-semibold">No hidden fees</h2>
               <p className="mt-3 text-muted-foreground">
-                Every fee is shown on the deal before you fund the deal, and on the invoice after payout.
+                Your platform fee rate is shown on the campaign before you take it live, and every fee
+                lands in rupees on an invoice — the brand fee when the campaign goes live, the creator
+                commission at payout.
                 There's no separate charge for payment protection, contracts, or invoicing — they're part of the
                 same transparent flow.
               </p>

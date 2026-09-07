@@ -700,12 +700,22 @@ export default function HowItWorksBrandsPage() {
           </div>
         </section>
 
+        {/*
+          BRAND-FEE TIMING RULE. The brand-side platform fee is charged ONCE PER
+          CAMPAIGN, when the campaign goes live, on the campaign's committed budget
+          (budgetMax) — not per deal and not on actual spend. See
+          BrandCampaignFeeService.chargeOnPublish and the fuller note in
+          src/pages/pricing.tsx. Brand-fee copy must say "when a campaign goes live",
+          never that it is taken once a deal finishes or closes. That per-transaction
+          phrasing belongs to the CREATOR commission
+          (PlatformFeeService.deductAtRelease), a separate charge taken at payout.
+        */}
         <FunnelCta
           heading="Ready to launch your first campaign?"
           sub="Free to start — no subscription on the Free tier. Upgrade to Pro anytime for lower fees and team features."
           primary={{ label: 'Launch your first campaign', to: '/brand/register' }}
           secondary={{ label: 'See pricing first', to: '/pricing' }}
-          reassurances={['Free to start', 'Contracts included', 'Pay only on completed deals']}
+          reassurances={['Free to start', 'Contracts included', 'Fee only when a campaign goes live']}
           className="py-20"
         />
       </main>

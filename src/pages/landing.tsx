@@ -65,6 +65,15 @@ const HERO = {
  * add an answer here that the app cannot back up; an answer engine that cites us
  * and is then contradicted by the product is worse than not being cited.
  */
+// BRAND-FEE TIMING RULE. The brand-side platform fee is charged ONCE PER
+// CAMPAIGN, when the campaign goes live, on the campaign's committed budget
+// (budgetMax) — not per deal and not on actual spend. See
+// BrandCampaignFeeService.chargeOnPublish and the fuller note in
+// src/pages/pricing.tsx. Brand-fee copy must say "when a campaign goes
+// live", never that it is taken once a deal finishes or closes. That
+// per-transaction phrasing belongs to the CREATOR commission
+// (PlatformFeeService.deductAtRelease), a separate charge at payout; the
+// creator-facing wording further down this file is correct.
 const FAQS = [
   {
     question: 'How do brands find influencers in India on Influora?',
@@ -74,7 +83,7 @@ const FAQS = [
   {
     question: 'How much does influencer marketing cost in India?',
     answer:
-      'Rates on Influora are set by each creator and shown on their profile as a rate card, so a brand sees the price before it starts a conversation. Nano and micro creators commonly price a single reel in the low thousands of rupees, while larger accounts price higher; Influora itself charges no subscription on the Free tier and takes a platform fee only when a deal completes.',
+      'Rates on Influora are set by each creator and shown on their profile as a rate card, so a brand sees the price before it starts a conversation. Nano and micro creators commonly price a single reel in the low thousands of rupees, while larger accounts price higher; Influora itself charges no subscription on the Free tier and charges the brand a platform fee when a campaign goes live.',
   },
   {
     question: 'How do I pay an influencer safely?',
@@ -254,14 +263,14 @@ export default function LandingPage() {
             {
               name: 'Free',
               price: 0,
-              description: 'No subscription. Pay a platform fee only when a deal completes.',
+              description: 'No subscription. Pay a platform fee when you take a campaign live.',
             },
             {
               name: 'Pro',
               price: 4999,
               billingPeriod: 'MON',
               description:
-                '400 AI credits a month, plus 5 seats, unlimited tracked creators and a reduced per-deal fee.',
+                '400 AI credits a month, plus 5 seats, unlimited tracked creators and a reduced platform fee on every campaign you take live.',
             },
           ],
         })}
@@ -735,7 +744,7 @@ export default function LandingPage() {
           sub="Create a brand account, post a brief, and have your first creator invites out today."
           primary={{ label: 'Create a brand account', to: '/brand/register' }}
           secondary={{ label: "I'm a creator — create a creator account", to: '/creator/register' }}
-          reassurances={['Free to start', 'No subscription', 'Pay only when a deal completes']}
+          reassurances={['Free to start', 'No subscription', 'Fee only when a campaign goes live']}
           className="py-20"
         />
       </main>
