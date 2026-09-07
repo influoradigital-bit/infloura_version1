@@ -271,7 +271,7 @@ export function DealContractTab({
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Value</p>
-                <p className="font-semibold text-success">{formatINR(dealValue)}</p>
+                <p className="font-semibold text-success-foreground">{formatINR(dealValue)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Status</p>

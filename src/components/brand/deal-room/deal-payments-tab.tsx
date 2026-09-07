@@ -163,7 +163,7 @@ export function DealPaymentsTab({
         <Card className={escrowLocked ? 'border-success/30 bg-success/5' : 'border-muted'}>
           <CardContent className="pt-4 flex items-start gap-3">
             {escrowLocked ? (
-              <Lock className="h-5 w-5 text-success shrink-0 mt-0.5" />
+              <Lock className="h-5 w-5 text-success-foreground shrink-0 mt-0.5" />
             ) : (
               <Shield className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
             )}
@@ -229,7 +229,7 @@ export function DealPaymentsTab({
               <CardTitle className="text-sm font-medium text-muted-foreground">Released</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-success">{formatINR(releasedTotal)}</p>
+              <p className="text-2xl font-bold text-success-foreground">{formatINR(releasedTotal)}</p>
             </CardContent>
           </Card>
         </div>
@@ -246,7 +246,7 @@ export function DealPaymentsTab({
               >
                 <div className="flex items-center gap-2">
                   {m.status === 'released' ? (
-                    <Unlock className="h-4 w-4 text-success" />
+                    <Unlock className="h-4 w-4 text-success-foreground" />
                   ) : m.status === 'locked' ? (
                     <Lock className="h-4 w-4 text-warning" />
                   ) : (
@@ -273,7 +273,7 @@ export function DealPaymentsTab({
                     variant="outline"
                     className={
                       m.status === 'released'
-                        ? 'text-success border-success/30'
+                        ? 'text-success-foreground border-success/30'
                         : m.status === 'locked'
                           ? 'text-warning border-warning/30'
                           : ''

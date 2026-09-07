@@ -225,7 +225,7 @@ export function CreatorDealContractTab({
           {/* netEarnings is null-safe via formatINR (shared helper, returns "—"). */}
           <div className="flex justify-between border-t pt-2">
             <span className="font-medium">You receive (est.)</span>
-            <span className="font-bold text-success">{formatINR(netEarnings)}</span>
+            <span className="font-bold text-success-foreground">{formatINR(netEarnings)}</span>
           </div>
         </div>
 
@@ -311,7 +311,7 @@ export function CreatorDealContractTab({
             </Button>
           )}
           {fullySigned && (
-            <div className="flex items-center gap-2 text-sm text-success px-3">
+            <div className="flex items-center gap-2 text-sm text-success-foreground px-3">
               <CheckCircle2 className="h-4 w-4" />
               Fully signed
             </div>

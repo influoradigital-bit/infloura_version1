@@ -18,7 +18,7 @@ const VERDICT_CONFIG: Record<
   DeliverableSafetyVerdict,
   { label: string; className: string; Icon: typeof CheckCircle2 }
 > = {
-  PASS: { label: 'No concerns found', className: 'bg-success/15 text-success', Icon: CheckCircle2 },
+  PASS: { label: 'No concerns found', className: 'bg-success/15 text-success-foreground', Icon: CheckCircle2 },
   REVIEW: { label: 'Review recommended', className: 'bg-warning/15 text-warning', Icon: AlertTriangle },
   FAIL: { label: 'Issues found', className: 'bg-destructive/15 text-destructive-foreground', Icon: XCircle },
 };
@@ -27,7 +27,7 @@ const CHECK_STATUS_CONFIG: Record<
   DeliverableSafetyCheck['status'],
   { className: string; Icon: typeof CheckCircle2 }
 > = {
-  PASS: { className: 'bg-success/15 text-success', Icon: CheckCircle2 },
+  PASS: { className: 'bg-success/15 text-success-foreground', Icon: CheckCircle2 },
   WARNING: { className: 'bg-warning/15 text-warning', Icon: AlertTriangle },
   FAIL: { className: 'bg-destructive/15 text-destructive-foreground', Icon: XCircle },
 };
@@ -46,7 +46,7 @@ const CHECK_STATUS_CONFIG: Record<
  * (`CompliancePreCheck.tsx`): collapsible card, chips are text+icon (not
  * color-only) so the signal survives grayscale/colorblind viewing, and this
  * uses the shadcn `text-destructive-foreground` token family — matching this
- * component's mount site, DeliverableViewer.tsx (bg-success/15 text-success,
+ * component's mount site, DeliverableViewer.tsx (bg-success/15 text-success-foreground,
  * bg-warning/15 text-warning, text-destructive-foreground), NOT the
  * `meera-*` tokens, which are scoped to the Meera chat surface only.
  *

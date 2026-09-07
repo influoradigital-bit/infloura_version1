@@ -205,7 +205,7 @@ export function ProposalForm({
               key={idx}
               className={cn(
                 'flex items-center gap-2 shrink-0 pb-2',
-                idx < step - 1 ? 'text-success' : idx === step - 1 ? 'text-primary' : 'text-muted-foreground'
+                idx < step - 1 ? 'text-success-foreground' : idx === step - 1 ? 'text-primary' : 'text-muted-foreground'
               )}
             >
               <div

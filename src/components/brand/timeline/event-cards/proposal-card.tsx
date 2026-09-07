@@ -90,7 +90,7 @@ export function ProposalEventCard({ event }: { event: TimelineEvent }) {
             controls with no handlers the day this timeline is mounted creator-side. */}
 
         {isAccepted && (
-          <div className="pt-2 text-sm text-success font-medium">✓ Both parties agreed to these terms</div>
+          <div className="pt-2 text-sm text-success-foreground font-medium">✓ Both parties agreed to these terms</div>
         )}
         {isRejected && (
           <div className="pt-2 text-sm text-muted-foreground font-medium">Proposal rejected.</div>

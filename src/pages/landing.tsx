@@ -272,8 +272,23 @@ export default function LandingPage() {
       <main>
         {/* Hero */}
         <section className="relative overflow-hidden">
+          {/*
+            `min-w-0` on BOTH grid items is load-bearing — verified in headless Chrome
+            at 375px, do not remove.
+
+            A grid item defaults to `min-width: auto`, so its min-content contribution
+            sizes the track. The Deal Room card's min-content is ~612px, which made this
+            single-column grid resolve a 612px track inside a 375px viewport. The text
+            column was then stretched to 612px and clipped by the section's
+            `overflow-hidden`, so the subhead, both CTAs and the stat row rendered
+            entirely off-screen on any phone — with no page-level horizontal scrollbar
+            to reveal it (`documentElement.scrollWidth` stayed 375).
+
+            Fixing the scroll strip inside the card was NOT sufficient: the constraint
+            binds here, at the grid item, not at the deepest overflowing descendant.
+          */}
           <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 py-16 lg:grid-cols-2 lg:py-24">
-            <div>
+            <div className="min-w-0">
               <FadeUp>
                 <Badge variant="outline" className="gap-1.5">
                   <ShieldCheck className="h-3 w-3" aria-hidden="true" />
@@ -336,7 +351,18 @@ export default function LandingPage() {
                 ))}
               </FadeUp>
             </div>
-            <div className="relative h-[360px] lg:h-[460px]">
+            {/*
+              No fixed height below `lg` — measured, do not re-add one.
+
+              `h-[360px]` here clipped the card by 90px at 375px (content needs
+              ~450px), cutting off the "Payment released" row and the
+              "Illustrative deal" caption. Nothing caught it: it is VERTICAL
+              clipping, so the horizontal-overflow sweep in ci/mobile-sweep.mjs
+              passes and `scrollWidth` stays clean. The fixed height exists to
+              stop layout shift in the two-column desktop hero, so it is kept
+              at `lg` where the measurement shows it fits exactly (460/460).
+            */}
+            <div className="relative min-w-0 lg:h-[460px]">
               <DealRoomHeroThread />
             </div>
           </div>

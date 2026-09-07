@@ -29,11 +29,11 @@ const statusConfig: Record<DeliverableStatus, { label: string; className: string
   SUBMITTED: { label: 'Submitted', className: 'bg-warning/15 text-warning' },
   REVISION_REQUESTED: { label: 'Revision Requested', className: 'bg-orange-100 text-orange-700' },
   RESUBMITTED: { label: 'Resubmitted', className: 'bg-warning/15 text-warning' },
-  APPROVED: { label: 'Approved', className: 'bg-success/15 text-success' },
+  APPROVED: { label: 'Approved', className: 'bg-success/15 text-success-foreground' },
   REJECTED: { label: 'Rejected', className: 'bg-destructive/15 text-destructive-foreground' },
   POSTED: { label: 'Posted', className: 'bg-blue-100 text-blue-700' },
   METRICS_REPORTED: { label: 'Metrics Reported', className: 'bg-blue-100 text-blue-700' },
-  VERIFIED: { label: 'Verified', className: 'bg-success/15 text-success' },
+  VERIFIED: { label: 'Verified', className: 'bg-success/15 text-success-foreground' },
 };
 
 function MediaPlayer({ file, onLoadError }: { file: DeliverableFile; onLoadError: () => void }) {

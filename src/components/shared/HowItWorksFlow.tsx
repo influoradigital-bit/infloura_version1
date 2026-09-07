@@ -42,7 +42,7 @@ export function HowItWorksFlow({ steps, currentStep }: HowItWorksFlowProps) {
                       isCurrent
                         ? 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground'
                         : isPast
-                          ? 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-success/15 text-success'
+                          ? 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-success/15 text-success-foreground'
                           : 'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground'
                     }
                   >

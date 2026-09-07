@@ -389,7 +389,7 @@ export default function CreatorPortfolioPublicPage() {
                 <Button size="lg" variant="outline" className="gap-2" onClick={sharePage}>
                   {shareState === 'copied' ? (
                     <>
-                      <CheckCircle2 className="h-4 w-4 text-success" />
+                      <CheckCircle2 className="h-4 w-4 text-success-foreground" />
                       Link copied
                     </>
                   ) : (
@@ -1011,7 +1011,7 @@ function ContactDialog({ open, onOpenChange, username, displayName }: ContactDia
         {sent ? (
           <div className="py-8 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15">
-              <CheckCircle2 className="h-6 w-6 text-success" />
+              <CheckCircle2 className="h-6 w-6 text-success-foreground" />
             </div>
             <p className="font-medium">Message sent</p>
             <p className="text-sm text-muted-foreground mt-1">{firstName(displayName)} usually replies within 24 hours.</p>

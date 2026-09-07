@@ -86,7 +86,7 @@ export function DealDeliverablesTab({
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-medium text-sm">{item.title}</p>
                           {isApproved && (
-                            <Badge className="bg-success/15 text-success text-xs">Approved</Badge>
+                            <Badge className="bg-success/15 text-success-foreground text-xs">Approved</Badge>
                           )}
                           {isPending && (
                             <Badge className="bg-warning/15 text-warning text-xs">Pending review</Badge>

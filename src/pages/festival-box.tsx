@@ -183,6 +183,22 @@ export default function FestivalBoxPage(): ReactElement {
           </div>
         </section>
 
+        {/* Hero visual — ported from the Stitch design's studio photography. Decorative only:
+            this is stock/illustrative imagery of a styled shoot, not a photo of a specific past
+            edition, so it carries no caption claiming otherwise. */}
+        <section className="border-b border-border/60 py-16">
+          <div className="mx-auto max-w-5xl px-6">
+            <FadeUp>
+              <img
+                src="/stitch-media/creator-collective-experience-mumbai-edition-shoot-d-e3d1a2.jpg"
+                alt=""
+                loading="lazy"
+                className="aspect-[16/9] w-full rounded-2xl border border-border/60 object-cover"
+              />
+            </FadeUp>
+          </div>
+        </section>
+
         {isBrand ? (
           <BrandSections onSelectTier={scrollToForm} />
         ) : (
@@ -260,16 +276,26 @@ function BrandSections({ onSelectTier }: { onSelectTier: (tier: string) => void 
 
       {/* Event flow */}
       <section className="py-20">
-        <div className="mx-auto max-w-4xl px-6">
+        <div className="mx-auto max-w-6xl px-6">
           <FadeUp className="text-center">
             <Badge variant="outline">The event</Badge>
             <h2 className="mt-3 text-2xl font-semibold sm:text-3xl">Five acts, one shoot day</h2>
           </FadeUp>
-          <StaggerContainer className="mt-10 space-y-6">
-            {BRAND_FLOW.map((step) => (
-              <StepRow key={step.step} step={step} />
-            ))}
-          </StaggerContainer>
+          <div className="mt-10 grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-start">
+            <StaggerContainer className="space-y-6">
+              {BRAND_FLOW.map((step) => (
+                <StepRow key={step.step} step={step} />
+              ))}
+            </StaggerContainer>
+            <FadeUp delay={0.1} className="lg:sticky lg:top-24">
+              <img
+                src="/stitch-media/curated-luxury-minimalist-creator-experience-unboxin-5bb439.jpg"
+                alt=""
+                loading="lazy"
+                className="w-full rounded-2xl border border-border/60 object-cover"
+              />
+            </FadeUp>
+          </div>
         </div>
       </section>
 
@@ -649,6 +675,14 @@ function CreatorSections(): ReactElement {
             <h2 className="mt-3 text-2xl font-semibold sm:text-3xl">
               A full production day, paid and protected
             </h2>
+          </FadeUp>
+          <FadeUp delay={0.05}>
+            <img
+              src="/stitch-media/luxury-unboxing-gift-box-with-premium-products-a36dd9.jpg"
+              alt=""
+              loading="lazy"
+              className="mt-10 aspect-[21/9] w-full rounded-2xl border border-border/60 object-cover"
+            />
           </FadeUp>
           <StaggerContainer className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {CREATOR_BENEFITS.map((item) => {

@@ -284,7 +284,7 @@ function PublicPageCard({
                 <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                   Profile views · 30d
                   {typeof delta === 'number' && delta > 0 && (
-                    <span className="inline-flex items-center gap-0.5 text-success">
+                    <span className="inline-flex items-center gap-0.5 text-success-foreground">
                       <TrendingUp className="h-3 w-3" aria-hidden />
                       {delta}%
                     </span>
@@ -599,7 +599,7 @@ export default function CreatorDashboardPage() {
                 </Alert>
               ) : unsignedContracts.length === 0 ? (
                 <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-                  <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
+                  <CheckCircle2 className="h-4 w-4 text-success-foreground" aria-hidden />
                   No contracts waiting on your signature.
                 </div>
               ) : (
@@ -809,7 +809,7 @@ export default function CreatorDashboardPage() {
         {!pendingLoading && !isEmptyCreator && pendingTotal === 0 && (
           <FadeUp y={0} delay={0.15}>
             <div className="flex items-center justify-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-6 text-sm text-muted-foreground">
-              <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
+              <CheckCircle2 className="h-4 w-4 text-success-foreground" aria-hidden />
               All caught up — check back when brands reach out or deadlines approach.
             </div>
           </FadeUp>

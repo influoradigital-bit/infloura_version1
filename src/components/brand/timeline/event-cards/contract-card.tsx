@@ -44,7 +44,7 @@ export function ContractEventCard({
     },
     active: {
       label: 'Active',
-      color: 'bg-success/20 text-success',
+      color: 'bg-success/20 text-success-foreground',
       icon: <CheckCircle2 className="h-4 w-4" />,
       description: 'Contract is active and both parties are bound',
     },

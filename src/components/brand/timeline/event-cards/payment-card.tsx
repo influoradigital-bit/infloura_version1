@@ -33,7 +33,7 @@ export function PaymentEventCard({
     },
     final_payout: {
       label: 'Final Payout',
-      color: 'bg-success/20 text-success',
+      color: 'bg-success/20 text-success-foreground',
       icon: <CheckCircle2 className="h-4 w-4" />,
       description: 'Complete payment delivered',
     },

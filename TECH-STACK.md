@@ -1,16 +1,29 @@
 # TECH STACK — Influora Platform
 **Owner:** Priya (CTO)  
-**Last verified:** 2026-07-30
+**Last verified:** 2026-09-07 — versions re-read from `package.json`, `influora-api/pom.xml`,
+`influora-ai/requirements.txt` and `application.yml`, not from memory.
 
 ---
 
 ## Frontend
-- **Framework:** React 18 + Vite (NOT Next.js)
-- **Routing:** React Router v6  
-- **Styling:** Tailwind CSS + shadcn/ui components  
-- **State:** Zustand (lightweight stores), React Query (server state)  
-- **Build:** Vite (ESM-first, fast HMR)  
-- **Package manager:** npm  
+- **Framework:** React **19** + Vite **6.4.3** (NOT Next.js)
+- **Language:** TypeScript **5.7.3**
+- **Routing:** React Router **7.18**
+- **Styling:** Tailwind **4.2** + shadcn/ui components
+- **State:** Zustand **5.0** (lightweight stores), React Query **5.100** (server state)
+- **Animation:** Framer Motion **12.38** — import from `framer-motion`
+- **Test:** Vitest **3.2**
+- **Build:** Vite (ESM-first, fast HMR)
+- **Package manager:** npm
+
+### ⚠️ Tailwind 4 is CSS-first — there is no config file
+There is **no `tailwind.config.js`/`.ts` in this repo, and adding one does nothing.**
+All design tokens live in `@theme` inside `src/app/globals.css`. That file is the single
+source of truth for colour, radius and the `--stage-*` / `--chart-*` / `--sidebar-*` scales.
+
+This matters right now: any HTML imported from an external design tool (Stitch, v0,
+Lovable) will be **Tailwind v3** and will ship a `tailwind.config` block. That block is
+inert here. Port the tokens into `@theme`; do not create a config file to accommodate it.
 
 **Key directories:**
 - `src/pages/brand-*.tsx` — brand-facing pages  
@@ -22,11 +35,13 @@
 ---
 
 ## Backend (Java + Spring Boot)
-- **Language:** Java 21  
-- **Framework:** Spring Boot 3.x  
-- **Database:** MySQL 8 (Prisma-managed schema, but this is Spring not Prisma — mistake in old doc)  
-- **ORM:** JPA + Hibernate  
-- **Build:** Maven  
+- **Language:** Java **21**
+- **Framework:** Spring Boot **3.3.5**
+- **Database:** MySQL 8 — `mysql-connector-j`, `org.hibernate.dialect.MySQLDialect`.
+  **There is no Prisma anywhere in this project.** Schema is owned by Flyway migrations.
+- **ORM:** JPA + Hibernate
+- **Migrations:** Flyway (`db/migration/V*.sql`)
+- **Build:** Maven
 - **Package:** `influora-api/`  
 
 **Key paths:**
@@ -38,15 +53,24 @@
 ---
 
 ## AI Service (Python + FastAPI)
-- **Framework:** FastAPI  
-- **Location:** `influora-ai/`  
-- **Models:** Claude Sonnet 4.5 (chat), Gemini 2.5 Flash (site analysis)  
+- **Framework:** FastAPI **0.115.6** on uvicorn **0.34.0**
+- **Location:** `influora-ai/`
+- **Models in the tree:** `claude-sonnet-4-5-20250929`, `claude-opus-4-1-20250805`,
+  `claude-haiku-4-5-20251001`, `claude-3-5-haiku-20241022`, `gemini-2.5-flash`,
+  `gemini-2.5-flash-lite`, `gemini-2.0-flash`
 - **Routes:** `/chat`, `/analyze_site`, `/brand_safety`  
 
 ---
 
 ## Infrastructure
-- **Dev:** localhost (FE:5173 Vite, BE:8080 Spring, AI:8000 FastAPI)  
+- **Dev:** localhost (FE:**3000** Vite, BE:8080 Spring, AI:8000 FastAPI)
+
+  > ⚠️ The frontend dev port is **3000** — `vite.config.ts:68` (`PORT` env overrides it),
+  > and `.claude/launch.json` agrees. But `application.yml:133` still defaults
+  > `INFLUORA_WEB_BASE_URL` to `http://localhost:5173`. Anything the backend generates
+  > against that default — verification links, password-reset links, OAuth redirects —
+  > points at a port nothing is serving. Set `INFLUORA_WEB_BASE_URL` explicitly in local
+  > env, or fix the default. Unowned as of 2026-09-07.
 - **Prod:** Hostinger VPS (Docker Compose)  
 - **CI:** GitHub Actions (build + publish Docker images)  
 - **Payments:** Razorpay (Order API + RazorpayX payout) — keys NOT provisioned yet  

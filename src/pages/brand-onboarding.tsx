@@ -252,7 +252,7 @@ export function YoureInStep({ firstName, onComplete, isSubmitting }: YoureInStep
     <div className="space-y-7">
       <div className="space-y-3 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
-          <CheckCircle2 className="h-7 w-7 text-success" />
+          <CheckCircle2 className="h-7 w-7 text-success-foreground" />
         </div>
         <h1 className="text-2xl font-semibold tracking-tight">
           You're in, {name} <Sparkles className="inline-block h-5 w-5 text-amber-500" />

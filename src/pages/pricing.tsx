@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Check, ShieldCheck, Sparkles, Zap } from 'lucide-react';
+import { ArrowRight, Ban, Check, Percent, ShieldCheck, Sparkles, Wallet, Zap } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -63,6 +63,59 @@ import {
 // platform" and never a bare "the platform is free", and it never implies the
 // caps are gone. Removing those caps would be a revenue decision and is
 // Swapnil's alone — see the report filed with this change.
+//
+// STITCH PORT (2026-09-07). Two Stitch designs targeted this page and
+// contradicted each other:
+//   - scratchpad/txt/transparent-pricing-free-pro-plans.txt — USED. Its cards
+//     and comparison-matrix copy already matched this file's verified
+//     constants almost verbatim (same tier names, same allowances, same
+//     matrix groups, same FAQ facts), which is why it's the one this page
+//     takes design cues from.
+//   - scratchpad/txt/transparent-pricing-economics.txt — REJECTED. Invents a
+//     "7% platform fee" that the CTO ruling above forbids printing on this
+//     page, and separately claims creators pay 0%, which is false (15%, see
+//     MATRIX_GROUPS "Identical on both plans"). Ananya flagged the pick to
+//     Swapnil for override rather than deciding it unilaterally.
+//
+// The CHOSEN file still contradicted itself: its hero stat tiles read
+// "0% Platform Fee — Creators take home 100% of agreed baseline rate", while
+// its OWN comparison-matrix rows two screens down read "Creator commission
+// 15% (unchanged)". The 15% is correct — it's the same figure already locked
+// in MATRIX_GROUPS and the FAQ below. The 0%/100% tile was deleted outright,
+// not reworded; nothing on this page states or implies a 0% creator
+// commission.
+//
+// Also NOT carried over from the chosen file, and why:
+//   - "Sovereign Creator[s]" / "Sovereign Creator Charter" — banned word, cut
+//     wherever it appeared (hero H1, a whole mid-page section).
+//   - "<3s Instant UPI" / "3-Second UPI Release" — unmeasured; the actual,
+//     already-published figure elsewhere on this site is "typically within
+//     24 hours" (see how-it-works/creators). Never printed here.
+//   - "Instant automated TDS challans and Form 26Q reporting" / "Tax
+//     Compliance Auto-Pilot" / "claim complete 18% Input Tax Credit on every
+//     single platform invoice" — TDS is recorded and shown on the payout and
+//     invoice; Influora does not file returns or give tax advice. Rule 4.
+//   - "RBI-regulated safety vault" / "RBI Licensed Banking Partner" — we are
+//     not RBI-licensed; only our payments partner is an RBI-authorized
+//     Payment Aggregator, stated as such where this page names it. "ISO 27001
+//     Certified" deleted outright, per standing rule.
+//   - A testimonial quote attributed to a fabricated "Kavya Sharma, Fashion &
+//     Tech Creator" (name collision with this team's own QA lead is
+//     coincidental and irrelevant — it's fabricated either way), plus a
+//     second fabricated pair (Deepika R./SkinBloom Mumbai, Arjun Sen) citing
+//     invented stats ("+88% ROAS Lift", "1.8x to 3.4x", "850+ brands",
+//     "14,000+ creators"). No real or fabricated names, no unmeasured stats.
+//   - A "High-Volume Brands" enterprise tier at a "4.0%" volume fee floor with
+//     SAP/Tally ERP integration claims — not a tier this page's verified
+//     pricing facts include; not added.
+//   - The one background image the design used was captioned "Instant UPI
+//     payment notification" and sits inside the rejected 3-second-payout
+//     claim above, so it wasn't ported either — this page stays image-free.
+//
+// What WAS taken from the design: the four-tile fact band under the hero
+// (HERO_FACTS below) borrows its layout — icon, big value, short caption —
+// but every value in it is one already stated and sourced elsewhere on this
+// page (the EVERY_PLAN_INCLUDED band, MATRIX_GROUPS, the tier cards).
 
 interface IncludedItem {
   label: string;
@@ -96,6 +149,19 @@ const PRO_INCLUDED: IncludedItem[] = [
   { label: 'Export reports (CSV/PDF)', comingSoon: true },
   { label: 'Campaign templates library', comingSoon: true },
 ];
+
+/**
+ * Hero fact band — layout borrowed from the Stitch design's stat tiles (see
+ * the STITCH PORT note above), values are not. Every entry here restates a
+ * fact already established elsewhere on this page (EVERY_PLAN_INCLUDED,
+ * MATRIX_GROUPS, the tier cards) — this band adds no new claim.
+ */
+const HERO_FACTS = [
+  { icon: Wallet, value: '₹0', label: 'To start — no subscription on Free' },
+  { icon: Percent, value: '15%', label: 'Creator commission, identical on every plan' },
+  { icon: Ban, value: 'None', label: 'Trial period, on either plan' },
+  { icon: ShieldCheck, value: 'Every deal', label: 'Payment protection, Free and Pro' },
+] as const;
 
 const CREATOR_INCLUDED = [
   'Free to join and build your profile',
@@ -377,6 +443,21 @@ export default function PricingPage() {
                 dashboard are included on every plan — Free included. Pro adds AI credits and raises the
                 limits on seats, tracked creators and analytics.
               </p>
+
+              <dl className="mx-auto mt-10 grid max-w-2xl grid-cols-2 gap-x-6 gap-y-6 border-t border-border/60 pt-8 sm:grid-cols-4">
+                {HERO_FACTS.map((f) => {
+                  const Icon = f.icon;
+                  return (
+                    <div key={f.label} className="text-center">
+                      <span className="mx-auto flex h-9 w-9 items-center justify-center rounded-full bg-accent text-accent-foreground">
+                        <Icon className="h-4 w-4" aria-hidden="true" />
+                      </span>
+                      <dt className="mt-2 text-xl font-bold tracking-tight">{f.value}</dt>
+                      <dd className="mt-1 text-xs text-muted-foreground">{f.label}</dd>
+                    </div>
+                  );
+                })}
+              </dl>
             </FadeUp>
           </div>
         </section>

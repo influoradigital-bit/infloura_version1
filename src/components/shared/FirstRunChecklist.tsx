@@ -169,7 +169,7 @@ export function FirstRunChecklist({
                     className={cn(
                       'flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-medium',
                       isDone
-                        ? 'bg-success/15 text-success'
+                        ? 'bg-success/15 text-success-foreground'
                         : isActive
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted text-muted-foreground',

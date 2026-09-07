@@ -137,6 +137,35 @@ export default function MeeraForCreatorsPage() {
           </div>
         </section>
 
+        {/* Grounded in a real creator's day — ported from the Stitch design's lifestyle
+            photography, without the testimonial that ran under it there. See the file header:
+            no first-person quotes for a product that has not shipped. */}
+        <section className="border-b border-border/60 py-16 sm:py-20">
+          <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-2">
+            <FadeUp>
+              <img
+                src="/stitch-media/warm-natural-daylight-streaming-into-an-indian-creat-65bc72.jpg"
+                alt=""
+                loading="lazy"
+                className="w-full rounded-2xl border border-border/60 object-cover"
+              />
+            </FadeUp>
+            <FadeUp delay={0.1}>
+              <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">
+                Built around your day
+              </p>
+              <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
+                Fits between shoots, not another app to check
+              </h2>
+              <p className="mt-4 text-muted-foreground">
+                A brief lands, you glance at Meera's read on it, and you get back to the shoot. No
+                dashboard to babysit, no chat to keep open — just a straight answer when a brand
+                messages, in the language you actually use.
+              </p>
+            </FadeUp>
+          </div>
+        </section>
+
         {/* What Meera does */}
         <section className="py-20">
           <div className="mx-auto max-w-5xl px-6">
@@ -196,11 +225,11 @@ export default function MeeraForCreatorsPage() {
         </section>
 
         {/* Three promises */}
-        <section className="py-14">
-          <div className="mx-auto max-w-3xl px-6 text-center">
+        <section className="border-t border-border/60 py-20">
+          <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-2">
             <FadeUp>
-              <h2 className="text-2xl font-bold tracking-tight">Three promises</h2>
-              <ul className="mt-6 grid gap-4 text-left sm:grid-cols-3">
+              <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Three promises</h2>
+              <ul className="mt-6 grid gap-4 text-left sm:grid-cols-2 lg:grid-cols-1">
                 <li className="rounded-xl border border-border/60 bg-background p-4 text-sm">
                   <span className="font-semibold">You decide.</span> Every message goes out only after
                   you approve it.
@@ -215,6 +244,20 @@ export default function MeeraForCreatorsPage() {
                 </li>
               </ul>
             </FadeUp>
+            {/*
+              IMAGE REMOVED — do not restore this file.
+
+              indian-female-content-creator-sitting-at-an-outdoor--b0f487.jpg shows a
+              phone running a fabricated Influora app screen ("Influora - Meera for
+              Creators / AI PR Manager") listing live brand deals with Nykaa, Zara
+              India (₹65k) and Myntra (₹50k), rendered with those companies' real
+              trademarked logos.
+
+              Three problems at once: it invents a product UI, it presents three real
+              companies as our customers at named rupee values, and it does so on the
+              page for a product that has not launched. Any replacement must be a real
+              capture of the real product, with no third-party brand marks in it.
+            */}
           </div>
         </section>
 
@@ -223,7 +266,7 @@ export default function MeeraForCreatorsPage() {
           sub="Create a creator account. When Meera is ready, you get her before anyone else."
           primary={{ label: 'Join the waitlist', to: '/creator/register' }}
           secondary={{ label: 'See pricing', to: '/pricing' }}
-          reassurances={['Free to join', 'No card needed', 'Hinglish, Hindi or English']}
+          reassurances={['Free to join', 'No card needed', 'Hinglish, English or Marathi']}
         />
       </main>
 

@@ -377,7 +377,7 @@ export function DashboardPage() {
             ) : (
               <div className="text-center py-12">
                 <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-success/15">
-                  <CheckCircle2 className="h-6 w-6 text-success" />
+                  <CheckCircle2 className="h-6 w-6 text-success-foreground" />
                 </div>
                 <p className="font-medium">All caught up!</p>
                 <p className="text-sm text-muted-foreground">No pending actions right now.</p>
@@ -642,7 +642,7 @@ function WalletCard({ balance, escrow, runwayDays, health, healthLabel, onManage
               className={cn(
                 'text-sm font-semibold',
                 neverFunded && 'text-muted-foreground',
-                !neverFunded && health === 'healthy' && 'text-success',
+                !neverFunded && health === 'healthy' && 'text-success-foreground',
                 !neverFunded && health === 'warning' && 'text-warning',
                 !neverFunded && health === 'critical' && 'text-destructive-foreground',
               )}

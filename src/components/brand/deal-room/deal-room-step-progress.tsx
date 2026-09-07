@@ -42,8 +42,19 @@ export function DealRoomStepProgress({
 }: DealRoomStepProgressProps) {
   const currentIndex = phases.findIndex((p) => p.id === currentPhase);
 
+  /*
+    `min-w-0` below is load-bearing, do not remove it.
+
+    Without it this box keeps `min-width: auto`, so its min-content width (~564px —
+    five never-wrapping phase chips) propagates up through every ancestor. On the
+    landing hero that made the single-column grid in `landing.tsx` resolve a 612px
+    track inside a 375px viewport, and the section's `overflow-hidden` then clipped
+    the whole text column: the subhead, both CTAs and the stat row rendered
+    off-screen on any phone. `overflow-x-auto` alone does not shrink a box — it only
+    scrolls one that is already allowed to be narrower than its contents.
+  */
   return (
-    <div className={cn('flex items-center gap-1 overflow-x-auto pb-1', className)}>
+    <div className={cn('flex min-w-0 items-center gap-1 overflow-x-auto pb-1', className)}>
       {phases.map((phase, index) => {
         const isComplete = index < currentIndex;
         const isCurrent = phase.id === currentPhase;
@@ -58,14 +69,16 @@ export function DealRoomStepProgress({
               className={cn(
                 'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
                 isCurrent && 'bg-primary/15 text-primary',
-                isComplete && !isCurrent && 'text-success',
+                // `text-success` is the pale mint SURFACE token (#ddf5e8) — 1.15:1 on a
+                // white card, i.e. invisible. Foreground text uses `-foreground`.
+                isComplete && !isCurrent && 'text-success-foreground',
                 !isCurrent && !isComplete && 'text-muted-foreground',
                 isClickable && 'hover:bg-muted cursor-pointer',
                 !isClickable && 'cursor-default',
               )}
             >
               {isComplete ? (
-                <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-success-foreground shrink-0" />
               ) : (
                 <span
                   className={cn(
