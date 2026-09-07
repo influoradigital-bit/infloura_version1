@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { FadeUp, StaggerContainer, StaggerItem } from '@/components/motion';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
+import { WalkthroughVideo } from '@/components/shared/WalkthroughVideo';
 import { FunnelCta } from '@/components/site/FunnelCta';
 import { TrustBar } from '@/components/site/TrustBar';
 import { StickyCta, StickyCtaSpacer } from '@/components/site/StickyCta';
@@ -215,6 +216,15 @@ export default function HowItWorksBrandsPage() {
                   </Button>
                 </div>
               </div>
+
+              {/* The lifecycle film. Same asset the signed-in how-it-works page plays, so a
+                  visitor and a customer are shown the same product. Renders nothing if the
+                  deployment has switched it off. */}
+              <WalkthroughVideo
+                role="brand"
+                title="How an Influora campaign works, for brands"
+                className="mx-auto mt-12 max-w-4xl"
+              />
 
               {/* Stat band */}
               <dl className="mx-auto mt-14 grid max-w-4xl grid-cols-2 gap-x-6 gap-y-8 border-t border-border/60 pt-10 lg:grid-cols-4">

@@ -53,6 +53,23 @@ describe('resolveWalkthroughEmbed — accepted hosts', () => {
   });
 });
 
+describe('resolveWalkthroughEmbed — same-origin bundled films', () => {
+  it('accepts a root-relative media path, as a <video> not an iframe', () => {
+    expect(resolveWalkthroughEmbed('/videos/campaign-lifecycle.mp4')).toEqual({
+      kind: 'file',
+      src: '/videos/campaign-lifecycle.mp4',
+    });
+  });
+
+  it.each([
+    ['a protocol-relative URL wearing a leading slash', '//evil.example.com/x.mp4'],
+    ['a path that climbs out of where we put it', '/videos/../../etc/x.mp4'],
+    ['a root-relative path that is not media', '/videos/brand.pdf'],
+  ])('rejects %s', (_label, url) => {
+    expect(resolveWalkthroughEmbed(url)).toBeNull();
+  });
+});
+
 describe('resolveWalkthroughEmbed — rejected input', () => {
   it.each([
     ['an arbitrary host', 'https://evil.example.com/embed/whatever'],

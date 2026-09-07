@@ -1,11 +1,12 @@
 import * as React from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowRight, LayoutTemplate, Loader2, Megaphone, Trash2, UserRoundSearch, X, Zap } from 'lucide-react';
+import { ArrowRight, LayoutTemplate, Loader2, Megaphone, PlayCircle, Trash2, UserRoundSearch, X, Zap } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type { CampaignType, ContentType, Platform } from '@/lib/types';
 import { CampaignForm, type CampaignFormData } from '@/components/brand/campaigns/campaign-form';
 import { BrandKycPrompt } from '@/components/brand/campaigns/brand-kyc-prompt';
+import { WalkthroughVideo } from '@/components/shared/WalkthroughVideo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { HypeLiveIndicator } from '@/components/ui/hype-live-indicator';
@@ -263,6 +264,22 @@ export default function BrandNewCampaignPage() {
 
       {/* B-5: optional, dismissible KYC prompt (never blocks campaign creation). */}
       <BrandKycPrompt />
+
+      {/* The brief-writing film, on the screen where "what do I even put in this?" is the
+          actual question — the lifecycle films on /brand/how-it-works answer a different one.
+          Collapsed by default so it never pushes the type tiles below the fold. */}
+      <details className="group mb-6 rounded-lg border border-border bg-card">
+        <summary className="flex cursor-pointer list-none items-center gap-2 p-3 text-sm font-medium">
+          <PlayCircle className="h-4 w-4 text-primary" aria-hidden="true" />
+          Watch: how to write a campaign brief
+          <span className="ml-auto text-xs font-normal text-muted-foreground group-open:hidden">
+            90 seconds
+          </span>
+        </summary>
+        <div className="px-3 pb-3">
+          <WalkthroughVideo role="brandCampaign" title="How to create a campaign on Influora" />
+        </div>
+      </details>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {TYPE_OPTIONS.map((option) => {

@@ -1,10 +1,17 @@
 import { Composition, Folder } from 'remotion';
 
+import { CampaignDemo } from './campaign/CampaignDemo';
+import { CampaignLifecycle } from './campaign/CampaignLifecycle';
+import { CREATOR_DURATION } from './campaign/creator-meta';
+import { CreatorLifecycle } from './campaign/CreatorLifecycle';
+import { LIFECYCLE_DURATION } from './campaign/lifecycle-meta';
+import { CAMPAIGN_DURATION } from './campaign/scene-meta';
+import { CAMPAIGN_VIDEO } from './campaign/theme';
 import { ChatScene } from './components/ChatScene';
 import { IntroScene } from './components/IntroScene';
 import { OutroScene } from './components/OutroScene';
 import { MEERA_DEMO_DURATION, TIMED_SCENES } from './demo-meta';
-import { LANG_ORDER, LOCALES } from './locales';
+import { LANG_ORDER } from './locales';
 import { MeeraDemo } from './MeeraDemo';
 import { VIDEO } from './theme';
 import { introFrames, outroFrames } from './timing';
@@ -17,6 +24,30 @@ import { introFrames, outroFrames } from './timing';
 export function RemotionRoot() {
   return (
     <>
+      <Composition
+        id="CampaignDemo"
+        component={CampaignDemo}
+        durationInFrames={CAMPAIGN_DURATION}
+        fps={CAMPAIGN_VIDEO.fps}
+        width={CAMPAIGN_VIDEO.width}
+        height={CAMPAIGN_VIDEO.height}
+      />
+      <Composition
+        id="CreatorLifecycle"
+        component={CreatorLifecycle}
+        durationInFrames={CREATOR_DURATION}
+        fps={CAMPAIGN_VIDEO.fps}
+        width={CAMPAIGN_VIDEO.width}
+        height={CAMPAIGN_VIDEO.height}
+      />
+      <Composition
+        id="CampaignLifecycle"
+        component={CampaignLifecycle}
+        durationInFrames={LIFECYCLE_DURATION}
+        fps={CAMPAIGN_VIDEO.fps}
+        width={CAMPAIGN_VIDEO.width}
+        height={CAMPAIGN_VIDEO.height}
+      />
       {LANG_ORDER.map((lang) => (
         <Composition
           key={lang}
