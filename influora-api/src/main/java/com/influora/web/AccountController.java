@@ -32,16 +32,22 @@ import org.springframework.web.bind.annotation.RestController;
  * retention. The user's row itself (id/status/userType) is left intact so existing foreign keys
  * keep resolving.
  *
- * <p><b>[SEC: Kabir H-1 — fixed]</b> Revoking refresh tokens here does NOT by itself invalidate an
- * already-issued access token — access tokens are stateless JWTs verified with no DB round-trip
- * (see {@code JwtAuthenticationFilter}), so a token issued before deletion would otherwise keep
- * authenticating for up to its remaining TTL. The actual immediate-effect guarantee comes from
- * {@code CreatorContextService.requireCreator}/{@code BrandContextService.requireBrand} — the two
- * gates every creator/brand-scoped endpoint (including every wallet/payout endpoint) already
- * calls — now re-checking {@code deletedAt} on every request. That is what makes deletion take
- * effect on the very next request rather than at token expiry; the token-revocation calls below
- * are still worth doing (stop new access tokens being minted from the refresh token, clear the
- * cookie) but are not sufficient alone.
+ * <p><b>[SEC: Kabir H-1 — PARTIAL, creators only]</b> Revoking refresh tokens here does NOT by
+ * itself invalidate an already-issued access token — access tokens are stateless JWTs verified with
+ * no DB round-trip (see {@code JwtAuthenticationFilter}), so a token issued before deletion keeps
+ * authenticating for up to its remaining TTL. Immediate effect therefore has to come from the
+ * per-request context gates re-checking {@code deletedAt}; the token-revocation calls below are
+ * worth doing (they stop new access tokens being minted from the refresh token) but are not
+ * sufficient alone.
+ *
+ * <p><b>Only the creator gate actually does that.</b> An earlier version of this paragraph said
+ * both gates re-check {@code deletedAt} and called H-1 fixed. Verified 2026-09-07: that is false.
+ * {@code CreatorContextService.requireCreator} does check it ({@code ACCOUNT_DELETED} / 401).
+ * {@code BrandContextService} does not, anywhere — {@code requireBrand} checks only {@code
+ * UserType}, {@code requireBrandWorkspace} only {@code workspace.isSuspended()}, {@code
+ * requireMember} only membership. So a soft-deleted BRAND user keeps full brand-scoped access,
+ * wallet and payout endpoints included, until their access token expires on its own. Tracked
+ * separately; do not read this class as evidence that deletion takes effect immediately for brands.
  */
 @RestController
 @RequestMapping("/me")
@@ -84,6 +90,15 @@ public class AccountController {
         // and expire the refresh cookie, so the deleted account cannot silently keep working off a
         // still-valid access token past its natural expiry.
         authService.logout(principal.getUserId());
+
+        // F-0702 — refresh tokens were the only thing this path invalidated. Outstanding
+        // password-reset tokens survived deletion and stayed resolvable by userId (softDelete()
+        // blanks the email and hash but leaves the row), so a link mailed before deletion could
+        // still write a fresh password hash onto the anonymized account afterwards. Up to 7 days
+        // for the sponsor-provisioning link, 1 hour for ordinary forgot-password.
+        // AuthService#resetPassword now also refuses a deleted user outright; this removes the rows
+        // so the second defence never has to fire.
+        authService.purgePasswordResetTokens(principal.getUserId());
         authCookieService.clearRefreshCookie(response);
 
         return ResponseEntity.ok(ApiResponse.ok(new DeleteAccountResponse(true)));

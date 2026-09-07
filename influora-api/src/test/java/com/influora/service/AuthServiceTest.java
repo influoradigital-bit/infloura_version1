@@ -1190,6 +1190,9 @@ class AuthServiceTest {
 
         assertEquals("INVALID_RESET_TOKEN", ex.getCode());
         assertEquals(400, ex.getStatus().value());
+        // Pinned from this end too (F-0702): the deleted-account branch asserts the identical
+        // string, so if either message is reworded alone, one of the two tests fails.
+        assertEquals("Password reset token is invalid or expired", ex.getMessage());
         verify(refreshTokenRepository, never()).revokeAllForUser(anyString());
     }
 
@@ -1275,6 +1278,133 @@ class AuthServiceTest {
         assertEquals(401, ex.getStatus().value());
         verify(userRepository, never()).save(any(User.class));
         verifyNoInteractions(refreshTokenRepository);
+    }
+
+    /**
+     * F-0703. Both drive the CORRECT current password at a locked account, so the only thing that
+     * can refuse them is the status guard — a wrong-password test would pass with the guard
+     * deleted. The stub for {@code matches} returning true is the whole point.
+     */
+    @Test
+    @DisplayName("changePassword F-0703: SUSPENDED account → ACCOUNT_SUSPENDED 403, nothing rotated")
+    void testChangePasswordSuspendedAccount() throws Exception {
+        User user = creatorUser(true);
+        setUserStatus(user, UserStatus.SUSPENDED);
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("OldSecret1", "hashed-pw")).thenReturn(true);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                authService.changePassword(
+                                        user.getId(), "OldSecret1", "NewSecret9", "some-refresh-raw"));
+
+        assertEquals("ACCOUNT_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        assertEquals("hashed-pw", user.getPasswordHash());
+        verify(userRepository, never()).save(any(User.class));
+        verify(passwordEncoder, never()).encode(anyString());
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    @Test
+    @DisplayName("changePassword F-0703: DEACTIVATED account → ACCOUNT_SUSPENDED 403, nothing rotated")
+    void testChangePasswordDeactivatedAccount() throws Exception {
+        User user = creatorUser(true);
+        setUserStatus(user, UserStatus.DEACTIVATED);
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("OldSecret1", "hashed-pw")).thenReturn(true);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                authService.changePassword(
+                                        user.getId(), "OldSecret1", "NewSecret9", null));
+
+        assertEquals("ACCOUNT_SUSPENDED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        assertEquals("hashed-pw", user.getPasswordHash());
+        verify(userRepository, never()).save(any(User.class));
+        verifyNoInteractions(refreshTokenRepository);
+    }
+
+    /**
+     * F-0703 ordering: a caller who does NOT know the current password must not learn the account's
+     * status. Without this, moving the guard above the matches() check would look harmless — both
+     * tests above would still pass — while turning the endpoint into a status oracle for anyone
+     * holding only a userId.
+     */
+    @Test
+    @DisplayName(
+            "changePassword F-0703: wrong password on a SUSPENDED account still reports"
+                    + " INVALID_CURRENT_PASSWORD, never the account status")
+    void testChangePasswordWrongPasswordDoesNotLeakSuspension() throws Exception {
+        User user = creatorUser(true);
+        setUserStatus(user, UserStatus.SUSPENDED);
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("WrongPassword1", "hashed-pw")).thenReturn(false);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                authService.changePassword(
+                                        user.getId(), "WrongPassword1", "NewSecret9", null));
+
+        assertEquals("INVALID_CURRENT_PASSWORD", ex.getCode());
+        assertEquals(401, ex.getStatus().value());
+    }
+
+    // ── F-0702: a reset token must not outlive the account ──────────────────
+
+    @Test
+    @DisplayName(
+            "resetPassword F-0702: a soft-deleted account is refused as INVALID_RESET_TOKEN,"
+                    + " indistinguishable from an unknown token, and nothing is written")
+    void testResetPasswordRefusesSoftDeletedAccount() {
+        User user = creatorUser(true);
+        user.softDelete();
+        assertNotNull(user.getDeletedAt());
+
+        String rawToken = "reset-raw-token-deleted";
+        PasswordResetToken token =
+                PasswordResetToken.create(
+                        "01HRESETTOKENDELETED12345",
+                        user.getId(),
+                        JwtService.hashToken(rawToken),
+                        Instant.now().plusSeconds(3600));
+        when(passwordResetTokenRepository.findByTokenHashAndUsedFalse(JwtService.hashToken(rawToken)))
+                .thenReturn(Optional.of(token));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> authService.resetPassword(rawToken, "NewSecret9"));
+
+        // Same code and status an unknown token produces — see testResetPasswordInvalidToken. If
+        // these ever diverge, the endpoint tells a token holder that the account existed and was
+        // deleted.
+        assertEquals("INVALID_RESET_TOKEN", ex.getCode());
+        assertEquals(400, ex.getStatus().value());
+        // The MESSAGE too, not just the code: asserting only the code lets the two throws diverge
+        // in wording later, which is enough on its own to tell a caller which branch they hit.
+        assertEquals("Password reset token is invalid or expired", ex.getMessage());
+
+        // The deleted account must stay anonymized: no new hash written onto the row.
+        assertNull(user.getPasswordHash());
+        assertFalse(token.isUsed());
+        verify(userRepository, never()).save(any(User.class));
+        verify(refreshTokenRepository, never()).revokeAllForUser(anyString());
+    }
+
+    @Test
+    @DisplayName("purgePasswordResetTokens F-0702: drops every reset token for the user")
+    void testPurgePasswordResetTokens() {
+        authService.purgePasswordResetTokens("01HCREATORUSER123456789A");
+
+        verify(passwordResetTokenRepository).deleteByUserId("01HCREATORUSER123456789A");
     }
 
     // ── F-0451: suspension must actually stop authentication ────────────────

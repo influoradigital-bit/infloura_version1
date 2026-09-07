@@ -601,6 +601,20 @@ public class AuthService {
         refreshTokenRepository.revokeAllForUser(userId);
     }
 
+    /**
+     * Drops every outstanding password-reset token for a user (F-0702). Called by the account-delete
+     * path, NOT by {@link #logout} — logging out is not a statement that a pending reset link should
+     * stop working, and a user who logged out precisely because they cannot remember their password
+     * is the normal case for having one outstanding.
+     *
+     * <p>Separate from logout for that reason even though the delete path calls both: deletion ends
+     * the account, logout ends a session.
+     */
+    @Transactional
+    public void purgePasswordResetTokens(String userId) {
+        passwordResetTokenRepository.deleteByUserId(userId);
+    }
+
     @Transactional
     public String forgotPassword(String email) {
         userRepository.findByEmailIgnoreCase(email).ifPresent(this::createPasswordResetToken);
@@ -629,6 +643,38 @@ public class AuthService {
                                 () ->
                                         new ApiException(
                                                 "USER_NOT_FOUND", "User not found", HttpStatus.BAD_REQUEST));
+
+        // F-0702 — a reset token outlives the account it belongs to. softDelete() nulls the email
+        // and password hash and stamps deletedAt, but nothing invalidates outstanding
+        // password_reset_tokens rows: AccountController's delete path revokes refresh tokens only.
+        // The token still resolves here by userId, so without this the reset would write a fresh
+        // password hash onto an anonymized row after the user asked us to delete it. Nobody can log
+        // in with it (email is null, so findByEmailIgnoreCase can never match), which is why this is
+        // hygiene rather than an access bug — but writing new credential material to a deleted
+        // account is the wrong answer regardless, and the window is up to 7 days on the
+        // sponsor-provisioning link (FestivalSponsorProvisioningService#issuePasswordSetLink), not
+        // the 1 hour forgot-password uses.
+        //
+        // Deliberately INVALID_RESET_TOKEN and not a distinct code, because a deleted account
+        // should behave as though it does not exist — that is what the user asked for. This is NOT
+        // an anti-enumeration argument, and an earlier draft of this comment wrongly framed it as
+        // one: reaching this line at all requires a valid unexpired token, which only ever left the
+        // building inside a mail to that address, so anyone who gets here already controls the
+        // mailbox and already knows the account existed. There is no stranger to hide it from.
+        //
+        // That is also why the SUSPENDED/DEACTIVATED branch immediately below is free to answer
+        // with its own distinct code and does not contradict this one: same audience, different
+        // product answer. A suspended account still exists and its owner is better served by being
+        // told why their reset was refused; a deleted account has no owner left to tell.
+        //
+        // The delete path now also purges these rows (purgePasswordResetTokens), so this is the
+        // second of two defences, not the only one.
+        if (user.getDeletedAt() != null) {
+            throw new ApiException(
+                    "INVALID_RESET_TOKEN",
+                    "Password reset token is invalid or expired",
+                    HttpStatus.BAD_REQUEST);
+        }
 
         // Same guard, same code and message as brandLogin/creatorLogin/refresh above: a locked
         // account could otherwise still rotate its own password.
@@ -718,6 +764,26 @@ public class AuthService {
                     "INVALID_CURRENT_PASSWORD",
                     "Current password is incorrect",
                     HttpStatus.UNAUTHORIZED);
+        }
+
+        // F-0703 — the guard resetPassword and the three login paths already carry. changePassword
+        // was the last credential-rotating method in this class without it, so an account locked by
+        // an operator could still change its own password for as long as its access token lived
+        // (refresh's guard stops renewal, so that is the whole window).
+        //
+        // Placed AFTER the password check on purpose, matching brandLogin/creatorLogin, which check
+        // status only once matches() has succeeded: a caller who cannot produce the current password
+        // must not learn the account's status. The same reasoning puts resetPassword's copy after
+        // its token check.
+        //
+        // As documented at resetPassword's guard: nothing in src/main WRITES these two states —
+        // product suspension lives on Workspace.isSuspended()/CreatorProfile.isSuspended() — so
+        // this fires only for an operator editing users.status by hand. Do not delete it as dead
+        // code. A soft-deleted account needs no branch here: softDelete() nulls passwordHash, and
+        // BCryptPasswordEncoder.matches returns false against a null hash, so the check above
+        // already refuses it with INVALID_CURRENT_PASSWORD.
+        if (user.getStatus() == UserStatus.SUSPENDED || user.getStatus() == UserStatus.DEACTIVATED) {
+            throw new ApiException("ACCOUNT_SUSPENDED", "Your account has been suspended", HttpStatus.FORBIDDEN);
         }
 
         PasswordPolicy.validate(newPassword);
