@@ -37,7 +37,14 @@ export function BusinessAccountRequired({ onSkip, className }: BusinessAccountRe
       // CR-65 — same reasoning as IGConnectPrompt.tsx: without this, the callback page sends
       // the creator to Settings instead of back to Co-pilot.
       api.metaOAuth.setConnectReturnTo('/creator/copilot');
-      const { authorizationUrl } = await api.metaOAuth.authorize();
+      // AUTHPATH-DELIBERATE (T-IGTRUST-0907) — this is the one connect surface that must NOT
+      // ask the creator which configuration applies, because it already knows: it renders only
+      // on `accountType: 'personal'`, and the three STEPS above are the instructions for
+      // switching to a professional account AND linking a Facebook Page. Once they have done
+      // that, FACEBOOK_LOGIN is the correct path by construction. Sending them to
+      // INSTAGRAM_LOGIN here would silently undo the setup this card just asked them to do.
+      // Explicit rather than relying on the server-side default, so the intent is readable.
+      const { authorizationUrl } = await api.metaOAuth.authorize('FACEBOOK_LOGIN');
       window.location.href = authorizationUrl;
     } catch (err) {
       setIsConnecting(false);

@@ -13,6 +13,7 @@ import {
   Briefcase,
   Wallet as WalletIcon,
   IndianRupee,
+  Search,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -21,8 +22,9 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
+import { MetaConnectPathDialog } from '@/components/creator/meta-connect-path-dialog';
 import { cn } from '@/lib/utils';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, type MetaAuthPath } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { normalizePhone, isValidPhone, filterPhoneInput } from '@/lib/phone';
 
@@ -84,6 +86,10 @@ export default function CreatorOnboardingPage() {
   // Step 1
   const [connectedSocials, setConnectedSocials] = React.useState<Social[]>([]);
   const [connectingPlatform, setConnectingPlatform] = React.useState<Social | null>(null);
+  // T-IGTRUST-0907 — mirrors connected-accounts.tsx: the Facebook-Page question has to be
+  // asked BEFORE the redirect, because the two Meta configurations differ in whether a Page
+  // is required and the choice cannot be changed once Meta's dialog has loaded.
+  const [showPathChoice, setShowPathChoice] = React.useState(false);
 
   // Step 2
   const [profileData, setProfileData] = React.useState({
@@ -118,11 +124,21 @@ export default function CreatorOnboardingPage() {
   // that callback routes back into onboarding. (CR-120: the old path posted a
   // literal 'mock_oauth_code' that the live backend rejected, hard-blocking every
   // creator at Step 1.)
-  const handleConnectInstagram = async () => {
+  //
+  // T-IGTRUST-0907 — `authPath` is now REQUIRED here rather than omitted. Omitting it
+  // defaults the backend to FACEBOOK_LOGIN (api.ts metaOAuth.authorize javadoc), whose
+  // dialog demands an Instagram professional account already linked to a Facebook Page
+  // the creator can administer. Settings has asked this question before the redirect
+  // since T-IGLOGIN-0820 (connected-accounts.tsx) precisely because a creator without a
+  // Page dead-ends inside Meta's own UI with nothing explaining why; onboarding — the
+  // one place EVERY creator passes through — never got that fix and silently sent all
+  // of them down the Page-required path.
+  const handleConnectInstagram = async (authPath: MetaAuthPath) => {
+    setShowPathChoice(false);
     setConnectingPlatform('instagram');
     try {
       localStorage.setItem(META_ONBOARDING_RESUME_KEY, '1');
-      const { authorizationUrl } = await api.metaOAuth.authorize();
+      const { authorizationUrl } = await api.metaOAuth.authorize(authPath);
       window.location.assign(authorizationUrl);
     } catch (err) {
       localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
@@ -137,7 +153,7 @@ export default function CreatorOnboardingPage() {
 
   const handleConnectSocial = (platform: Social) => {
     if (platform === 'instagram') {
-      void handleConnectInstagram();
+      setShowPathChoice(true);
       return;
     }
     // YouTube has no OAuth backend yet. Never send a fabricated code to the live
@@ -399,6 +415,15 @@ export default function CreatorOnboardingPage() {
           </div>
         )}
       </main>
+
+      {/* T-IGTRUST-0907 — see MetaConnectPathDialog's header for why this question exists and
+          why it is one shared component rather than a copy per connect surface. */}
+      <MetaConnectPathDialog
+        open={showPathChoice}
+        onOpenChange={setShowPathChoice}
+        onChoose={(authPath) => void handleConnectInstagram(authPath)}
+        busy={connectingPlatform === 'instagram'}
+      />
     </div>
   );
 }
@@ -423,14 +448,103 @@ function ConnectSocialsStep({
     { id: 'youtube', label: 'YouTube', icon: Youtube, handleMock: 'Connected', bg: 'bg-red-500', comingSoon: true },
   ];
 
+  const instagramConnected = connectedSocials.includes('instagram');
+
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold">Connect your social accounts</h2>
+        <h2 className="text-2xl font-bold">Connect your Instagram</h2>
         <p className="text-muted-foreground mt-2">
-          We'll auto-import your profile info and verify your creator status.
+          This is what turns your account into a profile brands can actually find.
         </p>
       </div>
+
+      {/*
+        T-IGTRUST-0907 — the stake, stated concretely rather than as "verify your creator
+        status". Verified, not asserted: CreatorProfileSpecifications.hasPlatforms (line 163)
+        filters brand Discover with an EXISTS subquery over platform_stats, and the only two
+        writers of that table (PlatformStatsAggregationJob, PortfolioService.syncPlatforms)
+        both build the row from a Meta metric. A creator who never completes OAuth therefore
+        has no row and cannot appear when a brand ticks the Instagram filter — which is the
+        single most common way a brand searches. See ledger F-0694.
+      */}
+      {!instagramConnected && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <p className="flex items-start gap-2.5 text-sm">
+            <Search className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+            <span>
+              <span className="font-medium">Brands search by verified Instagram reach.</span>{' '}
+              <span className="text-muted-foreground">
+                Until this is connected, your profile doesn’t appear in that search — no matter
+                how good the rest of it is.
+              </span>
+            </span>
+          </p>
+        </div>
+      )}
+
+      {/*
+        Every line below is checked against what the code actually requests, because a trust
+        promise that turns out to be false is worse than no promise:
+          · MetaOAuthService.REQUIRED_SCOPES        = instagram_basic, instagram_manage_insights,
+                                                      pages_show_list
+          · MetaOAuthService.INSTAGRAM_LOGIN_SCOPES = instagram_business_basic,
+                                                      instagram_business_manage_insights
+        Neither list contains a publishing scope (instagram_content_publish,
+        pages_manage_posts) or a messaging scope (instagram_manage_messages), so "never posts
+        or DMs" is a statement about the grant itself, not a policy we could quietly change.
+        The disconnect claim is ConnectedAccounts' revoke button (connected-accounts.tsx),
+        which calls MetaOAuthController's creator-scoped revoke.
+      */}
+      {/*
+        Meta / Instagram Graph API attribution (Priya ruling, T-IGTRUST-0907).
+
+        WHAT THIS MAY CLAIM, AND WHY THIS EXACT WORDING
+        The approval attaches to the API PERMISSIONS, never to Influora the company:
+          · "Permissions approved by Meta App Review" is TRUE and specific — Meta App Review
+            granted Advanced Access on the scopes MetaOAuthService requests
+            (app 850102124044922, Advanced Access on 4 scopes, confirmed 2026-09-02).
+          · "Approved by Meta" / "Meta Verified" / "Meta Partner" are all REFUSED. The first
+            reads as Meta endorsing the company; the second is a paid Meta product Influora
+            does not hold; the third is false — Influora is not a Meta Business Partner and
+            pages_read_engagement was rejected at review.
+
+        THIS LINE HAS AN EXPIRY. If Advanced Access on those scopes ever lapses or a scope is
+        removed at re-review, the claim becomes false and must come down the same day. It is
+        not decorative copy — it is an assertion about our App Review standing.
+      */}
+      <div className="flex items-center gap-3 rounded-lg border bg-muted/30 p-4">
+        <div
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400"
+          aria-hidden="true"
+        >
+          <Instagram className="h-7 w-7 text-white" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold">Official Instagram Graph API</p>
+          <p className="text-xs text-muted-foreground">
+            Permissions approved by Meta App Review. You sign in on Instagram’s own screen —
+            never on Influora.
+          </p>
+        </div>
+      </div>
+
+      {/*
+        The four-line permission list ("We read… / We never post… / We never see your password… /
+        Disconnect whenever you want") was REMOVED at Swapnil's direction after the header went.
+        The screen now leads with the App Review credential above and nothing else, on the view
+        that an itemised grant list reads as a disclosure form and puts the creator on guard at
+        exactly the wrong moment.
+
+        Two things that went with it, recorded so nobody re-derives them from scratch:
+          · the revocability promise ("disconnect any time, one click, your account stays") is
+            usually the line that converts a hesitant creator — it now appears only in Settings ›
+            Connected Accounts, i.e. AFTER they have already granted.
+          · "we never post, comment or DM" was the only place the product said out loud what the
+            scopes exclude. It remains true (no publishing or messaging scope is in
+            REQUIRED_SCOPES or INSTAGRAM_LOGIN_SCOPES) — it is simply no longer said here.
+        Both survive on the Settings card (connected-accounts.tsx), which keeps its short version.
+      */}
 
       <div className="space-y-3">
         {socials.map((social) => {
@@ -474,8 +588,35 @@ function ConnectSocialsStep({
         })}
       </div>
 
+      {/*
+        Meta attribution (Priya ruling, T-IGTRUST-0907).
+
+        WHAT THIS MAY AND MAY NOT SAY
+        The ask was to show that Meta "verifies" us. It must not, on three grounds:
+          · "Meta Verified" is a specific paid Meta product (the business/creator blue tick).
+            Using the phrase claims a subscription Influora does not hold.
+          · Implying Meta endorses or verifies Influora is a Brand Guidelines / Platform Terms
+            violation. Influora is NOT a Meta Business Partner; app 850102124044922 holds
+            Advanced Access on the scopes it requests and had pages_read_engagement REJECTED.
+          · It would be a false claim on the one screen whose entire purpose is being
+            believable, which defeats the screen.
+
+        What IS true, and is what a creator actually wants to know: the integration is the
+        official Instagram Graph API, and the password is entered on Instagram's own domain,
+        never ours. Stated as fact about the integration, never as an endorsement of Influora.
+        The Instagram glyph is used unmodified to refer to the service being connected.
+
+        If a Meta wordmark or partner badge is ever wanted here, it needs a check against the
+        current Meta brand permissions first — it is not a copy decision.
+      */}
+      {/* The Graph API / App Review attribution moved ABOVE the list, at full size — a trust
+          signal set in 12px grey under the fold is not a trust signal. Kept to one instance:
+          repeating it here would read as protesting too much.
+          "Connect at least one account" was removed as untrue — CR-120 added the skip link, and
+          a rule the product doesn't enforce is the kind of small lie that makes a creator
+          distrust the bigger claims above it. */}
       <p className="text-xs text-muted-foreground text-center">
-        Connect at least one account. You can add more later from your profile.
+        Takes about 30 seconds. You can also do it later from Settings.
       </p>
     </div>
   );
@@ -694,7 +835,7 @@ function YoureInStep({ onComplete, isLoading }: YoureInStepProps) {
     <div className="space-y-7">
       <div className="space-y-3 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
-          <CheckCircle2 className="h-7 w-7 text-success" />
+          <CheckCircle2 className="h-7 w-7 text-success-foreground" />
         </div>
         <h2 className="text-2xl font-bold">
           You're in! <Sparkles className="inline-block h-5 w-5 text-amber-500" />

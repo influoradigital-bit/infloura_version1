@@ -2,10 +2,12 @@ package com.influora.service.creatorcopilot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -25,7 +27,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
+import org.springframework.context.ApplicationEventPublisher;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -50,12 +54,17 @@ class CreatorMetaOAuthServiceTest {
     @Mock private MetaTokenStorage tokenStorage;
     @Mock private FacebookPageClient facebookPageClient;
     @Mock private MetaGraphApiClient graphApiClient;
+    // T-IGTRUST-0907 — connect now publishes CreatorMetaConnectedEvent so the Co-pilot caption
+    // sync starts immediately instead of waiting for the 02:00 UTC cron.
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private CreatorMetaOAuthService service;
 
     @BeforeEach
     void setUp() {
-        service = new CreatorMetaOAuthService(oAuthService, tokenStorage, facebookPageClient, graphApiClient);
+        service =
+                new CreatorMetaOAuthService(
+                        oAuthService, tokenStorage, facebookPageClient, graphApiClient, eventPublisher);
 
         when(oAuthService.exchangeCodeForToken(CODE))
                 .thenReturn(new MetaTokenResponse(SHORT_LIVED_TOKEN, "bearer", 3600L));
@@ -239,5 +248,36 @@ class CreatorMetaOAuthServiceTest {
                 expiresAt.isAfter(fiftyNineDaysOut),
                 "expiresAt must fall back to ~60 days out, not an already-expired Instant.now(): was "
                         + expiresAt);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // T-IGTRUST-0907 — the connect must kick the Co-pilot caption sync for this creator.
+    // Without it the creator waits for the 02:00 UTC cron: a mid-morning IST connect meant ~21
+    // hours of the Co-pilot answering pending_tagging right after they granted Instagram access.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("connect: a personal account publishes NO sync event — there is no IG account to read")
+    void connect_personalAccount_publishesNothing() {
+        // setUp already stubs resolveConnectedInstagram -> null, i.e. the personal-account result.
+        CreatorMetaOAuthService.ConnectResult result = service.connect(CREATOR_PROFILE_ID, CODE);
+
+        assertFalse(result.connected());
+        verify(eventPublisher, never()).publishEvent(any(CreatorMetaConnectedEvent.class));
+    }
+
+    @Test
+    @DisplayName("connect: a usable business account publishes the sync event for THAT creator")
+    void connect_businessAccount_publishesSyncEvent() {
+        when(facebookPageClient.resolveConnectedInstagram(LONG_LIVED_TOKEN))
+                .thenReturn(new InstagramBusinessAccount("17841400000000001", "creator_handle", 1000L));
+
+        CreatorMetaOAuthService.ConnectResult result = service.connect(CREATOR_PROFILE_ID, CODE);
+
+        assertTrue(result.connected());
+        ArgumentCaptor<CreatorMetaConnectedEvent> captor =
+                ArgumentCaptor.forClass(CreatorMetaConnectedEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        assertEquals(CREATOR_PROFILE_ID, captor.getValue().creatorProfileId());
     }
 }

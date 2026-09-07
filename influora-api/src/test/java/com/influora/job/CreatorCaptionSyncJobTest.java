@@ -21,6 +21,7 @@ import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.oauth.MetaTokenStorage;
 import com.influora.repository.CreatorCaptionCacheRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
+import com.influora.service.creatorcopilot.CreatorMetaConnectedEvent;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -223,5 +224,70 @@ class CreatorCaptionSyncJobTest {
 
         verify(tokenStorage, never()).getValidCreatorToken(CREATOR_ID_2);
         verify(instagramClient, never()).getMedia(eq(IG_ID_2), anyString(), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // T-IGTRUST-0907 — connect-triggered sync.
+    //
+    // Before this, nothing ran at connect time: the pipeline was two nightly crons (captions
+    // 02:00 UTC, theme tagging 03:00 UTC), so a creator connecting mid-morning IST saw the
+    // Co-pilot answer pending_tagging for ~21 hours immediately after granting Instagram access.
+    // These pin that the head start happens, that it respects the same kill switch as the cron,
+    // and — most importantly — that it can never surface a failure to the creator, because the
+    // cron remains the actual guarantee.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("onCreatorConnected: disabled flag gates it exactly like the cron")
+    void onCreatorConnected_disabled_doesNothing() {
+        props.setEnabled(false);
+
+        job.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID_1));
+
+        verify(tokenRepository, never()).findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(any());
+    }
+
+    @Test
+    @DisplayName("onCreatorConnected: syncs only the creator who connected, not every creator")
+    void onCreatorConnected_syncsOnlyThatCreator() {
+        when(tokenRepository.findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(any()))
+                .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1), tokenFor(CREATOR_ID_2, IG_ID_2)));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID_2)).thenReturn(Optional.of(ACCESS_TOKEN));
+        when(instagramClient.getMedia(eq(IG_ID_2), eq(ACCESS_TOKEN), anyInt(), any()))
+                .thenReturn(new InstagramMediaResponse(List.of(), null));
+
+        job.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID_2));
+
+        verify(instagramClient).getMedia(eq(IG_ID_2), eq(ACCESS_TOKEN), anyInt(), any());
+        // The whole point is that a connect kicks ONE creator's sync, not a full run.
+        verify(instagramClient, never()).getMedia(eq(IG_ID_1), anyString(), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("onCreatorConnected: a Meta failure is swallowed — the nightly cron is the guarantee")
+    void onCreatorConnected_metaFailure_neverThrows() {
+        when(tokenRepository.findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(any()))
+                .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1)));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
+        when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), any()))
+                .thenThrow(new MetaApiException("meta is down"));
+
+        // Must not propagate: this runs on an @Async listener after the connect already
+        // committed, so a throw here would be an unhandled rejection on a background thread and
+        // would tell the creator nothing.
+        job.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID_1));
+
+        verify(captionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("onCreatorConnected: no live token for that creator is a no-op, not a failure")
+    void onCreatorConnected_noToken_isNoOp() {
+        when(tokenRepository.findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(any()))
+                .thenReturn(List.of(tokenFor(CREATOR_ID_2, IG_ID_2)));
+
+        job.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID_1));
+
+        verify(instagramClient, never()).getMedia(anyString(), anyString(), anyInt(), any());
     }
 }

@@ -5,6 +5,7 @@ import { CreatorLayout } from '@/components/creator/creator-layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { api, ApiError, type MetaAuthPath } from '@/lib/api';
+import { MetaConnectPathDialog } from '@/components/creator/meta-connect-path-dialog';
 
 type CallbackState = 'loading' | 'success' | 'error';
 
@@ -51,6 +52,9 @@ export default function CreatorMetaCallbackPage() {
   >(null);
   const [serverReportedConnected, setServerReportedConnected] = React.useState(true);
   const [isRetrying, setIsRetrying] = React.useState(false);
+  // T-IGTRUST-0907 — the generic "Try Again" asks which configuration to retry with, rather
+  // than silently re-running the Page-required default that may be what just failed.
+  const [showRetryPathChoice, setShowRetryPathChoice] = React.useState(false);
   // Read once, on mount, before anything clears it.
   const [resumingOnboarding] = React.useState(
     () => localStorage.getItem(META_ONBOARDING_RESUME_KEY) === '1',
@@ -70,7 +74,13 @@ export default function CreatorMetaCallbackPage() {
     localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
   }, []);
 
-  const handleRetry = async (authPath?: MetaAuthPath) => {
+  // T-IGTRUST-0907 — `authPath` was optional, and the generic "Try Again" button called this
+  // with NO argument. That reached `authorize(undefined)`, which the backend defaults to
+  // FACEBOOK_LOGIN — so a creator whose connect had just failed got re-sent down the
+  // Page-required path no matter which one they originally picked, and a creator without a Page
+  // could loop through this screen indefinitely. It is now required, and the generic retry asks.
+  const handleRetry = async (authPath: MetaAuthPath) => {
+    setShowRetryPathChoice(false);
     setIsRetrying(true);
     try {
       // F-0168 — the general-return-path marker was already read-and-cleared at mount
@@ -257,7 +267,7 @@ export default function CreatorMetaCallbackPage() {
                     // CR-66 — retry the connection itself, not just navigate away from the
                     // failure. `resumingOnboarding` keeps its own behavior: the wizard has its
                     // own Connect button, so returning there already offers a real retry.
-                    void handleRetry();
+                    setShowRetryPathChoice(true);
                     return;
                   }
                   localStorage.removeItem(META_ONBOARDING_RESUME_KEY);
@@ -284,6 +294,13 @@ export default function CreatorMetaCallbackPage() {
           )}
         </Card>
       </div>
+
+      <MetaConnectPathDialog
+        open={showRetryPathChoice}
+        onOpenChange={setShowRetryPathChoice}
+        onChoose={(authPath) => void handleRetry(authPath)}
+        busy={isRetrying}
+      />
     </CreatorLayout>
   );
 }

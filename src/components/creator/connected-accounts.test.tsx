@@ -139,11 +139,16 @@ describe('ConnectedAccounts — disconnect (CR-102 / F-0115)', () => {
 
     expect(
       await screen.findByText(
-        "Your Instagram metrics will stop syncing, so the reach and engagement brands see will stay frozen at today's numbers until you reconnect.",
+        'Your Instagram metrics will stop syncing, so the reach and engagement brands see will stay frozen at your last synced numbers until you reconnect.',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/brands will no longer see/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/deliverable verification/i)).not.toBeInTheDocument();
+    // T-IGTRUST-0907 — and not the third wording either. "today's numbers" implies the frozen
+    // figures are current as of the disconnect; MetaTokenStorage.revokeCreatorToken
+    // (MetaTokenStorage.java:394) never touches platform_stats, so what brands keep seeing is
+    // whatever the last successful sync wrote — potentially months old.
+    expect(screen.queryByText(/today's numbers/i)).not.toBeInTheDocument();
   });
 
   it('calls api.metaOAuth.disconnect and refreshes status on confirm', async () => {

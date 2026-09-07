@@ -16,15 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { MetaConnectPathDialog } from '@/components/creator/meta-connect-path-dialog';
 import {
   Instagram,
   Youtube,
@@ -571,54 +563,17 @@ export default function CreatorProfilePage() {
           </CardContent>
         </Card>
 
-        {/* B3/F-0390 — same path-choice dialog pattern as connected-accounts.tsx
-            (T-IGLOGIN-0820): asked before the redirect since the two Meta configurations
-            differ in whether a Facebook Page is required. */}
-        <AlertDialog open={showMetaPathChoice} onOpenChange={setShowMetaPathChoice}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Is your Instagram linked to a Facebook Page?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Instagram offers two ways to connect. Pick the one that matches your setup — you
-                can change it later from this page.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <div className="space-y-3">
-              <button
-                type="button"
-                onClick={() => handleConnectMoreAccounts('FACEBOOK_LOGIN')}
-                disabled={isConnectingMeta}
-                className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
-              >
-                <span className="flex items-center gap-2 text-sm font-medium">
-                  Yes — I have a Facebook Page
-                </span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  Connect with Facebook. Needed later for paid partnership ads run from your
-                  handle. You must be able to manage the Page.
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleConnectMoreAccounts('INSTAGRAM_LOGIN')}
-                disabled={isConnectingMeta}
-                className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
-              >
-                <span className="flex items-center gap-2 text-sm font-medium">
-                  <Instagram className="h-4 w-4" aria-hidden="true" />
-                  No — Instagram only
-                </span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  Connect with your Instagram login. No Facebook Page needed. Profile, media and
-                  insights all work; paid partnership ads do not.
-                </span>
-              </button>
-            </div>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={isConnectingMeta}>Cancel</AlertDialogCancel>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {/* B3/F-0390 — asked before the redirect since the two Meta configurations differ in
+            whether a Facebook Page is required. T-IGTRUST-0907: this was the FOURTH hand-copy of
+            that dialog and had already drifted (its "Yes" option had lost the Facebook icon the
+            other three carry). Now the one shared component. */}
+        <MetaConnectPathDialog
+          open={showMetaPathChoice}
+          onOpenChange={setShowMetaPathChoice}
+          onChoose={handleConnectMoreAccounts}
+          busy={isConnectingMeta}
+          changeLaterLabel="from this page"
+        />
 
         {/* Stats — the real fields the backend actually returns; no fabricated
             "total collabs" / "rating" / "on-time %" (not part of CreatorProfileSelfResponse). */}

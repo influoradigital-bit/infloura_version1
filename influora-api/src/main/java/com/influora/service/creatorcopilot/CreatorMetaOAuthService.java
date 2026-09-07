@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,16 +57,19 @@ public class CreatorMetaOAuthService {
     private final MetaTokenStorage tokenStorage;
     private final FacebookPageClient facebookPageClient;
     private final MetaGraphApiClient graphApiClient;
+    private final ApplicationEventPublisher eventPublisher;
 
     public CreatorMetaOAuthService(
             MetaOAuthService oAuthService,
             MetaTokenStorage tokenStorage,
             FacebookPageClient facebookPageClient,
-            MetaGraphApiClient graphApiClient) {
+            MetaGraphApiClient graphApiClient,
+            ApplicationEventPublisher eventPublisher) {
         this.oAuthService = oAuthService;
         this.tokenStorage = tokenStorage;
         this.facebookPageClient = facebookPageClient;
         this.graphApiClient = graphApiClient;
+        this.eventPublisher = eventPublisher;
     }
 
     /** {@code accountType} is {@code "personal" | "business"}, matching API-CONTRACT.md §4.2's
@@ -99,7 +103,7 @@ public class CreatorMetaOAuthService {
     @Transactional
     public ConnectResult connect(String creatorProfileId, String code, MetaAuthPath authPath) {
         if (authPath == MetaAuthPath.INSTAGRAM_LOGIN) {
-            return connectViaInstagramLogin(creatorProfileId, code);
+            return publishIfConnected(creatorProfileId, connectViaInstagramLogin(creatorProfileId, code));
         }
         MetaTokenResponse shortLived = oAuthService.exchangeCodeForToken(code);
         MetaTokenResponse longLived = oAuthService.exchangeForLongLivedToken(shortLived.accessToken());
@@ -150,7 +154,27 @@ public class CreatorMetaOAuthService {
         if (igAccount == null) {
             return new ConnectResult(false, grantedScopes, ACCOUNT_TYPE_PERSONAL);
         }
-        return new ConnectResult(true, grantedScopes, ACCOUNT_TYPE_BUSINESS);
+        return publishIfConnected(
+                creatorProfileId, new ConnectResult(true, grantedScopes, ACCOUNT_TYPE_BUSINESS));
+    }
+
+    /**
+     * T-IGTRUST-0907 — kicks the Co-pilot caption sync for this creator now instead of leaving
+     * them to the 02:00 UTC cron, which for a mid-morning IST connect is ~21 hours of the
+     * Co-pilot answering {@code pending_tagging}.
+     *
+     * <p>Only on {@code connected == true}: a personal-account result has no IG business account
+     * to fetch media from, so a sync would be a guaranteed no-op Graph call.
+     *
+     * <p>Publishing is the whole contribution — the listener is {@code @Async}, so nothing about
+     * the connect response waits on Meta, and the listener swallows its own failures. This method
+     * returns its argument unchanged so it can wrap a return expression without altering it.
+     */
+    private ConnectResult publishIfConnected(String creatorProfileId, ConnectResult result) {
+        if (result.connected()) {
+            eventPublisher.publishEvent(new CreatorMetaConnectedEvent(creatorProfileId));
+        }
+        return result;
     }
 
     /**

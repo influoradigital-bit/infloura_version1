@@ -4,7 +4,8 @@ import { Instagram, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { api } from '@/lib/api';
+import { MetaConnectPathDialog } from '@/components/creator/meta-connect-path-dialog';
+import { api, type MetaAuthPath } from '@/lib/api';
 
 interface IGConnectPromptProps {
   className?: string;
@@ -21,14 +22,20 @@ interface IGConnectPromptProps {
 export function IGConnectPrompt({ className }: IGConnectPromptProps) {
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = React.useState(false);
+  const [showPathChoice, setShowPathChoice] = React.useState(false);
 
-  const handleConnect = async () => {
+  // T-IGTRUST-0907 — `authPath` is now required. This surface called `authorize()` bare, which
+  // the backend defaults to FACEBOOK_LOGIN (api.ts metaOAuth.authorize javadoc) — the path that
+  // demands a Facebook Page the creator can administer. A creator without one dead-ended inside
+  // Meta's UI. See MetaConnectPathDialog's header.
+  const handleConnect = async (authPath: MetaAuthPath) => {
+    setShowPathChoice(false);
     setIsConnecting(true);
     try {
       // CR-65 — without this, the callback page has no way to know this connect started from
       // Co-pilot and always sends the creator to Settings instead.
       api.metaOAuth.setConnectReturnTo('/creator/copilot');
-      const { authorizationUrl } = await api.metaOAuth.authorize();
+      const { authorizationUrl } = await api.metaOAuth.authorize(authPath);
       // Full-page navigation, not a fetch — same as connected-accounts.tsx's
       // handleConnect: Meta's OAuth dialog must load in the top-level
       // browsing context.
@@ -58,7 +65,7 @@ export function IGConnectPrompt({ className }: IGConnectPromptProps) {
             <p className="text-xs text-muted-foreground">Link Instagram to unlock Co-pilot.</p>
           </div>
         </div>
-        <Button size="sm" onClick={handleConnect} disabled={isConnecting}>
+        <Button size="sm" onClick={() => setShowPathChoice(true)} disabled={isConnecting}>
           {isConnecting ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -69,6 +76,13 @@ export function IGConnectPrompt({ className }: IGConnectPromptProps) {
           )}
         </Button>
       </CardContent>
+
+      <MetaConnectPathDialog
+        open={showPathChoice}
+        onOpenChange={setShowPathChoice}
+        onChoose={(authPath) => void handleConnect(authPath)}
+        busy={isConnecting}
+      />
     </Card>
   );
 }

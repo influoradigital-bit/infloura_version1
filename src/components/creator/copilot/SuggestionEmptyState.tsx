@@ -15,7 +15,15 @@ interface SuggestionEmptyStateProps {
 }
 
 const COPY: Record<SuggestionEmptyStateProps['reason'], string> = {
-  pending_tagging: 'Usually ready within a day.',
+  // T-IGTRUST-0907 — was "Usually ready within a day.", which says nothing about what is
+  // happening and reads as a vague apology at the single highest-stakes moment in the creator's
+  // first session: they have just granted Instagram access and this is the promised payoff.
+  // Naming the work ("reading your recent posts") and giving a real horizon is what makes the
+  // wait tolerable. The horizon is honest either way — the connect now kicks a caption sync for
+  // that creator immediately (CreatorMetaConnectedEvent), and CreatorThemeTaggingJob's 03:00 UTC
+  // run is the backstop, so "your first idea lands by tomorrow morning" is the outer bound
+  // rather than a hope.
+  pending_tagging: 'Reading your recent posts — your first idea lands by tomorrow morning.',
   no_suggestion_today: 'No new idea today — check back tomorrow.',
   // F-0480 — shown only while the backend connection check is in flight on a fresh mount; the
   // "within a day" copy above would be wrong for a ~200ms status round-trip.

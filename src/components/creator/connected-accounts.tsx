@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useMetaConnection } from '@/hooks/creator/useMetaConnection';
+import { MetaConnectPathDialog } from '@/components/creator/meta-connect-path-dialog';
 import { api, type MetaAuthPath } from '@/lib/api';
 
 interface MetaScopeInfo {
@@ -119,6 +120,23 @@ export function ConnectedAccounts() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/*
+          T-IGTRUST-0907 — the same three promises onboarding's Step 1 makes, kept here for the
+          creator who skipped onboarding and arrived at this card cold; they'd otherwise be asked
+          to grant Meta access with no statement of what it does and doesn't allow. Checked
+          against MetaOAuthService.REQUIRED_SCOPES / INSTAGRAM_LOGIN_SCOPES: neither list carries
+          a publishing (instagram_content_publish, pages_manage_posts) or messaging
+          (instagram_manage_messages) scope. Only shown while disconnected — once connected, the
+          granted-permissions block below reports the REAL grant and this would be noise.
+        */}
+        {!isConnected && !verifying && (
+          <ul className="space-y-1.5 rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+            <li>· We read your profile, media and insight numbers — nothing else.</li>
+            <li>· We never post, comment or DM. Those permissions are never requested.</li>
+            <li>· We never see your password — you sign in on Instagram’s own screen.</li>
+            <li>· You can disconnect from this card at any time.</li>
+          </ul>
+        )}
         {verifyError && !verifying && (
           <p className="flex items-center gap-1.5 text-xs text-destructive-foreground">
             <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />
@@ -265,59 +283,16 @@ export function ConnectedAccounts() {
         )}
       </CardContent>
 
-      {/*
-        T-IGLOGIN-0820 — asked BEFORE the redirect, because the two Meta configurations differ in
-        whether a Facebook Page is required and the choice cannot be changed mid-dialog. The
-        answer is a hint, not a fact: creators routinely do not know whether their Instagram is
-        linked to a Page, so a wrong "yes" is recovered on the callback screen rather than
-        dead-ending here.
-      */}
-      <AlertDialog open={showPathChoice} onOpenChange={setShowPathChoice}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Is your Instagram linked to a Facebook Page?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Instagram offers two ways to connect. Pick the one that matches your setup — you can
-              change it later from this page.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={() => handleConnect('FACEBOOK_LOGIN')}
-              disabled={isConnecting}
-              className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
-            >
-              <span className="flex items-center gap-2 text-sm font-medium">
-                <Facebook className="h-4 w-4 text-[#1877F2]" aria-hidden="true" />
-                Yes — I have a Facebook Page
-              </span>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Connect with Facebook. Needed later for paid partnership ads run from your handle.
-                You must be able to manage the Page.
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleConnect('INSTAGRAM_LOGIN')}
-              disabled={isConnecting}
-              className="w-full rounded-lg border p-3 text-left transition-colors hover:bg-muted disabled:opacity-60"
-            >
-              <span className="flex items-center gap-2 text-sm font-medium">
-                <Instagram className="h-4 w-4" aria-hidden="true" />
-                No — Instagram only
-              </span>
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Connect with your Instagram login. No Facebook Page needed. Profile, media and
-                insights all work; paid partnership ads do not.
-              </span>
-            </button>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isConnecting}>Cancel</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* T-IGLOGIN-0820, extracted to a shared component by T-IGTRUST-0907 — this card was the
+          only connect surface that asked the question, and the other two silently defaulted to
+          the Page-required path. See MetaConnectPathDialog's header. */}
+      <MetaConnectPathDialog
+        open={showPathChoice}
+        onOpenChange={setShowPathChoice}
+        onChoose={(authPath) => void handleConnect(authPath)}
+        busy={isConnecting}
+        changeLaterLabel="from this page"
+      />
 
       <AlertDialog
         open={showDisconnectConfirm}
@@ -343,9 +318,16 @@ export function ConnectedAccounts() {
                   What genuinely stops, verified end-to-end: PortfolioService.syncPlatforms
                   (throws NOT_CONNECTED), CreatorCaptionSyncJob (skips the creator), and
                   MetaConnectionService.getStatus (reports disconnected) — all three go
-                  through getValidCreatorToken, which the revoke genuinely empties. */}
+                  through getValidCreatorToken, which the revoke genuinely empties.
+                  T-IGTRUST-0907 (Tejas, fresh-context review) — the third wording was still an
+                  overstatement: it described the frozen figures as current as of the moment of
+                  disconnect. MetaTokenStorage.revokeCreatorToken (MetaTokenStorage.java:394)
+                  marks the token row revoked and writes an audit entry, and touches
+                  platform_stats not at all. What survives is therefore whatever the LAST SYNC
+                  wrote, which may be months stale. Gate: connect-copy-claims-verified.sh —
+                  which is why the old phrasing is described here rather than quoted. */}
               Your Instagram metrics will stop syncing, so the reach and engagement brands see
-              will stay frozen at today's numbers until you reconnect.
+              will stay frozen at your last synced numbers until you reconnect.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

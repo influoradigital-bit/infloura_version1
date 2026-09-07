@@ -16,9 +16,12 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
+import com.influora.service.creatorcopilot.CreatorMetaConnectedEvent;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -106,64 +109,16 @@ public class CreatorCaptionSyncJob {
         int itemsFailed = 0;
 
         for (MetaOAuthToken token : creatorTokens) {
-            String creatorProfileId = token.getCreatorProfileId();
-            String igBusinessAccountId = token.getIgBusinessAccountId();
-
-            if (igBusinessAccountId == null || igBusinessAccountId.isBlank()) {
-                creatorsSkippedNoAccount++;
-                continue;
-            }
-
-            try {
-                Optional<String> accessToken = tokenStorage.getValidCreatorToken(creatorProfileId);
-                if (accessToken.isEmpty()) {
-                    creatorsSkippedNoAccount++;
-                    continue;
-                }
-
-                InstagramMediaResponse mediaResponse =
-                        instagramClient.getMedia(
-                                igBusinessAccountId,
-                                accessToken.get(),
-                                props.getCaptionSyncMediaLimit(),
-                                // T-IGLOGIN-0820: this loop already holds the token row, so the
-                                // host comes straight off it rather than a second lookup.
-                                token.getAuthPath());
-                creatorsProcessed++;
-
-                if (mediaResponse == null || mediaResponse.data() == null) {
-                    continue;
-                }
-
-                for (InstagramMediaResponse.MediaItem item : mediaResponse.data()) {
-                    try {
-                        if (persistIfNew(creatorProfileId, item)) {
-                            inserted++;
-                        } else {
-                            skipped++;
-                        }
-                    } catch (Exception itemFailure) {
-                        itemsFailed++;
-                        log.warn(
-                                "CreatorCaptionSyncJob: failed to persist media {} for creator {}: {}",
-                                item.id(),
-                                creatorProfileId,
-                                itemFailure.getMessage());
-                    }
-                }
-            } catch (MetaApiException metaFailure) {
-                creatorsFailed++;
-                log.warn(
-                        "CreatorCaptionSyncJob: Meta fetch failed for creator {}: {}",
-                        creatorProfileId,
-                        metaFailure.getMessage());
-            } catch (Exception unexpected) {
-                creatorsFailed++;
-                log.warn(
-                        "CreatorCaptionSyncJob: unexpected failure syncing captions for creator {}: {}",
-                        creatorProfileId,
-                        unexpected.getMessage());
-            }
+            // T-IGTRUST-0907 — body extracted to syncOneCreator so the connect-triggered sync
+            // runs byte-identical logic instead of a second, drifting copy. The counters are
+            // accumulated here exactly as before, so this run's log line is unchanged.
+            CreatorSyncOutcome outcome = syncOneCreator(token);
+            if (outcome.processed()) creatorsProcessed++;
+            if (outcome.skippedNoAccount()) creatorsSkippedNoAccount++;
+            if (outcome.failed()) creatorsFailed++;
+            inserted += outcome.inserted();
+            skipped += outcome.skipped();
+            itemsFailed += outcome.itemsFailed();
         }
 
         log.info(
@@ -176,6 +131,138 @@ public class CreatorCaptionSyncJob {
                 creatorsFailed,
                 creatorsSkippedNoAccount,
                 itemsFailed);
+    }
+
+    /**
+     * Syncs one creator's captions immediately, off the back of a successful Meta connect
+     * (T-IGTRUST-0907). Without this the creator waits for the 02:00 UTC cron — up to ~21 hours
+     * for someone who connects mid-morning IST — while the Co-pilot reports
+     * {@code pending_tagging}.
+     *
+     * <p>{@code @Async} + {@code AFTER_COMMIT} (see {@link CreatorMetaConnectedEvent}): the
+     * token row is durably committed before this runs, and this runs on another thread, so the
+     * creator's connect response is never delayed by a Graph round trip and no failure here can
+     * roll back the connect.
+     *
+     * <p><b>This never throws.</b> A best-effort head start on a nightly job must not surface as
+     * an error anywhere — the cron remains the guarantee, and this is the optimisation. Every
+     * failure is logged and swallowed; the creator simply waits for tonight's run as they did
+     * before this existed.
+     *
+     * <p>Gated on the same {@code influora.creator-copilot.enabled} flag as the cron. With the
+     * flag false — which is the default in application.yml and in BOTH shipped compose files —
+     * this does nothing, exactly like the cron it front-runs.
+     */
+    @Async
+    @EventListener
+    public void onCreatorConnected(CreatorMetaConnectedEvent event) {
+        if (!props.isEnabled()) {
+            return;
+        }
+        String creatorProfileId = event.creatorProfileId();
+        try {
+            Optional<MetaOAuthToken> token =
+                    tokenRepository
+                            .findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(Instant.now())
+                            .stream()
+                            .filter(t -> creatorProfileId.equals(t.getCreatorProfileId()))
+                            .findFirst();
+            if (token.isEmpty()) {
+                log.info(
+                        "CreatorCaptionSyncJob: connect-triggered sync for creator {} found no live"
+                                + " token; leaving it to the nightly run",
+                        creatorProfileId);
+                return;
+            }
+            CreatorSyncOutcome outcome = syncOneCreator(token.get());
+            log.info(
+                    "CreatorCaptionSyncJob: connect-triggered sync for creator {} — {} inserted, {}"
+                            + " skipped, {} items failed, processed={}",
+                    creatorProfileId,
+                    outcome.inserted(),
+                    outcome.skipped(),
+                    outcome.itemsFailed(),
+                    outcome.processed());
+        } catch (Exception e) {
+            // Deliberately swallowed — see the javadoc. The cron is the guarantee.
+            log.warn(
+                    "CreatorCaptionSyncJob: connect-triggered sync failed for creator {}: {}",
+                    creatorProfileId,
+                    e.getMessage());
+        }
+    }
+
+    /** Per-creator counters, so the cron's aggregate logging is unchanged by the extraction. */
+    private record CreatorSyncOutcome(
+            boolean processed, boolean skippedNoAccount, boolean failed, int inserted, int skipped, int itemsFailed) {}
+
+    /**
+     * Syncs one creator's recent captions. Extracted verbatim from the cron loop
+     * (T-IGTRUST-0907) so the scheduled run and the connect-triggered run cannot diverge.
+     * Swallows the same exceptions the loop swallowed and reports them through the returned
+     * counters instead of throwing.
+     */
+    private CreatorSyncOutcome syncOneCreator(MetaOAuthToken token) {
+        String creatorProfileId = token.getCreatorProfileId();
+        String igBusinessAccountId = token.getIgBusinessAccountId();
+
+        if (igBusinessAccountId == null || igBusinessAccountId.isBlank()) {
+            return new CreatorSyncOutcome(false, true, false, 0, 0, 0);
+        }
+
+        int inserted = 0;
+        int skipped = 0;
+        int itemsFailed = 0;
+
+        try {
+            Optional<String> accessToken = tokenStorage.getValidCreatorToken(creatorProfileId);
+            if (accessToken.isEmpty()) {
+                return new CreatorSyncOutcome(false, true, false, 0, 0, 0);
+            }
+
+            InstagramMediaResponse mediaResponse =
+                    instagramClient.getMedia(
+                            igBusinessAccountId,
+                            accessToken.get(),
+                            props.getCaptionSyncMediaLimit(),
+                            // T-IGLOGIN-0820: the caller already holds the token row, so the
+                            // host comes straight off it rather than a second lookup.
+                            token.getAuthPath());
+
+            if (mediaResponse == null || mediaResponse.data() == null) {
+                return new CreatorSyncOutcome(true, false, false, 0, 0, 0);
+            }
+
+            for (InstagramMediaResponse.MediaItem item : mediaResponse.data()) {
+                try {
+                    if (persistIfNew(creatorProfileId, item)) {
+                        inserted++;
+                    } else {
+                        skipped++;
+                    }
+                } catch (Exception itemFailure) {
+                    itemsFailed++;
+                    log.warn(
+                            "CreatorCaptionSyncJob: failed to persist media {} for creator {}: {}",
+                            item.id(),
+                            creatorProfileId,
+                            itemFailure.getMessage());
+                }
+            }
+            return new CreatorSyncOutcome(true, false, false, inserted, skipped, itemsFailed);
+        } catch (MetaApiException metaFailure) {
+            log.warn(
+                    "CreatorCaptionSyncJob: Meta fetch failed for creator {}: {}",
+                    creatorProfileId,
+                    metaFailure.getMessage());
+            return new CreatorSyncOutcome(false, false, true, inserted, skipped, itemsFailed);
+        } catch (Exception unexpected) {
+            log.warn(
+                    "CreatorCaptionSyncJob: unexpected failure syncing captions for creator {}: {}",
+                    creatorProfileId,
+                    unexpected.getMessage());
+            return new CreatorSyncOutcome(false, false, true, inserted, skipped, itemsFailed);
+        }
     }
 
     /**

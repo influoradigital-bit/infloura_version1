@@ -267,9 +267,17 @@ describe('CreatorMetaCallbackPage', () => {
     await screen.findByText('Connection failed');
 
     await user.click(screen.getByRole('button', { name: 'Try Again' }));
+    // T-IGTRUST-0907 — the retry now asks which Meta configuration to use rather than silently
+    // re-running the Page-required default (which is often exactly what just failed). The
+    // original invariant is unchanged and still asserted below; only the number of clicks to
+    // reach it changed.
+    await user.click(await screen.findByText(/No — Instagram only/i));
 
     await waitFor(() => expect(metaAuthorize).toHaveBeenCalled());
     await waitFor(() => expect(window.location.href).toBe('https://meta.example/oauth'));
+    // And it must carry the creator's actual choice, never `undefined` (which the backend
+    // defaults to FACEBOOK_LOGIN — the path that may be what just failed).
+    expect(metaAuthorize).toHaveBeenCalledWith('INSTAGRAM_LOGIN');
 
     window.location = originalLocation;
   });
@@ -294,6 +302,11 @@ describe('CreatorMetaCallbackPage', () => {
     await screen.findByText('Connection failed');
 
     await user.click(screen.getByRole('button', { name: 'Try Again' }));
+    // T-IGTRUST-0907 — the retry now asks which Meta configuration to use rather than silently
+    // re-running the Page-required default (which is often exactly what just failed). The
+    // original invariant is unchanged and still asserted below; only the number of clicks to
+    // reach it changed.
+    await user.click(await screen.findByText(/No — Instagram only/i));
 
     await waitFor(() => expect(metaAuthorize).toHaveBeenCalled());
     // The re-persist must happen BEFORE authorize() redirects, not after.

@@ -26,7 +26,12 @@ import { useToast } from '@/hooks/use-toast';
 import { MetricSourceBadge } from '@/components/analytics/metric-source-badge';
 import { useCreatorDeliverableLifecycle } from '@/hooks/creator/useCreatorDeliverableLifecycle';
 import { ApiError, api } from '@/lib/api';
-import type { CreatorDeliverableMetricsPayload, CreatorDeliverableRowStatus } from '@/lib/api';
+import { MetaConnectPathDialog } from '@/components/creator/meta-connect-path-dialog';
+import type {
+  CreatorDeliverableMetricsPayload,
+  CreatorDeliverableRowStatus,
+  MetaAuthPath,
+} from '@/lib/api';
 
 export interface DeliverableLifecyclePanelProps {
   deliverableId: string;
@@ -69,6 +74,8 @@ export function DeliverableLifecyclePanel({
   const [livePostUrl, setLivePostUrl] = React.useState('');
   const [metrics, setMetrics] = React.useState<CreatorDeliverableMetricsPayload>({});
   const [connecting, setConnecting] = React.useState(false);
+  // T-IGTRUST-0907 — ask which Meta configuration applies before redirecting.
+  const [showPathChoice, setShowPathChoice] = React.useState(false);
   const proofInputRef = React.useRef<HTMLInputElement>(null);
 
   const canMarkPosted = currentStatus === 'APPROVED';
@@ -92,14 +99,18 @@ export function DeliverableLifecyclePanel({
     }
   };
 
-  const handleConnect = async () => {
+  // T-IGTRUST-0907 — `authPath` is now required, and the creator is asked before the redirect
+  // rather than defaulted to FACEBOOK_LOGIN (the Page-required configuration). See
+  // MetaConnectPathDialog's header for why the bare call was a dead-end.
+  const handleConnect = async (authPath: MetaAuthPath) => {
+    setShowPathChoice(false);
     setConnecting(true);
     try {
       // CR-54 — without this, completing (or cancelling) the OAuth dialog performs a hard
       // navigation to Settings/root and drops the creator out of this deal room. Capturing the
       // live location (not a prop) works regardless of which route mounts this panel.
       api.metaOAuth.setConnectReturnTo(window.location.pathname + window.location.search);
-      const { authorizationUrl } = await api.metaOAuth.authorize();
+      const { authorizationUrl } = await api.metaOAuth.authorize(authPath);
       window.location.href = authorizationUrl;
     } catch (err) {
       // F-0168 — authorize() threw AFTER the marker was written, so the redirect to Meta never
@@ -210,7 +221,12 @@ export function DeliverableLifecyclePanel({
                 <AlertTitle>Connect Instagram</AlertTitle>
                 <AlertDescription className="space-y-2">
                   <p>Connect your account so brands see your verified reach and engagement.</p>
-                  <Button type="button" size="sm" onClick={handleConnect} disabled={connecting}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => setShowPathChoice(true)}
+                    disabled={connecting}
+                  >
                     {connecting ? <Loader2 className="animate-spin" aria-hidden="true" /> : <Instagram aria-hidden="true" />}
                     Connect Instagram
                   </Button>
@@ -291,6 +307,14 @@ export function DeliverableLifecyclePanel({
           </Alert>
         )}
       </CardContent>
+
+      {/* T-IGTRUST-0907 — see MetaConnectPathDialog's header. */}
+      <MetaConnectPathDialog
+        open={showPathChoice}
+        onOpenChange={setShowPathChoice}
+        onChoose={(authPath) => void handleConnect(authPath)}
+        busy={connecting}
+      />
     </Card>
   );
 }

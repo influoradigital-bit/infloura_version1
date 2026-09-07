@@ -91,7 +91,14 @@ describe('DailySuggestionSection — no_suggestion_today (CR-64 / F-0107)', () =
     mockedHook.mockReturnValue({ ...BASE, status: 'loading' });
     render(<DailySuggestionSection />);
 
-    expect(screen.getByText('Usually ready within a day.')).toBeInTheDocument();
+    // T-IGTRUST-0907 — copy now names the work and gives a real horizon rather than
+    // "Usually ready within a day." The routing this test guards is unchanged.
+    expect(
+      screen.getByText('Reading your recent posts — your first idea lands by tomorrow morning.'),
+    ).toBeInTheDocument();
+    // It must never claim an immediacy the pipeline cannot deliver: the connect-triggered sync
+    // is a head start, not a guarantee, and theme tagging still runs on its own cron.
+    expect(screen.queryByText(/ready in a few (minutes|seconds)/i)).not.toBeInTheDocument();
   });
 
   // Priya review: the guard's placement relative to the earlier status checks is exactly what
