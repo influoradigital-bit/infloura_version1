@@ -280,17 +280,49 @@ public class ExternalCreatorLinkService {
      * joining, so this swallows its own exceptions rather than letting them reach the JOINED write
      * above — the same discipline the cross-link hook in {@code PortfolioService} already applies.
      */
-    private void adoptExternalPlatformStat(ExternalCreator external, String creatorProfileId) {
+    /**
+     * What {@link #adoptExternalPlatformStat} did, or would do. Returned rather than swallowed so a
+     * caller that needs to tally outcomes — the F-0740 backfill over creators who joined before
+     * F-0701 shipped — can report honest counts, while {@link #finishLinking} keeps ignoring it and
+     * staying best-effort.
+     */
+    public enum AdoptOutcome {
+        /** A platform_stats row was written (or, from {@link #wouldAdopt}, would be). */
+        WROTE,
+        /** The creator already has an INSTAGRAM row; real data is never overwritten. */
+        ALREADY_PRESENT,
+        /** The external row carries no usable ig_username, so there is nothing to adopt. */
+        NO_HANDLE,
+        /** The write threw. Swallowed on the live path; counted on the backfill path. */
+        FAILED
+    }
+
+    /**
+     * F-0740 — the decision half of {@link #adoptExternalPlatformStat}, with no writes, so a
+     * dry-run backfill can report exactly what a real run would do without a second copy of these
+     * predicates drifting from the ones that actually run. Never returns {@link
+     * AdoptOutcome#FAILED}: deciding cannot fail, only writing can.
+     */
+    public AdoptOutcome wouldAdopt(ExternalCreator external, String creatorProfileId) {
+        String handle = external.getIgUsername();
+        if (handle == null || handle.isBlank()) {
+            return AdoptOutcome.NO_HANDLE;
+        }
+        if (platformStatRepository
+                .findByCreatorProfileIdAndPlatform(creatorProfileId, INSTAGRAM)
+                .isPresent()) {
+            return AdoptOutcome.ALREADY_PRESENT;
+        }
+        return AdoptOutcome.WROTE;
+    }
+
+    public AdoptOutcome adoptExternalPlatformStat(ExternalCreator external, String creatorProfileId) {
         try {
+            AdoptOutcome decision = wouldAdopt(external, creatorProfileId);
+            if (decision != AdoptOutcome.WROTE) {
+                return decision;
+            }
             String handle = external.getIgUsername();
-            if (handle == null || handle.isBlank()) {
-                return;
-            }
-            if (platformStatRepository
-                    .findByCreatorProfileIdAndPlatform(creatorProfileId, INSTAGRAM)
-                    .isPresent()) {
-                return;
-            }
 
             Long followers = external.getFollowers();
             platformStatRepository.save(
@@ -333,6 +365,7 @@ public class ExternalCreatorLinkService {
                             + " account ownership)",
                     creatorProfileId,
                     external.getId());
+            return AdoptOutcome.WROTE;
         } catch (RuntimeException e) {
             log.error(
                     "adoptExternalPlatformStat failed for creatorProfileId={} externalCreatorId={}"
@@ -341,6 +374,7 @@ public class ExternalCreatorLinkService {
                     creatorProfileId,
                     external.getId(),
                     e);
+            return AdoptOutcome.FAILED;
         }
     }
 

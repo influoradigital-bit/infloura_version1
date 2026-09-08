@@ -1,6 +1,7 @@
 package com.influora.repository;
 
 import com.influora.domain.entity.ExternalCreator;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -67,6 +68,23 @@ public interface ExternalCreatorRepository
      * persistence context so a subsequent read by id sees the new value instead of the stale
      * cached entity.
      */
+    /**
+     * F-0740 — every external row already bound to a real creator profile, for the one-time
+     * backfill over creators who joined BEFORE F-0701 taught {@code finishLinking} to write a
+     * {@code platform_stats} row.
+     *
+     * <p>Keyed on the link rather than on {@code status = JOINED} deliberately: {@code markJoined}
+     * is what sets this column, so a row carrying a link is exactly a row whose Instagram identity
+     * we already know belongs to a creator on Influora — whatever the status column happens to
+     * read. Keying on status instead would silently miss any row linked by a path that did not also
+     * move the status, and the backfill would under-report while looking complete.
+     *
+     * <p>A derived finder, not an {@code @Query}: this interface's {@link #renameIgUsername} shows
+     * why JPQL here is expensive to add (it fails Hibernate 6's strict type check under H2 and
+     * takes the whole test context down with it).
+     */
+    List<ExternalCreator> findByLinkedCreatorProfileIdIsNotNull();
+
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE ExternalCreator e SET e.igUsername = :igUsername, e.updatedAt = CURRENT_TIMESTAMP WHERE e.id = :id")
     int renameIgUsername(@Param("id") String id, @Param("igUsername") String igUsername);
