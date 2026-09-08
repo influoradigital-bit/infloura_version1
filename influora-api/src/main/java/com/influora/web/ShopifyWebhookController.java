@@ -3,6 +3,7 @@ package com.influora.web;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.CouponRedemption;
 import com.influora.domain.entity.ShopifyIntegration;
+import com.influora.integration.shopify.ShopifyOrderOwnershipVerifier;
 import com.influora.integration.shopify.webhook.ShopifyOrderWebhookPayload;
 import com.influora.integration.shopify.webhook.ShopifyWebhookSignatureVerifier;
 import com.influora.repository.ShopifyIntegrationRepository;
@@ -44,6 +45,18 @@ import org.springframework.web.bind.annotation.RestController;
  * the shop, the request is rejected 404 before any coupon lookup — this also means a request
  * cannot be used to enumerate workspaces, since the same 404 is returned whether the shop domain
  * is simply unknown or was never connected.
+ *
+ * <p><b>[SEC: F-0726] That header is NOT authenticated, and this class used to assume it was.</b>
+ * {@code X-Shopify-Hmac-Sha256} is an HMAC of the BODY against the one app-level client secret. It
+ * proves the payload came from a shop with our app installed; it says nothing about WHICH shop,
+ * because the shop appears only in {@code X-Shopify-Shop-Domain}, which the HMAC does not cover.
+ * {@code wiki/errors/wave-d1-shopify-integration-redteam.md:95} called that header "a real,
+ * HMAC-authenticated workspace identity" and the D1 cross-tenant fix was built on that sentence —
+ * scoping the coupon lookup to a workspace chosen by an unsigned header only moves the attacker's
+ * choice from "which coupon" to "which workspace". Any delivery that is about to WRITE therefore
+ * has its order confirmed against the claimed shop's own Admin API first; see {@link
+ * ShopifyOrderOwnershipVerifier} for the attack this closes and why a payload-field binding was
+ * rejected in favour of an order lookup.
  *
  * <p><b>Idempotency [standing rule, {@code REMAINING_WORK_PLAN.md} line ~20].</b> Every webhook
  * delivery is wrapped in {@link IdempotencyService#executeOnce} keyed by a SHA-256 digest of
@@ -91,16 +104,19 @@ public class ShopifyWebhookController {
     private final ShopifyIntegrationRepository shopifyIntegrationRepository;
     private final RedemptionService redemptionService;
     private final IdempotencyService idempotencyService;
+    private final ShopifyOrderOwnershipVerifier orderOwnershipVerifier;
 
     public ShopifyWebhookController(
             ShopifyWebhookSignatureVerifier signatureVerifier,
             ShopifyIntegrationRepository shopifyIntegrationRepository,
             RedemptionService redemptionService,
-            IdempotencyService idempotencyService) {
+            IdempotencyService idempotencyService,
+            ShopifyOrderOwnershipVerifier orderOwnershipVerifier) {
         this.signatureVerifier = signatureVerifier;
         this.shopifyIntegrationRepository = shopifyIntegrationRepository;
         this.redemptionService = redemptionService;
         this.idempotencyService = idempotencyService;
+        this.orderOwnershipVerifier = orderOwnershipVerifier;
     }
 
     @PostMapping
@@ -158,6 +174,25 @@ public class ShopifyWebhookController {
             return ResponseEntity.ok().build();
         }
 
+        // [SEC: F-0726] The signature proved this body came from SOME shop with our app installed.
+        // It did not prove it came from THIS shop: X-Shopify-Hmac-Sha256 covers the body only, and
+        // the shop is named exclusively in X-Shopify-Shop-Domain, which nothing signs. Everything
+        // below is scoped to the workspace that header chose, so before any of it runs, confirm the
+        // order actually exists in that shop by asking that shop's own Admin API with that shop's
+        // own token. An attacker replaying a validly-signed body from a store they control cannot
+        // make their order appear in someone else's store.
+        //
+        // Placed after the discount-code check on purpose: an order with no coupon has already
+        // returned 200 and never reaches a write, so it does not need — and should not pay for — an
+        // outbound API call. This runs only for deliveries that are about to mutate something.
+        if (!orderOwnershipVerifier.orderBelongsToShop(
+                integration.getShopDomain(), integration.getWorkspaceId(), order.orderId())) {
+            throw new ApiException(
+                    "SHOP_ORDER_MISMATCH",
+                    "Order does not belong to the shop this delivery claims to come from",
+                    HttpStatus.UNAUTHORIZED);
+        }
+
         String idempotencyKey = deriveIdempotencyKey(integration.getShopDomain(), order.orderId());
 
         try {
@@ -181,6 +216,31 @@ public class ShopifyWebhookController {
                     integration.getShopDomain(),
                     effectiveTopic,
                     order.orderId());
+        } catch (ApiException redemptionFailure) {
+            // [F-0725] A TERMINAL redemption outcome is acknowledged 200, not surfaced as a non-2xx.
+            // Shopify retries any non-2xx delivery and REMOVES the subscription after roughly 48h of
+            // continuous failures, so this class of error did not merely spam the endpoint — it
+            // eventually disconnected the store. These outcomes are pure functions of the order body
+            // and the coupon row: an identical redelivery fails identically, forever. See
+            // StoreWebhookRedemptionOutcome for why this is not a blanket catch — a transient fault
+            // still escapes below and keeps its non-2xx so Shopify's retry can recover it.
+            if (!StoreWebhookRedemptionOutcome.isTerminal(redemptionFailure)) {
+                throw redemptionFailure;
+            }
+            if (StoreWebhookRedemptionOutcome.isDataDefect(redemptionFailure)) {
+                log.error(
+                        "Shopify webhook shop={} order={} coupon carries an unpriceable discount type ({}) — acknowledged, not retried; the coupon row needs fixing",
+                        integration.getShopDomain(),
+                        order.orderId(),
+                        redemptionFailure.getCode());
+            } else {
+                log.info(
+                        "Shopify webhook shop={} topic={} order={} discount code is not a redeemable Influora coupon ({}) — acknowledged, nothing to attribute",
+                        integration.getShopDomain(),
+                        effectiveTopic,
+                        order.orderId(),
+                        redemptionFailure.getCode());
+            }
         }
 
         return ResponseEntity.ok().build();

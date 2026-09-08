@@ -267,6 +267,32 @@ public class WooCommerceWebhookController {
                     integration.getSiteUrl(),
                     effectiveTopic,
                     order.orderId());
+        } catch (ApiException redemptionFailure) {
+            // [F-0725] A TERMINAL redemption outcome is acknowledged 200, not surfaced as a non-2xx.
+            // WooCommerce retries any non-2xx delivery, and these outcomes are pure functions of the
+            // order body and the coupon row -- an identical redelivery fails identically, forever.
+            // Most orders on a real store carry the merchant's OWN discount code (FREESHIP, an
+            // expired sale, a promo at its cap), so this was the ordinary case, not an edge case.
+            // See StoreWebhookRedemptionOutcome for why this is not a blanket catch: a transient
+            // fault (database outage, IDEMPOTENCY_KEY_IN_PROGRESS) still escapes below and keeps its
+            // non-2xx, because there the platform's retry IS the recovery path we want.
+            if (!StoreWebhookRedemptionOutcome.isTerminal(redemptionFailure)) {
+                throw redemptionFailure;
+            }
+            if (StoreWebhookRedemptionOutcome.isDataDefect(redemptionFailure)) {
+                log.error(
+                        "WooCommerce webhook site={} order={} coupon carries an unpriceable discount type ({}) — acknowledged, not retried; the coupon row needs fixing",
+                        integration.getSiteUrl(),
+                        order.orderId(),
+                        redemptionFailure.getCode());
+            } else {
+                log.info(
+                        "WooCommerce webhook site={} topic={} order={} discount code is not a redeemable Influora coupon ({}) — acknowledged, nothing to attribute",
+                        integration.getSiteUrl(),
+                        effectiveTopic,
+                        order.orderId(),
+                        redemptionFailure.getCode());
+            }
         }
 
         return ResponseEntity.ok().build();

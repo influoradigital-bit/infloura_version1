@@ -5,11 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.domain.entity.ShopifyIntegration;
+import com.influora.integration.shopify.ShopifyOrderOwnershipVerifier;
 import com.influora.integration.shopify.webhook.ShopifyWebhookSignatureVerifier;
 import com.influora.repository.ShopifyIntegrationRepository;
 import com.influora.service.IdempotencyService;
@@ -65,6 +67,7 @@ class ShopifyWebhookIdempotencyTest {
     @Mock private ShopifyIntegrationRepository shopifyIntegrationRepository;
     @Mock private RedemptionService redemptionService;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private ShopifyOrderOwnershipVerifier orderOwnershipVerifier;
 
     private ShopifyWebhookController controller;
 
@@ -75,7 +78,18 @@ class ShopifyWebhookIdempotencyTest {
     void setUp() {
         controller =
                 new ShopifyWebhookController(
-                        signatureVerifier, shopifyIntegrationRepository, redemptionService, idempotencyService);
+                        signatureVerifier,
+                        shopifyIntegrationRepository,
+                        redemptionService,
+                        idempotencyService,
+                        orderOwnershipVerifier);
+
+        // [F-0726] Default: the order genuinely belongs to the shop that sent the delivery, so
+        // every pre-existing test keeps exercising the path it was written for. lenient() because
+        // the tests that stop earlier (bad signature, unknown shop, no coupon) never reach it.
+        lenient()
+                .when(orderOwnershipVerifier.orderBelongsToShop(anyString(), anyString(), anyString()))
+                .thenReturn(true);
     }
 
     private static ShopifyIntegration activeIntegration() {

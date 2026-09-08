@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -13,6 +14,8 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.CouponRedemption;
 import com.influora.domain.entity.ShopifyIntegration;
+import com.influora.integration.shopify.ShopifyOrderOwnershipVerifier;
+import com.influora.integration.shopify.exception.ShopifyApiException;
 import com.influora.integration.shopify.webhook.ShopifyWebhookSignatureVerifier;
 import com.influora.repository.ShopifyIntegrationRepository;
 import com.influora.service.IdempotencyService;
@@ -24,6 +27,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -64,6 +69,7 @@ class ShopifyWebhookControllerTest {
     @Mock private ShopifyIntegrationRepository shopifyIntegrationRepository;
     @Mock private RedemptionService redemptionService;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private ShopifyOrderOwnershipVerifier orderOwnershipVerifier;
 
     private ShopifyWebhookController controller;
 
@@ -71,7 +77,18 @@ class ShopifyWebhookControllerTest {
     void setUp() {
         controller =
                 new ShopifyWebhookController(
-                        signatureVerifier, shopifyIntegrationRepository, redemptionService, idempotencyService);
+                        signatureVerifier,
+                        shopifyIntegrationRepository,
+                        redemptionService,
+                        idempotencyService,
+                        orderOwnershipVerifier);
+
+        // [F-0726] Default: the order genuinely belongs to the shop that sent the delivery, so
+        // every pre-existing test keeps exercising the path it was written for. lenient() because
+        // the tests that stop earlier (bad signature, unknown shop, no coupon) never reach it.
+        lenient()
+                .when(orderOwnershipVerifier.orderBelongsToShop(anyString(), anyString(), anyString()))
+                .thenReturn(true);
     }
 
     private ShopifyIntegration activeIntegration() {
@@ -330,13 +347,21 @@ class ShopifyWebhookControllerTest {
                 "{\"id\":999888777,\"total_price\":\"499.99\","
                         + "\"discount_codes\":[{\"code\":\"BRAND_B_SUMMER25\",\"amount\":\"100.00\"}]}";
 
-        // The forged webhook's processing fails loudly (ApiException bubbling out of the
-        // idempotency-wrapped supplier) -- it does NOT come back as a quiet 200 that would let
-        // Brand A's forged order silently increment Brand B's coupon usage count or trigger a
-        // bogus affiliate-commission accrual.
-        assertThrows(
-                ApiException.class,
-                () -> controller.receive(VALID_SIGNATURE, SHOP_DOMAIN, "orders/paid", hostilePayload));
+        // [F-0725] This assertion CHANGED from assertThrows(ApiException) to a 200, and the change
+        // does not weaken what this test protects. The security property here has never been the
+        // HTTP status -- it is the two verify() blocks below: RedemptionService was called with
+        // Brand A's OWN resolved workspaceId, so the cross-workspace coupon was rejected INSIDE the
+        // service and neither Brand B's usage count nor any affiliate accrual was ever touched.
+        // That is still true, and still asserted.
+        //
+        // The old comment argued the 200 itself was the danger. It is not: the increment and the
+        // commission accrual are prevented by the workspace-scoped rejection, not by the status
+        // code, and nothing runs after redeem() has thrown. The non-2xx had a real cost the old test
+        // could not see -- Shopify retries it and removes the subscription after ~48h of failures
+        // (F-0725), so the loudest possible failure was the one that disconnected the store.
+        ResponseEntity<Void> response =
+                controller.receive(VALID_SIGNATURE, SHOP_DOMAIN, "orders/paid", hostilePayload);
+        assertEquals(HttpStatus.OK, response.getStatusCode());
 
         // The load-bearing assertion: the controller called RedemptionService with BRAND A's OWN
         // resolved workspaceId (WORKSPACE_ID) -- it never substituted, guessed, or omitted a
@@ -493,5 +518,186 @@ class ShopifyWebhookControllerTest {
                         redeemKeyCaptor.capture());
         assertEquals(redeemKeyCaptor.getAllValues().get(0), redeemKeyCaptor.getAllValues().get(1));
         assertEquals(keyCaptor.getAllValues().get(0), redeemKeyCaptor.getAllValues().get(0));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // [F-0725] webhook-retry-storm regression coverage.
+    //
+    // The defect: the try/catch around the redemption caught only AlreadyCompleted/
+    // AlreadyInProgress, so every ordinary business outcome escaped as a non-2xx. Shopify retries
+    // any non-2xx delivery and REMOVES the webhook subscription after roughly 48h of continuous
+    // failures, while IdempotencyService#reclaimFailedForRetry handed the reservation back on each
+    // attempt so the retry genuinely re-ran and re-failed. The controller reaches this code
+    // whenever an order carries ANY discount code -- and on a real store most discount codes are
+    // the merchant's own, not an Influora coupon. The integration disconnected itself.
+    //
+    // These two tests are a matched pair and must be read together: the first proves terminal
+    // outcomes are acknowledged, the second proves the fix is NOT a blanket catch that would also
+    // swallow a real outage. Deleting either one leaves the other able to pass a wrong fix.
+    // ---------------------------------------------------------------------------------------
+
+    @ParameterizedTest(name = "terminal outcome {0} is acknowledged 200, not retried")
+    @ValueSource(strings = {"INVALID_CODE", "CODE_EXPIRED", "CODE_LIMIT_REACHED", "UNSUPPORTED_DISCOUNT_TYPE"})
+    @DisplayName(
+            "receive: an order whose discount code is not a redeemable Influora coupon is"
+                    + " acknowledged 200 — the delivery must not be retried until Shopify drops the"
+                    + " subscription (F-0725)")
+    void receive_terminalRedemptionOutcome_isAcknowledgedNotRetried(String terminalCode) {
+        when(signatureVerifier.verify(anyString(), eq(VALID_SIGNATURE), eq(null))).thenReturn(true);
+        when(shopifyIntegrationRepository.findByShopDomainAndRevokedFalse(SHOP_DOMAIN))
+                .thenReturn(Optional.of(activeIntegration()));
+        stubIdempotencyServiceRunsAction();
+
+        // The merchant's OWN store coupon, of the kind that appears on ordinary orders every day.
+        when(redemptionService.redeem(
+                        eq(WORKSPACE_ID), eq("FREESHIP"), anyString(), any(BigDecimal.class), eq(null), anyString()))
+                .thenThrow(new ApiException(terminalCode, "terminal outcome", HttpStatus.BAD_REQUEST));
+
+        String payload =
+                "{\"id\":424242,\"total_price\":\"75.00\","
+                        + "\"discount_codes\":[{\"code\":\"FREESHIP\",\"amount\":\"5.00\"}]}";
+
+        ResponseEntity<Void> response =
+                controller.receive(VALID_SIGNATURE, SHOP_DOMAIN, "orders/paid", payload);
+
+        // 200 is the whole point: Shopify stops retrying and keeps the subscription alive.
+        assertEquals(
+                HttpStatus.OK,
+                response.getStatusCode(),
+                "a discount code that is not a redeemable Influora coupon must not drive a retry loop");
+
+        // The redemption was still genuinely attempted and still workspace-scoped -- acknowledging
+        // the delivery must not mean skipping the attempt.
+        verify(redemptionService, times(1))
+                .redeem(
+                        eq(WORKSPACE_ID), eq("FREESHIP"), anyString(), any(BigDecimal.class), eq(null), anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "receive: a TRANSIENT redemption failure still returns non-2xx so Shopify's retry can"
+                    + " recover it — the F-0725 fix must not be a blanket catch")
+    void receive_transientRedemptionFailure_stillSurfacesNon2xx() {
+        when(signatureVerifier.verify(anyString(), eq(VALID_SIGNATURE), eq(null))).thenReturn(true);
+        when(shopifyIntegrationRepository.findByShopDomainAndRevokedFalse(SHOP_DOMAIN))
+                .thenReturn(Optional.of(activeIntegration()));
+        stubIdempotencyServiceRunsAction();
+
+        // IDEMPOTENCY_KEY_IN_PROGRESS (RedemptionService.java:203-206) resolves as soon as the
+        // concurrent attempt commits -- retrying is exactly the right recovery, so it must NOT be
+        // converted to 200.
+        when(redemptionService.redeem(
+                        eq(WORKSPACE_ID), eq("REALCODE"), anyString(), any(BigDecimal.class), eq(null), anyString()))
+                .thenThrow(
+                        new ApiException(
+                                "IDEMPOTENCY_KEY_IN_PROGRESS",
+                                "This redemption is already being processed -- retry shortly",
+                                HttpStatus.CONFLICT));
+
+        String payload =
+                "{\"id\":515151,\"total_price\":\"20.00\","
+                        + "\"discount_codes\":[{\"code\":\"REALCODE\",\"amount\":\"2.00\"}]}";
+
+        ApiException thrown =
+                assertThrows(
+                        ApiException.class,
+                        () -> controller.receive(VALID_SIGNATURE, SHOP_DOMAIN, "orders/paid", payload),
+                        "a transient failure must keep its non-2xx so Shopify retries it");
+        assertEquals("IDEMPOTENCY_KEY_IN_PROGRESS", thrown.getCode());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // [F-0726] unsigned-tenant-selector regression coverage.
+    //
+    // X-Shopify-Hmac-Sha256 covers the BODY only, against the single app-level client secret. The
+    // shop is named exclusively in X-Shopify-Shop-Domain, which nothing signs — so a valid
+    // signature does not establish WHICH shop sent the delivery, even though the resolved shop
+    // decides the workspace every downstream write is scoped to.
+    //
+    // The attack: install the app on a store you control, add a second webhook subscription to your
+    // own collector (Shopify signs it with the same app secret), capture a body + valid HMAC for an
+    // order whose discount code you chose, then replay it to us with the victim's shop domain in
+    // the header.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "receive: REJECTS a validly-signed delivery whose order does not exist in the shop the"
+                    + " header claims — the replayed-body cross-tenant attack (F-0726)")
+    void receive_orderNotInClaimedShop_isRejected() {
+        when(signatureVerifier.verify(anyString(), eq(VALID_SIGNATURE), eq(null))).thenReturn(true);
+        when(shopifyIntegrationRepository.findByShopDomainAndRevokedFalse(SHOP_DOMAIN))
+                .thenReturn(Optional.of(activeIntegration()));
+
+        // The victim's shop's own Admin API, asked with the victim's own token, does not have this
+        // order — because the attacker created it in their own store.
+        when(orderOwnershipVerifier.orderBelongsToShop(eq(SHOP_DOMAIN), eq(WORKSPACE_ID), eq("999888777")))
+                .thenReturn(false);
+
+        String replayedPayload =
+                "{\"id\":999888777,\"total_price\":\"499.99\","
+                        + "\"discount_codes\":[{\"code\":\"VICTIM_CODE\",\"amount\":\"100.00\"}]}";
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> controller.receive(VALID_SIGNATURE, SHOP_DOMAIN, "orders/paid", replayedPayload));
+
+        assertEquals("SHOP_ORDER_MISMATCH", ex.getCode());
+        assertEquals(HttpStatus.UNAUTHORIZED, ex.getStatus());
+
+        // The load-bearing assertion: nothing was written. No redemption, no usage-count increment,
+        // no affiliate accrual — the delivery never reached RedemptionService at all.
+        verify(redemptionService, never())
+                .redeem(anyString(), anyString(), anyString(), any(), any(), anyString());
+        verify(idempotencyService, never()).executeOnce(anyString(), anyString(), anyString(), any(Supplier.class));
+    }
+
+    @Test
+    @DisplayName(
+            "receive: does NOT spend an Admin API call on an order with no discount code — the"
+                    + " ownership check guards writes, not every delivery (F-0726)")
+    void receive_orderWithNoCoupon_skipsOwnershipCheck() {
+        when(signatureVerifier.verify(anyString(), eq(VALID_SIGNATURE), eq(null))).thenReturn(true);
+        when(shopifyIntegrationRepository.findByShopDomainAndRevokedFalse(SHOP_DOMAIN))
+                .thenReturn(Optional.of(activeIntegration()));
+
+        String noCouponPayload = "{\"id\":777,\"total_price\":\"12.00\",\"discount_codes\":[]}";
+
+        ResponseEntity<Void> response =
+                controller.receive(VALID_SIGNATURE, SHOP_DOMAIN, "orders/paid", noCouponPayload);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        // Most orders on a real store carry no Influora coupon; paying for an outbound Shopify call
+        // on every one of them would be a self-inflicted rate limit.
+        verify(orderOwnershipVerifier, never()).orderBelongsToShop(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "receive: an UNREACHABLE Admin API is not treated as 'not your order' — it surfaces"
+                    + " non-2xx so Shopify retries, and F-0725 must not swallow it")
+    void receive_ownershipCheckTransientFailure_surfacesNon2xx() {
+        when(signatureVerifier.verify(anyString(), eq(VALID_SIGNATURE), eq(null))).thenReturn(true);
+        when(shopifyIntegrationRepository.findByShopDomainAndRevokedFalse(SHOP_DOMAIN))
+                .thenReturn(Optional.of(activeIntegration()));
+
+        // A Shopify incident, not a forgery. Reading this as a rejection would silently drop real
+        // redemptions for the duration of the outage.
+        when(orderOwnershipVerifier.orderBelongsToShop(eq(SHOP_DOMAIN), eq(WORKSPACE_ID), eq("424242")))
+                .thenThrow(new ShopifyApiException("Shopify order ownership check could not reach the shop"));
+
+        String payload =
+                "{\"id\":424242,\"total_price\":\"75.00\","
+                        + "\"discount_codes\":[{\"code\":\"REALCODE\",\"amount\":\"5.00\"}]}";
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> controller.receive(VALID_SIGNATURE, SHOP_DOMAIN, "orders/paid", payload),
+                        "a transient ownership-check failure must keep its non-2xx so Shopify retries");
+        assertEquals("SHOPIFY_API_ERROR", ex.getCode());
+        verify(redemptionService, never())
+                .redeem(anyString(), anyString(), anyString(), any(), any(), anyString());
     }
 }
