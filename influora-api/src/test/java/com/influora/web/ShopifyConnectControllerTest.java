@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
+import com.influora.config.ShopifyProperties;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.UserType;
 import com.influora.integration.shopify.dto.ShopifyTokenResponse;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 
 /**
  * Unit tests for {@link ShopifyConnectController} — mirrors {@code MetaOAuthController}'s test
@@ -48,11 +50,21 @@ class ShopifyConnectControllerTest {
     @Mock private ShopifyOAuthStateStore stateStore;
     @Mock private BrandContextService brandContextService;
 
+    /** Real POJO, not a mock: isConfigured() is the behaviour under test, so stubbing it would assert the mock instead of the guard. */
+    private ShopifyProperties shopifyProperties;
+
     private ShopifyConnectController controller;
 
     @BeforeEach
     void setUp() {
-        controller = new ShopifyConnectController(oAuthService, tokenStorage, stateStore, brandContextService);
+        shopifyProperties = new ShopifyProperties();
+        // A configured deploy, so every pre-existing test keeps exercising the path it was
+        // written for. The F-0732 test blanks these to reach the guard.
+        shopifyProperties.setApiKey("test-api-key");
+        shopifyProperties.setApiSecret("test-api-secret");
+        controller =
+                new ShopifyConnectController(
+                        oAuthService, tokenStorage, stateStore, brandContextService, shopifyProperties);
     }
 
     private Workspace testWorkspace() {
@@ -139,5 +151,36 @@ class ShopifyConnectControllerTest {
 
         assertEquals(List.of("read_orders"), response.grantedScopes());
         verify(tokenStorage, times(1)).storeToken(WORKSPACE_ID, SHOP, "shpat_abc", List.of("read_orders"));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // [F-0732] missing-config-guard.
+    //
+    // ShopifyProperties.apiKey/apiSecret default to "" and nothing binds them anywhere — no yaml
+    // placeholder, no compose file, no generate-env.sh entry (F-0729) — so isConfigured() is false
+    // in every environment today. authorize() built the dialog URL regardless, sending the brand
+    // into Shopify's UI with client_id= empty, which Shopify answers with its own error page. The
+    // brand reads that as their store being broken.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "authorize: refuses with 503 when no Shopify app is configured, instead of handing back"
+                    + " an authorize URL with a blank client_id (F-0732)")
+    void authorize_notConfigured_refusedBeforeMintingState() {
+        shopifyProperties.setApiKey("");
+        shopifyProperties.setApiSecret("");
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> controller.authorize(BRAND_PRINCIPAL, SHOP));
+
+        assertEquals("SHOPIFY_NOT_CONFIGURED", ex.getCode());
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ex.getStatus());
+
+        // Load-bearing: no state was minted and no URL was built. This is also what makes guarding
+        // only authorize() sufficient — /callback cannot be reached with a valid state that was
+        // never issued, which is exactly how MetaOAuthController scopes its own guard.
+        verify(stateStore, never()).issue(anyString(), anyString());
+        verify(oAuthService, never()).buildAuthorizationUrl(anyString(), anyString());
     }
 }

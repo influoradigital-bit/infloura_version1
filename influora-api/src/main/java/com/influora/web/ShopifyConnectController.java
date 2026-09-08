@@ -2,6 +2,7 @@ package com.influora.web;
 
 import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.config.ShopifyProperties;
 import com.influora.domain.entity.Workspace;
 import com.influora.integration.shopify.dto.ShopifyTokenResponse;
 import com.influora.integration.shopify.oauth.ShopifyOAuthService;
@@ -45,16 +46,19 @@ public class ShopifyConnectController {
     private final ShopifyTokenStorage tokenStorage;
     private final ShopifyOAuthStateStore stateStore;
     private final BrandContextService brandContextService;
+    private final ShopifyProperties shopifyProperties;
 
     public ShopifyConnectController(
             ShopifyOAuthService oAuthService,
             ShopifyTokenStorage tokenStorage,
             ShopifyOAuthStateStore stateStore,
-            BrandContextService brandContextService) {
+            BrandContextService brandContextService,
+            ShopifyProperties shopifyProperties) {
         this.oAuthService = oAuthService;
         this.tokenStorage = tokenStorage;
         this.stateStore = stateStore;
         this.brandContextService = brandContextService;
+        this.shopifyProperties = shopifyProperties;
     }
 
     /**
@@ -65,6 +69,27 @@ public class ShopifyConnectController {
     public ApiResponse<ShopifyAuthorizeResponse> authorize(
             @AuthenticationPrincipal AuthPrincipal principal, @RequestParam String shop) {
         brandContextService.requireBrand(principal);
+
+        // [F-0732] Fail loudly rather than handing back an authorize URL with a blank client_id.
+        // ShopifyProperties.apiKey/apiSecret default to "" and NOTHING binds them — no yaml
+        // placeholder, no deploy file, no generate-env.sh entry (F-0729) — so isConfigured() is
+        // false in every environment today. Without this guard the brand is redirected into
+        // Shopify's own UI, which answers a blank client_id with its own error page; that reads to
+        // the brand as their store or account being broken rather than as this deploy simply not
+        // having a Shopify app configured. Mirrors MetaOAuthController#authorize's identical guard
+        // (META_NOT_CONFIGURED, 503), including the deliberately environment-level message: the
+        // caller is told the capability is unavailable here, never which credential is missing.
+        //
+        // Guarding ONLY authorize is intentional, and matches Meta's shape: /callback is
+        // unreachable with a valid state because no state can be minted once this throws. Adding a
+        // second guard there would suggest the callback is independently reachable, which it is not.
+        if (!shopifyProperties.isConfigured()) {
+            throw new ApiException(
+                    "SHOPIFY_NOT_CONFIGURED",
+                    "Connecting a Shopify store is not available on this environment",
+                    HttpStatus.SERVICE_UNAVAILABLE);
+        }
+
         String validatedShop = ShopifyOAuthService.validateShopDomain(shop);
         String state = stateStore.issue(principal.getUserId(), validatedShop);
         return ApiResponse.ok(
