@@ -24,6 +24,7 @@ import com.influora.repository.CouponRedemptionRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.IdempotencyService;
 import java.math.BigDecimal;
+import java.util.List;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 
 /**
  * Phase 4 UTM/Coupon Tracking: unit tests for RedemptionService -- idempotency (the {@code
@@ -47,6 +49,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class RedemptionServiceTest {
 
     private static final String WORKSPACE_ID = "01HWORKSPACE12345678A";
+    private static final String OTHER_WORKSPACE_ID = "01HWORKSPACEOTHER123";
     private static final String COUPON_ID = "01HCOUPON1234567890AB";
     private static final String CAMPAIGN_ID = "01HCAMPAIGN123456789A";
     private static final String CREATOR_ID = "01HCREATORPROFILE1234";
@@ -133,7 +136,7 @@ class RedemptionServiceTest {
                     + " double-increment usage or write a second audit entry")
     void testDuplicateIdempotencyKeyIsCleanNoOp() {
         CouponCode coupon = percentageCoupon(20, null, null, 0);
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -155,7 +158,7 @@ class RedemptionServiceTest {
         verify(auditLogService, times(1))
                 .recordMoneyEvent(any(), eq("COUPON_REDEEMED"), any(), isNull(), isNull(), anyString(), anyMap());
         // The second call never re-validated the coupon code at all.
-        verify(couponCodeRepository, times(1)).findByCode("PRIYA_SUMMER25");
+        verify(couponCodeRepository, times(1)).findAllByCode("PRIYA_SUMMER25");
     }
 
     @Test
@@ -332,7 +335,7 @@ class RedemptionServiceTest {
     void testCodeNotFound() {
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("NOPE")).thenReturn(Optional.empty());
+        when(couponCodeRepository.findAllByCode("NOPE")).thenReturn(List.of());
 
         ApiException ex =
                 assertThrows(
@@ -350,13 +353,13 @@ class RedemptionServiceTest {
     void testCodeLookupIsUppercased() {
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.empty());
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of());
 
         assertThrows(
                 ApiException.class,
                 () -> service.redeem("  priya_summer25  ", ORDER_ID, BigDecimal.TEN, CUSTOMER_ID, IDEMPOTENCY_KEY));
 
-        verify(couponCodeRepository).findByCode("PRIYA_SUMMER25");
+        verify(couponCodeRepository).findAllByCode("PRIYA_SUMMER25");
     }
 
     @Test
@@ -365,7 +368,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(20, null, Instant.now().minus(1, ChronoUnit.DAYS), 0);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
 
         ApiException ex =
                 assertThrows(
@@ -385,7 +388,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(20, null, Instant.now().plus(1, ChronoUnit.DAYS), 0);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -400,7 +403,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(20, 5, null, 5);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
 
         ApiException ex =
                 assertThrows(
@@ -420,7 +423,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(20, 5, null, 4);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -436,7 +439,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(20, null, null, 999);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -455,7 +458,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(15, null, null, 0);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -471,7 +474,7 @@ class RedemptionServiceTest {
         CouponCode coupon = fixedCoupon(BigDecimal.valueOf(500), null, null, 0);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_FIXED")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_FIXED")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -488,7 +491,7 @@ class RedemptionServiceTest {
         CouponCode coupon = fixedCoupon(BigDecimal.valueOf(500), null, null, 0);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_FIXED")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_FIXED")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -512,7 +515,7 @@ class RedemptionServiceTest {
                         .build();
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_WEIRD")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_WEIRD")).thenReturn(List.of(coupon));
 
         ApiException ex =
                 assertThrows(
@@ -539,7 +542,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(15, 100, null, 3);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -587,7 +590,7 @@ class RedemptionServiceTest {
         CouponCode brandCoupon = brandLevelPercentageCoupon(15, null, null, 0);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("SUMMER-SALE-2026_EXCLUSIVE")).thenReturn(Optional.of(brandCoupon));
+        when(couponCodeRepository.findAllByCode("SUMMER-SALE-2026_EXCLUSIVE")).thenReturn(List.of(brandCoupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -699,7 +702,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(15, 100, null, 3);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -722,7 +725,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(15, 100, null, 3);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         service.redeem("priya_summer25", ORDER_ID, BigDecimal.valueOf(200), CUSTOMER_ID, IDEMPOTENCY_KEY);
@@ -750,7 +753,7 @@ class RedemptionServiceTest {
         CouponCode coupon = percentageCoupon(15, 100, null, 3);
         when(redemptionRepository.findByIdempotencyKey(IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
         mockIdempotencyExecuteOnce();
-        when(couponCodeRepository.findByCode("PRIYA_SUMMER25")).thenReturn(Optional.of(coupon));
+        when(couponCodeRepository.findAllByCode("PRIYA_SUMMER25")).thenReturn(List.of(coupon));
         when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
 
         CouponRedemption result =
@@ -764,5 +767,88 @@ class RedemptionServiceTest {
         verify(auditLogService)
                 .recordMoneyEvent(any(), eq("COUPON_REDEEMED"), any(), isNull(), isNull(), anyString(), anyMap());
         verify(eventPublisher).publishEvent(any(CouponRedeemedEvent.class));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // [F-0728] cross-workspace-code-shadowing.
+    //
+    // coupon_codes is UNIQUE(workspace_id, code), so two brands may legally hold the same code
+    // string. The lookup was global: RedemptionWriter fetched by code alone and only THEN rejected a
+    // row belonging to another workspace. So whichever row the database returned first won — Brand B
+    // creating SUMMER20 could make Brand A's own SUMMER20 answer INVALID_CODE forever. And with two
+    // rows present the Optional-returning finder raised IncorrectResultSizeDataAccessException,
+    // which GlobalExceptionHandler does not handle: a bare 500 on every delivery carrying the code.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "redeem: the same code in two workspaces redeems each workspace's OWN coupon — neither"
+                    + " shadows the other (F-0728)")
+    void redeem_sameCodeInTwoWorkspaces_eachRedeemsItsOwn() {
+        String sharedCode = "SUMMER20";
+        CouponCode brandA = couponIn(WORKSPACE_ID, "01HCOUPONBRANDA00001", sharedCode);
+        CouponCode brandB = couponIn(OTHER_WORKSPACE_ID, "01HCOUPONBRANDB00001", sharedCode);
+
+        when(couponCodeRepository.findByWorkspaceIdAndCode(WORKSPACE_ID, sharedCode)).thenReturn(Optional.of(brandA));
+        when(couponCodeRepository.findByWorkspaceIdAndCode(OTHER_WORKSPACE_ID, sharedCode))
+                .thenReturn(Optional.of(brandB));
+        when(redemptionRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
+        mockIdempotencyExecuteOnce();
+        when(redemptionRepository.save(any(CouponRedemption.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CouponRedemption aRedemption =
+                service.redeem(WORKSPACE_ID, sharedCode, ORDER_ID, BigDecimal.valueOf(100), null, "key-a");
+        CouponRedemption bRedemption =
+                service.redeem(OTHER_WORKSPACE_ID, sharedCode, ORDER_ID, BigDecimal.valueOf(100), null, "key-b");
+
+        // Each brand redeemed ITS OWN coupon row. Before the fix one of these resolved to the other
+        // brand's row and was then rejected as INVALID_CODE.
+        assertEquals(brandA.getId(), aRedemption.getCouponId());
+        assertEquals(brandB.getId(), bRedemption.getCouponId());
+        assertEquals(1, brandA.getUsageCount());
+        assertEquals(1, brandB.getUsageCount());
+
+        // Load-bearing: the QUERY was scoped, not filtered afterwards. A fix that kept fetching
+        // globally and re-checked ownership would still pass the assertions above whenever the
+        // database happened to return the right row first, and fail intermittently in production.
+        verify(couponCodeRepository, never()).findAllByCode(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "redeem: an unscoped caller hitting a code that exists in two workspaces gets a clear"
+                    + " ambiguity error, not an unhandled 500 (F-0728)")
+    void redeem_unscopedCollidingCode_reportsAmbiguity() {
+        String sharedCode = "SUMMER20";
+        when(couponCodeRepository.findAllByCode(sharedCode))
+                .thenReturn(
+                        List.of(
+                                couponIn(WORKSPACE_ID, "01HCOUPONBRANDA00001", sharedCode),
+                                couponIn(OTHER_WORKSPACE_ID, "01HCOUPONBRANDB00001", sharedCode)));
+        when(redemptionRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
+        mockIdempotencyExecuteOnce();
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.redeem(sharedCode, ORDER_ID, BigDecimal.valueOf(100), CUSTOMER_ID, "key-x"));
+
+        assertEquals("AMBIGUOUS_COUPON_CODE", ex.getCode());
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        // Nothing was written: no arbitrary brand got credited with someone else's sale.
+        verify(redemptionRepository, never()).save(any(CouponRedemption.class));
+        verify(couponCodeRepository, never()).save(any(CouponCode.class));
+    }
+
+    private static CouponCode couponIn(String workspaceId, String couponId, String code) {
+        return CouponCode.builder()
+                .id(couponId)
+                .workspaceId(workspaceId)
+                .campaignId(CAMPAIGN_ID)
+                .creatorId(CREATOR_ID)
+                .code(code)
+                .discountType("percentage")
+                .discountValue(BigDecimal.TEN)
+                .build();
     }
 }

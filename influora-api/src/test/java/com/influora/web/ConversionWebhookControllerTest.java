@@ -27,6 +27,7 @@ import com.influora.service.tracking.ConversionTrackingService;
 import com.influora.service.tracking.RedemptionService;
 import com.influora.web.dto.tracking.WebhookDtos.RedemptionWebhookResponse;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -133,7 +134,7 @@ class ConversionWebhookControllerTest {
     @Test
     @DisplayName("redeemCoupon: valid signature delegates to the WORKSPACE-SCOPED RedemptionService.redeem")
     void redeemCoupon_validSignature_delegatesWorkspaceScoped() {
-        when(couponCodeRepository.findByCode(CODE)).thenReturn(Optional.of(couponInWorkspace(WORKSPACE_ID)));
+        when(couponCodeRepository.findAllByCode(CODE)).thenReturn(List.of(couponInWorkspace(WORKSPACE_ID)));
         when(secretService.decryptSecretForWorkspace(WORKSPACE_ID)).thenReturn(THE_SECRET);
         String rawPayload = redemptionPayload(CODE, ORDER_ID, "100.00", CUSTOMER_ID, IDEMPOTENCY_KEY);
         when(signatureVerifier.verify(rawPayload, VALID_SIGNATURE, THE_SECRET)).thenReturn(true);
@@ -169,7 +170,7 @@ class ConversionWebhookControllerTest {
     @Test
     @DisplayName("redeemCoupon: REJECTS (401) when the signature is invalid -- never reaches RedemptionService")
     void redeemCoupon_invalidSignature_rejected() {
-        when(couponCodeRepository.findByCode(CODE)).thenReturn(Optional.of(couponInWorkspace(WORKSPACE_ID)));
+        when(couponCodeRepository.findAllByCode(CODE)).thenReturn(List.of(couponInWorkspace(WORKSPACE_ID)));
         when(secretService.decryptSecretForWorkspace(WORKSPACE_ID)).thenReturn(THE_SECRET);
         String rawPayload = redemptionPayload(CODE, ORDER_ID, "100.00", CUSTOMER_ID, IDEMPOTENCY_KEY);
         when(signatureVerifier.verify(rawPayload, "bad-signature", THE_SECRET)).thenReturn(false);
@@ -186,7 +187,7 @@ class ConversionWebhookControllerTest {
     @Test
     @DisplayName("redeemCoupon: REJECTS (401) when the signature header is missing/null")
     void redeemCoupon_missingSignature_rejected() {
-        when(couponCodeRepository.findByCode(CODE)).thenReturn(Optional.of(couponInWorkspace(WORKSPACE_ID)));
+        when(couponCodeRepository.findAllByCode(CODE)).thenReturn(List.of(couponInWorkspace(WORKSPACE_ID)));
         when(secretService.decryptSecretForWorkspace(WORKSPACE_ID)).thenReturn(THE_SECRET);
         String rawPayload = redemptionPayload(CODE, ORDER_ID, "100.00", CUSTOMER_ID, IDEMPOTENCY_KEY);
         when(signatureVerifier.verify(rawPayload, null, THE_SECRET)).thenReturn(false);
@@ -201,7 +202,7 @@ class ConversionWebhookControllerTest {
     @Test
     @DisplayName("redeemCoupon: REJECTS (401) when the signature was computed over a tampered payload")
     void redeemCoupon_tamperedPayload_rejected() {
-        when(couponCodeRepository.findByCode(CODE)).thenReturn(Optional.of(couponInWorkspace(WORKSPACE_ID)));
+        when(couponCodeRepository.findAllByCode(CODE)).thenReturn(List.of(couponInWorkspace(WORKSPACE_ID)));
         when(secretService.decryptSecretForWorkspace(WORKSPACE_ID)).thenReturn(THE_SECRET);
         // The signature was genuinely computed over the ORIGINAL amount; the attacker tampers the
         // body afterward. The verifier (proven separately) would recompute over the tampered bytes
@@ -221,7 +222,7 @@ class ConversionWebhookControllerTest {
     @Test
     @DisplayName("redeemCoupon: an unknown coupon code is rejected as INVALID_WEBHOOK_SIGNATURE, same as a bad signature (no enumeration)")
     void redeemCoupon_unknownCode_rejectedSameAsInvalidSignature() {
-        when(couponCodeRepository.findByCode("UNKNOWN")).thenReturn(Optional.empty());
+        when(couponCodeRepository.findAllByCode("UNKNOWN")).thenReturn(List.of());
         when(secretService.decryptSecretForWorkspace(null)).thenReturn(null);
         String rawPayload = redemptionPayload("UNKNOWN", ORDER_ID, "100.00", CUSTOMER_ID, IDEMPOTENCY_KEY);
 
@@ -237,7 +238,7 @@ class ConversionWebhookControllerTest {
     @Test
     @DisplayName("redeemCoupon: a resolved workspace with NO configured secret is rejected (fail closed), never silently permitted")
     void redeemCoupon_workspaceWithNoSecret_rejected() {
-        when(couponCodeRepository.findByCode(CODE)).thenReturn(Optional.of(couponInWorkspace(WORKSPACE_ID)));
+        when(couponCodeRepository.findAllByCode(CODE)).thenReturn(List.of(couponInWorkspace(WORKSPACE_ID)));
         when(secretService.decryptSecretForWorkspace(WORKSPACE_ID)).thenReturn(null);
         String rawPayload = redemptionPayload(CODE, ORDER_ID, "100.00", CUSTOMER_ID, IDEMPOTENCY_KEY);
 
@@ -259,13 +260,13 @@ class ConversionWebhookControllerTest {
 
         assertEquals("INVALID_WEBHOOK_PAYLOAD", ex.getCode());
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatus());
-        verify(couponCodeRepository, never()).findByCode(anyString());
+        verify(couponCodeRepository, never()).findAllByCode(anyString());
     }
 
     @Test
     @DisplayName("redeemCoupon: idempotent retry (same signed payload delivered twice) returns the same replayed redemption")
     void redeemCoupon_idempotentRetry_returnsReplayedRedemption() {
-        when(couponCodeRepository.findByCode(CODE)).thenReturn(Optional.of(couponInWorkspace(WORKSPACE_ID)));
+        when(couponCodeRepository.findAllByCode(CODE)).thenReturn(List.of(couponInWorkspace(WORKSPACE_ID)));
         when(secretService.decryptSecretForWorkspace(WORKSPACE_ID)).thenReturn(THE_SECRET);
         String rawPayload = redemptionPayload(CODE, ORDER_ID, "100.00", CUSTOMER_ID, IDEMPOTENCY_KEY);
         when(signatureVerifier.verify(rawPayload, VALID_SIGNATURE, THE_SECRET)).thenReturn(true);
@@ -298,7 +299,7 @@ class ConversionWebhookControllerTest {
     void redeemCoupon_sameRawKeyDifferentWorkspaces_namespacedDifferently() {
         // Workspace A's coupon, delivery #1, raw idempotencyKey shared (by coincidence or a
         // malicious probing attempt) with workspace B below.
-        when(couponCodeRepository.findByCode(CODE)).thenReturn(Optional.of(couponInWorkspace(WORKSPACE_ID)));
+        when(couponCodeRepository.findAllByCode(CODE)).thenReturn(List.of(couponInWorkspace(WORKSPACE_ID)));
         when(secretService.decryptSecretForWorkspace(WORKSPACE_ID)).thenReturn(THE_SECRET);
         String payloadA = redemptionPayload(CODE, ORDER_ID, "100.00", CUSTOMER_ID, IDEMPOTENCY_KEY);
         when(signatureVerifier.verify(payloadA, VALID_SIGNATURE, THE_SECRET)).thenReturn(true);
@@ -334,7 +335,7 @@ class ConversionWebhookControllerTest {
 
         // Workspace B's DIFFERENT coupon code, but the SAME raw idempotencyKey string.
         String codeB = "OTHERCODE";
-        when(couponCodeRepository.findByCode(codeB)).thenReturn(Optional.of(couponInWorkspace(OTHER_WORKSPACE_ID)));
+        when(couponCodeRepository.findAllByCode(codeB)).thenReturn(List.of(couponInWorkspace(OTHER_WORKSPACE_ID)));
         when(secretService.decryptSecretForWorkspace(OTHER_WORKSPACE_ID)).thenReturn("other-secret");
         String payloadB = redemptionPayload(codeB, ORDER_ID, "100.00", CUSTOMER_ID, IDEMPOTENCY_KEY);
         when(signatureVerifier.verify(payloadB, VALID_SIGNATURE, "other-secret")).thenReturn(true);
@@ -369,7 +370,7 @@ class ConversionWebhookControllerTest {
     @Test
     @DisplayName("redeemCoupon: a null idempotency key still propagates RedemptionService's own rejection, after signature passes")
     void redeemCoupon_missingIdempotencyKey_propagatesRejection() {
-        when(couponCodeRepository.findByCode(CODE)).thenReturn(Optional.of(couponInWorkspace(WORKSPACE_ID)));
+        when(couponCodeRepository.findAllByCode(CODE)).thenReturn(List.of(couponInWorkspace(WORKSPACE_ID)));
         when(secretService.decryptSecretForWorkspace(WORKSPACE_ID)).thenReturn(THE_SECRET);
         String rawPayload = redemptionPayloadNullFields(CODE, ORDER_ID, "100.00");
         when(signatureVerifier.verify(rawPayload, VALID_SIGNATURE, THE_SECRET)).thenReturn(true);

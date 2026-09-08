@@ -14,7 +14,7 @@ public interface ShopifyIntegrationRepository extends JpaRepository<ShopifyInteg
      * ShopifyWebhookController}, which is called by Shopify itself (HMAC-verified, but with no
      * workspace principal). {@code shop_domain} is the only trusted identifier available at that
      * call site to resolve the owning workspace; see that controller's class javadoc and {@link
-     * com.influora.repository.CouponCodeRepository#findByCode} for the same shape of exception to
+     * com.influora.repository.CouponCodeRepository#findAllByCode} for the same shape of exception to
      * the general resolve-then-scope rule (a public, signature-verified webhook has no workspace
      * principal to scope by until AFTER this lookup resolves one).
      */

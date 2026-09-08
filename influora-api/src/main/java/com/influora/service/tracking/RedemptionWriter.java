@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
@@ -180,20 +181,57 @@ public class RedemptionWriter {
      * limit. See {@code RedemptionService#validateCode}'s original javadoc (moved here verbatim
      * alongside the write it exclusively supports) for the spec-adaptation notes.
      */
-    private CouponCode validateCode(String code, String workspaceId) {
-        CouponCode coupon =
-                couponCodeRepository
-                        .findByCode(normalizeCode(code))
-                        .orElseThrow(
-                                () -> new ApiException("INVALID_CODE", "Coupon code not found", HttpStatus.NOT_FOUND));
+    /**
+     * [F-0728] Resolves a coupon for a caller whose workspace is already proven — both store
+     * webhooks, which resolve the workspace from a signed delivery before redeeming.
+     *
+     * <p>Scoping the QUERY rather than filtering after a global lookup is the whole fix. The
+     * previous code fetched globally and then rejected a foreign row, so a coupon belonging to
+     * another workspace could be returned first and turn this caller's own valid code into {@code
+     * INVALID_CODE}: Brand B creating {@code SUMMER20} made Brand A's {@code SUMMER20} permanently
+     * unredeemable. {@code UNIQUE(workspace_id, code)} means this query matches at most one row, so
+     * the shadowing cannot happen and no post-hoc ownership check is needed.
+     *
+     * <p>A code that exists only in ANOTHER workspace is still reported as {@code INVALID_CODE},
+     * identical to "no such code" — preserving the deliberate no-enumeration-signal property the
+     * Wave D1/E4 cross-tenant fix established.
+     */
+    private CouponCode resolveScoped(String workspaceId, String normalizedCode) {
+        return couponCodeRepository
+                .findByWorkspaceIdAndCode(workspaceId, normalizedCode)
+                .orElseThrow(() -> new ApiException("INVALID_CODE", "Coupon code not found", HttpStatus.NOT_FOUND));
+    }
 
-        // [SEC: Kabir Wave D1/E4] A coupon resolved by the global findByCode lookup that belongs to
-        // a DIFFERENT workspace than the caller's proven identity is indistinguishable from "does
-        // not exist" -- same INVALID_CODE 404, no new enumeration signal. workspaceId == null
-        // preserves the legacy unscoped behavior for callers with no workspace identity to check.
-        if (workspaceId != null && !workspaceId.equals(coupon.getWorkspaceId())) {
+    /**
+     * [F-0728] Resolves a coupon for the legacy caller that has no workspace identity to scope by
+     * ({@code ConversionWebhookController}'s brand-own-checkout webhook).
+     *
+     * <p>Two workspaces may legally hold the same code string, and this caller cannot choose
+     * between them — guessing would credit a real sale to the wrong brand and accrue a commission
+     * against the wrong campaign. Previously the repository returned an {@code Optional}, so this
+     * case raised {@code IncorrectResultSizeDataAccessException}, which {@code
+     * GlobalExceptionHandler} does not handle: a bare 500 on every delivery carrying that code.
+     * Reporting the ambiguity explicitly is both honest and actionable — the operator can see WHICH
+     * code collided instead of reading a stack trace.
+     */
+    private CouponCode resolveUnscoped(String normalizedCode) {
+        List<CouponCode> matches = couponCodeRepository.findAllByCode(normalizedCode);
+        if (matches.isEmpty()) {
             throw new ApiException("INVALID_CODE", "Coupon code not found", HttpStatus.NOT_FOUND);
         }
+        if (matches.size() > 1) {
+            throw new ApiException(
+                    "AMBIGUOUS_COUPON_CODE",
+                    "This coupon code exists in more than one workspace and cannot be attributed"
+                            + " without one; the brand must redeem it through its own store integration",
+                    HttpStatus.CONFLICT);
+        }
+        return matches.get(0);
+    }
+
+    private CouponCode validateCode(String code, String workspaceId) {
+        String normalized = normalizeCode(code);
+        CouponCode coupon = workspaceId != null ? resolveScoped(workspaceId, normalized) : resolveUnscoped(normalized);
 
         if (coupon.getExpiresAt() != null && coupon.getExpiresAt().isBefore(Instant.now())) {
             throw new ApiException("CODE_EXPIRED", "Coupon code has expired", HttpStatus.BAD_REQUEST);

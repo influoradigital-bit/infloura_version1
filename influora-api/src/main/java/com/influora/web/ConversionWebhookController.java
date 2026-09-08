@@ -20,7 +20,9 @@ import com.influora.web.dto.tracking.WebhookDtos.ConversionWebhookResponse;
 import com.influora.web.dto.tracking.WebhookDtos.RedemptionWebhookRequest;
 import com.influora.web.dto.tracking.WebhookDtos.RedemptionWebhookResponse;
 import java.net.URI;
-import java.util.Optional;
+import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -76,7 +78,7 @@ import org.springframework.web.bind.annotation.RestController;
  * signature verification passes):
  *
  * <ul>
- *   <li>{@code /webhooks/redemption}: {@link CouponCodeRepository#findByCode} resolves the coupon's
+ *   <li>{@code /webhooks/redemption}: {@link CouponCodeRepository#findAllByCode} resolves the coupon's
  *       {@code workspaceId} (this is a READ used only to select which secret to check against — it
  *       is not itself an authorization decision, so reusing the pre-existing global finder here
  *       does not reopen the D1-class cross-tenant gap; the actual redemption call below is
@@ -141,6 +143,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ConversionWebhookController {
 
+    private static final Logger log = LoggerFactory.getLogger(ConversionWebhookController.class);
+
     private static final String SIGNATURE_HEADER = "X-Influora-Signature";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -202,9 +206,25 @@ public class ConversionWebhookController {
         // only to select a secret to check against -- it is not itself an authorization decision,
         // and the resolved workspace is subsequently used for a genuine authorization purpose (the
         // workspace-scoped redeem overload below) only AFTER the signature check passes.
-        Optional<CouponCode> coupon =
-                request.code() == null ? Optional.empty() : couponCodeRepository.findByCode(normalizeCode(request.code()));
-        String workspaceId = coupon.map(CouponCode::getWorkspaceId).orElse(null);
+        // [F-0728] findAllByCode, not findByCode. UNIQUE(workspace_id, code) lets two workspaces
+        // legally hold the same code string, and the previous Optional-returning finder raised
+        // IncorrectResultSizeDataAccessException on exactly that — a bare 500, since
+        // GlobalExceptionHandler has no handler for it. More importantly this lookup chooses WHICH
+        // WORKSPACE'S SECRET verifies the signature below, so silently taking one of two matches
+        // would decide a security question by row order. A genuine collision is left unresolved
+        // here: workspaceId stays null, verifySignatureOrReject rejects (it has no secret to check
+        // against), and the caller is refused rather than validated against an arbitrary brand's
+        // secret. RedemptionWriter reports the same collision as AMBIGUOUS_COUPON_CODE for callers
+        // that get that far.
+        List<CouponCode> matches =
+                request.code() == null ? List.of() : couponCodeRepository.findAllByCode(normalizeCode(request.code()));
+        if (matches.size() > 1) {
+            log.warn(
+                    "Conversion webhook coupon code resolves to {} workspaces — refusing rather than"
+                            + " picking one to verify the signature against (F-0728)",
+                    matches.size());
+        }
+        String workspaceId = matches.size() == 1 ? matches.get(0).getWorkspaceId() : null;
 
         verifySignatureOrReject(rawPayload, signature, workspaceId);
 

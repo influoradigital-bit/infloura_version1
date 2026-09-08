@@ -118,7 +118,7 @@ public class RedemptionService {
      * IDEMPOTENCY_KEY_IN_PROGRESS} (409) -- a transient, retry-safe response, never a generic 500.
      *
      * @param code the coupon code string as entered/scanned at checkout (case-insensitive; matched
-     *     via {@link CouponCodeRepository#findByCode}, which is itself uppercase-agnostic only in
+     *     via {@link CouponCodeRepository#findAllByCode}, which is itself uppercase-agnostic only in
      *     that callers are expected to normalize -- see {@link #normalizeCode})
      * @param orderId the brand's own external order identifier
      * @param orderAmount the order's pre-discount total; must be non-null and non-negative
@@ -148,7 +148,7 @@ public class RedemptionService {
      * caller-resolved, ALREADY-authenticated (signature-verified) workspace that this webhook
      * delivery was proven to originate from ({@code ShopifyWebhookController}/{@code
      * WooCommerceWebhookController}/{@code ConversionWebhookController}) — never
-     * client-supplied on its own. Because {@link CouponCodeRepository#findByCode} is a global,
+     * client-supplied on its own. Because {@link CouponCodeRepository#findAllByCode} is a global,
      * not workspace-scoped, lookup and coupon codes are only unique per-workspace ({@code
      * UNIQUE(workspace_id, code)}), a webhook legitimately signed by workspace A could otherwise
      * redeem a coupon code that happens to belong to workspace B. Passing {@code workspaceId}

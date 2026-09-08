@@ -257,7 +257,7 @@ public class ShopifyWebhookController {
      * <p><b>[SEC: Kabir, Wave D1 HIGH — FIXED] Cross-tenant coupon redemption.</b> This previously
      * called the GLOBAL {@code RedemptionService#redeem(String, String, BigDecimal, String,
      * String)} overload, discarding the resolved {@code workspaceId} entirely — since {@code
-     * CouponCodeRepository#findByCode} is a global, not workspace-scoped, lookup and coupon codes
+     * CouponCodeRepository#findAllByCode} is a global, not workspace-scoped, lookup and coupon codes
      * are only unique per-workspace ({@code UNIQUE(workspace_id, code)}), a webhook signed by Brand
      * A's own connected store (a real, legitimately-obtained signature) could redeem a coupon code
      * that happens to belong to Brand B, inflating Brand B's usage count and triggering an

@@ -44,20 +44,41 @@ public interface CouponCodeRepository extends JpaRepository<CouponCode, String> 
     Optional<CouponCode> findByWorkspaceIdAndId(String workspaceId, String id);
 
     /**
-     * Global code lookup, deliberately NOT workspace-scoped -- used by {@code RedemptionService
-     * #redeem}, which is called from an unauthenticated brand-webhook endpoint (the brand's own
-     * commerce platform posting "this code was used at checkout"), not a workspace-authenticated
-     * brand request. There is no workspace principal available at that call site to scope by (same
-     * shape of exception as {@code CampaignLinkService#recordClick}, which is also intentionally not
-     * workspace-scoped for the same reason -- see that class's javadoc). The uniqueness constraint
-     * behind this lookup is {@code UNIQUE(workspace_id, code)}, not a bare {@code UNIQUE(code)}, so in
-     * theory the same code string could exist in two different workspaces; this finder returns
-     * whichever row matches first and is only safe to use where the caller has no workspace context
-     * to disambiguate with (i.e. exactly the webhook-redemption case). A brand-authenticated read
-     * path must use {@link #findByWorkspaceIdAndId} or {@link #findByWorkspaceIdAndCampaignId}
-     * instead, never this method.
+     * Workspace-scoped code lookup -- the correct finder for every caller that already knows which
+     * workspace the code must belong to. {@code UNIQUE(workspace_id, code)} (V24) makes the result
+     * unambiguous by construction: at most one row can match, so no "which one did we get" question
+     * exists here at all.
+     *
+     * <p>[F-0728] Both store webhooks resolve their workspace from a signed delivery before
+     * redeeming, so they are exactly these callers. Previously they went through the global finder
+     * below and were then rejected AFTER the fact by {@code RedemptionWriter#validateCode}'s
+     * cross-workspace check, which meant a second workspace registering the same code string
+     * shadowed the first into {@code INVALID_CODE} -- Brand B creating {@code SUMMER20} made Brand
+     * A's own {@code SUMMER20} permanently unredeemable.
      */
-    Optional<CouponCode> findByCode(String code);
+    Optional<CouponCode> findByWorkspaceIdAndCode(String workspaceId, String code);
+
+    /**
+     * Global code lookup for the ONE caller that genuinely has no workspace to scope by: {@code
+     * ConversionWebhookController}, where the code itself is what resolves the workspace whose
+     * secret then verifies the signature. There is no workspace principal at that point (same shape
+     * of exception as {@code CampaignLinkService#recordClick} -- see that class's javadoc). Every
+     * other caller must use {@link #findByWorkspaceIdAndCode}, {@link #findByWorkspaceIdAndId} or
+     * {@link #findByWorkspaceIdAndCampaignId}.
+     *
+     * <p>[F-0728] Returns a LIST, and that is the fix rather than an inconvenience. This was {@code
+     * Optional<CouponCode> findByCode}, whose javadoc claimed it "returns whichever row matches
+     * first". That was wrong: Spring Data raises {@code IncorrectResultSizeDataAccessException} when
+     * an {@code Optional} query matches more than one row, and {@code GlobalExceptionHandler} has no
+     * handler for it -- so the moment two workspaces shared a code string, every delivery carrying
+     * it became a bare 500. The uniqueness constraint is {@code UNIQUE(workspace_id, code)}, so two
+     * such rows are entirely legal to create.
+     *
+     * <p>A caller with no workspace context genuinely cannot choose between two matches, and
+     * guessing would attribute a real sale to the wrong brand. Callers must therefore treat "more
+     * than one" as an explicit, reportable ambiguity -- never take {@code get(0)}.
+     */
+    List<CouponCode> findAllByCode(String code);
 
     /** Creator-scoped coupon list backing {@code CreatorCouponService}. */
     List<CouponCode> findByCreatorIdOrderByCreatedAtDesc(String creatorId);
