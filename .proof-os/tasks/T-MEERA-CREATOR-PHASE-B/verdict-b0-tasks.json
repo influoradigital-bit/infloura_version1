@@ -1,0 +1,23 @@
+{
+  "verdict": "believed",
+  "oracle": "model",
+  "isolation": "fresh-context",
+  "done_when": "Only Task Divided with assign people flow",
+  "not_checked": [
+    "whether this is the RIGHT division of Phase B0 \u2014 only that it is complete, every row is assigned to a declared service, and the flows are internally consistent",
+    "whether the per-wave day estimates are achievable by this team",
+    "whether the spec line numbers quoted inside B0 task rows are still accurate at HEAD \u2014 only the ten anchors in section 1.2 were re-measured; task B0-05 is what closes the rest",
+    "whether Phase A actually deploys and smokes green (task B0-02) \u2014 the whole measurement wave rests on it and it has never been run",
+    "whether the fourteen risk rules, the pricing constants or the six tools are correct \u2014 B0 exists to find that out"
+  ],
+  "skipped": [
+    {
+      "step": "oracle-first CHECK pipeline (gates/build.mvn.sh, build.node.sh, frontend.sh over scope '**') selected by resolve.py",
+      "reason": "the human's stated done_when is a task-division artifact; no build oracle can satisfy 'Only Task Divided with assign people flow', and nothing was built for a build gate to measure"
+    },
+    {
+      "step": "cleanup.py close on T-MEERA-CREATOR-PHASE-B",
+      "reason": "only the division is done; 70 tasks in it are unstarted, so the task stays open"
+    }
+  ]
+}

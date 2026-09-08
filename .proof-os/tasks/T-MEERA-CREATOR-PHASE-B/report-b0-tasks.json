@@ -1,0 +1,16 @@
+{
+  "rows": [
+    {
+      "subject": ".proof-os/tasks/T-MEERA-CREATOR-PHASE-B/TASKS-B0.md",
+      "owner": "arjun",
+      "status": "aligned",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "Agent(arjun) invoked twice in its own context with the artifact path and the done_when only",
+        "result": "second pass returns PASS on both structural properties; the two defects the first pass raised were corrected before it ran",
+        "where": ".proof-os/tasks/T-MEERA-CREATOR-PHASE-B/TASKS-B0.md:1"
+      }
+    }
+  ]
+}
