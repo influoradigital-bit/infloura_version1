@@ -60,8 +60,16 @@ fi
 
 # Does the settlement path debit the workspace that owes the commission? requireWorkspaceWallet is
 # the only way in this codebase to reach a brand workspace's wallet (WalletService), so its absence
-# from this file means no brand-side leg exists, whatever else the file does.
-if grep -q "requireWorkspaceWallet" "$WRITER" 2>/dev/null; then
+# from this file means no brand-side leg exists.
+#
+# COMMENT LINES ARE STRIPPED FIRST, and the pattern is call-shaped. This check previously read
+# `grep -q "requireWorkspaceWallet"` over the raw file, which a COMMENT satisfied — so the single
+# most likely edit anyone would make here (a note explaining WHY the funding leg is missing) flipped
+# the gate to "funded" and made it print "PROVED: … debits the owing brand workspace" over a file
+# that debits nobody. A gate that a comment can green is worse than no gate: it is a false all-clear
+# on a money path. Found by CTO review 2026-09-08 (F-0770), and it is the same class this repo has
+# now hit three times.
+if grep -vE '^[[:space:]]*(\*|//|/\*)' "$WRITER" 2>/dev/null | grep -q "requireWorkspaceWallet("; then
   FUNDING_LEG=1
 else
   FUNDING_LEG=0
