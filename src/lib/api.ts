@@ -5126,6 +5126,12 @@ export type StoreProvider = 'SHOPIFY' | 'WOOCOMMERCE';
 
 /** GET /shopify/oauth/authorize (ShopifyDtos.java:11) */
 export interface ShopifyAuthorizeResult { authorizationUrl: string; state: string }
+/**
+ * GET /shopify/oauth/callback (ShopifyDtos.java:14 — ShopifyCallbackResponse).
+ * Field is `shopDomain`, not `shop`: the record was read before writing this. A TS field the Java
+ * record never sends type-checks cleanly and then renders blank forever.
+ */
+export interface ShopifyCallbackResult { connected: boolean; shopDomain: string; grantedScopes: string[] }
 /** POST /woocommerce/connect (WooCommerceDtos.java:18) */
 export interface WooCommerceConnectResult { connected: boolean; siteUrl: string }
 /** GET /integrations/store/status response shape (IntegrationDtos.IntegrationStatusResponse). */
@@ -5178,6 +5184,21 @@ export const storeIntegrations = {
       ? http.request<ShopifyAuthorizeResult>('GET', '/shopify/oauth/authorize', { query: { shop } })
       : mockOr<ShopifyAuthorizeResult>({
           authorizationUrl: `https://${shop}.myshopify.com/admin/oauth/authorize?mock=1`, state: 'mock_state',
+        }),
+
+  /**
+   * GET /shopify/oauth/callback?code=&state=&shop= (ShopifyConnectController.java:112).
+   *
+   * [F-0731] Called by the frontend route Shopify redirects the merchant's browser to. The backend
+   * endpoint answers with a JSON ApiResponse rather than a 302 (see that controller's javadoc), so
+   * the browser cannot simply follow it — this page reads the query params off its own URL and
+   * completes the exchange as an authenticated API call, exactly as the creator Meta callback does.
+   */
+  completeShopifyConnect: (params: { code: string; state: string; shop: string }) =>
+    isLive()
+      ? http.request<ShopifyCallbackResult>('GET', '/shopify/oauth/callback', { query: params })
+      : mockOr<ShopifyCallbackResult>({
+          connected: true, shopDomain: params.shop, grantedScopes: ['read_orders'],
         }),
 
   /** POST /woocommerce/connect (WooCommerceConnectController.java:61) */

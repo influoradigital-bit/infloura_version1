@@ -23,6 +23,7 @@ import BrandEditCampaignPage from '@/pages/brand-edit-campaign';
 import BrandCreatorProfilePage from '@/pages/brand-creator-profile';
 import BrandWalletPage from '@/pages/brand-wallet';
 import BrandSettingsPage from '@/pages/brand-settings';
+import BrandShopifyCallbackPage from '@/pages/brand-shopify-callback';
 import BrandAcceptInvitePage from '@/pages/brand-accept-invite';
 import BrandVerificationPage from '@/pages/brand-verification';
 import BrandBillingSettingsPage from '@/pages/brand-billing-settings';
@@ -381,6 +382,19 @@ export default function App() {
           element={
             <BrandLayoutWrapper>
               <BrandSettingsPage />
+            </BrandLayoutWrapper>
+          }
+        />
+        {/* [F-0731] Where Shopify sends the merchant after they approve the install
+            (influora.shopify.redirect-uri). Brand-authenticated like every other /brand route:
+            GET /shopify/oauth/callback requires the caller's JWT, so an unauthenticated landing
+            here could not complete the exchange anyway — ProtectedRoute sends them to login and
+            back, rather than failing the call with a 401 they cannot act on. */}
+        <Route
+          path="/brand/settings/shopify/callback"
+          element={
+            <BrandLayoutWrapper>
+              <BrandShopifyCallbackPage />
             </BrandLayoutWrapper>
           }
         />

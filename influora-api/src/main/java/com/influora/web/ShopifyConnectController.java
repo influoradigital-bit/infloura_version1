@@ -4,6 +4,7 @@ import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
 import com.influora.config.ShopifyProperties;
 import com.influora.domain.entity.Workspace;
+import com.influora.integration.shopify.ShopifyWebhookRegistrar;
 import com.influora.integration.shopify.dto.ShopifyTokenResponse;
 import com.influora.integration.shopify.oauth.ShopifyOAuthService;
 import com.influora.integration.shopify.oauth.ShopifyOAuthStateStore;
@@ -14,6 +15,8 @@ import com.influora.web.dto.shopify.ShopifyDtos.ShopifyAuthorizeResponse;
 import com.influora.web.dto.shopify.ShopifyDtos.ShopifyCallbackResponse;
 import java.util.Arrays;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,23 +45,28 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/shopify/oauth")
 public class ShopifyConnectController {
 
+    private static final Logger log = LoggerFactory.getLogger(ShopifyConnectController.class);
+
     private final ShopifyOAuthService oAuthService;
     private final ShopifyTokenStorage tokenStorage;
     private final ShopifyOAuthStateStore stateStore;
     private final BrandContextService brandContextService;
     private final ShopifyProperties shopifyProperties;
+    private final ShopifyWebhookRegistrar webhookRegistrar;
 
     public ShopifyConnectController(
             ShopifyOAuthService oAuthService,
             ShopifyTokenStorage tokenStorage,
             ShopifyOAuthStateStore stateStore,
             BrandContextService brandContextService,
-            ShopifyProperties shopifyProperties) {
+            ShopifyProperties shopifyProperties,
+            ShopifyWebhookRegistrar webhookRegistrar) {
         this.oAuthService = oAuthService;
         this.tokenStorage = tokenStorage;
         this.stateStore = stateStore;
         this.brandContextService = brandContextService;
         this.shopifyProperties = shopifyProperties;
+        this.webhookRegistrar = webhookRegistrar;
     }
 
     /**
@@ -124,6 +132,29 @@ public class ShopifyConnectController {
                         : Arrays.asList(tokenResponse.scope().split(","));
 
         tokenStorage.storeToken(workspace.getId(), validatedShop, tokenResponse.accessToken(), grantedScopes);
+
+        // [F-0730] A Shopify app receives ONLY the topics it subscribes to. Storing the token used
+        // to be the last step, so a store could complete OAuth, report "connected", and never
+        // deliver a single order — ShopifyWebhookController was reachable in principle and dead in
+        // practice, with nothing reporting a problem.
+        //
+        // Registration failure REVOKES the token just stored, and the connect fails. The tempting
+        // alternative — keep the token, log the failure, return connected:true — reproduces exactly
+        // the silent half-connected state this ticket exists to end: status would read "connected"
+        // while no order could ever arrive. A brand who sees an error retries; a brand who sees
+        // success never looks again.
+        try {
+            webhookRegistrar.registerOrderWebhooks(validatedShop, tokenResponse.accessToken());
+        } catch (RuntimeException registrationFailure) {
+            tokenStorage.revoke(workspace.getId());
+            log.error(
+                    "Shopify connect for shop={} rolled back: the access token was obtained but the order"
+                            + " webhooks could not be registered, so the store would have been connected and"
+                            + " deaf (F-0730)",
+                    validatedShop,
+                    registrationFailure);
+            throw registrationFailure;
+        }
 
         return ApiResponse.ok(new ShopifyCallbackResponse(true, validatedShop, grantedScopes));
     }

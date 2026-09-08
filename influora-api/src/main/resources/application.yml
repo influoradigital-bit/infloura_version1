@@ -456,6 +456,17 @@ influora:
     bank-encryption-key: ${INFLUORA_PII_BANKENCRYPTIONKEY:}
   shopify:
     token-encryption-key: ${INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY:}
+    # [F-0731] Where Shopify sends the merchant's browser after they approve the install. This MUST
+    # be a FRONTEND route, not this API: /shopify/oauth/callback returns a JSON ApiResponse, so a
+    # browser landing there directly is shown raw JSON with no way back into the app. The default
+    # derives from influora.web-base-url so it follows whatever SPA origin this deploy actually
+    # serves, rather than being a second hardcoded copy of the domain that drifts (which is exactly
+    # how the WooCommerce delivery URL ended up pointing at a host we do not own).
+    #
+    # Still gated by F-0729: api-key/api-secret remain unbound, so isConfigured() is false and
+    # /authorize refuses before this value is ever used. Binding it here means the redirect target
+    # is correct on the day those credentials land, instead of being discovered wrong at that point.
+    redirect-uri: ${INFLUORA_SHOPIFY_REDIRECTURI:${influora.web-base-url}/brand/settings/shopify/callback}
   woocommerce:
     token-encryption-key: ${INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY:}
   conversion-webhook:

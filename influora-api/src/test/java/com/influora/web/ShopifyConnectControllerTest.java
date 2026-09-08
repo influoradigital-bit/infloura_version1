@@ -15,6 +15,8 @@ import com.influora.config.ShopifyProperties;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.UserType;
 import com.influora.integration.shopify.dto.ShopifyTokenResponse;
+import com.influora.integration.shopify.ShopifyWebhookRegistrar;
+import com.influora.integration.shopify.exception.ShopifyApiException;
 import com.influora.integration.shopify.oauth.ShopifyOAuthService;
 import com.influora.integration.shopify.oauth.ShopifyOAuthStateStore;
 import com.influora.integration.shopify.oauth.ShopifyTokenStorage;
@@ -49,6 +51,7 @@ class ShopifyConnectControllerTest {
     @Mock private ShopifyTokenStorage tokenStorage;
     @Mock private ShopifyOAuthStateStore stateStore;
     @Mock private BrandContextService brandContextService;
+    @Mock private ShopifyWebhookRegistrar webhookRegistrar;
 
     /** Real POJO, not a mock: isConfigured() is the behaviour under test, so stubbing it would assert the mock instead of the guard. */
     private ShopifyProperties shopifyProperties;
@@ -64,7 +67,12 @@ class ShopifyConnectControllerTest {
         shopifyProperties.setApiSecret("test-api-secret");
         controller =
                 new ShopifyConnectController(
-                        oAuthService, tokenStorage, stateStore, brandContextService, shopifyProperties);
+                        oAuthService,
+                        tokenStorage,
+                        stateStore,
+                        brandContextService,
+                        shopifyProperties,
+                        webhookRegistrar);
     }
 
     private Workspace testWorkspace() {
@@ -182,5 +190,51 @@ class ShopifyConnectControllerTest {
         // never issued, which is exactly how MetaOAuthController scopes its own guard.
         verify(stateStore, never()).issue(anyString(), anyString());
         verify(oAuthService, never()).buildAuthorizationUrl(anyString(), anyString());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // [F-0730] absent-webhook-subscription.
+    //
+    // A Shopify app receives ONLY the topics it explicitly subscribes to. Nothing in this repo ever
+    // subscribed anything — no Admin API call, no shopify.app.toml manifest — so a brand could
+    // complete OAuth, see "connected", and never have one order attributed, with nothing reporting a
+    // problem. Storing the token was the last step of connect; now it is not.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "callback: subscribes the shop to the order webhooks after storing the token — without"
+                    + " this the store is connected and deaf (F-0730)")
+    void callback_registersOrderWebhooks() {
+        when(brandContextService.requireBrandWorkspace(BRAND_PRINCIPAL)).thenReturn(testWorkspace());
+        when(stateStore.consume("state-123", USER_ID, SHOP)).thenReturn(true);
+        when(oAuthService.exchangeCodeForToken(SHOP, "auth-code"))
+                .thenReturn(new ShopifyTokenResponse("shpat_abc", "read_orders"));
+
+        controller.callback(BRAND_PRINCIPAL, "auth-code", "state-123", SHOP);
+
+        verify(webhookRegistrar, times(1)).registerOrderWebhooks(SHOP, "shpat_abc");
+    }
+
+    @Test
+    @DisplayName(
+            "callback: a failed webhook registration REVOKES the stored token and fails the connect,"
+                    + " rather than leaving a store that reports connected but can never deliver"
+                    + " (F-0730)")
+    void callback_webhookRegistrationFailure_rollsBackTheConnect() {
+        when(brandContextService.requireBrandWorkspace(BRAND_PRINCIPAL)).thenReturn(testWorkspace());
+        when(stateStore.consume("state-123", USER_ID, SHOP)).thenReturn(true);
+        when(oAuthService.exchangeCodeForToken(SHOP, "auth-code"))
+                .thenReturn(new ShopifyTokenResponse("shpat_abc", "read_orders"));
+        when(webhookRegistrar.registerOrderWebhooks(SHOP, "shpat_abc"))
+                .thenThrow(new ShopifyApiException("Shopify refused the subscription"));
+
+        assertThrows(
+                ApiException.class, () -> controller.callback(BRAND_PRINCIPAL, "auth-code", "state-123", SHOP));
+
+        // Load-bearing: the half-connected state is undone. Keeping the token and returning
+        // connected:true would reproduce exactly the silent failure F-0730 describes — the brand
+        // would see success and never look again.
+        verify(tokenStorage, times(1)).revoke(WORKSPACE_ID);
     }
 }
