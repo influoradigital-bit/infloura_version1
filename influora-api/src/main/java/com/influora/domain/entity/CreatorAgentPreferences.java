@@ -6,6 +6,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 
 /**
  * T-MEERA-CREATOR-PHASE-A (SPEC.md 1.2, A3) — one row per creator: the rate floors Meera must
@@ -138,6 +139,58 @@ public class CreatorAgentPreferences {
     @Column(name = "ai_monthly_cap_usd", precision = 6, scale = 2)
     private BigDecimal aiMonthlyCapUsd;
 
+    // ---------------------------------------------------------------------------------------
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 2.1) — the six Phase-B columns, V20260910100000.
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * B6 — the creator opted her rate card in to the public media kit. When false,
+     * {@link #rateCardJson} is nulled rather than merely hidden (see {@link #applyRateCard}): a
+     * card that is not shareable has no reason to sit in the database waiting to leak.
+     *
+     * <p>Info barrier (SPEC.md 0.3): this flag governs the RATE CARD only. The three
+     * {@code *Floor} fields above stay never-brand-visible regardless of its value.
+     */
+    @Column(name = "rate_card_shareable", nullable = false)
+    private boolean rateCardShareable;
+
+    /**
+     * JSON object of creator-TYPED strings, e.g. {@code {"reel":"5000","story_set":"2500"}} — not
+     * parsed numbers. The creator authored them and the media kit echoes them back verbatim.
+     */
+    @Column(name = "rate_card_json", columnDefinition = "TEXT")
+    private String rateCardJson;
+
+    /**
+     * B6 — this creator is in the 20 percent negotiation holdout: {@code estimate_my_rate} and
+     * {@code check_deal_risks} still work, but COUNTER drafts and the quote anchor are withheld.
+     * Assigned ONCE at row creation (SPEC.md 2.9), never toggled afterwards — a cohort a creator can
+     * move in and out of measures nothing.
+     */
+    @Column(name = "negotiation_holdout", nullable = false)
+    private boolean negotiationHoldout;
+
+    /**
+     * When the holdout lapses. {@link LocalDate}, not {@link Instant}: a holdout expires on a
+     * calendar day (creation + 90), never at an instant. Null when {@link #negotiationHoldout} is
+     * false. This is the first {@code LocalDate} on this entity.
+     */
+    @Column(name = "holdout_until")
+    private LocalDate holdoutUntil;
+
+    /**
+     * B5 — how many drafts this creator has ever approved, the level-0 exit signal (10 approved
+     * drafts prompts the level-1 offer). A stored counter and NOT a {@code COUNT} over
+     * {@code meera_drafts}: the rule is "ever", and a count over a table whose rows can be discarded
+     * would go down.
+     */
+    @Column(name = "approved_draft_count", nullable = false)
+    private int approvedDraftCount;
+
+    /** Null means never prompted — stops a creator who declined the level-1 offer being re-asked. */
+    @Column(name = "level_up_prompted_at")
+    private Instant levelUpPromptedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -267,6 +320,72 @@ public class CreatorAgentPreferences {
     /** Gate fix round 1 (Priya Q7) — admin-only mutation; see the field's javadoc. {@code null} clears the override back to the process-wide default. */
     public void setAiMonthlyCapUsdOverride(BigDecimal aiMonthlyCapUsd) {
         this.aiMonthlyCapUsd = aiMonthlyCapUsd;
+        touch();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 2.1) — accessors and mutators for the six columns above.
+    // ---------------------------------------------------------------------------------------
+
+    public boolean isRateCardShareable() {
+        return rateCardShareable;
+    }
+
+    public String getRateCardJson() {
+        return rateCardJson;
+    }
+
+    public boolean isNegotiationHoldout() {
+        return negotiationHoldout;
+    }
+
+    public LocalDate getHoldoutUntil() {
+        return holdoutUntil;
+    }
+
+    public int getApprovedDraftCount() {
+        return approvedDraftCount;
+    }
+
+    public Instant getLevelUpPromptedAt() {
+        return levelUpPromptedAt;
+    }
+
+    /**
+     * SPEC.md 2.1 — applied from {@code updatePreferences} when the request carries the two rate-card
+     * fields. Nulls the JSON when {@code shareable} is false rather than keeping it hidden: opting
+     * out should remove the data, not merely stop rendering it.
+     */
+    public void applyRateCard(boolean shareable, String rateCardJson) {
+        this.rateCardShareable = shareable;
+        this.rateCardJson = shareable ? rateCardJson : null;
+        touch();
+    }
+
+    /**
+     * SPEC.md 2.9 — called ONCE, from
+     * {@code CreatorAgentPreferencesService.createWithComputedDefaults}, between
+     * {@link #newWithDefaults} and the save. Deliberately not called anywhere else: the holdout is a
+     * measurement cohort, and a creator who can move in or out of it measures nothing.
+     */
+    public void assignHoldout(boolean holdout, LocalDate until) {
+        this.negotiationHoldout = holdout;
+        this.holdoutUntil = holdout ? until : null;
+        touch();
+    }
+
+    /**
+     * SPEC.md 2.1 / B5 — increments the level-0 exit counter and returns the NEW value, so the
+     * caller can compare it against the level-up threshold without a second read.
+     */
+    public int recordApprovedDraft() {
+        this.approvedDraftCount += 1;
+        touch();
+        return this.approvedDraftCount;
+    }
+
+    public void markLevelUpPrompted(Instant when) {
+        this.levelUpPromptedAt = when;
         touch();
     }
 

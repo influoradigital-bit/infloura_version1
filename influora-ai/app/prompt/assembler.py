@@ -100,6 +100,18 @@ _FORBIDDEN_BRAND_FIELDS = {
     "creator_language",
     "excluded_categories",
     "blocked_brands",
+    # Meera for Creators Phase B (SPEC.md §7.2): the Phase-B creator fields.
+    # `rate_card` is the creator's own asking prices and `negotiation_holdout`
+    # /`holdout_until` say whether she is in the coaching control arm -- a
+    # brand learning either would be handed the other side of the table.
+    # `tools_enabled` and `approved_draft_count` are creator-agent internals
+    # that describe how much autonomy her Meera has, which is hers to know.
+    "tools_enabled",
+    "negotiation_holdout",
+    "holdout_until",
+    "rate_card_shareable",
+    "approved_draft_count",
+    "rate_card",
 }
 
 # Canonical snake_case field set for POST /internal/meera/context's response
@@ -133,6 +145,10 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     # exact; `build_block_b_creator` deliberately never reads it.
     "ai_monthly_cap_usd",
     "approval_level",
+    # Phase B (§3.7): how many drafts this creator has approved. Read by the
+    # level-up surfaces, NEVER rendered -- a running total of her own approvals
+    # in Meera's mouth reads as a scoreboard, not as help.
+    "approved_draft_count",
     "audience",
     "blocked_brands",
     "brand_tone",
@@ -151,10 +167,25 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     # Gate fix round 2 (Q8): ISO 4217 code the `floors` are denominated in.
     "floor_currency",
     "floors",
+    # Phase B (§2.10): the calendar day the negotiation holdout lapses, ALREADY
+    # rendered as a display string by Java (`Rendered.date`) -- Python never
+    # formats a date. Only rendered when `negotiation_holdout` is true.
+    "holdout_until",
     "identity",
     "metrics_summary",
+    # Phase B (§2.10, B6): this creator is in the negotiation-coaching control
+    # arm. Rendered so Meera withholds counter-coaching rather than silently
+    # behaving differently -- a creator who is held out is told she is.
+    "negotiation_holdout",
+    # Phase B (§3.10, B6): whether her rate card may appear on the public media
+    # kit. A sharing switch, not negotiating input -- never rendered.
+    "rate_card_shareable",
     "represented",
     "tier",
+    # Phase B (§7.2): the creator tool names this turn may call. Absent or
+    # EMPTY degrades to Phase-A warn-only behaviour, which is what Wave 1 ships
+    # (Spring sends `List.of()` until B0-20 lands `CreatorToolScopes`).
+    "tools_enabled",
     "weekly_sponsored_limit",
     "working_days",
     "working_hours_end",
@@ -167,7 +198,20 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
 # Fields that pass the allow-list (so the drift test against Java stays exact)
 # but are consumed by OTHER readers and must never be rendered into Block B.
 CREATOR_CONTEXT_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
-    {"audience", "workspace_id", "consent_accepted", "consent_version", "ai_monthly_cap_usd"}
+    {
+        "audience",
+        "workspace_id",
+        "consent_accepted",
+        "consent_version",
+        "ai_monthly_cap_usd",
+        # Phase B (§2.10): allow-listed so the Java<->Python drift check stays
+        # exact, but deliberately never rendered. `approved_draft_count` drives
+        # the level-up prompt in the UI and `rate_card_shareable` is a media-kit
+        # sharing switch; neither is something Meera should reason about while
+        # helping with a deal.
+        "approved_draft_count",
+        "rate_card_shareable",
+    }
 )
 
 # ISO weekday numbers as the settings UI and Spring store them
@@ -633,6 +677,33 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
         lines.append(
             f"- REPRESENTED by {represented_by}: warn-only mode, "
             "never draft anything addressed to a brand"
+        )
+
+    # Phase B (§2.10/§7.2, B6): the negotiation holdout is the control arm that
+    # proves the coaching is what moves outcomes. Rendered rather than silently
+    # applied -- a creator whose Meera has gone quiet on counters deserves to be
+    # told why, and told when it lifts. `holdout_until` is already a display
+    # string from Java (Rendered.date), so this never formats a date; when Spring
+    # sends the holdout without a date, `_creator_str` says "not available"
+    # rather than dropping the line.
+    #
+    # NOTE the reads below are written against the LOCAL `ctx`, never the
+    # `context` parameter: tests/prompt/test_creator_context_drift.py greps this
+    # module for the literal `ctx.get("<name>")` / `_creator_str(ctx, "<name>"`
+    # and a read spelled `context.get(...)` fails that test while working fine.
+    if ctx.get("negotiation_holdout"):
+        lines.append(
+            "- Negotiation coaching: withheld for this deal until "
+            f"{_creator_str(ctx, 'holdout_until')}"
+        )
+
+    # §7.2: the tools this turn may actually call. Absent or empty renders
+    # NOTHING, which is the Phase-A warn-only block verbatim -- Wave 1's Spring
+    # always sends an empty list, so this line stays dark until B0-20.
+    tools_enabled = ctx.get("tools_enabled")
+    if isinstance(tools_enabled, list) and tools_enabled:
+        lines.append(
+            "- Tools you may call now: " + ", ".join(_safe(t) for t in tools_enabled)
         )
 
     # Q8: the creator's own rules -- what they saved on the Meera settings

@@ -18,11 +18,20 @@ import {
   isApiLive,
   isMoneyActionBlocked,
   type ApiErrorPayload,
+  type BriefExtraction,
+  type DealRisksResponse,
+  type PackageQuote,
+  type RiskFlag,
 } from './api';
 // F-0551 — the shared in-memory access-token store. Imported from auth-session (not api.ts) for
 // the same reason api.ts reads it from there: that module is the single owner of the live-mode
 // token slot, so both API layers resolve the same credential instead of each keeping its own.
 import { getMemoryAccessToken, LIVE_SESSION_TOKEN_HINT } from './auth-session';
+// T-MEERA-CREATOR-PHASE-B §8.2 — `DraftReplyPayload.deal_terms` carries the same camelCase
+// `DealTermsDto` shape `deals.counter`/`deals.create` already use (SPEC.md §8.1). `DealTerms` is
+// not re-exported from api.ts (by design — see api.ts's own note above `deals`), so import it
+// straight from types.ts the way api.ts itself does.
+import type { DealTerms } from './types';
 
 // ---------------------------------------------------------------------------
 // Environment / config
@@ -389,6 +398,166 @@ export function isOptionsPayload(data: unknown): data is OptionsPayload {
 }
 
 // ---------------------------------------------------------------------------
+// Creator tool payloads — Phase B0 "Paste and Read" (T-MEERA-CREATOR-PHASE-B
+// SPEC.md §8.2, B0-16). Snake_case, mirroring `CreatorToolDtos` (§3.5)
+// field-for-field — creator payloads follow `MeeraContextDtos`, NOT the
+// camelCase `MeeraToolDtos` payloads above. Six B0 tools only: get_my_deals,
+// get_brief, estimate_my_rate, get_my_metrics, check_deal_risks, draft_reply.
+// SendRoutineReplyPayload/RankOpenCampaignsPayload/DraftApplicationPayload
+// (send_routine_reply/rank_open_campaigns/draft_application) are Phase
+// B1/B7 tools and are deliberately NOT declared here.
+// ---------------------------------------------------------------------------
+
+/** `CreatorToolDtos.DealSummary` (§3.5) — one row of `GetMyDealsPayload.deals`. */
+export interface DealSummary {
+  deal_id: string;
+  brand_name: string;
+  campaign_title: string;
+  status: string;
+  status_label: string;
+  /** "8,000" — omitted (NON_NULL) when there is no amount yet. */
+  amount?: string;
+  /** Same nullable pair as `amount` (both come from the one `amountValue` BigDecimal on the Java
+   *  side) — omitted (NON_NULL) whenever `amount` is. */
+  amount_value?: number;
+  currency: string;
+  /** e.g. "reply to brand" — omitted when there is nothing to do. */
+  next_action?: string;
+  next_deadline?: string;
+  secured: boolean;
+  unread_count: number;
+  has_pending_offer: boolean;
+  /** The PLATFORM `CreatorBrief` for this collaboration, if one exists. */
+  brief_id?: string;
+}
+
+/** `CreatorToolDtos.GetMyDealsResult` (§3.5) — `get_my_deals` tool result. */
+export interface GetMyDealsPayload {
+  deals: DealSummary[];
+  active_count: number;
+  completed_count: number;
+}
+
+/** `CreatorToolDtos.GetBriefResult` (§3.5) — `get_brief` tool result. */
+export interface GetBriefPayload {
+  brief_id: string;
+  source: 'PASTED' | 'PLATFORM';
+  status: 'NEW' | 'ANALYZED' | 'DRAFTED' | 'SECURED' | 'DISMISSED';
+  /** Only set for a PLATFORM brief (source of the collaboration it was built from). */
+  deal_id?: string;
+  extraction: BriefExtraction;
+  flags: RiskFlag[];
+  quote: PackageQuote;
+  extraction_source: 'AI' | 'FALLBACK';
+}
+
+/** `CreatorToolDtos.EstimateMyRateResult` (§3.5) — `estimate_my_rate` tool result. */
+export interface EstimateMyRatePayload {
+  quote: PackageQuote;
+}
+
+/** `CreatorToolDtos.MetricsResult` (§3.5) — nested metrics on `GetMyMetricsPayload`. Per
+ *  `GetMyMetricsExecutor` (§3.6): when `connected` is false every string field below is omitted
+ *  except `tier`, and `data_source` (only set to `SELF_REPORTED` when the profile has followers). */
+export interface MetricsResult {
+  connected: boolean;
+  followers?: string;
+  reach_30d?: string;
+  engagement_rate?: string;
+  avg_reach_per_post?: string;
+  verified_at?: string;
+  data_source?: string;
+  tier?: string;
+  quality_score?: string;
+}
+
+/** `CreatorToolDtos.GetMyMetricsResult` (§3.5) — `get_my_metrics` tool result. */
+export interface GetMyMetricsPayload {
+  metrics: MetricsResult;
+}
+
+/**
+ * `CreatorToolDtos.CheckDealRisksResult` (§3.5) — `check_deal_risks` tool result. This is the
+ * exact same Java record as `api.ts`'s `DealRisksResponse` (the `GET /deals/:id/risks` HTTP
+ * response); aliased rather than redeclared so the two stay in sync by construction.
+ */
+export type CheckDealRisksPayload = DealRisksResponse;
+
+/**
+ * `CreatorToolDtos.DraftReplyResult` (§3.5) — `draft_reply` tool result. `kind` is narrowed to
+ * the three values `DraftReplyExecutor` can actually produce (§3.6) — `DraftItem.kind` in
+ * `api.ts` carries the full five-value `DraftKind` enum for the drafts list instead.
+ * `proposed_amount`/`proposed_amount_value`/`deal_terms` are COUNTER-only; `target_deal_id`/
+ * `target_brief_id` are mutually exclusive (one of `deal_id`/`brief_id` was supplied as input);
+ * `withheld_reason` is only set when `withheld` is true.
+ */
+export interface DraftReplyPayload {
+  draft_id: string;
+  kind: 'REPLY' | 'COUNTER' | 'DECLINE';
+  text: string;
+  proposed_amount?: string;
+  proposed_amount_value?: number;
+  deal_terms?: DealTerms;
+  target_deal_id?: string;
+  target_brief_id?: string;
+  withheld: boolean;
+  withheld_reason?: string;
+}
+
+export function isGetMyDealsPayload(data: unknown): data is GetMyDealsPayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<GetMyDealsPayload>;
+  return Array.isArray(d.deals);
+}
+
+export function isGetBriefPayload(data: unknown): data is GetBriefPayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<GetBriefPayload>;
+  return typeof d.brief_id === 'string' && !!d.extraction && typeof d.extraction === 'object';
+}
+
+export function isEstimateMyRatePayload(data: unknown): data is EstimateMyRatePayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<EstimateMyRatePayload>;
+  return !!d.quote && typeof d.quote === 'object';
+}
+
+export function isGetMyMetricsPayload(data: unknown): data is GetMyMetricsPayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<GetMyMetricsPayload>;
+  return !!d.metrics && typeof d.metrics === 'object';
+}
+
+export function isCheckDealRisksPayload(data: unknown): data is CheckDealRisksPayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<CheckDealRisksPayload>;
+  return Array.isArray(d.flags);
+}
+
+export function isDraftReplyPayload(data: unknown): data is DraftReplyPayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<DraftReplyPayload>;
+  return typeof d.draft_id === 'string' && typeof d.kind === 'string';
+}
+
+/** The six Phase B0 creator tools (SPEC.md §1 scope table, §8.2). Phase B1/B7 add
+ *  send_routine_reply, rank_open_campaigns and draft_application to this set later. */
+export const CREATOR_TOOL_NAMES = [
+  'get_my_deals',
+  'get_brief',
+  'estimate_my_rate',
+  'get_my_metrics',
+  'check_deal_risks',
+  'draft_reply',
+] as const;
+
+export type CreatorToolName = (typeof CREATOR_TOOL_NAMES)[number];
+
+export function isCreatorToolName(name: string): name is CreatorToolName {
+  return (CREATOR_TOOL_NAMES as readonly string[]).includes(name);
+}
+
+// ---------------------------------------------------------------------------
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
@@ -400,7 +569,7 @@ export function isOptionsPayload(data: unknown): data is OptionsPayload {
  * already uses — deliberately NOT a brand-then-creator fallback, which would silently attach
  * the wrong role's token when a browser happens to hold both (a real case during QA/dev).
  */
-type MeeraRole = 'brand' | 'creator';
+export type MeeraRole = 'brand' | 'creator';
 
 function getToken(role: MeeraRole = 'brand'): string | null {
   // F-0551 SHIP-BLOCKER, caught by a fresh-context review before this shipped. When the access

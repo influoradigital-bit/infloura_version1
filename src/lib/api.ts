@@ -31,9 +31,11 @@ import type {
   CreatorScoresSummary,
   DealTerms,
   DeliverableStatus,
+  ExclusivityScope,
   Platform,
   PlatformStats,
   TargetAudience,
+  UsageChannel,
   VerificationStatus,
 } from './types';
 import {
@@ -6537,16 +6539,44 @@ export interface CreatorAgentPreferences {
    * CreatorAgentPreferences.newWithDefaults on the Java side). Server-owned: never sent on PUT.
    */
   consent_version: string;
+  /** T-MEERA-CREATOR-PHASE-B (§3.10) — whether `rate_card` below may be shown on the public
+   *  media kit / used for SEND_RATE_CARD routine replies. Creator-editable. */
+  rate_card_shareable: boolean;
+  /** T-MEERA-CREATOR-PHASE-B (§3.10) — creator-typed rate-card strings (never the floors), or
+   *  null when no rate card has been set. Creator-editable. */
+  rate_card: { reel: string | null; story_set: string | null; post: string | null } | null;
+  /**
+   * T-MEERA-CREATOR-PHASE-B (§3.6/§3.9) — server-computed holdout state read by
+   * `DraftReplyExecutor`/`RoutineReplyService`. Server-owned: never sent on PUT
+   * (see `CreatorAgentPreferencesUpdate` below).
+   */
+  negotiation_holdout: boolean;
+  /**
+   * T-MEERA-CREATOR-PHASE-B (§3.7) — count of drafts approved via
+   * `POST /creator/meera/drafts/:id/approve`. Server-owned: never sent on PUT.
+   */
+  approved_draft_count: number;
+  /**
+   * T-MEERA-CREATOR-PHASE-B (§3.7) — `approved_draft_count >= 10 && consentAcceptedAt <=
+   * now-7d && approval_level == 0 && levelUpPromptedAt == null`. Server-owned: never sent on PUT.
+   */
+  level_up_eligible: boolean;
 }
 
 /**
- * PUT request body (SPEC.md §2.3) — same fields as the GET response minus `consent_accepted`
- * and `consent_version`, both server-owned (set only via `recordConsent`, never via this PUT —
- * UpdatePreferencesRequest on the Java side has no field for either).
+ * PUT request body (SPEC.md §2.3, widened by T-MEERA-CREATOR-PHASE-B §8.1) — same fields as the
+ * GET response minus five server-owned fields: `consent_accepted`/`consent_version` (set only via
+ * `recordConsent`) and `negotiation_holdout`/`approved_draft_count`/`level_up_eligible` (computed
+ * server-side — see `CreatorAgentPreferences` above). `UpdatePreferencesRequest` on the Java side
+ * has no field for any of the five.
  */
 export type CreatorAgentPreferencesUpdate = Omit<
   CreatorAgentPreferences,
-  'consent_accepted' | 'consent_version'
+  | 'consent_accepted'
+  | 'consent_version'
+  | 'negotiation_holdout'
+  | 'approved_draft_count'
+  | 'level_up_eligible'
 >;
 
 export interface CreatorAgentConsentResponse {
@@ -6591,6 +6621,11 @@ const MOCK_CREATOR_AGENT_PREFS: CreatorAgentPreferences = {
   agency_name: null,
   consent_accepted: false,
   consent_version: 'v1',
+  rate_card_shareable: false,
+  rate_card: null,
+  negotiation_holdout: false,
+  approved_draft_count: 0,
+  level_up_eligible: false,
 };
 
 export const creatorAgentPrefs = {
@@ -6645,6 +6680,280 @@ export const creatorAgentPrefs = {
         })
       : mockOr(undefined),
 };
+
+// ---------------------------------------------------------------------------
+// Meera Phase B0 "Paste and Read" — creator brief, quote, deal-risk, draft and
+// campaign-fit contract types (T-MEERA-CREATOR-PHASE-B SPEC.md §8.1, B0-16).
+// Types only — no namespace methods here; those land with a later wave.
+// Snake_case throughout, mirroring the Java records field-for-field (§2.11,
+// §3.5, §3.7). B1-only types (SecureLinkResponse, SecureLinkItem,
+// CreateSecureLinkRequest, SecureLinkPreview, MediaKitResponse,
+// PublicMediaKitResponse, SendLogItem) are deliberately NOT declared here —
+// see §14.5, Phase B0 is the read-and-draft half only.
+// ---------------------------------------------------------------------------
+
+/**
+ * `com.influora.service.rates.QuoteDeliverableType` (§4.1) — a pricing-only taxonomy, distinct
+ * from the platform-shaped `CreatorDeliverableType` above (`DeliverableType.java`, persisted on
+ * `Deliverable` rows). Never conflate the two: this one prices `deliverables[].type` on a pasted
+ * brief and `QuoteLine.type` on a quote; it is never written to a `deliverables` row.
+ */
+export type QuoteDeliverableType =
+  | 'REEL'
+  | 'STATIC_POST'
+  | 'STORY_SET'
+  | 'SHORT'
+  | 'YT_INTEGRATION'
+  | 'YT_DEDICATED'
+  | 'UGC_ONLY'
+  | 'OTHER';
+
+/**
+ * `com.influora.web.dto.brief.BriefDtos.BriefExtraction` (§2.11) — shared contract with the AI
+ * service, snake_case `@JsonProperty` on every component, `@JsonInclude(NON_NULL)`. `category`
+ * uses `RateEstimationService.CATEGORY_MULTIPLIERS` keys (open set, not enumerated in the spec —
+ * kept as `string` rather than guessing a closed union). `usage_channels`/`exclusivity_scope`
+ * reuse the existing `UsageChannel`/`ExclusivityScope` enums one-for-one (SPEC.md §2.11).
+ *
+ * Every field below except the six booleans is a boxed/object Java type (String, BigDecimal,
+ * Integer, List<...>) on `BriefDtos.BriefExtraction` — an extraction that found nothing for that
+ * field leaves the Java value null, and `@JsonInclude(NON_NULL)` then OMITS the key instead of
+ * sending it as `null`. So each one is declared `?` here, never `| null` (a `=== null` check
+ * never fires against a key that was never sent). The six booleans are Java primitives, which
+ * cannot be null, so they alone stay required.
+ */
+export interface BriefExtraction {
+  /** Omitted (NON_NULL) when the extractor found no brand name. */
+  brand_name?: string;
+  /** Omitted (NON_NULL) when the extractor found no product name. */
+  product?: string;
+  /** Omitted (NON_NULL) when the extractor found no category. */
+  category?: string;
+  /** Omitted (NON_NULL) when the extractor found no deliverables. */
+  deliverables?: Array<{ type: QuoteDeliverableType; qty: number }>;
+  /** Omitted (NON_NULL) when no budget figure was extracted — see `budget_stated`. */
+  budget_inr?: number;
+  budget_stated: boolean;
+  barter_only: boolean;
+  /** Omitted (NON_NULL) unless `barter_only` and an MRP was stated. */
+  barter_mrp_inr?: number;
+  /** Omitted (NON_NULL) when no deadline was extracted. */
+  deadline?: string;
+  /** Omitted (NON_NULL) when no usage window was extracted. */
+  usage_months?: number;
+  usage_perpetual: boolean;
+  /** Omitted (NON_NULL) when no usage channels were extracted. */
+  usage_channels?: UsageChannel[];
+  /** Omitted (NON_NULL) when no exclusivity window was extracted. */
+  exclusivity_days?: number;
+  /** Omitted (NON_NULL) when no exclusivity scope was extracted. */
+  exclusivity_scope?: ExclusivityScope;
+  /** Omitted (NON_NULL) when no exclusivity brand list was extracted. */
+  exclusivity_brands?: string[];
+  /** Omitted (NON_NULL) when no revision cap was extracted. */
+  max_revisions?: number;
+  /** Omitted (NON_NULL) when no payment terms were extracted. */
+  payment_terms?: string;
+  off_platform_payment_hint: boolean;
+  disclosure_hidden_hint: boolean;
+  /** Omitted (NON_NULL) when no claims were extracted. */
+  claims?: string[];
+  /** Omitted (NON_NULL) when the brief is not in a regulated category. */
+  regulated_category?: 'FINANCE' | 'HEALTH' | 'RMG' | 'CRYPTO' | 'ALCOHOL' | 'TOBACCO';
+  vague_deliverables: boolean;
+  /** Omitted (NON_NULL) when the extractor produced no summary lines. */
+  summary_lines?: string[];
+}
+
+/** `CreatorToolDtos.RiskFlag` (§3.5) — one deal-risk-rule finding (§5.2 codes). */
+export interface RiskFlag {
+  code: string;
+  severity: 'INFO' | 'WARN' | 'CRITICAL';
+  title: string;
+  detail: string;
+  /** e.g. "≈ 6,000 of lost income" — omitted (NON_NULL) when the rule has no cost estimate. */
+  cost?: string;
+  action: string;
+  /** Rendered strings only (Map<String, String> on the Java side). */
+  data: Record<string, string>;
+  dismissible: boolean;
+}
+
+/** `CreatorToolDtos.QuoteLine` (§3.5) — one deliverable line on a `PackageQuote`. */
+export interface QuoteLine {
+  type: QuoteDeliverableType;
+  qty: number;
+  unit_price: string;
+  unit_price_value: number;
+  line_total: string;
+  line_total_value: number;
+  below_floor: boolean;
+}
+
+/** `CreatorToolDtos.AddOnLine` (§3.5) — one priced add-on (§4.2 codes). */
+export interface AddOnLine {
+  code: string;
+  label: string;
+  amount: string;
+  amount_value: number;
+  basis: string;
+}
+
+/** `CreatorToolDtos.PackageQuote` (§3.5) — `estimate_my_rate`/`get_brief`'s priced package. */
+export interface PackageQuote {
+  /** Omitted (NON_NULL) when the quote has no priced deliverable lines (e.g. withheld). */
+  lines?: QuoteLine[];
+  /** Omitted (NON_NULL) when the quote has no add-ons. */
+  add_ons?: AddOnLine[];
+  bundle_discount: string;
+  bundle_discount_value: number;
+  total: string;
+  total_value: number;
+  /** Omitted (NON_NULL) when the creator is under a negotiation holdout (§2.9). */
+  anchor?: string;
+  anchor_value?: number;
+  /** Creator-only — never on the (Phase B1) secure link's stripped package. */
+  floor_total: string;
+  floor_total_value: number;
+  range_min: string;
+  range_max: string;
+  currency: string;
+  payment_schedule: string;
+  revision_rounds: number;
+  /** Free text, e.g. "your last N priced deals" — not a closed enum. */
+  provenance: string;
+  provenance_sample_size: number;
+  /** Omitted (NON_NULL) when the quote is withheld or no move is recommended. */
+  recommended_move?: 'SCOPE_DOWN' | 'COUNTER_AT_FLOOR' | 'ACCEPT' | 'DECLINE';
+  /** Omitted (NON_NULL) unless `recommended_move` is `SCOPE_DOWN`. */
+  scope_down_offer?: string;
+  withheld: boolean;
+  /** Omitted (NON_NULL) unless `withheld` is true. */
+  withheld_reason?: string;
+}
+
+/**
+ * `CreatorBriefService.paste`/`ensurePlatformBrief`/`get` response (§3.8 step 6, §14.4.a) —
+ * `BriefAnalysisResponse{brief_id, status, extraction, flags, quote, extraction_source,
+ * summary_lines}` plus `degraded_reason` (AMEND-0904, §14.4.a: cap exhaustion / AI outage
+ * degrade to the deterministic fallback rather than a wall).
+ */
+export interface BriefAnalysisResponse {
+  brief_id: string;
+  status: 'NEW' | 'ANALYZED' | 'DRAFTED' | 'SECURED' | 'DISMISSED';
+  extraction: BriefExtraction;
+  flags: RiskFlag[];
+  quote: PackageQuote;
+  extraction_source: 'AI' | 'FALLBACK';
+  /** Omitted (NON_NULL) when the extractor produced no summary lines. */
+  summary_lines?: string[];
+  /** Omitted (NON_NULL) outside a degraded analysis (AMEND-0904, §14.4.a). */
+  degraded_reason?: 'cap' | 'ai_unavailable';
+}
+
+/**
+ * `GET /creator/briefs` list row. No controller or `BriefDtos.BriefListItem` DTO for this
+ * endpoint has landed yet, but the entity it will be built from — `CreatorBrief`
+ * (`domain/entity/CreatorBrief.java`, SPEC.md §2.2) — has, and confirms this shape: `source`/
+ * `status` mirror the non-null `BriefSource`/`BriefStatus` enums, `brand_name_guess` is a nullable
+ * `@Column`, and `created_at` is non-null. The heavier `extraction`/`flags`/`quote` blobs stay
+ * reserved for the single-brief `BriefAnalysisResponse` and are deliberately excluded here.
+ */
+export interface BriefListItem {
+  brief_id: string;
+  source: 'PASTED' | 'PLATFORM';
+  status: 'NEW' | 'ANALYZED' | 'DRAFTED' | 'SECURED' | 'DISMISSED';
+  /** Omitted (NON_NULL) when the brand name could not be guessed — nullable on `CreatorBrief`. */
+  brand_name_guess?: string;
+  created_at: string;
+}
+
+/**
+ * `CreatorToolDtos.CheckDealRisksResult` (§3.5), exposed on the wire as `DealRisksResponse` via
+ * `GET /deals/:id/risks`. The record has landed in `CreatorToolDtos.java` with `target` typed as
+ * a plain `String` (no Java enum), so the `'DEAL' | 'BRIEF'` union below is still inferred from
+ * the producing method names (`DealRiskService.evaluateDeal`/`evaluateBrief`, §3.6) — that service
+ * has not been implemented yet, so re-verify the literal value set once it lands.
+ */
+export interface DealRisksResponse {
+  /** Omitted (NON_NULL) when the target has no risk flags. */
+  flags?: RiskFlag[];
+  highest_severity: 'INFO' | 'WARN' | 'CRITICAL';
+  target: 'DEAL' | 'BRIEF';
+  target_id: string;
+}
+
+/**
+ * One row of `GET /creator/meera/drafts`. No DTO or controller for this endpoint has landed yet
+ * — `CreatorToolDtos.DraftItem` is not a real symbol there. This mirrors the persisted `MeeraDraft`
+ * entity instead (`domain/entity/MeeraDraft.java`, SPEC.md §2.4): `kind`/`status` are the full
+ * five-value `DraftKind`/`DraftStatus` enums (non-null columns) even though B0's `draft_reply`
+ * tool only ever produces REPLY/COUNTER/DECLINE — ROUTINE/APPLICATION drafts are Phase B1/B7 but
+ * the entity already declares all five kind/status values. `intent` is a nullable column set only
+ * for `ROUTINE`; `proposed_amount`, `collaboration_id` (→ `deal_id`), `brief_id` and `campaign_id`
+ * are nullable columns too.
+ */
+export interface DraftItem {
+  draft_id: string;
+  kind: 'REPLY' | 'COUNTER' | 'DECLINE' | 'APPLICATION' | 'ROUTINE';
+  /** Omitted (NON_NULL) unless `kind` is `ROUTINE`. */
+  intent?:
+    | 'SEND_MEDIA_KIT'
+    | 'SEND_RATE_CARD'
+    | 'ACK_BRIEF'
+    | 'ASK_DELIVERABLE_COUNT'
+    | 'ASK_TIMELINE'
+    | 'TENTATIVE_AVAILABILITY';
+  text: string;
+  /** Omitted (NON_NULL) unless `kind` is `COUNTER`. */
+  proposed_amount?: string;
+  /** Omitted (NON_NULL) when this draft has no deal thread yet. */
+  deal_id?: string;
+  /** Omitted (NON_NULL) unless this draft targets a pasted/platform brief. */
+  brief_id?: string;
+  /** Omitted (NON_NULL) unless `kind` is `APPLICATION`. */
+  campaign_id?: string;
+  status: 'PENDING' | 'APPROVED' | 'EDITED' | 'DISCARDED' | 'SENT';
+  created_at: string;
+}
+
+/**
+ * `POST /creator/meera/drafts/:id/approve` request body (§3.7) — `{text, proposed_amount?,
+ * deal_terms?}`. `deal_terms` carries the SAME camelCase `DealTermsDto`/`DealTerms` shape used by
+ * `deals.counter`/`deals.create` (§8.1: "camelCase keys as in DealDtos.DealTermsDto") even though
+ * every sibling field on this DTO is snake_case — import `DealTerms` from `@/lib/types` at the
+ * call site the same way `deals.counter`'s payload does.
+ */
+export interface ApproveDraftRequest {
+  text: string;
+  proposed_amount: number | null;
+  deal_terms: DealTerms | null;
+}
+
+/** `POST /creator/meera/drafts/:id/approve` response (§3.7). */
+export interface ApproveDraftResponse {
+  draft_id: string;
+  /** Omitted (NON_NULL) unless the approved draft was a REPLY. */
+  sent_message_id?: string;
+  /** Omitted (NON_NULL) unless the approved draft was a COUNTER. */
+  deal_id?: string;
+  approved_draft_count: number;
+  level_up_eligible: boolean;
+}
+
+/** `CreatorToolDtos.CampaignFit` (§3.5) — `rank_open_campaigns`' per-campaign result (Phase B1/B7
+ *  tool; the type itself is declared in B0 per the §8.1 task list). */
+export interface CampaignFit {
+  campaign_id: string;
+  title: string;
+  brand_name: string;
+  budget_band: string;
+  fit_score: number;
+  fit_reasons: string[];
+  application_deadline: string;
+  already_applied: boolean;
+  below_floor: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Public verified-metrics (A9, SPEC.md §2.8) — no auth required

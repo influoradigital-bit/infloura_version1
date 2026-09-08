@@ -66,7 +66,7 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.08.10.1"
+PROMPT_VERSION = "meera-2026.09.10.1"
 # ^ bumped for ME-2 (BrandF.md §115): the request_payment/confirm_launch tool
 # bullets in Block A used to tell Meera to "propose a payment"/"propose
 # launching" via those tools — but get_tool_schemas() (schemas.py) no longer

@@ -2,6 +2,7 @@ package com.influora.service.meera;
 
 import com.influora.common.ApiException;
 import com.influora.common.JsonLists;
+import com.influora.common.Rendered;
 import com.influora.domain.entity.BrandAiCredit;
 import com.influora.domain.entity.BrandProfile;
 import com.influora.domain.entity.Campaign;
@@ -16,6 +17,7 @@ import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CampaignTemplateScope;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.CreatorDealStatuses;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.VerificationStatus;
 import com.influora.repository.BrandProfileRepository;
@@ -30,6 +32,7 @@ import com.influora.repository.DeliverableMetricRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
+import com.influora.service.scoring.CreatorTiers;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.OutcomeDigest;
@@ -84,16 +87,11 @@ public class MeeraContextService {
     private static final Set<CampaignStatus> FUNDED_STATUSES =
             EnumSet.of(CampaignStatus.ACTIVE, CampaignStatus.PAUSED, CampaignStatus.COMPLETED);
 
-    /**
-     * T-MEERA-CREATOR-PHASE-A (SPEC.md 2.9, A4) — {@code deals_summary.active_count}: every
-     * non-terminal collaboration status. Terminal = {@code COMPLETED}/{@code CANCELLED}/{@code
-     * DISPUTED}; everything else is still an open negotiation or in-flight deal from the
-     * creator's point of view.
-     */
-    private static final Set<CollaborationStatus> ACTIVE_DEAL_STATUSES =
-            EnumSet.complementOf(
-                    EnumSet.of(
-                            CollaborationStatus.COMPLETED, CollaborationStatus.CANCELLED, CollaborationStatus.DISPUTED));
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.6, B0-11): ACTIVE_DEAL_STATUSES was `private static final`
+    // here, and the Phase-B creator tool executors sit in com.influora.service.meera.tool.creator —
+    // a different package, so even package-private would not have reached it. Moved verbatim to
+    // CreatorDealStatuses.ACTIVE rather than copied, so `deals_summary.active_count` below and
+    // `get_my_deals` in the tool surface cannot drift apart in front of the creator.
 
     private final WorkspaceRepository workspaceRepository;
     private final BrandProfileRepository brandProfileRepository;
@@ -255,7 +253,7 @@ public class MeeraContextService {
         identity.put("kyc_done", profile.getIdentityKycStatus() == VerificationStatus.VERIFIED);
         identity.put("gstin_present", profile.getGstin() != null && !profile.getGstin().isBlank());
 
-        String tier = profile.getTierOverride() != null ? profile.getTierOverride().name() : deriveTier(profile.getTotalFollowers());
+        String tier = profile.getTierOverride() != null ? profile.getTierOverride().name() : CreatorTiers.derive(profile.getTotalFollowers());
 
         // Fix round 2, item 3 (Priya Q8) — these were persisted correctly on the settings row but
         // never reached this response, so Meera never actually saw them. JsonLists.stringListFromJson
@@ -298,7 +296,20 @@ public class MeeraContextService {
                 identity,
                 prefs != null && prefs.isConsentAccepted(),
                 prefs != null ? prefs.getConsentVersion() : null,
-                prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null);
+                prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null,
+                prefs != null && prefs.isNegotiationHoldout(),
+                // Rendered by Java, never by Python (SPEC.md §3.6). Rendered.date returns null for
+                // a null date, and the record is @JsonInclude(NON_NULL), so a creator who is not
+                // held out simply has no holdout_until key on the wire.
+                prefs != null ? Rendered.date(prefs.getHoldoutUntil(), locale) : null,
+                prefs != null && prefs.isRateCardShareable(),
+                prefs != null ? prefs.getApprovedDraftCount() : 0,
+                // TODO(B0-20): replace with CreatorToolScopes.toolNamesForLevel(approvalLevel,
+                // represented, negotiationHoldout) once that class lands in Wave 2. Wave 1 sends an
+                // EMPTY list deliberately — §7.2's degrade rule turns an empty tools_enabled into
+                // `tools = []` on the Python side, which is exactly Phase-A warn-only behaviour.
+                // Inventing a tool list here would enable tools before the scope rules exist.
+                List.of());
     }
 
     /**
@@ -381,7 +392,7 @@ public class MeeraContextService {
 
     private static Map<String, Object> buildDealsSummary(List<Collaboration> collaborations, Locale locale) {
         long activeCount =
-                collaborations.stream().filter(c -> ACTIVE_DEAL_STATUSES.contains(c.getStatus())).count();
+                collaborations.stream().filter(c -> CreatorDealStatuses.ACTIVE.contains(c.getStatus())).count();
         long completedCount =
                 collaborations.stream().filter(c -> c.getStatus() == CollaborationStatus.COMPLETED).count();
         BigDecimal totalEarned =
@@ -411,14 +422,10 @@ public class MeeraContextService {
         return spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
     }
 
-    /** Mirrors {@code CreatorAgentBaselineService.deriveTier} — kept as a private copy rather than a shared util for one three-line method. */
-    private static String deriveTier(long followers) {
-        if (followers >= 1_000_000) return "MEGA";
-        if (followers >= 500_000) return "MACRO";
-        if (followers >= 50_000) return "MID";
-        if (followers >= 10_000) return "MICRO";
-        return "NANO";
-    }
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.6, B0-11): the private `deriveTier` copy that used to sit
+    // here — and whose own javadoc already flagged it as a duplicate of
+    // CreatorAgentBaselineService.deriveTier — is now CreatorTiers.derive. The three copies were
+    // byte-identical, MEGA branch included, so this changed no output.
 
     /** Last N campaigns for this workspace: type, distinct creator count (collaborations), funded y/n. */
     private List<PastCampaignEntry> buildPastCampaignSummary(
