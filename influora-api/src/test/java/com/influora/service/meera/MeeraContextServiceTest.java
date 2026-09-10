@@ -286,6 +286,85 @@ class MeeraContextServiceTest {
     }
 
     @Test
+    @DisplayName(
+            "[QA Wave 2 blocker] the ASSEMBLED CREATOR context carries a non-empty tools_enabled"
+                    + " naming exactly the wired creator tools -- CreatorToolScopes.toolNamesForLevel"
+                    + " was green in isolation while this seam still shipped List.of(), which made the"
+                    + " controller, both executors, the validator and the creator scope mint"
+                    + " unreachable in production with every test on both sides passing")
+    void testCreatorContextCarriesWiredToolNames() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(12_400L);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+
+        com.influora.domain.entity.CreatorAgentPreferences prefs =
+                mock(com.influora.domain.entity.CreatorAgentPreferences.class);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.of(prefs));
+        when(prefs.getBrandTone()).thenReturn("FRIENDLY");
+        when(prefs.getApprovalLevel()).thenReturn(0);
+        when(prefs.isRepresented()).thenReturn(false);
+        when(prefs.isConsentAccepted()).thenReturn(true);
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+
+        // The assertion that would have caught the gap. An empty list here degrades to `tools = []`
+        // on the Python side, so the model is never offered a creator tool and nothing downstream
+        // of this response can ever be entered.
+        assertFalse(
+                creatorContext.toolsEnabled().isEmpty(),
+                "tools_enabled is empty: the model is offered no creator tool and the entire Wave 2"
+                        + " surface is dead in production");
+        assertEquals(List.of("get_my_deals", "get_my_metrics"), creatorContext.toolsEnabled());
+
+        // Every offered name must be a declared CreatorToolName, i.e. a tool with a Spring route --
+        // offering a name the server cannot answer costs the creator a turn and a narrated failure.
+        for (String name : creatorContext.toolsEnabled()) {
+            assertTrue(
+                    com.influora.domain.enums.CreatorToolName.parse(name).isPresent(),
+                    "tools_enabled offers a name with no route: " + name);
+        }
+
+        // The three flags the wire carries and the three that decided the offer are the same
+        // reading of the same row -- what the hoisted locals at the call site exist to guarantee.
+        assertEquals(
+                CreatorToolScopes.toolNamesForLevel(
+                        creatorContext.approvalLevel(),
+                        creatorContext.represented(),
+                        creatorContext.negotiationHoldout()),
+                creatorContext.toolsEnabled(),
+                "tools_enabled disagrees with the approval_level/represented/holdout it ships beside");
+
+        // An agency-represented creator is on the reads-only scope, and both wired tools are reads,
+        // so she is still offered both -- representation must not silently blank the tool list.
+        com.influora.domain.entity.CreatorAgentPreferences representedPrefs =
+                mock(com.influora.domain.entity.CreatorAgentPreferences.class);
+        when(representedPrefs.getBrandTone()).thenReturn("FRIENDLY");
+        when(representedPrefs.getApprovalLevel()).thenReturn(0);
+        when(representedPrefs.isRepresented()).thenReturn(true);
+        when(representedPrefs.isConsentAccepted()).thenReturn(true);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1"))
+                .thenReturn(Optional.of(representedPrefs));
+
+        var representedContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+        assertTrue(representedContext.represented());
+        assertEquals(List.of("get_my_deals", "get_my_metrics"), representedContext.toolsEnabled());
+    }
+
+    @Test
     @DisplayName("unknown audience value is rejected the same way as CREATOR")
     void testUnknownAudienceGuarded() {
         assertThrows(ApiException.class, () -> service.assemble(WORKSPACE_ID, "SOMETHING_ELSE"));

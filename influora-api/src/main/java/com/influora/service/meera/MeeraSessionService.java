@@ -16,7 +16,12 @@ import com.influora.repository.AiMessageRepository;
 import com.influora.repository.BrandProfileRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.CreatorAgentConversationService;
+// T-MEERA-CREATOR-PHASE-B (SPEC.md 3.3) — the preferences SERVICE, never
+// CreatorAgentPreferencesRepository. This class sits under service/**, which InfoBarrierTest scans,
+// and the floors on that row are exactly what the info barrier exists to contain.
+import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.IdempotencyService;
+import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +104,7 @@ public class MeeraSessionService {
     private final OnBehalfTokenService onBehalfTokenService;
     private final IdempotencyService idempotencyService;
     private final CreatorAgentConversationService creatorAgentConversationService;
+    private final CreatorAgentPreferencesService creatorAgentPreferencesService;
 
     public MeeraSessionService(
             AiConversationRepository conversationRepository,
@@ -110,7 +116,8 @@ public class MeeraSessionService {
             StreamTokenService streamTokenService,
             OnBehalfTokenService onBehalfTokenService,
             IdempotencyService idempotencyService,
-            CreatorAgentConversationService creatorAgentConversationService) {
+            CreatorAgentConversationService creatorAgentConversationService,
+            CreatorAgentPreferencesService creatorAgentPreferencesService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.workspaceRepository = workspaceRepository;
@@ -121,6 +128,7 @@ public class MeeraSessionService {
         this.onBehalfTokenService = onBehalfTokenService;
         this.idempotencyService = idempotencyService;
         this.creatorAgentConversationService = creatorAgentConversationService;
+        this.creatorAgentPreferencesService = creatorAgentPreferencesService;
     }
 
     /** Reuses the workspace's ACTIVE conversation, or opens a new one. Tenant-scoped. */
@@ -401,8 +409,24 @@ public class MeeraSessionService {
                 streamTokenService.mint(workspaceId, conversationId, messageId, userId, userType);
         // SECURITY FIX #1: mint the dedicated per-turn on-behalf token here, alongside the stream
         // token — the browser forwards THIS as onbehalf_jwt, never the full access token.
+        //
+        // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.3): a CREATOR turn's tool scope is not a constant. It
+        // depends on that creator's approval level and whether an agency represents her, so it is
+        // resolved per turn, here, from her stored preferences. A BRAND turn keeps the five-argument
+        // mint and therefore OnBehalfTokenService.SCOPE_DEFAULT, byte-for-byte unchanged.
+        //
+        // getOrCreatePreferences (not a repository read) is deliberate: this class is scanned by
+        // InfoBarrierTest, and the preferences row holds the creator's rate floors. It also creates
+        // the row with computed defaults if the creator has never opened her settings, which is the
+        // common case on a first turn — a creator with no row must still get a scope, not a 404.
+        String onBehalfScope = OnBehalfTokenService.SCOPE_DEFAULT;
+        if (isCreatorTurn) {
+            PreferencesResponse prefs = creatorAgentPreferencesService.getOrCreatePreferences(userId);
+            onBehalfScope = CreatorToolScopes.scopeFor(prefs.approvalLevel(), prefs.represented());
+        }
         String onBehalfToken =
-                onBehalfTokenService.mint(workspaceId, conversationId, messageId, userId, userType);
+                onBehalfTokenService.mint(
+                        workspaceId, conversationId, messageId, userId, userType, onBehalfScope);
 
         // Streaming-first: no synchronous Python call here anymore. The browser opens its own SSE
         // connection to influora-ai's /chat using this token (Priya's locked architecture) and

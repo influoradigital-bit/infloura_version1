@@ -269,6 +269,17 @@ public class MeeraContextService {
                                 .toList()
                         : List.of();
 
+        // T-MEERA-CREATOR-PHASE-B (B0-20) — hoisted out of the constructor call below because
+        // tools_enabled is DERIVED from these three, and an inline ternary cannot be reused. The
+        // three values that decide the tool offer and the three the wire carries are now provably
+        // the same values, not two independent readings of the same row.
+        int approvalLevel =
+                prefs != null
+                        ? prefs.getApprovalLevel()
+                        : CreatorAgentPreferences.APPROVAL_LEVEL_DRAFT_ONLY;
+        boolean represented = prefs != null && prefs.isRepresented();
+        boolean negotiationHoldout = prefs != null && prefs.isNegotiationHoldout();
+
         return new CreatorContextResponse(
                 creatorUserId,
                 CREATOR_AUDIENCE,
@@ -282,8 +293,8 @@ public class MeeraContextService {
                 floors,
                 metricsSummary,
                 dealsSummary,
-                prefs != null ? prefs.getApprovalLevel() : CreatorAgentPreferences.APPROVAL_LEVEL_DRAFT_ONLY,
-                prefs != null && prefs.isRepresented(),
+                approvalLevel,
+                represented,
                 prefs != null ? prefs.getAgencyName() : null,
                 excludedCategories,
                 blockedBrands,
@@ -297,19 +308,23 @@ public class MeeraContextService {
                 prefs != null && prefs.isConsentAccepted(),
                 prefs != null ? prefs.getConsentVersion() : null,
                 prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null,
-                prefs != null && prefs.isNegotiationHoldout(),
+                negotiationHoldout,
                 // Rendered by Java, never by Python (SPEC.md §3.6). Rendered.date returns null for
                 // a null date, and the record is @JsonInclude(NON_NULL), so a creator who is not
                 // held out simply has no holdout_until key on the wire.
                 prefs != null ? Rendered.date(prefs.getHoldoutUntil(), locale) : null,
                 prefs != null && prefs.isRateCardShareable(),
                 prefs != null ? prefs.getApprovedDraftCount() : 0,
-                // TODO(B0-20): replace with CreatorToolScopes.toolNamesForLevel(approvalLevel,
-                // represented, negotiationHoldout) once that class lands in Wave 2. Wave 1 sends an
-                // EMPTY list deliberately — §7.2's degrade rule turns an empty tools_enabled into
-                // `tools = []` on the Python side, which is exactly Phase-A warn-only behaviour.
-                // Inventing a tool list here would enable tools before the scope rules exist.
-                List.of());
+                // T-MEERA-CREATOR-PHASE-B (B0-20, SPEC.md §3.3/§7.2) — the Wave-1 empty-list TODO
+                // is discharged here. This is the ONLY production caller of toolNamesForLevel, and
+                // therefore the only thing that makes the whole Wave-2 creator tool surface
+                // reachable: an empty tools_enabled degrades to `tools = []` on the Python side, so
+                // leaving it hardcoded meant the controller, both executors, the validator and the
+                // creator scope mint could never be entered in production while every test on both
+                // sides still passed. Asserted end-to-end (not on this method in isolation) by
+                // MeeraContextServiceTest#testCreatorContextCarriesWiredToolNames — reverting this
+                // argument to List.of() must turn that test red.
+                CreatorToolScopes.toolNamesForLevel(approvalLevel, represented, negotiationHoldout));
     }
 
     /**

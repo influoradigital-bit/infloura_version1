@@ -2072,12 +2072,10 @@ public class DealService {
 
         String userId = principal.getUserId();
         int unread =
-                (int)
-                        dealMessageRepository
-                                .findByCollaborationIdOrderByCreatedAtAsc(collaboration.getId())
-                                .stream()
-                                .filter(m -> !parseReadBy(m.getReadByJson()).contains(userId))
-                                .count();
+                unreadCountFor(
+                        dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(
+                                collaboration.getId()),
+                        userId);
 
         // [BE-1: Vikram, contract-flow-architecture-2026-07-23 §6.4] version DESC alone is an
         // unstable tiebreak -- every Contract row defaults to version=1 (Contract.Builder#build),
@@ -2134,15 +2132,9 @@ public class DealService {
                         deliverables.stream()
                                 .filter(d -> DELIVERABLE_DONE_STATUSES.contains(d.getStatus()))
                                 .count();
+        java.time.LocalDate nextDeadlineDate = nextDeadlineFor(deliverables);
         Instant nextDeadline =
-                deliverables.stream()
-                        .filter(d -> !DELIVERABLE_DONE_STATUSES.contains(d.getStatus()))
-                        .filter(d -> d.getStatus() != DeliverableStatus.REJECTED)
-                        .map(Deliverable::getDeadline)
-                        .filter(java.util.Objects::nonNull)
-                        .min(java.util.Comparator.naturalOrder())
-                        .map(d -> d.atStartOfDay(ZoneOffset.UTC).toInstant())
-                        .orElse(null);
+                nextDeadlineDate == null ? null : nextDeadlineDate.atStartOfDay(ZoneOffset.UTC).toInstant();
 
         return new DealResponse(
                 collaboration.getId(),
@@ -2236,6 +2228,59 @@ public class DealService {
                     DeliverableStatus.POSTED,
                     DeliverableStatus.METRICS_REPORTED,
                     DeliverableStatus.VERIFIED);
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.6) — "how many messages on this deal has this user not
+     * read", extracted from {@link #toDealResponse} so there is one implementation rather than two.
+     *
+     * <p><b>{@code public}, not package-visible</b>: the other caller is
+     * {@code com.influora.service.meera.tool.creator.GetMyDealsExecutor}, a different package. The
+     * alternative — the executor computing its own count — is how {@code get_my_deals} and the deal
+     * room end up quoting different unread numbers to the same creator on the same screen.
+     *
+     * <p>Reads {@code readByJson} through the same tolerant {@link #parseReadBy} the deal room uses,
+     * so a malformed column counts the message as unread rather than throwing.
+     *
+     * @param messages every message on the collaboration; a null or empty list is 0, not an error
+     * @param userId the reader — a null id counts nothing, since "unread by nobody" is not a number
+     *     worth guessing at
+     */
+    public static int unreadCountFor(List<DealMessage> messages, String userId) {
+        if (messages == null || userId == null) {
+            return 0;
+        }
+        return (int)
+                messages.stream().filter(m -> !parseReadBy(m.getReadByJson()).contains(userId)).count();
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.6) — the earliest deadline still owed on a deal, or
+     * null when nothing is outstanding or nothing carries a date.
+     *
+     * <p>Extracted alongside {@link #unreadCountFor} and for the same reason: {@code get_my_deals}
+     * renders "deliver by 5 Oct" from this, and a second copy of the "which deliverables still
+     * count" filter is a copy that will drift from {@link #DELIVERABLE_DONE_STATUSES}. Returns the
+     * {@link java.time.LocalDate} rather than an {@code Instant} because that is what
+     * {@code Deliverable#getDeadline} actually stores; {@link #toDealResponse} does its own
+     * UTC-midnight conversion for the {@code DealResponse} contract, and the creator tool renders
+     * the date directly.
+     *
+     * <p>{@code REJECTED} is excluded on top of the done-set: a rejected deliverable is not
+     * outstanding work, but it is also not "done", so the done-set alone would keep surfacing its
+     * deadline forever.
+     */
+    public static java.time.LocalDate nextDeadlineFor(List<Deliverable> deliverables) {
+        if (deliverables == null) {
+            return null;
+        }
+        return deliverables.stream()
+                .filter(d -> !DELIVERABLE_DONE_STATUSES.contains(d.getStatus()))
+                .filter(d -> d.getStatus() != DeliverableStatus.REJECTED)
+                .map(Deliverable::getDeadline)
+                .filter(java.util.Objects::nonNull)
+                .min(java.util.Comparator.naturalOrder())
+                .orElse(null);
+    }
 
     private Counterparty resolveCounterparty(
             Collaboration collaboration, Campaign campaign, UserType viewerRole) {

@@ -36,7 +36,7 @@ class AuthRateLimitFilterDeliverableContractBucketTest {
         stubSubject(BRAND_TOKEN, "brand-user-1");
         stubSubject(OTHER_CREATOR_TOKEN, "creator-user-2");
 
-        filter = new AuthRateLimitFilter(jwtService);
+        filter = new AuthRateLimitFilter(jwtService, null);
         setField("enabled", true);
         setField("sensitiveLimit", 10);
         setField("otpLimit", 5);

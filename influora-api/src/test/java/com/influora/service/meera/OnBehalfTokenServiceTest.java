@@ -194,4 +194,72 @@ class OnBehalfTokenServiceTest {
 
         assertThrows(JwtException.class, () -> jwtService.parseAccessToken(onBehalfToken));
     }
+
+    @Test
+    @DisplayName(
+            "T-MEERA-CREATOR-PHASE-B (SPEC.md 3.3): the six-argument mint puts the caller's scope"
+                    + " on the token verbatim, and every other claim is identical to the five-arg"
+                    + " form")
+    void testSixArgMintCarriesTheGivenScope() {
+        String creatorScope = CreatorToolScopes.SCOPE_LEVEL_0;
+
+        String token =
+                service.mint(WORKSPACE_ID, CONVERSATION_ID, TURN_ID, USER_ID, UserType.CREATOR, creatorScope);
+        Claims claims = service.verify(token);
+
+        assertEquals(creatorScope, claims.get("scope"));
+        assertEquals(USER_ID, claims.getSubject());
+        assertEquals(WORKSPACE_ID, claims.get("workspaceId"));
+        assertEquals("CREATOR", claims.get("userType"));
+        assertEquals(CONVERSATION_ID, claims.get("conversationId"));
+        assertEquals(TURN_ID, claims.get("turnId"));
+        assertTrue(claims.getAudience().contains(OnBehalfTokenService.ONBEHALF_AUDIENCE));
+        assertEquals(OnBehalfTokenService.ISSUER, claims.getIssuer());
+        // A creator scope must never smuggle in the brand default -- that would hand a creator
+        // turn create_campaign and the brand performance read.
+        assertNotEquals(OnBehalfTokenService.SCOPE_DEFAULT, claims.get("scope"));
+    }
+
+    @Test
+    @DisplayName(
+            "T-MEERA-CREATOR-PHASE-B: the FIVE-argument mint still defaults to SCOPE_DEFAULT after"
+                    + " the overload was extracted -- every existing BRAND call site is unchanged")
+    void testFiveArgMintStillDefaultsToScopeDefault() {
+        Claims fiveArg =
+                service.verify(service.mint(WORKSPACE_ID, CONVERSATION_ID, TURN_ID, USER_ID, UserType.BRAND));
+        Claims sixArg =
+                service.verify(
+                        service.mint(
+                                WORKSPACE_ID,
+                                CONVERSATION_ID,
+                                TURN_ID,
+                                USER_ID,
+                                UserType.BRAND,
+                                OnBehalfTokenService.SCOPE_DEFAULT));
+
+        assertEquals(OnBehalfTokenService.SCOPE_DEFAULT, fiveArg.get("scope"));
+        assertEquals(fiveArg.get("scope"), sixArg.get("scope"));
+    }
+
+    @Test
+    @DisplayName(
+            "T-MEERA-CREATOR-PHASE-B: a represented creator's read-only scope survives the round"
+                    + " trip, so OnBehalfAuthResolver#requireScope refuses draft_reply on it")
+    void testRepresentedScopeExcludesTheDraftTool() {
+        String token =
+                service.mint(
+                        WORKSPACE_ID,
+                        CONVERSATION_ID,
+                        TURN_ID,
+                        USER_ID,
+                        UserType.CREATOR,
+                        CreatorToolScopes.SCOPE_REPRESENTED);
+
+        String scope = service.verify(token).get("scope", String.class);
+        java.util.List<String> names = java.util.List.of(scope.trim().split("\\s+"));
+        assertTrue(names.contains("get_my_deals"));
+        assertTrue(names.contains("get_my_metrics"));
+        assertEquals(false, names.contains("draft_reply"));
+        assertEquals(false, names.contains("send_routine_reply"));
+    }
 }

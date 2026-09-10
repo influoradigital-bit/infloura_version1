@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from app.tools.creator_schemas import is_creator_tool
+
 ToolTier = Literal["read", "draft", "commit"]
 
 SHOW_CREATORS = "show_creators"
@@ -453,7 +455,18 @@ def get_tool_schemas() -> list[dict[str, Any]]:
 
 
 def is_known_tool(name: str) -> bool:
-    return name in TOOL_NAMES or name in LOCAL_TOOL_NAMES
+    """True for any tool the loop is willing to dispatch — brand, local, or
+    creator (SPEC.md §7.3). On false, `loop.py` yields an `unknown_tool` error
+    result and skips the call.
+
+    WIDENING THIS FUNCTION IS HALF AN EDIT. `loop.py`'s Spring path lookup is a
+    bracket subscript that sits OUTSIDE its `try`, so accepting a creator name
+    here without also widening that lookup to `CREATOR_TOOL_TO_SPRING_PATH`
+    raises an unhandled KeyError in the middle of a live stream. The two must
+    move together; `tests/tools/test_loop_creator_dispatch.py` pins both
+    halves.
+    """
+    return name in TOOL_NAMES or name in LOCAL_TOOL_NAMES or is_creator_tool(name)
 
 
 def is_local_tool(name: str) -> bool:

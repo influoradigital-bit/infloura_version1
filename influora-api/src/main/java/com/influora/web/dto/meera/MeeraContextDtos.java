@@ -241,12 +241,22 @@ public final class MeeraContextDtos {
             @JsonProperty("approved_draft_count") int approvedDraftCount,
             /**
              * SPEC.md &sect;3.3/&sect;7.2 — the creator tool names this turn may call, which
-             * Python turns into the actual tool schema list. <b>Wave 1 always sends an EMPTY
-             * list</b> (TODO: task B0-20 populates it from {@code CreatorToolScopes
-             * .toolNamesForLevel(level, represented, holdout)}, which does not exist until Wave 2).
-             * An empty list is not a degraded state to work around: &sect;7.2's degrade rule maps
-             * it to {@code tools = []}, i.e. exactly Phase-A warn-only behaviour, which is what
-             * Wave 1 is supposed to ship.
+             * Python turns into the actual tool schema list.
+             *
+             * <p>Populated by {@code MeeraContextService#assembleCreatorContext} from {@code
+             * CreatorToolScopes.toolNamesForLevel(approvalLevel, represented, negotiationHoldout)}.
+             * The Wave-1 TODO that used to sit here (task B0-20, "send an empty list until {@code
+             * CreatorToolScopes} lands") is discharged — that class landed in Wave 2 and the call
+             * site now reads it.
+             *
+             * <p>An empty list is still a legitimate value rather than a bug to work around:
+             * &sect;7.2's degrade rule maps it to {@code tools = []}, i.e. Phase-A warn-only
+             * behaviour. It is what a creator whose scope intersects no wired tool must get. It is
+             * <b>not</b> what a consenting creator gets, and {@code
+             * MeeraContextServiceTest#testCreatorContextCarriesWiredToolNames} holds that line: an
+             * always-empty {@code tools_enabled} makes the entire creator tool surface — routes,
+             * executors, validator, scope mint — unreachable in production while every unit test on
+             * both sides still passes.
              */
             @JsonProperty("tools_enabled") List<String> toolsEnabled) {}
 }

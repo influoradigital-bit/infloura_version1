@@ -29,6 +29,10 @@ from app.clients.spring import (
 from app.config import PROMPT_VERSION
 from app.providers.claude import ClaudeProvider
 from app.routes.analyze_site import perform_site_analysis
+from app.tools.creator_schemas import (
+    CREATOR_IDEMPOTENT_REQUIRED_TOOLS,
+    CREATOR_TOOL_TO_SPRING_PATH,
+)
 from app.tools.schemas import (
     IDEMPOTENT_REQUIRED_TOOLS,
     PRESENT_OPTIONS,
@@ -154,14 +158,37 @@ async def run_tool_loop(
     """Runs the full function-calling loop for one /chat turn, yielding
     normalized LoopEvents as they occur (text tokens, tool lifecycle, done/error).
 
-    `tools` (Meera for Creators Phase A, A4): the tool schemas offered to
-    Claude for this turn. `None` (every pre-existing caller) means the full
-    BRAND set from `get_tool_schemas()`. CREATOR turns pass `[]` -- no money
-    tools, no brand tools -- and `assemble_prompt` is the single place that
-    decides which; the route only forwards `prompt.tools`.
+    `tools` (Meera for Creators, A4 / SPEC.md §7.2): the tool schemas offered
+    to Claude for this turn. `None` (every pre-existing caller) means the full
+    BRAND set from `get_tool_schemas()`. CREATOR turns pass the creator set the
+    creator's `tools_enabled` grants -- never a money tool, never a brand tool,
+    and `[]` when nothing is granted. `assemble_prompt` is the single place
+    that decides which; the route only forwards `prompt.tools`.
     """
     messages = list(initial_messages)
     tools = get_tool_schemas() if tools is None else list(tools)
+    # SPEC.md §7.3 / Kabir LOW 4 — the PER-TURN gate.
+    #
+    # `is_known_tool` is a GLOBAL allowlist: since B0 widened it, all six
+    # creator names pass it on every turn, brand turns included. Without this
+    # set the loop never compares an emitted name against what was actually
+    # offered, so a brand turn that emits `draft_reply` (a brief or a pasted
+    # DM is untrusted text; getting the model to name a tool is cheap) is
+    # forwarded to `/internal/meera/creator/draft_reply` carrying the BRAND's
+    # on-behalf JWT. That request fails closed at Spring — a brand's
+    # SCOPE_DEFAULT names no creator tool, so `CreatorMeeraToolController`
+    # 403s it and nothing leaks — but the boundary then exists only remotely,
+    # and the round trip is a free amplifier for whoever controls the injected
+    # text. Refuse locally instead: no socket, no JWT on the wire.
+    #
+    # Built from `tools` because that IS the offer: `assemble_prompt` derives
+    # it from the creator's `tools_enabled`, so a creator whose scope grants
+    # three tools cannot dispatch the other three either. Empty offer set =
+    # nothing dispatchable, which is the correct reading of an empty offer and
+    # the direction a missing context must fail in.
+    offered_tool_names = {
+        t["name"] for t in tools if isinstance(t, dict) and isinstance(t.get("name"), str)
+    }
     iterations = 0
     final_usage: dict[str, Any] | None = None
     # P1 BLANK TURN fix (F2): bounded to ONE retry across the entire loop call
@@ -340,6 +367,48 @@ async def run_tool_loop(
                 yield LoopEvent(type="tool_result", tool_name=tool_name, tool_status="error", tool_result_data=result_payload)
                 continue
 
+            # The per-turn half of the gate (see `offered_tool_names` above).
+            # Runs AFTER `is_known_tool` so an invented name still reports as
+            # `unknown_tool`, and BEFORE the local-tool branch so it also
+            # covers `analyze_site` / `present_options` — brand-only surface a
+            # CREATOR turn must not be able to reach either.
+            #
+            # THE ONE EXEMPTION is a money tool. `get_tool_schemas()` stopped
+            # offering request_payment/confirm_launch (ME-2), yet the loop
+            # deliberately keeps forwarding them so Spring's on-behalf
+            # rejection can drive MONEY_TOOL_SCOPE_DECLINE below — a shipped,
+            # tested behaviour, not an oversight. It is not a hole of the kind
+            # this gate closes: a money tool routes to the caller's OWN
+            # `/internal/meera/<name>` prefix under the caller's own JWT, so
+            # no audience boundary is crossed, and the far end refuses on
+            # scope. DO NOT add any other name here — every addition
+            # re-opens exactly the cross-audience forward described above.
+            if tool_name not in offered_tool_names and not is_money_tool(tool_name):
+                logger.warning(
+                    "rejected tool call not offered this turn: %s (offered=%s)",
+                    tool_name,
+                    sorted(offered_tool_names),
+                )
+                result_payload = {
+                    "error": "tool_not_offered",
+                    "message": f"tool {tool_name!r} was not offered on this turn",
+                }
+                tool_result_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": _safe_json(result_payload),
+                        "is_error": True,
+                    }
+                )
+                yield LoopEvent(
+                    type="tool_result",
+                    tool_name=tool_name,
+                    tool_status="error",
+                    tool_result_data=result_payload,
+                )
+                continue
+
             # Local (Python-native) tools run in-process, NOT forwarded to Spring.
             # analyze_site: SSRF-guarded page fetch + Gemini classify so Meera
             # reads the brand's REAL product/price from a pasted URL instead of
@@ -449,9 +518,47 @@ async def run_tool_loop(
                 )
                 continue
 
-            path = TOOL_TO_SPRING_PATH[tool_name]
+            # SPEC.md §7.3. This lookup and `is_known_tool` are ONE edit: the
+            # brand map alone would KeyError on a creator tool that
+            # `is_known_tool` had just accepted, and this line sits OUTSIDE the
+            # `try` below, so that KeyError is unhandled and kills a live
+            # stream mid-turn. `.get(...)` then a `.get(...)` (never a bracket
+            # subscript on either map) also covers the third case: a name that
+            # is known but has no route in either map — a schema shipped ahead
+            # of its endpoint — which degrades to an error tool_result the
+            # model can narrate instead of a 500.
+            path = TOOL_TO_SPRING_PATH.get(tool_name) or CREATOR_TOOL_TO_SPRING_PATH.get(tool_name)
+            if not path:
+                logger.error("no Spring route for known tool %s — degrading to an error result", tool_name)
+                result_payload = {
+                    "error": "tool_not_routable",
+                    "message": f"tool {tool_name!r} has no endpoint in this deployment",
+                }
+                tool_result_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": _safe_json(result_payload),
+                        "is_error": True,
+                    }
+                )
+                yield LoopEvent(
+                    type="tool_result",
+                    tool_name=tool_name,
+                    tool_status="error",
+                    tool_result_data=result_payload,
+                )
+                continue
+
             idempotency_key = None
-            if tool_name in IDEMPOTENT_REQUIRED_TOOLS:
+            # Both idempotency sites consider the creator set — this one and
+            # `allow_retry=` below. They are a pair: requiring the key without
+            # disabling retry leaves a commit-like creator tool silently
+            # retryable, which is the failure this comment exists to prevent.
+            if (
+                tool_name in IDEMPOTENT_REQUIRED_TOOLS
+                or tool_name in CREATOR_IDEMPOTENT_REQUIRED_TOOLS
+            ):
                 idempotency_key = idempotency_key_for(tool_use_id, ctx.workspace_id)
 
             # Forward the tool input AS-PROPOSED. Never treat any amount-shaped
@@ -469,7 +576,10 @@ async def run_tool_loop(
                     payload=forward_payload,
                     onbehalf_jwt=ctx.onbehalf_jwt,
                     idempotency_key=idempotency_key,
-                    allow_retry=tool_name not in IDEMPOTENT_REQUIRED_TOOLS,
+                    allow_retry=(
+                        tool_name not in IDEMPOTENT_REQUIRED_TOOLS
+                        and tool_name not in CREATOR_IDEMPOTENT_REQUIRED_TOOLS
+                    ),
                 )
             except SpringCallError as exc:
                 # ME-2 (BrandF.md §115): a money tool rejected on the on-behalf
@@ -525,6 +635,11 @@ async def run_tool_loop(
                 )
                 continue
 
+            # §7.3: `data` goes to the model AND to the browser byte-for-byte —
+            # no per-tool reshaping here, for brand or creator tools. The
+            # creator cards (`CreatorToolResultRenderer`, §8.4) render straight
+            # off this payload, so a field dropped or renamed here is a card
+            # that silently renders empty rather than an error anyone sees.
             data = response.data or {}
             action = data.get("action") if isinstance(data, dict) else None
             if action == "AWAIT_HUMAN_CONFIRM" or data.get("status") == "PENDING_CONFIRM":

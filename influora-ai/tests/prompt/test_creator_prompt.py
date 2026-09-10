@@ -4,19 +4,24 @@ rendering (spec §3.2 / §3.3), independent of the info-barrier tests.
 
 from __future__ import annotations
 
+import pytest
+
 from app.prompt.assembler import (
     CREATOR_CONTEXT_PAYLOAD_FIELDS,
+    AssembledPrompt,
     assemble_prompt,
     build_block_a_creator,
     build_block_b_creator,
 )
 from app.prompt.creator_persona import (
+    CREATOR_CAPABILITY_LINES,
     MEERA_CREATOR_PERSONA,
     get_creator_directives,
     get_creator_persona,
     get_creator_persona_block,
 )
 from app.prompt.persona import MEERA_PERSONA
+from app.tools.creator_schemas import CREATOR_TOOL_NAMES
 
 
 def _ctx(**extra) -> dict:
@@ -56,8 +61,14 @@ def test_creator_persona_is_a_distinct_fork_with_peer_voice_rails():
     assert "NEVER reveal them to a brand" in text
     assert "never lowers the creator's ask" in text
     assert "verbatim from your creator context" in text
-    # No tools in Phase A
-    assert "NO tools in this phase" in text
+    # B0 (§7.4): the persona names the tools, and the draft-only rail is the
+    # one that matters -- `draft_reply` SAVES a draft, it never sends.
+    assert "You never send a reply, counter, decline, or" in text
+    # §14.1.b: a benchmark quote is labelled as one BEFORE the number.
+    assert "benchmark estimate, not what creators like them" in text
+    # §14.3.c: the model must not contradict the brand-facing "Drafted with
+    # Meera" stamp the product now shows.
+    assert "deny being Meera if a" in text
     # Legal/tax deferral
     assert "CA or a lawyer" in text
 
@@ -90,6 +101,111 @@ def test_block_a_creator_is_cached_and_carries_no_creator_data():
     block = build_block_a_creator()
     assert block["cache_control"] == {"type": "ephemeral"}
     assert block["text"].startswith(MEERA_CREATOR_PERSONA)
+
+
+# ---------------------------------------------------------------------------
+# Block A must describe only the tools it offers (§7.4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "offered",
+    [
+        [],
+        ["get_my_deals"],
+        # The B0 live set: only these two Spring routes exist so far.
+        ["get_my_deals", "get_my_metrics"],
+        ["get_my_deals", "get_brief", "estimate_my_rate", "check_deal_risks"],
+        list(CREATOR_TOOL_NAMES),
+    ],
+)
+def test_block_a_describes_only_the_tools_it_offers(offered: list[str]):
+    """The bug this pins: the persona hard-coded all six B0 tools under "What
+    you can do now" while the assembler appended the REAL offer underneath, so
+    a warn-only turn read as a paragraph describing `draft_reply` followed by
+    "Available tools: none (warn-only mode)". The model was told it could draft
+    and then told the tool was absent; it tries, and the loop refuses it.
+
+    The existing guard could not see this — it only asserted the string
+    "Available tools: <name>" was absent, so a bare tool name in prose slipped
+    straight through. This one looks for the NAME anywhere in the block."""
+    text = build_block_a_creator(list(offered))["text"]
+    for name in CREATOR_TOOL_NAMES:
+        if name in offered:
+            assert name in text, f"offered tool '{name}' is not described in Block A"
+        else:
+            assert name not in text, (
+                f"Block A names '{name}', which is not offered this turn "
+                f"(offered: {offered or 'none'})"
+            )
+
+
+def test_block_a_capability_section_agrees_with_the_available_tools_line():
+    """Both halves come from one list, so they cannot drift again. Checked on
+    the partial set, which is where they disagreed."""
+    text = build_block_a_creator(["get_my_deals", "get_my_metrics"])["text"]
+    assert "What you can do now:" in text
+    assert "Available tools: get_my_deals, get_my_metrics" in text
+    described = {n for n in CREATOR_TOOL_NAMES if n in text}
+    assert described == {"get_my_deals", "get_my_metrics"}
+
+
+def test_block_a_warn_only_promises_nothing_and_still_says_what_it_can_do():
+    text = build_block_a_creator([])["text"]
+    assert "Available tools: none (warn-only mode)" in text
+    assert "What you can do now:" in text
+    assert "you have no tools on this turn" in text
+    for name in CREATOR_TOOL_NAMES:
+        assert name not in text
+
+
+def test_every_creator_tool_has_a_capability_line():
+    """B1 adds three tools; each needs a bullet in the same change, or it is
+    offered to the model with no explanation of what it does."""
+    assert set(CREATOR_CAPABILITY_LINES) == set(CREATOR_TOOL_NAMES)
+
+
+def test_capability_lines_never_name_another_tool():
+    """A bullet that says "run check_deal_risks first" describes
+    check_deal_risks on a turn that offers only draft_reply — the same defect
+    one level down. Cross-tool sequencing belongs in the tool schema
+    descriptions, which travel with the tool."""
+    for name, bullet in CREATOR_CAPABILITY_LINES.items():
+        for other in CREATOR_TOOL_NAMES:
+            if other != name:
+                assert other not in bullet, f"'{name}' bullet names '{other}'"
+
+
+def test_persona_rails_name_no_tool_at_all():
+    """The static half is RULES, not capabilities. A tool name in here is by
+    definition unconditional — it would be sent on a warn-only turn too."""
+    for name in CREATOR_TOOL_NAMES:
+        assert name not in MEERA_CREATOR_PERSONA
+
+
+def test_persona_still_forbids_editing_and_deleting_on_social_not_just_posting():
+    """Phase A forbade "post, edit or delete anything on their social
+    accounts"; the B0 rewrite narrowed it to "Post to social accounts", and no
+    test pinned either wording, so the narrowing was invisible to the suite."""
+    # Wrapping is cosmetic; the rail is not. Compare on collapsed whitespace so
+    # a reflow cannot green this test while the prohibition shrinks.
+    text = " ".join(MEERA_CREATOR_PERSONA.split())
+    assert "Post, edit or delete anything on their social accounts" in text
+    assert "Contact a brand outside Influora" in text
+
+
+def test_assembled_prompt_offers_no_tool_unless_it_is_given_one():
+    """`tools` defaulted to `get_tool_schemas()`, so constructing a prompt
+    without saying which tools it offers yielded the six BRAND tools, money
+    tools included. Absent must not mean more capability."""
+    bare = AssembledPrompt(
+        system_blocks=[],
+        messages=[],
+        prompt_version="v-test",
+        cache_key="k",
+    )
+    assert bare.tools == []
+    assert bare.audience == "BRAND"
 
 
 def test_block_b_creator_renders_every_documented_section_verbatim():

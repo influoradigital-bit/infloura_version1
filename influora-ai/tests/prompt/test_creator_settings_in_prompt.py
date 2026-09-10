@@ -83,7 +83,10 @@ def test_settings_survive_the_full_assembled_prompt():
         session_id="sess-q8",
     )
     assert assembled.audience == "CREATOR"
-    assert assembled.tools == []  # Phase A: conversational only
+    # B0 (§7.2): this fixture carries no `tools_enabled`, so the assembler
+    # degrades to the Phase-A empty tool set. The tool-enabled path is covered
+    # in tests/security/test_info_barrier.py.
+    assert assembled.tools == []
     system_text = "\n".join(
         block.get("text", "") for block in assembled.system_blocks if isinstance(block, dict)
     )

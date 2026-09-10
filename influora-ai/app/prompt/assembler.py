@@ -30,9 +30,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.prompt.creator_persona import get_creator_directives, get_creator_persona_block
+from app.prompt.creator_persona import (
+    get_creator_directives,
+    get_creator_persona_block,
+    render_creator_capabilities,
+)
 from app.prompt.persona import get_persona_block, stamp_prompt_version
 from app.prompt.untrusted import neutralize_angle_brackets, wrap_untrusted
+from app.tools.creator_schemas import get_creator_tool_schemas
 from app.tools.schemas import get_tool_schemas
 
 # Forbidden brand-context fields — defense in depth. Spring should never send
@@ -238,11 +243,18 @@ class AssembledPrompt:
     prompt_version: str
     cache_key: str
     # Meera for Creators Phase A: the audience this prompt was assembled for
-    # and the tool set that goes with it. BRAND = the full schema set from
-    # `get_tool_schemas()`; CREATOR = [] (no money tools, no brand tools).
-    # Defaults keep every existing positional construction valid.
+    # and the tool set that goes with it. `assemble_prompt` always passes
+    # `tools` explicitly — the full brand schema set on a BRAND turn, the
+    # granted creator subset on a CREATOR turn.
+    #
+    # The default is EMPTY, not `get_tool_schemas()`. It used to be the brand
+    # set, which meant constructing an AssembledPrompt without saying which
+    # tools it offers handed the caller six brand tools including the money
+    # ones — absent yielding MORE capability, the same fail-open shape as the
+    # `tools_enabled` bug fixed in §7.2. No tools is the only safe reading of
+    # "not stated".
     audience: str = "BRAND"
-    tools: list[dict[str, Any]] = field(default_factory=get_tool_schemas)
+    tools: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _strip_forbidden_fields(brand: dict[str, Any]) -> dict[str, Any]:
@@ -476,16 +488,51 @@ def build_block_b(brand_context: dict[str, Any]) -> dict[str, Any]:
     return {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
 
 
-def build_block_a_creator() -> dict[str, Any]:
+def build_block_a_creator(tool_names: list[str] | None = None) -> dict[str, Any]:
     """Stable, tenant-agnostic prefix for CREATOR turns: the creator persona
-    and NOTHING else. Phase A creator turns carry an empty tool set (no money
-    tools, no brand tools -- `assemble_prompt` returns `tools=[]` for the
-    loop), so no tool names are listed here either. Marked ephemeral for
-    Anthropic prompt caching, cached globally across every creator.
+    plus the names of the tools this turn may call. Never a money tool and
+    never a brand tool -- the two tool sets are disjoint
+    (`app/tools/creator_schemas.py`), and `tests/security/test_info_barrier.py`
+    asserts no brand tool name appears in this block.
+
+    `tool_names` comes from `assemble_prompt`, which derives it from the
+    creator's `tools_enabled`. Empty (or omitted) renders the warn-only line:
+    that is the Phase-A degrade for an older Spring that sends no list, and it
+    must stay truthful -- a tool named here that the loop would reject is a
+    promise the model cannot keep.
+
+    Both halves of the block are built from that ONE list: the prose
+    capabilities ("What you can do now") via `render_creator_capabilities`, and
+    the "Available tools:" line. They used to disagree -- the persona hard-coded
+    all six B0 tools while this line named only the granted ones, so a warn-only
+    turn described `draft_reply` and then said no tools were available. Anything
+    that describes a capability in here must be derived from `names`, never
+    hard-coded, or the two drift apart again.
+
+    NOTE this is Block A, cached GLOBALLY across every creator, so the tool
+    names are the only per-turn variation allowed in here. They are safe: a
+    tool NAME is product surface, not creator data. Anything creator-specific
+    belongs in Block B (`build_block_b_creator`), which is keyed per creator.
+    Two creators on different approval levels get different Block A cache
+    entries, which is correct -- they are being offered different tools.
     """
+    names = [n for n in (tool_names or []) if isinstance(n, str) and n.strip()]
+    tools_line = (
+        "Available tools: " + ", ".join(names)
+        if names
+        else "Available tools: none (warn-only mode)"
+    )
+    text = (
+        get_creator_persona_block()
+        + "\n\n"
+        + render_creator_capabilities(names)
+        + "\n"
+        + tools_line
+        + "\n"
+    )
     return {
         "type": "text",
-        "text": get_creator_persona_block() + "\n\nAvailable tools: none in this phase.\n",
+        "text": text,
         "cache_control": {"type": "ephemeral"},
     }
 
@@ -698,8 +745,12 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
         )
 
     # §7.2: the tools this turn may actually call. Absent or empty renders
-    # NOTHING, which is the Phase-A warn-only block verbatim -- Wave 1's Spring
-    # always sends an empty list, so this line stays dark until B0-20.
+    # NOTHING, which is the Phase-A warn-only block verbatim -- Spring sends an
+    # empty list until `CreatorToolScopes` (B0-20) grants a level, so this line
+    # stays dark until then. The names are also rendered into Block A
+    # (`build_block_a_creator`) and the matching SCHEMAS are what
+    # `assemble_prompt` hands the loop, all three off this same list -- the
+    # persona says what Meera can do, this line says what she may do NOW.
     tools_enabled = ctx.get("tools_enabled")
     if isinstance(tools_enabled, list) and tools_enabled:
         lines.append(
@@ -890,17 +941,33 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
     audience = str(brand_context.get("audience") or "BRAND").upper()
     prompt_version = brand_context.get("prompt_version") or stamp_prompt_version()
 
-    # Meera for Creators Phase A (A4): CREATOR routes to the creator persona +
-    # creator Block B (fed from `brand_context["creator"]`) and an EMPTY tool
-    # set -- no money tools, no brand tools in this phase. Anything else is the
-    # BRAND path, unchanged. `audience` comes from the ROUTE (derived from the
-    # verified token / on-behalf JWT), never from the client body.
+    # Meera for Creators (A4): CREATOR routes to the creator persona + creator
+    # Block B (fed from `brand_context["creator"]`) and the CREATOR tool set --
+    # never a money tool, never a brand tool. Anything else is the BRAND path,
+    # unchanged. `audience` comes from the ROUTE (derived from the verified
+    # token / on-behalf JWT), never from the client body.
     if audience == "CREATOR":
         creator = dict(brand_context.get("creator") or {})
         creator.setdefault("workspace_id", workspace_id)
-        block_a = build_block_a_creator()
+        # Phase B0 (§7.2): the tools this creator may call come from Spring's
+        # `tools_enabled` (CreatorToolScopes, keyed on their approval level).
+        #
+        # ABSENT OR EMPTY DEGRADES TO PHASE A -- an empty tool set, warn-only
+        # Block A -- and that is deliberate, not a fallback nobody thought
+        # about. An older Spring, a context call that failed open, or a
+        # creator whose scope grants nothing all arrive here as "no list", and
+        # in every one of those cases offering a tool would have the model
+        # propose a call the loop or Spring can only reject. `or []` is what
+        # turns absent into empty; `get_creator_tool_schemas(None)` means
+        # "every schema in the module" and is for the CI schema guard, NOT for
+        # a live turn. The isinstance check keeps a malformed value (a bare
+        # string, say) from being iterated character by character into a
+        # filter that would then match nothing but cost a confusing debug.
+        enabled = creator.get("tools_enabled")
+        enabled_names = [n for n in enabled if isinstance(n, str)] if isinstance(enabled, list) else []
+        tools: list[dict[str, Any]] = get_creator_tool_schemas(enabled_names)
+        block_a = build_block_a_creator([t["name"] for t in tools])
         block_b = build_block_b_creator(creator)
-        tools: list[dict[str, Any]] = []
     else:
         block_a = build_block_a()
         block_b = build_block_b(brand_context)

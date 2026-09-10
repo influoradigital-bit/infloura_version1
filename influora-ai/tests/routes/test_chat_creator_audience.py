@@ -43,6 +43,7 @@ from app.costs.spend_tracker import CREATOR_CAP_MESSAGE
 from app.prompt.creator_persona import MEERA_CREATOR_PERSONA
 from app.prompt.persona import MEERA_PERSONA
 from app.routes import chat as chat_route
+from app.tools.creator_schemas import CREATOR_TOOL_NAMES
 from app.tools.loop import LoopEvent
 
 CREATOR_ID = "creator-user-chat-001"
@@ -592,6 +593,32 @@ async def test_consented_creator_turn_uses_creator_persona_and_empty_tool_set():
     # A8: the creator's monthly ledger moved (and the daily one too).
     assert await spend_tracker.get_creator_month_total(CREATOR_ID) > 0
     assert await spend_tracker.get_workspace_total_today(CREATOR_ID) > 0
+
+
+@pytest.mark.asyncio
+async def test_creator_turn_forwards_the_creator_tools_spring_enabled():
+    """The route half of §7.2. The assembler picking the right schemas is
+    tested in tests/security/test_info_barrier.py; this pins that `chat.py`
+    actually hands them to the loop (`tools=prompt.tools`) instead of dropping
+    them, which no assembler-level test can see.
+
+    Its sibling above (`..._uses_creator_persona_and_empty_tool_set`) keeps the
+    degrade case: a context with no `tools_enabled` still forwards `[]`.
+    """
+    spring = _spring(_creator_context(tools_enabled=list(CREATOR_TOOL_NAMES)))
+    recorded: dict = {}
+
+    with patch.object(chat_route, "verify_token_async", AsyncMock(return_value=_verified())), \
+         patch.object(chat_route, "_get_spring", return_value=spring), \
+         patch.object(chat_route, "_get_claude", return_value=MagicMock()), \
+         patch.object(chat_route, "run_tool_loop", _fake_tool_loop(recorded)):
+        response = await chat_route.chat(_make_request(_body()), authorization=None)
+        assert response.status_code == 200
+        await _drain(response)
+
+    assert [t["name"] for t in recorded["tools"]] == list(CREATOR_TOOL_NAMES)
+    # Still a creator turn: no brand tool crossed over.
+    assert "calculate_budget" not in json.dumps(recorded["tools"])
 
 
 @pytest.mark.asyncio

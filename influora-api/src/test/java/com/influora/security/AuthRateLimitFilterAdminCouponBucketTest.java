@@ -36,7 +36,7 @@ class AuthRateLimitFilterAdminCouponBucketTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        filter = new AuthRateLimitFilter(null);
+        filter = new AuthRateLimitFilter(null, null);
         bucketForMethod =
                 AuthRateLimitFilter.class.getDeclaredMethod("bucketFor", HttpServletRequest.class);
         bucketForMethod.setAccessible(true);

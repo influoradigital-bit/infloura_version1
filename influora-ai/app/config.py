@@ -66,8 +66,25 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.10.1"
-# ^ bumped for ME-2 (BrandF.md §115): the request_payment/confirm_launch tool
+PROMPT_VERSION = "meera-2026.09.10.2"
+# ^ bumped for T-MEERA-CREATOR-PHASE-B B0 Wave 2. Wave 1 took `.09.10.1` for
+# the creator context contract; Wave 2 then REWROTE prompt content underneath
+# that same version — creator_persona.py's "what you do right now" section
+# became a six-tool capability list with two new rails, and
+# assembler.build_block_a_creator() stopped emitting the fixed "Available
+# tools: none in this phase." line in favour of the per-turn tool names. Two
+# materially different Block A texts sharing one version means a logged turn
+# cannot be attributed to the prompt that produced it, and `cache_key_for`
+# would serve Wave 1's persona to sessions opened before the deploy.
+# `.2` rather than a new date because this is the same Phase B step; the later
+# phases already reserve their own dates (C = .09.30.1, E = .09.20.1,
+# D = .10.05.1), so incrementing the serial cannot collide with one.
+# Verified before bumping: the literal is pinned nowhere — not a test, Java
+# file, YAML or env file. `tests/eval/test_tenant_isolation.py` carries a
+# hard-coded "meera-2026.07.05" but as a log-record fixture value, never
+# compared against this constant.
+#
+# Previously: bumped for ME-2 (BrandF.md §115): the request_payment/confirm_launch tool
 # bullets in Block A used to tell Meera to "propose a payment"/"propose
 # launching" via those tools — but get_tool_schemas() (schemas.py) no longer
 # offers either (they're scope-gated out for every real caller today), so the
