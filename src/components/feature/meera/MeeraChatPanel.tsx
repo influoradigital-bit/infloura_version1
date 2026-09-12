@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useReducedMotion } from 'framer-motion'
-import { AudioLines } from 'lucide-react'
+import { AudioLines, Globe, Rocket, Wallet } from 'lucide-react'
 
 import { VoiceToggle } from '@/components/ui/voice-toggle'
 import { MeeraOrb } from '@/components/feature/meera/MeeraOrb'
@@ -9,7 +10,7 @@ import { MessageBubble } from '@/components/feature/meera/MessageBubble'
 import { ThinkingState } from '@/components/feature/meera/ThinkingState'
 import { Composer } from '@/components/feature/meera/Composer'
 import { CreditPaywall } from '@/components/feature/meera/CreditPaywall'
-import { ToolResultRenderer } from '@/components/feature/meera/ToolResultRenderer'
+import { ToolResultRenderer, ToolResultWrapper } from '@/components/feature/meera/ToolResultRenderer'
 import { useVoiceOutput } from '@/hooks/useVoiceOutput'
 import { useMeeraStream } from '@/hooks/useMeeraStream'
 import { MEERA_IDENTITY, MEERA_THINKING_STEPS, MEERA_STARTER_TEMPLATES } from '@/data/meera-copy'
@@ -18,7 +19,8 @@ import type { MeeraFunctionCall } from '@/data/stage-config'
 import { ApiError, isApiLive } from '@/lib/api'
 import { meeraApi } from '@/lib/meera-api'
 import { uniqueId } from '@/lib/unique-id'
-import { cn } from '@/lib/utils'
+import { cssVars } from '@/lib/css-vars'
+import { cn, formatINR } from '@/lib/utils'
 
 interface MeeraChatPanelProps {
   /**
@@ -69,6 +71,16 @@ function toolErrorMessage(data: unknown): string | undefined {
     const d = data as { message?: unknown; error?: unknown }
     if (typeof d.message === 'string' && d.message) return d.message
     if (typeof d.error === 'string' && d.error) return d.error
+    // The LOCAL tools (analyze_site) don't use the flat `{error, message}`
+    // Spring shape — analyze_site.py returns `{success:false, error:{code,
+    // message}}`, so `d.error` is an OBJECT here and both checks above miss
+    // it. That left every unreadable-page failure showing the generic
+    // "Failed to run Analyze Site" instead of the real reason
+    // ("no readable content found", "this URL could not be safely fetched").
+    if (d.error && typeof d.error === 'object') {
+      const nested = d.error as { message?: unknown }
+      if (typeof nested.message === 'string' && nested.message) return nested.message
+    }
   }
   return undefined
 }
@@ -81,6 +93,28 @@ interface RenderedMessage {
   toolResults?: LiveToolResult[]
 }
 
+/**
+ * MOCK-ONLY stage triggers. `handleMockSend` is the sole reader — it replays
+ * the scripted turn's `triggersStage` through `onFunctionCall` so the demo
+ * canvas walks all five stages with no backend running.
+ *
+ * These are NOT live-reachable for `funding`/`live`, and that is correct, not
+ * a wiring gap: `request_payment` and `confirm_launch` are the two "commit"
+ * money tools, and Meera is deliberately never given them. They are filtered
+ * out of `get_tool_schemas()` (influora-ai/app/tools/schemas.py — `is_money_tool`),
+ * so Claude is never even offered them, and the on-behalf token they'd need is
+ * minted with SCOPE_DEFAULT, which excludes both (OnBehalfTokenService.java).
+ * Meera must never move money. So in LIVE mode no `request_payment` /
+ * `confirm_launch` tool_result can ever arrive, and the funding + live stages
+ * can never be advanced by a tool call.
+ *
+ * The brand does those two steps themselves — funding from the wallet's
+ * "Secure Campaign Funds" card (FundEscrowButton, mounted on
+ * src/pages/brand-wallet.tsx) and launching from the campaign page — which is
+ * exactly what persona.py tells Meera to say. `HUMAN_STEP_HANDOFF` below is
+ * this panel's half of that: the chat hands the brand a real route to those
+ * controls instead of leaving them at a step nothing can advance.
+ */
 const STAGE_TO_CALL: Record<string, MeeraFunctionCall> = {
   snapshot: 'analyze_site',
   recommend: 'calculate_budget',
@@ -90,14 +124,31 @@ const STAGE_TO_CALL: Record<string, MeeraFunctionCall> = {
 }
 
 /**
- * Every tool name the LIVE Python stream can actually report via `tool_result`
- * — matches the backend tool contract one-for-one (influora-ai/app/tools/
- * schemas.py: show_creators, calculate_budget, create_campaign,
- * request_payment, confirm_launch, get_campaign_performance). `analyze_site`
- * is NOT a real backend tool — it only exists as a mock-mode stage trigger
- * (STAGE_TO_CALL above) and must never gate the live stream, or a live
- * `create_campaign` tool_result would be silently dropped here while a tool
- * that can never fire stayed allow-listed.
+ * Every tool name the LIVE Python stream can report via `tool_result`.
+ *
+ * `analyze_site` IS a real, live backend tool — the previous comment here
+ * claimed it was "NOT a real backend tool ... only a mock-mode stage trigger",
+ * and that was simply false. It is one of the six tools `get_tool_schemas()`
+ * actually offers Claude (influora-ai/app/tools/schemas.py — the four
+ * non-money Spring tools plus the two LOCAL ones, `analyze_site` and
+ * `present_options`). It is "local" only in the sense that the tool loop runs
+ * it in-process (`perform_site_analysis`, influora-ai/app/routes/
+ * analyze_site.py) instead of forwarding it to `/internal/meera/*` — which is
+ * why it is absent from `TOOL_NAMES`/the Spring CI schema diff, and is
+ * presumably what the old comment mistook for "not real". It fires on every
+ * conversation where a brand pastes a store URL, and its `tool_result` reaches
+ * this component exactly like any other. Omitting it here meant the UI
+ * silently threw away the brand's own store analysis — nothing rendered in
+ * chat, and `stagePayloads.snapshot` stayed empty so StageSnapshot's
+ * refetch-on-analysis path (StageSnapshot.tsx's `toolResult` effect) was dead
+ * code.
+ *
+ * `request_payment` / `confirm_launch` stay listed but can only ever arrive
+ * with `status: 'error'` — see STAGE_TO_CALL above for why Meera is never
+ * given the money tools. They are kept in the list so that a future scope
+ * widening surfaces rather than being dropped, and so the scope-rejection
+ * tool_result loop.py emits (its `MONEY_TOOL_SCOPE_DECLINE` path) renders as
+ * the honest hand-off below instead of vanishing.
  *
  * `get_campaign_performance` (2.4, phase2-frontend-design.md §5.3): this
  * array IS the actual advancement gate — a name here that doesn't
@@ -107,6 +158,7 @@ const STAGE_TO_CALL: Record<string, MeeraFunctionCall> = {
  * for the full lockstep warning.
  */
 const MEERA_FUNCTION_CALLS: readonly MeeraFunctionCall[] = [
+  'analyze_site',
   'calculate_budget',
   'show_creators',
   'create_campaign',
@@ -117,6 +169,258 @@ const MEERA_FUNCTION_CALLS: readonly MeeraFunctionCall[] = [
 
 function isMeeraFunctionCall(name: string): name is MeeraFunctionCall {
   return (MEERA_FUNCTION_CALLS as readonly string[]).includes(name)
+}
+
+// ---------------------------------------------------------------------------
+// analyze_site inline result (P1-8)
+//
+// ToolResultRenderer's dispatcher only knows the five Spring-contract tools
+// plus present_options, so it has no `analyze_site` branch — handing it one
+// would render an EMPTY wrapper (a card-shaped div with no content), which is
+// worse than dropping it. The presentation below deliberately mirrors the
+// existing vocabulary: ToolResultWrapper (reused as-is) for the loading/error
+// shell, and StageSnapshot's own card grammar for the body — brand-colour
+// swatch via cssVars, niche tags, product name/price rows, "+N more on canvas".
+// ---------------------------------------------------------------------------
+
+/**
+ * The `data` half of a successful `analyze_site` tool_result
+ * (influora-ai/app/routes/analyze_site.py::perform_site_analysis returns
+ * `{success: true, data: {source_url, niche_tags, tone_dial, brand_color,
+ * product_catalog}}`). Everything is optional here on purpose — this is an
+ * `unknown` wire payload, narrowed defensively, never trusted.
+ */
+interface AnalyzeSiteData {
+  source_url?: unknown
+  niche_tags?: unknown
+  brand_color?: unknown
+  product_catalog?: unknown
+}
+
+interface AnalyzeSiteProduct {
+  name: string
+  price?: number
+}
+
+/** Narrow a raw `analyze_site` payload to its inner `data`, or null if it isn't one. */
+function analyzeSiteData(payload: unknown): AnalyzeSiteData | null {
+  if (!payload || typeof payload !== 'object') return null
+  const p = payload as { success?: unknown; data?: unknown }
+  if (p.success !== true) return null
+  if (!p.data || typeof p.data !== 'object') return null
+  return p.data as AnalyzeSiteData
+}
+
+/**
+ * `product_catalog` is a BARE ARRAY of `{name, price, currency}` on the wire
+ * (merge_known_products in analyze_site.py) — same shape StageSnapshot's
+ * `extractCatalogProducts` handles. A price can legitimately be missing, so
+ * only `name` is required to show a row.
+ */
+function analyzeSiteProducts(catalog: unknown): AnalyzeSiteProduct[] {
+  if (!Array.isArray(catalog)) return []
+  const products: AnalyzeSiteProduct[] = []
+  for (const entry of catalog) {
+    if (!entry || typeof entry !== 'object') continue
+    const candidate = entry as { name?: unknown; price?: unknown }
+    if (typeof candidate.name !== 'string' || candidate.name.trim() === '') continue
+    products.push({
+      name: candidate.name,
+      price: typeof candidate.price === 'number' ? candidate.price : undefined,
+    })
+  }
+  return products
+}
+
+/** Host-only label for the analysed URL (same trim StageSnapshot's siteInitials uses). */
+function siteHost(url: unknown): string | null {
+  if (typeof url !== 'string' || url === '') return null
+  const host = url
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .replace(/[/?#].*$/, '')
+  return host || null
+}
+
+/** How many catalog rows fit in the chat card before the "+N more on canvas" line (matches ShowCreatorsResult). */
+const ANALYZE_SITE_MAX_PRODUCTS = 3
+
+function AnalyzeSiteResult({ data, className }: { data: AnalyzeSiteData; className?: string }) {
+  const host = siteHost(data.source_url)
+  const tags = Array.isArray(data.niche_tags)
+    ? data.niche_tags.filter((t): t is string => typeof t === 'string' && t.trim() !== '')
+    : []
+  const products = analyzeSiteProducts(data.product_catalog)
+  const shown = products.slice(0, ANALYZE_SITE_MAX_PRODUCTS)
+  const brandColor = typeof data.brand_color === 'string' && data.brand_color ? data.brand_color : null
+
+  return (
+    <div className={cn('rounded-lg border border-meera-border bg-meera-surface-2 p-3', className)}>
+      <div className="mb-2 flex items-center gap-2 text-xs font-medium text-meera-text">
+        <Globe className="h-3.5 w-3.5 shrink-0 text-meera-accent" />
+        <span className="truncate">{host ? `Read ${host}` : 'Read your store'}</span>
+        {brandColor && (
+          <span
+            ref={cssVars({ '--analyze-site-swatch': brandColor })}
+            role="img"
+            aria-label="Detected brand colour"
+            className="ml-auto h-3.5 w-3.5 shrink-0 rounded-full border border-meera-border-strong bg-[var(--analyze-site-swatch)]"
+          />
+        )}
+      </div>
+
+      {tags.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1">
+          {tags.slice(0, 4).map((tag) => (
+            <span
+              key={tag}
+              className="rounded-full bg-meera-accent-soft px-2 py-0.5 text-[10px] font-medium text-meera-accent"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {shown.length > 0 ? (
+        <div className="space-y-1.5">
+          {shown.map((product) => (
+            <div key={product.name} className="flex items-center justify-between gap-2 text-xs">
+              <span className="truncate text-meera-text">{product.name}</span>
+              {product.price !== undefined && (
+                <span className="shrink-0 text-meera-text-muted">{formatINR(product.price)}</span>
+              )}
+            </div>
+          ))}
+          {products.length > shown.length && (
+            <p className="text-[10px] text-meera-text-muted">
+              +{products.length - shown.length} more on canvas
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className="text-xs text-meera-text-muted">No products detected on that page.</p>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Human-step hand-off (P1-7)
+//
+// Securing funds and going live are the two steps Meera structurally cannot
+// take — and must not (see STAGE_TO_CALL above). Without this the brand was
+// left at a step nothing could advance, with either silence or a raw backend
+// error code and no route anywhere. This gives the step an honest state and a
+// real link to the control that does it.
+//
+// Copy rule: "escrow" is banned in brand-facing copy — the vocabulary is
+// Secure Payments / secure the funds / secured funds.
+// ---------------------------------------------------------------------------
+
+type HumanStepKey = 'fund' | 'launch'
+
+const HUMAN_STEP_HANDOFF: Record<HumanStepKey, { title: string; body: string; to: string; cta: string }> = {
+  fund: {
+    title: 'Securing the funds is your step',
+    // Mirrors persona.py's own instruction to Meera, so chat and canvas say the
+    // same thing: the wallet's fund control only lists ACTIVE campaigns, never
+    // drafts — promising it's there before that is the misdirection to avoid.
+    body: "Meera can't move money — she's never given that control. Open the campaign from your dashboard and set its budget; once it's active, your wallet has a Secure Campaign Funds card for it.",
+    to: '/brand/wallet',
+    cta: 'Open your wallet',
+  },
+  launch: {
+    title: 'Going live is your step',
+    body: "Meera can't launch a campaign. Launch it from the campaign page once the funds show as secured.",
+    to: '/brand/campaigns',
+    cta: 'Open your campaigns',
+  },
+}
+
+function HumanStepHandoff({ step, className }: { step: HumanStepKey; className?: string }) {
+  const copy = HUMAN_STEP_HANDOFF[step]
+  const Icon = step === 'fund' ? Wallet : Rocket
+
+  return (
+    <div className={cn('rounded-lg border border-meera-border bg-meera-surface-2 p-3', className)}>
+      <div className="flex items-start gap-2">
+        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-meera-accent" />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-meera-text">{copy.title}</p>
+          <p className="mt-0.5 text-[11px] leading-relaxed text-meera-text-muted">{copy.body}</p>
+          <Link
+            to={copy.to}
+            className="mt-2 inline-block text-[10px] font-medium text-meera-accent underline underline-offset-2"
+          >
+            {copy.cta} →
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The two money tools → the human step that actually performs them. */
+const MONEY_TOOL_HUMAN_STEP: Record<string, HumanStepKey> = {
+  request_payment: 'fund',
+  confirm_launch: 'launch',
+}
+
+/**
+ * One inline tool card. Routes `analyze_site` and the never-reachable money
+ * tools to the renderers above, and everything else to the shared
+ * ToolResultRenderer untouched.
+ */
+function LiveToolResultCard({
+  result,
+  onOptionPick,
+  className,
+}: {
+  result: LiveToolResult
+  onOptionPick: (option: { key: string; label: string; recommended?: boolean }) => void
+  className?: string
+}) {
+  const { name, status, data, errorMessage } = result
+
+  if (name === 'analyze_site') {
+    if (status !== 'ok') {
+      // Reuse the shared error shell so a failed read reads identically to
+      // every other failed tool (and now carries analyze_site's real reason —
+      // see toolErrorMessage's nested-error branch).
+      return (
+        <ToolResultWrapper toolName={name} status={status} errorMessage={errorMessage} className={className} />
+      )
+    }
+    // `?? {}` rather than `null`: an unexpected-but-successful payload still
+    // renders the "read your store" card (honest, minimal) instead of an
+    // invisible empty div the brand can't tell apart from nothing happening.
+    return <AnalyzeSiteResult data={analyzeSiteData(data) ?? {}} className={className} />
+  }
+
+  const moneyStep: HumanStepKey | undefined = MONEY_TOOL_HUMAN_STEP[name]
+  if (moneyStep && status === 'error') {
+    // The only way a money tool reaches the browser at all: loop.py's
+    // scope-rejection path. A raw "Failed to run Request Payment" is a dead
+    // end; the hand-off is the same fact plus somewhere to go.
+    return <HumanStepHandoff step={moneyStep} className={className} />
+  }
+
+  return (
+    <>
+      <ToolResultRenderer
+        toolName={name}
+        status={status}
+        data={data}
+        errorMessage={errorMessage}
+        onOptionPick={onOptionPick}
+        className={className}
+      />
+      {/* A DRAFT exists and Meera is out of moves on the money path — this is
+          the reachable point where the funding step becomes the brand's. */}
+      {name === 'create_campaign' && status === 'ok' && <HumanStepHandoff step="fund" className={className} />}
+    </>
+  )
 }
 
 /**
@@ -536,9 +840,11 @@ export function MeeraChatPanel({
             })
           },
           onToolResult: (event) => {
-            // Render the 5 stage tools AND the display-only present_options
-            // pattern (tappable choice cards); anything else off the wire is
-            // ignored. present_options drives NO Living Canvas stage.
+            // Render every stage tool (analyze_site included — it is a real
+            // live tool, see MEERA_FUNCTION_CALLS) AND the display-only
+            // present_options pattern (tappable choice cards); anything else
+            // off the wire is ignored. present_options drives NO Living Canvas
+            // stage.
             const isStageCall = isMeeraFunctionCall(event.name)
             if (!isStageCall && event.name !== 'present_options') return
 
@@ -758,12 +1064,9 @@ export function MeeraChatPanel({
             <div key={message.id}>
               <MessageBubble role={message.role} text={message.text} />
               {message.toolResults?.map((tr) => (
-                <ToolResultRenderer
+                <LiveToolResultCard
                   key={tr.id}
-                  toolName={tr.name}
-                  status={tr.status}
-                  data={tr.data}
-                  errorMessage={tr.errorMessage}
+                  result={tr}
                   onOptionPick={(opt) => {
                     // ME-1 (BrandF.md §115) — log the tap before sending the
                     // choice as the next turn; conversationId is guaranteed

@@ -152,7 +152,9 @@ class BrandContextAssemblerTest {
         when(workspace.getName()).thenReturn("Acme");
 
         List<PastCampaignEntry> pastCampaigns =
-                List.of(new PastCampaignEntry("HYPE", 3, true), new PastCampaignEntry("DIRECT", 0, false));
+                List.of(
+                        new PastCampaignEntry("camp1", "HYPE", 3, true),
+                        new PastCampaignEntry("camp2", "DIRECT", 0, false));
 
         ContextResponse response =
                 assembler.assembleBrandContext(workspace, null, List.of(), pastCampaigns, "unlimited", 7, null);

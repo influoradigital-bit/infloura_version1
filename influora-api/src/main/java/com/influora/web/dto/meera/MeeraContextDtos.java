@@ -47,9 +47,25 @@ public final class MeeraContextDtos {
             @JsonProperty("budget_band") String budgetBand,
             @JsonProperty("key_requirements") String keyRequirements) {}
 
-    /** One line of the last-N-campaigns summary — see A1's {@code past_campaign_summary} allow-list entry. */
+    /**
+     * One line of the last-N-campaigns summary — see A1's {@code past_campaign_summary} allow-list
+     * entry.
+     *
+     * <p><b>F-18 ({@code campaignId}):</b> {@code get_campaign_performance} REQUIRES a {@code
+     * campaign_id} and the model is forbidden from inventing one — {@code persona.py} and {@code
+     * app/tools/schemas.py} both tell it to copy the id verbatim out of an {@code "[id=...]"}
+     * marker. {@code assembler.py::_render_past_campaign_summary} renders that marker ONLY when
+     * the entry carries {@code campaign_id} (or {@code campaignId}); with neither field on this
+     * record the lookup was always {@code null}, the marker never rendered, and the one tool that
+     * exists to stop Meera estimating was structurally uncallable for every brand. This is the
+     * {@link com.influora.domain.entity.Campaign#getId() Campaign primary key} — the SAME
+     * identifier {@code GetCampaignPerformanceExecutor} resolves via {@code
+     * CampaignRepository#findByIdAndWorkspaceId}, so the round-trip through the model lands on a
+     * real row rather than a 404.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record PastCampaignEntry(
+            @JsonProperty("campaign_id") String campaignId,
             @JsonProperty("type") String type,
             @JsonProperty("creator_count") int creatorCount,
             @JsonProperty("funded") boolean funded) {}
@@ -71,9 +87,20 @@ public final class MeeraContextDtos {
      * attributedRevenueInr} sums real {@code UtmCampaign.revenueAttributed} rows. {@code type} is
      * the only free-text-ish field (brand-authored via campaign_type/template) and is {@code
      * _safe()}-wrapped on the Python side before it reaches a prompt (B2 fix).
+     *
+     * <p><b>F-18 ({@code campaignId}):</b> same fix, same reason as {@link PastCampaignEntry} —
+     * {@code assembler.py::_render_outcome_digest} renders the {@code "[id=...]"} marker only when
+     * this entry carries the id, and {@code get_campaign_performance} cannot be called without
+     * one. It is the {@link com.influora.domain.entity.Campaign#getId() Campaign primary key}, the
+     * identifier {@code GetCampaignPerformanceExecutor} looks up with {@code
+     * CampaignRepository#findByIdAndWorkspaceId}. Emitting it is tenant-safe because that executor
+     * re-resolves the id against the JWT-derived workspace on every call and 404s identically for
+     * "no such campaign" and "another tenant's campaign" — the id is never trusted as an
+     * authorization token.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CampaignOutcomeEntry(
+            @JsonProperty("campaign_id") String campaignId,
             @JsonProperty("type") String type,
             @JsonProperty("creator_count") int creatorCount,
             @JsonProperty("spend_inr") BigDecimal spendInr,

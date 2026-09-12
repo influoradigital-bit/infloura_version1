@@ -437,6 +437,12 @@ public class MeeraContextService {
                             .count();
             summary.add(
                     new PastCampaignEntry(
+                            // F-18: the Campaign PK, verbatim — this is exactly what
+                            // GetCampaignPerformanceExecutor resolves via
+                            // CampaignRepository#findByIdAndWorkspaceId. Without it
+                            // assembler.py cannot render the "[id=...]" marker the model is
+                            // required to copy from, and get_campaign_performance is uncallable.
+                            campaign.getId(),
                             campaign.getCampaignType() != null ? campaign.getCampaignType().name() : "STANDARD",
                             (int) creatorCount,
                             FUNDED_STATUSES.contains(campaign.getStatus())));

@@ -350,6 +350,11 @@ public class BrandContextAssembler {
         BigDecimal attributedRevenueInr = sumRevenue(utmRows);
 
         return new CampaignOutcomeEntry(
+                // F-18: the Campaign PK (already resolved into `campaignId` above and used as the
+                // key for every map lookup in this method) — the same identifier
+                // GetCampaignPerformanceExecutor resolves via findByIdAndWorkspaceId, so the id
+                // the model copies back out of Block B's "[id=...]" marker hits a real row.
+                campaignId,
                 campaign.getCampaignType() != null ? campaign.getCampaignType().name() : "STANDARD",
                 (int) creatorCount,
                 spendInr,

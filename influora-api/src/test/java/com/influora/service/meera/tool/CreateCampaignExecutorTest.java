@@ -377,6 +377,120 @@ class CreateCampaignExecutorTest {
         assertEquals("Unspecified", campaignCaptor.getValue().getEndBrandCategory());
     }
 
+    // ---------------------------------------------------------------------------------------
+    // P1-11: taking Meera's template recommendation must not produce a THINNER draft than
+    // ignoring it. Before the fix, the `if (template != null)` branch copied only requirements/
+    // hashtags/target_audience/brand_guidelines and the else-branch that applies platforms/
+    // content_types/objectives was skipped entirely, so all three came out NULL on every
+    // template-drafted campaign.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "P1-11: template path fills platforms/content_types/objectives from the template's own"
+                    + " columns (upper-cased, allow-list filtered) while status stays DRAFT and every"
+                    + " money field stays null")
+    void testTemplatePathPopulatesPlatformsContentTypesAndObjectives() {
+        mockIdempotencyExecuteOnce();
+        String templateId = "01HWXYZTEMPLATE7654321";
+        // Values spelled exactly as the SYSTEM seed rows store them in
+        // V20260714150000__campaign_templates.sql: lowercase, and with one content type
+        // ('link_in_bio') that is NOT on the server-side allow-list.
+        CampaignTemplate template =
+                CampaignTemplate.builder()
+                        .id(templateId)
+                        .name("Sales & Conversions")
+                        .category(CampaignTemplateCategory.SALES)
+                        .scope(CampaignTemplateScope.SYSTEM)
+                        .campaignType(CampaignIntentType.DIRECT)
+                        .platformsJson("[\"instagram\",\"tiktok\"]")
+                        .contentTypesJson("[\"reel\",\"link_in_bio\"]")
+                        .objectivesJson("[\"conversions\",\"clicks\"]")
+                        .requirementsJson("[\"Include tracked link/coupon code\"]")
+                        .hashtagsJson("[\"#ad\"]")
+                        .brandGuidelines("CTA must be clear")
+                        .build();
+        when(campaignTemplateService.requireVisible(templateId, WORKSPACE_ID)).thenReturn(template);
+        when(campaignIntentRepository.save(any(CampaignIntent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        // persona.py tells the model NOT to compose platforms/content_types/objectives itself once
+        // a template_id is set, so the input carries none of them -- the template row is the only
+        // possible source. This is the exact shape of the live call that produced the half-empty
+        // form.
+        Map<String, Object> input =
+                Map.of("product_name", "Widget", "template_id", templateId, "creator_count", 3);
+
+        CreateCampaignResult result =
+                executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
+
+        assertNotNull(result);
+        org.mockito.ArgumentCaptor<Campaign> campaignCaptor = org.mockito.ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(campaignCaptor.capture());
+        Campaign saved = campaignCaptor.getValue();
+
+        // The three columns that were NULL before the fix.
+        assertEquals("[\"INSTAGRAM\",\"TIKTOK\"]", saved.getPlatformsJson());
+        // 'link_in_bio' is dropped by ALLOWED_CONTENT_TYPES -- the allow-list must still apply to
+        // anything arriving via the template path.
+        assertEquals("[\"REEL\"]", saved.getContentTypesJson());
+        assertEquals("[\"conversions\",\"clicks\"]", saved.getObjectivesJson());
+
+        // Safety properties that must NOT have been weakened by the fix.
+        assertEquals(CampaignStatus.DRAFT, saved.getStatus());
+        assertEquals(CampaignStatus.DRAFT.name(), result.status());
+        assertEquals(null, saved.getBudgetMin());
+        assertEquals(null, saved.getBudgetMax());
+        assertEquals(null, saved.getStartDate());
+        assertEquals(null, saved.getEndDate());
+        assertEquals(null, saved.getHypeConfigJson());
+    }
+
+    @Test
+    @DisplayName(
+            "P1-11: a template with NULL platforms/content_types/objectives falls back to the"
+                    + " AI-composed values, still allow-list filtered")
+    void testTemplateWithEmptyColumnsFallsBackToAiComposedValues() {
+        mockIdempotencyExecuteOnce();
+        String templateId = "01HWXYZTEMPLATEEMPTY01";
+        CampaignTemplate template =
+                CampaignTemplate.builder()
+                        .id(templateId)
+                        .name("Bare custom template")
+                        .category(CampaignTemplateCategory.CUSTOM)
+                        .scope(CampaignTemplateScope.CUSTOM)
+                        .workspaceId(WORKSPACE_ID)
+                        .campaignType(CampaignIntentType.STANDARD)
+                        .brandGuidelines("Keep it authentic")
+                        .build();
+        when(campaignTemplateService.requireVisible(templateId, WORKSPACE_ID)).thenReturn(template);
+        when(campaignIntentRepository.save(any(CampaignIntent.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(campaignRepository.save(any(Campaign.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Map<String, Object> input =
+                Map.of(
+                        "product_name", "Widget",
+                        "template_id", templateId,
+                        "platforms", java.util.List.of("instagram", "MYSPACE"),
+                        "content_types", java.util.List.of("reel"),
+                        "objectives", java.util.List.of("Brand Awareness"));
+
+        executor.execute(WORKSPACE_ID, CONVERSATION_ID, USER_ID, UserType.BRAND, IDEMPOTENCY_KEY, input);
+
+        org.mockito.ArgumentCaptor<Campaign> campaignCaptor = org.mockito.ArgumentCaptor.forClass(Campaign.class);
+        verify(campaignRepository).save(campaignCaptor.capture());
+        Campaign saved = campaignCaptor.getValue();
+        // 'MYSPACE' is not on ALLOWED_PLATFORMS and must be dropped.
+        assertEquals("[\"INSTAGRAM\"]", saved.getPlatformsJson());
+        assertEquals("[\"REEL\"]", saved.getContentTypesJson());
+        assertEquals("[\"Brand Awareness\"]", saved.getObjectivesJson());
+        assertEquals(CampaignStatus.DRAFT, saved.getStatus());
+        assertEquals(null, saved.getBudgetMin());
+        assertEquals(null, saved.getBudgetMax());
+    }
+
     private static Workspace mockWorkspace(String name, String industry) {
         Workspace workspace = org.mockito.Mockito.mock(Workspace.class);
         org.mockito.Mockito.lenient().when(workspace.getName()).thenReturn(name);

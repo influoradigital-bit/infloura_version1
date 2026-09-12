@@ -50,6 +50,12 @@ import org.springframework.transaction.annotation.Transactional;
  * CampaignTemplateService#requireVisible} (SYSTEM visible to all, CUSTOM only to the owning
  * workspace; 404s on a cross-workspace/unknown id) and {@code requirements}/{@code hashtags}/
  * {@code target_audience}/{@code brand_guidelines} are copied from the template into the draft.
+ * {@code platforms}/{@code content_types}/{@code objectives} are taken from the template's own
+ * columns where it has them and from the AI-composed equivalents where it does not (P1-11 — the
+ * template path used to skip all three, so a recommended template produced a THINNER draft than no
+ * template at all); the template's values go through the same {@link #ALLOWED_PLATFORMS}/{@link
+ * #ALLOWED_CONTENT_TYPES} filter as the AI's, since a CUSTOM template row is workspace-authored
+ * free-form JSON.
  * Per Ash's ruling ("DERIVE, don't widen"), {@code campaign_type} is then taken from {@code
  * template.getCampaignType()} — which may legitimately be {@code STANDARD} — and any AI-supplied
  * {@code campaign_type} in the input is IGNORED; the AI-facing tool enum itself is unchanged
@@ -213,8 +219,11 @@ public class CreateCampaignExecutor {
         String templateId = stringArg(input, "template_id");
 
         // Tier-1 content-composition inputs (AI-composed CONTENT only — never money/dates; see the
-        // class-level guardrail note). Parsed unconditionally; whether they're actually applied to
-        // the draft is gated below on template == null (a template still wins for its own fields).
+        // class-level guardrail note). Parsed unconditionally. title/description/hashtags/
+        // target_audience and the HYPE content lanes are applied only on the no-template path (a
+        // template is the sole authority for those of its own fields); platforms/content_types/
+        // objectives are applied on BOTH paths — template value first, these as the fallback when
+        // the template's own column is empty (P1-11).
         String aiTitle = stringArg(input, "title");
         String aiDescription = stringArg(input, "description");
         List<String> aiObjectives = stringListArg(input, "objectives");
@@ -312,6 +321,51 @@ public class CreateCampaignExecutor {
                     .hashtagsJson(template.getHashtagsJson())
                     .targetAudienceJson(template.getTargetAudienceJson())
                     .brandGuidelines(template.getBrandGuidelines());
+
+            // P1-11: platforms/content_types/objectives used to be applied ONLY in the else-branch
+            // below, so taking Meera's template recommendation produced a THINNER draft than
+            // ignoring it — all three columns came out empty and the brand opened a half-filled
+            // form. persona.py explicitly tells the model NOT to compose those itself once a
+            // template_id is set ("When you DO build it from scratch (no template_id), compose a
+            // real draft ... objectives, platforms, content_types ..."), so nothing else was ever
+            // going to fill them. The template row is the authority for its own columns (same
+            // "DERIVE, don't widen" ruling that already governs campaign_type above); the
+            // AI-composed equivalents are only a fallback for a template whose own column is
+            // NULL/empty — campaign_templates.platforms/content_types/objectives are all nullable
+            // (V20260714150000), and a CUSTOM template saved from a partly-filled form legitimately
+            // has holes in them.
+            //
+            // The ALLOWED_PLATFORMS/ALLOWED_CONTENT_TYPES allow-lists are applied to the template's
+            // values too, exactly as they are to the AI's: a CUSTOM template row is workspace-authored
+            // free-form JSON, so routing it into the draft unfiltered would be a way around the
+            // server-side filter. filterAllowed also upper-cases what it keeps, which the SYSTEM seed
+            // rows need — they store lowercase ('instagram', 'reel') while every campaign row written
+            // by the human form stores the canonical upper-case spelling.
+            // objectives has no allow-list on either path (free-form on the human write path too), so
+            // it is only cleaned of null/blank entries.
+            List<String> templatePlatforms =
+                    filterAllowed(templateStringList(template.getPlatformsJson()), ALLOWED_PLATFORMS);
+            List<String> templateContentTypes =
+                    filterAllowed(templateStringList(template.getContentTypesJson()), ALLOWED_CONTENT_TYPES);
+            List<String> templateObjectives = templateStringList(template.getObjectivesJson());
+
+            List<String> resolvedPlatforms = templatePlatforms.isEmpty() ? aiPlatforms : templatePlatforms;
+            List<String> resolvedContentTypes =
+                    templateContentTypes.isEmpty() ? aiContentTypes : templateContentTypes;
+            List<String> resolvedObjectives = templateObjectives.isEmpty() ? aiObjectives : templateObjectives;
+
+            if (!resolvedPlatforms.isEmpty()) {
+                campaignBuilder.platformsJson(JsonLists.toJson(resolvedPlatforms));
+            }
+            if (!resolvedContentTypes.isEmpty()) {
+                campaignBuilder.contentTypesJson(JsonLists.toJson(resolvedContentTypes));
+            }
+            if (!resolvedObjectives.isEmpty()) {
+                campaignBuilder.objectivesJson(JsonLists.toJson(resolvedObjectives));
+            }
+            // Still NO money/date field on this branch: budgetMin/budgetMax are never copied from
+            // the template (it has both columns populated on every SYSTEM seed row — deliberately
+            // ignored), and perReelRate/slotCap/liveUntil remain human-only.
         } else {
             // Tier-1 content composition (no template_id): apply the AI-composed fields the model
             // passed. A template, when set, is the sole authority for its own 4 fields above — the
@@ -502,6 +556,32 @@ public class CreateCampaignExecutor {
             }
         }
         return new ArrayList<>(kept);
+    }
+
+    /**
+     * P1-11: reads a {@code CampaignTemplate} JSON array column into a clean {@code List<String>}.
+     * Null/blank column, malformed JSON, or a JSON object where an array was expected all collapse
+     * to an empty list ({@link JsonLists#stringListFromJson} swallows the parse error), which in
+     * turn makes the caller fall back to the AI-composed equivalent instead of writing garbage into
+     * the draft. Null and blank array entries are dropped so the value handed to
+     * {@link #filterAllowed} can never NPE on {@code toUpperCase()}.
+     */
+    private static List<String> templateStringList(String json) {
+        List<String> raw = JsonLists.stringListFromJson(json);
+        if (raw.isEmpty()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (String item : raw) {
+            if (item == null) {
+                continue;
+            }
+            String s = item.trim();
+            if (!s.isEmpty()) {
+                out.add(s);
+            }
+        }
+        return out;
     }
 
     /** {@code primary} if non-null/non-blank, else {@code fallback} (which may itself be null). */
