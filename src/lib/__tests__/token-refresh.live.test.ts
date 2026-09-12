@@ -134,4 +134,72 @@ describe('access-token renewal', () => {
 
     expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'))).toHaveLength(0);
   });
+
+  /**
+   * The Meta OAuth callback is the one request in this app where losing a retry costs the user
+   * something unrecoverable. `GET /meta/oauth/callback?code=&state=` carries Meta's ONE-TIME
+   * authorization code, and the creator reaches it after a full round trip through Meta's consent
+   * dialog — long enough for a 15-minute access token to age out mid-flow. If that request were
+   * rejected and not retried, the code would be abandoned and the creator would have to redo the
+   * whole grant.
+   *
+   * The renewal machinery above is generic, so it already covers this endpoint — these two cases
+   * exist because what the generic tests assert (a refresh happened, the rotated token was sent)
+   * would still hold if the retry rebuilt the URL and dropped the query string. Then refresh would
+   * look perfect and the connect would fail anyway, on the one parameter that cannot be re-obtained.
+   * So these assert the CODE, not the token.
+   */
+  const CODE = 'AQLGFX1XKMqLElY4f4v1yXzcaG_MziBN8QEOClj94fle0A0WCcc';
+  const STATE = '01M2AT27NEZW2MJQDFZW3EH889';
+  const CONNECTED = { connected: true, grantedScopes: ['instagram_basic'] };
+
+  /** Every URL the callback endpoint was actually requested with, in order. */
+  function callbackRequests(): URL[] {
+    return fetchMock.mock.calls
+      .map(([u]) => String(u))
+      .filter((u) => u.includes('/meta/oauth/callback'))
+      .map((u) => new URL(u));
+  }
+
+  it('carries Meta’s one-time code on the request sent AFTER a pre-flight refresh', async () => {
+    // The creator's token aged out while they were inside Meta's dialog: by the time the callback
+    // page mounts, `ensureFreshToken` refreshes before the request is ever sent.
+    api.auth.setToken('creator', jwtExpiringIn(5));
+    route(() => jsonResponse({ success: true, data: CONNECTED }));
+
+    await expect(api.metaOAuth.callback(CODE, STATE)).resolves.toMatchObject({ connected: true });
+
+    expect(fetchMock.mock.calls.filter(([u]) => String(u).includes('/auth/refresh'))).toHaveLength(1);
+    const sent = callbackRequests();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].searchParams.get('code')).toBe(CODE);
+    expect(sent[0].searchParams.get('state')).toBe(STATE);
+  });
+
+  it('replays the SAME code and state on the 401-driven retry, so the connect is not lost', async () => {
+    // Token still looks valid to the client (it was minted minutes ago and the dialog was quick),
+    // but the server rejects it — revoked, or clock skew. Only the reactive path can save this,
+    // and it must resend the identical one-time code: a fresh one cannot be obtained without
+    // sending the creator back through Meta.
+    api.auth.setToken('creator', jwtExpiringIn(600));
+    let served = 0;
+    route(() => {
+      served += 1;
+      return served === 1
+        ? jsonResponse({ success: false, error: { code: 'UNAUTHENTICATED', message: 'expired' } }, 401)
+        : jsonResponse({ success: true, data: CONNECTED });
+    });
+
+    await expect(api.metaOAuth.callback(CODE, STATE)).resolves.toMatchObject({ connected: true });
+
+    const sent = callbackRequests();
+    expect(sent).toHaveLength(2); // original + retry, not a give-up
+    expect(sent[1].searchParams.get('code')).toBe(CODE);
+    expect(sent[1].searchParams.get('state')).toBe(STATE);
+    // Same code both times. The backend consumes the state token only AFTER authenticating
+    // (MetaOAuthController.callback), so the first 401 spends nothing and this replay is valid
+    // rather than a double-redemption.
+    expect(sent[0].searchParams.get('code')).toBe(sent[1].searchParams.get('code'));
+    expect(sent[0].searchParams.get('state')).toBe(sent[1].searchParams.get('state'));
+  });
 });

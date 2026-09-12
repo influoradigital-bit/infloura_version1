@@ -166,6 +166,20 @@ export default function CreatorMetaCallbackPage() {
       }
 
       try {
+        // Do NOT add a token refresh before this call. The obvious worry — the creator's access
+        // token aged out while they were inside Meta's dialog, so this XHR goes out with a dead
+        // bearer and Meta's one-time `code` is abandoned — is already handled by the http layer
+        // for every authenticated request: `ensureFreshToken` renews any token within 60s of its
+        // `exp` BEFORE the request is sent, and `fetchWithAuthRetry` refreshes once and replays
+        // the request on a 401 (src/lib/api.ts). A page-level refresh here would be a second,
+        // duplicate mechanism that spends an extra POST /auth/refresh on every single connect.
+        //
+        // What actually needed proving was not that a refresh happens, but that the retried
+        // request still carries THIS `code` — a rebuilt URL would drop it, refresh would look
+        // perfect, and the connect would fail on the one parameter that cannot be re-obtained
+        // without sending the creator back through Meta. Pinned in token-refresh.live.test.ts
+        // ("carries Meta's one-time code..." / "replays the SAME code and state..."), which are
+        // the only tests in the suite that catch a query-string-dropping retry.
         const result = await api.metaOAuth.callback(code, state);
         if (cancelled) return;
         // CR-105 — accountType was previously dropped here (called with only 2 args), which is
