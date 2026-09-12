@@ -230,6 +230,17 @@ influora:
     # surface (agent-preferences, consent, /creator/meera/**, public verified) without a code
     # rollback.
     creator-enabled: ${MEERA_CREATOR_ENABLED:true}
+    # T-MEERA-CREATOR-PHASE-B D-02 (QA-TECH-0912.md q15, ruling 1) — the separate enable step for
+    # send_routine_reply, the one creator tool that puts a message in front of a brand under the
+    # creator's name. DEFAULT false, unlike creator-enabled above: that flag guards reads, which are
+    # safe to serve; this one guards a send, whose safe state is off.
+    #
+    # send_routine_reply is ALREADY in the scope claim of every level-1/level-2 creator's on-behalf
+    # token (CreatorToolScopes.SCOPE_LEVEL_1 — scope is minted as a ceiling and requireScope is bare
+    # string membership), so without this flag the capability would go live on the code deploy that
+    # first adds the route. The route does not exist yet; CreatorSendGateTest fails if one appears
+    # without being gated here.
+    creator-send-enabled: ${MEERA_CREATOR_SEND_ENABLED:false}
     stream:
       # Kabir G2/G6 — distinct signing key from the user access/refresh JWTs. ≤60s TTL scoped
       # per Meera turn (aud=meera-stream); Python verifies this, never the user's access JWT.

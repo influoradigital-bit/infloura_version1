@@ -213,9 +213,107 @@ class InfoBarrierRuntimeTest {
         // proves is actually rendered for a CREATOR context.
         assertThat(json).doesNotContain(LEAK_AGENCY_NAME);
         assertThat(json).doesNotContain("agency_name");
+
+        // D-01 (PENDING-0912.md; QA-TECH-0912.md q6) — scan for the floor KEY, not just the floor
+        // VALUE. Every assertion above this line tests a distinctive value (99999 / an agency name),
+        // so a floor field that is PRESENT but empty, null, zero, or holding a value this test did
+        // not seed passes all of them. The static half of this barrier
+        // (com.influora.architecture.FloorBarrierTest) proves no DECLARED field carries a floor key;
+        // it cannot see this route at all, because MeeraInternalController#context is declared
+        // ResponseEntity<ApiResponse<Object>> and is the one handler a BRAND caller and a CREATOR
+        // caller share. So the key scan belongs here, on the assembled object, where it also covers
+        // a floor written into a Map<String, ?> under a key computed at runtime.
+        assertThat(floorKeysIn(mapper.readTree(json)))
+                .as(
+                        "the BRAND context carries a floor key. The floor is the creator's negotiating"
+                                + " position and a brand reading it is the worst outcome this feature"
+                                + " can produce -- the key must not be on a brand payload even when"
+                                + " its value happens to be null or empty. Brand context JSON: %s",
+                        json)
+                .isEmpty();
+
         // Structural proof: the BRAND path never even reads the repository that holds floors
         // (and agency names).
         verifyNoInteractions(creatorAgentPreferencesRepository);
+    }
+
+    /**
+     * D-01 — the positive control for {@link #floorKeysIn}, and the reason the empty-set assertion
+     * above is not vacuous.
+     *
+     * <p>A scanner that returns an empty set for every input would make {@code
+     * brandContextNeverExposesCreatorFloor}'s key assertion pass forever. So the same scanner is
+     * pointed at a payload that genuinely DOES carry a floor: a creator's own CREATOR context, whose
+     * {@code CreatorContextResponse} declares {@code @JsonProperty("floors")} and {@code
+     * floor_currency}. If the scan stops working, this test goes red first.
+     */
+    @Test
+    @DisplayName(
+            "D-01 — the floor-key scanner is proven against a payload that DOES carry a floor: a"
+                    + " creator's own CREATOR context")
+    void floorKeyScannerFindsTheFloorOnACreatorContext() throws Exception {
+        String creatorUserId = "01J2CREATORAUSER";
+        stubCreator(creatorUserId, "creatorA-profile", "Creator A", LEAK_FLOOR_RAW, LEAK_AGENCY_NAME);
+
+        String json = mapper.writeValueAsString(service.assemble(creatorUserId, "CREATOR"));
+
+        assertThat(floorKeysIn(mapper.readTree(json)))
+                .as(
+                        "the floor-key scanner found no floor key on a CREATOR context, which is"
+                                + " documented to carry one -- the scanner is broken, and the"
+                                + " empty-set assertion in brandContextNeverExposesCreatorFloor is"
+                                + " therefore passing vacuously. CREATOR context JSON: %s",
+                        json)
+                .contains("floors");
+    }
+
+    /**
+     * Every JSON object key anywhere in the tree that names, or renders, a creator floor. Kept in
+     * step with {@code com.influora.architecture.FloorBarrierTest.FLOOR_JSON_KEYS} — that class
+     * enforces the same names over DECLARED types, this one over a SERIALISED payload.
+     */
+    private static final java.util.Set<String> FLOOR_JSON_KEYS =
+            java.util.Set.of(
+                    "floor",
+                    "floors",
+                    "floor_total",
+                    "floor_total_value",
+                    "floor_value",
+                    "floor_currency",
+                    "rate_floor",
+                    "anchor",
+                    "anchor_value",
+                    "range_min",
+                    "range_max",
+                    "quote_json");
+
+    private static java.util.Set<String> floorKeysIn(com.fasterxml.jackson.databind.JsonNode node) {
+        java.util.Set<String> found = new java.util.LinkedHashSet<>();
+        collectFloorKeys(node, found);
+        return found;
+    }
+
+    private static void collectFloorKeys(
+            com.fasterxml.jackson.databind.JsonNode node, java.util.Set<String> into) {
+        if (node == null) {
+            return;
+        }
+        if (node.isObject()) {
+            java.util.Iterator<String> names = node.fieldNames();
+            while (names.hasNext()) {
+                String name = names.next();
+                if (FLOOR_JSON_KEYS.contains(name)) {
+                    into.add(name);
+                }
+                collectFloorKeys(node.get(name), into);
+            }
+            return;
+        }
+        if (node.isArray()) {
+            for (com.fasterxml.jackson.databind.JsonNode child : node) {
+                collectFloorKeys(child, into);
+            }
+        }
     }
 
     @Test

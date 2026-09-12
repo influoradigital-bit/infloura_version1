@@ -16,6 +16,53 @@ import java.util.Set;
  * four of them are wired. Minting the full ceiling now means a later wave adds a route and an
  * executor without also having to re-mint tokens or migrate a claim shape.
  *
+ * <p><b>[D-02] Minting the ceiling is free only while no route exists. Read this before you add
+ * one.</b> The sentence above is true and is also the whole hazard, so it does not get to stand
+ * alone. "Inert" is a property of the <i>absence of a route</i>, not a property of the claim — the
+ * claim is a standing grant. Because {@code requireScope} is bare string membership, <b>there is no
+ * intermediate state in which a route exists and the grant does not</b>: from the instant a
+ * {@code @PostMapping} for a scoped-but-unwired name reaches production, every token already
+ * authorises it, and the next token every level-1 and level-2 creator is minted authorises it too.
+ * The 120-second TTL on those tokens ({@code OnBehalfTokenService.MAX_TTL_SECONDS}) bounds the
+ * <i>pre-existing</i> tokens to a two-minute tail; it does nothing about the standing grant, which is
+ * the part that matters.
+ *
+ * <p><b>And be precise about what that 120-second tail is, because it is not a confined credential.</b>
+ * The on-behalf token is returned to the creator's browser in the HTTP body of the turn response
+ * ({@code CreatorMeeraController#sendTurn} puts {@code onBehalfToken} into {@code
+ * MeeraDtos.SendTurnResponse}), and {@code OnBehalfAuthResolver}'s own javadoc records that {@code
+ * jti} single-use/replay enforcement is <b>not implemented</b>. So each token is a browser-visible
+ * bearer credential, replayable any number of times until {@code exp}. Two minutes is short; it is not
+ * server-side, and it is not single-use. Do not shorten this to "the token is server-side" or "the
+ * token is spent on use" — both are false, and the next author will size the risk from whatever this
+ * comment says.
+ *
+ * <p>For {@link #SCOPE_LEVEL_1}'s {@code send_routine_reply} that would mean a message reaching a
+ * brand under the creator's name, enabled by a code deploy rather than by a reviewable decision. So
+ * the deploy-order rule, which is the thing this javadoc previously left unwritten:
+ *
+ * <ol>
+ *   <li>The send route ships behind {@code influora.meera.creator-send-enabled} (env {@code
+ *       MEERA_CREATOR_SEND_ENABLED}), <b>default false</b> —
+ *       {@link com.influora.config.MeeraCreatorFeatureProperties#isCreatorSendEnabled()}, checked in
+ *       {@code CreatorMeeraToolController} alongside {@code requireFeatureEnabled}. Separate from
+ *       {@code creator-enabled} so pulling sends back does not take down every creator read.
+ *   <li>Deploy influora-api first, influora-ai second, flag false across both. The flag makes the
+ *       order harmless either way.
+ *   <li>A test must prove the grant is inert with the flag off: a level-1 token whose scope contains
+ *       the tool is refused at the route with a code that is <b>not</b>
+ *       {@code ON_BEHALF_SCOPE_INSUFFICIENT}, so the audit trail distinguishes "capability switched
+ *       off" from "scope insufficient". {@code CreatorMeeraToolControllerTest} has the shape for it.
+ * </ol>
+ *
+ * <p>{@code com.influora.architecture.CreatorSendGateTest} enforces rule 1 mechanically: it pins the
+ * send-capable routes on the controller as an empty set and requires any entry to be gated on that
+ * flag, so the commit that adds the route cannot pass without coming back here. Do not satisfy it by
+ * widening the pinned set alone. Note also that
+ * {@code MeeraContextServiceTest#testCreatorContextCarriesWiredToolNames} goes <b>green</b> on that
+ * commit by design — it is a wiring-consistency check between {@code WIRED_TOOL_NAMES} and the
+ * route set, not a capability gate, and it will not tell anyone a send grant just went live.
+ *
  * <p>{@link #toolNamesForLevel} is the opposite: it is what the assembler puts in front of the
  * model, so it must contain <b>only</b> tools whose endpoints exist. A tool the model can call but
  * the server cannot answer is worse than a tool it cannot see — the model spends a turn, gets a 404,
@@ -31,7 +78,34 @@ public final class CreatorToolScopes {
             "get_my_deals get_brief estimate_my_rate get_my_metrics check_deal_risks draft_reply"
                     + " rank_open_campaigns draft_application";
 
-    /** Level 1 adds the one commit-like tool: a routine reply actually reaches the brand. */
+    /**
+     * Level 1 adds the one commit-like tool: a routine reply actually reaches the brand.
+     *
+     * <p><b>[D-02] This name is a standing grant, not a plan.</b> {@code send_routine_reply} has no
+     * route today, which is the only reason it is inert — see the class javadoc's deploy-order rule
+     * before adding one. The moment a {@code @PostMapping("/send_routine_reply")} exists, this string
+     * authorises it for every level-1 and level-2 creator, with no separate step in between. The
+     * route must therefore be gated on {@code influora.meera.creator-send-enabled} (default false);
+     * {@code com.influora.architecture.CreatorSendGateTest} fails if it is not.
+     *
+     * <p>Do <b>not</b> "fix" that by deleting the name from this constant — but for one reason, not
+     * two. The reason that holds: the scope is read at <b>mint time</b>, so every token issued after
+     * the route deploys names whatever this constant says at that moment; removing the name today buys
+     * no window, because the name and the route would go live in the same deploy either way.
+     *
+     * <p>The reason that does <b>not</b> hold, corrected here because an earlier draft of this javadoc
+     * asserted it: that a populated level-1 constant is what makes {@link #scopeFor}'s degrade path
+     * work. It is not. {@code scopeFor} clamps an unexpected approval level by returning {@link
+     * #SCOPE_LEVEL_0} directly, whatever this constant happens to contain, so emptying level 1 would
+     * not weaken the clamp by one name. The ceiling is not self-justifying.
+     *
+     * <p>So keeping {@code send_routine_reply} here is acceptable on exactly one condition: <b>the flag
+     * gate holds</b>. "The ceiling stays; the flag is the gate" is conditional on {@code
+     * com.influora.architecture.CreatorSendGateTest} continuing to fail when a send-capable route
+     * appears without {@code influora.meera.creator-send-enabled} behind it. If that class is deleted,
+     * weakened, or found bypassable again, the condition is broken and this name must come out of the
+     * constant until it is restored.
+     */
     public static final String SCOPE_LEVEL_1 = SCOPE_LEVEL_0 + " send_routine_reply";
 
     /**
