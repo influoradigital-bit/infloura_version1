@@ -33,14 +33,16 @@ Stage vocabulary, used consistently below:
 
 | # | Defect | Owner | Severity | Stage |
 |---|---|---|---|---|
-| D-01 | The info-barrier test bans exactly one repository import and nothing else, so putting a creator's floor on a brand-readable payload turns **no test red**. | kabir + vikram | **HIGH** (missing control) | READY |
-| D-02 | The spec instructs minting the send permission into every level-1 token. The day that route lands, tokens already issued become live send grants, and the context test goes green on that commit. | vikram | **HIGH** (process) | READY — fix before Wave 4 |
+| D-01 | The info-barrier test bans exactly one repository import and nothing else, so putting a creator's floor on a brand-readable payload turns **no test red**. | kabir + vikram | **HIGH** (missing control) | ✅ **CLOSED** `948f10f` — `FloorBarrierTest` walks the declared type graph reflectively from every controller, default-deny, three exemptions audited against the security config. Tester falsified three ways the author had not. |
+| D-02 | The spec instructs minting the send permission into every level-1 token. The day that route lands, tokens already issued become live send grants, and the context test goes green on that commit. | vikram | ~~HIGH~~ → **MEDIUM** | ✅ **CLOSED** `948f10f` as a documented partial control. Took three rounds: attribute alias, then single-controller scope, then string-equality on return types. Severity corrected on evidence (120s TTL), but the reason was also wrong — the token is browser-visible and replayable, not confined server-side. Seven gaps declared, widest one names the file that already exhibits it. |
 | D-03 | Deal rows can render blank: two fields are required in TypeScript but nullable in Java, and omitted fields arrive undefined. | ananya | MEDIUM | READY |
 | D-04 | A malformed quote renders "Not available yet · undefined revisions · Based on ." because the type guard admits any object. | ananya | MEDIUM | READY — cheapest fix here |
 | D-05 | Risk evaluation prices a floor but writes no pricing audit row, so the calibration report systematically under-counts. The allowed tool-call row is not a substitute. | vikram | MEDIUM | READY |
 | D-06 | The rate limiter collapses every creator into one shared bucket when the verify-failure budget is exhausted. Triggered by our own expired tokens or a key rotation, not by an attacker. | vikram | MEDIUM | READY |
 
-**My priority order:** D-02 first, because Wave 4 is the wave that starts adding routes and the current comment tells the next author that minting the full ceiling is free. It is free only while no route exists. Then D-01, then D-04 as a quick win, then D-03, D-05, D-06.
+**Both HIGH defects are closed as of `948f10f`, tester-passed.** Remaining order for the four MEDIUMs: D-04 first as a quick win, then D-03, D-05, D-06. None blocks Wave 4.
+
+**What the D-02 rounds taught, worth carrying into every future gate:** the detector was sound after round one; the *scope* was the hole twice more. A gate is only as good as the set of things it looks at, and the author falsifies the shapes they thought of while the reviewer finds the one they did not. The fix that finally held was a control on the control — an assertion that the detector matches by subtype rather than by name. Also caught in passing: the previous assertion was **unsatisfiable**, asserting an empty set, so a correctly gated route could only ever ship by deleting the check. A gate that cannot pass is its own defect class and it was live until this round.
 
 ---
 
