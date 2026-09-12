@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -33,7 +34,9 @@ import com.influora.repository.BrandProfileRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.CreatorAgentConversationService;
 import com.influora.service.IdempotencyService;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,6 +48,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 
 /**
@@ -581,7 +585,8 @@ class MeeraSessionServiceTest {
                         .content("hi")
                         .creditsCharged(1)
                         .build();
-        when(messageRepository.findByConversationIdOrderByCreatedAtAsc(CONVERSATION_ID))
+        when(messageRepository.findByConversationIdOrderByCreatedAtDesc(
+                        eq(CONVERSATION_ID), any(Pageable.class)))
                 .thenReturn(List.of(first));
 
         List<AiMessage> result = service.listMessages(WORKSPACE_ID, CONVERSATION_ID, null);
@@ -848,5 +853,134 @@ class MeeraSessionServiceTest {
                 "नमस्ते there! मैं Meera हूं, Influora पर आपकी मैनेजर। मैं आपकी डील्स, कमाई और मेट्रिक्स"
                         + " समझने में मदद कर सकती हूं। आप क्या जानना चाहेंगे?",
                 messageCaptor.getValue().getContent());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // P1-14 -- unbounded conversation history.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "P1-14: listMessages with no cursor returns at most DEFAULT_HISTORY_LIMIT messages --"
+                    + " the most recent ones, still oldest-first so the transcript reads correctly")
+    void testListMessagesWithoutAfterIsCappedToTheMostRecentPage() {
+        when(conversationRepository.findByIdAndWorkspaceId(CONVERSATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(conversation()));
+        int total = MeeraSessionService.DEFAULT_HISTORY_LIMIT + 37;
+        List<AiMessage> wholeHistory = new ArrayList<>();
+        for (int i = 0; i < total; i++) {
+            wholeHistory.add(
+                    AiMessage.builder()
+                            .id(String.format("01HHISTORY%011d", i))
+                            .conversationId(CONVERSATION_ID)
+                            .role(i % 2 == 0 ? MessageRole.USER : MessageRole.ASSISTANT)
+                            .content("message " + i)
+                            .creditsCharged(0)
+                            .build());
+        }
+        // The DB does the trimming now, so the stub answers the way a real LIMIT would: the newest
+        // DEFAULT_HISTORY_LIMIT rows, newest-first. The 37 older rows are never fetched at all.
+        List<AiMessage> newestFirstPage = new ArrayList<>();
+        for (int i = total - 1; i >= total - MeeraSessionService.DEFAULT_HISTORY_LIMIT; i--) {
+            newestFirstPage.add(wholeHistory.get(i));
+        }
+        when(messageRepository.findByConversationIdOrderByCreatedAtDesc(
+                        eq(CONVERSATION_ID), any(Pageable.class)))
+                .thenReturn(newestFirstPage);
+
+        List<AiMessage> result = service.listMessages(WORKSPACE_ID, CONVERSATION_ID, null);
+
+        // WHY THIS FAILS AGAINST THE BUGGY CODE: the no-cursor branch called
+        // findByConversationIdOrderByCreatedAtAsc(...) and returned it verbatim. That finder is not
+        // stubbed here, so on the pre-fix code this test reads an empty list from the unstubbed mock
+        // and every assertion below fails on size 0.
+        assertEquals(MeeraSessionService.DEFAULT_HISTORY_LIMIT, result.size());
+        // Oldest-first for the transcript: the newest message is LAST even though the query
+        // returned it first, and the oldest survivor is exactly DEFAULT_HISTORY_LIMIT back.
+        assertSame(wholeHistory.get(total - 1), result.get(result.size() - 1));
+        assertSame(wholeHistory.get(total - MeeraSessionService.DEFAULT_HISTORY_LIMIT), result.get(0));
+
+        // THE POINT OF THE FOLLOW-UP FIX: the row FETCH is bounded, not just the response. An
+        // earlier revision loaded the whole conversation and trimmed in Java, which passed the
+        // assertions above while still dragging every row out of the database on each page load.
+        ArgumentCaptor<Pageable> page = ArgumentCaptor.forClass(Pageable.class);
+        verify(messageRepository)
+                .findByConversationIdOrderByCreatedAtDesc(eq(CONVERSATION_ID), page.capture());
+        assertEquals(MeeraSessionService.DEFAULT_HISTORY_LIMIT, page.getValue().getPageSize());
+        assertEquals(0, page.getValue().getPageNumber());
+        verify(messageRepository, never()).findByConversationIdOrderByCreatedAtAsc(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "P1-14: the no-cursor two-argument overload is bounded too -- it has no callers in"
+                    + " src/main today, so an unbounded copy of the fixed logic sitting in it was a"
+                    + " dormant way to reintroduce the defect")
+    void testTwoArgListMessagesIsAlsoCapped() {
+        when(conversationRepository.findByIdAndWorkspaceId(CONVERSATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(conversation()));
+        List<AiMessage> page = new ArrayList<>();
+        for (int i = 0; i < MeeraSessionService.DEFAULT_HISTORY_LIMIT; i++) {
+            page.add(
+                    AiMessage.builder()
+                            .id(String.format("01HTWOARG%012d", i))
+                            .conversationId(CONVERSATION_ID)
+                            .role(MessageRole.ASSISTANT)
+                            .content("m" + i)
+                            .creditsCharged(0)
+                            .build());
+        }
+        when(messageRepository.findByConversationIdOrderByCreatedAtDesc(
+                        eq(CONVERSATION_ID), any(Pageable.class)))
+                .thenReturn(page);
+
+        List<AiMessage> result = service.listMessages(WORKSPACE_ID, CONVERSATION_ID);
+
+        // WHY THIS FAILS AGAINST THE BUGGY CODE: the two-arg overload ran its own
+        // findByConversationIdOrderByCreatedAtAsc, which is unstubbed here -> empty result, and it
+        // never touched the paged finder, so both assertions fail.
+        assertEquals(MeeraSessionService.DEFAULT_HISTORY_LIMIT, result.size());
+        verify(messageRepository, never()).findByConversationIdOrderByCreatedAtAsc(anyString());
+    }
+
+    /**
+     * GUARD TEST, not a regression test -- stated plainly because the distinction matters. This
+     * passes against both the pre-fix and post-fix code (the cursor branch was never the defect),
+     * so it proves nothing about the P1-14 fix and must never be cited as evidence for it. Its
+     * only job is to fail LATER, if someone "tidies up" by applying the cap to both branches.
+     */
+    @Test
+    @DisplayName(
+            "P1-14 guard: the after-cursor path stays UNCAPPED -- useMeeraStream's recovery path"
+                    + " asks for everything since message X and capping it could drop the reply it"
+                    + " exists to fetch")
+    void testListMessagesWithAfterCursorIsNotCapped() {
+        when(conversationRepository.findByIdAndWorkspaceId(CONVERSATION_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(conversation()));
+        int total = MeeraSessionService.DEFAULT_HISTORY_LIMIT + 5;
+        List<AiMessage> sinceCursor = new ArrayList<>();
+        for (int i = 0; i < total; i++) {
+            sinceCursor.add(
+                    AiMessage.builder()
+                            .id(String.format("01HAFTER%013d", i))
+                            .conversationId(CONVERSATION_ID)
+                            .role(MessageRole.ASSISTANT)
+                            .content("catch-up " + i)
+                            .creditsCharged(0)
+                            .build());
+        }
+        when(messageRepository.findByConversationIdAndIdGreaterThanOrderByIdAsc(
+                        CONVERSATION_ID, "01HOLDER0000000000000A"))
+                .thenReturn(sinceCursor);
+
+        List<AiMessage> result =
+                service.listMessages(WORKSPACE_ID, CONVERSATION_ID, "01HOLDER0000000000000A");
+
+        assertEquals(total, result.size());
+        verify(messageRepository, never()).findByConversationIdOrderByCreatedAtAsc(anyString());
+        // The cursor path must not be routed through the new paged finder either -- capping a
+        // recovery fetch could silently drop the very reply useMeeraStream is catching up on.
+        verify(messageRepository, never())
+                .findByConversationIdOrderByCreatedAtDesc(anyString(), any(Pageable.class));
     }
 }

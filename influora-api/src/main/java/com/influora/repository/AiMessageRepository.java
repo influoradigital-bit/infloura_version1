@@ -3,6 +3,7 @@ package com.influora.repository;
 import com.influora.domain.entity.AiMessage;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AiMessageRepository extends JpaRepository<AiMessage, String> {
@@ -35,4 +36,20 @@ public interface AiMessageRepository extends JpaRepository<AiMessage, String> {
      * .findByIdAndWorkspaceId}.
      */
     List<AiMessage> findByConversationIdAndIdGreaterThanOrderByIdAsc(String conversationId, String afterId);
+
+    /**
+     * P1-14 — the newest page of a conversation, so {@code MeeraSessionService#listMessages}'s
+     * no-cursor branch can bound the ROW FETCH and not merely the response it returns.
+     *
+     * <p>Returns NEWEST-first because that is the only order in which a {@code LIMIT} can select
+     * the most recent N; the caller reverses to oldest-first for the transcript. Deliberately a
+     * {@link Pageable} overload rather than a {@code findTop100By...} derived name: the page size
+     * is {@code MeeraSessionService.DEFAULT_HISTORY_LIMIT}, and baking that constant into a method
+     * name would mean the cap could be changed in one place and silently not the other.
+     *
+     * <p>Same tenant-isolation contract as {@link #findByConversationIdOrderByCreatedAtAsc}:
+     * callers MUST first resolve the conversation via
+     * {@code AiConversationRepository.findByIdAndWorkspaceId} (Guardrail 4).
+     */
+    List<AiMessage> findByConversationIdOrderByCreatedAtDesc(String conversationId, Pageable pageable);
 }

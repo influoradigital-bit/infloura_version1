@@ -42,6 +42,66 @@ function SnapshotIdle({ stalled = false, className }: { stalled?: boolean; class
   )
 }
 
+/**
+ * P1-13 — terminal "we stopped / we couldn't read it" card.
+ *
+ * Replaces two silences:
+ *   1. the poll budget running out (`analysisTimedOut`) used to fall through to
+ *      `SnapshotIdle`, which tells the brand their snapshot "will appear here"
+ *      while nothing is still running — a promise we had already given up on;
+ *   2. the `ERROR` status rendered `analysisError` alone, with no way forward.
+ *
+ * Both now say what happened, why it is not the brand's fault, and offer a
+ * retry plus the manual route. `analyze_site` does a plain HTTP GET with no
+ * JavaScript rendering (influora-ai/app/routes/analyze_site.py), so a
+ * client-rendered storefront legitimately comes back empty — say so rather
+ * than implying the site is broken.
+ */
+function SnapshotUnreadable({
+  title,
+  detail,
+  tone = 'neutral',
+  onRetry,
+  className,
+}: {
+  title: string
+  detail?: string | null
+  tone?: 'neutral' | 'danger'
+  onRetry: () => void
+  className?: string
+}) {
+  return (
+    <div
+      role="status"
+      className={cn(
+        'flex min-h-[8rem] flex-col items-center justify-center gap-2 rounded-xl border p-6 text-center',
+        tone === 'danger'
+          ? 'border-meera-danger/30 bg-meera-danger/5'
+          : 'border-dashed border-meera-border bg-meera-surface-2',
+        className,
+      )}
+    >
+      <p className="text-sm font-medium text-meera-text">{title}</p>
+      {detail && <p className="max-w-xs text-xs text-meera-text-muted">{detail}</p>}
+      <p className="max-w-xs text-xs text-meera-text-muted">
+        I read the page itself without running its scripts, so a shop that builds its pages in the
+        browser can come back empty — that doesn&rsquo;t mean anything is wrong with your site.
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-1 inline-flex h-9 items-center justify-center rounded-lg bg-meera-accent px-4 text-xs font-semibold text-white transition-colors duration-150 ease-out hover:bg-meera-accent-hover focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--meera-accent-glow)]"
+      >
+        Check again
+      </button>
+      <p className="max-w-xs text-xs text-meera-text-muted">
+        Or send me the link again here and I&rsquo;ll have another go — or just tell me your
+        products and I&rsquo;ll work from that.
+      </p>
+    </div>
+  )
+}
+
 interface StageSnapshotProps {
   /**
    * Latest `analyze_site` tool_result payload for this session, if any. Its
@@ -92,7 +152,8 @@ function siteInitials(siteUrl: string | null): string {
 /** Stage 1 — brand card: logo, site preview, product tiles, brand-color swatch. */
 export function StageSnapshot({ toolResult, className }: StageSnapshotProps) {
   const live = isApiLive()
-  const { brandProfile, isLoading, error, refetch } = useBrandProfile()
+  const { brandProfile, isLoading, error, refetch, analysisTimedOut, restartAnalysisPoll } =
+    useBrandProfile()
 
   // An `analyze_site` tool_result means the backend just finished (re)analyzing
   // the site this turn — refresh the persisted profile rather than guessing at
@@ -160,6 +221,26 @@ export function StageSnapshot({ toolResult, className }: StageSnapshotProps) {
   // genuinely in flight and within the bounded window; every other state
   // resolves to a stable idle / error / ready render, so the snapshot can
   // never hang on a perpetual "Reading your site…" loader.
+  // P1-13 — the poll budget ran out with the backend still PENDING/ANALYZING.
+  // This is terminal: nothing is polling any more, so anything that keeps
+  // implying progress (the spinner, or SnapshotIdle's "will appear here") is a
+  // lie. Checked FIRST so it wins over both. `restartAnalysisPoll` mints a fresh
+  // budget and fetches again — the way forward this state used to lack.
+  if (analysisTimedOut) {
+    return (
+      <SnapshotUnreadable
+        title="I stopped waiting on your site"
+        detail={
+          brandProfile?.websiteUrl
+            ? `I asked ${brandProfile.websiteUrl} for a couple of minutes and never got a usable answer, so I've stopped.`
+            : "I waited a couple of minutes and never got a usable answer, so I've stopped."
+        }
+        onRetry={restartAnalysisPoll}
+        className={className}
+      />
+    )
+  }
+
   if (analysisInFlight && !loaderExpired) {
     return <StageLoadingState label="Reading your site…" className={className} />
   }
@@ -177,17 +258,18 @@ export function StageSnapshot({ toolResult, className }: StageSnapshotProps) {
     )
   }
 
+  // P1-13 — this used to be `analysisError` on its own, with no explanation and
+  // no way forward. `empty_page` (the most common failure, and the one the
+  // no-JavaScript fetch causes) read as "your site is broken".
   if (brandProfile?.analysisStatus === 'ERROR') {
     return (
-      <div
-        className={cn(
-          'rounded-xl border border-meera-danger/30 bg-meera-danger/5 p-6 text-center text-sm text-meera-danger',
-          className,
-        )}
-        role="alert"
-      >
-        {brandProfile.analysisError || "Couldn't analyze your site."}
-      </div>
+      <SnapshotUnreadable
+        title="I couldn't read your site"
+        detail={brandProfile.analysisError || null}
+        tone="danger"
+        onRetry={restartAnalysisPoll}
+        className={className}
+      />
     )
   }
 

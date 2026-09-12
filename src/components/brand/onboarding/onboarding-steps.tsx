@@ -17,6 +17,7 @@ import {
   MailCheck,
   RefreshCw,
   Info,
+  AlertCircle,
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -43,6 +44,8 @@ import {
   type UploadResult,
 } from '@/lib/upload';
 import { api, ApiError, isApiLive } from '@/lib/api';
+import { hasBrandToken } from '@/lib/auth-session';
+import { useBrandProfile } from '@/hooks/useBrandProfile';
 import { toast } from '@/hooks/use-toast';
 
 // ===========================
@@ -841,6 +844,189 @@ export function AccountSetupStep({
 }
 
 // ===========================
+// Site analysis feedback (P1-13)
+// ===========================
+
+/**
+ * P1-13 — signup reads the brand's storefront and never tells them.
+ *
+ * `OnboardingService.saveBrandCompany` hands `websiteUrl` to
+ * `AnalyzeSiteTriggerService` the moment this step is submitted, but the only
+ * surface that ever showed a word about it was the Meera canvas, much later.
+ * In onboarding the field was a bare "Website (optional)" input: no notice that
+ * we were about to fetch the page, no result, and — once the brand-profile poll
+ * exhausted its budget — no message at all, forever.
+ *
+ * Two pieces below:
+ *   - `SITE_ANALYSIS_*` copy + `SiteAnalysisStatus`, the honest state readout
+ *     (reading / found N / found none / couldn't read / we stopped waiting);
+ *   - the disclosure rendered under the URL field itself, which is the only
+ *     thing we can honestly say *before* the step is submitted.
+ *
+ * The limitation is stated rather than hidden: `analyze_site` does a plain
+ * httpx GET with NO JavaScript rendering
+ * (influora-ai/app/routes/analyze_site.py:46-58), so a client-rendered
+ * storefront legitimately comes back empty (`empty_page`). Copy therefore says
+ * "we couldn't read it, add your products yourself" — never "your site is
+ * broken".
+ */
+
+/**
+ * Loose "has the brand actually given us a link yet?" check. Deliberately NOT
+ * validation — the field stays optional and nothing here can block Continue;
+ * it only decides whether to promise a fetch we are about to make.
+ */
+function looksLikeSiteUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^(https?:\/\/)?[\w-]+(\.[\w-]+)+/i.test(trimmed);
+}
+
+/** Bare host for display — 'https://www.acme.in/shop' → 'acme.in'. */
+function siteHost(url: string | null | undefined): string {
+  if (!url) return 'your site';
+  const host = url
+    .trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .replace(/[/?#].*$/, '');
+  return host || 'your site';
+}
+
+/**
+ * Count products in `MeeraBrandProfile.productCatalog`, which is `unknown` on
+ * the wire. Same defensive narrowing as StageSnapshot's `extractCatalogProducts`
+ * — it arrives as a BARE ARRAY from the backend and as `{ products: [...] }`
+ * from the mock, so both shapes are accepted and anything else counts as zero.
+ */
+function countCatalogProducts(catalog: unknown): number {
+  if (!catalog || typeof catalog !== 'object') return 0;
+  const products = Array.isArray(catalog)
+    ? catalog
+    : (catalog as { products?: unknown }).products;
+  if (!Array.isArray(products)) return 0;
+  return products.filter(
+    (p) => !!p && typeof p === 'object' && typeof (p as { name?: unknown }).name === 'string',
+  ).length;
+}
+
+/** The no-JavaScript caveat, said the same way everywhere. */
+const SITE_ANALYSIS_CAVEAT =
+  "We read the page as it's served, without running its scripts — so a shop that builds its pages in the browser can come back empty. That doesn't mean anything is wrong with your site, and you can add your products yourself at any time.";
+
+/**
+ * Live readout of the site analysis this signup triggered.
+ *
+ * Mounted only for an already-authenticated brand on a live API: a brand-new
+ * signup has no workspace to report on until this step is submitted, and demo
+ * mode would otherwise show the mock profile's site instead of the one the user
+ * typed. Renders nothing when there is nothing honest to say.
+ */
+export function SiteAnalysisStatus({ enteredUrl }: { enteredUrl: string }) {
+  const { brandProfile, analysisTimedOut, restartAnalysisPoll } = useBrandProfile();
+
+  const status = brandProfile?.analysisStatus;
+  const host = siteHost(brandProfile?.websiteUrl || enteredUrl);
+
+  // Terminal: the poll budget ran out with the backend still working. Before
+  // P1-13 this was pure silence — the hook stopped fetching and nothing on
+  // screen changed. Never a spinner; always a way forward.
+  if (analysisTimedOut) {
+    return (
+      <SiteAnalysisProblem
+        headline={`We stopped waiting on ${host}`}
+        detail="We asked for a couple of minutes and never got a usable answer, so we've stopped checking."
+        onRecheck={restartAnalysisPoll}
+      />
+    );
+  }
+
+  if (status === 'ERROR') {
+    return (
+      <SiteAnalysisProblem
+        headline={`We couldn't read ${host}`}
+        detail={brandProfile?.analysisError || null}
+        onRecheck={restartAnalysisPoll}
+      />
+    );
+  }
+
+  if (status === 'ANALYZING' || (status === 'PENDING' && !!brandProfile?.websiteUrl)) {
+    return (
+      <div
+        role="status"
+        className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+      >
+        <Loader2
+          className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+        <span>
+          Reading {host} now — pulling in your products, colours and category. This usually takes
+          under a minute, and you can carry on without waiting.
+        </span>
+      </div>
+    );
+  }
+
+  if (status === 'READY') {
+    const count = countCatalogProducts(brandProfile?.productCatalog);
+    return (
+      <div
+        role="status"
+        className="flex flex-col gap-1 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs"
+      >
+        <p className="flex items-start gap-2 font-medium text-stage-approved-fg">
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            {count > 0
+              ? `We read ${host} and found ${count} ${count === 1 ? 'product' : 'products'}.`
+              : `We read ${host}, but couldn't find any products on the page.`}
+          </span>
+        </p>
+        {count === 0 && <p className="text-muted-foreground">{SITE_ANALYSIS_CAVEAT}</p>}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+/** Shared failure card — headline, honest reason, the caveat, and a re-check. */
+function SiteAnalysisProblem({
+  headline,
+  detail,
+  onRecheck,
+}: {
+  headline: string;
+  detail?: string | null;
+  onRecheck: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      className="flex flex-col gap-2 rounded-lg border border-destructive-foreground/30 bg-destructive/10 px-3 py-2.5 text-xs"
+    >
+      <p className="flex items-start gap-2 font-medium text-destructive-foreground">
+        <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        <span>{headline}</span>
+      </p>
+      {detail && <p className="text-muted-foreground">{detail}</p>}
+      <p className="text-muted-foreground">{SITE_ANALYSIS_CAVEAT}</p>
+      <div>
+        {/* type="button": this card renders inside the step's <form>, and a bare
+            button would submit it. Re-checks the saved status — it does not
+            re-run the analysis, so it must not claim to. */}
+        <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={onRecheck}>
+          <RefreshCw className="h-3 w-3" aria-hidden="true" />
+          Check again
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ===========================
 // STEP 2: Company Details
 // ===========================
 
@@ -1112,6 +1298,28 @@ export function CompanyDetailsStep({
             value={data.websiteUrl}
             onChange={(e) => onUpdate({ websiteUrl: e.target.value })}
           />
+          {/* P1-13 — say it before we do it. Submitting this step hands the URL
+              to AnalyzeSiteTriggerService, which fetches the page; until now the
+              brand was never told that happened, here or anywhere else in
+              onboarding. */}
+          {looksLikeSiteUrl(data.websiteUrl) ? (
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                When you continue, we&rsquo;ll read {siteHost(data.websiteUrl)} to pull in your
+                products, colours and category — it usually takes under a minute.{' '}
+                {SITE_ANALYSIS_CAVEAT}
+              </span>
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Add it and we&rsquo;ll read your site to pre-fill your products, colours and category.
+            </p>
+          )}
+          {/* Live readout for a brand who already has a workspace (arriving here
+              part-way through onboarding) — a brand-new signup has nothing to
+              report on until this step is saved. */}
+          {isApiLive() && hasBrandToken() && <SiteAnalysisStatus enteredUrl={data.websiteUrl} />}
         </div>
 
         <div className="flex flex-col gap-1.5">

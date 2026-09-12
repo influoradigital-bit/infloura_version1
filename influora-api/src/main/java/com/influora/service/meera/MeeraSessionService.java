@@ -18,10 +18,13 @@ import com.influora.repository.WorkspaceRepository;
 import com.influora.service.CreatorAgentConversationService;
 import com.influora.service.IdempotencyService;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -80,6 +83,41 @@ public class MeeraSessionService {
 
     private static final int TURN_CREDIT_COST = 1;
     private static final String SEND_TURN_SCOPE = "meera.send_turn";
+
+    /*
+     * P1-6 server-side backstop REMOVED 2026-09-12 on Swapnil's ruling, after the tester and
+     * Kabir both rejected it (see wiki/processes/P1-RUN-REPORT-0912.md).
+     *
+     * It keyed the refund on "newest row is USER and no persist-writeback row exists", treating
+     * the ABSENCE of a writeback row as proof that nothing was delivered. It is not. Two paths
+     * reach that state with the reply already in the brand's hands:
+     *   (a) chat.py returns on `disconnected` BEFORE persist_assistant_message and deliberately
+     *       never releases — that omission IS Kabir's fix. Read every SSE token, abort, wait out
+     *       the grace window, send again, and the sweep returned the credit for a delivered reply.
+     *   (b) chat.py's `if tool_result_delivered:` branch keeps the charge and persists nothing, so
+     *       every ordinary tool-result-only turn (show_creators / calculate_budget answered with
+     *       no narration) would be silently refunded on the brand's next send.
+     *
+     * The Python half of P1-6 (release_early, wired to the five terminal paths chat.py can
+     * actually observe, guarded on a server-minted messageId) is CORRECT and stays.
+     *
+     * If this backstop is rebuilt, it must key on a POSITIVE terminal marker written by Python at
+     * stream end — delivered vs disconnected — never on an absent row, and it must not fire on the
+     * tool_result_delivered path at all.
+     */
+
+    /**
+     * P1-14. Default page size for {@link #listMessages(String, String, String)} when no {@code
+     * after} cursor is supplied — i.e. the "brand reopens the chat" reload, which previously
+     * returned the conversation's ENTIRE message history with no limit on every page load, growing
+     * without bound because nothing in {@code src/main} ever archives a thread (the only {@link
+     * ConversationStatus} ever written anywhere is {@code ACTIVE}).
+     *
+     * <p>Newest N, returned oldest-first, so the transcript still reads top-to-bottom correctly.
+     * The {@code after}-cursor path is deliberately NOT capped — {@code useMeeraStream}'s recovery
+     * path asks for "everything since message X" and must keep getting exactly that.
+     */
+    static final int DEFAULT_HISTORY_LIMIT = 100;
 
     /**
      * Package-visible (not {@code private}) so {@link AICreditService#release} can consult it via
@@ -644,16 +682,20 @@ public class MeeraSessionService {
         creditService.release(workspaceId, TURN_CREDIT_COST, turnId);
     }
 
-    /** Tenant-scoped full turn history for a conversation. */
+    /**
+     * Tenant-scoped turn history for a conversation, bounded to the newest {@link
+     * #DEFAULT_HISTORY_LIMIT}.
+     *
+     * <p>P1-14: this overload used to run its own unbounded
+     * {@code findByConversationIdOrderByCreatedAtAsc} — the same defect the three-argument version
+     * was fixed for. It has no callers in {@code src/main} today (both controllers use the
+     * cursor-aware overload), so it was a dormant way to reintroduce the bug rather than a live
+     * bug. It now delegates instead of duplicating, so there is exactly ONE unbounded-history
+     * path in this class and it is the deliberate one (the {@code after}-cursor branch).
+     */
     @Transactional(readOnly = true)
     public List<AiMessage> listMessages(String workspaceId, String conversationId) {
-        conversationRepository
-                .findByIdAndWorkspaceId(conversationId, workspaceId)
-                .orElseThrow(
-                        () ->
-                                new ApiException(
-                                        "CONVERSATION_NOT_FOUND", "Conversation not found", HttpStatus.NOT_FOUND));
-        return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+        return listMessages(workspaceId, conversationId, null);
     }
 
     /**
@@ -667,6 +709,30 @@ public class MeeraSessionService {
      * {@code AiMessage#getId()} (a ULID, monotonically sortable by creation time) rather than
      * {@code createdAt} — a millisecond-resolution timestamp can collide across two turns saved in
      * the same millisecond, which the id cannot.
+     *
+     * <p><b>P1-14 — bounded default.</b> The no-cursor branch used to return the conversation's
+     * ENTIRE history, unbounded, and that is what the browser reloads every single time a brand
+     * opens the page. Nothing in {@code src/main} ever ends a conversation — the only {@link
+     * ConversationStatus} value written anywhere is {@code ACTIVE} ({@code AiConversation}'s
+     * field default, and this class's two {@code .status(...)} calls) — so {@link #startOrResume}
+     * keeps resuming the same row forever and that history only ever grows. It now returns the
+     * most recent {@link #DEFAULT_HISTORY_LIMIT} messages, still oldest-first so the transcript
+     * reads correctly. The {@code after}-cursor branch is untouched: {@code useMeeraStream}'s
+     * recovery path asks for "everything since message X" and must keep getting exactly that,
+     * unbounded — it is inherently small (one interrupted turn's worth) and capping it could
+     * silently drop the reply the recovery exists to fetch.
+     *
+     * <p>The cap is applied in the QUERY, not after the fetch: {@link
+     * AiMessageRepository#findByConversationIdOrderByCreatedAtDesc(String,
+     * org.springframework.data.domain.Pageable)} selects the newest {@code DEFAULT_HISTORY_LIMIT}
+     * rows with a database {@code LIMIT} and this method reverses that bounded page to
+     * oldest-first. An earlier revision trimmed the list in Java after loading the whole
+     * conversation, which bounded the response but left the row fetch unbounded — the part that
+     * actually costs us as a thread grows. Both are bounded now.
+     *
+     * <p>Deliberately NOT introducing an archival/status lifecycle to solve this — deciding when a
+     * brand's Meera thread ends, and what happens to it, is a product decision well above this
+     * fix. Recommended separately.
      */
     @Transactional(readOnly = true)
     public List<AiMessage> listMessages(String workspaceId, String conversationId, String afterMessageId) {
@@ -677,7 +743,15 @@ public class MeeraSessionService {
                                 new ApiException(
                                         "CONVERSATION_NOT_FOUND", "Conversation not found", HttpStatus.NOT_FOUND));
         if (afterMessageId == null || afterMessageId.isBlank()) {
-            return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId);
+            // Newest-first with a LIMIT at the database — the only order in which "the most recent
+            // N" is expressible as a page — then reversed here so the transcript still reads
+            // oldest-first. Reversing a bounded copy, never the whole conversation.
+            List<AiMessage> newestFirst =
+                    messageRepository.findByConversationIdOrderByCreatedAtDesc(
+                            conversationId, PageRequest.of(0, DEFAULT_HISTORY_LIMIT));
+            List<AiMessage> oldestFirst = new ArrayList<>(newestFirst);
+            Collections.reverse(oldestFirst);
+            return List.copyOf(oldestFirst);
         }
         return messageRepository.findByConversationIdAndIdGreaterThanOrderByIdAsc(conversationId, afterMessageId);
     }

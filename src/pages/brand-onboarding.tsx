@@ -8,10 +8,11 @@ import {
   AccountSetupStep,
   CompanyDetailsStep,
   initialData,
+  SiteAnalysisStatus,
   type OnboardingData,
 } from '@/components/brand/onboarding/onboarding-steps';
 import { Button } from '@/components/ui/button';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, isApiLive } from '@/lib/api';
 import { hasBrandToken } from '@/lib/auth-session';
 import { normalizePhone } from '@/lib/phone';
 
@@ -210,6 +211,7 @@ export default function BrandOnboardingPage() {
         return (
           <YoureInStep
             firstName={data.firstName}
+            websiteUrl={data.websiteUrl}
             onComplete={handleComplete}
             isSubmitting={isSubmitting}
           />
@@ -239,13 +241,27 @@ export default function BrandOnboardingPage() {
 
 interface YoureInStepProps {
   firstName?: string;
+  /**
+   * P1-13. The store URL the brand typed on step 2, so this step can show what we did with it.
+   *
+   * Step 2 triggers the analysis via saveBrandCompany and then UNMOUNTS, so its own readout is
+   * only ever reachable by a brand who re-enters an already-authenticated step 2. A first-time
+   * signup lands HERE while the analysis is still in flight, which made this the only place the
+   * result could actually reach them before the Meera canvas.
+   */
+  websiteUrl?: string;
   onComplete: (destination?: string) => void;
   isSubmitting: boolean;
 }
 
 /** Exported for test — F-0341 pins that these cards are live controls carrying a destination,
  *  which is not observable from the page without driving the whole wizard past a required form. */
-export function YoureInStep({ firstName, onComplete, isSubmitting }: YoureInStepProps) {
+export function YoureInStep({
+  firstName,
+  websiteUrl,
+  onComplete,
+  isSubmitting,
+}: YoureInStepProps) {
   const name = firstName?.trim() || 'there';
 
   return (
@@ -262,6 +278,12 @@ export function YoureInStep({ firstName, onComplete, isSubmitting }: YoureInStep
           campaign — we'll prompt you then. Pick where to go first:
         </p>
       </div>
+
+      {/* P1-13: we read their store the moment step 2 submitted -- say so, and say honestly when
+          we could not. Same gating as step 2's readout: a live API and a real token. */}
+      {isApiLive() && hasBrandToken() && websiteUrl?.trim() ? (
+        <SiteAnalysisStatus enteredUrl={websiteUrl} />
+      ) : null}
 
       <div className="space-y-3">
         <NextActionCard
