@@ -11,9 +11,13 @@ import com.influora.security.OnBehalfAuthResolver.OnBehalfContext;
 import com.influora.service.AuditLogService;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.meera.tool.ToolCallValidator.ToolCallRejectedException;
+import com.influora.service.meera.tool.creator.CheckDealRisksExecutor;
 import com.influora.service.meera.tool.creator.CreatorToolCallValidator;
+import com.influora.service.meera.tool.creator.EstimateMyRateExecutor;
 import com.influora.service.meera.tool.creator.GetMyDealsExecutor;
 import com.influora.service.meera.tool.creator.GetMyMetricsExecutor;
+import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
+import com.influora.web.dto.meera.CreatorToolDtos.EstimateMyRateResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyDealsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyMetricsResult;
 import java.util.Map;
@@ -35,12 +39,18 @@ import org.springframework.web.bind.annotation.RestController;
  * on-behalf JWT authenticates the creator. Neither alone is sufficient, and this controller re-proves
  * the human on every call rather than trusting the body.
  *
- * <p><b>Two routes, not the nine in SPEC.md &sect;3.1.</b> {@code get_brief},
- * {@code estimate_my_rate} and {@code check_deal_risks} need {@code CreatorBriefService},
- * {@code RateQuoteService} and {@code DealRiskService}, none of which exist yet; the drafts and the
- * campaign tools are later waves still. They are deliberately not stubbed. A registered route that
- * 404s or returns an empty shape is worse than an absent one: the model is told the capability
- * exists, spends a turn on it, and narrates a failure to the creator.
+ * <p><b>Four routes, not the nine in SPEC.md &sect;3.1.</b> {@code estimate_my_rate} and
+ * {@code check_deal_risks} joined the first two in Wave 3, with {@code RateQuoteService} and
+ * {@code DealRiskService}. {@code get_brief} still needs {@code CreatorBriefService} (Wave 4), and
+ * the drafts and campaign tools are later waves still. They are deliberately not stubbed. A
+ * registered route that 404s or returns an empty shape is worse than an absent one: the model is
+ * told the capability exists, spends a turn on it, and narrates a failure to the creator.
+ *
+ * <p><b>Adding a route here is half a change.</b> The other half is
+ * {@code CreatorToolScopes.WIRED_TOOL_NAMES}, which is what the assembler actually offers the
+ * model; a route with no name there is unreachable, and a name there with no route costs the
+ * creator a turn. {@code MeeraContextServiceTest#testCreatorContextCarriesWiredToolNames} reflects
+ * over this class's {@code @PostMapping} values and fails on either half alone.
  *
  * <p>Handler order is fixed and lives in one place ({@link #handleRead}) rather than being repeated
  * per route — the flag before identity, identity before consent, consent before the validator,
@@ -60,6 +70,8 @@ public class CreatorMeeraToolController {
     private final MeeraCreatorFeatureProperties featureProperties;
     private final GetMyDealsExecutor getMyDealsExecutor;
     private final GetMyMetricsExecutor getMyMetricsExecutor;
+    private final EstimateMyRateExecutor estimateMyRateExecutor;
+    private final CheckDealRisksExecutor checkDealRisksExecutor;
 
     public CreatorMeeraToolController(
             OnBehalfAuthResolver onBehalfAuthResolver,
@@ -68,7 +80,9 @@ public class CreatorMeeraToolController {
             AuditLogService auditLogService,
             MeeraCreatorFeatureProperties featureProperties,
             GetMyDealsExecutor getMyDealsExecutor,
-            GetMyMetricsExecutor getMyMetricsExecutor) {
+            GetMyMetricsExecutor getMyMetricsExecutor,
+            EstimateMyRateExecutor estimateMyRateExecutor,
+            CheckDealRisksExecutor checkDealRisksExecutor) {
         this.onBehalfAuthResolver = onBehalfAuthResolver;
         this.creatorToolCallValidator = creatorToolCallValidator;
         this.preferencesService = preferencesService;
@@ -76,6 +90,8 @@ public class CreatorMeeraToolController {
         this.featureProperties = featureProperties;
         this.getMyDealsExecutor = getMyDealsExecutor;
         this.getMyMetricsExecutor = getMyMetricsExecutor;
+        this.estimateMyRateExecutor = estimateMyRateExecutor;
+        this.checkDealRisksExecutor = checkDealRisksExecutor;
     }
 
     @PostMapping("/get_my_deals")
@@ -91,6 +107,22 @@ public class CreatorMeeraToolController {
             @RequestBody Map<String, Object> body) {
         return handleRead(
                 onBehalfJwt, body, CreatorToolName.get_my_metrics, getMyMetricsExecutor::execute);
+    }
+
+    @PostMapping("/estimate_my_rate")
+    public ResponseEntity<ApiResponse<EstimateMyRateResult>> estimateMyRate(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt,
+            @RequestBody Map<String, Object> body) {
+        return handleRead(
+                onBehalfJwt, body, CreatorToolName.estimate_my_rate, estimateMyRateExecutor::execute);
+    }
+
+    @PostMapping("/check_deal_risks")
+    public ResponseEntity<ApiResponse<CheckDealRisksResult>> checkDealRisks(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt,
+            @RequestBody Map<String, Object> body) {
+        return handleRead(
+                onBehalfJwt, body, CreatorToolName.check_deal_risks, checkDealRisksExecutor::execute);
     }
 
     /**

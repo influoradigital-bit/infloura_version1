@@ -12,8 +12,8 @@ import java.util.Set;
  * list. {@code OnBehalfAuthResolver#requireScope} only asserts that the tool being called is present
  * in the claim — it never validates the claim's entries against a registry — so a scope naming a
  * tool with no route is inert: nothing can call it, and it 404s if anything tries. That is why
- * {@link #SCOPE_LEVEL_0} ships all eight level-0 names from SPEC.md &sect;3.3 verbatim even in a wave
- * that wires two of them. Minting the full ceiling now means a later wave adds a route and an
+ * {@link #SCOPE_LEVEL_0} ships all eight level-0 names from SPEC.md &sect;3.3 verbatim while only
+ * four of them are wired. Minting the full ceiling now means a later wave adds a route and an
  * executor without also having to re-mint tokens or migrate a claim shape.
  *
  * <p>{@link #toolNamesForLevel} is the opposite: it is what the assembler puts in front of the
@@ -67,16 +67,31 @@ public final class CreatorToolScopes {
                     + " rank_open_campaigns";
 
     /**
-     * The tools that have a route AND an executor today (SPEC.md &sect;3.1, B0 Wave 2).
+     * The tools that have a route AND an executor today, in SPEC.md &sect;3.1 catalogue order.
      *
-     * <p>TODO(T-MEERA-CREATOR-PHASE-B): grow this as the waves land — {@code estimate_my_rate} and
-     * {@code check_deal_risks} with Wave 3's {@code RateQuoteService}/{@code DealRiskService},
-     * {@code get_brief} with Wave 4's {@code CreatorBriefService}, {@code draft_reply} with the
-     * draft surface, then {@code send_routine_reply} (B1/B5) and {@code rank_open_campaigns} /
-     * {@code draft_application} (B7). Adding a name here without adding its
-     * {@code /internal/meera/creator/*} route is the one change this class must never take.
+     * <p>Wave 3 added {@code estimate_my_rate} and {@code check_deal_risks} alongside
+     * {@code RateQuoteService} and {@code DealRiskService}. Still to come: {@code get_brief} with
+     * Wave 4's {@code CreatorBriefService}, {@code draft_reply} with the draft surface, then
+     * {@code send_routine_reply} (B1/B5) and {@code rank_open_campaigns} /
+     * {@code draft_application} (B7).
+     *
+     * <p><b>This list and {@code CreatorMeeraToolController}'s {@code @PostMapping} set are one
+     * change, never two.</b> A name here with no route costs the creator a turn and a narrated
+     * failure; a route with no name here is dead code that no production traffic can reach — which
+     * is exactly what happened in Wave 2, when the class landed and the call site did not, and
+     * every test on both sides stayed green because the Java tests called
+     * {@link #toolNamesForLevel} directly and the Python tests injected fixtures. The tripwire is
+     * {@code MeeraContextServiceTest#testCreatorContextCarriesWiredToolNames}, which asserts
+     * through the assembled context and reflects over the controller's route set, so it fails on
+     * either half alone.
+     *
+     * <p>Deliberately {@code List.of(...)} and not a {@code String} constant: javac inlines a
+     * constant {@code String} into every class that reads it, so a test could go on asserting a
+     * stale value until it was itself recompiled (see {@link #SCOPE_LEVEL_2}). A {@code List} is
+     * read at runtime and cannot go stale that way.
      */
-    private static final List<String> WIRED_TOOL_NAMES = List.of("get_my_deals", "get_my_metrics");
+    private static final List<String> WIRED_TOOL_NAMES =
+            List.of("get_my_deals", "estimate_my_rate", "get_my_metrics", "check_deal_risks");
 
     private CreatorToolScopes() {}
 

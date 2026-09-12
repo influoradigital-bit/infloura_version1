@@ -22,12 +22,18 @@ import com.influora.security.OnBehalfAuthResolver;
 import com.influora.security.OnBehalfAuthResolver.OnBehalfContext;
 import com.influora.service.AuditLogService;
 import com.influora.service.CreatorAgentPreferencesService;
+import com.influora.service.meera.tool.creator.CheckDealRisksExecutor;
 import com.influora.service.meera.tool.creator.CreatorToolCallValidator;
+import com.influora.service.meera.tool.creator.EstimateMyRateExecutor;
 import com.influora.service.meera.tool.creator.GetMyDealsExecutor;
 import com.influora.service.meera.tool.creator.GetMyMetricsExecutor;
+import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
+import com.influora.web.dto.meera.CreatorToolDtos.EstimateMyRateResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyDealsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyMetricsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.MetricsResult;
+import com.influora.web.dto.meera.CreatorToolDtos.PackageQuote;
+import com.influora.web.dto.meera.CreatorToolDtos.RiskFlag;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -60,6 +66,8 @@ class CreatorMeeraToolControllerTest {
     @Mock private MeeraCreatorFeatureProperties featureProperties;
     @Mock private GetMyDealsExecutor getMyDealsExecutor;
     @Mock private GetMyMetricsExecutor getMyMetricsExecutor;
+    @Mock private EstimateMyRateExecutor estimateMyRateExecutor;
+    @Mock private CheckDealRisksExecutor checkDealRisksExecutor;
 
     private CreatorMeeraToolController controller;
 
@@ -73,7 +81,9 @@ class CreatorMeeraToolControllerTest {
                         auditLogService,
                         featureProperties,
                         getMyDealsExecutor,
-                        getMyMetricsExecutor);
+                        getMyMetricsExecutor,
+                        estimateMyRateExecutor,
+                        checkDealRisksExecutor);
         lenient().when(featureProperties.isCreatorEnabled()).thenReturn(true);
     }
 
@@ -98,18 +108,33 @@ class CreatorMeeraToolControllerTest {
                 assertThrows(ApiException.class, () -> controller.getMyDeals(JWT, BODY));
         ApiException metrics =
                 assertThrows(ApiException.class, () -> controller.getMyMetrics(JWT, BODY));
+        ApiException rate =
+                assertThrows(ApiException.class, () -> controller.estimateMyRate(JWT, BODY));
+        ApiException risks =
+                assertThrows(ApiException.class, () -> controller.checkDealRisks(JWT, BODY));
 
         assertEquals("FEATURE_DISABLED", deals.getCode());
         assertEquals(HttpStatus.NOT_FOUND, deals.getStatus());
         assertEquals("FEATURE_DISABLED", metrics.getCode());
         assertEquals(HttpStatus.NOT_FOUND, metrics.getStatus());
+        assertEquals("FEATURE_DISABLED", rate.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, rate.getStatus());
+        assertEquals("FEATURE_DISABLED", risks.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, risks.getStatus());
 
         verifyNoInteractions(
-                onBehalfAuthResolver, preferencesService, getMyDealsExecutor, getMyMetricsExecutor);
+                onBehalfAuthResolver,
+                preferencesService,
+                getMyDealsExecutor,
+                getMyMetricsExecutor,
+                estimateMyRateExecutor,
+                checkDealRisksExecutor);
         // [SEC: Kabir Wave 2, finding 3] The refusal is audited, with a null tenant key: the flag
         // is checked before anything about the caller is proven, so there is no identity to record.
         assertRejectionRow(null, "get_my_deals", "FEATURE_DISABLED");
         assertRejectionRow(null, "get_my_metrics", "FEATURE_DISABLED");
+        assertRejectionRow(null, "estimate_my_rate", "FEATURE_DISABLED");
+        assertRejectionRow(null, "check_deal_risks", "FEATURE_DISABLED");
     }
 
     @Test
@@ -340,6 +365,163 @@ class CreatorMeeraToolControllerTest {
                                 AuditLogService.OUTCOME_REJECTED,
                                 AuditLogService.OUTCOME_FAILED)
                         .contains(outcome.getValue()));
+    }
+
+    // =====================================================================================
+    // Wave 3 - the two routes added with RateQuoteService and DealRiskService
+    // =====================================================================================
+
+    @Test
+    @DisplayName(
+            "estimate_my_rate happy path: the executor runs with the JWT-verified user id and an"
+                    + " ALLOWED row is written under the tool's own name and tier")
+    void testEstimateMyRateHappyPath() {
+        stubResolverFor(CreatorToolName.estimate_my_rate, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(creatorToolCallValidator.validateAndResolve("estimate_my_rate", CREATOR_USER_ID))
+                .thenReturn(CreatorToolName.estimate_my_rate);
+        when(creatorToolCallValidator.tierOf(CreatorToolName.estimate_my_rate))
+                .thenReturn(MeeraToolTier.R);
+        EstimateMyRateResult expected = new EstimateMyRateResult(emptyQuote());
+        when(estimateMyRateExecutor.execute(CREATOR_USER_ID, BODY)).thenReturn(expected);
+
+        ResponseEntity<ApiResponse<EstimateMyRateResult>> response =
+                controller.estimateMyRate(JWT, BODY);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(expected, response.getBody().data());
+        verify(estimateMyRateExecutor).execute(CREATOR_USER_ID, BODY);
+        verify(onBehalfAuthResolver)
+                .resolveForWorkspaceRequiringScope(JWT, CREATOR_USER_ID, "estimate_my_rate");
+        verify(auditLogService)
+                .recordToolCall(
+                        eq(CREATOR_USER_ID),
+                        eq("estimate_my_rate"),
+                        eq("R"),
+                        eq(AuditLogService.OUTCOME_ALLOWED),
+                        eq((String) null),
+                        eq((String) null),
+                        eq((BigDecimal) null),
+                        any());
+    }
+
+    @Test
+    @DisplayName(
+            "check_deal_risks happy path: flags reach the caller unaltered and the ALLOWED row"
+                    + " names check_deal_risks, not the route it was copied from")
+    void testCheckDealRisksHappyPath() {
+        stubResolverFor(CreatorToolName.check_deal_risks, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(creatorToolCallValidator.validateAndResolve("check_deal_risks", CREATOR_USER_ID))
+                .thenReturn(CreatorToolName.check_deal_risks);
+        when(creatorToolCallValidator.tierOf(CreatorToolName.check_deal_risks))
+                .thenReturn(MeeraToolTier.R);
+        RiskFlag flag =
+                new RiskFlag(
+                        "BELOW_FLOOR",
+                        "CRITICAL",
+                        "Offer is below your floor",
+                        "Offer is 20,000 against your floor of 36,000.",
+                        null,
+                        "Counter at your floor of 36,000.",
+                        Map.of(),
+                        true);
+        CheckDealRisksResult expected =
+                new CheckDealRisksResult(List.of(flag), "CRITICAL", "DEAL", "01HDEAL123");
+        when(checkDealRisksExecutor.execute(CREATOR_USER_ID, BODY)).thenReturn(expected);
+
+        ResponseEntity<ApiResponse<CheckDealRisksResult>> response =
+                controller.checkDealRisks(JWT, BODY);
+
+        assertEquals(expected, response.getBody().data());
+        assertEquals("CRITICAL", response.getBody().data().highestSeverity());
+        verify(onBehalfAuthResolver)
+                .resolveForWorkspaceRequiringScope(JWT, CREATOR_USER_ID, "check_deal_risks");
+        verify(auditLogService)
+                .recordToolCall(
+                        eq(CREATOR_USER_ID),
+                        eq("check_deal_risks"),
+                        eq("R"),
+                        eq(AuditLogService.OUTCOME_ALLOWED),
+                        eq((String) null),
+                        eq((String) null),
+                        eq((BigDecimal) null),
+                        any());
+    }
+
+    @Test
+    @DisplayName(
+            "the two new routes refuse a BRAND principal exactly like the first two -- these read"
+                    + " the creator's floors, which is precisely what the info barrier contains")
+    void testBrandPrincipalIs403OnTheWave3Routes() {
+        OnBehalfContext brand =
+                new OnBehalfContext("01HBRANDUSER123456789", CREATOR_USER_ID, UserType.BRAND, "c");
+        stubResolverFor(CreatorToolName.estimate_my_rate, brand);
+        stubResolverFor(CreatorToolName.check_deal_risks, brand);
+
+        assertEquals(
+                "AUDIENCE_PRINCIPAL_MISMATCH",
+                assertThrows(ApiException.class, () -> controller.estimateMyRate(JWT, BODY)).getCode());
+        assertEquals(
+                "AUDIENCE_PRINCIPAL_MISMATCH",
+                assertThrows(ApiException.class, () -> controller.checkDealRisks(JWT, BODY)).getCode());
+
+        verifyNoInteractions(estimateMyRateExecutor, checkDealRisksExecutor);
+        verify(preferencesService, never()).isConsentAccepted(anyString());
+        assertRejectionRow(
+                "01HBRANDUSER123456789", "estimate_my_rate", "AUDIENCE_PRINCIPAL_MISMATCH");
+        assertRejectionRow(
+                "01HBRANDUSER123456789", "check_deal_risks", "AUDIENCE_PRINCIPAL_MISMATCH");
+    }
+
+    @Test
+    @DisplayName("the two new routes refuse an unconsented creator before any pricing or rule runs")
+    void testUnconsentedCreatorIs403OnTheWave3Routes() {
+        stubResolverFor(CreatorToolName.estimate_my_rate, creatorContext());
+        stubResolverFor(CreatorToolName.check_deal_risks, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(false);
+
+        assertEquals(
+                "CONSENT_REQUIRED",
+                assertThrows(ApiException.class, () -> controller.estimateMyRate(JWT, BODY)).getCode());
+        assertEquals(
+                "CONSENT_REQUIRED",
+                assertThrows(ApiException.class, () -> controller.checkDealRisks(JWT, BODY)).getCode());
+
+        verifyNoInteractions(estimateMyRateExecutor, checkDealRisksExecutor);
+        verify(creatorToolCallValidator, never()).validateAndResolve(anyString(), anyString());
+        assertRejectionRow(CREATOR_USER_ID, "estimate_my_rate", "CONSENT_REQUIRED");
+        assertRejectionRow(CREATOR_USER_ID, "check_deal_risks", "CONSENT_REQUIRED");
+    }
+
+    @Test
+    @DisplayName(
+            "each Wave 3 route asks the resolver for its OWN scope name -- a token scoped to"
+                    + " estimate_my_rate alone cannot reach check_deal_risks")
+    void testWave3RoutesAreScopedIndividually() {
+        when(onBehalfAuthResolver.resolveForWorkspaceRequiringScope(
+                        JWT, CREATOR_USER_ID, "check_deal_risks"))
+                .thenThrow(
+                        new ApiException("ON_BEHALF_SCOPE_INSUFFICIENT", "nope", HttpStatus.FORBIDDEN));
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> controller.checkDealRisks(JWT, BODY));
+
+        assertEquals("ON_BEHALF_SCOPE_INSUFFICIENT", ex.getCode());
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        verifyNoInteractions(checkDealRisksExecutor, estimateMyRateExecutor);
+        verify(auditLogService, never())
+                .recordToolCall(
+                        any(), any(), any(), eq(AuditLogService.OUTCOME_ALLOWED), any(), any(), any(),
+                        any());
+        assertRejectionRow(CREATOR_USER_ID, "check_deal_risks", "ON_BEHALF_SCOPE_INSUFFICIENT");
+    }
+
+    /** Shape only -- the controller never reads a quote's contents. */
+    private static PackageQuote emptyQuote() {
+        return new PackageQuote(
+                List.of(), List.of(), null, null, "12,000", new BigDecimal("12000"), null, null,
+                null, null, null, null, "INR", null, 2, "your floor", 0, null, null, false, null);
     }
 
     /**

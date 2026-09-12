@@ -136,7 +136,10 @@ class DealServiceBudgetTest {
                                 contractRepository,
                                 escrowHoldRepository,
                                 shipmentRepository),
-                        applicationHistoryService);
+                        applicationHistoryService,
+                        // B0-34 (SPEC.md 5.3) — this suite never calls risksForCreator, the
+                        // only method that touches DealRiskService.
+                        null);
     }
 
     /** budgetMax 50000, mirroring {@code DealServiceTest#activeCampaign}. */

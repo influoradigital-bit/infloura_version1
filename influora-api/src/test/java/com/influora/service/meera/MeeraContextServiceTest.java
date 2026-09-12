@@ -285,13 +285,22 @@ class MeeraContextServiceTest {
         assertEquals(null, withoutCap.aiMonthlyCapUsd());
     }
 
+    /**
+     * SPEC.md &sect;3.1 catalogue order, and the four tools that have a route TODAY. Declared here
+     * as a literal rather than read from {@code CreatorToolScopes} -- a test that imported the
+     * production list would agree with it no matter what it said.
+     */
+    private static final List<String> WIRED_CREATOR_TOOLS =
+            List.of("get_my_deals", "estimate_my_rate", "get_my_metrics", "check_deal_risks");
+
     @Test
     @DisplayName(
             "[QA Wave 2 blocker] the ASSEMBLED CREATOR context carries a non-empty tools_enabled"
-                    + " naming exactly the wired creator tools -- CreatorToolScopes.toolNamesForLevel"
-                    + " was green in isolation while this seam still shipped List.of(), which made the"
-                    + " controller, both executors, the validator and the creator scope mint"
-                    + " unreachable in production with every test on both sides passing")
+                    + " naming exactly the four wired creator tools -- CreatorToolScopes"
+                    + ".toolNamesForLevel was green in isolation while this seam still shipped"
+                    + " List.of(), which made the controller, every executor, the validator and the"
+                    + " creator scope mint unreachable in production with every test on both sides"
+                    + " passing")
     void testCreatorContextCarriesWiredToolNames() {
         com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
         when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
@@ -326,15 +335,31 @@ class MeeraContextServiceTest {
                 creatorContext.toolsEnabled().isEmpty(),
                 "tools_enabled is empty: the model is offered no creator tool and the entire Wave 2"
                         + " surface is dead in production");
-        assertEquals(List.of("get_my_deals", "get_my_metrics"), creatorContext.toolsEnabled());
+        assertEquals(WIRED_CREATOR_TOOLS, creatorContext.toolsEnabled());
 
-        // Every offered name must be a declared CreatorToolName, i.e. a tool with a Spring route --
-        // offering a name the server cannot answer costs the creator a turn and a narrated failure.
+        // Every offered name must be a declared CreatorToolName. Necessary but NOT sufficient --
+        // all nine of SPEC.md 3.1's tools will eventually be constants, so this alone cannot tell
+        // a wired tool from a planned one. The route assertion below is the one that can.
         for (String name : creatorContext.toolsEnabled()) {
             assertTrue(
                     com.influora.domain.enums.CreatorToolName.parse(name).isPresent(),
                     "tools_enabled offers a name with no route: " + name);
         }
+
+        // The bidirectional tripwire, and the actual lesson of Wave 2: a class and its call site
+        // are one change. Compared against the WIDEST scope (level 2, not represented), whose
+        // toolNamesForLevel is CreatorToolScopes.WIRED_TOOL_NAMES in full -- so this is a set
+        // equality between "what the assembler can ever offer" and "what the controller can
+        // answer", and it fails from either side alone:
+        //   - a fifth name added to WIRED_TOOL_NAMES with no @PostMapping -> left side bigger;
+        //   - a fifth @PostMapping added without the name -> right side bigger, dead code that no
+        //     production traffic can reach, which is exactly how Wave 2 shipped.
+        // Both were run against this assertion before it was committed.
+        assertEquals(
+                new java.util.TreeSet<>(CreatorToolScopes.toolNamesForLevel(2, false, false)),
+                creatorMeeraToolRoutes(),
+                "the tools the assembler can offer and the routes the controller serves have"
+                        + " diverged -- one of them was changed without the other");
 
         // The three flags the wire carries and the three that decided the offer are the same
         // reading of the same row -- what the hoisted locals at the call site exist to guarantee.
@@ -361,7 +386,35 @@ class MeeraContextServiceTest {
                 (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
                         service.assemble(WORKSPACE_ID, "CREATOR");
         assertTrue(representedContext.represented());
-        assertEquals(List.of("get_my_deals", "get_my_metrics"), representedContext.toolsEnabled());
+        assertEquals(WIRED_CREATOR_TOOLS, representedContext.toolsEnabled());
+    }
+
+    /**
+     * The {@code /internal/meera/creator/*} tool names {@link CreatorMeeraToolController} actually
+     * serves, read off its {@code @PostMapping} annotations.
+     *
+     * <p>Reflection rather than a hand-kept list, because a hand-kept list is the same defect one
+     * level up: it would have to be edited by the same person who forgot to edit
+     * {@code WIRED_TOOL_NAMES}.
+     */
+    private static java.util.TreeSet<String> creatorMeeraToolRoutes() {
+        java.util.TreeSet<String> routes = new java.util.TreeSet<>();
+        for (java.lang.reflect.Method method :
+                com.influora.web.CreatorMeeraToolController.class.getDeclaredMethods()) {
+            org.springframework.web.bind.annotation.PostMapping mapping =
+                    method.getAnnotation(org.springframework.web.bind.annotation.PostMapping.class);
+            if (mapping == null) {
+                continue;
+            }
+            for (String path : mapping.value()) {
+                routes.add(path.startsWith("/") ? path.substring(1) : path);
+            }
+        }
+        assertFalse(
+                routes.isEmpty(),
+                "no @PostMapping found on CreatorMeeraToolController -- this assertion cannot pass"
+                        + " vacuously");
+        return routes;
     }
 
     @Test

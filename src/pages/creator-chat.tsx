@@ -41,6 +41,7 @@ import {
   type ShipmentApiRecord,
   type ShipmentApiStatus,
   type ShipmentCondition,
+  type RiskFlag,
 } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
@@ -76,6 +77,7 @@ import { ShippingAddressForm, type ShippingAddressData } from '@/components/crea
 import { ReceiptConfirmation, type ReceiptData } from '@/components/creator/deal-room/receipt-confirmation';
 import { ShipmentCard, type ShipmentStatus } from '@/components/shared/shipment-card';
 import { DealTermsSummary } from '@/components/shared/deal-terms-summary';
+import { DealRiskCard } from '@/components/shared/deal-risk-card';
 import { MapPin } from 'lucide-react';
 // CR-34 — `CollaborationStatus` is no longer imported here: the only value-level use was the
 // local canAccept() mirror, which now lives in lib/deal-stage.ts. It survives in prose below.
@@ -752,6 +754,51 @@ export default function CreatorChatPage() {
   const dealRefreshRefs = React.useRef(new Map<string, number>());
 
   /**
+   * T-MEERA-CREATOR-PHASE-B (SPEC.md §8.6, B0-37) — `DealRiskService`'s flags for a deal, keyed
+   * by deal id so switching rooms never shows deal A's flags under deal B's proposal.
+   *
+   * `flags` is optional on the wire (`CheckDealRisksResult` is `@JsonInclude(NON_NULL)`) but is
+   * normalised to `[]` on the way into state, so nothing downstream has to guard a `.map()`.
+   */
+  const [dealRisks, setDealRisks] = React.useState<Record<string, RiskFlag[]>>({});
+
+  /** Per-deal monotonic tokens for {@link loadDealRisks}, exactly as `dealRefreshRefs` above. */
+  const dealRisksRefs = React.useRef(new Map<string, number>());
+
+  /**
+   * Read `GET /deals/:id/risks`.
+   *
+   * Carries the same "latest request wins" guard as {@link refreshDeal}, and for the same reason:
+   * without a per-deal token, a slow response for deal A landing after the creator has already
+   * switched to deal B would paint A's flags onto B's proposal card — the one place on this page
+   * where showing the wrong deal's warning is actively dangerous.
+   *
+   * A 403 is EXPECTED and is swallowed in silence. `DealService.risksForCreator` refuses any
+   * principal that is not the creator on this deal with `CREATOR_ONLY`; that is an ordinary state
+   * (a deal the creator is not party to), not a failure worth a toast. Every OTHER error is
+   * logged — this fetch is additive, so a real failure must not disturb the room, but it must
+   * still be diagnosable.
+   */
+  const loadDealRisks = React.useCallback(
+    async (id: string) => {
+      if (!liveApi) return;
+      const token = (dealRisksRefs.current.get(id) ?? 0) + 1;
+      dealRisksRefs.current.set(id, token);
+      const isSupersededRisksRead = () => dealRisksRefs.current.get(id) !== token;
+      try {
+        const result = await api.deals.risks(id);
+        if (isSupersededRisksRead()) return;
+        setDealRisks((prev) => ({ ...prev, [id]: result.flags ?? [] }));
+      } catch (err) {
+        if (isSupersededRisksRead()) return;
+        if (err instanceof ApiError && err.status === 403) return;
+        console.error('Failed to load deal risk flags', id, err);
+      }
+    },
+    [liveApi],
+  );
+
+  /**
    * Re-read ONE deal's metadata — `GET /deals/:id` — and upsert it into the list.
    *
    * CR-09 needs the accept/decline/counter handlers to refresh the deal so the CR-02 gate
@@ -768,6 +815,10 @@ export default function CreatorChatPage() {
   const refreshDeal = React.useCallback(
     async (id: string) => {
       if (!liveApi) return;
+      // §8.6 — the risk flags refresh on the same path as the deal itself, so a counter or an
+      // accept re-evaluates them. It owns its own token, so it neither blocks nor is blocked by
+      // the metadata read below.
+      void loadDealRisks(id);
       const token = (dealRefreshRefs.current.get(id) ?? 0) + 1;
       dealRefreshRefs.current.set(id, token);
       /** Has a newer refresh of THIS deal started since we issued ours? */
@@ -806,7 +857,7 @@ export default function CreatorChatPage() {
         });
       }
     },
-    [liveApi, toast],
+    [liveApi, toast, loadDealRisks],
   );
 
   const selectedDeal = React.useMemo(() => {
@@ -938,6 +989,20 @@ export default function CreatorChatPage() {
     setLiveMessages([]);
     void loadMessages(selectedDeal.id);
   }, [liveApi, selectedDeal?.id, loadMessages]);
+
+  // §8.6 (B0-37) — flags for whichever deal is open. `refreshDeal` covers the post-mutation
+  // case; this covers the far commoner one, opening a deal without mutating it.
+  React.useEffect(() => {
+    if (!liveApi || !selectedDeal) return;
+    void loadDealRisks(selectedDeal.id);
+  }, [liveApi, selectedDeal?.id, loadDealRisks]);
+
+  /**
+   * §8.6 — the open deal's flags. `[]` rather than `undefined` for a deal whose read has not
+   * landed (or was refused with the expected 403), so the render sites below gate on length and
+   * never on a null that the wire cannot produce.
+   */
+  const selectedDealRiskFlags = selectedDeal ? (dealRisks[selectedDeal.id] ?? []) : [];
 
   // Mark the thread read once opened (mirrors creator-deals.tsx openDeal flow).
   React.useEffect(() => {
@@ -2530,6 +2595,20 @@ export default function CreatorChatPage() {
                           </div>
                         )}
 
+                        {/* T-MEERA-CREATOR-PHASE-B §8.6 (B0-37) — `DealRiskService`'s flags for
+                            THIS deal, after the terms summary. Gated on `pending` for the same
+                            reason the terms block above is: the flags describe the offer
+                            currently on the table, so a settled card must not carry them. Its own
+                            gate is `length > 0` rather than presence, so a deal with no flags —
+                            or one whose read was refused with the expected 403 — renders no
+                            heading at all rather than an empty panel implying "all clear". */}
+                        {event.metadata?.status === 'pending' && selectedDealRiskFlags.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-stage-outreach-border space-y-2">
+                            <p className="text-xs text-muted-foreground mb-1">What to watch</p>
+                            <DealRiskCard flags={selectedDealRiskFlags} />
+                          </div>
+                        )}
+
                         {/* Earnings Breakdown for Creator */}
                         <div className="mt-3 pt-3 border-t border-stage-outreach-border">
                           <p className="text-xs text-muted-foreground mb-2">Your Earnings Breakdown</p>
@@ -2732,6 +2811,18 @@ export default function CreatorChatPage() {
                           <div className="mt-3 pt-3 border-t border-stage-negotiating-border space-y-2">
                             <p className="text-xs text-muted-foreground mb-1">Deal Terms</p>
                             <DealTermsSummary terms={selectedDeal.dealTerms} />
+                          </div>
+                        )}
+
+                        {/* §8.6 (B0-37) — see the identical note on the Brand Proposal card. The
+                            flags belong on the creator's own counter too: `ExclusivityLongRule`,
+                            `UsageLongRule` and `UsagePerpetualRule` all describe terms a counter
+                            on amount alone leaves untouched, so they are still what the creator
+                            would be agreeing to. */}
+                        {event.metadata?.status === 'pending' && selectedDealRiskFlags.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-stage-negotiating-border space-y-2">
+                            <p className="text-xs text-muted-foreground mb-1">What to watch</p>
+                            <DealRiskCard flags={selectedDealRiskFlags} />
                           </div>
                         )}
 

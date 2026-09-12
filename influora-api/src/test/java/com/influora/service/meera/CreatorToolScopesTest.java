@@ -165,11 +165,13 @@ class CreatorToolScopesTest {
 
     @Test
     @DisplayName(
-            "toolNamesForLevel offers ONLY tools with a live route -- get_my_deals and"
-                    + " get_my_metrics in Wave 2, never the six names the scope also mints")
+            "toolNamesForLevel offers ONLY tools with a live route -- the four wired in Waves 2 and"
+                    + " 3, never the four names the level-0 scope also mints")
     void testOnlyWiredToolsAreOffered() {
         List<String> offered = CreatorToolScopes.toolNamesForLevel(0, false, false);
-        assertEquals(List.of("get_my_deals", "get_my_metrics"), offered);
+        assertEquals(
+                List.of("get_my_deals", "estimate_my_rate", "get_my_metrics", "check_deal_risks"),
+                offered);
         // The gap between the ceiling and the offered set is the point: the scope names eight
         // tools, but a tool the model can call and the server cannot answer is worse than one it
         // cannot see.

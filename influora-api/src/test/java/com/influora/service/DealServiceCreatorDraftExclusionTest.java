@@ -89,7 +89,10 @@ class DealServiceCreatorDraftExclusionTest {
                         eventPublisher,
                         messageStreamRegistry,
                         collaborationReviveService,
-                        applicationHistoryService);
+                        applicationHistoryService,
+                        // B0-34 (SPEC.md 5.3) — this suite never calls risksForCreator, the
+                        // only method that touches DealRiskService.
+                        null);
     }
 
     @Test

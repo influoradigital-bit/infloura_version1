@@ -48,6 +48,8 @@ import com.influora.service.notification.event.FirstMessageSentEvent;
 import com.influora.service.notification.event.PayoutReleasedEvent;
 import com.influora.service.notification.event.ProposalAcceptedEvent;
 import com.influora.service.notification.event.ProposalSentEvent;
+import com.influora.service.risk.DealRiskService;
+import com.influora.service.risk.RiskSeverity;
 import com.influora.web.dto.deal.DealDtos.CounterRequest;
 import com.influora.web.dto.deal.DealDtos.CreateDealRequest;
 import com.influora.web.dto.deal.DealDtos.DealMessageResponse;
@@ -57,6 +59,8 @@ import com.influora.web.dto.deal.DealDtos.OkResponse;
 import com.influora.web.dto.deal.DealDtos.RejectRequest;
 import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.DeliverableListItem;
+import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
+import com.influora.web.dto.meera.CreatorToolDtos.RiskFlag;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -115,6 +119,12 @@ public class DealService {
     /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
     private final ApplicationHistoryService applicationHistoryService;
 
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;5.3, B4) — backs {@link #risksForCreator} only. Every
+     * other method on this class ignores it.
+     */
+    private final DealRiskService dealRiskService;
+
     public DealService(
             CollaborationRepository collaborationRepository,
             DealMessageRepository dealMessageRepository,
@@ -130,7 +140,8 @@ public class DealService {
             ApplicationEventPublisher eventPublisher,
             DealMessageStreamRegistry messageStreamRegistry,
             CollaborationReviveService collaborationReviveService,
-            ApplicationHistoryService applicationHistoryService) {
+            ApplicationHistoryService applicationHistoryService,
+            DealRiskService dealRiskService) {
         this.collaborationRepository = collaborationRepository;
         this.collaborationReviveService = collaborationReviveService;
         this.dealMessageRepository = dealMessageRepository;
@@ -146,6 +157,37 @@ public class DealService {
         this.eventPublisher = eventPublisher;
         this.messageStreamRegistry = messageStreamRegistry;
         this.applicationHistoryService = applicationHistoryService;
+        this.dealRiskService = dealRiskService;
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;5.3, B4) — {@code GET /deals/{id}/risks}.
+     *
+     * <p><b>Creator principal only, and the 403 is not a formality.</b> Every flag this returns is
+     * computed against the creator's own rate floors, her excluded categories and her blocked
+     * brands — the exact numbers the Phase-A info barrier (and {@code InfoBarrierTest}) exist to
+     * keep away from a brand. A brand reading her risk flags would learn, from
+     * {@code BELOW_FLOOR}'s detail line alone, the lowest number she will accept, which is the
+     * single most valuable thing to know on the other side of a negotiation. So this refuses
+     * BRAND principals outright rather than filtering the payload: a filtered version of this
+     * response is one field away from leaking, every time anyone adds a flag.
+     *
+     * <p>The refusal code is {@code CREATOR_ONLY} rather than the {@code WRONG_USER_TYPE} that
+     * {@link CreatorContextService#requireCreator} raises, because SPEC.md &sect;5.3 names it —
+     * the frontend branches on it to keep the tab hidden on brand deal pages.
+     */
+    @Transactional(readOnly = true)
+    public CheckDealRisksResult risksForCreator(AuthPrincipal principal, String dealId) {
+        if (principal == null || principal.getUserType() != UserType.CREATOR) {
+            throw new ApiException(
+                    "CREATOR_ONLY",
+                    "Deal risk flags are visible to the creator on the deal only",
+                    HttpStatus.FORBIDDEN);
+        }
+        CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        List<RiskFlag> flags = dealRiskService.evaluateDeal(profile.getId(), dealId);
+        return new CheckDealRisksResult(
+                flags, RiskSeverity.highest(flags), DealRiskService.TARGET_DEAL, dealId);
     }
 
     @Transactional(readOnly = true)

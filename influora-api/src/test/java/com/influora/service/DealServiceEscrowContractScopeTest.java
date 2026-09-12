@@ -136,7 +136,10 @@ class DealServiceEscrowContractScopeTest {
                                 contractRepository,
                                 escrowHoldRepository,
                                 shipmentRepository),
-                        applicationHistoryService);
+                        applicationHistoryService,
+                        // B0-34 (SPEC.md 5.3) — this suite never calls risksForCreator, the
+                        // only method that touches DealRiskService.
+                        null);
 
         when(creatorPrincipal.getUserType()).thenReturn(UserType.CREATOR);
         when(creatorPrincipal.getUserId()).thenReturn(CREATOR_USER_ID);

@@ -187,9 +187,12 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     "rate_card_shareable",
     "represented",
     "tier",
-    # Phase B (§7.2): the creator tool names this turn may call. Absent or
-    # EMPTY degrades to Phase-A warn-only behaviour, which is what Wave 1 ships
-    # (Spring sends `List.of()` until B0-20 lands `CreatorToolScopes`).
+    # Phase B (§7.2): the creator tool names this turn may call. Spring sends
+    # the tools that have a live route -- four as of Wave 3 (get_my_deals,
+    # estimate_my_rate, get_my_metrics, check_deal_risks), intersected with the
+    # creator's own scope. Absent or EMPTY still degrades to Phase-A warn-only
+    # behaviour, which is now a real state (a scope granting none of the wired
+    # tools) rather than the Wave-1 placeholder it used to describe.
     "tools_enabled",
     "weekly_sponsored_limit",
     "working_days",
@@ -745,9 +748,10 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
         )
 
     # §7.2: the tools this turn may actually call. Absent or empty renders
-    # NOTHING, which is the Phase-A warn-only block verbatim -- Spring sends an
-    # empty list until `CreatorToolScopes` (B0-20) grants a level, so this line
-    # stays dark until then. The names are also rendered into Block A
+    # NOTHING, which is the Phase-A warn-only block verbatim. That is no longer
+    # the default: `CreatorToolScopes.toolNamesForLevel` (B0-20) is wired at
+    # `MeeraContextService`, so a consenting creator arrives here with four
+    # names and this line renders. The names are also rendered into Block A
     # (`build_block_a_creator`) and the matching SCHEMAS are what
     # `assemble_prompt` hands the loop, all three off this same list -- the
     # persona says what Meera can do, this line says what she may do NOW.

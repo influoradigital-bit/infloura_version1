@@ -2464,6 +2464,25 @@ export const deals = {
       : mockOr<Deal | null>(null),
 
   /**
+   * GET /deals/:id/risks — T-MEERA-CREATOR-PHASE-B (SPEC.md §8.1, §5.3), B0-34's endpoint.
+   *
+   * Creator-only by construction, not by filtering: `DealService.risksForCreator` refuses a BRAND
+   * principal outright with `CREATOR_ONLY` (403) because `BELOW_FLOOR`'s detail line is the lowest
+   * number the creator will accept. Hence the hard-coded `{ role: 'creator' }` — `http.request`
+   * defaults `role` to `'brand'`, which would send the wrong token on every call.
+   *
+   * Callers must swallow the 403: a creator viewing a deal they are not the creator on is an
+   * ordinary state, not an error worth a toast (§8.6).
+   *
+   * The mock returns a clean, flagless result rather than invented flags — `highest_severity` is
+   * absent exactly as the server omits it for an empty list.
+   */
+  risks: (id: string) =>
+    isLive()
+      ? http.request<DealRisksResponse>('GET', `/deals/${id}/risks`, { role: 'creator' })
+      : mockOr<DealRisksResponse>({ flags: [], target: 'DEAL', target_id: id }),
+
+  /**
    * POST /deals/:id/accept — brand or creator accepts whichever offer is currently on the
    * table. `role` defaults to 'creator' to preserve existing call sites; pass 'brand' for
    * brand-side accept (backend B-4: dual-role, mirrors `counter()`'s auth/scoping — brand
@@ -6815,8 +6834,16 @@ export interface PackageQuote {
   /** Creator-only — never on the (Phase B1) secure link's stripped package. */
   floor_total: string;
   floor_total_value: number;
-  range_min: string;
-  range_max: string;
+  /**
+   * B0-37: corrected from required to optional. `range_min`/`range_max` are built by
+   * `Rendered.money(...)`, which returns **null** for a null amount (`Rendered.java` L53-56), and
+   * only §4.3's benchmark branch (1c) carries a range at all — `UnitBasis.rangeMin/rangeMax` are
+   * null on own-history (1a) and tier-band (1b). `PackageQuote` is `@JsonInclude(NON_NULL)`, so
+   * on those two branches these keys are OMITTED. Declaring them required made `tsc` promise a
+   * string that the majority of real quotes never send.
+   */
+  range_min?: string;
+  range_max?: string;
   currency: string;
   payment_schedule: string;
   revision_rounds: number;
@@ -6871,14 +6898,40 @@ export interface BriefListItem {
 /**
  * `CreatorToolDtos.CheckDealRisksResult` (§3.5), exposed on the wire as `DealRisksResponse` via
  * `GET /deals/:id/risks`. The record has landed in `CreatorToolDtos.java` with `target` typed as
- * a plain `String` (no Java enum), so the `'DEAL' | 'BRIEF'` union below is still inferred from
- * the producing method names (`DealRiskService.evaluateDeal`/`evaluateBrief`, §3.6) — that service
- * has not been implemented yet, so re-verify the literal value set once it lands.
+ * a plain `String` (no Java enum), so the `'DEAL' | 'BRIEF'` union below cannot be read off a Java
+ * enum — but `DealRiskService` HAS now landed and pins both literals as constants:
+ * `TARGET_DEAL = "DEAL"` / `TARGET_BRIEF = "BRIEF"` (`service/risk/DealRiskService.java` L94-95),
+ * and they are the only two values either producer passes. The union is verified, not inferred.
  */
 export interface DealRisksResponse {
-  /** Omitted (NON_NULL) when the target has no risk flags. */
-  flags?: RiskFlag[];
-  highest_severity: 'INFO' | 'WARN' | 'CRITICAL';
+  /**
+   * Always present — at least as `[]`. Required rather than optional because
+   * `isCheckDealRisksPayload` (`meera-api.ts`) gates the entire risk card on
+   * `Array.isArray(flags)`: while this said optional, "absent" was a legal shape that rendered
+   * NOTHING — no card, no empty state, no log. Requiring the field turns that impossible shape
+   * into a compile error instead of a silent blank.
+   *
+   * Safe to require, checked against the producer rather than assumed. Every path into this DTO
+   * runs `DealRiskService.evaluate`, which builds a local `ArrayList` and ends
+   * `return List.copyOf(flags)` (`service/risk/DealRiskService.java` L379-388) — it cannot hand
+   * back null, and an empty list is not null, so `@JsonInclude(NON_NULL)` does not strip it. A
+   * clean deal serialises `"flags": []`. `evaluateDeal` (L200) and `evaluateBrief` (L248) both
+   * just `return evaluate(ctx, …)`, and the only two DTO producers pass that list straight
+   * through: `CheckDealRisksExecutor.execute` and `DealService.risksForCreator` (named rather than
+   * line-cited — both are in files under active edit, the method names are the stable anchor).
+   *
+   * Do NOT relax the runtime guard to match this type. The guard is what stops a malformed or
+   * hostile payload reaching `.map()`; the type change removes the *legitimate* absent case only.
+   */
+  flags: RiskFlag[];
+  /**
+   * B0-37: corrected from required to optional, now that the producer has landed.
+   * `RiskSeverity.highest(List<RiskFlag>)` (`service/risk/RiskSeverity.java`) returns **null** for
+   * an empty list — its javadoc says so explicitly: "no flags" omits the field rather than
+   * claiming a severity of INFO that nothing actually raised. `CheckDealRisksResult` is
+   * `@JsonInclude(NON_NULL)`, so a clean deal sends no `highest_severity` key at all.
+   */
+  highest_severity?: 'INFO' | 'WARN' | 'CRITICAL';
   target: 'DEAL' | 'BRIEF';
   target_id: string;
 }

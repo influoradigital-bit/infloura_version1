@@ -3,8 +3,10 @@ package com.influora.web;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.admin.CreatorAgentBaselineService;
+import com.influora.service.admin.CreatorAgentRateCalibrationService;
 import com.influora.web.dto.admin.AdminCreatorAgentDtos.BaselinesResponse;
 import com.influora.web.dto.admin.AdminCreatorAgentDtos.MonthlyCapResponse;
+import com.influora.web.dto.admin.AdminCreatorAgentDtos.RateCalibrationResponse;
 import com.influora.web.dto.admin.AdminCreatorAgentDtos.SetMonthlyCapRequest;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -29,16 +31,40 @@ public class AdminCreatorAgentController {
 
     private final CreatorAgentBaselineService baselineService;
     private final CreatorAgentPreferencesService preferencesService;
+    private final CreatorAgentRateCalibrationService rateCalibrationService;
 
     public AdminCreatorAgentController(
-            CreatorAgentBaselineService baselineService, CreatorAgentPreferencesService preferencesService) {
+            CreatorAgentBaselineService baselineService,
+            CreatorAgentPreferencesService preferencesService,
+            CreatorAgentRateCalibrationService rateCalibrationService) {
         this.baselineService = baselineService;
         this.preferencesService = preferencesService;
+        this.rateCalibrationService = rateCalibrationService;
     }
 
     @GetMapping("/baselines")
     public BaselinesResponse getBaselines(@AuthenticationPrincipal AuthPrincipal principal) {
         return baselineService.getBaselines();
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;14.1.g, B0-35) — the rate calibration report: per tier,
+     * the benchmark constant the quote path prices from, what creators in that tier actually closed
+     * at, and what Meera has been quoting.
+     *
+     * <p>Bare DTO like every other route on this controller (see the class javadoc). Admin auth is
+     * the structural {@code hasRole("ADMIN")} matcher on {@code /admin/**}; the specific route is
+     * pinned in {@code SecurityConfigMatcherTest} rather than re-checked here, because a per-method
+     * check would be the second copy of a rule this controller does not own.
+     *
+     * <p><b>The response carries no workspace id and no creator id</b> — the realised figures come
+     * from a cross-tenant projection under Kabir's k-anonymity gate and reach the wire only as a
+     * median, two counts and a fraction. {@code AdminCreatorAgentControllerTest} asserts the
+     * payload's key set against an allow-list so a later "just add the top workspace" cannot.
+     */
+    @GetMapping("/rate-calibration")
+    public RateCalibrationResponse getRateCalibration(@AuthenticationPrincipal AuthPrincipal principal) {
+        return rateCalibrationService.getRateCalibration();
     }
 
     /**
