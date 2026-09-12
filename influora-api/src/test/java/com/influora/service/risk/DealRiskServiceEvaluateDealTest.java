@@ -13,11 +13,13 @@ import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DealMessage;
+import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
+import com.influora.domain.enums.DeliverableType;
 import com.influora.domain.enums.ExclusivityScope;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
@@ -237,23 +239,69 @@ class DealRiskServiceEvaluateDealTest {
                 .containsExactly(new DeliverableSlot("INSTAGRAM_REEL", 3));
     }
 
-    /** The same deal with no quote: the fallback prices one reel and the offer clears it. */
+    /**
+     * The same deal with no quote. <b>Re-stated for the view fix, not relaxed or deleted.</b>
+     *
+     * <p>What it used to pin was the UNDER-STATEMENT: {@code viewOf} built the deliverable list from
+     * the (empty) {@code Deliverable} rows, so {@code Floors} saw no deliverables at all, priced the
+     * package as ONE reel — 12,000 — the 20,000 offer cleared it and BELOW_FLOOR stayed silent. That
+     * silence was the bug the quote existed to route around, and this test existed to say so out loud.
+     *
+     * <p>{@code viewOf} now falls back to the package named on the proposal card, so the no-quote
+     * path prices the REAL package: three reels at the 12,000 reel floor is 36,000, the 20,000 offer
+     * is under it, and BELOW_FLOOR fires with no quote at all. <b>Old figure 12,000 (silent), new
+     * figure 36,000 (fires)</b>, and the new one is asserted as an exact string rather than a range —
+     * a range would hide the next wrong number exactly as the missing deliverables hid this one.
+     *
+     * <p>What it still pins is why it was worth writing: the FALLBACK's own figure, on the no-quote
+     * path, for a deal whose deliverables exist only on a proposal card. Reverting the fallback in
+     * {@code DealRiskService.viewOf} turns this red — the flag disappears and 36,000 with it.
+     */
     @Test
-    @DisplayName("without a quote the fallback prices the same deal as one reel and stays silent")
-    void belowFloorStaysSilentWithoutAQuote() {
+    @DisplayName("without a quote the fallback prices the whole package on the card, not one reel")
+    void belowFloorFallbackPricesThePackageOnTheCardWithoutAQuote() {
         givenPreContractNegotiationOfThreeReels();
         when(rateQuoteService.quoteForRisk(any(), any(), any(), anyList())).thenReturn(null);
 
-        assertThat(service.evaluateDeal(PROFILE_ID, DEAL_ID))
-                .extracting(RiskFlag::code)
-                .as("12,000 fallback floor against a 20,000 offer -- nothing to flag, and that is the bug")
-                .doesNotContain(BelowFloorRule.CODE);
+        RiskFlag belowFloor = requireFlag(service.evaluateDeal(PROFILE_ID, DEAL_ID), BelowFloorRule.CODE);
+
+        assertThat(belowFloor.detail())
+                .as("three reels at the 12,000 reel floor -- not the one reel the old view implied")
+                .isEqualTo("Offer is 20,000 against your floor of 36,000.");
+    }
+
+    /**
+     * The seam {@link #belowFloorFiresOnTheQuotedFloorTotal()} and the test above used to make
+     * between them. Now that the fallback prices the same three reels the quote does, 36,000 no
+     * longer tells the two sources apart — so this pins the quoted figure at a number the fallback
+     * CANNOT produce. Reverting the quote wiring (passing null for {@code RiskContext.quote} in
+     * {@code evaluateDeal}) turns this red at 36,000, the fallback's answer.
+     */
+    @Test
+    @DisplayName("the QUOTED floor still wins over the fallback when the two disagree")
+    void belowFloorPrefersTheQuotedFloorOverTheFallback() {
+        givenPreContractNegotiationOfThreeReels();
+        when(rateQuoteService.quoteForRisk(any(), any(), any(), anyList()))
+                .thenReturn(quoteWithFloorTotal(new BigDecimal("48000")));
+
+        RiskFlag belowFloor = requireFlag(service.evaluateDeal(PROFILE_ID, DEAL_ID), BelowFloorRule.CODE);
+
+        assertThat(belowFloor.detail())
+                .as("48,000 is the quote's number; the three-reel fallback would have said 36,000")
+                .isEqualTo("Offer is 20,000 against your floor of 48,000.");
     }
 
     /**
      * Pricing reaches five repositories and the benchmark estimator, and a creator with no metric
      * row, no history and no niche is an ordinary case rather than an error. None of that may cost
      * her the flags that need no quote at all.
+     *
+     * <p><b>Re-stated with the view fix</b>, for the same reason as
+     * {@link #belowFloorFallbackPricesThePackageOnTheCardWithoutAQuote()}: the second assertion used
+     * to be that BELOW_FLOOR stayed away entirely, because the fallback under-stated the package as
+     * one reel. It now fires on the fallback's 36,000, which is the stronger version of what the
+     * assertion was for — the flag is priced from the floors this context actually has, not from a
+     * quote that threw.
      */
     @Test
     @DisplayName("a quote that throws degrades to the fallback -- the other rules still run")
@@ -268,10 +316,9 @@ class DealRiskServiceEvaluateDealTest {
                 .extracting(RiskFlag::code)
                 .as("USAGE_PERPETUAL needs no quote and must survive a pricing failure")
                 .contains(UsagePerpetualRule.CODE);
-        assertThat(flags)
-                .extracting(RiskFlag::code)
-                .as("and the floor comparison falls back rather than firing on a number it does not have")
-                .doesNotContain(BelowFloorRule.CODE);
+        assertThat(requireFlag(flags, BelowFloorRule.CODE).detail())
+                .as("the floor comparison falls back to the stored floors, not to a number it does not have")
+                .isEqualTo("Offer is 20,000 against your floor of 36,000.");
     }
 
     // ------------------------------------------------------------------
@@ -289,9 +336,12 @@ class DealRiskServiceEvaluateDealTest {
      * same fixture names three reels exactly. A flag that always fires carries no information and
      * teaches creators to dismiss the whole panel, so it degraded the thirteen rules that are sound.
      *
-     * <p>Reverting the guard in {@code VagueDeliverablesRule} — dropping the
-     * {@code !ctx.isDealTarget()} conjunct — turns this red and leaves every other test in this
-     * class green, which is the whole change stated as one test.
+     * <p>It was first fixed by disarming the branch on the deal target, which bought silence by
+     * throwing the signal away — see {@link #vagueDeliverablesFiresWhenNothingNamesThePackage()} for
+     * the case that suppression could not distinguish. The guard is gone and {@code viewOf} now names
+     * the package on the card, so this test's silence is earned rather than imposed: <b>reverting the
+     * fallback in {@code DealRiskService.viewOf} turns this red</b>, which is the whole change stated
+     * as one test.
      */
     @Test
     @DisplayName("VAGUE_DELIVERABLES stays quiet on a negotiation whose proposal names the package")
@@ -302,8 +352,104 @@ class DealRiskServiceEvaluateDealTest {
 
         assertThat(service.evaluateDeal(PROFILE_ID, DEAL_ID))
                 .extracting(RiskFlag::code)
-                .as("no Deliverable rows means no contract yet, not a brief that named no count")
+                .as("the card names three reels exactly, so nothing here is unspecified")
                 .doesNotContain(VagueDeliverablesRule.CODE);
+    }
+
+    /**
+     * The other half, and the reason the target guard had to go rather than stay: a pre-contract deal
+     * with NO proposal card genuinely has unspecified quantities, and that is the single most useful
+     * thing this rule can tell a creator who is about to put a number on the work. The suppression
+     * could not reach it — with {@code !ctx.isDealTarget()} in the conjunct the branch was dark on
+     * every deal, this case included.
+     *
+     * <p>Nothing in the fixture's text is vague ("Hi, keen to work together" is the whole of it), so
+     * the {@code BRIEF_TEXT} trigger cannot account for the flag; the {@code basis} assertion is what
+     * says which trigger fired.
+     */
+    @Test
+    @DisplayName("VAGUE_DELIVERABLES DOES fire on a negotiation with no proposal card at all")
+    void vagueDeliverablesFiresWhenNothingNamesThePackage() {
+        givenNegotiationWith(List.of(), List.of());
+
+        RiskFlag flag = requireFlag(service.evaluateDeal(PROFILE_ID, DEAL_ID), VagueDeliverablesRule.CODE);
+
+        assertThat(flag.data())
+                .as("no rows and no card: nobody has said how much work this is")
+                .containsEntry("basis", "NO_QUANTITIES");
+        assertThat(flag.detail())
+                .as("a live deal's source is the proposal card, not a brief document that may not exist")
+                .isEqualTo("The proposal does not say how many pieces of content you owe.");
+    }
+
+    /**
+     * A card whose metadata cannot be read is the same state as no card: the creator has still not
+     * been told a count. {@code RateQuoteService.slotsFromProposalMetadata} answers an empty list for
+     * unparseable metadata rather than throwing, and the view has to carry that emptiness through.
+     */
+    @Test
+    @DisplayName("VAGUE_DELIVERABLES DOES fire when the proposal card's metadata is unreadable")
+    void vagueDeliverablesFiresWhenTheCardIsUnreadable() {
+        givenNegotiationWith(List.of(proposalCardWithMetadata(UNREADABLE_METADATA)), List.of());
+
+        RiskFlag flag = requireFlag(service.evaluateDeal(PROFILE_ID, DEAL_ID), VagueDeliverablesRule.CODE);
+
+        assertThat(flag.data())
+                .as("a card nobody can parse names no package")
+                .containsEntry("basis", "NO_QUANTITIES");
+    }
+
+    /**
+     * <b>The trap this whole change had to avoid.</b> {@code RateQuoteService.normaliseSlots}
+     * substitutes a single REEL for an empty package (SPEC.md &sect;4.3 1a). If that substitution
+     * reached the view, a deal nobody has scoped would report one reel instead of nothing, and
+     * {@code VAGUE_DELIVERABLES} would go permanently DARK rather than firing — the same rule lost,
+     * by the opposite mistake, and invisible to any assertion about a flag that is already silent.
+     *
+     * <p>Two assertions, and the first is the one that proves emptiness. A substituted REEL would be a
+     * line with {@code qty 1}, which flips {@code hasCountedDeliverable} and takes the
+     * {@code NO_QUANTITIES} basis away; the basis arriving is therefore proof that the list the rule
+     * read was EMPTY, not one-reel-long. (The floor cannot prove it: {@code Floors} prices an empty
+     * list as one reel too, so both spell 12,000 and the 20,000 offer clears either.) The second
+     * assertion pins the same emptiness one step earlier, in the package handed to pricing.
+     */
+    @Test
+    @DisplayName("an unreadable card leaves the view with NO deliverables, not a substituted reel")
+    void anUnreadableCardLeavesTheViewEmptyRatherThanOneReel() {
+        givenNegotiationWith(List.of(proposalCardWithMetadata(UNREADABLE_METADATA)), List.of());
+
+        RiskFlag flag = requireFlag(service.evaluateDeal(PROFILE_ID, DEAL_ID), VagueDeliverablesRule.CODE);
+
+        assertThat(flag.data())
+                .as("a substituted reel would be a counted line and this basis would be gone")
+                .containsEntry("basis", "NO_QUANTITIES");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<DeliverableSlot>> slots = ArgumentCaptor.forClass(List.class);
+        verify(rateQuoteService).quoteForRisk(any(), any(), any(), slots.capture());
+        assertThat(slots.getValue())
+                .as("packageOnTheTable resolved nothing, and nothing is what the view must get")
+                .isEmpty();
+    }
+
+    /**
+     * The view has one taxonomy whichever side of contract drafting the package is read from: three
+     * {@code INSTAGRAM_REEL} contract rows fold to {@code REEL x3} through
+     * {@code DealRiskService.quoteType}, and the same three on a proposal card fold to {@code REEL x3}
+     * through {@code QuoteDeliverableType.parse}. Same canonical names, so the same floor — the exact
+     * string {@link #belowFloorFallbackPricesThePackageOnTheCardWithoutAQuote()} asserts for the card.
+     * If the card path ever stopped canonicalising, this pair stops agreeing.
+     */
+    @Test
+    @DisplayName("contract rows and a proposal card canonicalise the same package to the same floor")
+    void contractRowsAndAProposalCardAgreeOnThePackage() {
+        givenNegotiationWith(List.of(), threeReelContractRows());
+
+        RiskFlag belowFloor = requireFlag(service.evaluateDeal(PROFILE_ID, DEAL_ID), BelowFloorRule.CODE);
+
+        assertThat(belowFloor.detail())
+                .as("the same figure the card path produces for the same three reels")
+                .isEqualTo("Offer is 20,000 against your floor of 36,000.");
     }
 
     /**
@@ -411,14 +557,79 @@ class DealRiskServiceEvaluateDealTest {
 
     /** Exactly what {@code DealService.persistProposalMessage} writes: platform type names. */
     private static DealMessage proposalCard() {
+        return proposalCardWithMetadata("{\"deliverables\":[{\"type\":\"INSTAGRAM_REEL\",\"qty\":3}]}");
+    }
+
+    /**
+     * A truncated metadata blob — the card exists and carries a {@code metadataJson}, but
+     * {@code JsonLists.objectFromJson} cannot read it and returns null rather than throwing.
+     */
+    private static final String UNREADABLE_METADATA = "{\"deliverables\":[{\"type\":\"INSTAGRAM_REEL\",";
+
+    private static DealMessage proposalCardWithMetadata(String metadataJson) {
         return DealMessage.create(
                 "01PROPOSAL0000000000000000",
                 DEAL_ID,
                 DealMessageKind.proposal,
                 WORKSPACE_ID,
                 DealSenderType.brand,
+                // Deliberately free of the VAGUE_TEXT phrases, so the BRIEF_TEXT trigger cannot
+                // account for a VAGUE_DELIVERABLES flag any of these tests asserts.
                 "Here is our offer",
-                "{\"deliverables\":[{\"type\":\"INSTAGRAM_REEL\",\"qty\":3}]}");
+                metadataJson);
+    }
+
+    /** Three {@code INSTAGRAM_REEL} rows, as {@code ContractService} materialises them at draft time. */
+    private static List<Deliverable> threeReelContractRows() {
+        return List.of(reelRow(0), reelRow(1), reelRow(2));
+    }
+
+    private static Deliverable reelRow(int slotIndex) {
+        return Deliverable.builder()
+                .id("01DELIVERABLE000000000000" + slotIndex)
+                .collaborationId(DEAL_ID)
+                .creatorProfileId(PROFILE_ID)
+                .slotIndex(slotIndex)
+                .type(DeliverableType.INSTAGRAM_REEL)
+                .build();
+    }
+
+    /**
+     * The same 20,000 / 12,000-reel-floor negotiation as
+     * {@link #givenPreContractNegotiationOfThreeReels()}, with the messages and {@code Deliverable}
+     * rows under test supplied by the caller — its own copy rather than a parameter on that fixture,
+     * because the below-floor seam tests are pinned to that one's exact numbers and stubs.
+     */
+    private void givenNegotiationWith(List<DealMessage> messages, List<Deliverable> rows) {
+        Collaboration collaboration =
+                Collaboration.invite(DEAL_ID, CAMPAIGN_ID, USER_ID, "Hi, keen to work together", "INR");
+        collaboration.transitionTo(CollaborationStatus.IN_NEGOTIATION);
+        collaboration.updateAgreedRate(new BigDecimal("20000"));
+
+        when(creatorProfileRepository.findById(PROFILE_ID)).thenReturn(Optional.of(profile));
+        when(preferencesService.getByProfileId(PROFILE_ID))
+                .thenReturn(
+                        floors(new BigDecimal("12000"), new BigDecimal("5000"), new BigDecimal("4000")));
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(campaign(null, null)));
+        lenient()
+                .when(workspaceRepository.findById(WORKSPACE_ID))
+                .thenReturn(
+                        Optional.of(Workspace.newBrand(WORKSPACE_ID, "Glow Labs", "glow", "BEAUTY", "1-10")));
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID)).thenReturn(messages);
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(DEAL_ID)).thenReturn(rows);
+        when(collaborationRepository.findByCreatorId(USER_ID)).thenReturn(List.of(collaboration));
+        lenient().when(campaignRepository.findAllById(anyList())).thenReturn(List.of());
+        lenient().when(workspaceRepository.findAllById(anyList())).thenReturn(List.of());
+        lenient().when(deliverableRepository.findByCollaborationIdIn(anyList())).thenReturn(List.of());
+    }
+
+    private static RiskFlag requireFlag(List<RiskFlag> flags, String code) {
+        return flags.stream()
+                .filter(flag -> code.equals(flag.code()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("expected a " + code + " flag, got " + flags));
     }
 
     /**

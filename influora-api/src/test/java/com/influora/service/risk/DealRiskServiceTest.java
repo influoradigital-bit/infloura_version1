@@ -407,6 +407,9 @@ class DealRiskServiceTest {
         RiskFlag flag = requireFlag(ctx, VagueDeliverablesRule.CODE);
 
         assertThat(flag.data()).containsEntry("basis", "NO_QUANTITIES");
+        assertThat(flag.detail())
+                .as("a pasted brief is the source on this path, so the sentence names the brief")
+                .isEqualTo("The brief does not say how many pieces of content you owe.");
     }
 
     @Test

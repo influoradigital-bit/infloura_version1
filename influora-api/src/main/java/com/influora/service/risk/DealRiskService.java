@@ -22,6 +22,7 @@ import com.influora.repository.DeliverableRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.CreatorAgentPreferencesService;
+import com.influora.service.rates.QuoteDeliverableType;
 import com.influora.service.rates.RateQuoteService;
 import com.influora.service.risk.RiskContext.ActiveDeal;
 import com.influora.service.risk.rules.BarterRule;
@@ -182,7 +183,10 @@ public class DealRiskService {
         List<Deliverable> deliverables =
                 deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(collaboration.getId());
 
-        BriefExtraction extraction = viewOf(collaboration, campaign, workspace, deliverables);
+        // Resolved ONCE and handed to both the view and the quote, so the risk view and the quoted
+        // floor can never disagree about what is on the table. See packageOnTheTable.
+        List<DeliverableSlot> onTheTable = packageOnTheTable(deliverables, messages);
+        BriefExtraction extraction = viewOf(collaboration, campaign, workspace, deliverables, onTheTable);
         RiskContext ctx =
                 new RiskContext(
                         profile,
@@ -190,7 +194,7 @@ public class DealRiskService {
                         extraction,
                         collaboration,
                         activeDealsFor(profile, collaboration.getId()),
-                        quoteFor(profile, prefs, extraction, packageOnTheTable(deliverables, messages)),
+                        quoteFor(profile, prefs, extraction, onTheTable),
                         extraction.brandName(),
                         campaign == null ? null : campaign.getWorkspaceId(),
                         dealText(collaboration, messages),
@@ -339,11 +343,21 @@ public class DealRiskService {
      * the latest proposal card's metadata, which is where {@code RateQuoteService} already reads
      * it for its own history normalisation.
      *
-     * <p>Note the asymmetry this leaves on purpose: {@link #viewOf} still builds the
-     * extraction-shaped view from the {@code Deliverable} rows alone, so on a pre-contract deal the
-     * view names no deliverables and {@link Floors} prices the package as a single reel. That is
-     * the under-statement the quote is here to replace, and it is asserted in
-     * {@code DealRiskServiceEvaluateDealTest}.
+     * <p><b>This is the one resolver, and {@link #viewOf} now reads it too.</b> It used to feed only
+     * the quote, which left the extraction-shaped view naming no deliverables on every pre-contract
+     * deal — so {@link Floors} priced a three-reel package as one reel and
+     * {@code VAGUE_DELIVERABLES} could not tell "no contract yet" from "nobody named a count". Both
+     * callers take their package from this one call in {@link #evaluateDeal}, so the floor the
+     * creator is quoted and the package the rules reason about cannot come apart.
+     *
+     * <p><b>What it must NOT do is substitute anything.</b> An absent, empty or unreadable proposal
+     * card returns an EMPTY list here, and it has to stay empty all the way into the view:
+     * {@code RateQuoteService.normaliseSlots} prices an empty package as a single REEL (SPEC.md
+     * &sect;4.3 1a), and if that substitution reached the view then a deal nobody has scoped would
+     * report one reel instead of nothing and {@code VAGUE_DELIVERABLES} would go permanently dark.
+     * The substitution lives inside {@code RateQuoteService.compute} and nowhere on this path;
+     * {@code RateQuoteService.slotsFromProposalMetadata} returns an empty list for null,
+     * unparseable and {@code deliverables}-free metadata, which is exactly what is wanted here.
      */
     private static List<DeliverableSlot> packageOnTheTable(
             List<Deliverable> deliverables, List<DealMessage> messages) {
@@ -378,11 +392,12 @@ public class DealRiskService {
      * without going through a repository load.
      *
      * <p><b>{@code target} is stamped onto the context before the rules run</b>
-     * ({@link RiskContext#withTarget}), rather than being a second parameter the rules cannot see.
-     * {@code VAGUE_DELIVERABLES} has to branch on it — an empty deliverable list means "the brief
-     * was vague" on one target and "no contract exists yet" on the other — and threading it through
-     * the context here is what stops that branch and the audit row below reading two different
-     * answers for the same evaluation.
+     * ({@link RiskContext#withTarget}), rather than being a second parameter the rules cannot see, so
+     * a rule and the audit row below can never read two different answers for the same evaluation.
+     * {@code VAGUE_DELIVERABLES} used to branch on it — an empty deliverable list meant "the brief
+     * was vague" on one target and "no contract exists yet" on the other — and no longer does:
+     * {@link #viewOf} now names the package on the table, so an empty list means the same thing on
+     * both targets. No rule branches on the target today.
      */
     public List<RiskFlag> evaluate(RiskContext ctx, String target) {
         RiskContext scoped = ctx.withTarget(target);
@@ -481,12 +496,25 @@ public class DealRiskService {
      * {@code JsonLists.stringListFromJson} would not throw — that method swallows the parse error
      * and returns an empty list — so {@code USAGE_PERPETUAL}'s "all five channels" test would
      * silently never fire on any deal. {@code exclusivity_brands} IS JSON, and is parsed as such.
+     *
+     * <p><b>{@code deliverables} does not come from the {@code Deliverable} table alone.</b> Those
+     * rows are materialised at contract time, so a deal in {@code INVITED}, {@code APPLIED} or
+     * {@code IN_NEGOTIATION} has none and this view used to report zero deliverables even when the
+     * latest proposal card named an exact package. {@code onTheTable} is
+     * {@link #packageOnTheTable}'s answer — the rows when they exist, else the card — and it is the
+     * same list {@link #quoteFor} prices, so the package the rules see and the package the creator
+     * is quoted a floor for are one thing. It stays EMPTY for an absent, empty or unreadable card;
+     * see {@link #packageOnTheTable} for why nothing may be substituted in its place.
+     *
+     * @param onTheTable the package actually on the table, already resolved by
+     *     {@link #packageOnTheTable} — never re-resolved here, so there is one answer per evaluation
      */
     private static BriefExtraction viewOf(
             Collaboration collaboration,
             Campaign campaign,
             Workspace workspace,
-            List<Deliverable> deliverables) {
+            List<Deliverable> deliverables,
+            List<DeliverableSlot> onTheTable) {
         BigDecimal budget =
                 collaboration.getAgreedRate() != null
                         ? collaboration.getAgreedRate()
@@ -495,7 +523,7 @@ public class DealRiskService {
                 brandNameOf(null, null, campaign, workspace),
                 null,
                 campaign == null ? null : campaign.getEndBrandCategory(),
-                deliverableLines(deliverables),
+                deliverableLines(deliverables, onTheTable),
                 budget,
                 budget != null,
                 false,
@@ -643,10 +671,64 @@ public class DealRiskService {
     }
 
     /**
+     * The view's deliverable lines: the contract rows when a contract exists, else the package named
+     * on the latest proposal card.
+     *
+     * <p>Both branches end in SPEC.md &sect;2.11's canonical names — the rows through
+     * {@link #quoteType}, the card's free strings through
+     * {@link QuoteDeliverableType#parse(String)} — so the same package produces the same lines
+     * whichever side of contract drafting it is read from, and {@link Floors} folds them onto the
+     * creator's three stored floors by one rule.
+     *
+     * <p><b>Empty in, empty out.</b> No contract and no readable card yields an empty list, which is
+     * what {@code VAGUE_DELIVERABLES} reads as "nobody has said how much work this is" — the signal
+     * this method exists to make true rather than to suppress.
+     */
+    private static List<DeliverableLine> deliverableLines(
+            List<Deliverable> deliverables, List<DeliverableSlot> onTheTable) {
+        List<DeliverableLine> fromContract = deliverableLines(deliverables);
+        return fromContract.isEmpty() ? linesFromSlots(onTheTable) : fromContract;
+    }
+
+    /**
+     * The proposal card's slots as counted view lines, canonicalised through
+     * {@link QuoteDeliverableType#parse(String)} — the same fold the pricing engine applies to the
+     * same strings, so the view and the quote agree on what the card named.
+     *
+     * <p>{@code parse} answers {@link QuoteDeliverableType#OTHER} for anything it does not
+     * recognise rather than throwing, which is deliberate: a brand that typed "IG reel" has still
+     * named a piece of work, and dropping it would read as "nobody said", i.e. the bug this fallback
+     * fixes in the other direction.
+     */
+    private static List<DeliverableLine> linesFromSlots(List<DeliverableSlot> onTheTable) {
+        if (onTheTable == null || onTheTable.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (DeliverableSlot slot : onTheTable) {
+            if (slot == null || slot.type() == null) {
+                continue;
+            }
+            // Both producers guarantee a positive qty (the row branch writes 1,
+            // slotsFromProposalMetadata clamps with Math.max(1, ...)); this is the null guard on a
+            // boxed field, and a non-positive count is not a count -- see hasCountedDeliverable.
+            Integer qty = slot.qty();
+            if (qty == null || qty <= 0) {
+                continue;
+            }
+            counts.merge(QuoteDeliverableType.parse(slot.type()).name(), qty, Integer::sum);
+        }
+        return counts.entrySet().stream()
+                .map(entry -> new DeliverableLine(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    /**
      * Persisted {@link DeliverableType} values folded onto the brief/quote taxonomy of SPEC.md
      * &sect;2.11, then counted. The persisted enum is platform-shaped
-     * ({@code INSTAGRAM_REEL}) and the pricing one is format-shaped ({@code REEL}); this is the
-     * only place the two meet on the deal path.
+     * ({@code INSTAGRAM_REEL}) and the pricing one is format-shaped ({@code REEL}); this is where the
+     * two meet for a CONTRACTED deal, and {@link #linesFromSlots} is where they meet before a
+     * contract exists.
      */
     private static List<DeliverableLine> deliverableLines(List<Deliverable> deliverables) {
         if (deliverables == null || deliverables.isEmpty()) {

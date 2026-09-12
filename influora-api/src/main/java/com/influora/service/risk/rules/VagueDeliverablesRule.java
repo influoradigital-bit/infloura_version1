@@ -1,5 +1,6 @@
 package com.influora.service.risk.rules;
 
+import com.influora.service.risk.DealRiskService;
 import com.influora.service.risk.RiskContext;
 import com.influora.service.risk.RiskSeverity;
 import com.influora.service.risk.RiskText;
@@ -16,29 +17,27 @@ import java.util.regex.Pattern;
  * <p>Fires on any of: the extractor's own {@code vague_deliverables} verdict, a deliverable list
  * that is empty or has no line with a positive quantity, or the giveaway phrases in the brief.
  *
- * <p><b>The middle one is BRIEF-ONLY, and that is a correctness fix rather than a tuning knob.</b>
- * On the deal path {@code DealRiskService.viewOf} builds the deliverable list from the
- * {@code Deliverable} table, and those rows are materialised when a contract is drafted — so every
- * deal in {@code INVITED}, {@code APPLIED} or {@code IN_NEGOTIATION} has none. Counting that as "no
- * quantities" made this flag fire on literally every deal a creator can still counter, which is the
- * whole population the risk panel serves, while the detail sentence asserted something about a brief
- * the data does not support: the proposal card may name an exact package. A flag that always fires
- * carries no information and teaches creators to dismiss the panel, so it degrades the thirteen
- * rules that are sound. The two triggers that ARE evidence regardless of target — the extractor's
- * explicit hint and vague language in the text — keep working on both.
+ * <p><b>The middle one reads the package on the table, not the contract table.</b> It used to be
+ * disarmed on the deal path outright, because {@code DealRiskService.viewOf} built the deliverable
+ * list from the {@code Deliverable} rows alone and those are materialised when a contract is drafted
+ * — so every deal in {@code INVITED}, {@code APPLIED} or {@code IN_NEGOTIATION} looked like a brief
+ * that named no count, and this flag fired on the whole population the risk panel serves. That guard
+ * removed the false positive by removing the signal: a pre-contract deal with NO proposal card
+ * genuinely has unspecified quantities, and that is precisely what the creator needs told.
+ * {@code viewOf} now falls back to the latest proposal card through
+ * {@code DealRiskService.packageOnTheTable}, so the view can tell "the card names three reels" from
+ * "nobody has named anything" — and with a correct view the target guard was redundant on the first
+ * case and actively wrong on the second, so it is gone.
  *
- * <p><b>Why not read the quantities from the proposal card instead.</b> Both available sources are
- * unsound for this question. {@code RiskContext.quote} cannot answer it:
- * {@code RateQuoteService.normaliseSlots} substitutes a single REEL slot for an empty package, so
- * {@code quote.lines()} carries a positive quantity even when nobody named one, and reading it would
- * take this rule dark on genuinely vague briefs too. Feeding
- * {@code RateQuoteService.slotsFromProposalMetadata} into the extraction view would answer it, but
- * that view is also what {@link com.influora.service.risk.Floors} prices from when no quote is
- * available, so it would move the floor fallback off the single reel that
- * {@code DealRiskServiceEvaluateDealTest#belowFloorStaysSilentWithoutAQuote} pins. Neither is
- * needed: with the target guard the branch cannot fire on a deal at all, so quantities read from the
- * card would change no outcome — and arming the branch on the deal path would reintroduce the false
- * positive for a negotiation that has no proposal card yet.
+ * <p><b>What has to stay true for this branch to mean anything.</b> The view must report an EMPTY
+ * list for an absent, empty or unreadable card. {@code RateQuoteService.normaliseSlots} prices an
+ * empty package as a single REEL (SPEC.md &sect;4.3 1a); if that substitution ever reached the view a
+ * counted line would appear where nobody named one, and this branch would go permanently dark
+ * instead of firing — a worse failure than the false positive it replaced, and one no assertion about
+ * an already-silent flag could see. It does not reach the view: {@code normaliseSlots} is private to
+ * {@code RateQuoteService.compute}, and {@code RateQuoteService.slotsFromProposalMetadata} — the
+ * resolver {@code packageOnTheTable} actually calls — returns an empty list for null, unparseable and
+ * {@code deliverables}-free metadata. {@code DealRiskServiceEvaluateDealTest} asserts both halves.
  *
  * <p>The action is the 48-hour follow-up's first half only. The assumption quote it mentions is a
  * Phase-C job; this rule asks the question and stops there rather than promising a follow-up that
@@ -59,11 +58,7 @@ public final class VagueDeliverablesRule implements RiskRule {
     public Optional<RiskFlag> apply(RiskContext ctx) {
         BriefExtraction extraction = ctx.extraction();
         boolean flagged = extraction != null && extraction.vagueDeliverables();
-        // Brief-only: on a deal the absent rows are a contract that has not been drafted, not a
-        // brief that failed to name a count. See the class javadoc.
-        boolean noCounts =
-                !ctx.isDealTarget()
-                        && !hasCountedDeliverable(extraction == null ? null : extraction.deliverables());
+        boolean noCounts = !hasCountedDeliverable(extraction == null ? null : extraction.deliverables());
         boolean inText = RiskText.matches(ctx.text(), VAGUE_TEXT);
 
         if (!flagged && !noCounts && !inText) {
@@ -71,12 +66,16 @@ public final class VagueDeliverablesRule implements RiskRule {
         }
 
         String basis = flagged ? "STATED" : noCounts ? "NO_QUANTITIES" : "BRIEF_TEXT";
+        // Wording only, not a firing condition: the source named in the sentence follows the
+        // engine-stamped target, so a creator reading this on a live deal is pointed at the
+        // proposal card in front of her, not a document that does not exist on that path.
+        String source = DealRiskService.TARGET_DEAL.equals(ctx.target()) ? "The proposal" : "The brief";
         return Optional.of(
                 new RiskFlag(
                         CODE,
                         RiskSeverity.WARN.name(),
                         TITLE,
-                        "The brief does not say how many pieces of content you owe.",
+                        source + " does not say how many pieces of content you owe.",
                         null,
                         "Ask the brand for the exact count before you put a number on it.",
                         RiskText.data("basis", basis),

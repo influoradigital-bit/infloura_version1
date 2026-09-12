@@ -26,12 +26,14 @@ import java.util.Locale;
  * #collaboration} and {@link #lastBrandMessage} — are nullable, and the one rule that needs them
  * ({@code PARTNERSHIP_ADS_REQUEST}) refuses to fire when they are absent rather than guessing.
  *
- * <p><b>Where the one shape leaks, and why {@link #target} exists.</b> The view is extraction-SHAPED
- * but it is not an extraction: fields the extractor produces and a collaboration does not carry stay
- * at their defaults, so on the deal path an empty {@code deliverables} list does not mean "nobody
- * said how much work this is", it means "no contract has materialised the rows yet". A rule that
- * reads absence as evidence must therefore know which target it is on — that is what
- * {@code VAGUE_DELIVERABLES} reads {@link #isDealTarget()} for, and it is the only such rule.
+ * <p><b>Where the one shape used to leak, and what closed it.</b> The view is extraction-SHAPED but
+ * it is not an extraction: fields the extractor produces and a collaboration does not carry stay at
+ * their defaults. {@code deliverables} was one of them — {@code DealRiskService.viewOf} built it from
+ * the {@code Deliverable} rows, which only exist once a contract is drafted, so on a pre-contract
+ * deal an empty list meant "no rows yet" rather than "nobody said how much work this is" and
+ * {@code VAGUE_DELIVERABLES} had to be disarmed on the deal target to stop it firing on every
+ * negotiation. {@code viewOf} now falls back to the package named on the latest proposal card, so an
+ * empty list means the same thing on both paths and no rule branches on {@link #target} any more.
  */
 public record RiskContext(
         CreatorProfile profile,
@@ -92,9 +94,14 @@ public record RiskContext(
          * <p><b>Stamped by the engine, not trusted from the caller.</b>
          * {@code DealRiskService.evaluate} overwrites this from its own {@code target} argument via
          * {@link #withTarget} before any rule runs, so it can never disagree with the target the
-         * {@code OFF_PLATFORM_HINT} audit row records. A context built by hand may leave it null;
-         * {@link #isDealTarget()} reads null as "not a deal", which degrades to the pre-guard
-         * behaviour rather than silently taking a rule dark.
+         * {@code OFF_PLATFORM_HINT} audit row records. A context built by hand may leave it null.
+         *
+         * <p><b>No rule reads it today</b>, and that is the point: {@code VAGUE_DELIVERABLES} was the
+         * only one, and it read the target to compensate for a deliverable view that could not tell
+         * "no contract yet" from "nobody named a count". Fixing the view removed the need. The field
+         * stays because it is what the engine stamps and the audit row records, so a rule that ever
+         * does need the target gets the engine's answer rather than the caller's — it is not a hook
+         * for disarming a rule on one path.
          */
         String target) {
 
@@ -126,14 +133,6 @@ public record RiskContext(
     /** True when there is a collaboration behind this evaluation, whatever the target is. */
     public boolean isDealPath() {
         return collaboration != null;
-    }
-
-    /**
-     * True only for {@code DealRiskService.TARGET_DEAL}. A null target reads as false so a
-     * hand-built context keeps the behaviour it had before the target was carried at all.
-     */
-    public boolean isDealTarget() {
-        return DealRiskService.TARGET_DEAL.equals(target);
     }
 
     /**
