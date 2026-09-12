@@ -62,6 +62,35 @@ class MetaTokenStorageTest {
         storage = new MetaTokenStorage(repository, auditLog, externalCreatorLinkService, props);
     }
 
+    @Test
+    @DisplayName("an EMPTY (not null) key refuses to construct — the value a missing env var gives")
+    void emptyEncryptionKeyRefusesToConstruct() {
+        // testConstructorThrowsIfKeyMissing above covers null. This covers "", which is what the
+        // real misconfiguration produces and what null never occurs as: application.yml binds
+        // ${META_TOKEN_ENCRYPTION_KEY:} with an empty default, and a compose `environment:` map
+        // that omits the var (or forwards a bare ${VAR} that is unset) leaves the property as an
+        // empty string, never null. deploy/hostinger/docker-compose.hostinger.yml omitted exactly
+        // this var while forwarding its three sibling keys.
+        //
+        // Why it matters that this THROWS: MetaTokenStorage is an eager @Service, so the throw
+        // fails the application context and the API does not start. That is the intended
+        // fail-closed behaviour and the tempting "fix" is to make decodeKey lenient — which would
+        // trade a loud failure at boot for a 500 in the middle of a creator's connect, after Meta
+        // has already issued a one-time code. The message is asserted so the operator can tell
+        // WHICH of the four token-encryption keys is missing.
+        MetaApiProperties empty = createTestProperties();
+        empty.setTokenEncryptionKey("");
+
+        IllegalStateException e =
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                new MetaTokenStorage(
+                                        repository, auditLog, externalCreatorLinkService, empty));
+
+        assertTrue(e.getMessage().contains("token-encryption-key"), e.getMessage());
+    }
+
     private MetaApiProperties createTestProperties() {
         MetaApiProperties props = new MetaApiProperties();
         props.setAppId("app-id");

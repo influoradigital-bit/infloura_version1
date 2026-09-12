@@ -17,6 +17,19 @@ name: influora
 #
 # Nothing but Caddy publishes a host port. mysql/redis/clamav/api/ai/web are reachable only
 # on the internal Docker network — strictly better than exposing 8080/8000/3306 at all.
+#
+# DEPLOY STATUS, verified 2026-09-12 against the Hostinger API (VPS 1844961): this file has never
+# been deployed. There is no `influora` Docker project on that box. What IS there is
+# `influora-test` (/docker/influora-test/docker-compose.yml — the sibling docker-compose.test.yml,
+# IP-only, dev profile), whose api/web/ai/caddy/redis containers all exited two weeks ago; only its
+# mysql is still up. The real domain went to the Utho VPS instead, so deploy/utho/ is the live
+# production surface and this file is the unused domain+TLS path its own header promises for "when
+# you get a real domain".
+#
+# Stated because the state of an undeployed config file is not observable from the file, and the
+# gap that led here — the Meta OAuth credentials below were absent from the api `environment:` map
+# — would have been caught immediately by a single boot. It is NOT a decision to stop maintaining
+# this file: it is the reason nothing had reported that it could not start.
 
 # [SEC: Kabir CR-11 red-team, M-4] Log rotation. Every service previously inherited Docker's
 # `json-file` driver with its default `max-size` of UNLIMITED, and logback-spring.xml has a single
@@ -141,6 +154,20 @@ services:
       INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY: ${INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY}
       INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY: ${INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY}
       INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY: ${INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY}
+      # The fourth key in this fail-closed family, and the one that was MISSING from this map while
+      # the three above were present — so this file could not boot the API at all, let alone run
+      # Meta OAuth. MetaTokenStorage is an eager @Service whose constructor decodes
+      # influora.meta.token-encryption-key and throws IllegalStateException on a blank value
+      # (MetaTokenStorage.java decodeKey), exactly like ShopifyTokenStorage and
+      # WooCommerceIntegrationService. application.yml gives it NO default
+      # (${META_TOKEN_ENCRYPTION_KEY:}), and this `environment:` map is an explicit list, so the
+      # property resolved to "" no matter what ops put in the project .env — the F-0390 class
+      # documented further down, but hitting a boot-blocking constructor instead of a feature flag.
+      # Bare ${VAR} like its three siblings, NOT `:-`: an unset required secret should make
+      # `docker compose` warn at deploy time, and `:-` would only substitute the same empty string
+      # that throws anyway. Must decode to EXACTLY 32 bytes (AES-256) and be DISTINCT from every
+      # other key here [SEC: Kabir sign-off gate].
+      META_TOKEN_ENCRYPTION_KEY: ${META_TOKEN_ENCRYPTION_KEY}
       # ---- Internal service URLs (validator rejects localhost) ----
       BRAND_SAFETY_AI_BASE_URL: http://influora-ai:8000
       TRENDSPARK_AI_BASE_URL: http://influora-ai:8000
@@ -148,6 +175,11 @@ services:
       VOICE_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
       CREATOR_COPILOT_AI_BASE_URL: http://influora-ai:8000
+      # ---- TrendSpark trend-pull data sources (T4 ingest job) ----
+      TREND_INGEST_ENABLED: ${TREND_INGEST_ENABLED:-false}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # ---- Creator AI Co-pilot batch (OFF unless set in .env) ----
       # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
       # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.
@@ -214,6 +246,37 @@ services:
       R2_BUCKET_NAME: ${R2_BUCKET_NAME}
       R2_ENDPOINT: ${R2_ENDPOINT}
       R2_PUBLIC_URL: ${R2_PUBLIC_URL}
+      # ---- Meta (Instagram/Facebook) OAuth ----
+      # MetaApiProperties.isConfigured() is "app-id AND app-secret both non-blank", and it is the
+      # gate that decides whether Connect Instagram does anything at all. These six were absent
+      # from this map, so the whole integration was unreachable on this stack no matter what ops
+      # set on the host — while the two optional extras below (marketplace flag, system IG caller)
+      # WERE forwarded, which is what made the gap read as deliberate rather than as the oversight
+      # it was: those extras cannot do anything with isConfigured() false.
+      #
+      # Two DISTINCT credential pairs, not one with a prefix: Facebook Login, and Business Login
+      # for Instagram (T-IGLOGIN-0820). Reusing one app's id/secret for the other fails the token
+      # exchange.
+      #
+      # `:-` rather than bare ${VAR} here — unlike META_TOKEN_ENCRYPTION_KEY above — because blank
+      # is a SUPPORTED state for these: it means "Meta OAuth off on this deploy", which is the
+      # documented default in application.yml and does not block boot.
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      META_INSTAGRAM_APP_ID: ${META_INSTAGRAM_APP_ID:-}
+      META_INSTAGRAM_APP_SECRET: ${META_INSTAGRAM_APP_SECRET:-}
+      # Meta redirects the BROWSER to these, so they must be the SPA route that completes a
+      # connect — NEVER an API path. Pointing them at /api/v1/meta/oauth/callback answers every
+      # connect with UNAUTHENTICATED, because that endpoint reads a bearer token a top-level
+      # navigation from facebook.com cannot carry: that was the live 2026-09-12 failure, fixed in
+      # commit 0ac68e2 (see influora-api/.../config/MetaRedirectUri.java). Left unset here on
+      # purpose: since that commit a blank value derives https://${APP_DOMAIN}/creator/settings/
+      # meta/callback from influora.web-base-url, which is already correct for this stack — so ops
+      # only has to set these to override, and cannot reintroduce the API-path mistake by omission.
+      # Whatever value ends up in use must also be listed byte-for-byte in the Meta app's Valid
+      # OAuth Redirect URIs.
+      META_REDIRECT_URI: ${META_REDIRECT_URI:-}
+      META_INSTAGRAM_REDIRECT_URI: ${META_INSTAGRAM_REDIRECT_URI:-}
       # T-CREATORCONNECT-0902 — CreatorMarketplaceClient gate (OFF until instagram_creator_
       # marketplace_discovery clears App Review) + admin recipient for creator-connection emails.
       # Q7.4 (Critical) — `:-false`/`:-` here, NOT a bare `${VAR}`: compose passes an unset host
