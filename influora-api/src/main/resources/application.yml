@@ -155,7 +155,20 @@ influora:
       cutover-instant: ${INFLUORA_ESCROW_RELEASE_GATE_CUTOVER_INSTANT:}
   auth:
     require-email-verification: true
-    require-email-otp-before-register: ${REQUIRE_EMAIL_OTP_BEFORE_REGISTER:false}
+    # ON by default since 2026-09-12. When true, register REFUSES an email that has not
+    # completed the OTP challenge (brandRegister/creatorRegister -> requireVerifiedEmail), and
+    # the register pages render EmailOtpGate -- the client learns this from GET /public/config,
+    # so the server flag and the UI can never disagree.
+    #
+    # This makes MSG91 delivery a HARD DEPENDENCY of registration: with MSG91 unconfigured or
+    # down, sendOtp throws 503 EMAIL_DELIVERY_FAILED and NOBODY can sign up at all. That is why
+    # this stays env-overridable instead of a literal true -- REQUIRE_EMAIL_OTP_BEFORE_REGISTER=false
+    # is the kill switch for an MSG91 outage, and it takes effect without rebuilding the image.
+    #
+    # Do NOT set it false while require-email-verification above is true unless you understand
+    # F-0601: that combination stamps every new account PENDING_VERIFICATION with no OTP ever
+    # sent, and the account bricks at its second login.
+    require-email-otp-before-register: ${REQUIRE_EMAIL_OTP_BEFORE_REGISTER:true}
     otp-length: 6
     # Kabir A1/B4 — refresh token lives only in this HttpOnly cookie, never in JSON/localStorage.
     # secure MUST be true on any HTTPS deploy; false only for local http dev.
@@ -513,6 +526,16 @@ influora:
     caption-sync-max-creators-per-run: ${CREATOR_COPILOT_CAPTION_SYNC_MAX_CREATORS_PER_RUN:0}
     caption-sync-cron: ${CREATOR_COPILOT_CAPTION_SYNC_CRON:0 0 2 * * *}
     theme-tag-batch-cron: ${CREATOR_COPILOT_THEME_TAG_CRON:0 0 3 * * *}
+  # TrendSpark trend-pull data sources (T4 ingest job) — TrendIngestProperties. Blank defaults (NOT
+  # REPLACE_WITH placeholders), same convention as influora.meta.app-id/app-secret above: these are
+  # read-only third-party API keys, not signing/encryption secrets, so SecretsStartupValidator does
+  # not check them and the app boots fine with all three unset (isConfigured() just goes false).
+  trend-ingest:
+    enabled: ${TREND_INGEST_ENABLED:false}
+    newsapi-api-key: ${NEWSAPI_KEY:}
+    tmdb-api-key: ${TMDB_API_KEY:}
+    youtube-api-key: ${YOUTUBE_API_KEY:}
+    pull-cron: ${TREND_INGEST_PULL_CRON:0 0 5 * * *}
   # meera_interaction_log retention purge (MeeraInteractionLogRetentionPurgeJob). HARD, MANDATORY
   # predecessor to any future read/join/analytics consumer of this table (Priya's PARTIAL-2 ruling,
   # wiki/build/partials-resolution-plan.md) and Kabir's L1 fast-follow (wiki/build/phase2-kabir-

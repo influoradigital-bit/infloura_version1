@@ -118,6 +118,12 @@ SMTP_PASSWORD=REPLACE_ME
 # inside TLS and the connection dies. On 587 the pair inverts (STARTTLS=true, SSL=false).
 SMTP_STARTTLS_ENABLE=false
 SMTP_SSL_ENABLE=true
+# Email-OTP gate on signup (application.yml defaults it to true -- written explicitly here so an
+# operator reading the .env can see the state instead of having to know the Spring default).
+# While this is true, MSG91 is a hard dependency of registration: if the four SMTP_* values above
+# are still REPLACE_ME, sendOtp returns 503 and NOBODY can sign up. Either finish MSG91 or set
+# this to false -- do not leave a half-configured mailer behind an enabled gate.
+REQUIRE_EMAIL_OTP_BEFORE_REGISTER=true
 R2_ACCOUNT_ID=REPLACE_ME
 R2_ACCESS_KEY_ID=REPLACE_ME
 R2_SECRET_ACCESS_KEY=REPLACE_ME

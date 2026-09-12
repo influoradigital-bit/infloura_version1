@@ -1,3 +1,35 @@
+> ## ⚠️ STATUS: THIS DESIGN WAS NEVER BUILT. DO NOT FOLLOW IT AS A MAP OF THE LIVE BOX.
+>
+> Everything below describes a *proposed* Caddy-behind-nginx layout under `/opt/influora`,
+> driven by `docker compose`. A live inspection on **2026-09-07** found none of it on the
+> server: no Caddy container, no `influora-web` container, no DB container, no `/opt/influora`,
+> and no compose file for these services at all.
+>
+> Reading this file as current state has already caused one real mistake — env vars aimed at
+> `/usr/local/App/.env`, which is the **co-tenant Snapsby stack**, not Influora. That edit
+> applies cleanly and does nothing, with no error.
+>
+> **What is actually running (verified live 2026-09-07):**
+>
+> | thing | reality |
+> |---|---|
+> | API env file | `/usr/local/App/influora/influora.env` |
+> | AI env file | `/usr/local/App/influora-ai/influora-ai/influora-ai.env` |
+> | how `influora-api` starts | bare `docker run --network host --env-file`, **not** compose |
+> | SPA | static files in `/var/www/influora`, served by nginx |
+> | nginx vhost | `/etc/nginx/sites-available/influora.in` (apex + `www`) |
+> | API route | `influora.in/api/` → `127.0.0.1:8082`, single-origin |
+> | `app.` / `api.` / `ai.influora.in` | **do not exist** — no server block, no cert |
+> | co-tenant | Snapsby (`snaps-backend`) shares this box |
+>
+> Because the API is launched with `--env-file`, its env is read **once at container-create
+> time**. `docker restart` re-reads nothing, and recreating from `influora.env` alone drops any
+> variable that was passed inline with `-e`. Merge the file env with the running container's env
+> first — Step 6 of `.proof-os/tasks/T-UTHO-DEPLOY-0907/priya-plan-v2.md` is the procedure.
+>
+> Treat the rest of this file as a design document. Re-verify against the box before acting on
+> any path, hostname, or command in it.
+
 # Deploying Influora on Utho — Option A (Caddy behind nginx)
 
 The Utho box at `150.241.245.242` is **not empty**. nginx/1.26.3 runs there as the Cloudflare

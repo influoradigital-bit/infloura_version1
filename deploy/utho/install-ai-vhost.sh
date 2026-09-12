@@ -70,7 +70,7 @@ else
   warn "The Influora docker stack is probably not running on this box - which matches"
   warn "the apex being served statically from /var/www/influora."
   warn "This vhost will install correctly and then 502 until you run:"
-  warn "    cd /opt/influora && docker compose up -d"
+  warn "    docker start influora-ai   # host-network container, no compose file on this box"
   # Installing the vhost is still the right move even with the stack down - it is a
   # prerequisite either way. But make the operator say so, and stay non-interactive-safe:
   # the documented invocation is `ssh host 'bash script'`, where stdin is NOT a tty and a
@@ -222,19 +222,24 @@ echo "      HTTP $code"
 case "$code" in
   401|422|400) ok "FastAPI is answering - this is the correct result (auth/validation rejection)" ;;
   405)     warn "still 405 - nginx is still not routing this host to the app" ;;
-  502|503) warn "502/503 - vhost is correct but Caddy or influora-ai is down: cd /opt/influora && docker compose up -d" ;;
+  502|503) warn "502/503 - vhost is correct but influora-ai is down: docker start influora-ai" ;;
   200)     warn "200 on an empty unauthenticated body is suspicious - confirm you are not hitting snapsby" ;;
   *)       warn "unexpected $code" ;;
 esac
 
 say "Done. Remaining step, NOT done by this script:"
 cat <<'NEXT'
-    Point the API at the new host and restart it:
+    Point the API at the new host and recreate it:
 
-      cd /opt/influora
-      grep -n MEERA .env
+      # NOT /opt/influora and NOT docker compose - neither exists on this box.
+      # influora-api runs as a bare host-network `docker run --env-file`, so its env is
+      # read ONCE at container-create time: `docker restart` re-reads nothing, and
+      # recreating from influora.env alone DROPS any var that was passed inline with -e.
+      # Follow Step 6 of .proof-os/tasks/T-UTHO-DEPLOY-0907/priya-plan-v2.md, which merges
+      # the file env with the running container env before recreating.
+
+      grep -n MEERA /usr/local/App/influora/influora.env
       # set:  MEERA_PUBLIC_CHAT_URL=https://ai.influora.in/chat
-      docker compose up -d influora-api
 
     Until then Spring keeps handing browsers https://influora.in/meera/chat,
     which is the static SPA vhost and will keep returning 405.
