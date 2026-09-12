@@ -399,3 +399,184 @@ async def test_service_token_path_falls_back_to_body_turn_id():
     spring.persist_assistant_message.assert_awaited_once()
     _, kwargs = spring.persist_assistant_message.call_args
     assert kwargs["turn_id"] == "spring-supplied-turn-id"
+
+
+# ----------------------------------------------------------------------------------------------
+# P1-6 -- "we bill the brand for our own failures".
+#
+# influora-api charges 1 AI credit at SEND (`MeeraSessionService#doSendTurn` ->
+# `AICreditService#tryConsumeForTurn`), BEFORE this route is ever contacted. Until this fix, the
+# ONLY caller of `spring.release_turn_credit` was `release_charge()`, defined inside
+# `event_stream()` -- so every terminal path that ends `chat()` before the generator is iterated
+# left the decrement stranded:
+#
+#   1. the spend gate's 503 (kill switch / daily ceiling / per-workspace hard cap) -- OUR
+#      ceiling refusing OUR turn, the single highest-volume case;
+#   2. the brand-context 403 (Spring refused or could not serve the on-behalf context fetch);
+#   3. the `audience_unverified` 403 (a stale or forged stream-token shape);
+#   4. the conversation-binding 403;
+#   5. an exception thrown assembling the prompt or constructing the provider clients, which
+#      escaped as an unhandled 500 with no generator ever created.
+#
+# In every one of them the browser rendered MeeraChatPanel's generic "Didn't catch that -- try
+# again?", the brand retried, and burned another credit -- with the client deliberately NOT
+# re-POSTing automatically (MeeraChatPanel.tsx:621-623) precisely because that would double-charge.
+#
+# (A sixth path -- influora-ai unreachable from the browser entirely -- cannot be covered here by
+# construction; `MeeraSessionService#releaseStaleUnansweredTurn` is the backstop for that one.)
+# ----------------------------------------------------------------------------------------------
+
+
+def _blocked_gate() -> MagicMock:
+    gate = MagicMock()
+    gate.allowed = False
+    gate.error_code = "AI_KILL_SWITCH_ACTIVE"
+    gate.error_message = "AI provider calls are temporarily disabled (kill switch active)"
+    gate.reservation = None
+    return gate
+
+
+def _verified_creator_stream_token() -> VerifiedToken:
+    return VerifiedToken(
+        workspace_id=WORKSPACE_ID,
+        scope="chat:stream",
+        subject="creator-1",
+        conversation_id=CONVERSATION_ID,
+        claims={"messageId": STREAM_MESSAGE_ID, "userType": "CREATOR"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_spend_gate_block_releases_the_send_time_charge():
+    """P1-6, the headline path: the brand's credit balance must be unchanged by a turn that dies
+    at OUR spend gate.
+
+    The brand was charged 1 credit at send. The gate then refuses the turn with a 503 before a
+    single provider token exists -- a failure entirely on our side. `release_turn_credit` keyed on
+    the token's server-minted messageId is what makes the balance whole again.
+
+    WHY THIS FAILS AGAINST THE BUGGY CODE: the pre-fix route did
+    `return _error_response(503, ...)` straight out of the `if not gate.allowed:` block.
+    `StreamingResponse` was never constructed, `event_stream()` was never iterated, and
+    `release_charge()` -- the sole caller of `release_turn_credit` in the entire service -- lived
+    inside that generator. So `release_turn_credit` was never awaited and this assertion reads
+    "Expected 'release_turn_credit' to have been awaited once. Awaited 0 times."
+    """
+    request = _make_request(_body())
+    spring = _mock_spring()
+
+    with patch.object(
+        chat_route, "verify_token_async", AsyncMock(return_value=_verified_stream_token())
+    ), patch.object(
+        chat_route, "check_spend_gate", AsyncMock(return_value=_blocked_gate())
+    ), patch.object(
+        chat_route, "_get_spring", MagicMock(return_value=spring)
+    ):
+        response = await chat_route.chat(request, authorization="Bearer whatever")
+
+    assert response.status_code == 503
+    spring.release_turn_credit.assert_awaited_once()
+    _, kwargs = spring.release_turn_credit.call_args
+    assert kwargs["turn_id"] == STREAM_MESSAGE_ID
+    assert kwargs["conversation_id"] == CONVERSATION_ID
+    # Nothing was streamed, so there is nothing to persist -- and persisting would make the refund
+    # a no-op server-side (AICreditService#release refuses to refund a turn whose reply landed).
+    spring.persist_assistant_message.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_brand_context_unauthorized_releases_the_send_time_charge():
+    """Path 2. Spring refused (or could not serve) the on-behalf context fetch, so the turn ends
+    with a 403 and no provider call. Pre-fix this returned straight out of the `brand_context is
+    None` block -- the daily spend reservation was released there, the brand's AI credit was not."""
+    request = _make_request(_body())
+    spring = _mock_spring()
+
+    with patch.object(
+        chat_route, "verify_token_async", AsyncMock(return_value=_verified_stream_token())
+    ), patch.object(
+        chat_route, "_fetch_brand_context", AsyncMock(return_value=(None, "context_unauthorized"))
+    ), patch.object(
+        chat_route, "_get_spring", MagicMock(return_value=spring)
+    ):
+        response = await chat_route.chat(request, authorization="Bearer whatever")
+
+    assert response.status_code == 403
+    spring.release_turn_credit.assert_awaited_once()
+    _, kwargs = spring.release_turn_credit.call_args
+    assert kwargs["turn_id"] == STREAM_MESSAGE_ID
+
+
+@pytest.mark.asyncio
+async def test_failure_before_the_stream_starts_releases_the_send_time_charge():
+    """Path 5, and the widest of them: anything that throws in the straight-line stretch between
+    the context fetch and `StreamingResponse(...)`. Pre-fix this escaped `chat()` as an unhandled
+    500 -- no generator, no refund, and no structured error for the client either."""
+    request = _make_request(_body())
+    spring = _mock_spring()
+
+    def _exploding_assemble_prompt(*args, **kwargs):
+        raise RuntimeError("prompt assembly blew up")
+
+    brand_context = {"workspace_id": WORKSPACE_ID, "audience": "BRAND", "conversation": []}
+
+    with patch.object(
+        chat_route, "verify_token_async", AsyncMock(return_value=_verified_stream_token())
+    ), patch.object(
+        chat_route, "_fetch_brand_context", AsyncMock(return_value=(brand_context, None))
+    ), patch.object(
+        chat_route, "assemble_prompt", _exploding_assemble_prompt
+    ), patch.object(
+        chat_route, "_get_spring", MagicMock(return_value=spring)
+    ):
+        response = await chat_route.chat(request, authorization="Bearer whatever")
+
+    assert response.status_code == 503
+    spring.release_turn_credit.assert_awaited_once()
+    _, kwargs = spring.release_turn_credit.call_args
+    assert kwargs["turn_id"] == STREAM_MESSAGE_ID
+
+
+@pytest.mark.asyncio
+async def test_early_release_never_fires_on_a_client_supplied_turn_id():
+    """P1-6 guard, and the reason `release_early` keys on `verified.claims["messageId"]` rather
+    than on `turn_id`: on the service-token path there is no server-minted messageId and `turn_id`
+    falls back to the CLIENT-supplied `body["turn_id"]`. Refunding against that value would hand a
+    client a lever to name someone else's turn -- or its own still-streaming one -- which is Kabir
+    FAIL 2 wearing a different hat. No verified messageId, no early refund."""
+    request = _make_request(_body(turn_id="attacker-constant-turn-id"))
+    spring = _mock_spring()
+
+    with patch.object(
+        chat_route, "verify_token_async", AsyncMock(return_value=_verified_service_token())
+    ), patch.object(
+        chat_route, "check_spend_gate", AsyncMock(return_value=_blocked_gate())
+    ), patch.object(
+        chat_route, "_get_spring", MagicMock(return_value=spring)
+    ):
+        response = await chat_route.chat(request, authorization="Bearer whatever")
+
+    assert response.status_code == 503
+    spring.release_turn_credit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_early_release_never_fires_on_a_creator_turn():
+    """P1-6 guard: a CREATOR turn is never charged against the brand AI-credit ledger at all
+    (`MeeraSessionService#doSendTurn`'s `isCreatorTurn` branch skips `tryConsumeForTurn`), so
+    there is nothing to give back and calling release would only log a spurious "never charged at
+    send" WARN on the Spring side for every blocked creator turn."""
+    request = _make_request(_body())
+    spring = _mock_spring()
+
+    with patch.object(
+        chat_route, "verify_token_async", AsyncMock(return_value=_verified_creator_stream_token())
+    ), patch.object(
+        chat_route, "check_spend_gate", AsyncMock(return_value=_blocked_gate())
+    ), patch.object(
+        chat_route, "_get_spring", MagicMock(return_value=spring)
+    ):
+        response = await chat_route.chat(request, authorization="Bearer whatever")
+
+    assert response.status_code == 503
+    spring.release_turn_credit.assert_not_awaited()

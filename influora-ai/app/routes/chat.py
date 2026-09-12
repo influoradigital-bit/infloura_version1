@@ -353,6 +353,72 @@ async def chat(request: Request, authorization: str | None = Header(default=None
     except AuthError as exc:
         raise auth_error_to_http(exc) from exc
 
+    # SECURITY FIX (Kabir red-team FAIL 2): the write-back/refund idempotency key is now the
+    # STREAM TOKEN'S OWN VERIFIED `messageId` claim -- server-minted by
+    # StreamTokenService.mint(...) at send-time (influora-api) -- never the client-supplied
+    # `body["turn_id"]`. The old code (`turn_id=body.get("turn_id", request_id)` below) let a
+    # client pin `turn_id` to a constant across many turns: turn 1 charged, turns 2..N replayed
+    # through Spring's `AlreadyCompletedException` short-circuit with `creditsCharged=0` --
+    # unlimited turns for one credit. A genuine `chat:stream` token always carries `messageId`
+    # (see the verified.conversation_id non-None check just below -- both claims are minted
+    # together); the service-token path (Spring-proxied /chat, no per-turn binding, no
+    # messageId) falls back to the body-supplied value, matching its pre-existing behavior --
+    # that path isn't reachable by an untrusted browser client at all.
+    #
+    # P1-6: resolved HERE (hoisted above the conversation-binding check below) purely so
+    # `release_early` has a turn identity on every terminal path, including that one.
+    verified_message_id = verified.claims.get("messageId")
+    turn_id = verified_message_id or body.get("turn_id", request_id)
+
+    def _claimed_audience_is_creator() -> bool:
+        """The VERIFIED audience, resolved through the same single source of truth the route
+        uses below -- just read earlier, because the conversation-binding check terminates
+        before `derive_audience` has run. A CREATOR turn is never charged against the brand
+        AI-credit ledger at all (see `MeeraSessionService#doSendTurn`'s `isCreatorTurn`
+        branch), so there is nothing for `release_early` to give back on one."""
+        return derive_audience(verified.claims) == AUDIENCE_CREATOR
+
+    async def release_early(reason: str) -> None:
+        """P1-6 (we bill the brand for our own failures) -- refunds the turn's SEND-time charge on
+        a terminal path that ends the request BEFORE `event_stream()` is ever iterated.
+
+        `release_charge()` (defined inside `event_stream`) was the only caller of
+        `spring.release_turn_credit`, so every `return _error_response(...)` in this function --
+        the spend-gate 503, the brand-context 403, the audience 403, the conversation-binding
+        403, and any exception thrown while assembling the prompt -- left influora-api's
+        send-time `AICreditService#tryConsumeForTurn` decrement stranded. The brand saw the
+        client's generic "Didn't catch that -- try again?", retried, and burned another credit on
+        every attempt.
+
+        Safe on all three counts the existing refund path cares about:
+          * Only ever fires for a turn id that came from the token's SERVER-MINTED `messageId`
+            claim -- never a client-supplied `body["turn_id"]`, which would reopen Kabir FAIL 2
+            by letting a client name someone else's (or its own still-streaming) turn.
+          * Only ever fires on a path where ZERO provider output has reached the client, so it
+            can never become the "refund and keep the reply" leak MUST-FIX #1 closed.
+          * Never double-refunds: each call site returns immediately, so the generator (and with
+            it `release_charge`) never runs -- and `AICreditService#release` is idempotent and
+            guarded server-side regardless.
+        """
+        if verified_message_id is None or _claimed_audience_is_creator():
+            return
+        try:
+            await _get_spring().release_turn_credit(
+                # The VERIFIED conversation binding wins over `body["conversation_id"]`: the
+                # conversation-mismatch call site below is refunding precisely because the two
+                # disagree, and Spring resolves the conversation from this value before
+                # cross-checking it against the on-behalf JWT.
+                conversation_id=verified.conversation_id or body.get("conversation_id") or "",
+                turn_id=turn_id,
+                onbehalf_jwt=onbehalf_jwt,
+            )
+        except Exception as exc:  # noqa: BLE001 - a lost refund is a bad credit, not a hole
+            log_event(
+                logger, logging.WARNING, "release_turn_credit_failed",
+                workspace_id=workspace_id, request_id=request_id,
+                fields={"error_type": type(exc).__name__, "reason": reason},
+            )
+
     # Scoped stream tokens are minted single-use and bound to one
     # conversationId (04-AI-SERVICE-SPEC §1.1 / 02-API-CONTRACT-BRAND §218,
     # §226). A service token has no conversation binding (conversation_id is
@@ -361,6 +427,8 @@ async def chat(request: Request, authorization: str | None = Header(default=None
     if verified.conversation_id is not None:
         body_conversation_id = body.get("conversation_id")
         if verified.conversation_id != body_conversation_id:
+            # P1-6: the turn was charged at send and no stream will ever run for it.
+            await release_early("conversation_mismatch")
             raise auth_error_to_http(
                 AuthError(
                     status.HTTP_403_FORBIDDEN,
@@ -368,19 +436,6 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                     "stream token's conversation_id does not match request body conversation_id",
                 )
             )
-
-    # SECURITY FIX (Kabir red-team FAIL 2): the write-back/refund idempotency key is now the
-    # STREAM TOKEN'S OWN VERIFIED `messageId` claim -- server-minted by
-    # StreamTokenService.mint(...) at send-time (influora-api) -- never the client-supplied
-    # `body["turn_id"]`. The old code (`turn_id=body.get("turn_id", request_id)` below) let a
-    # client pin `turn_id` to a constant across many turns: turn 1 charged, turns 2..N replayed
-    # through Spring's `AlreadyCompletedException` short-circuit with `creditsCharged=0` --
-    # unlimited turns for one credit. A genuine `chat:stream` token always carries `messageId`
-    # (see verified.conversation_id's non-None check just above -- both claims are minted
-    # together); the service-token path (Spring-proxied /chat, no per-turn binding, no
-    # messageId) falls back to the body-supplied value, matching its pre-existing behavior --
-    # that path isn't reachable by an untrusted browser client at all.
-    turn_id = verified.claims.get("messageId") or body.get("turn_id", request_id)
 
     settings = get_settings()
 
@@ -401,6 +456,10 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                 workspace_id=workspace_id, request_id=request_id,
                 fields={"scope": verified.scope},
             )
+            # P1-6: a stale/forged stream token shape still corresponds to a real send-time
+            # charge (Spring minted the messageId this refund is keyed on), and the turn ends
+            # here with no provider call. Give the credit back.
+            await release_early("audience_unverified")
             return _error_response(
                 status.HTTP_403_FORBIDDEN,
                 "audience_unverified",
@@ -444,6 +503,12 @@ async def chat(request: Request, authorization: str | None = Header(default=None
             workspace_id=workspace_id, request_id=request_id,
             fields={"error_code": gate.error_code},
         )
+        # P1-6 (the headline path): OUR ceiling/kill-switch refusing OUR own turn. The brand was
+        # already charged 1 AI credit at send, the turn is over before a single provider token
+        # exists, and before this line the generator that owns the refund never ran -- so the
+        # brand paid for a failure that was entirely on our side, then paid again on every
+        # retry for as long as the gate stayed shut.
+        await release_early("spend_gate_blocked")
         return _error_response(
             503, gate.error_code or "AI_SPEND_BLOCKED", gate.error_message or "spend gate blocked this call"
         )
@@ -563,14 +628,43 @@ async def chat(request: Request, authorization: str | None = Header(default=None
                 workspace_id=workspace_id, request_id=request_id,
                 fields={"audience": audience, "error_code": context_error},
             )
+            # P1-6: Spring refused (or could not serve) the on-behalf context fetch. The turn is
+            # over with no provider call -- the send-time charge must not survive it.
+            await release_early("brand_context_unavailable")
             return _error_response(
                 status.HTTP_403_FORBIDDEN,
                 context_error or CONTEXT_UNAUTHORIZED_CODE,
                 CONTEXT_UNAUTHORIZED_MESSAGE,
             )
-    prompt = assemble_prompt(brand_context, session_id=body.get("conversation_id"))
-    claude = _get_claude()
-    spring = _get_spring()
+    # P1-6: the last stretch of straight-line work before `event_stream()` takes over. An
+    # exception anywhere in here (a prompt-assembly bug, a provider/client constructor blowing
+    # up on bad config) used to escape as an unhandled 500 with the generator never created --
+    # the single widest un-refunded hole after the spend gate, because it swallows every future
+    # failure mode added to this stretch rather than just the ones enumerated today.
+    try:
+        prompt = assemble_prompt(brand_context, session_id=body.get("conversation_id"))
+        claude = _get_claude()
+        spring = _get_spring()
+    except Exception as exc:  # noqa: BLE001 - never let a pre-stream failure keep the charge
+        if spend_reservation is not None:
+            await release(spend_reservation)
+            spend_reservation = None
+        if creator_reservation is not None:
+            await release_creator(creator_reservation)
+            creator_reservation = None
+        log_event(
+            logger, logging.ERROR, "chat_turn_failed_before_stream",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"error_type": type(exc).__name__},
+        )
+        await release_early("failed_before_stream")
+        # Same code/shape the in-stream failure path emits, so the client renders the same
+        # generic retry message rather than a bare 500.
+        return _error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "provider_timeout",
+            "Meera couldn't start this turn. Please try again.",
+        )
     loop_ctx = ToolLoopContext(
         workspace_id=workspace_id,
         onbehalf_jwt=onbehalf_jwt,
