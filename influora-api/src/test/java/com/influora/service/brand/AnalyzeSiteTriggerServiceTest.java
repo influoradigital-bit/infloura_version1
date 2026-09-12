@@ -74,13 +74,17 @@ class AnalyzeSiteTriggerServiceTest {
                     public void rollback(TransactionStatus status) {}
                 };
 
+        // FIX 3 (2026-09-12) — AnalyzeSiteTriggerService now counts each attempt. A real
+        // SimpleMeterRegistry, not a mock: these tests only need it to not blow up, and the
+        // dedicated outcome-tag assertions live in AnalyzeSiteTriggerServiceMetricsTest.
         service =
                 new AnalyzeSiteTriggerService(
                         brandProfileRepository,
                         aiClient,
                         taskScheduler,
                         eventPublisher,
-                        noopTransactionManager);
+                        noopTransactionManager,
+                        new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
     }
 
     @Test

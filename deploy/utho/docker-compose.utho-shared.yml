@@ -187,6 +187,14 @@ services:
       MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
       VOICE_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
+      # Added 2026-09-12: application-prod.yml no longer carries a fallback for these,
+      # so an unset var now REFUSES THE BOOT instead of resolving to a fiction.
+      CREATOR_COPILOT_AI_BASE_URL: http://influora-ai:8000
+      # ---- TrendSpark trend-pull data sources (T4 ingest job) ----
+      TREND_INGEST_ENABLED: ${TREND_INGEST_ENABLED:-false}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       INFLUORA_MEERA_STREAM_PUBLICCHATURL: https://${AI_DOMAIN}/chat
       CLAMAV_HOST: clamav
       # ---- Money + comms (no validator — break silently if wrong) ----

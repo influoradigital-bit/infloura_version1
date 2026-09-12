@@ -1,6 +1,7 @@
 package com.influora.web;
 
 import com.influora.security.AuthPrincipal;
+import com.influora.service.admin.AdminBrandReanalyzeService;
 import com.influora.service.admin.AdminBrandService;
 import com.influora.web.dto.admin.AdminBrandDtos.BrandDetailDto;
 import com.influora.web.dto.admin.AdminBrandDtos.BrandSummaryDto;
@@ -59,8 +60,17 @@ public class AdminBrandController {
 
     private final AdminBrandService adminBrandService;
 
-    public AdminBrandController(AdminBrandService adminBrandService) {
+    /**
+     * [FIX 2, 2026-09-12] Separate collaborator rather than another method on {@link
+     * AdminBrandService} -- see {@link AdminBrandReanalyzeService}'s class javadoc for why.
+     */
+    private final AdminBrandReanalyzeService adminBrandReanalyzeService;
+
+    public AdminBrandController(
+            AdminBrandService adminBrandService,
+            AdminBrandReanalyzeService adminBrandReanalyzeService) {
         this.adminBrandService = adminBrandService;
+        this.adminBrandReanalyzeService = adminBrandReanalyzeService;
     }
 
     @GetMapping
@@ -153,5 +163,29 @@ public class AdminBrandController {
             @PathVariable String id,
             @Valid @RequestBody ReinstateRequest body) {
         return adminBrandService.reinstate(principal, request, id, body.reason());
+    }
+
+    /**
+     * POST /admin/brands/{workspaceId}/reanalyze [FIX 2, 2026-09-12 analyze-site prod incident] --
+     * re-runs website analysis for one brand using the URL already on its profile.
+     *
+     * <p>The path variable is named {@code workspaceId} rather than {@code id} to say what it is:
+     * it is the SAME value every sibling here calls {@code id} (they resolve it via {@code
+     * workspaceRepository.findById(brandId)} -- a brand IS a {@code Workspace} in this schema),
+     * and the same value {@code brand_profiles.workspace_id} carries. No new id space.
+     *
+     * <p>Takes NO request body on purpose: the URL to analyze always comes from the stored
+     * profile, never from the caller (see {@link AdminBrandReanalyzeService#reanalyze}). Returns a
+     * small JSON object rather than 204, for the same reason {@link #overrideBudget} does --
+     * {@code apiRequest()} in api-contracts.ts always calls {@code response.json()} on success and
+     * throws on a genuinely empty body.
+     */
+    @PostMapping("/{workspaceId}/reanalyze")
+    public ResponseEntity<Map<String, Object>> reanalyze(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            HttpServletRequest request,
+            @PathVariable String workspaceId) {
+        return ResponseEntity.ok(
+                adminBrandReanalyzeService.reanalyze(principal, request, workspaceId));
     }
 }

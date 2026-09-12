@@ -100,6 +100,17 @@ services:
       TRENDSPARK_AI_BASE_URL: http://influora-ai:8000
       MEERA_CHAT_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
+      # Added 2026-09-12: application-prod.yml no longer carries a fallback for these,
+      # so an unset var now REFUSES THE BOOT instead of resolving to a fiction.
+      # VOICE_AI_BASE_URL has never had a fallback -- this stack could not boot
+      # the prod profile even before that change.
+      CREATOR_COPILOT_AI_BASE_URL: http://influora-ai:8000
+      VOICE_AI_BASE_URL: http://influora-ai:8000
+      # ---- TrendSpark trend-pull data sources (T4 ingest job) ----
+      TREND_INGEST_ENABLED: ${TREND_INGEST_ENABLED:-false}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # Browser-reachable SSE URL Spring returns as SendTurnResponse.streamUrl. The dev profile
       # otherwise falls back to MeeraStreamProperties' Java default http://localhost:8000/chat,
       # which the browser can't reach and CSP blocks. Route it same-origin through Caddy's

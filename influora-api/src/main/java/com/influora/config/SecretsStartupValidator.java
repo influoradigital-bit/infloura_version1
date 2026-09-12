@@ -108,6 +108,24 @@ public class SecretsStartupValidator {
 
     private static final Logger log = LoggerFactory.getLogger(SecretsStartupValidator.class);
 
+    /**
+     * The literal fallback that shipped in {@code application-prod.yml} for all five influora-ai
+     * base URLs and caused the 2026-09-12 analyze-site incident. Kept as a named constant so the
+     * boot-failure message can name it, rather than only saying ".internal hosts are rejected" --
+     * see {@link #checkNotUnroutableHost}.
+     */
+    private static final String INCIDENT_FICTIONAL_AI_HOST = "ai.influora.internal";
+
+    /**
+     * Host suffixes nothing in our infrastructure resolves: the special-use private-network
+     * namespace and mDNS-only {@code .local}. A real deploy addresses influora-ai by Docker
+     * Compose service alias ({@code http://influora-ai:8000}), which has no dotted suffix, so
+     * these cannot collide with a working configuration. Lowercase; compared against a
+     * lowercased host.
+     */
+    private static final java.util.List<String> UNROUTABLE_HOST_SUFFIXES =
+            java.util.List.of(".internal", ".local");
+
     private static final int MIN_SECRET_BYTES = 32;
 
     // Must match the literal defaults in application.yml exactly.
@@ -586,19 +604,19 @@ public class SecretsStartupValidator {
      * turn on localhost instead of the real influora-ai deployment.
      */
     private void validateAiServiceUrls(StringBuilder problems) {
-        checkNotLocalhost(problems, "influora.brand-safety-ai.base-url", brandSafetyAiProperties.getBaseUrl());
-        checkNotLocalhost(problems, "influora.trendspark-ai.base-url", trendSparkAiProperties.getBaseUrl());
-        checkNotLocalhost(problems, "influora.meera-chat-ai.base-url", meeraChatAiProperties.getBaseUrl());
+        checkNotUnroutableHost(problems, "influora.brand-safety-ai.base-url", brandSafetyAiProperties.getBaseUrl());
+        checkNotUnroutableHost(problems, "influora.trendspark-ai.base-url", trendSparkAiProperties.getBaseUrl());
+        checkNotUnroutableHost(problems, "influora.meera-chat-ai.base-url", meeraChatAiProperties.getBaseUrl());
         // analyze-site is an AI service too: AnalyzeSiteAiProperties.baseUrl defaults to
         // http://localhost:8000 exactly like its three siblings, so leaving it out would let a prod
         // deploy silently point site analysis at localhost — the precise failure W0-5 exists to stop.
-        checkNotLocalhost(problems, "influora.analyze-site-ai.base-url", analyzeSiteAiProperties.getBaseUrl());
+        checkNotUnroutableHost(problems, "influora.analyze-site-ai.base-url", analyzeSiteAiProperties.getBaseUrl());
         // Fifth sibling, added with the Creator AI Co-pilot: CreatorSuggestionAiProperties.baseUrl
         // has the same http://localhost:8000 default. Worth failing closed even though
         // CreatorNudgeService.callAiSafely swallows the transport error and falls back to template
         // copy — that fallback is precisely what makes a localhost misconfig invisible in prod,
         // which is the failure mode W0-5 exists to stop.
-        checkNotLocalhost(
+        checkNotUnroutableHost(
                 problems, "influora.creator-copilot-ai.base-url", creatorSuggestionAiProperties.getBaseUrl());
     }
 
@@ -619,7 +637,7 @@ public class SecretsStartupValidator {
         String url = meeraStreamProperties.getPublicChatUrl();
 
         int before = problems.length();
-        checkNotLocalhost(problems, name, url);
+        checkNotUnroutableHost(problems, name, url);
         if (problems.length() > before) {
             // Missing/invalid/loopback already reported — the scheme check below would be noise.
             return;
@@ -645,10 +663,44 @@ public class SecretsStartupValidator {
      * those links dead, with no boot-time signal.
      */
     private void validateApiPublicUrl(StringBuilder problems) {
-        checkNotLocalhost(problems, "influora.api.public-url", apiPublicUrl);
+        checkNotUnroutableHost(problems, "influora.api.public-url", apiPublicUrl);
     }
 
-    private void checkNotLocalhost(StringBuilder problems, String name, String url) {
+    /**
+     * [FIX 1, 2026-09-12 analyze-site prod incident] The blind spot this method used to have, and
+     * why widening it was the actual fix.
+     *
+     * <p>Before today this only rejected the three literal loopback spellings below. {@code
+     * application-prod.yml} shipped all five influora-ai base URLs with a {@code
+     * :https://ai.influora.internal} fallback -- a hostname that resolves NOWHERE (no DNS zone, no
+     * hosts entry, no Docker network alias in this repo ever served it; every deploy compose file
+     * sets these vars to {@code http://influora-ai:8000}). It is not localhost, so it sailed
+     * straight through this check while being just as dead. With {@code ANALYZE_SITE_AI_BASE_URL}
+     * unset on the live box, Spring resolved the fiction, DNS returned NXDOMAIN, {@code
+     * AnalyzeSiteAiClient#analyze} threw before a single SYN left the box, and every brand profile
+     * created since 2026-08-30 landed in the terminal {@code FAILED} state. The validator "worked"
+     * -- it just checked for the wrong shape of wrong.
+     *
+     * <p>So the rule is now "the host must be plausibly routable", not "the host must not be
+     * localhost": loopback spellings PLUS any host in a reserved/special-use internal namespace
+     * that nothing in our infrastructure serves. {@code .internal} is the special-use
+     * private-network namespace and {@code .local} is mDNS-only (RFC 6762) -- neither is
+     * resolvable from the API container, and the shape we actually deploy (a Docker Compose
+     * service alias such as {@code influora-ai}) carries no dotted suffix at all, so nothing
+     * legitimate is caught here. {@code ai.influora.internal} is additionally called out by name
+     * because it is the specific value that shipped and caused the incident, so a re-added
+     * fallback is named in the failure message rather than merely categorized.
+     *
+     * <p>Applies to all three callers ({@link #validateAiServiceUrls}, {@link
+     * #validateMeeraPublicStreamUrl}, {@link #validateApiPublicUrl}). For the latter two -- both
+     * BROWSER-facing URLs -- an unresolvable internal name is even more clearly wrong than for a
+     * Spring-to-Python call, so no caller wants the narrower rule.
+     *
+     * <p>Dev is unaffected: every problem recorded here is accumulated into the shared {@code
+     * problems} buffer, which {@link #validate} only throws on outside dev (it warns in dev) --
+     * the same exemption every other check in this class relies on.
+     */
+    private void checkNotUnroutableHost(StringBuilder problems, String name, String url) {
         if (url == null || url.isBlank()) {
             problems.append("  - ").append(name).append(" is missing\n");
             return;
@@ -667,6 +719,33 @@ public class SecretsStartupValidator {
         String normalized = host.toLowerCase(java.util.Locale.ROOT);
         if (normalized.equals("localhost") || normalized.equals("127.0.0.1") || normalized.equals("::1")) {
             problems.append("  - ").append(name).append(" still points at localhost (").append(url).append(")\n");
+            return;
+        }
+        if (normalized.equals(INCIDENT_FICTIONAL_AI_HOST)) {
+            problems
+                    .append("  - ")
+                    .append(name)
+                    .append(" points at ")
+                    .append(INCIDENT_FICTIONAL_AI_HOST)
+                    .append(", which resolves nowhere -- this exact value silently FAILED every")
+                    .append(" brand site analysis from 2026-08-30 on; set the real *_AI_BASE_URL")
+                    .append(" env var on the box instead (")
+                    .append(url)
+                    .append(")\n");
+            return;
+        }
+        for (String suffix : UNROUTABLE_HOST_SUFFIXES) {
+            if (normalized.endsWith(suffix)) {
+                problems
+                        .append("  - ")
+                        .append(name)
+                        .append(" points at a '")
+                        .append(suffix)
+                        .append("' host, which nothing in our infrastructure resolves (")
+                        .append(url)
+                        .append(")\n");
+                return;
+            }
         }
     }
 }

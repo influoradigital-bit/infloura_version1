@@ -40,11 +40,41 @@ spring:
 # one of BrandSafetyAiProperties/TrendSparkAiProperties/MeeraChatAiProperties defaulted to
 # http://localhost:8000 (their Java field default) with nothing in any application*.yml overriding
 # it, so a prod boot would silently try to call brand-safety/trendspark scoring and Meera's chat
-# turn against localhost. `https://ai.influora.internal` matches the internal hostname the
-# frontend already uses for the same service (see VITE_MEERA_STREAM_URL in .env.local.example /
-# wiki/tech/LOCAL_SETUP.md) — same influora-ai deployment, different route per client (see each
-# client's PATH constant). SecretsStartupValidator#validateAiServiceUrls additionally fails closed
-# outside dev if any of these three still resolves to a localhost/loopback host.
+# turn against localhost. SecretsStartupValidator#validateAiServiceUrls additionally fails closed
+# outside dev if any of these still resolves to an unroutable host.
+#
+# FIX 1 (2026-09-12, analyze-site prod incident) — the W0-5 fix above shipped with a
+# `:https://ai.influora.internal` FALLBACK on each of these five. That hostname resolves NOWHERE
+# (NXDOMAIN): it was written to look like the internal influora-ai address but no DNS zone, no
+# /etc/hosts entry and no Docker network alias in this repo ever served it (every deploy compose
+# file sets these vars to `http://influora-ai:8000`, the Compose service alias — see
+# deploy/utho/docker-compose.utho.yml and deploy/hostinger/docker-compose.hostinger.yml).
+# Consequence, live: with ANALYZE_SITE_AI_BASE_URL unset on the box, Spring resolved the fiction,
+# the JDK HttpClient failed DNS resolution before any SYN went out, AnalyzeSiteAiClient#analyze
+# threw instantly, AnalyzeSiteTriggerService#markFailed wrote the terminal FAILED — and every one
+# of the 6 brand_profiles rows created since 2026-08-30 died that way, created_at to updated_at in
+# one second (too fast to have reached either the 5s connect or the 60s request timeout). A
+# fallback that cannot work is strictly worse than no fallback: it converts a loud boot failure
+# into a silent, permanent, per-brand data loss.
+#
+# So: NO defaults below. An unset var now raises PlaceholderResolutionException and aborts
+# startup — the same pattern influora.env / influora.meera.stream.public-chat-url /
+# influora.voice-ai.base-url (further down this file) already use deliberately.
+#
+# *** CRITICAL DEPLOY SEQUENCING — READ BEFORE SHIPPING THIS FILE ***
+#   Deploying this change to a box that does not already export all five vars below will make the
+#   API REFUSE TO BOOT. That is the intended behaviour, not a regression. Therefore:
+#     STEP 1 (FIRST):  set BRAND_SAFETY_AI_BASE_URL, TRENDSPARK_AI_BASE_URL,
+#                      MEERA_CHAT_AI_BASE_URL, ANALYZE_SITE_AI_BASE_URL and
+#                      CREATOR_COPILOT_AI_BASE_URL on the live box (the live stack is
+#                      /usr/local/App/docker-compose.prod.yml on the Utho VPS, which is NOT in
+#                      this repo) and confirm they are present in the container environment.
+#     STEP 2 (SECOND): deploy this file.
+#   Do NOT reorder these two steps, and do NOT re-add a default to make step 1 skippable.
+#   Known gaps in the repo's own compose files, which must be closed the same way before those
+#   stacks are used: deploy/utho/docker-compose.utho-shared.yml is missing
+#   CREATOR_COPILOT_AI_BASE_URL, and deploy/hostinger/docker-compose.test.yml is missing both
+#   CREATOR_COPILOT_AI_BASE_URL and VOICE_AI_BASE_URL.
 influora:
   # [SEC: Kabir MED finding] SecretsStartupValidator (and now SpringJwksKeyService's ephemeral-JWKS
   # dev fallback) both gate on influora.env, deliberately NOT spring.profiles.active, because profile
@@ -59,15 +89,15 @@ influora:
   # behaving like dev.
   env: ${APP_ENV}
   brand-safety-ai:
-    base-url: ${BRAND_SAFETY_AI_BASE_URL:https://ai.influora.internal}
+    base-url: ${BRAND_SAFETY_AI_BASE_URL}
   trendspark-ai:
-    base-url: ${TRENDSPARK_AI_BASE_URL:https://ai.influora.internal}
+    base-url: ${TRENDSPARK_AI_BASE_URL}
   meera-chat-ai:
-    base-url: ${MEERA_CHAT_AI_BASE_URL:https://ai.influora.internal}
+    base-url: ${MEERA_CHAT_AI_BASE_URL}
   analyze-site-ai:
-    base-url: ${ANALYZE_SITE_AI_BASE_URL:https://ai.influora.internal}
+    base-url: ${ANALYZE_SITE_AI_BASE_URL}
   creator-copilot-ai:
-    base-url: ${CREATOR_COPILOT_AI_BASE_URL:https://ai.influora.internal}
+    base-url: ${CREATOR_COPILOT_AI_BASE_URL}
   # Deploy blocker 2 — MeeraStreamProperties#publicChatUrl (Java field default) is
   # http://localhost:8000/chat and no profile previously overrode it, so a prod boot
   # would hand browsers a localhost URL for the browser-direct Meera SSE connection

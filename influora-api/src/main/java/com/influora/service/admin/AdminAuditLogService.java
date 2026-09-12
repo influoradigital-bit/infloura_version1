@@ -200,7 +200,20 @@ public class AdminAuditLogService {
                                     // T-FESTIVALBOX-0905 phase 6 (Vikram) — PATCH
                                     // /admin/brands/{id}/meta-pixel. Not secret: same non-PII
                                     // profile-field bar as industry/size/email above.
-                                    "metaPixelId")),
+                                    "metaPixelId",
+                                    // FIX 2 (2026-09-12 analyze-site incident) -- POST
+                                    // /admin/brands/{workspaceId}/reanalyze snapshots the brand
+                                    // profile's analysisStatus old->new. Not secret (an enum name:
+                                    // PENDING/ANALYZING/READY/FAILED). Added HERE, with the
+                                    // endpoint, specifically because of the two notes above: an
+                                    // entity type or field missing from these lists makes
+                                    // record() swallow the whole write inside Rule 5's catch, and
+                                    // a verify(adminAuditLogService).record(...) unit test still
+                                    // passes -- so the endpoint would ship unaudited and look
+                                    // tested. The website URL is deliberately NOT added: it is
+                                    // already visible in BrandDetailDto and adding it here would
+                                    // widen the trail for no investigative gain.
+                                    "analysisStatus")),
                     // T-FESTIVALBOX-0905 phase 11 — AdminCampaignCouponService#issue's detail map.
                     // Without this entry the entity type alone is not enough: filterFields falls
                     // back to Set.of() and strips every key, so the row would persist with an empty

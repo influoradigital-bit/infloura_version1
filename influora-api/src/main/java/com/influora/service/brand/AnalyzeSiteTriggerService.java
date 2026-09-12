@@ -10,6 +10,8 @@ import com.influora.integration.ai.dto.AnalyzeSiteAiDtos.AnalyzeSiteResponse;
 import com.influora.integration.ai.dto.AnalyzeSiteAiDtos.Data;
 import com.influora.repository.BrandProfileRepository;
 import com.influora.web.dto.meera.MeeraDtos.AnalyzeSiteCallback;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -60,11 +62,66 @@ public class AnalyzeSiteTriggerService {
 
     private static final Logger log = LoggerFactory.getLogger(AnalyzeSiteTriggerService.class);
 
+    /**
+     * [FIX 3, 2026-09-12 analyze-site prod incident] Counter name for "one analyze-site call was
+     * attempted", tagged by {@link #OUTCOME_TAG}.
+     *
+     * <p>Why this exists: on live, {@code analyze_site} had never once succeeded -- 6 of 6 {@code
+     * brand_profiles} rows FAILED, from 2026-08-30 onward -- and the ONLY signal was a per-call
+     * {@code log.warn} in {@code AnalyzeSiteAiClient} (lines 128-133) that nothing aggregated. We
+     * learned about a total, weeks-long feature outage from a hand-run SQL query. A counter here
+     * is aggregable: {@code outcome=transport_failure} climbing while {@code outcome=success}
+     * stays at zero is the shape that should have screamed on day one.
+     *
+     * <p>Instrumented here rather than in {@link AnalyzeSiteAiClient} because this method is the
+     * one place all outcomes converge -- including the HTTP-200-but-unsuccessful case, which never
+     * reaches the client's exception paths at all.
+     */
+    static final String ATTEMPT_COUNTER = "analyze_site.attempt";
+
+    static final String OUTCOME_TAG = "outcome";
+
+    /** HTTP 200 and a usable payload -- the row goes READY. */
+    static final String OUTCOME_SUCCESS = "success";
+
+    /** HTTP 200, {@code success=false} -- influora-ai read the site and had nothing usable. A
+     * real product outcome (a brand's site may genuinely be unreadable), NOT an infra alarm. */
+    static final String OUTCOME_HANDLED_FAILURE = "handled_failure";
+
+    /**
+     * The request never got an answer: DNS/connect/TLS/read-timeout. {@code
+     * AnalyzeSiteAiClient#analyze} wraps exactly these as {@code new AnalyzeSiteAiException(msg,
+     * cause)} -- a non-null cause is the discriminator, since its non-200 and unparseable-body
+     * throws pass no cause. This is the tag the 2026-08-30 incident would have pinned to the wall:
+     * an unresolvable base-url host produces this and nothing else.
+     */
+    static final String OUTCOME_TRANSPORT_FAILURE = "transport_failure";
+
+    /** We reached influora-ai and it answered badly: non-200, or a body we could not parse. */
+    static final String OUTCOME_UPSTREAM_ERROR = "upstream_error";
+
+    /** A bug on this side of the call -- kept distinct so it can never be read as an AI outage. */
+    static final String OUTCOME_UNEXPECTED_ERROR = "unexpected_error";
+
     private final BrandProfileRepository brandProfileRepository;
     private final AnalyzeSiteAiClient aiClient;
     private final TaskScheduler taskScheduler;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate transactionTemplate;
+
+    /**
+     * Constructor-injected like every other collaborator here. Note for future readers: {@code
+     * BrandCampaignFeeService} (line ~134) carries a comment asserting there is "no
+     * io.micrometer/spring-boot-starter-actuator dependency in pom.xml, no MeterRegistry bean
+     * anywhere in the codebase" and therefore falls back to a greppable log line. Half of that is
+     * stale: {@code spring-boot-starter-actuator} IS a compile dependency (pom.xml, added for
+     * {@code /actuator/health}), it brings {@code micrometer-core} with it, and Boot's
+     * {@code MetricsAutoConfiguration} registers a {@code MeterRegistry} bean. So no new
+     * dependency and no TECH-STACK approval is needed to count things -- this is the first
+     * service to actually use it.
+     */
+    private final MeterRegistry meterRegistry;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public AnalyzeSiteTriggerService(
@@ -72,12 +129,18 @@ public class AnalyzeSiteTriggerService {
             AnalyzeSiteAiClient aiClient,
             TaskScheduler taskScheduler,
             ApplicationEventPublisher eventPublisher,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            MeterRegistry meterRegistry) {
         this.brandProfileRepository = brandProfileRepository;
         this.aiClient = aiClient;
         this.taskScheduler = taskScheduler;
         this.eventPublisher = eventPublisher;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.meterRegistry = meterRegistry;
+    }
+
+    private void countAttempt(String outcome) {
+        Counter.builder(ATTEMPT_COUNTER).tag(OUTCOME_TAG, outcome).register(meterRegistry).increment();
     }
 
     /**
@@ -131,8 +194,10 @@ public class AnalyzeSiteTriggerService {
         try {
             AnalyzeSiteResponse response = aiClient.analyze(workspaceId, websiteUrl);
             if (response.success() && response.data() != null) {
+                countAttempt(OUTCOME_SUCCESS);
                 applySuccess(workspaceId, response.data());
             } else {
+                countAttempt(OUTCOME_HANDLED_FAILURE);
                 String message =
                         response.error() != null && response.error().message() != null
                                 ? response.error().message()
@@ -140,8 +205,14 @@ public class AnalyzeSiteTriggerService {
                 markFailed(workspaceId, message);
             }
         } catch (AnalyzeSiteAiException e) {
+            // See OUTCOME_TRANSPORT_FAILURE: the client wraps a cause only when httpClient().send()
+            // itself threw (DNS/connect/TLS/timeout). A cause-less AnalyzeSiteAiException means we
+            // did reach influora-ai and it answered non-200 or unparseably.
+            countAttempt(
+                    e.getCause() != null ? OUTCOME_TRANSPORT_FAILURE : OUTCOME_UPSTREAM_ERROR);
             markFailed(workspaceId, e.getMessage());
         } catch (Exception e) {
+            countAttempt(OUTCOME_UNEXPECTED_ERROR);
             log.error(
                     "AnalyzeSiteTriggerService: unexpected failure analyzing site for workspace={}",
                     workspaceId,

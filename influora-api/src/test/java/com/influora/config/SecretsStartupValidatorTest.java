@@ -82,19 +82,30 @@ class SecretsStartupValidatorTest {
         dataSourceProperties.setUsername("influora_prod_svc");
         dataSourceProperties.setPassword("real-prod-db-password-distinct-from-dev-default");
 
+        // FIX 1 (2026-09-12 analyze-site prod incident) — this baseline used to be
+        // "https://ai.influora.internal" on all five, which is precisely the unroutable fiction
+        // that shipped as application-prod.yml's fallback and silently FAILED every brand site
+        // analysis from 2026-08-30. checkNotUnroutableHost now rejects it, so the "everything is
+        // fine" baseline needs a host that could actually resolve — exactly the same correction
+        // meeraStreamProperties.publicChatUrl above already carries. `http://influora-ai:8000`
+        // (the Docker Compose service alias every deploy/*/docker-compose*.yml actually sets) is
+        // used here rather than an https example host so the baseline also proves the real
+        // deployed shape passes: no dotted suffix, plain HTTP on a private network, which is
+        // legitimate for a Spring→Python call (unlike the browser-facing URLs, which have their
+        // own HTTPS check).
         brandSafetyAiProperties = new BrandSafetyAiProperties();
-        brandSafetyAiProperties.setBaseUrl("https://ai.influora.internal");
+        brandSafetyAiProperties.setBaseUrl("http://influora-ai:8000");
 
         trendSparkAiProperties = new TrendSparkAiProperties();
-        trendSparkAiProperties.setBaseUrl("https://ai.influora.internal");
+        trendSparkAiProperties.setBaseUrl("http://influora-ai:8000");
 
         meeraChatAiProperties = new MeeraChatAiProperties();
-        meeraChatAiProperties.setBaseUrl("https://ai.influora.internal");
+        meeraChatAiProperties.setBaseUrl("http://influora-ai:8000");
 
         analyzeSiteAiProperties = new AnalyzeSiteAiProperties();
-        analyzeSiteAiProperties.setBaseUrl("https://ai.influora.internal");
+        analyzeSiteAiProperties.setBaseUrl("http://influora-ai:8000");
         creatorSuggestionAiProperties = new CreatorSuggestionAiProperties();
-        creatorSuggestionAiProperties.setBaseUrl("https://ai.influora.internal");
+        creatorSuggestionAiProperties.setBaseUrl("http://influora-ai:8000");
     }
 
     /** Defaults both refresh-cookie {@code secure} flags to {@code true} (the "everything is fine" state) — override via the 3-arg overload for the dedicated secure-flag tests. */
@@ -165,6 +176,118 @@ class SecretsStartupValidatorTest {
         setField(
                 validator, "festivalIpHashSalt", "real-festival-ip-hash-salt-at-least-32-bytes-long!!!");
         return validator;
+    }
+
+    // ==================================================================================
+    // FIX 1 (2026-09-12) — the analyze-site production incident.
+    //
+    // application-prod.yml shipped all five influora-ai base URLs with a
+    // ":https://ai.influora.internal" fallback. That host resolves nowhere. With
+    // ANALYZE_SITE_AI_BASE_URL unset on the live box, Spring resolved the fiction, DNS returned
+    // NXDOMAIN, AnalyzeSiteAiClient#analyze threw before a SYN went out, and all 6 brand_profiles
+    // rows created from 2026-08-30 onward ended terminally FAILED. This validator DID check these
+    // base URLs and DID hard-fail boot — it just only matched literal localhost/127.0.0.1/::1, so
+    // a fictional-but-not-loopback host went straight through. These tests pin the widened rule.
+    //
+    // Each of the four below goes RED against the pre-fix validator, and for the same mechanical
+    // reason in every case: checkNotLocalhost's only host comparison was
+    // equals("localhost") || equals("127.0.0.1") || equals("::1"). Every host asserted here fails
+    // all three, so nothing was appended to `problems`, so validate() found problems.length()==0
+    // and returned — no IllegalStateException to catch. assertThrows fails with
+    // "Expected java.lang.IllegalStateException to be thrown, but nothing was thrown."
+    //
+    // Note on constants: INCIDENT_FICTIONAL_AI_HOST is a private static final String, which javac
+    // inlines at compile time. These tests assert on the literal "ai.influora.internal" and on
+    // the message text, never on the constant's identity, so they stay honest — but verify with
+    // `mvn clean compile` regardless, so a stale class file can't answer for a changed constant.
+    // ==================================================================================
+
+    @Test
+    @DisplayName(
+            "FIX 1: prod boot FAILS when an AI base-url is the fictional ai.influora.internal host")
+    void testFictionalInternalAiHostFailsClosedInProd() throws Exception {
+        analyzeSiteAiProperties.setBaseUrl("https://ai.influora.internal");
+
+        SecretsStartupValidator validator = buildValidator("prod");
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(
+                thrown.getMessage().contains("influora.analyze-site-ai.base-url"),
+                "the failure must name the offending property, got: " + thrown.getMessage());
+        assertTrue(
+                thrown.getMessage().contains("ai.influora.internal"),
+                "the failure must name the unroutable host so the fix is obvious, got: "
+                        + thrown.getMessage());
+    }
+
+    @Test
+    @DisplayName("FIX 1: every one of the five AI base-urls is covered, not just analyze-site")
+    void testFictionalInternalAiHostFailsClosedForAllFiveClients() throws Exception {
+        // The incident was observed on analyze-site, but the same fallback shipped on all five.
+        // Covering each one individually stops a future reader from concluding only the one that
+        // burned us is guarded.
+        brandSafetyAiProperties.setBaseUrl("https://ai.influora.internal");
+        trendSparkAiProperties.setBaseUrl("https://ai.influora.internal");
+        meeraChatAiProperties.setBaseUrl("https://ai.influora.internal");
+        analyzeSiteAiProperties.setBaseUrl("https://ai.influora.internal");
+        creatorSuggestionAiProperties.setBaseUrl("https://ai.influora.internal");
+
+        SecretsStartupValidator validator = buildValidator("prod");
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class, validator::validate);
+        for (String property :
+                new String[] {
+                    "influora.brand-safety-ai.base-url",
+                    "influora.trendspark-ai.base-url",
+                    "influora.meera-chat-ai.base-url",
+                    "influora.analyze-site-ai.base-url",
+                    "influora.creator-copilot-ai.base-url"
+                }) {
+            assertTrue(
+                    thrown.getMessage().contains(property),
+                    property + " must be reported too, got: " + thrown.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "FIX 1: prod boot FAILS for any .internal/.local host, not only the one that burned us")
+    void testReservedInternalSuffixesFailClosedInProd() throws Exception {
+        // A rename of the fiction ("https://ai-2.influora.internal") must not slip through, and
+        // mDNS-only .local is just as unresolvable from the API container.
+        for (String unroutable :
+                new String[] {"https://ai-2.influora.internal", "http://influora-ai.local:8000"}) {
+            analyzeSiteAiProperties.setBaseUrl(unroutable);
+
+            SecretsStartupValidator validator = buildValidator("prod");
+
+            IllegalStateException thrown =
+                    assertThrows(
+                            IllegalStateException.class,
+                            validator::validate,
+                            unroutable + " must fail a prod boot");
+            assertTrue(
+                    thrown.getMessage().contains("influora.analyze-site-ai.base-url"),
+                    "the failure must name the offending property for " + unroutable + ", got: "
+                            + thrown.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("FIX 1: dev still only warns, and the real deployed host shape still boots clean")
+    void testFictionalInternalHostOnlyWarnsInDevAndRealHostBootsClean() throws Exception {
+        // Half 1 — the dev exemption is unchanged: the widened check adds to the same `problems`
+        // buffer validate() only throws on outside dev.
+        analyzeSiteAiProperties.setBaseUrl("https://ai.influora.internal");
+        assertDoesNotThrow(buildValidator("dev")::validate);
+
+        // Half 2 — falsification guard. If the widened rule were too broad (e.g. rejecting any
+        // host containing "internal", or any non-HTTPS AI URL), it would also reject the shape we
+        // genuinely deploy, and FIX 1 would brick every environment instead of only the
+        // misconfigured ones. The baseline in setUp() already uses http://influora-ai:8000, so a
+        // clean prod boot here is the assertion that the rule is narrow enough to be shippable.
+        analyzeSiteAiProperties.setBaseUrl("http://influora-ai:8000");
+        assertDoesNotThrow(buildValidator("prod")::validate);
     }
 
     private static void setField(SecretsStartupValidator validator, String fieldName, Object value)
