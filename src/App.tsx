@@ -5,6 +5,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import { api, isApiLive, type Role } from '@/lib/api';
 import { Toaster } from '@/components/ui/toaster';
 import { DemoModeBanner } from '@/components/DemoModeBanner';
+import { RouteAnalytics } from '@/components/site/RouteAnalytics';
 import BrandLoginPage from '@/pages/brand-login';
 import BrandRegisterPage from '@/pages/brand-register';
 import BrandForgotPasswordPage from '@/pages/brand-forgot-password';
@@ -253,6 +254,9 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
     <BrowserRouter>
+    {/* Outside RoutedErrorBoundary on purpose: a thrown route renders the fallback, and the
+        visitor navigating away from it is still a navigation GTM should see. */}
+    <RouteAnalytics />
     <RoutedErrorBoundary>
       <Routes>
         {/* Auth Routes */}

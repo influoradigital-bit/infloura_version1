@@ -58,6 +58,27 @@
     -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- The tag origins from site-tags.js below. dns-prefetch rather than preconnect: these are
+         `async` and off the critical path, so holding open a TLS connection for them would
+         compete with the font and API connections that ARE on it. -->
+    <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
+    <link rel="dns-prefetch" href="https://www.clarity.ms" />
+
+    <!--
+      Google Tag Manager (GTM-K7LNG26G). Microsoft Clarity (project yh2rsgpkvq) is NOT loaded
+      separately — it is already a tag inside this container, so the loader deliberately does
+      not ship a second copy. That is written up in full in public/site-tags.js.
+
+      This is NOT the inline bootstrap Google's setup page hands you. The production CSP
+      (docker/nginx.conf.template) sets script-src WITHOUT 'unsafe-inline', so an inline
+      snippet here would run on `vite dev` and be silently blocked on every real deploy.
+      Same-origin file = 'self' = allowed, with no sitewide weakening of the policy. The full
+      reasoning and the GTM-Custom-HTML caveat are in public/site-tags.js.
+
+      `defer` keeps it off the parser's critical path; the loader inserts the vendor scripts
+      `async` itself, exactly as the official snippets do.
+    -->
+    <script src="/site-tags.js" defer></script>
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Influora" />
@@ -108,6 +129,20 @@
     </script>
   </head>
   <body>
+    <!--
+      Google Tag Manager (noscript). Only reachable by a visitor with JavaScript disabled, who
+      by definition never runs site-tags.js. It buys little on a React SPA — such a visitor sees
+      the static fallback below and nothing else — but it costs nothing, and frame-src in
+      docker/nginx.conf.template permits www.googletagmanager.com so it is not silently blocked.
+    -->
+    <noscript
+      ><iframe
+        src="https://www.googletagmanager.com/ns.html?id=GTM-K7LNG26G"
+        height="0"
+        width="0"
+        style="display: none; visibility: hidden"
+      ></iframe
+    ></noscript>
     <div id="root">
       <!--
         Static fallback for crawlers that do not execute JavaScript (GPTBot,

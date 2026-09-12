@@ -33,27 +33,50 @@ map $uri $influora_cache_control {
 # has never reached a browser, and the sponsor Meta pixel on /festival-box/* was blocked in
 # production while the landing-page copy sold it as working.
 #
-# WHY NOT JUST ADD connect.facebook.net TO THE DEFAULT — because that is the trap. Doing so would
-# permit Facebook script loading on /brand/*, /creator/*, /admin/* and every public creator
-# portfolio, to fix one marketing page. The whole point of the festival pixel design is that the
-# rest of influora.in stays tracker-free; the ONLY difference between these two values is the
-# single https://connect.facebook.net entry in script-src.
+# WHY THE PATH SCOPING IS GONE (2026-09-12, Swapnil ruling). This map used to carry a second,
+# wider value for /festival-box/* whose ONLY difference was https://connect.facebook.net in
+# script-src, so a sponsor's Meta Pixel could run on that one marketing page while the rest of
+# influora.in stayed free of it. That design is over: Swapnil ruled that GTM (GTM-K7LNG26G)
+# loads sitewide and that the container's Meta Pixel must actually fire, and the container runs
+# on every route — so the DEFAULT had to permit Facebook regardless. Once it did, the festival
+# value was byte-identical to the default: a branch that scopes nothing while reading like
+# protection. It was deleted rather than left in place as decoration.
 #
-# img-src/connect-src need no festival-specific widening: the default already carries a bare
-# `https:` for img-src, and pixel event beacons go to www.facebook.com over that. Adding them
-# again would be theatre — a wider policy that changes nothing.
+# The `map` itself is kept (one map, one add_header, no resets — [Kabir H-5] above) so that
+# re-narrowing is a one-line addition. To reverse the ruling: remove the two Facebook origins
+# and www.facebook.com from the default, then add back a `~^/festival-box/` value carrying them.
 #
-# NOTE for whoever edits this next: these two values must stay identical apart from that one
-# entry. If you change a directive in the default, change it here too. They are written out in
-# full rather than composed from a variable because envsubst runs over this file and nested
-# variable expansion inside a map value is a footgun that fails silently.
+# THE TWO FACEBOOK SCRIPT ORIGINS, and why BOTH are listed:
+#   https://connect.facebook.net
+#       fbevents.js. Meta's official GTM template injects this unconditionally.
+#   https://capi-automation.s3.us-east-2.amazonaws.com
+#       clientParamBuilder.bundle.js — Meta's CAPI parameter builder. The template injects it
+#       behind a SERVER-SIDE gatekeeper (`enable_gtm_parambuilder`) that has no checkbox in the
+#       tag UI, so Meta can begin requesting it on any day with no change on our side. It is
+#       listed up front precisely for that reason: leave it out and the breakage arrives later,
+#       silently, on a date nobody chose. Note that it is a plain S3 bucket, not a Meta-branded
+#       CDN — a wider trust grant than anything else on this line, and the first entry to drop
+#       if the pixel is ever retired.
+# www.facebook.com is in connect-src because fbevents.js sends events over XHR as well as the
+# /tr GET beacon — img-src's bare `https:` covers only the beacon.
+#
+# CONSEQUENCE SOMEONE SHOULD RULE ON: the consent bar on /festival-box/* (PageConsentBar.tsx)
+# now gates only that page's OWN pixel injection. The GTM container's pixel loads on that page
+# before the visitor answers, so the bar no longer means "no Meta tag until you accept".
+#
+# WHAT IS DELIBERATELY STILL ABSENT — 'unsafe-inline' in script-src. GTM's own bootstrap is
+# served from public/site-tags.js (same-origin, so 'self' covers it) precisely so this did not
+# have to be relaxed. Consequence: GTM **Custom HTML** tags are blocked by this policy and
+# silently do nothing — which is exactly why the Meta Pixel had to move to Meta's official
+# Gallery template, whose sandboxed injectScript needs no inline execution. Any other vendor
+# tag works on the same terms: use a template, and add its origin here. If Custom HTML ever
+# becomes genuinely unavoidable, the fix is a per-request nonce, not 'unsafe-inline' on a
+# platform that moves money.
+#
+# This value is written out in full rather than composed from a variable because envsubst runs
+# over this file and nested variable expansion inside a map value fails silently.
 map $uri $influora_csp {
-    default "default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ${CSP_API_ORIGIN} ${CSP_MEERA_ORIGIN} https://api.razorpay.com https://lumberjack.razorpay.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
-
-    # The public Festival Box shopper pages only. Note the trailing-segment anchor: this matches
-    # /festival-box/mumbai-2026 and deeper, NOT the /festival-box sponsorship landing page, which
-    # has no pixel and must not be permitted one.
-    ~^/festival-box/ "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://connect.facebook.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ${CSP_API_ORIGIN} ${CSP_MEERA_ORIGIN} https://api.razorpay.com https://lumberjack.razorpay.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
+    default "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://*.googletagmanager.com https://*.clarity.ms https://connect.facebook.net https://capi-automation.s3.us-east-2.amazonaws.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' ${CSP_API_ORIGIN} ${CSP_MEERA_ORIGIN} https://api.razorpay.com https://lumberjack.razorpay.com https://*.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://*.clarity.ms https://www.facebook.com; frame-src https://api.razorpay.com https://checkout.razorpay.com https://*.googletagmanager.com https://tagassistant.google.com; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
 }
 
 server {
