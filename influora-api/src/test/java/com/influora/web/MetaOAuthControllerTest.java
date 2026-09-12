@@ -130,6 +130,51 @@ class MetaOAuthControllerTest {
     }
 
     @Test
+    @DisplayName(
+            "authorize fails closed when redirect-uri points at this API, and burns no state token"
+                    + " (the live 2026-09-12 configuration)")
+    void authorize_redirectUriMisconfigured_failsClosedBeforeIssuingState() {
+        // The third guard in the same family as the two above. It lives in MetaOAuthService because
+        // that is where the value is resolved; what this asserts is that the controller consults it
+        // BEFORE minting a state token and before handing back a dialog URL, so a creator is never
+        // sent to Meta on a deploy that cannot receive them back.
+        org.mockito.Mockito.doThrow(
+                        new ApiException(
+                                "META_REDIRECT_URI_MISCONFIGURED",
+                                "Connecting an Instagram account is not available on this environment",
+                                org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE))
+                .when(oAuthService)
+                .assertRedirectUriUsable(false);
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> controller.authorize(CREATOR_PRINCIPAL, null));
+
+        assertEquals("META_REDIRECT_URI_MISCONFIGURED", ex.getCode());
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, ex.getStatus());
+        verify(stateStore, never()).issue(anyString(), any(MetaAuthPath.class));
+        verify(oAuthService, never()).buildAuthorizationUrl(anyString());
+    }
+
+    @Test
+    @DisplayName("authorize asks about the redirect-uri of the auth path it is actually using")
+    void authorize_checksTheRedirectUriOfTheRequestedAuthPath() {
+        // Not cosmetic. The two paths read DIFFERENT properties (influora.meta.redirect-uri vs
+        // instagram-redirect-uri) and both were wrong in generate-env.sh, so passing the wrong flag
+        // here would validate the property this request will not use — a guard that runs, reports
+        // green, and protects nothing.
+        metaApiProperties.setInstagramAppId("ig-app-id");
+        metaApiProperties.setInstagramAppSecret("ig-app-secret");
+        when(stateStore.issue(eq(USER_ID), eq(MetaAuthPath.INSTAGRAM_LOGIN))).thenReturn("state-ig");
+        when(oAuthService.buildInstagramAuthorizationUrl(eq("state-ig")))
+                .thenReturn("https://www.instagram.com/oauth/authorize?...");
+
+        controller.authorize(CREATOR_PRINCIPAL, MetaAuthPath.INSTAGRAM_LOGIN);
+
+        verify(oAuthService, times(1)).assertRedirectUriUsable(true);
+        verify(oAuthService, never()).assertRedirectUriUsable(false);
+    }
+
+    @Test
     @DisplayName("authorize: rejects a non-creator principal")
     void authorize_rejectsNonCreator() {
         AuthPrincipal brandPrincipal = new AuthPrincipal(USER_ID, "brand@example.com", UserType.BRAND, WORKSPACE_ID);

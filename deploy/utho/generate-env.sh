@@ -33,7 +33,12 @@ cat > "$ENV_PATH" <<ENVEOF
 # NEVER commit this file.
 
 ROOT_DOMAIN=influora.in
-APP_DOMAIN=app.influora.in
+# T-DOMAIN-0820 §4.5 ruled this out: "DNS: influora.in -> the app deployment; api.influora.in ->
+# Spring API. No `app.` subdomain is needed under this decision." This generated app.influora.in
+# anyway, and compose derives INFLUORA_WEB_BASE_URL from it (docker-compose.utho.yml) — so every
+# absolute URL the API builds, the Meta redirect below included, pointed at a host that does not
+# serve the SPA. Must stay the origin that actually serves the frontend.
+APP_DOMAIN=influora.in
 API_DOMAIN=api.influora.in
 AI_DOMAIN=ai.influora.in
 ACME_EMAIL=REPLACE_ME
@@ -143,8 +148,12 @@ META_INSTAGRAM_APP_SECRET=REPLACE_ME
 # API instead returns UNAUTHENTICATED every time: that endpoint requires @AuthenticationPrincipal
 # and Meta's redirect carries no bearer token. One route serves both auth paths — the backend
 # recovers which one from the state token. Must match a Valid OAuth Redirect URI byte-for-byte.
-META_REDIRECT_URI=https://app.influora.in/creator/settings/meta/callback
-META_INSTAGRAM_REDIRECT_URI=https://app.influora.in/creator/settings/meta/callback
+# The host MUST equal APP_DOMAIN above (T-DOMAIN-0820 §4.6 names this exact value); the app.
+# subdomain these two used to carry serves nothing.
+# .proof-os/gates/meta-connect-is-completable.sh compares these against APP_DOMAIN and against the
+# React route, so this file cannot drift from either again.
+META_REDIRECT_URI=https://influora.in/creator/settings/meta/callback
+META_INSTAGRAM_REDIRECT_URI=https://influora.in/creator/settings/meta/callback
 # T-CREATORCONNECT-0902 — CreatorMarketplaceClient gate. OFF: instagram_creator_marketplace_discovery
 # cannot even be App-Reviewed yet (wiki/decisions/2026-09-02-what-we-need.md); ExternalCreatorService
 # falls back to the external_creators table (Business Discovery + admin import) regardless.

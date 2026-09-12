@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
+import com.influora.common.ApiException;
 import com.influora.config.MetaApiProperties;
 import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.exception.MetaApiException;
@@ -34,6 +35,11 @@ class MetaOAuthServiceTest {
     private static final String APP_SECRET = "test-app-secret";
     private static final String REDIRECT_URI = "https://influora.com/oauth/callback";
     private static final String GRAPH_API_VERSION = "v25.0";
+    private static final String WEB_BASE_URL = "https://influora.in";
+    /** The value that was live on 2026-09-12 and returned UNAUTHENTICATED on every connect. */
+    private static final String API_CALLBACK_URI = "https://influora.in/api/v1/meta/oauth/callback";
+    private static final String SPA_CALLBACK_URI =
+            "https://influora.in/creator/settings/meta/callback";
 
     @Mock private RestClient restClient;
     @Mock private RestClient.RequestHeadersUriSpec<?> requestHeadersUriSpec;
@@ -44,7 +50,86 @@ class MetaOAuthServiceTest {
     @BeforeEach
     void setUp() {
         MetaApiProperties props = createTestProperties();
-        service = new MetaOAuthService(props, restClient);
+        service = new MetaOAuthService(props, WEB_BASE_URL, restClient);
+    }
+
+    /**
+     * A service whose Facebook and Instagram redirect URIs are exactly these. Used by the
+     * misconfiguration tests below, which need the property set differently per case.
+     */
+    private MetaOAuthService serviceWithRedirects(String facebook, String instagram) {
+        MetaApiProperties props = createTestProperties();
+        props.setRedirectUri(facebook);
+        props.setInstagramRedirectUri(instagram);
+        props.setInstagramAppId("test-ig-app-id");
+        props.setInstagramAppSecret("test-ig-app-secret");
+        return new MetaOAuthService(props, WEB_BASE_URL, restClient);
+    }
+
+    @Test
+    @DisplayName("authorize refuses a redirect-uri pointing at this API's own callback (live 0912)")
+    void redirectUriOnTheApiCallbackPathIsRefusedBeforeTheDialog() {
+        MetaOAuthService misconfigured = serviceWithRedirects(API_CALLBACK_URI, SPA_CALLBACK_URI);
+
+        ApiException e =
+                assertThrows(
+                        ApiException.class, () -> misconfigured.assertRedirectUriUsable(false));
+
+        assertEquals("META_REDIRECT_URI_MISCONFIGURED", e.getCode());
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, e.getStatus());
+    }
+
+    @Test
+    @DisplayName("the INSTAGRAM_LOGIN path is guarded by its own property, not the Facebook one")
+    void instagramRedirectUriIsGuardedIndependently() {
+        // The bug class is per-property: generate-env.sh set BOTH to the same wrong value, so a
+        // guard that only read influora.meta.redirect-uri would have left this path broken.
+        MetaOAuthService misconfigured = serviceWithRedirects(SPA_CALLBACK_URI, API_CALLBACK_URI);
+
+        assertThrows(ApiException.class, () -> misconfigured.assertRedirectUriUsable(true));
+        // ...and the correctly-configured Facebook path on the same service still works.
+        misconfigured.assertRedirectUriUsable(false);
+    }
+
+    @Test
+    @DisplayName("the dialog URL itself refuses it too, not just the pre-flight assert")
+    void buildAuthorizationUrlRefusesTheApiCallbackPath() {
+        MetaOAuthService misconfigured = serviceWithRedirects(API_CALLBACK_URI, API_CALLBACK_URI);
+
+        assertThrows(ApiException.class, () -> misconfigured.buildAuthorizationUrl("state-1"));
+        assertThrows(
+                ApiException.class, () -> misconfigured.buildInstagramAuthorizationUrl("state-1"));
+    }
+
+    @Test
+    @DisplayName("the code exchange refuses it too, so no leg can send Meta an impossible value")
+    void codeExchangeRefusesTheApiCallbackPath() {
+        MetaOAuthService misconfigured = serviceWithRedirects(API_CALLBACK_URI, API_CALLBACK_URI);
+
+        // Throws before any HTTP call — the mocked RestClient is never touched, which is the point:
+        // a bad redirect_uri must not reach Meta's token endpoint either.
+        assertThrows(ApiException.class, () -> misconfigured.exchangeCodeForToken("code-1"));
+        assertThrows(
+                ApiException.class, () -> misconfigured.exchangeInstagramCodeForToken("code-1"));
+    }
+
+    @Test
+    @DisplayName("a blank redirect-uri derives the SPA route instead of sending Meta an empty value")
+    void blankRedirectUriDerivesTheSpaRoute() {
+        // Blank, not absent: both Utho compose files forward `${META_REDIRECT_URI}` bare, so an
+        // unset host variable reaches Spring as an empty string and the yaml default never applies.
+        MetaOAuthService blank = serviceWithRedirects("", "   ");
+
+        assertTrue(
+                blank.buildAuthorizationUrl("state-1")
+                        .contains(
+                                "redirect_uri=https%3A%2F%2Finfluora.in%2Fcreator%2Fsettings%2Fmeta%2Fcallback"),
+                "blank redirect-uri must fall back to web-base-url + the SPA callback route");
+        assertTrue(
+                blank.buildInstagramAuthorizationUrl("state-1")
+                        .contains(
+                                "redirect_uri=https%3A%2F%2Finfluora.in%2Fcreator%2Fsettings%2Fmeta%2Fcallback"),
+                "the Instagram path must derive the same route");
     }
 
     @Test

@@ -95,6 +95,14 @@ public class MetaOAuthController {
                     HttpStatus.SERVICE_UNAVAILABLE);
         }
 
+        // Same shape as the two guards above, and for the same reason: refuse a connect this
+        // environment cannot complete, before the creator spends a Meta dialog on it. Verified live
+        // 2026-09-12 — redirect-uri pointed at THIS endpoint, so Meta sent the browser to an API
+        // path that needs a bearer token the browser does not have and the creator got
+        // UNAUTHENTICATED after granting permissions. isConfigured() above cannot catch that: it
+        // checks only app-id and app-secret and never looks at redirect-uri.
+        oAuthService.assertRedirectUriUsable(resolved == MetaAuthPath.INSTAGRAM_LOGIN);
+
         String state = stateStore.issue(principal.getUserId(), resolved);
         String url =
                 resolved == MetaAuthPath.INSTAGRAM_LOGIN

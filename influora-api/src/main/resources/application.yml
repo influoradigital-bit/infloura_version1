@@ -418,12 +418,25 @@ influora:
     # unless used). Supply real values via env (prod) or application-dev.yml (dev).
     app-id: ${META_APP_ID:}
     app-secret: ${META_APP_SECRET:}
-    redirect-uri: ${META_REDIRECT_URI:}
+    # Meta redirects the BROWSER here, so this must be the SPA route that completes the connect —
+    # NOT an API path. Verified live 2026-09-12: pointed at /api/v1/meta/oauth/callback, every
+    # connect returned UNAUTHENTICATED, because that endpoint needs an Authorization header and a
+    # top-level navigation from facebook.com carries none. Derived from web-base-url like
+    # influora.shopify.redirect-uri below, so a deploy that sets nothing still gets a value that
+    # works. MetaRedirectUri.resolve() repeats this default in code, deliberately: both Utho
+    # compose files forward `${META_REDIRECT_URI}` bare, an unset host var arrives as set-but-EMPTY,
+    # and a yaml default only applies when the property is ABSENT (the F-0390 class documented in
+    # deploy/hostinger/docker-compose.hostinger.yml). Without the code-side fallback this line is
+    # decorative on exactly the deploys that need it.
+    redirect-uri: ${META_REDIRECT_URI:${influora.web-base-url}/creator/settings/meta/callback}
     # T-IGLOGIN-0820 — Business Login for Instagram (no Facebook Page required). Distinct app
     # credentials from the Facebook pair above; blank keeps that path off, same convention.
     instagram-app-id: ${META_INSTAGRAM_APP_ID:}
     instagram-app-secret: ${META_INSTAGRAM_APP_SECRET:}
-    instagram-redirect-uri: ${META_INSTAGRAM_REDIRECT_URI:}
+    # One SPA route serves both auth paths — the backend recovers which one from the state token —
+    # so this defaults to the same place. It is a separate property because the Instagram app's
+    # dashboard keeps its own Valid OAuth Redirect URIs list, not because the URL differs.
+    instagram-redirect-uri: ${META_INSTAGRAM_REDIRECT_URI:${influora.web-base-url}/creator/settings/meta/callback}
     graph-api-version: ${META_GRAPH_API_VERSION:v25.0}
     # F-0479 — MetricsPollingJob's per-post leg: fetch recent media + insights and write
     # media_metrics. ON by default; with it off that table has NO writer and every creator stays

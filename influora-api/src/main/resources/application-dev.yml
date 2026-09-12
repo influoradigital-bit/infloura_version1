@@ -67,7 +67,10 @@ influora:
   # meta:            # Optional — leave commented unless connecting Instagram/Facebook.
   #   app-id: "PASTE_HERE"
   #   app-secret: "PASTE_HERE"
-  #   redirect-uri: "http://localhost:8080/api/v1/meta/oauth/callback"
+  #   # The SPA route (vite, port 5173) — NOT the API. Meta redirects the browser here and the
+  #   # React page calls GET /meta/oauth/callback itself with the creator's token. An API URL here
+  #   # returns UNAUTHENTICATED every time; this example used to show exactly that wrong shape.
+  #   redirect-uri: "http://localhost:5173/creator/settings/meta/callback"
 
 logging:
   level:

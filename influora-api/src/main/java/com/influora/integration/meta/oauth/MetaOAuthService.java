@@ -1,6 +1,8 @@
 package com.influora.integration.meta.oauth;
 
+import com.influora.common.ApiException;
 import com.influora.config.MetaApiProperties;
+import com.influora.config.MetaRedirectUri;
 import com.influora.integration.meta.dto.InstagramShortLivedTokenResponse;
 import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.exception.MetaApiException;
@@ -9,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -57,6 +61,14 @@ public class MetaOAuthService {
 
     private final MetaApiProperties props;
 
+    /**
+     * The SPA origin, used only to derive a redirect URI when none is configured (see {@link
+     * MetaRedirectUri#resolve}). Injected rather than read off {@code MetaApiProperties} because it
+     * is not a Meta property — it is the same {@code influora.web-base-url} the Shopify redirect
+     * default is built from.
+     */
+    private final String webBaseUrl;
+
     // Nullable until first use (or injected by the test constructor). Built lazily rather than
     // in the container constructor for the same reason as MetaGraphApiClient: RestClient.build()
     // spins up the JDK HttpClient (selector thread + NIO pipe), and application boot must not
@@ -66,14 +78,58 @@ public class MetaOAuthService {
     // @Autowired is required, not decorative: with the test constructor below also present,
     // Spring has two candidates and refuses to guess ("No default constructor found" at boot).
     @org.springframework.beans.factory.annotation.Autowired
-    public MetaOAuthService(MetaApiProperties props) {
+    public MetaOAuthService(
+            MetaApiProperties props, @Value("${influora.web-base-url}") String webBaseUrl) {
         this.props = props;
+        this.webBaseUrl = webBaseUrl;
     }
 
     /** Package-private test constructor for injecting mocked RestClient. */
-    MetaOAuthService(MetaApiProperties props, RestClient restClient) {
+    MetaOAuthService(MetaApiProperties props, String webBaseUrl, RestClient restClient) {
         this.props = props;
+        this.webBaseUrl = webBaseUrl;
         this.restClient = restClient;
+    }
+
+    /**
+     * The {@code redirect_uri} for this auth path — the SAME value for the dialog and for the code
+     * exchange, which Meta requires to match byte-for-byte. All four call sites go through here so
+     * they cannot drift, and so the impossible-configuration check below cannot be bypassed by one
+     * of them.
+     *
+     * @throws ApiException 503 if the configured value points at the API's own callback path, a
+     *     configuration that answers every Meta redirect with {@code UNAUTHENTICATED} (see {@link
+     *     MetaRedirectUri}). Failing here is what turns a dead end the creator discovers AFTER
+     *     granting permissions into a refusal before the dialog opens.
+     */
+    String resolveRedirectUri(boolean instagramLogin) {
+        String configured =
+                instagramLogin ? props.getInstagramRedirectUri() : props.getRedirectUri();
+        String effective = MetaRedirectUri.resolve(configured, webBaseUrl);
+        if (MetaRedirectUri.pointsAtApiCallback(effective)) {
+            log.error(
+                    "Meta {} redirect-uri is set to this API's own callback path ({}). Meta redirects"
+                        + " the BROWSER there, which carries no Authorization header, so every connect"
+                        + " returns UNAUTHENTICATED. Point it at the SPA route {} and add that exact"
+                        + " URL to the Meta app's Valid OAuth Redirect URIs.",
+                    instagramLogin ? "INSTAGRAM_LOGIN" : "FACEBOOK_LOGIN",
+                    effective,
+                    MetaRedirectUri.CREATOR_CALLBACK_PATH);
+            throw new ApiException(
+                    "META_REDIRECT_URI_MISCONFIGURED",
+                    "Connecting an Instagram account is not available on this environment",
+                    HttpStatus.SERVICE_UNAVAILABLE);
+        }
+        return effective;
+    }
+
+    /**
+     * Fails a connect attempt before a state token is minted and before the creator is sent to
+     * Meta. Called by {@code MetaOAuthController#authorize} alongside its {@code isConfigured}
+     * guards; {@link #resolveRedirectUri} enforces the same rule again on the exchange leg.
+     */
+    public void assertRedirectUriUsable(boolean instagramLogin) {
+        resolveRedirectUri(instagramLogin);
     }
 
     private RestClient restClient() {
@@ -97,7 +153,7 @@ public class MetaOAuthService {
                 + "?client_id="
                 + urlEncode(props.getAppId())
                 + "&redirect_uri="
-                + urlEncode(props.getRedirectUri())
+                + urlEncode(resolveRedirectUri(false))
                 + "&scope="
                 + urlEncode(String.join(",", REQUIRED_SCOPES))
                 + "&response_type=code"
@@ -120,7 +176,7 @@ public class MetaOAuthService {
                         + "&client_secret="
                         + urlEncode(props.getAppSecret())
                         + "&redirect_uri="
-                        + urlEncode(props.getRedirectUri())
+                        + urlEncode(resolveRedirectUri(false))
                         + "&code="
                         + urlEncode(code);
         return fetchToken(url, "code-exchange");
@@ -161,7 +217,7 @@ public class MetaOAuthService {
                 + "?client_id="
                 + urlEncode(props.getInstagramAppId())
                 + "&redirect_uri="
-                + urlEncode(props.getInstagramRedirectUri())
+                + urlEncode(resolveRedirectUri(true))
                 + "&scope="
                 + urlEncode(String.join(",", INSTAGRAM_LOGIN_SCOPES))
                 + "&response_type=code"
@@ -185,7 +241,7 @@ public class MetaOAuthService {
                         + urlEncode(props.getInstagramAppSecret())
                         + "&grant_type=authorization_code"
                         + "&redirect_uri="
-                        + urlEncode(props.getInstagramRedirectUri())
+                        + urlEncode(resolveRedirectUri(true))
                         + "&code="
                         + urlEncode(code);
         try {
