@@ -451,7 +451,22 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             return "meera-turn";
         }
 
-        if (path.equals("/auth/brand/send-email-otp") || path.equals("/auth/brand/verify-email")) {
+        // Both LEGS, not just brand: /auth/creator/send-email-otp and /auth/creator/verify-email
+        // are served by the identical BrandEmailOtpService.sendOtp/verifyOtp (AuthController:88,
+        // :95). Listing only the brand pair let the creator pair fall through to the "sensitive"
+        // bucket below, giving the creator leg DOUBLE this bucket's request budget for the exact
+        // same service methods. Same shape as the MEERA_TURN "(/creator)?" prefix and the mirrored
+        // /creator/meera/voice/* routes already fixed in this class: the creator mirror of a brand
+        // route was added later and never reached the matcher.
+        if (path.equals("/auth/brand/send-email-otp")
+                || path.equals("/auth/brand/verify-email")
+                || path.equals("/auth/creator/send-email-otp")
+                || path.equals("/auth/creator/verify-email")
+                // The Festival Box enquiry form's code request. Same service, same email cost per
+                // call, so it belongs in the same per-IP bucket rather than the looser "sensitive"
+                // one it would otherwise fall into — it does not start with /auth/, so without this
+                // line it would get NO bucket at all and only the global default would apply.
+                || path.equals("/festival-enquiries/send-otp")) {
             return "otp";
         }
         if (path.equals("/auth/refresh")) {

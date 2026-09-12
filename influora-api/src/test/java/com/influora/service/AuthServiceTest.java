@@ -30,6 +30,7 @@ import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.UserStatus;
 import com.influora.domain.enums.UserType;
+import com.influora.domain.enums.WorkspaceType;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.PasswordResetTokenRepository;
 import com.influora.repository.RefreshTokenRepository;
@@ -38,6 +39,7 @@ import com.influora.repository.WalletRepository;
 import com.influora.repository.WorkspaceMemberRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.JwtService;
+import com.influora.service.billing.SubscriptionService;
 import com.influora.web.dto.auth.AuthDtos.TokenPair;
 import com.influora.web.dto.auth.BrandRegisterRequest;
 import com.influora.web.dto.auth.CreatorRegisterRequest;
@@ -76,6 +78,7 @@ class AuthServiceTest {
     @Mock private InfluoraEnvironment environment;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private RegistrationService registrationService;
+    @Mock private SubscriptionService subscriptionService;
 
     private AuthService authService;
 
@@ -133,7 +136,8 @@ class AuthServiceTest {
                         environment,
                         eventPublisher,
                         registrationService,
-                        new UserPhoneService(userRepository));
+                        new UserPhoneService(userRepository),
+                        subscriptionService);
         // Defaults match application.yml; tests that need OTP/verification gates flip these.
         setField("requireEmailVerification", true);
         setField("requireEmailOtpBeforeRegister", false);
@@ -240,6 +244,36 @@ class AuthServiceTest {
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).saveAndFlush(userCaptor.capture());
         assertEquals("9876543210", userCaptor.getValue().getPhoneNumber());
+    }
+
+    // ── F-4 (SUBSCRIPTION-MODEL-REDESIGN-0912.md): eager Free-subscription provisioning ────
+
+    @Test
+    @DisplayName(
+            "brandRegister: F-4 -- eagerly provisions the Free-tier subscription row for the new"
+                    + " BRAND workspace, in the same transaction as workspace creation")
+    void testBrandRegisterProvisionsFreeSubscriptionForNewWorkspace() {
+        BrandRegisterRequest req = brandRequestWithPhone("9876543210");
+        when(userRepository.existsByEmailIgnoreCase(req.email())).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("9876543210")).thenReturn(false);
+        when(passwordEncoder.encode(any())).thenReturn("hashed");
+        when(workspaceRepository.existsBySlug(any())).thenReturn(false);
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(workspaceMemberRepository.save(any(WorkspaceMember.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(walletRepository.save(any(Wallet.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(anyString(), eq(UserType.BRAND), anyString(), anyString()))
+                .thenReturn("access-jwt");
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        authService.brandRegister(req);
+
+        ArgumentCaptor<Workspace> workspaceCaptor = ArgumentCaptor.forClass(Workspace.class);
+        verify(workspaceRepository).save(workspaceCaptor.capture());
+        assertEquals(WorkspaceType.BRAND, workspaceCaptor.getValue().getType());
+        verify(subscriptionService).getOrCreateFreeSubscription(workspaceCaptor.getValue().getId());
     }
 
     @Test
@@ -516,7 +550,7 @@ class AuthServiceTest {
         assertEquals(userCaptor.getValue().getId(), profileCaptor.getValue().getUserId());
 
         verify(walletRepository).save(any(Wallet.class));
-        verify(brandEmailOtpService, never()).requireVerifiedEmail(anyString());
+        verify(brandEmailOtpService, never()).requireAndConsumeVerifiedEmail(anyString());
         // Q5.5: an ordinary (non-invite) registration passes the null inviteToken through
         // unconditionally — RegistrationService is responsible for treating that as a no-op.
         verify(registrationService).consumeInviteToken(isNull(), eq(profileCaptor.getValue().getId()));
@@ -565,7 +599,7 @@ class AuthServiceTest {
                                 "Please verify your email with the OTP before continuing",
                                 org.springframework.http.HttpStatus.FORBIDDEN))
                 .when(brandEmailOtpService)
-                .requireVerifiedEmail(CREATOR_REQUEST.email());
+                .requireAndConsumeVerifiedEmail(CREATOR_REQUEST.email());
 
         ApiException ex =
                 assertThrows(ApiException.class, () -> authService.creatorRegister(CREATOR_REQUEST));
@@ -595,7 +629,7 @@ class AuthServiceTest {
         TokenPair pair = authService.creatorRegister(CREATOR_REQUEST);
 
         assertTrue(pair.user().emailVerified());
-        verify(brandEmailOtpService).requireVerifiedEmail(CREATOR_REQUEST.email());
+        verify(brandEmailOtpService).requireAndConsumeVerifiedEmail(CREATOR_REQUEST.email());
     }
 
     @Test

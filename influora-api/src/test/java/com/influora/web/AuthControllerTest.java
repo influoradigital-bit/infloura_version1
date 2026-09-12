@@ -80,14 +80,23 @@ class AuthControllerTest {
     void sendCreatorEmailOtp_delegates() {
         SendEmailOtpResponse otpResponse =
                 new SendEmailOtpResponse("OTP sent successfully", 300L, "r***@example.com");
-        when(brandEmailOtpService.sendOtp("riya@example.com")).thenReturn(otpResponse);
+        // [F4] The controller now passes the client address through so the service can apply its
+        // per-origin send cap. Asserting the exact value is the point: reading the address from
+        // anywhere but getRemoteAddr() (an X-Forwarded-For header, say) would let a caller name
+        // their own origin and opt straight out of that cap.
+        org.springframework.mock.web.MockHttpServletRequest httpRequest =
+                new org.springframework.mock.web.MockHttpServletRequest();
+        httpRequest.setRemoteAddr("203.0.113.9");
+        when(brandEmailOtpService.sendOtp("riya@example.com", "203.0.113.9"))
+                .thenReturn(otpResponse);
 
         ResponseEntity<ApiResponse<SendEmailOtpResponse>> response =
-                controller.sendCreatorEmailOtp(new SendEmailOtpRequest("riya@example.com"));
+                controller.sendCreatorEmailOtp(
+                        new SendEmailOtpRequest("riya@example.com"), httpRequest);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(otpResponse, response.getBody().data());
-        verify(brandEmailOtpService).sendOtp("riya@example.com");
+        verify(brandEmailOtpService).sendOtp("riya@example.com", "203.0.113.9");
     }
 
     @Test

@@ -176,6 +176,26 @@ export default function BrandRegisterPage() {
         });
         return;
       }
+      // F7 — the server is the authority on whether OTP is required, not /config/public.
+      // `api.config.public()` defaults requireEmailOtp to false when that one unauthenticated GET
+      // fails (api.ts), which was harmless while the server default was also false. It is not
+      // harmless now that the server defaults to true: a single network blip on that GET made this
+      // page skip the OTP step, POST straight to register, and land here with a message telling the
+      // user to verify an email — with no OTP input anywhere on screen and no retry that helps,
+      // because the same cached failure path runs again. Recover by trusting the 403 over the
+      // config read: mount the gate and send the first code from here.
+      if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
+        setRequireEmailOtp(true);
+        try {
+          await api.auth.sendBrandEmailOtp(email);
+          setShowOtp(true);
+        } catch {
+          setErrors({
+            form: 'Please verify your email to continue. We could not send the code — try again.',
+          });
+        }
+        return;
+      }
       if (err instanceof ApiError && err.code === 'PHONE_REQUIRED') {
         setErrors({ phone: 'Mobile number is required' });
         return;

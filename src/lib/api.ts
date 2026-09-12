@@ -3627,10 +3627,18 @@ export const config = {
    * GET /config/public — the one unauthenticated config read (SecurityConfig permitAll), because
    * the signup pages need it before a token exists.
    *
-   * Fails CLOSED to `requireEmailOtp: false`: if this call fails the user still gets a working
-   * signup form, and a server that actually requires OTP will reject the registration with a
-   * readable `EMAIL_NOT_VERIFIED` error. The opposite default would hard-block signup whenever
-   * config is briefly unreachable.
+   * Defaults to `requireEmailOtp: false` when the read fails. Note this is the PERMISSIVE value,
+   * not the safe one - the older comment here called it "fails CLOSED", which was backwards.
+   * It is still the right default, because defaulting to `true` would hard-block signup whenever
+   * this one GET is briefly unreachable.
+   *
+   * What makes it safe is the RECOVERY, not the default: the server has required email OTP by
+   * default since 2026-09-12 (application.yml `require-email-otp-before-register`), so a failed
+   * read here means the page skips the OTP step and register answers 403 EMAIL_NOT_VERIFIED.
+   * brand-register.tsx and creator-register.tsx both handle that code by mounting EmailOtpGate
+   * and sending the first code, so the server's answer wins over this fallback. Do not remove
+   * those handlers on the assumption that this default protects the flow - it does not; before
+   * they existed, a blip on this GET produced a signup form no user could complete.
    */
   public: async (): Promise<PublicConfigResponse> => {
     if (!isLive()) return mockOr<PublicConfigResponse>({ requireEmailOtp: false });
@@ -4287,7 +4295,6 @@ export interface BillingUsageSummary {
   trackedCreatorLimit: number | null;
   analyticsViewsUsed: number;
   analyticsViewsLimit: number | null;
-  exportsUsed: number;
   exportEnabled: boolean;
   aiCreditsRemaining: number;
   aiCreditsMonthlyAllotment: number;
@@ -4322,7 +4329,6 @@ const mockBillingUsage: BillingUsageSummary = {
   trackedCreatorLimit: 5,
   analyticsViewsUsed: 1,
   analyticsViewsLimit: 1,
-  exportsUsed: 0,
   exportEnabled: false,
   aiCreditsRemaining: 63,
   aiCreditsMonthlyAllotment: 150,
@@ -6794,6 +6800,11 @@ export interface FestivalEnquiryPayload {
   utmCampaign?: string;
   /** Anti-bot decoy. Always send whatever the hidden input held, including undefined. */
   honeypot?: string;
+  /**
+   * The emailed code proving the submitter owns `email`. REQUIRED server-side — the enquiry is
+   * refused without it. Obtained from `festivalEnquiry.sendOtp` first.
+   */
+  otp: string;
 }
 
 export interface FestivalEnquiryResult {
@@ -6821,6 +6832,29 @@ export const festivalEnquiry = {
    */
   submit: (payload: FestivalEnquiryPayload): Promise<FestivalEnquiryResult> =>
     http.request<FestivalEnquiryResult>('POST', '/festival-enquiries', { body: payload }),
+
+  /**
+   * POST /festival-enquiries/send-otp — mail a code to the address typed into the form, step one
+   * of submitting. Public, like `submit`.
+   *
+   * No mock branch, for the same reason `submit` has none: a fake success here would leave a real
+   * brand waiting for an email that was never sent, on the only form on the marketing site that
+   * captures a sales lead.
+   *
+   * Server-side this maps to `sendOtpForPublicForm`, NOT the signup `sendOtp` — the difference is
+   * that this one delivers even when the address already belongs to a verified Influora account,
+   * which is the common case here and would otherwise dead-end every existing customer.
+   *
+   * Shape matches EmailOtpDtos.SendEmailOtpResponse exactly — `expiresIn`, not `expiresInSeconds`,
+   * and the same trio `sendBrandEmailOtp` above declares. A field name the Java record does not
+   * send type-checks fine and arrives `undefined` at runtime.
+   */
+  sendOtp: (email: string): Promise<{ message: string; expiresIn: number; maskedEmail: string }> =>
+    http.request<{ message: string; expiresIn: number; maskedEmail: string }>(
+      'POST',
+      '/festival-enquiries/send-otp',
+      { body: { email } },
+    ),
 };
 
 export const clientErrors = {

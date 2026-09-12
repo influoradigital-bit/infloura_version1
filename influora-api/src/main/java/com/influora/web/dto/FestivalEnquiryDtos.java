@@ -59,7 +59,27 @@ public final class FestivalEnquiryDtos {
             @Size(max = 120) String utmSource,
             @Size(max = 120) String utmMedium,
             @Size(max = 120) String utmCampaign,
-            @Size(max = 200) String honeypot) {}
+            @Size(max = 200) String honeypot,
+            /**
+             * The emailed code proving the submitter controls {@code email}. REQUIRED — the whole
+             * point of the field is that a human typing an address they do not own cannot get past
+             * it. Length-bounded only here; the controller verifies it against the live challenge
+             * before the service is entered, so an absent or wrong value never reaches a row.
+             */
+            @NotBlank(message = "Verification code is required")
+                    @Size(max = 12)
+                    String otp) {}
+
+    /**
+     * Step one of the same form: ask for a code. Carries nothing but the address, because nothing
+     * else is needed to decide whether to send one, and every extra field on an unauthenticated
+     * endpoint is another thing to validate.
+     */
+    public record SendEnquiryOtpRequest(
+            @NotBlank(message = "Email is required")
+                    @Email(message = "Valid email is required")
+                    @Size(max = 255)
+                    String email) {}
 
     /**
      * What the public form gets back. Deliberately carries NO id and no echo of the submitted

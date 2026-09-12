@@ -221,6 +221,22 @@ public class SecurityConfig {
                                         // discipline as the Meta callbacks above.
                                         .requestMatchers(HttpMethod.POST, "/festival-enquiries")
                                         .permitAll()
+                                        // Step one of that same form: mail a verification code to
+                                        // the address typed into it. Public for the identical
+                                        // reason — the submitter has no account to authenticate
+                                        // with. Named as its own exact verb+path rather than
+                                        // widening the matcher above to /festival-enquiries/**,
+                                        // which would hand public access to every future
+                                        // sub-resource of that path, including admin reads.
+                                        //
+                                        // Writes no business row: it inserts one
+                                        // email_otp_challenges record and sends one email, both
+                                        // capped at 3 per address per hour inside
+                                        // BrandEmailOtpService, with a second per-IP cap in
+                                        // AuthRateLimitFilter's "otp" bucket.
+                                        .requestMatchers(
+                                                HttpMethod.POST, "/festival-enquiries/send-otp")
+                                        .permitAll()
                                         // T-FESTIVALBOX-0905 phase 6 — coupon-copy demand-signal tracking
                                         // on the public Festival Box page. Same shopper-has-no-account
                                         // reasoning as /festival-enquiries above, but this one is

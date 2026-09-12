@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type FormEvent, type ReactElement } from 'react';
-import { CheckCircle2, Loader2, Lock } from 'lucide-react';
+import { CheckCircle2, Loader2, Lock, MailCheck } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +42,13 @@ export function FestivalEnquiryForm({ audience, presetTier }: FestivalEnquiryFor
   const [done, setDone] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [utm, setUtm] = useState<{ source?: string; medium?: string; campaign?: string }>({});
+  // Step two. The filled-in payload is parked here while the visitor fetches the code from their
+  // inbox, so the form's own fields can stay mounted-but-hidden and nothing they typed is lost if
+  // the code is wrong. `otp` is omitted from what we park precisely because it is the one thing
+  // still to be collected.
+  const [pending, setPending] = useState<Omit<FestivalEnquiryPayload, 'otp'> | null>(null);
+  const [code, setCode] = useState('');
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     // Guarded for the prerenderer, which executes this module without a browser `window`.
@@ -74,7 +81,9 @@ export function FestivalEnquiryForm({ audience, presetTier }: FestivalEnquiryFor
     };
 
     const rawFollowers = value('followers');
-    const payload: FestivalEnquiryPayload = {
+    // Omit<..., 'otp'> deliberately: at this point the visitor has not seen a code yet. The `otp`
+    // is added in confirmCode(), which is the only place it can honestly exist.
+    const payload: Omit<FestivalEnquiryPayload, 'otp'> = {
       type: audience,
       edition: FESTIVAL_EDITION,
       name: value('name') ?? '',
@@ -102,20 +111,62 @@ export function FestivalEnquiryForm({ audience, presetTier }: FestivalEnquiryFor
     setSubmitting(true);
     setError(null);
     try {
-      const result = await festivalEnquiry.submit(payload);
-      setDone(
-        result.message ??
-          'Thanks — we have your enquiry. Our team will be in touch within 2 working days.',
-      );
-      form.reset();
+      // Step one of two. Nothing is stored yet: this only mails a code to the address typed above,
+      // and the enquiry is POSTed in confirmCode() once that code comes back. The server refuses a
+      // submission without it, so a visitor who mistypes their address — the whole reason this step
+      // exists — never reaches a row rather than reaching an unreachable one.
+      await festivalEnquiry.sendOtp(payload.email);
+      setPending(payload);
+      setCode('');
     } catch (e) {
       setError(
         e instanceof Error && e.message
           ? e.message
-          : 'Something went wrong sending that. Please try again, or email info@influora.in.',
+          : 'We could not send the code. Please try again, or email info@influora.in.',
       );
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  /** Step two: the code came back, so send the enquiry we parked. */
+  async function confirmCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting || !pending) return;
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const result = await festivalEnquiry.submit({ ...pending, otp: code.trim() });
+      setDone(
+        result.message ??
+          'Thanks — we have your enquiry. Our team will be in touch within 2 working days.',
+      );
+      setPending(null);
+      setCode('');
+    } catch (e) {
+      // Stay on this panel on a wrong code — the server bounds the guesses, and dropping the
+      // visitor back to a blank form would lose everything they typed.
+      setError(
+        e instanceof Error && e.message
+          ? e.message
+          : 'That code did not work. Check it and try again.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function resendCode() {
+    if (!pending || resending) return;
+    setResending(true);
+    setError(null);
+    try {
+      await festivalEnquiry.sendOtp(pending.email);
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : 'Could not resend the code.');
+    } finally {
+      setResending(false);
     }
   }
 
@@ -137,6 +188,75 @@ export function FestivalEnquiryForm({ audience, presetTier }: FestivalEnquiryFor
           Send another
         </Button>
       </div>
+    );
+  }
+
+  if (pending) {
+    return (
+      <form
+        onSubmit={confirmCode}
+        className="rounded-2xl border border-border/60 bg-card/50 p-6 sm:p-8"
+        noValidate
+      >
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-accent">
+          <MailCheck className="h-6 w-6 text-accent-foreground" aria-hidden="true" />
+        </span>
+        <h3 className="mt-4 text-xl font-semibold">Confirm your email</h3>
+        <p className="mt-2 text-sm text-muted-foreground">
+          We sent a 6-digit code to <span className="font-medium text-foreground">{pending.email}</span>.
+          Enter it to send your {audience === 'BRAND' ? 'enquiry' : 'application'}.
+        </p>
+
+        <div className="mt-5 max-w-xs">
+          <Label htmlFor={`${formId}-otp`}>6-digit code</Label>
+          <Input
+            id={`${formId}-otp`}
+            name="otp"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="000000"
+            className="mt-1.5 tracking-[0.4em]"
+            required
+          />
+        </div>
+
+        {error ? (
+          <p className="mt-4 text-sm text-destructive-foreground" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <Button type="submit" disabled={submitting || code.length < 6}>
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                Sending…
+              </>
+            ) : (
+              `Send ${audience === 'BRAND' ? 'enquiry' : 'application'}`
+            )}
+          </Button>
+          <Button type="button" variant="outline" onClick={resendCode} disabled={resending}>
+            {resending ? 'Resending…' : 'Resend code'}
+          </Button>
+          {/* Back, not a reset: `pending` still holds everything they typed, so returning to the
+              form must not clear it — a visitor who mistyped one character of their email should
+              not have to refill the whole thing. */}
+          <button
+            type="button"
+            className="text-sm text-muted-foreground underline underline-offset-4"
+            onClick={() => {
+              setPending(null);
+              setError(null);
+            }}
+          >
+            Use a different email
+          </button>
+        </div>
+      </form>
     );
   }
 

@@ -50,8 +50,14 @@ public class AuthController {
 
     @PostMapping("/brand/send-email-otp")
     public ResponseEntity<ApiResponse<SendEmailOtpResponse>> sendBrandEmailOtp(
-            @Valid @RequestBody SendEmailOtpRequest body) {
-        return ResponseEntity.ok(ApiResponse.ok(brandEmailOtpService.sendOtp(body.email())));
+            @Valid @RequestBody SendEmailOtpRequest body, HttpServletRequest httpRequest) {
+        // getRemoteAddr(), never X-Forwarded-For directly: forward-headers-strategy=native has
+        // Tomcat's RemoteIpValve rewrite this from the header already, walking it right-to-left
+        // against the trusted-proxy allowlist. Reading the raw header here would let a caller name
+        // their own origin and opt out of the per-IP cap entirely.
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        brandEmailOtpService.sendOtp(body.email(), httpRequest.getRemoteAddr())));
     }
 
     @PostMapping("/brand/verify-email")
@@ -84,8 +90,10 @@ public class AuthController {
 
     @PostMapping("/creator/send-email-otp")
     public ResponseEntity<ApiResponse<SendEmailOtpResponse>> sendCreatorEmailOtp(
-            @Valid @RequestBody SendEmailOtpRequest body) {
-        return ResponseEntity.ok(ApiResponse.ok(brandEmailOtpService.sendOtp(body.email())));
+            @Valid @RequestBody SendEmailOtpRequest body, HttpServletRequest httpRequest) {
+        return ResponseEntity.ok(
+                ApiResponse.ok(
+                        brandEmailOtpService.sendOtp(body.email(), httpRequest.getRemoteAddr())));
     }
 
     @PostMapping("/creator/verify-email")

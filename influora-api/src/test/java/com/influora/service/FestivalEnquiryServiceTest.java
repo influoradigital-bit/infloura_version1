@@ -579,7 +579,14 @@ class FestivalEnquiryServiceTest {
                     utmSource,
                     utmMedium,
                     utmCampaign,
-                    honeypot);
+                    honeypot,
+                    // Any non-blank value. The service under test never reads this field: the code
+                    // is verified in FestivalEnquiryController BEFORE submit() is entered, so that
+                    // verifyOtp keeps its own transaction (and with it the failed-attempt counter
+                    // its noRollbackFor protects). These tests therefore still cover exactly what
+                    // they covered before -- validation, honeypot and throttle -- and deliberately
+                    // do NOT assert anything about OTP.
+                    "000000");
         }
     }
 }

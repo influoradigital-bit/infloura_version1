@@ -14,6 +14,7 @@ import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.UserStatus;
 import com.influora.domain.enums.UserType;
+import com.influora.domain.enums.WorkspaceType;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.PasswordResetTokenRepository;
 import com.influora.repository.RefreshTokenRepository;
@@ -22,6 +23,7 @@ import com.influora.repository.WalletRepository;
 import com.influora.repository.WorkspaceMemberRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.JwtService;
+import com.influora.service.billing.SubscriptionService;
 import com.influora.service.notification.event.PasswordResetEvent;
 import com.influora.service.notification.event.UserCreatedEvent;
 import com.influora.web.dto.auth.AuthDtos.TokenPair;
@@ -62,6 +64,7 @@ public class AuthService {
     private final ApplicationEventPublisher eventPublisher;
     private final RegistrationService registrationService;
     private final UserPhoneService userPhoneService;
+    private final SubscriptionService subscriptionService;
 
     @Value("${influora.auth.require-email-verification:true}")
     private boolean requireEmailVerification;
@@ -86,7 +89,8 @@ public class AuthService {
             InfluoraEnvironment environment,
             ApplicationEventPublisher eventPublisher,
             RegistrationService registrationService,
-            UserPhoneService userPhoneService) {
+            UserPhoneService userPhoneService,
+            SubscriptionService subscriptionService) {
         this.userRepository = userRepository;
         this.workspaceRepository = workspaceRepository;
         this.workspaceMemberRepository = workspaceMemberRepository;
@@ -101,6 +105,7 @@ public class AuthService {
         this.eventPublisher = eventPublisher;
         this.registrationService = registrationService;
         this.userPhoneService = userPhoneService;
+        this.subscriptionService = subscriptionService;
     }
 
     /**
@@ -176,7 +181,7 @@ public class AuthService {
             // past this point once ownership is actually proven, so it's safe to mark
             // the account verified here (Priya/Kabir gap fix: this used to run
             // unconditionally, making the login-time verification gate permanently dead).
-            brandEmailOtpService.requireVerifiedEmail(req.email());
+            brandEmailOtpService.requireAndConsumeVerifiedEmail(req.email());
             user.setEmailVerified(true);
         }
 
@@ -213,6 +218,21 @@ public class AuthService {
             }
             throw new ApiException(
                     "EMAIL_ALREADY_EXISTS", "An account with this email already exists", HttpStatus.CONFLICT);
+        }
+
+        // F-4 (SUBSCRIPTION-MODEL-REDESIGN-0912.md) — eagerly provision the Free-tier subscription
+        // row in this same transaction so a brand who never opens billing settings still has one;
+        // UsageCounterService#resolvePeriodStart otherwise silently falls back to a calendar-month
+        // anchor instead of the billing-period anchor for exactly that workspace. Placed AFTER the
+        // try/catch above (not inside it) so a hypothetical failure here is never mis-attributed to
+        // the email/phone DataIntegrityViolationException translation. getOrCreateFreeSubscription
+        // is idempotent (SubscriptionService's class javadoc, createFreeSubscription bullet) and
+        // this call can never write PRO. Guarded on WorkspaceType.BRAND — Workspace.newBrand()
+        // always constructs BRAND, so this is always true today, but the guard stays so a future
+        // direct-AGENCY creation path can never silently inherit it (same shape of bug documented
+        // in AICreditResetJob's class javadoc for BrandAiCredit).
+        if (workspace.getType() == WorkspaceType.BRAND) {
+            subscriptionService.getOrCreateFreeSubscription(workspaceId);
         }
 
         // W3-1 — #18 "welcome after signup" (07-NOTIFICATION-SYSTEM-SPEC.md §3.3). Genuinely open
@@ -379,7 +399,7 @@ public class AuthService {
         user.setPhoneNumber(normalizedPhone);
 
         if (requireEmailOtpBeforeRegister) {
-            brandEmailOtpService.requireVerifiedEmail(req.email());
+            brandEmailOtpService.requireAndConsumeVerifiedEmail(req.email());
             user.setEmailVerified(true);
         }
 
