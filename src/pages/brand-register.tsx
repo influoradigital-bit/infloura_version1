@@ -14,6 +14,10 @@ import { Eye, EyeOff, ArrowRight, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { InfluoraLogo } from '@/components/shared/influora-logo';
 import { EmailOtpGate } from '@/components/shared/email-otp-gate';
 import { api, ApiError } from '@/lib/api';
+// F-0780 — the shared module, never a locally re-derived /^[6-9]\d{9}$/: it mirrors the server's
+// IndianPhoneUtils, so a pasted '+91 98765 43210' normalizes instead of being wrongly rejected by
+// a client stricter than the endpoint it posts to.
+import { normalizePhone, isValidPhone, filterPhoneInput } from '@/lib/phone';
 import { getBrandDisplayName, buildBrandUser } from '@/lib/auth-session';
 import { useAuthStore } from '@/lib/store';
 
@@ -36,6 +40,9 @@ export default function BrandRegisterPage() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
+  // F-0780 — holds the RAW input ('+91 98765 43210' pastes intact); normalized at validate and
+  // submit time, never on keystroke, so the caret can't jump while the user is still typing.
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreeToTerms, setAgreeToTerms] = useState(false);
@@ -85,6 +92,15 @@ export default function BrandRegisterPage() {
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errs.email = 'Please enter a valid email address';
     }
+    // F-0780 — checked here, BEFORE the OTP is sent, so a mistyped number costs no verification
+    // code. Duplicate-number 409s are only knowable server-side; those land on this same field in
+    // submitRegistration's catch.
+    const normalizedPhone = normalizePhone(phone);
+    if (!normalizedPhone) {
+      errs.phone = 'Mobile number is required';
+    } else if (!isValidPhone(normalizedPhone)) {
+      errs.phone = 'Enter a valid 10-digit mobile number';
+    }
     if (!password) {
       errs.password = 'Password is required';
     } else if (password.length < 8) {
@@ -130,6 +146,11 @@ export default function BrandRegisterPage() {
         industry: industry || 'other',
         companySize: teamSize || '1-5',
         acceptedTerms: agreeToTerms,
+        // F-0780 — F-0392 made phone a required component of BrandRegisterRequest and
+        // AuthService.brandRegister throws PHONE_REQUIRED/400 on a blank one, but this caller was
+        // never updated, so every submission from this page 400'd. Send the normalized 10 digits,
+        // not the raw input (the same rule brand-onboarding.tsx follows).
+        phone: normalizePhone(phone),
       });
 
       // F-0320 — mirrors brand-login.tsx: populate the shared auth store from the identity
@@ -139,11 +160,33 @@ export default function BrandRegisterPage() {
 
       navigate('/brand/onboarding');
     } catch (err) {
+      // Back to the form so the error sits next to the fields it refers to. Hoisted above the
+      // branches below (F-0780) so every path back out of this catch still leaves the OTP gate.
+      setShowOtp(false);
+      // F-0780 — branch on the machine-readable `code` BEFORE the generic fallback, and never on
+      // the bare HTTP status: this endpoint also 409s for EMAIL_ALREADY_EXISTS, so mapping by
+      // status alone would label a taken email as a taken mobile. Same convention as
+      // creator-register.tsx and brand-onboarding.tsx.
+      if (err instanceof ApiError && err.code === 'PHONE_ALREADY_EXISTS') {
+        // users.phone_number is UNIQUE across BOTH user types, so this also fires for a number
+        // already on a creator account, and there is no self-serve way out
+        // (wiki/decisions/phone-0904-cto-review.md D4) — hence the pointer to support.
+        setErrors({
+          phone: 'This mobile number is already registered. Sign in instead, or contact support.',
+        });
+        return;
+      }
+      if (err instanceof ApiError && err.code === 'PHONE_REQUIRED') {
+        setErrors({ phone: 'Mobile number is required' });
+        return;
+      }
+      if (err instanceof ApiError && err.code === 'INVALID_PHONE') {
+        setErrors({ phone: 'Enter a valid 10-digit mobile number' });
+        return;
+      }
       const message =
         err instanceof ApiError ? err.message : 'Registration failed. Please try again.';
       setErrors({ form: message });
-      // Back to the form so the error sits next to the fields it refers to.
-      setShowOtp(false);
     } finally {
       setLoading(false);
     }
@@ -363,6 +406,36 @@ export default function BrandRegisterPage() {
                     className={`${inputClassName} ${inputErrorClass('email')}`}
                   />
                   <FieldError message={errors.email} />
+                </div>
+
+                {/* F-0780 — this writes users.phone_number, the person's OWN mobile, so it lives
+                    with the person's fields in Step 2 rather than with the company info in
+                    Step 1. Markup mirrors creator-register.tsx. */}
+                <div>
+                  <Label htmlFor="phone" className="block text-sm font-medium text-foreground mb-1.5">
+                    Mobile Number <span className="text-red-400">*</span>
+                  </Label>
+                  <div className="flex gap-2">
+                    <div className="flex items-center rounded-md border border-input bg-muted px-3 py-3 text-sm text-muted-foreground">
+                      +91
+                    </div>
+                    <Input
+                      id="phone"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      value={phone}
+                      // Keep digits, spaces and '+' on keystroke so a pasted '+91 98765 43210' is
+                      // not mangled mid-typing; normalizePhone() strips them at validate/submit.
+                      onChange={(e) => {
+                        setPhone(filterPhoneInput(e.target.value));
+                        if (errors.phone) setErrors((prev) => ({ ...prev, phone: '' }));
+                      }}
+                      placeholder="98765 43210"
+                      maxLength={17}
+                      className={`${inputClassName} flex-1 ${inputErrorClass('phone')}`}
+                    />
+                  </div>
+                  <FieldError message={errors.phone} />
                 </div>
 
                 <div>

@@ -991,7 +991,16 @@ export interface BrandRegisterPayload {
   industry?: string;
   companySize?: string;
   acceptedTerms: boolean;
-  phone?: string;
+  /**
+   * F-0780 — REQUIRED, mirroring `CreatorRegisterPayload`. It was declared optional here while
+   * F-0392 made it mandatory server-side, so tsc could not see that src/pages/brand-register.tsx
+   * omitted it entirely and 400'd every brand signup. Send the NORMALIZED 10-digit value
+   * (`normalizePhone` from `src/lib/phone.ts`), never the raw `+91 98765 43210` the input holds:
+   * `AuthService.brandRegister` rejects a blank with `PHONE_REQUIRED`/400, a malformed value with
+   * `INVALID_PHONE`/400, and a number already on ANY account (brand or creator —
+   * `users.phone_number` is UNIQUE across user types) with `PHONE_ALREADY_EXISTS`/409.
+   */
+  phone: string;
 }
 
 /**

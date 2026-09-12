@@ -103,6 +103,8 @@ describe('BrandRegisterPage — no fabricated name from email (F-0463)', () => {
     await user.type(screen.getByPlaceholderText('Jane'), 'Priya');
     await user.type(screen.getByPlaceholderText('Doe'), 'Sharma');
     await user.type(screen.getByPlaceholderText('you@company.com'), 'sales@acme.com');
+    // F-0780 — phone is required by step 2's validation now; without it the submit never fires.
+    await user.type(screen.getByPlaceholderText('98765 43210'), '9876543210');
     await user.type(screen.getByPlaceholderText(/Create a strong password/i), 'Passw0rdy');
     await user.type(screen.getByPlaceholderText('Confirm your password'), 'Passw0rdy');
     await user.click(screen.getByRole('checkbox'));
@@ -124,8 +126,10 @@ describe('BrandRegisterPage — no fabricated name from email (F-0463)', () => {
 
     await completeStep1(user);
 
-    // Deliberately skip First Name / Last Name — only fill the rest of step 2.
+    // Deliberately skip First Name / Last Name — only fill the rest of step 2. Phone included
+    // (F-0780) so the block below is proved to come from the missing names, not a missing phone.
     await user.type(screen.getByPlaceholderText('you@company.com'), 'sales@acme.com');
+    await user.type(screen.getByPlaceholderText('98765 43210'), '9876543210');
     await user.type(screen.getByPlaceholderText(/Create a strong password/i), 'Passw0rdy');
     await user.type(screen.getByPlaceholderText('Confirm your password'), 'Passw0rdy');
     await user.click(screen.getByRole('checkbox'));

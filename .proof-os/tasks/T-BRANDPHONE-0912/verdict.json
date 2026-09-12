@@ -1,0 +1,29 @@
+{
+  "verdict": "proved",
+  "oracle": "script",
+  "isolation": "oracle",
+  "done_when": ".proof-os/gates/F-0780-brand-register-sends-phone.sh exits 0 after being seen red on the pre-fix tree, and kavya, kabir, meera and neha have each returned a fresh-context verdict recorded in the journal",
+  "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0780-brand-register-sends-phone.sh",
+    "result": "exit 0 — both legs passed with real per-leg case counts printed",
+    "where": ".proof-os/gates/F-0780-brand-register-sends-phone.sh"
+  },
+  "not_checked": [
+    "That a real POST /auth/brand/register succeeds. api.auth.brandRegister is mocked in both gate suites, so the server's IndianPhoneUtils rule is mirrored in src/lib/phone.ts and never executed. No backend was started; no Java test was run. The client-server equivalence is by inspection of AuthService.java:120-179, not by execution.",
+    "The WARM onboarding entry (brand token present, wizard opens at step 2). That path deliberately skips brandRegister and has no payload to prove.",
+    "Any THIRD caller of BrandRegisterPayload added later. The gate is a fixed list of two suites and will stay green if a new page omits phone — F-0779's failure mode one caller further on. Two callers exist today and both are covered.",
+    "Whether an accepted number is REACHABLE. No SMS or OTP is ever sent to the mobile, so a valid-format number is not a verified one.",
+    "That the tree verified is the tree that ships. Another Claude Code session is actively writing this repo; three reviewers observed brand-register.tsx change mid-review and one had an edit silently reverted. Whoever merges must re-run the gate and pin the hash.",
+    "Screen-reader behaviour of the new field's error state. It follows the page-wide FieldError pattern (no role=alert, no aria-invalid, no aria-describedby) which this change did not introduce and did not fix.",
+    "F-0789 (unauthenticated phone-enumeration via the pre-OTP isTaken check) and F-0790 (untracked TrendIngestProperties.java breaking the pushed backend build) are open and untouched by this work."
+  ],
+  "skipped": [
+    {"step": "neha live E2E against a deployed build",
+     "reason": "no deployment of this branch exists — production runs a commit without the change, so testing it would test the wrong code. She drove a local Vite dev server against a Python CORS stub instead, which exercises the real UI but not the real backend."},
+    {"step": "proceeding past a global promote.py --recurrence exit 1",
+     "reason": "the block names dead-metric x5, doc-stale-doc-claim x11 and stale-identifier-on-rotate x3. None is this task's class. Read as a per-class block; declared because the script's exit code is 1 globally."},
+    {"step": "graphify-first orientation as the project hook mandates",
+     "reason": "ran once for this question and it returned 188 nodes of unrelated remotion and lint-script matches. Fell back to targeted reads of the files named in the ledger record."}
+  ]
+}

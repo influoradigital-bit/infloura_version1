@@ -150,6 +150,9 @@ describe('BrandRegisterPage — F-0320 populates the shared auth store', () => {
     await user.type(screen.getByLabelText(/First Name/i), 'Rahul');
     await user.type(screen.getByLabelText(/Last Name/i), 'Mehta');
     await user.type(screen.getByLabelText(/Email Address/i), 'rahul@auditbrand.com');
+    // F-0780 — Step 2 also collects the person's mobile now (required by BrandRegisterRequest
+    // since F-0392); without it validateStep2 short-circuits and brandRegister is never called.
+    await user.type(screen.getByLabelText(/Mobile Number/i), '9876543210');
     await user.type(screen.getByLabelText(/^Password/i), 'Passw0rd!!');
     await user.type(screen.getByLabelText(/^Confirm Password/i), 'Passw0rd!!');
     await user.click(screen.getByRole('checkbox'));

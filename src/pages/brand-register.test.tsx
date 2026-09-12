@@ -73,6 +73,9 @@ async function completeStep2(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByPlaceholderText('Jane'), 'Priya');
   await user.type(screen.getByPlaceholderText('Doe'), 'Sharma');
   await user.type(screen.getByPlaceholderText('you@company.com'), 'brand@example.com');
+  // F-0780 — phone is a required component of BrandRegisterRequest and step 2 now validates it,
+  // so this helper has to fill it or nothing past the button click ever runs.
+  await user.type(screen.getByPlaceholderText('98765 43210'), '9876543210');
   await user.type(screen.getByPlaceholderText(/Create a strong password/i), 'Passw0rdy');
   await user.type(screen.getByPlaceholderText('Confirm your password'), 'Passw0rdy');
   await user.click(screen.getByRole('checkbox'));
