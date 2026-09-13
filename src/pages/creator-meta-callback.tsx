@@ -4,7 +4,7 @@ import { Loader2, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
 import { CreatorLayout } from '@/components/creator/creator-layout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { api, ApiError, type MetaAuthPath } from '@/lib/api';
+import { api, ApiError, isApiLive, type MetaAuthPath } from '@/lib/api';
 import { MetaConnectPathDialog } from '@/components/creator/meta-connect-path-dialog';
 
 type CallbackState = 'loading' | 'success' | 'error';
@@ -166,20 +166,39 @@ export default function CreatorMetaCallbackPage() {
       }
 
       try {
-        // Do NOT add a token refresh before this call. The obvious worry — the creator's access
-        // token aged out while they were inside Meta's dialog, so this XHR goes out with a dead
-        // bearer and Meta's one-time `code` is abandoned — is already handled by the http layer
-        // for every authenticated request: `ensureFreshToken` renews any token within 60s of its
-        // `exp` BEFORE the request is sent, and `fetchWithAuthRetry` refreshes once and replays
-        // the request on a 401 (src/lib/api.ts). A page-level refresh here would be a second,
-        // duplicate mechanism that spends an extra POST /auth/refresh on every single connect.
+        // The paragraph that used to stand here said "Do NOT add a token refresh before this
+        // call", on the grounds that the http layer already refreshes on a 401 and replays. That
+        // is true for a request that WENT OUT WITH A TOKEN, and it is not true here. Measured on
+        // production 2026-09-13, every creator Instagram connect died at this line:
         //
-        // What actually needed proving was not that a refresh happens, but that the retried
-        // request still carries THIS `code` — a rebuilt URL would drop it, refresh would look
-        // perfect, and the connect would fail on the one parameter that cannot be re-obtained
-        // without sending the creator back through Meta. Pinned in token-refresh.live.test.ts
-        // ("carries Meta's one-time code..." / "replays the SAME code and state..."), which are
-        // the only tests in the suite that catch a query-string-dropping retry.
+        //   15:50:23  GET /api/v1/me/creator-profile          401
+        //   15:50:23  GET /api/v1/deals?status=all            401
+        //   15:50:23  GET /api/v1/meta/oauth/callback?code=…  401
+        //   (no POST /auth/refresh anywhere near it)
+        //
+        // Three causes compounding, none of them visible from this file alone:
+        //   1. F-0551 moved the access token to MEMORY ONLY in live mode. Meta's redirect is a
+        //      top-level browser navigation, so the app reloads and that memory is empty.
+        //   2. `fetchWithAuthRetry` gates its refresh-and-replay on `hasAuthHeader` (api.ts:647).
+        //      With no token there is no header, so the 401 is returned untouched and the
+        //      mechanism the old comment deferred to never runs.
+        //   3. This route is deliberately UNGUARDED (App.tsx:541) so the auth guard cannot bounce
+        //      a mid-connect creator to /creator/login — which also means `useAuthGuardState`'s
+        //      cold-load `api.auth.bootstrap` never runs for this route. Removing the guard
+        //      removed the session RESTORATION nobody replaced.
+        //
+        // So the session must be restored here, explicitly, before the exchange. `bootstrap`
+        // spends one POST /auth/refresh against the HttpOnly refresh cookie and never throws.
+        // The cost the old comment worried about — a duplicate refresh on every connect — does
+        // not apply: this only fires when there is no token at all, which after a top-level
+        // redirect is the normal case, not the exceptional one.
+        //
+        // Why this cannot be fixed by retrying: Meta's `code` is single-use and short-lived. The
+        // creator's three "Try Again" clicks at 15:50:23, 15:54:27 and 15:55:02 all replayed the
+        // SAME spent code. There is exactly one chance to get this request right.
+        if (isApiLive() && !api.auth.hasToken('creator')) {
+          await api.auth.bootstrap('creator');
+        }
         const result = await api.metaOAuth.callback(code, state);
         if (cancelled) return;
         // CR-105 — accountType was previously dropped here (called with only 2 args), which is
