@@ -6,6 +6,7 @@ import com.influora.config.MetaRedirectUri;
 import com.influora.integration.meta.dto.InstagramShortLivedTokenResponse;
 import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.exception.MetaApiException;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -286,9 +287,39 @@ public class MetaOAuthService {
         return fetchToken(url, "instagram-refresh");
     }
 
+    /**
+     * F-0813 — {@code URI.create(url)}, never {@code uri(String)}.
+     *
+     * <p>Every caller hands this method a URL whose query values are ALREADY percent-encoded by
+     * {@link #urlEncode}. {@code RestClient.uri(String)} treats its argument as a URI TEMPLATE and
+     * encodes it a second time, so {@code https%3A%2F%2F…} went on the wire as
+     * {@code https%253A%252F%252F…}. Meta decodes once, gets {@code https%3A%2F%2F…}, and answers:
+     *
+     * <pre>
+     *   {"error":{"message":"redirect_uri isn't an absolute URI. Check RFC 3986.",
+     *             "type":"OAuthException","code":191}}
+     * </pre>
+     *
+     * Reproduced against Meta's live endpoint on 2026-09-13 with the real app credentials and a
+     * dummy code — same URL, only the encoding differing:
+     *
+     * <pre>
+     *   single-encoded redirect_uri -> code=100 "Invalid verification code format."  (reached the code check)
+     *   double-encoded redirect_uri -> code=191 "redirect_uri isn't an absolute URI." (production's error)
+     * </pre>
+     *
+     * <p>A {@code java.net.URI} is passed through untouched, so the single encoding survives.
+     *
+     * <p>This broke ONLY the code exchange, which is why the Meta dialog always worked and the
+     * connect never completed: {@link #buildAuthorizationUrl} hands its URL to the BROWSER as a
+     * string and never goes through {@code RestClient}. The other {@code fetchToken} callers
+     * survived by luck — their parameters are tokens and codes that are almost always
+     * {@code [A-Za-z0-9_-]}, where re-encoding is a no-op. A token containing {@code +} or
+     * {@code /} would have broken identically, so this is fixed once, here, for all of them.
+     */
     private MetaTokenResponse fetchToken(String url, String opName) {
         try {
-            return restClient().get().uri(url).retrieve().body(MetaTokenResponse.class);
+            return restClient().get().uri(URI.create(url)).retrieve().body(MetaTokenResponse.class);
         } catch (RestClientResponseException e) {
             log.error(
                     "Meta OAuth {} failed: status={}, body={}",

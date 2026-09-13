@@ -169,7 +169,7 @@ class MetaOAuthServiceTest {
         MetaTokenResponse mockResponse = new MetaTokenResponse("short-token", "bearer", 3600L);
 
         doReturn(requestHeadersUriSpec).when(restClient).get();
-        doReturn(requestHeadersUriSpec).when(requestHeadersUriSpec).uri(any(String.class));
+        doReturn(requestHeadersUriSpec).when(requestHeadersUriSpec).uri(any(java.net.URI.class));
         doReturn(responseSpec).when(requestHeadersUriSpec).retrieve();
         doReturn(mockResponse).when(responseSpec).body(MetaTokenResponse.class);
 
@@ -187,7 +187,7 @@ class MetaOAuthServiceTest {
         String code = "invalid-code";
 
         doReturn(requestHeadersUriSpec).when(restClient).get();
-        doReturn(requestHeadersUriSpec).when(requestHeadersUriSpec).uri(any(String.class));
+        doReturn(requestHeadersUriSpec).when(requestHeadersUriSpec).uri(any(java.net.URI.class));
         doReturn(responseSpec).when(requestHeadersUriSpec).retrieve();
         doReturn(null).when(responseSpec).body(MetaTokenResponse.class);
         when(responseSpec.body(MetaTokenResponse.class))
@@ -204,7 +204,7 @@ class MetaOAuthServiceTest {
         MetaTokenResponse mockResponse = new MetaTokenResponse("long-lived-token", "bearer", 5184000L); // 60 days
 
         doReturn(requestHeadersUriSpec).when(restClient).get();
-        doReturn(requestHeadersUriSpec).when(requestHeadersUriSpec).uri(any(String.class));
+        doReturn(requestHeadersUriSpec).when(requestHeadersUriSpec).uri(any(java.net.URI.class));
         doReturn(responseSpec).when(requestHeadersUriSpec).retrieve();
         doReturn(mockResponse).when(responseSpec).body(MetaTokenResponse.class);
 
@@ -222,7 +222,7 @@ class MetaOAuthServiceTest {
         MetaTokenResponse mockResponse = new MetaTokenResponse("refreshed-token", "bearer", 5184000L);
 
         doReturn(requestHeadersUriSpec).when(restClient).get();
-        doReturn(requestHeadersUriSpec).when(requestHeadersUriSpec).uri(any(String.class));
+        doReturn(requestHeadersUriSpec).when(requestHeadersUriSpec).uri(any(java.net.URI.class));
         doReturn(responseSpec).when(requestHeadersUriSpec).retrieve();
         doReturn(mockResponse).when(responseSpec).body(MetaTokenResponse.class);
 
