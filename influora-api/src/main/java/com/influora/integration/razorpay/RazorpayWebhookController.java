@@ -163,20 +163,67 @@ public class RazorpayWebhookController {
      * EscrowHold} id as the receipt; wallet top-up orders ({@code
      * WalletTopUpService#initiateTopUp}) prefix theirs with {@value
      * WalletTopUpService#RECEIPT_PREFIX} specifically so this dispatch can tell the two apart
-     * without an extra DB lookup or a try/catch-based guess. A receipt that matches neither shape
-     * falls through to the (pre-existing) escrow path, which will itself reject it with
-     * {@code ESCROW_NOT_FOUND} rather than this method silently swallowing an unroutable event.
+     * without an extra DB lookup or a try/catch-based guess.
+     *
+     * <p><b>F-0809 — shared Razorpay account.</b> The same Razorpay account and API keys serve both
+     * Influora and Snapsby (confirmed with the operator 2026-09-13; separating the accounts would
+     * mean separating the legal entities, so the shared account is a fixed constraint, not a
+     * migration). Razorpay delivers EVERY event on an account to EVERY registered webhook URL, and
+     * per-URL filtering is by event type only — both products need {@code payment.captured} and
+     * {@code order.paid}, so there is nothing to filter on. This endpoint therefore receives
+     * Snapsby's payment events as a matter of course.
+     *
+     * <p>Those carry a receipt that is present and well-formed but names no Influora record. That
+     * used to fall through to the escrow path and throw {@code ESCROW_NOT_FOUND}, which Razorpay
+     * sees as a non-2xx and retries indefinitely — and sustained non-2xx responses are how Razorpay
+     * decides to disable a webhook, which would take Influora's own crediting down with it. A
+     * not-found on either path is now treated as "this event belongs to the other product on the
+     * shared account": logged and acknowledged.
+     *
+     * <p><b>The catch is deliberately narrow — {@code TOPUP_NOT_FOUND} and {@code ESCROW_NOT_FOUND}
+     * only, and every other failure still propagates.</b> That narrowness is the whole safety
+     * property. Swallowing anything wider would ACK a genuine failure to credit one of OUR orders,
+     * Razorpay would never retry it, and the payment would be captured and never credited —
+     * rebuilding F-0808, the defect where a Rs 1,000 payment was stranded silently because the
+     * webhook is the only path by which money ever enters a wallet.
      */
     private void dispatchFundingEvent(WebhookEvent event) {
         String receipt = event.entityId();
-        if (receipt != null && receipt.startsWith(WalletTopUpService.RECEIPT_PREFIX)) {
-            String topUpId = receipt.substring(WalletTopUpService.RECEIPT_PREFIX.length());
-            walletTopUpService.confirmCredited(
-                    topUpId, event.paymentId(), event.amountInPaise(), event.currency());
-            return;
+        try {
+            if (receipt != null && receipt.startsWith(WalletTopUpService.RECEIPT_PREFIX)) {
+                String topUpId = receipt.substring(WalletTopUpService.RECEIPT_PREFIX.length());
+                walletTopUpService.confirmCredited(
+                        topUpId, event.paymentId(), event.amountInPaise(), event.currency());
+                return;
+            }
+            escrowService.confirmFunded(
+                    event.entityId(), event.paymentId(), event.amountInPaise(), event.currency());
+        } catch (ApiException e) {
+            if (!isUnknownToThisProduct(e)) {
+                throw e;
+            }
+            // INFO, not DEBUG: on a shared account this is the normal path for every Snapsby
+            // payment, but it is ALSO what a genuine mis-routing of an Influora order would look
+            // like. Keeping the receipt and payment id on the record is the only way to tell the
+            // two apart after the fact.
+            log.info(
+                    "Razorpay funding event names no Influora record (receipt={}, paymentId={},"
+                            + " code={}) — acknowledged without action. Expected for payments"
+                            + " belonging to the other product on the shared Razorpay account"
+                            + " (F-0809); investigate if this receipt should have been ours.",
+                    receipt,
+                    event.paymentId(),
+                    e.getCode());
         }
-        escrowService.confirmFunded(
-                event.entityId(), event.paymentId(), event.amountInPaise(), event.currency());
+    }
+
+    /**
+     * F-0809 — whether this failure means "the order named by the receipt is not ours", as opposed
+     * to any other reason crediting failed. Only these two codes qualify; see the narrowness note
+     * on {@link #dispatchFundingEvent}.
+     */
+    private static boolean isUnknownToThisProduct(ApiException e) {
+        return "TOPUP_NOT_FOUND".equals(e.getCode()) || "ESCROW_NOT_FOUND".equals(e.getCode());
     }
 
     /**

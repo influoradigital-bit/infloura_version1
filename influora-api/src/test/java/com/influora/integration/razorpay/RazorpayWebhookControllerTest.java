@@ -36,6 +36,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.PlatformTransactionManager;
 
@@ -432,5 +433,104 @@ class RazorpayWebhookControllerTest {
                 .applySubscriptionWebhookUpdate(any(), any(), any(), any(), any(), any(), any());
         verify(invoiceService, times(1)).generateInvoiceFromWebhook(any(), any(), anyLong(), any(), any(), any());
         verify(eventPublisher, times(1)).publishEvent(any(InvoiceReadyEvent.class));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0809 — shared Razorpay account (Influora + Snapsby on one set of keys).
+    //
+    // Razorpay delivers every event on an account to every registered webhook URL, so this
+    // endpoint receives Snapsby's payments. Those name no Influora record. Before the fix they
+    // reached escrowService.confirmFunded and threw ESCROW_NOT_FOUND -> non-2xx -> Razorpay
+    // retries forever, and sustained non-2xx is how Razorpay disables a webhook (which would take
+    // Influora's own crediting down with it).
+    //
+    // The third test is the one that matters. The danger in this fix is not that a foreign event
+    // throws -- it is that the catch is too wide and swallows a REAL failure to credit one of our
+    // own orders, which Razorpay would then never retry: F-0808 rebuilt, money captured and never
+    // credited, silently. Mutate isUnknownToThisProduct to `return true` and ONLY that third test
+    // goes red; the two ACK tests stay green. That asymmetry is the point.
+    // ---------------------------------------------------------------------------------------
+
+    private static String orderPaidPayload(String receipt) {
+        return "{"
+                + "\"event\":\"order.paid\","
+                + "\"payload\":{"
+                + "\"payment\":{\"entity\":{\"id\":\"pay_FOREIGN1\",\"amount\":100000,\"currency\":\"INR\"}},"
+                + "\"order\":{\"entity\":{\"receipt\":\"" + receipt + "\"}}"
+                + "},"
+                + "\"created_at\":1700000005}";
+    }
+
+    @Test
+    @DisplayName(
+            "F-0809: an order.paid for another product on the shared Razorpay account is ACKed 200,"
+                    + " not retried forever")
+    void foreignEscrowShapedReceiptIsAcknowledged() {
+        when(escrowService.confirmFunded(anyString(), anyString(), anyLong(), anyString()))
+                .thenThrow(new ApiException("ESCROW_NOT_FOUND", "Secured payment not found", HttpStatus.NOT_FOUND));
+
+        ResponseEntity<Void> response =
+                controller.receive(VALID_SIGNATURE, orderPaidPayload("snapsby-order-9f3c21"));
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(walletTopUpService, never()).confirmCredited(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "F-0809: a topup-prefixed receipt that names no Influora top-up is ACKed 200 as well")
+    void foreignTopUpShapedReceiptIsAcknowledged() {
+        when(walletTopUpService.confirmCredited(anyString(), anyString(), anyLong(), anyString()))
+                .thenThrow(new ApiException("TOPUP_NOT_FOUND", "Wallet top-up order not found", HttpStatus.NOT_FOUND));
+
+        ResponseEntity<Void> response =
+                controller.receive(
+                        VALID_SIGNATURE,
+                        orderPaidPayload(WalletTopUpService.RECEIPT_PREFIX + "01NOTOURSXXXXXXXXXXXXXXXXX"));
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(escrowService, never()).confirmFunded(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "F-0809/F-0808: a GENUINE failure to credit one of OUR top-ups still propagates -- it"
+                    + " must NOT be swallowed, or Razorpay never retries and the payment is lost")
+    void realCreditFailureOnOurOwnOrderStillThrows() {
+        // Any code that is not TOPUP_NOT_FOUND / ESCROW_NOT_FOUND means the order IS ours and
+        // crediting failed for a real reason. Swallowing this would ACK to Razorpay, stopping the
+        // retry that is the only thing standing between a captured payment and an uncredited
+        // wallet -- exactly the F-0808 defect this fix must not reintroduce.
+        when(walletTopUpService.confirmCredited(anyString(), anyString(), anyLong(), anyString()))
+                .thenThrow(
+                        new ApiException(
+                                "WEBHOOK_AMOUNT_MISMATCH",
+                                "Webhook amount does not match the order",
+                                HttpStatus.BAD_REQUEST));
+
+        ApiException thrown =
+                Assertions.assertThrows(
+                        ApiException.class,
+                        () ->
+                                controller.receive(
+                                        VALID_SIGNATURE,
+                                        orderPaidPayload(
+                                                WalletTopUpService.RECEIPT_PREFIX + "01OURSXXXXXXXXXXXXXXXXXXXX")));
+
+        assertEquals("WEBHOOK_AMOUNT_MISMATCH", thrown.getCode());
+    }
+
+    @Test
+    @DisplayName("F-0809: a genuine Influora top-up still credits normally after the fix")
+    void ourOwnTopUpStillCredits() {
+        String topUpId = "01M2D29W3KSVFK9DKHF7KV76P9";
+
+        ResponseEntity<Void> response =
+                controller.receive(
+                        VALID_SIGNATURE, orderPaidPayload(WalletTopUpService.RECEIPT_PREFIX + topUpId));
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(walletTopUpService, times(1))
+                .confirmCredited(eq(topUpId), eq("pay_FOREIGN1"), eq(100000L), eq("INR"));
     }
 }
