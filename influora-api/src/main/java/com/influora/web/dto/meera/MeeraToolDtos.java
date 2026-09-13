@@ -56,11 +56,46 @@ public final class MeeraToolDtos {
              * {@code price_source}), {@code "inferred"} otherwise — including when no
              * {@code price_source} was supplied at all (fail safe: unknown provenance is never
              * treated as confirmed). Lets Meera say "based on an estimated price" instead of
-             * quoting a guess as fact; never changes the math itself, which stays exactly as
-             * before — this is provenance-awareness only, and the charged amount at commit is
-             * still always independently re-derived server-side (see class javadoc).
+             * quoting a guess as fact; the charged amount at commit is still always independently
+             * re-derived server-side (see {@code CalculateBudgetExecutor}'s class javadoc).
+             *
+             * <p>P1-12 (2026-09-13): this no longer gates the MATH, because the product price no
+             * longer produces the per-creator number at all. It remains on the wire because the
+             * price may still be mentioned in conversation and the caveat is still true.
              */
-            String priceConfidence) {}
+            String priceConfidence,
+            /**
+             * P1-12: where {@code suggestedPerCreatorRate} came from. Exactly two values:
+             *
+             * <ul>
+             *   <li>{@code "platform_rate_band"} — the median of REAL {@code agreed_rate} values
+             *       from {@code COMPLETED} collaborations in this brand's niche, aggregated behind
+             *       the k-anonymity floor by {@code BrandContextAssembler#buildRateBand}.
+             *   <li>{@code "insufficient_data"} — no band was available (no niche on the brand
+             *       profile, no completed collaborations in that niche, or the k-anonymity floor
+             *       not met). In this case {@code suggestedPoolTotal} and {@code
+             *       suggestedPerCreatorRate} are BOTH {@code null} and omitted from JSON: we
+             *       refuse to quote rather than emit a number with no basis.
+             * </ul>
+             *
+             * <p>There is deliberately no third value. Before P1-12 the fallback was a percentage
+             * of the product price (6-15% by goal), which produced ₹318 per creator for a ₹5,300
+             * product — commercially unusable, and unrelated to what any creator actually charges.
+             * A percentage of a product price is not a fallback for a creator rate; it is a
+             * different quantity wearing the same currency symbol.
+             */
+            String rateBasis,
+            /** Low end of the real band; {@code null} when {@code rateBasis} is insufficient_data. */
+            BigDecimal perCreatorRateMin,
+            /** High end of the real band; {@code null} when {@code rateBasis} is insufficient_data. */
+            BigDecimal perCreatorRateMax,
+            /**
+             * Distinct creators behind the band (always &gt;= the k-anonymity floor when non-null).
+             * Aggregate count only — no row from the cross-tenant projection is ever serialized.
+             */
+            Integer rateSampleSize,
+            /** The niche the band was computed for; {@code null} when no band. */
+            String rateNiche) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CreateCampaignResult(

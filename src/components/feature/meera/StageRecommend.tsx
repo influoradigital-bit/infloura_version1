@@ -4,7 +4,7 @@ import { StageLoadingState } from '@/components/feature/meera/StageLoadingState'
 import { MEERA_STAT_LABELS } from '@/data/meera-copy'
 import { MOCK_CAMPAIGN_PLAN, computeFee } from '@/data/meera-mock'
 import { isApiLive } from '@/lib/api'
-import { isCalculateBudgetPayload } from '@/lib/meera-api'
+import { isCalculateBudgetPayload, isQuotedBudget } from '@/lib/meera-api'
 import { formatINR } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
@@ -54,11 +54,37 @@ export function StageRecommend({ toolResult, className }: StageRecommendProps) {
     return <StageLoadingState label="Crunching the budget…" className={className} />
   }
 
+  // P1-12: when there is no real niche rate band, the DTO carries NO money fields at all and this
+  // canvas must not render currency. Previously the two tiles below showed a percentage of the
+  // product price (₹318/creator for a ₹5,300 product), which is the number a brand acts on.
+  // Saying we don't know is the honest state; the ask lives in Meera's message beside this.
+  if (!isQuotedBudget(toolResult)) {
+    return (
+      <div className={cn('space-y-4', className)}>
+        <p className="rounded-lg border border-meera-border bg-meera-surface-2 p-3 text-xs text-meera-text-muted">
+          We don&rsquo;t have enough completed collaborations in your niche yet to know what
+          creators actually charge, so we&rsquo;re not going to guess a rate. Tell Meera what you
+          usually pay a creator &mdash; or your total budget &mdash; and she&rsquo;ll plan around it.
+        </p>
+        <StatPair
+          label="Suggested creators"
+          value={toolResult.suggestedCreatorCount}
+          formatFn={(n) => `${Math.round(n)}`}
+          className="max-w-[12rem]"
+        />
+      </div>
+    )
+  }
+
   return (
     <div className={cn('space-y-4', className)}>
       <div className="grid grid-cols-2 gap-3">
         <StatPair label="Suggested pool" value={toolResult.suggestedPoolTotal} formatFn={(n) => formatINR(n)} />
-        <StatPair label="Per creator" value={toolResult.suggestedPerCreatorRate} formatFn={(n) => formatINR(n)} />
+        <StatPair
+          label="Per creator (whole collab)"
+          value={toolResult.suggestedPerCreatorRate}
+          formatFn={(n) => formatINR(n)}
+        />
       </div>
       <StatPair
         label="Suggested creators"
@@ -66,11 +92,23 @@ export function StageRecommend({ toolResult, className }: StageRecommendProps) {
         formatFn={(n) => `${Math.round(n)}`}
         className="max-w-[12rem]"
       />
-      {toolResult.rationale && (
-        <p className="rounded-lg border border-meera-border bg-meera-surface-2 p-3 text-xs text-meera-text-muted">
-          {toolResult.rationale}
-        </p>
-      )}
+      {/* P1-12: `rationale` is NOT rendered here any more. It is written for Meera, not for the
+          brand — it contains directives ("Quote it as a RANGE, not a fixed price", "NO RATE
+          QUOTED, do not invent one"). Showing Meera's instructions to the brand reads as
+          machinery leaking through the product. The basis line below says the same thing in the
+          brand's language. */}
+      <p className="rounded-lg border border-meera-border bg-meera-surface-2 p-3 text-xs text-meera-text-muted">
+        Median of real agreed rates from
+        {typeof toolResult.rateSampleSize === 'number' ? ` ${toolResult.rateSampleSize}` : ''}{' '}
+        creators&rsquo; completed collaborations
+        {toolResult.rateNiche ? ` in ${toolResult.rateNiche}` : ''}
+        {typeof toolResult.perCreatorRateMin === 'number' &&
+        typeof toolResult.perCreatorRateMax === 'number'
+          ? ` (typically ${formatINR(toolResult.perCreatorRateMin)}–${formatINR(toolResult.perCreatorRateMax)} per creator)`
+          : ''}
+        . This covers the whole collaboration per creator, not a single reel. Advisory &mdash; the
+        amount charged at funding is always recalculated.
+      </p>
     </div>
   )
 }

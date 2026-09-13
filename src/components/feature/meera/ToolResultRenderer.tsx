@@ -11,7 +11,9 @@
  * Data shapes match the real Spring DTOs (`MeeraToolDtos.java`), corrected
  * 2026-07-17 (QA/Vikram) — 02-API-CONTRACT-BRAND.md was stale against them:
  *   - show_creators: { creators: [{ creatorProfileId, displayName, city?, categories?, totalFollowers, engagementRate?, verified }] }
- *   - calculate_budget: { suggestedPoolTotal, suggestedPerCreatorRate, suggestedCreatorCount, currency, rationale? }
+ *   - calculate_budget: { suggestedPoolTotal?, suggestedPerCreatorRate?, suggestedCreatorCount, currency,
+ *       rationale?, rateBasis?, perCreatorRateMin?, perCreatorRateMax?, rateSampleSize?, rateNiche? }
+ *       (P1-12: the money fields are absent when rateBasis === 'insufficient_data' — see isQuotedBudget)
  *   - create_campaign: { campaignId, status: 'DRAFT', serverBudget }
  *   - request_payment: { status, campaignIntentId, serverAmount, currency, confirmActionUrl, replay }
  *   - confirm_launch: { campaignId, status, creatorsInvited, replay }
@@ -24,6 +26,7 @@ import {
   isRequestPaymentPayload,
   isConfirmLaunchPayload,
   isOptionsPayload,
+  isQuotedBudget,
   type ShowCreatorsPayload,
   type CalculateBudgetPayload,
   type CreateCampaignPayload,
@@ -97,7 +100,47 @@ interface CalculateBudgetResultProps {
 }
 
 export function CalculateBudgetResult({ data, className }: CalculateBudgetResultProps) {
-  const { suggestedPoolTotal, suggestedPerCreatorRate, suggestedCreatorCount, rationale } = data;
+  // suggestedPoolTotal / suggestedPerCreatorRate are read from `data` AFTER the isQuotedBudget
+  // narrowing below, never destructured ahead of it — destructuring first would strip the type
+  // predicate's effect and force casts back in.
+  const { suggestedCreatorCount, perCreatorRateMin, perCreatorRateMax, rateSampleSize } = data;
+
+  // P1-12: `rationale` is written for Meera, not for the brand — it carries instructions like
+  // "NO RATE QUOTED, do not invent one". It was previously printed verbatim on this card. It is
+  // not rendered any more; the card states its own basis instead.
+
+  // P1-12: no rate band means no number. The old card showed "Creator pool ₹1,589 / Per creator
+  // ₹318" derived from a percentage of a guessed product price. This state replaces it: say what
+  // we don't know, and ask. A number here is worse than no number, because the brand acts on it.
+  if (!isQuotedBudget(data)) {
+    return (
+      <div
+        className={cn(
+          'rounded-lg border border-meera-border bg-meera-surface-2 p-3',
+          className
+        )}
+      >
+        <div className="mb-2 flex items-center gap-2 text-xs font-medium text-meera-text">
+          <Calculator className="h-3.5 w-3.5 text-meera-accent" />
+          <span>No rate suggested yet</span>
+        </div>
+        <p className="text-xs text-meera-text-muted">
+          We don&rsquo;t have enough completed collaborations in your niche yet to say what creators
+          actually charge &mdash; so we&rsquo;re not going to guess. Tell Meera what you usually pay
+          a creator, or the total budget you have in mind, and she&rsquo;ll plan around that.
+        </p>
+        <div className="mt-1.5 flex justify-between border-t border-meera-border pt-1.5 text-xs font-semibold">
+          <span className="text-meera-text">Creators</span>
+          <span className="text-meera-accent">{suggestedCreatorCount}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const hasRange =
+    typeof perCreatorRateMin === 'number' && typeof perCreatorRateMax === 'number';
+  const rangeLow = perCreatorRateMin ?? 0;
+  const rangeHigh = perCreatorRateMax ?? 0;
 
   return (
     <div
@@ -114,17 +157,34 @@ export function CalculateBudgetResult({ data, className }: CalculateBudgetResult
       <div className="space-y-1 text-xs">
         <div className="flex justify-between">
           <span className="text-meera-text-muted">Creator pool</span>
-          <span className="text-meera-text">{formatINR(suggestedPoolTotal)}</span>
+          <span className="text-meera-text">{formatINR(data.suggestedPoolTotal)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-meera-text-muted">Per creator</span>
-          <span className="text-meera-text">{formatINR(suggestedPerCreatorRate)}</span>
+          {/* Labelled per COLLABORATION, not per reel: `agreed_rate` is the whole-deal figure for
+              one creator (ContractService caps the sum of all milestones at it), so "per reel"
+              would understate what the money buys. */}
+          <span className="text-meera-text-muted">Per creator (whole collab)</span>
+          <span className="text-meera-text">{formatINR(data.suggestedPerCreatorRate)}</span>
         </div>
+        {hasRange && (
+          <div className="flex justify-between">
+            <span className="text-meera-text-muted">Typical range</span>
+            <span className="text-meera-text">
+              {formatINR(rangeLow)} &ndash;{' '}
+              {formatINR(rangeHigh)}
+            </span>
+          </div>
+        )}
         <div className="mt-1.5 flex justify-between border-t border-meera-border pt-1.5 font-semibold">
           <span className="text-meera-text">Creators</span>
           <span className="text-meera-accent">{suggestedCreatorCount}</span>
         </div>
-        {rationale && <p className="pt-1 text-meera-text-muted">{rationale}</p>}
+        <p className="pt-1 text-meera-text-muted">
+          Median of real agreed rates from
+          {typeof rateSampleSize === 'number' ? ` ${rateSampleSize}` : ''} creators&rsquo; completed
+          collaborations{data.rateNiche ? ` in ${data.rateNiche}` : ''}. Advisory &mdash; the amount
+          charged at funding is always recalculated.
+        </p>
       </div>
     </div>
   );

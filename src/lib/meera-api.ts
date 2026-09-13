@@ -211,14 +211,41 @@ export interface ShowCreatorsPayload {
   }>;
 }
 
-/** `MeeraToolDtos.CalculateBudgetResult` — advisory suggestion, not a locked-in fee breakdown. */
+/**
+ * `MeeraToolDtos.CalculateBudgetResult` — advisory suggestion, not a locked-in fee breakdown.
+ *
+ * P1-12 (2026-09-13): the money fields are now OPTIONAL, because the executor refuses to quote
+ * when there is no real niche rate band to quote from — and that refusal is the common case in
+ * production, not a rare one. The DTO is `@JsonInclude(NON_NULL)`, so on that path
+ * `suggestedPoolTotal` and `suggestedPerCreatorRate` are absent from the wire entirely. Declaring
+ * them as required `number` (as this did until P1-12) would make `isCalculateBudgetPayload`
+ * return false for every refusal, and `ToolResultRenderer` would silently render nothing —
+ * exactly the kind of invisible FE↔DTO seam that made `get_campaign_performance` uncallable for
+ * weeks. Read `rateBasis` first, then the numbers.
+ */
 export interface CalculateBudgetPayload {
-  suggestedPoolTotal: number;
-  suggestedPerCreatorRate: number;
+  /** Absent when `rateBasis === 'insufficient_data'`. */
+  suggestedPoolTotal?: number;
+  /** Absent when `rateBasis === 'insufficient_data'`. */
+  suggestedPerCreatorRate?: number;
   suggestedCreatorCount: number;
   currency: string;
   /** Nullable on the DTO (`String`) — omitted from JSON when null. */
   rationale?: string;
+  /**
+   * `'platform_rate_band'` — the figures are the median/range of real completed collaborations in
+   * the brand's niche. `'insufficient_data'` — we don't have enough settled deals in that niche to
+   * know what creators charge, so NO figure is quoted and the card says so.
+   */
+  rateBasis?: 'platform_rate_band' | 'insufficient_data';
+  /** Low end of the real band; absent when there is no band. */
+  perCreatorRateMin?: number;
+  /** High end of the real band; absent when there is no band. */
+  perCreatorRateMax?: number;
+  /** Distinct creators behind the band (aggregate count only). */
+  rateSampleSize?: number;
+  /** The niche the band was computed for. */
+  rateNiche?: string;
 }
 
 /**
@@ -330,10 +357,34 @@ export function isShowCreatorsPayload(data: unknown): data is ShowCreatorsPayloa
 export function isCalculateBudgetPayload(data: unknown): data is CalculateBudgetPayload {
   if (!data || typeof data !== 'object') return false;
   const d = data as Partial<CalculateBudgetPayload>;
+  // `suggestedCreatorCount` is an `int` on the DTO and is therefore ALWAYS on the wire, on both
+  // the quoted and the refused path — it is the only field that can identify this payload.
+  // P1-12: the money fields are deliberately NOT part of this check; requiring them would make a
+  // refusal fail the guard and vanish from the UI without a trace.
+  return typeof d.suggestedCreatorCount === 'number';
+}
+
+/** A `calculate_budget` result that actually carries figures — see {@link isQuotedBudget}. */
+export type QuotedBudgetPayload = CalculateBudgetPayload & {
+  suggestedPoolTotal: number;
+  suggestedPerCreatorRate: number;
+};
+
+/**
+ * True only when `calculate_budget` actually quoted — i.e. a real niche rate band backed it.
+ * Callers MUST branch on this before rendering any currency: on the other path there is no
+ * number, and inventing one (a zero, a placeholder, a percentage of anything) would recreate the
+ * P1-12 defect in the frontend after it was removed from the backend.
+ *
+ * Both legs are checked on purpose. `rateBasis` is the intent; the `typeof` checks are what make
+ * this a sound type predicate, and they also hold the line if an older backend (no `rateBasis` on
+ * the wire at all) is ever talking to this frontend.
+ */
+export function isQuotedBudget(payload: CalculateBudgetPayload): payload is QuotedBudgetPayload {
   return (
-    typeof d.suggestedPoolTotal === 'number' &&
-    typeof d.suggestedPerCreatorRate === 'number' &&
-    typeof d.suggestedCreatorCount === 'number'
+    payload.rateBasis !== 'insufficient_data' &&
+    typeof payload.suggestedPerCreatorRate === 'number' &&
+    typeof payload.suggestedPoolTotal === 'number'
   );
 }
 

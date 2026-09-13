@@ -399,8 +399,16 @@ public class BrandContextAssembler {
      * #RATE_BAND_K_ANON_FLOOR}. No backoff to a niche-only grouping in v1 (Priya/Ash ruling on
      * Vikram's open Q2) — a blurred band is worse than none, and widening the query would reopen
      * k-anon exposure that needs its own Kabir pass.
+     *
+     * <p><b>Public since P1-12 (2026-09-13), deliberately.</b> {@code CalculateBudgetExecutor} now
+     * quotes off this band instead of a percentage of the product price, so it needs the same
+     * aggregate. It calls THIS method rather than re-deriving one, because the k-anonymity floor
+     * must have exactly one implementation — a second copy is a second thing to forget to raise.
+     * The "fetch there, shape here" split is preserved: the executor runs {@code
+     * CollaborationRepository#findRateBandCandidates} itself and hands the rows in, exactly as
+     * {@code MeeraContextService} does; this class still queries no repository.
      */
-    private RateBand buildRateBand(String niche, List<RateBandCandidateRow> candidates) {
+    public RateBand buildRateBand(String niche, List<RateBandCandidateRow> candidates) {
         if (candidates == null || candidates.isEmpty()) {
             return null;
         }

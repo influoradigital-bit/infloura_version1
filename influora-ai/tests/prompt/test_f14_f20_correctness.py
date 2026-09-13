@@ -166,11 +166,35 @@ def test_f16_truncated_finish_reason_is_refunded_not_billed_as_an_answer():
 
 
 def test_f17_persona_references_the_field_that_actually_exists():
+    """P1-12 correction (2026-09-13): this gate was enforcing the WRONG name.
+
+    It banned ``price_confidence`` and required ``price_source``. Neither is what the
+    model sees. The tool result handed to Claude is Spring's response ``data`` forwarded
+    verbatim (``app/tools/loop.py`` -> ``_safe_json(result_payload)``, whose payload is
+    ``SpringResponse.data`` straight off ``response.json()``), so the field names are the
+    Java record component names as Jackson writes them.
+
+    ``MeeraToolDtos.CalculateBudgetResult`` declares NO ``@JsonProperty`` on any component
+    and there is no global ``PropertyNamingStrategy`` in the service, so it serializes
+    camelCase: ``priceConfidence``. Two independent confirmations: the sibling
+    ``MeeraContextDtos`` annotates ``@JsonProperty("snake_case")`` on every field precisely
+    because snake_case there is NOT the default, and the frontend reads
+    ``suggestedPoolTotal``/``suggestedPerCreatorRate`` — camelCase — off this very DTO.
+
+    So the original F-17 fix swapped one non-existent name for another and this gate went
+    green on it. The persona now names ``priceConfidence``, and this asserts THAT.
+    """
     persona = get_persona_block()
     assert "price_confidence" not in persona, (
-        "the money caveat rail still names a field that exists nowhere in the repo"
+        "snake_case price_confidence is not on the wire; Jackson writes priceConfidence"
     )
-    assert "price_source" in persona
+    assert "price_source" not in persona, (
+        "price_source is not a field on CalculateBudgetResult either — it is the name of a"
+        " catalog key the EXECUTOR reads server-side, never something the model receives"
+    )
+    assert "priceConfidence" in persona, (
+        "the money caveat rail must name the field Claude actually receives"
+    )
 
 
 def test_f17_no_module_anywhere_still_uses_the_phantom_field():

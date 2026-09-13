@@ -104,7 +104,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     },
     {
         "name": CALCULATE_BUDGET,
-        "description": "Suggest pool + per-reel rate from product price and goal. Read-only, no money.",
+        "description": (
+            "Ask what a creator collaboration is worth in this brand's niche, and how big a "
+            "pool that makes. Read-only, no money. The per-creator figure comes from REAL "
+            "completed collaborations on the platform, not from the product price; it is a "
+            "whole-collaboration rate per creator, not a per-reel rate. Read `rateBasis` on "
+            "the result first: \"platform_rate_band\" means the numbers are real, "
+            "\"insufficient_data\" means there are no numbers and you must ask the brand what "
+            "they pay instead of quoting anything."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {

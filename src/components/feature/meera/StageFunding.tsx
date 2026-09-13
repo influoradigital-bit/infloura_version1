@@ -9,7 +9,11 @@ import { MEERA_CTAS, MEERA_TRUST_COPY } from '@/data/meera-copy'
 import { MEERA_EASE_ENTRY } from '@/data/motion-tokens'
 import { MOCK_CAMPAIGN_PLAN, computeFee } from '@/data/meera-mock'
 import { isApiLive } from '@/lib/api'
-import { isCalculateBudgetPayload, isRequestPaymentPayload } from '@/lib/meera-api'
+import {
+  isCalculateBudgetPayload,
+  isQuotedBudget,
+  isRequestPaymentPayload,
+} from '@/lib/meera-api'
 import { formatINR } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 
@@ -51,7 +55,11 @@ export function StageFunding({ paid, onPay, onGoLive, paymentToolResult, budgetT
     // have them from the recommend stage, are shown as display-only context
     // above it — never a fabricated pool/fee breakdown of this DTO.
     totalLabel = formatINR(paymentToolResult.serverAmount)
-    const budget = isCalculateBudgetPayload(budgetToolResult) ? budgetToolResult : null
+    // P1-12: a budget payload with no rate band carries NO figures (the fields are absent from
+    // the wire). Treat it as no context rather than rendering formatINR(undefined) — this block is
+    // display-only garnish next to the authoritative server amount, so dropping it costs nothing.
+    const budgetPayload = isCalculateBudgetPayload(budgetToolResult) ? budgetToolResult : null
+    const budget = budgetPayload && isQuotedBudget(budgetPayload) ? budgetPayload : null
     breakdown = (
       <div className="rounded-lg border border-meera-border bg-meera-surface-2 p-4 text-sm">
         {budget && (
