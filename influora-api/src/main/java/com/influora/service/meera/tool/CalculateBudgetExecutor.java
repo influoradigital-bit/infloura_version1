@@ -163,14 +163,26 @@ public class CalculateBudgetExecutor {
             rationale = buildBandRationale(band, effectiveCreatorCount, goal, currency);
         }
 
-        // Deliberately NOT gated on whether we quoted: the brand may well be told the product price
-        // in the same breath even when the rate came from the band, and that price is still a guess
-        // (Kabir C1 — the caveat is about the price's provenance, not about the rate's basis).
+        // Kabir C1 caveat — but it only means the same thing on the path where a price may be
+        // spoken at all. On the BAND path the rate is real and the price may legitimately be
+        // mentioned alongside it, so hedge it. On the REFUSAL path there is no quote to attach a
+        // price to, and the only price in play is the one the MODEL passed in as `product_price`
+        // (analyze_site has never populated a real catalog in production, so priceIsScraped is
+        // false by default). Handing the model "phrase this as based on an estimated price" there
+        // is an invitation to open with "based on an estimated price around ₹5,300" — a number it
+        // invented, laundered through a tool call, and hedged into sounding server-sourced. That is
+        // the surviving half of the P1-12 defect, so the refusal path forbids the price instead.
         if (productPrice != null && !priceIsScraped) {
             rationale +=
-                    " Note: this product price is an ESTIMATE, not a confirmed scraped price —"
-                            + " phrase this to the brand as based on an estimated price, not a"
-                            + " quoted fact.";
+                    RATE_BASIS_INSUFFICIENT.equals(rateBasis)
+                            ? " The product price in this call is NOT a confirmed price — it came"
+                                    + " from the caller, not from a verified scraped catalog. Since"
+                                    + " no rate is quoted, do NOT state that price to the brand"
+                                    + " either, hedged or otherwise: quote NO rupee figure in this"
+                                    + " reply."
+                            : " Note: this product price is an ESTIMATE, not a confirmed scraped"
+                                    + " price — phrase this to the brand as based on an estimated"
+                                    + " price, not a quoted fact.";
         }
 
         auditLogService.recordToolCall(

@@ -119,3 +119,88 @@ def test_no_tool_schema_uses_a_json_schema_combinator():
     blob = json.dumps(get_tool_schemas())
     for combinator in ('"anyOf"', '"oneOf"', '"allOf"'):
         assert combinator not in blob, combinator
+
+
+# ---------------------------------------------------------------------------
+# P1-12b — the PROSE half of the refusal.
+#
+# The card is only one of two surfaces that showed a number. Above it, Meera's
+# spoken reply said: "based on an estimated price around Rs 5,300, I'd put
+# roughly Rs 1,600 across five creators at about Rs 320 each." Today that prose
+# merely mirrors the tool. After P1-12 the tool returns NO money on the default
+# path -- which removes the mirror and leaves a silence a helpful model will
+# fill, because Block B (`assembler.py`, the `- Product catalog:` line) still
+# shows it a product price it can multiply by anything.
+#
+# There is no output-side net to catch it: `has_invented_price` is wired to
+# `routes/creator_suggestion.py:193` and `routes/trendspark.py:151` and NOT to
+# brand chat, so nothing downstream of the model inspects this sentence. The
+# prompt is the only layer that can hold, which is why these are prompt
+# assertions -- and why they assert the PROHIBITION, not just its vocabulary.
+# ---------------------------------------------------------------------------
+
+
+def _flat_persona() -> str:
+    """Persona block, lowercased with runs of whitespace collapsed to one space.
+
+    The persona is a hard-wrapped triple-quoted string, so a sentence that
+    reads as one clause on screen contains newlines and leading indentation at
+    arbitrary points. Asserting raw substrings against it silently couples
+    every test to the current line breaks -- an innocuous re-wrap would go red,
+    and worse, a real deletion could go GREEN if the phrase you happened to
+    pick sat inside one line. Normalise first, then assert on meaning.
+    """
+    return " ".join(get_persona_block().lower().split())
+
+
+def _insufficient_data_rail() -> str:
+    """The persona's insufficient_data bullet, normalised.
+
+    Scoped on purpose: a prohibition that lives in the platform_rate_band
+    branch, or three screens away in the general rails, is not the sentence
+    the model is reading when it has just received a refusal.
+    """
+    flat = _flat_persona()
+    start = flat.index('ratebasis "insufficient_data"')
+    end = flat.index("the product price never determines the rate", start)
+    return flat[start:end]
+
+
+def test_refusal_rail_forbids_the_product_price_itself_not_only_the_rate():
+    """The pre-fix rail forbade "a rate or a pool total". The live sentence
+    carried THREE figures and only two of them are a rate or a pool total: the
+    Rs 5,300 is a PRICE, and on this path it is a price the model passed into
+    the tool itself (analyze_site has never populated a real catalog in
+    production, so priceConfidence is "inferred" by default). Forbidding the
+    rate while leaving the price sayable leaves the brand reading an invented
+    rupee figure in chat, which is the defect Swapnil saw."""
+    rail = _insufficient_data_rail()
+    assert "not the product price either" in rail
+    assert "no rupee figure at all" in rail
+
+
+def test_refusal_rail_closes_the_i_supplied_it_loophole():
+    """A number the model put into the tool call is not a number the tool gave
+    back. Without this, "quote ONLY what the tool returns" is satisfiable by
+    echoing your own argument."""
+    rail = _insufficient_data_rail()
+    assert "a number you supplied is not a number you were given" in rail
+
+
+def test_refusal_rail_does_not_let_the_estimate_caveat_authorise_a_price():
+    """`CalculateBudgetExecutor` appends a C1 caveat telling Meera to phrase the
+    price as "based on an estimated price". That caveat is what the live prose
+    opened with. It must read as a hedge on a price she is already entitled to
+    say, never as permission to say one on the refusal path."""
+    flat = _flat_persona()
+    assert "never permission to say one" in flat
+    assert "you are not entitled to say a price" in flat
+
+
+def test_refusal_rail_still_asks_what_they_usually_pay():
+    """Guard against over-correcting: the approved UX is a refusal that ASKS,
+    not a dead end. If a future edit strips the question along with the number,
+    this fails."""
+    rail = _insufficient_data_rail()
+    assert "usually pay" in rail
+    assert "the brand states" in rail  # their answer is the one allowed figure

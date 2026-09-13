@@ -391,7 +391,13 @@ class CalculateBudgetExecutorTest {
         CalculateBudgetResult result = executor.execute("ws1", input);
 
         assertEquals("inferred", result.priceConfidence());
-        assertTrue(result.rationale().contains("ESTIMATE"));
+        // No band is stubbed here, so this is the REFUSAL path, where P1-12b replaced the
+        // "phrase it as based on an estimated price" hedge with an outright ban on saying the
+        // price. C1's actual claim -- the model cannot talk us into "scraped" -- is the
+        // priceConfidence assertion above; this one pins that the provenance caveat is still
+        // present and still says the price is not confirmed.
+        assertTrue(result.rationale().contains("NOT a confirmed price"), result.rationale());
+        assertTrue(result.rationale().contains("do NOT state that price"), result.rationale());
     }
 
     @Test
@@ -468,6 +474,47 @@ class CalculateBudgetExecutorTest {
         assertNull(result.suggestedPerCreatorRate());
         assertEquals(CalculateBudgetExecutor.RATE_BASIS_INSUFFICIENT, result.rateBasis());
         assertTrue(result.rationale().contains("NO RATE QUOTED"));
+    }
+
+    @Test
+    @DisplayName(
+            "P1-12b: on the refusal path the rationale FORBIDS stating the price, and never hands"
+                    + " the model the \"phrase this as based on an estimated price\" wording")
+    void testRefusalPathForbidsSpeakingThePriceAtAll() {
+        // The live prose opened "based on an estimated price around Rs 5,300, I'd put roughly
+        // Rs 1,600 across five creators at about Rs 320 each". P1-12 removed the two rate figures
+        // from the wire, but the price clause came from THIS string -- and Rs 5,300 was the
+        // model's own tool argument, since analyze_site has never populated a real catalog.
+        // Telling the model to hedge a number it invented is what made the guess sound sourced.
+        CalculateBudgetResult result =
+                executor.execute("ws1", Map.of("product_price", "5300", "goal", "review"));
+
+        assertEquals(CalculateBudgetExecutor.RATE_BASIS_INSUFFICIENT, result.rateBasis());
+        assertEquals("inferred", result.priceConfidence());
+        assertTrue(result.rationale().contains("quote NO rupee figure"), result.rationale());
+        // The exact phrase the model echoed to the brand must not appear on this path.
+        assertTrue(
+                !result.rationale().contains("based on an estimated price"), result.rationale());
+    }
+
+    @Test
+    @DisplayName(
+            "P1-12b: a scraped price on the refusal path adds no caveat either -- the ban rides on"
+                    + " the C1 branch, so this documents the gap a future scraped catalog opens")
+    void testRefusalPathWithScrapedPriceStillQuotesNoRate() {
+        withCatalog(
+                "[{\"name\":\"Cooker\",\"price\":4000,\"currency\":\"INR\","
+                        + "\"price_source\":\"scraped\"}]");
+
+        CalculateBudgetResult result =
+                executor.execute("ws1", Map.of("product_price", "4000", "goal", "review"));
+
+        assertEquals(CalculateBudgetExecutor.RATE_BASIS_INSUFFICIENT, result.rateBasis());
+        assertEquals("scraped", result.priceConfidence());
+        // A real scraped price MAY be spoken; the rate still may not be.
+        assertTrue(result.rationale().contains("NO RATE QUOTED"), result.rationale());
+        assertNull(result.suggestedPerCreatorRate());
+        assertNull(result.suggestedPoolTotal());
     }
 
     @Test
