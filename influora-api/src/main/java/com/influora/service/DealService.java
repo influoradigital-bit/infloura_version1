@@ -12,6 +12,7 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Contract;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DealMessage;
+import com.influora.domain.entity.DealOfferHistory;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.EscrowHold;
 import com.influora.domain.entity.Workspace;
@@ -23,6 +24,8 @@ import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
+import com.influora.domain.enums.OfferActor;
+import com.influora.domain.enums.OfferEvent;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.ExclusivityScope;
@@ -33,8 +36,10 @@ import com.influora.repository.CollaborationRepository;
 import com.influora.repository.ContractRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DealMessageRepository;
+import com.influora.repository.DealOfferHistoryRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.repository.EscrowHoldRepository;
+import com.influora.repository.MeeraDraftRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.notification.event.BidAcceptedEvent;
@@ -124,6 +129,14 @@ public class DealService {
      * other method on this class ignores it.
      */
     private final DealRiskService dealRiskService;
+    private final DealOfferHistoryRepository dealOfferHistoryRepository;
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;2.6) — read by {@link #meeraDraftedAuthorship} and by
+     * nothing else on this class. It exists so that {@code meeraDraftId} on a counter is EVIDENCE
+     * rather than a claim: see that method for what the claim used to buy a caller.
+     */
+    private final MeeraDraftRepository meeraDraftRepository;
 
     public DealService(
             CollaborationRepository collaborationRepository,
@@ -141,7 +154,9 @@ public class DealService {
             DealMessageStreamRegistry messageStreamRegistry,
             CollaborationReviveService collaborationReviveService,
             ApplicationHistoryService applicationHistoryService,
-            DealRiskService dealRiskService) {
+            DealRiskService dealRiskService,
+            DealOfferHistoryRepository dealOfferHistoryRepository,
+            MeeraDraftRepository meeraDraftRepository) {
         this.collaborationRepository = collaborationRepository;
         this.collaborationReviveService = collaborationReviveService;
         this.dealMessageRepository = dealMessageRepository;
@@ -158,6 +173,8 @@ public class DealService {
         this.messageStreamRegistry = messageStreamRegistry;
         this.applicationHistoryService = applicationHistoryService;
         this.dealRiskService = dealRiskService;
+        this.dealOfferHistoryRepository = dealOfferHistoryRepository;
+        this.meeraDraftRepository = meeraDraftRepository;
     }
 
     /**
@@ -348,6 +365,12 @@ public class DealService {
             }
         }
 
+        // SPEC.md 2.6 write point 1 of 4 -- the brand's opening OFFER, recorded once the collaboration
+        // row exists. Before this table, agreed_rate was OVERWRITTEN on every counter, so after three
+        // rounds the first two offers were simply gone and nothing could say what a negotiation had
+        // actually done.
+        recordOffer(collaboration, OfferActor.BRAND, OfferEvent.OFFER, body.amount(), false);
+
         persistProposalMessage(
                 collaboration,
                 principal.getUserId(),
@@ -490,6 +513,15 @@ public class DealService {
         }
         collaboration.transitionTo(CollaborationStatus.CANCELLED);
         collaborationRepository.save(collaboration);
+        // SPEC.md 2.6 write point 4 of 4 -- REJECT carries no amount (a refusal is not a number), and
+        // this method is also the CREATOR's own withdrawal path, so the actor comes from the role
+        // rather than being assumed to be the brand.
+        recordOffer(
+                collaboration,
+                role == UserType.CREATOR ? OfferActor.CREATOR : OfferActor.BRAND,
+                OfferEvent.REJECT,
+                null,
+                false);
         String reason = body != null && body.reason() != null ? body.reason() : "Deal rejected";
         String sanitizedReason = TextSanitizer.sanitizePlainText(reason);
         String actorLabel = role == UserType.CREATOR ? "Creator" : "Brand";
@@ -1190,6 +1222,15 @@ public class DealService {
 
         collaboration.transitionTo(CollaborationStatus.TERMS_AGREED);
         collaborationRepository.save(collaboration);
+        // SPEC.md 2.6 write point 3 of 4 -- the amount is the collaboration's agreedRate, which is what
+        // was actually accepted. The guard above has already refused a party accepting its own last
+        // offer, so the actor here is genuinely the counterparty.
+        recordOffer(
+                collaboration,
+                role == UserType.CREATOR ? OfferActor.CREATOR : OfferActor.BRAND,
+                OfferEvent.ACCEPT,
+                collaboration.getAgreedRate(),
+                false);
         String actorLabel = role == UserType.CREATOR ? "Creator" : "Brand";
         DealMessage systemMessage =
                 appendSystemMessage(collaboration.getId(), actorLabel + " accepted the proposal");
@@ -1355,6 +1396,18 @@ public class DealService {
         applyDealTermsIfPresent(collaboration, body.dealTerms());
         collaboration.transitionTo(CollaborationStatus.IN_NEGOTIATION);
         collaborationRepository.save(collaboration);
+        // SPEC.md 2.6 write point 2 of 4, immediately after updateAgreedRate above. MEERA_COUNTER is a
+        // distinct EVENT rather than a flag on COUNTER because it is what 14.1.d's meeraAnchoredShare
+        // selects on, and meeraDrafted is stamped alongside it: the actor stays the party whose offer
+        // this is (a creator owns a counter she approved), while authorship is recorded separately.
+        OfferActor actor = senderType == DealSenderType.creator ? OfferActor.CREATOR : OfferActor.BRAND;
+        boolean meeraDrafted = meeraDraftedAuthorship(collaboration, actor, body.meeraDraftId());
+        recordOffer(
+                collaboration,
+                actor,
+                meeraDrafted ? OfferEvent.MEERA_COUNTER : OfferEvent.COUNTER,
+                body.amount(),
+                meeraDrafted);
         // [H1] Settle the offer this counter supersedes BEFORE persisting the new one — ordering
         // is load-bearing, since settleLatestProposal resolves "the newest proposal" and the new
         // card must not exist yet. Without this every superseded card stayed "pending" and kept
@@ -1429,6 +1482,172 @@ public class DealService {
         }
 
         return toDealResponse(collaboration, principal, principal.getUserType());
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;2.6), B0-43 -- appends one row to the negotiation ledger.
+     *
+     * <p><b>{@code sequenceNo} is a count plus one, derived under the collaboration row lock</b>, never
+     * a separate {@code SELECT max(sequence_no)} -- that would be a TOCTOU, and the table's
+     * {@code UNIQUE KEY uk_doh_collab_seq (collaboration_id, sequence_no)} would turn the race into a
+     * duplicate-key 500 on an ordinary deal action rather than a silent mis-ordering. That is
+     * PRIYA-COMPAT-0904 &sect;7 condition 3.
+     *
+     * <p><b>The lock is taken HERE, and that is a correction to the spec rather than a duplication of
+     * it.</b> SPEC.md &sect;2.6 and the migration both assert that all four write points "already take
+     * that lock before reaching the recordOffer helper". Only one of them does: {@link #doReject}
+     * re-reads the row through {@link CollaborationRepository#findByIdForUpdate} (Kabir finding #6).
+     * {@link #createProposal}, {@link #doAccept} and {@link #doCounter} reach their collaboration
+     * through {@code requireOwnedCollaboration}, which is deliberately unlocked, and
+     * {@code IdempotencyService.executeOnce} serialises only calls sharing an idempotency key -- two
+     * concurrent counters with different client-supplied keys do not. Acquiring the lock in this one
+     * place makes the premise true for all four instead of assuming it for three: a row lock is
+     * re-entrant within a transaction, so {@code doReject} pays nothing for it, and the count that
+     * follows cannot observe a writer that has not yet committed.
+     *
+     * <p><b>The lock read must fail loudly, which is why its result is checked</b> (PRIYA-COMPAT-0912
+     * condition). What is wanted here is the serialisation and not the row -- the caller already holds
+     * the entity -- so it is tempting to discard the {@link Optional}. Do not: the serialisation this
+     * code actually gets today comes from the {@code collaborationRepository.save} that
+     * {@link #doCounter} flushes immediately BEFORE calling here, not from this {@code SELECT ... FOR
+     * UPDATE}. That makes the lock's efficacy rest on an invisible precondition, and a lock that
+     * cannot fail loudly breaks silently the day someone moves the {@code recordOffer} call above the
+     * save. An empty result means the row this ledger entry claims to be about is not lockable, and
+     * that is a 500, not a no-op.
+     *
+     * <p><b>{@link IllegalStateException}, deliberately NOT an {@code ApiException("DEAL_NOT_FOUND",
+     * 404)}.</b> This is a named ruling, because the first revision of this guard threw the 404 and it
+     * was the wrong shape twice over.
+     *
+     * <ul>
+     *   <li><b>It is not reachable by a caller.</b> Every one of the four write points has already
+     *       loaded or saved this exact row inside this same transaction — {@link #createProposal}
+     *       saves it, {@link #doCounter} and {@link #doAccept} load it through
+     *       {@code requireOwnedCollaboration} and save it, {@link #doReject} locks it itself. A
+     *       missing row here cannot be produced by a request; it can only be produced by an edit that
+     *       moves {@code recordOffer} above the load or the save. {@code DEAL_NOT_FOUND} is the code
+     *       the ownership-scoped lookups return for a deal a caller may not see, so reusing it here
+     *       tells a client "your deal does not exist" about a defect in our own write ordering, and
+     *       makes the two indistinguishable in any 404 count.
+     *   <li><b>The 404 was the quieter of the two, which defeats the point of checking at all.</b>
+     *       {@code GlobalExceptionHandler.handleApi} serialises an {@code ApiException} and returns —
+     *       no {@code log.error}, and no {@code ErrorLogService.record}, because 4xx is an expected
+     *       outcome there. {@code IllegalStateException} falls to {@code handleGeneric}, which logs
+     *       the stack trace AND persists it to the admin error-log console. The whole reason the
+     *       {@link Optional} is checked rather than discarded is so the failure is loud; routing it
+     *       through the one handler that does not record it would have made "fails loudly" a comment
+     *       rather than a fact.
+     * </ul>
+     *
+     * <p>Both alternatives fail the request and roll the transaction back, so the ledger is never
+     * written without its offer either way. The choice is only about what the failure is NAMED, and
+     * this one is a programmer error.
+     *
+     * <p><b>Not best-effort, unlike the application-history and notification writes around it.</b>
+     * Those are observational. This is the ledger SPEC.md &sect;14.1.d's {@code meeraAnchoredShare} is
+     * computed from, and a negotiation that silently failed to record itself would bias the number the
+     * B0-to-B1 decision turns on, in an unrecoverable direction. Catching
+     * {@code DataIntegrityViolationException} here would also be theatre: by the time it surfaces the
+     * transaction is already marked rollback-only.
+     */
+    private void recordOffer(
+            Collaboration collaboration,
+            OfferActor actor,
+            OfferEvent event,
+            BigDecimal amount,
+            boolean meeraDrafted) {
+        collaborationRepository
+                .findByIdForUpdate(collaboration.getId())
+                .orElseThrow(
+                        () ->
+                                new IllegalStateException(
+                                        "recordOffer could not lock collaboration "
+                                                + collaboration.getId()
+                                                + " — the caller must load or save the row before"
+                                                + " appending to its offer ledger"));
+        int sequenceNo = dealOfferHistoryRepository.countByCollaborationId(collaboration.getId()) + 1;
+        dealOfferHistoryRepository.save(
+                DealOfferHistory.record(
+                        Ulids.newUlid(),
+                        collaboration.getId(),
+                        sequenceNo,
+                        actor,
+                        event,
+                        amount,
+                        collaboration.getCurrency(),
+                        meeraDrafted));
+    }
+
+    /**
+     * SPEC.md &sect;2.6 — whether this counter really was approved from a Meera draft, DERIVED here
+     * rather than believed from {@code CounterRequest.meeraDraftId}.
+     *
+     * <p><b>The string on the request is a claim, and the counterparty can make it.</b> Until this
+     * method existed the rule was "non-blank {@code meeraDraftId}", and {@code POST
+     * /deals/{id}/counter} is a MUTUAL route — a brand client posts to it too. So any brand could
+     * write {@code MEERA_COUNTER / meera_drafted = true} rows onto a negotiation by sending an
+     * arbitrary string, and those rows feed {@code meeraAnchoredShare}: the number that labels a
+     * band's price "mostly Meera-quoted" to creators, and the number SPEC.md &sect;14.5.c's gate reads
+     * to decide whether Phase B1 starts. A metric a counterparty can inflate at will is worse than no
+     * metric, because it is read as a measurement.
+     *
+     * <p>Three conditions, all necessary:
+     *
+     * <ol>
+     *   <li>The actor is the CREATOR. Meera drafts for creators (see {@code MeeraDraft}'s own
+     *       javadoc, whose only mandatory parent is {@code creator_profile_id}), so a brand-actor row
+     *       can never legitimately carry authorship. This is the same clause
+     *       {@code DealOfferHistoryRepository.findDistinctCollaborationIdsByEvent} now applies where
+     *       the share is computed — both halves are here deliberately, because either alone leaves
+     *       the hole open at the layer that was skipped.
+     *   <li>The draft id resolves to a real row OWNED BY the creator on this deal. Scoped inside the
+     *       query ({@code findByIdAndCreatorProfileId}), so another creator's draft id is
+     *       indistinguishable from one that does not exist.
+     *   <li>That draft targets THIS collaboration. A draft written against a different deal is not
+     *       evidence about this one.
+     * </ol>
+     *
+     * <p><b>An unresolvable id is a false stamp, not a 4xx.</b> The counter itself is legitimate and
+     * must still go through — refusing it would let a stale draft id block a creator's negotiation.
+     * The claim is simply not recorded, and the discard is logged so a genuinely broken approve flow
+     * is visible rather than silently under-counting.
+     */
+    private boolean meeraDraftedAuthorship(
+            Collaboration collaboration, OfferActor actor, String meeraDraftId) {
+        if (meeraDraftId == null || meeraDraftId.isBlank()) {
+            return false;
+        }
+        if (actor != OfferActor.CREATOR) {
+            log.warn(
+                    "Ignoring meeraDraftId on a BRAND-actor counter for collaboration {} — Meera drafts"
+                            + " for creators, so authorship on a brand offer is not recordable",
+                    collaboration.getId());
+            return false;
+        }
+        String creatorProfileId =
+                creatorProfileRepository
+                        .findByUserId(collaboration.getCreatorId())
+                        .map(CreatorProfile::getId)
+                        .orElse(null);
+        if (creatorProfileId == null) {
+            log.warn(
+                    "Ignoring meeraDraftId on collaboration {} — no creator profile for the deal's"
+                            + " creator, so the draft cannot be attributed",
+                    collaboration.getId());
+            return false;
+        }
+        boolean resolved =
+                meeraDraftRepository
+                        .findByIdAndCreatorProfileId(meeraDraftId, creatorProfileId)
+                        .filter(draft -> collaboration.getId().equals(draft.getCollaborationId()))
+                        .isPresent();
+        if (!resolved) {
+            log.warn(
+                    "Ignoring meeraDraftId on collaboration {} — it does not resolve to a draft owned by"
+                            + " this creator on this deal; the counter is recorded as hand-typed",
+                    collaboration.getId());
+        }
+        return resolved;
     }
 
     private void notifyBidCountered(Collaboration collaboration, CounterRequest body) {

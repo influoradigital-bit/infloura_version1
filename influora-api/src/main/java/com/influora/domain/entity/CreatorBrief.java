@@ -127,6 +127,30 @@ public class CreatorBrief {
         return brief;
     }
 
+    /**
+     * SPEC.md &sect;2.2 / &sect;3.8 — the platform path: a brief lifted from a collaboration that
+     * already exists on Influora, so {@link #collaborationId} is set from the start rather than only
+     * after a secure link is redeemed.
+     *
+     * <p>Sanitized and capped exactly like {@link #paste}. The text is composed from campaign and
+     * offer fields a BRAND wrote, which makes it no more trustworthy than a pasted email: it is
+     * third-party text heading for a model either way.
+     */
+    public static CreatorBrief platform(
+            String id, String creatorProfileId, String collaborationId, String rawText) {
+        CreatorBrief brief = new CreatorBrief();
+        brief.id = id;
+        brief.creatorProfileId = creatorProfileId;
+        brief.source = BriefSource.PLATFORM;
+        brief.collaborationId = collaborationId;
+        brief.rawText = capped(TextSanitizer.sanitizePlainText(rawText));
+        brief.status = BriefStatus.NEW;
+        Instant now = Instant.now();
+        brief.createdAt = now;
+        brief.updatedAt = now;
+        return brief;
+    }
+
     private static String capped(String sanitized) {
         if (sanitized == null) {
             return "";

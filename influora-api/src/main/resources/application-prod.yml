@@ -68,6 +68,11 @@ influora:
     base-url: ${ANALYZE_SITE_AI_BASE_URL:https://ai.influora.internal}
   creator-copilot-ai:
     base-url: ${CREATOR_COPILOT_AI_BASE_URL:https://ai.influora.internal}
+    # Restated here as well as in application.yml: a prod operator turning a hung brief-extract call
+    # down mid-incident must find the knob in the profile they actually run. Same env vars, so one
+    # export changes both.
+    connect-timeout-seconds: ${CREATOR_COPILOT_AI_CONNECT_TIMEOUT_SECONDS:5}
+    request-timeout-seconds: ${CREATOR_COPILOT_AI_REQUEST_TIMEOUT_SECONDS:15}
   # Deploy blocker 2 — MeeraStreamProperties#publicChatUrl (Java field default) is
   # http://localhost:8000/chat and no profile previously overrode it, so a prod boot
   # would hand browsers a localhost URL for the browser-direct Meera SSE connection

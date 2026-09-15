@@ -165,6 +165,23 @@ TRENDSPARK_PERSONA_NAME = os.getenv("TRENDSPARK_PERSONA_NAME", "Meera")
 # wiki/build/creator-copilot-ai-route-plan.md §5.2.
 CREATOR_COPILOT_MODEL = os.getenv("CREATOR_COPILOT_MODEL", TRENDSPARK_MODEL)
 
+# Brief extraction (POST /internal/brief-extract, T-MEERA-CREATOR-PHASE-B §7.5)
+# — the ONE forced-tool call that turns a creator's pasted DM/email into the
+# structured BriefExtraction of SPEC §2.11.
+#
+# Lives HERE rather than in the route module, beside CREATOR_COPILOT_MODEL
+# above, for the same reason that one does: a model id is deployment
+# configuration, and a route file is not where an operator looks for it.
+#
+# The default is the EXACT TRENDSPARK_MODEL string, never a fresh literal.
+# app/costs/pricing.py keys PRICING_TABLE by literal model id, so a new
+# Haiku-class literal here would miss the table and `estimate_cost_usd` would
+# raise at billing time on the first real extraction — the pricing tests are
+# what catch that, and inheriting TRENDSPARK_MODEL's priced row is what avoids
+# it. Overridable via env for an independent bump, which must be to a model the
+# table already prices.
+BRIEF_EXTRACT_MODEL = os.getenv("BRIEF_EXTRACT_MODEL", TRENDSPARK_MODEL)
+
 # Brand-safety GARM classification model (Wave C task C2) — pinned the same
 # way as TRENDSPARK_MODEL above. The default is DELIBERATELY Sonnet
 # (CLAUDE_MODEL), not a Haiku-class model: GARM labeling is bounded,
@@ -471,6 +488,27 @@ class Settings:
     # `AI_CREATOR_MONTHLY_CAP_USD=0` to disable the cap entirely.
     ai_creator_monthly_cap_usd: float = field(
         default_factory=lambda: _get_float("AI_CREATOR_MONTHLY_CAP_USD", 0.75)
+    )
+
+    # --- Brief extraction's OWN monthly cap (SPEC §14.4.b) ---
+    # POST /internal/brief-extract is metered on a SEPARATE per-creator monthly
+    # bucket (`f"{creator_profile_id}:brief"`) from the chat cap above, so a
+    # chatty creator never starves paste-and-read — which is the one surface
+    # that still works when the chat cap is gone.
+    #
+    # Default 0.25 USD ~= 70 extractions at the credit sheet's INR 0.294/call on
+    # Haiku. Enforced by `app.costs.spend_tracker.check_creator_spend_gate`,
+    # which is the per-creator MONTHLY gate and the only one taking a `cap_usd`
+    # override — NOT `app.costs.gate.check_spend_gate`, the daily workspace
+    # ceiling, which takes none and would leave this value bound to nothing.
+    #
+    # A value <= 0 DISABLES the cap outright (spend_tracker's
+    # `check_creator_spend_gate` returns None on `cap <= 0`). That is a
+    # deliberate off switch, but it also means a mis-set or empty
+    # BRIEF_EXTRACT_MONTHLY_CAP_USD is a disabled cost control that looks
+    # configured — see that function and SPEC §14.4.b trap 2.
+    brief_extract_monthly_cap_usd: float = field(
+        default_factory=lambda: _get_float("BRIEF_EXTRACT_MONTHLY_CAP_USD", 0.25)
     )
 
     # --- Voice language defaults (A5) ---

@@ -186,7 +186,23 @@ class FloorBarrierTest {
                     "CreatorAgentDtos.PreferencesResponse",
                     "CreatorAgentDtos.UpdatePreferencesRequest",
                     "AdminCreatorAgentDtos.RateCalibrationResponse",
-                    "MeeraContextDtos.CreatorContextResponse");
+                    "MeeraContextDtos.CreatorContextResponse",
+                    // B0-42 (SPEC.md 3.8): the creator reading her OWN brief. It carries the whole
+                    // PackageQuote, floor included, deliberately -- CreatorBrief's own javadoc says
+                    // reopening a brief must show her the same floor she was shown, and the quote is
+                    // stored whole for that reason. Served only by CreatorBriefController, which
+                    // refuses every non-CREATOR principal on every route. Two tests hold that between
+                    // them, and neither holds it alone: CreatorContextServiceTest#testRejectsBrand
+                    // proves the gate itself refuses a BRAND principal (real service, no stub), and
+                    // CreatorBriefControllerTest#brandPrincipalIsRefusedOnEveryRoute proves all four
+                    // handlers call the gate. The controller test is NOT evidence of the refusal -- it
+                    // stubs the gate to throw -- and citing it for that is how a barrier stops meaning
+                    // anything. See FLOOR_PERMITTED_CONTROLLERS' javadoc.
+                    //
+                    // The brand-visible half of this arc is Phase B1's createSecureLink, which builds
+                    // a SEPARATE stripped package_json. That type does not exist yet, and when it does
+                    // it must NOT be added to this set.
+                    "BriefDtos.BriefAnalysisResponse");
 
     /**
      * Controllers permitted to serve a floor-bearing response, each because its gate proves the
@@ -202,6 +218,31 @@ class FloorBarrierTest {
      *   <li>{@code AdminCreatorAgentController} — {@code @RequestMapping("/admin/creator-agent")},
      *       so admin auth is structural: {@code SecurityConfig}'s {@code hasRole("ADMIN")} matcher
      *       on {@code /admin/**}.
+     *   <li>{@code CreatorBriefController} (B0-42) — every route runs {@code
+     *       CreatorContextService#requireCreatorProfile}, whose first statement is {@code
+     *       requireCreator}, which throws {@code 403 WRONG_USER_TYPE} for any principal whose {@code
+     *       userType} is not {@code CREATOR} and for a null principal. The acting creator is resolved
+     *       from {@code principal.getUserId()} and every read is scoped by her {@code
+     *       creator_profiles.id} inside the repository query, so a brief id belonging to another
+     *       creator is a 404 rather than a payload. She reads her own floor, on her own brief.
+     *       <p><b>This entry is earned by two tests, not by this paragraph — and the citation has to
+     *       name the right one for each half.</b> The permit needs BOTH that every route calls the
+     *       gate and that the gate refuses a brand, and no single test here shows both.
+     *       <ul>
+     *         <li>Every route CALLS it: {@code
+     *             CreatorBriefControllerTest#brandPrincipalIsRefusedOnEveryRoute} drives all four
+     *             handlers and asserts the service is never reached. Delete the call from a handler and
+     *             it goes red.
+     *         <li>The gate REFUSES a brand: {@code CreatorContextServiceTest#testRejectsBrand} drives
+     *             {@code requireCreatorProfile} with a {@code UserType.BRAND} principal against the
+     *             real service and asserts 403. Delete the {@code requireCreator} check and it goes
+     *             red.
+     *       </ul>
+     *       This paragraph used to cite the controller test for the refusal as well. It cannot show
+     *       that: it STUBS {@code requireCreatorProfile} to throw, so the exception it observes is the
+     *       one the test itself supplied. Gut {@code requireCreator} entirely and that test stays
+     *       green. A whole-controller floor permit resting on a stubbed refusal is the same defect
+     *       class as an allow-list entry backed by nothing but a comment.
      * </ul>
      *
      * <p>A controller whose name merely starts with "Creator" does <b>not</b> qualify and must not be
@@ -213,7 +254,8 @@ class FloorBarrierTest {
             Set.of(
                     "CreatorMeeraToolController",
                     "CreatorAgentController",
-                    "AdminCreatorAgentController");
+                    "AdminCreatorAgentController",
+                    "CreatorBriefController");
 
     /** Spring mapping annotations, by simple name — avoids importing six annotation types. */
     private static final Set<String> MAPPING_ANNOTATIONS =

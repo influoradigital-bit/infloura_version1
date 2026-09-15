@@ -1,6 +1,7 @@
 package com.influora.service.admin;
 
 import com.influora.common.JsonLists;
+import com.influora.domain.enums.OfferActor;
 import com.influora.domain.enums.OfferEvent;
 import com.influora.repository.AuditLogEntryRepository;
 import com.influora.repository.CollaborationRepository;
@@ -215,6 +216,12 @@ public class CreatorAgentRateCalibrationService {
      *
      * <p>Only ids that are already in a band are ever passed in, and the returned ids are used
      * only for a set-membership test that produces a fraction. No id reaches the response.
+     *
+     * <p><b>Filtered to {@link OfferActor#CREATOR}.</b> Meera drafts for creators, so a Meera-drafted
+     * counter is a creator action by definition; {@code POST /deals/{id}/counter} is nevertheless a
+     * MUTUAL route a brand client also posts to. Without the actor clause a brand could raise the
+     * {@code meera_anchored_share} this admin surface reports — the B0-to-B1 gate metric — simply by
+     * countering. Same clause, same reason, as {@code RateQuoteService#meeraAnchoredShare}.
      */
     private Set<String> anchoredCollaborations(Map<String, List<RateBandCandidateRow>> realisedByTier) {
         Set<String> allIds = new HashSet<>();
@@ -229,7 +236,8 @@ public class CreatorAgentRateCalibrationService {
             return Set.of();
         }
         List<String> anchored =
-                dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(allIds, OfferEvent.MEERA_COUNTER);
+                dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(
+                        allIds, OfferEvent.MEERA_COUNTER, OfferActor.CREATOR);
         return anchored == null ? Set.of() : new HashSet<>(anchored);
     }
 

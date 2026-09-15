@@ -24,14 +24,21 @@ import java.time.Instant;
  * share of negotiations where a Meera-drafted counter appeared, and it is not recoverable later
  * without a per-event authorship stamp captured at write time.
  *
- * <p><b>{@link #sequenceNo} is derived as {@code countByCollaborationId(collaborationId) + 1} inside
- * the transaction that already holds the collaboration row lock</b> — never with a separate
- * {@code SELECT max(sequence_no)} read, which would be a TOCTOU. {@code DealService}'s four write
- * points ({@code createProposal}, {@code doCounter}, {@code doAccept}, {@code doReject}) all take
- * that lock before reaching the {@code recordOffer} helper. The row lock makes the derivation
- * correct; the migration's {@code UNIQUE KEY uk_doh_collab_seq (collaboration_id, sequence_no)}
- * makes a mistake in it loud rather than silently corrupting the ordering. That is
- * PRIYA-COMPAT-0904 &sect;7 condition 3.
+ * <p><b>{@link #sequenceNo} is derived as {@code countByCollaborationId(collaborationId) + 1} under
+ * the collaboration row lock</b> — never with a separate {@code SELECT max(sequence_no)} read, which
+ * would be a TOCTOU. The row lock makes the derivation correct; the migration's {@code UNIQUE KEY
+ * uk_doh_collab_seq (collaboration_id, sequence_no)} makes a mistake in it loud rather than silently
+ * corrupting the ordering. That is PRIYA-COMPAT-0904 &sect;7 condition 3.
+ *
+ * <p><b>The lock is taken by {@code DealService.recordOffer} itself, and an earlier revision of this
+ * paragraph was wrong about that.</b> It claimed the four write points ({@code createProposal},
+ * {@code doCounter}, {@code doAccept}, {@code doReject}) "all take that lock before reaching the
+ * recordOffer helper", as SPEC.md &sect;2.6 and the migration comment still do. Only {@code doReject}
+ * did; the other three reach their collaboration through {@code requireOwnedCollaboration}, which is
+ * deliberately unlocked. The helper therefore acquires the lock in one place rather than trusting
+ * three callers to, and checks the result so an unlockable row fails loudly — see that method's
+ * javadoc, which is where this invariant is actually enforced. The migration comment cannot be
+ * corrected in place: Flyway checksums an applied migration file, comments included.
  *
  * <p><b>Append-only:</b> no {@code updatedAt}, and this entity deliberately exposes no setters. A
  * negotiation event happened or it did not; it is never revised. Same discipline as

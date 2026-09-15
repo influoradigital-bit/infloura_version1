@@ -9,6 +9,7 @@ import com.influora.domain.entity.DealMessage;
 import com.influora.domain.entity.MediaMetric;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DealMessageKind;
+import com.influora.domain.enums.OfferActor;
 import com.influora.domain.enums.OfferEvent;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CollaborationRepository.RateBandCandidateRow;
@@ -611,6 +612,14 @@ public class RateQuoteService {
      * negotiation with two Meera-drafted counters holds two {@code MEERA_COUNTER} rows. A row
      * count on either side pushes this above 1.0 and fires the label off a single deal. Never
      * {@code countByCollaborationIdInAndEvent}.
+     *
+     * <p><b>Filtered to {@link OfferActor#CREATOR}, and that filter is load-bearing.</b> A
+     * Meera-drafted counter is a creator action by definition, but {@code POST /deals/{id}/counter}
+     * is a MUTUAL route that a brand client also posts to. Counting brand-actor rows here let a brand
+     * inflate the share that decides whether this band's price is labelled "mostly Meera-quoted" — an
+     * honesty label a counterparty must not be able to set. {@code DealService.doCounter} now also
+     * refuses to stamp authorship on a brand-actor row; both halves are needed, because either alone
+     * leaves the number forgeable by whichever layer is skipped.
      */
     private double meeraAnchoredShare(List<String> bandIds) {
         if (bandIds.isEmpty()) {
@@ -618,7 +627,7 @@ public class RateQuoteService {
         }
         List<String> anchored =
                 dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(
-                        bandIds, OfferEvent.MEERA_COUNTER);
+                        bandIds, OfferEvent.MEERA_COUNTER, OfferActor.CREATOR);
         return anchored == null ? 0.0 : anchored.size() / (double) bandIds.size();
     }
 

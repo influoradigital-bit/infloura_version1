@@ -24,6 +24,8 @@ import com.influora.repository.CollaborationRepository;
 import com.influora.repository.ContractRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DealMessageRepository;
+import com.influora.repository.DealOfferHistoryRepository;
+import com.influora.repository.MeeraDraftRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.PaymentMilestoneRepository;
@@ -131,7 +133,15 @@ class ContractServiceDeliverableMaterializationTest {
                         applicationHistoryService,
                         // B0-34 (SPEC.md 5.3) — this suite never calls risksForCreator, the
                         // only method that touches DealRiskService.
-                        null);
+                        null,
+                        org.mockito.Mockito.mock(DealOfferHistoryRepository.class),
+                        org.mockito.Mockito.mock(MeeraDraftRepository.class));
+
+        // B0-43 — createProposal reaches recordOffer, which locks the collaboration row and checks the
+        // result. The row is minted inside the service here, so no test can hold it: see
+        // DealOfferLedgerFixture. The one test below that needs a real locked row stubs it itself,
+        // after this, and a later stubbing wins.
+        DealOfferLedgerFixture.stubOfferLedgerRowLock(collaborationRepository);
 
         contractService =
                 new ContractService(

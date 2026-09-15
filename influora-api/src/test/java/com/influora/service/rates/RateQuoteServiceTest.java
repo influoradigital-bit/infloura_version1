@@ -15,6 +15,7 @@ import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DealMessage;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DealMessageKind;
+import com.influora.domain.enums.OfferActor;
 import com.influora.domain.enums.OfferEvent;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CollaborationRepository.RateBandCandidateRow;
@@ -230,7 +231,7 @@ class RateQuoteServiceTest {
                         anyString(), eq(DealMessageKind.proposal)))
                 .thenReturn(Optional.empty());
         lenient()
-                .when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(any(), any()))
+                .when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(any(), any(), any()))
                 .thenReturn(List.of());
     }
 
@@ -462,7 +463,7 @@ class RateQuoteServiceTest {
                 bandRow("8000", "ws-2", "c-5"));
         lenient()
                 .when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(
-                        any(), eq(OfferEvent.MEERA_COUNTER)))
+                        any(), eq(OfferEvent.MEERA_COUNTER), eq(OfferActor.CREATOR)))
                 .thenReturn(List.of("c-1", "c-2", "c-3"));
 
         PackageQuote quote = quoteOneReel();
@@ -483,7 +484,7 @@ class RateQuoteServiceTest {
                 bandRow("9000", "ws-3", "c-6"));
         lenient()
                 .when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(
-                        any(), eq(OfferEvent.MEERA_COUNTER)))
+                        any(), eq(OfferEvent.MEERA_COUNTER), eq(OfferActor.CREATOR)))
                 .thenReturn(List.of("c-1", "c-2", "c-3"));
 
         assertThat(quoteOneReel().provenance()).doesNotContain("mostly Meera-quoted");
@@ -510,7 +511,7 @@ class RateQuoteServiceTest {
         // MEERA_COUNTER row, which the DISTINCT query collapses before it ever reaches the service.
         lenient()
                 .when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(
-                        any(), eq(OfferEvent.MEERA_COUNTER)))
+                        any(), eq(OfferEvent.MEERA_COUNTER), eq(OfferActor.CREATOR)))
                 .thenReturn(List.of("c-1", "c-2", "c-3", "c-4", "c-5"));
 
         PackageQuote quote = quoteOneReel();
@@ -522,8 +523,44 @@ class RateQuoteServiceTest {
         ArgumentCaptor<java.util.Collection<String>> ids =
                 ArgumentCaptor.forClass(java.util.Collection.class);
         verify(dealOfferHistoryRepository)
-                .findDistinctCollaborationIdsByEvent(ids.capture(), eq(OfferEvent.MEERA_COUNTER));
+                .findDistinctCollaborationIdsByEvent(
+                        ids.capture(), eq(OfferEvent.MEERA_COUNTER), eq(OfferActor.CREATOR));
         assertThat(ids.getValue()).containsExactlyInAnyOrder("c-1", "c-2", "c-3", "c-4", "c-5");
+    }
+
+    /**
+     * The second half of the forged-authorship fix. {@code POST /deals/{id}/counter} is a MUTUAL
+     * route, so a brand client also sets {@code meeraDraftId}; before this clause existed the share
+     * selected on the EVENT alone, and any brand-actor {@code MEERA_COUNTER} row counted toward the
+     * "mostly Meera-quoted" label creators read on a price. {@code DealService} now refuses to write
+     * such a row at all, and this asserts the consuming side does not depend on that: it asks the
+     * ledger only for CREATOR-actor rows.
+     *
+     * <p>What a mock can show is the argument. That a brand-actor ROW is actually excluded by the
+     * {@code and h.actor = :actor} clause is a database fact, so it is only provable against a real
+     * schema (Testcontainers).
+     */
+    @Test
+    @DisplayName("14.1.d - the share query is asked for CREATOR-actor rows only, never the event alone")
+    void meeraAnchoredShareAsksForCreatorActorRowsOnly() {
+        givenBand(
+                bandRow("4000", "ws-1", "c-1"),
+                bandRow("5000", "ws-2", "c-2"),
+                bandRow("6000", "ws-3", "c-3"),
+                bandRow("7000", "ws-1", "c-4"),
+                bandRow("8000", "ws-2", "c-5"));
+        lenient()
+                .when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(
+                        any(), eq(OfferEvent.MEERA_COUNTER), eq(OfferActor.CREATOR)))
+                .thenReturn(List.of());
+
+        quoteOneReel();
+
+        ArgumentCaptor<OfferActor> actor = ArgumentCaptor.forClass(OfferActor.class);
+        verify(dealOfferHistoryRepository)
+                .findDistinctCollaborationIdsByEvent(
+                        any(), eq(OfferEvent.MEERA_COUNTER), actor.capture());
+        assertThat(actor.getValue()).isEqualTo(OfferActor.CREATOR);
     }
 
     /**

@@ -106,6 +106,15 @@ except Exception:
         "creator_suggestion router failed to import — /internal/creator-suggestion NOT registered"
     )
 
+try:
+    from app.routes import brief_extract
+
+    app.include_router(brief_extract.router, tags=["creator-brief"])
+except Exception:
+    logger.exception(
+        "brief_extract router failed to import — /internal/brief-extract NOT registered"
+    )
+
 
 @app.on_event("startup")
 async def _refuse_boot_on_missing_secrets() -> None:

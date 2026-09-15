@@ -142,8 +142,8 @@ class DealControllerTest {
             "CounterRequest: omitted deliverables (null or empty) pass validation — DealService.doCounter()"
                     + " carries them forward from the superseded proposal card")
     void counterRequest_omittedDeliverables_passesValidation() {
-        CounterRequest emptyList = new CounterRequest(new BigDecimal("100"), null, List.of(), null, null, null);
-        CounterRequest nullList = new CounterRequest(new BigDecimal("100"), null, null, null, null, null);
+        CounterRequest emptyList = new CounterRequest(new BigDecimal("100"), null, List.of(), null, null, null, null);
+        CounterRequest nullList = new CounterRequest(new BigDecimal("100"), null, null, null, null, null, null);
 
         assertTrue(validator.validate(emptyList).isEmpty());
         assertTrue(validator.validate(nullList).isEmpty());
@@ -154,7 +154,7 @@ class DealControllerTest {
     void counterRequest_zeroQtySlot_failsValidation() {
         CounterRequest request =
                 new CounterRequest(
-                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 0)), null, null, null);
+                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 0)), null, null, null, null);
 
         Set<ConstraintViolation<CounterRequest>> violations = validator.validate(request);
 
@@ -166,7 +166,7 @@ class DealControllerTest {
     void counterRequest_validDeliverables_passesValidation() {
         CounterRequest request =
                 new CounterRequest(
-                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 2)), null, null, null);
+                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 2)), null, null, null, null);
 
         assertTrue(validator.validate(request).isEmpty());
     }
@@ -284,7 +284,7 @@ class DealControllerTest {
     @Test
     @DisplayName("POST /deals/{id}/counter delegates with body and idempotency key")
     void testCounter() {
-        CounterRequest body = new CounterRequest(new BigDecimal("30000"), "How about this?", null, null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("30000"), "How about this?", null, null, null, null, null);
         DealResponse deal =
                 new DealResponse(
                         "deal1",

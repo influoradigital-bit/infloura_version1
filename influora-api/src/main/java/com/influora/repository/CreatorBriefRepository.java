@@ -44,4 +44,20 @@ public interface CreatorBriefRepository extends JpaRepository<CreatorBrief, Stri
      */
     Optional<CreatorBrief> findFirstByCollaborationIdAndCreatorProfileId(
             String collaborationId, String creatorProfileId);
+
+    /**
+     * SPEC.md &sect;3.8 — what makes {@code CreatorBriefService.ensurePlatformBrief} idempotent.
+     *
+     * <p>Source-scoped, not just collaboration-scoped, and that is the whole point: a creator may
+     * paste a revised brief for a deal she already has, so the sibling method above can legitimately
+     * return a {@link com.influora.domain.enums.BriefSource#PASTED} row for a collaboration. Reusing
+     * it for the ensure path would make {@code ensurePlatformBrief} hand back her own pasted brief
+     * instead of the platform reading of the deal, and then never create the platform one at all.
+     *
+     * <p>{@code First} for the same reason as the sibling: nothing in the schema forbids two rows,
+     * and the caller takes whichever the index yields rather than this method pretending there is
+     * exactly one.
+     */
+    Optional<CreatorBrief> findFirstByCollaborationIdAndCreatorProfileIdAndSource(
+            String collaborationId, String creatorProfileId, com.influora.domain.enums.BriefSource source);
 }

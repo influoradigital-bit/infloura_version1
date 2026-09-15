@@ -305,6 +305,23 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private int creatorToolLimit;
 
     /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.8) — requests per window, <b>per creator</b>, for
+     * {@code POST /creator/briefs}.
+     *
+     * <p>10 rather than the generic limit because this is the one creator route that spends real money
+     * on every call: each paste is an AI extraction billed against the creator's own monthly brief
+     * allowance. The window bound and that allowance are two different controls doing two different
+     * jobs — the allowance stops a month of cost, this stops a minute of it, and neither substitutes
+     * for the other.
+     *
+     * <p>USER-keyed (see {@link #isUserKeyedBucket}), not IP-keyed. An IP key on a creator route is
+     * wrong in both directions: creators behind one mobile carrier NAT would starve each other, and a
+     * single creator could reset her own window by changing network.
+     */
+    @Value("${influora.meera.creator-brief-paste-rate-limit-per-window:10}")
+    private int creatorBriefPasteLimit;
+
+    /**
      * [SEC: Kabir Wave 2, finding 1] How many ES256 verifications ONE source address is allowed to
      * <b>fail</b> per {@link #windowSeconds} before this filter stops verifying for that address
      * entirely and keys the bucket by IP instead. See {@link #extractOnBehalfSubject} for why a
@@ -562,6 +579,13 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         if (CREATOR_TOOL.matcher(path).matches()) {
             return "creator-tool";
         }
+        // SPEC.md 3.8 — POST /creator/briefs ONLY. The exact-equality check, rather than a prefix,
+        // keeps GET /creator/briefs/{id} and the dismiss route out of a bucket that exists to bound
+        // AI spend: reading a brief the creator already paid for costs nothing, and throttling it
+        // would only stop her opening what she has.
+        if ("POST".equalsIgnoreCase(request.getMethod()) && path.equals("/creator/briefs")) {
+            return "creator-brief-paste";
+        }
 
         if (path.equals("/auth/brand/send-email-otp") || path.equals("/auth/brand/verify-email")) {
             return "otp";
@@ -631,6 +655,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "meera-turn" -> meeraTurnLimit;
             case "meera-voice" -> meeraVoiceLimit;
             case "creator-tool" -> creatorToolLimit;
+            case "creator-brief-paste" -> creatorBriefPasteLimit;
             default -> sensitiveLimit;
         };
     }
@@ -686,7 +711,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                     "creator-withdraw",
                     "admin-coupon-issue",
                     "meera-turn",
-                    "meera-voice" ->
+                    "meera-voice",
+                    // SPEC.md 3.8 — AI cost, so the identity that must be bounded is the creator's,
+                    // not her network's. Reachable from the ordinary `Authorization` header (unlike
+                    // "creator-tool" above, which sits on /internal/** where that header carries the
+                    // SERVICE token), so it needs no special case beyond this entry.
+                    "creator-brief-paste" ->
                     true;
             default -> false;
         };

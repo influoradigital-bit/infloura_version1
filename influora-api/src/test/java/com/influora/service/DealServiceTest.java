@@ -40,6 +40,8 @@ import com.influora.repository.CollaborationRepository;
 import com.influora.repository.ContractRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DealMessageRepository;
+import com.influora.repository.DealOfferHistoryRepository;
+import com.influora.repository.MeeraDraftRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.WorkspaceRepository;
@@ -68,6 +70,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
+import com.influora.domain.entity.DealOfferHistory;
+import com.influora.domain.entity.MeeraDraft;
+import com.influora.domain.enums.DraftKind;
+import com.influora.domain.enums.OfferActor;
+import com.influora.domain.enums.OfferEvent;
 
 /** Task #9 — access isolation, negotiation state transitions, idempotency wiring. */
 @ExtendWith(MockitoExtension.class)
@@ -79,6 +86,7 @@ class DealServiceTest {
     private static final String CREATOR_USER_ID = "01HCREATORUSER1234567";
     private static final String CREATOR_PROFILE_ID = "01HCREATORPROFILE1234";
     private static final String BRAND_USER_ID = "01HBRANDUSER123456789";
+    private static final String MEERA_DRAFT_ID = "01HMEERADRAFT12345678";
 
     @Mock private CollaborationRepository collaborationRepository;
     @Mock private DealMessageRepository dealMessageRepository;
@@ -98,6 +106,21 @@ class DealServiceTest {
     @Mock private AuthPrincipal brandPrincipal;
 
     @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;2.6), B0-43 — the negotiation ledger. A named mock rather
+     * than an inline one because the four write-point tests at the bottom of this class assert what
+     * lands in it; the rest of the suite simply lets it absorb the writes.
+     */
+    @Mock private DealOfferHistoryRepository dealOfferHistoryRepository;
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;2.6) — what turns {@code meeraDraftId} from a claim into
+     * evidence. Unstubbed it returns {@code Optional.empty()}, which is the correct reading for every
+     * test in this suite that does not deal in drafts: an id that resolves to nothing is a hand-typed
+     * counter.
+     */
+    @Mock private MeeraDraftRepository meeraDraftRepository;
 
     private DealService service;
 
@@ -128,7 +151,16 @@ class DealServiceTest {
                         applicationHistoryService,
                         // B0-34 (SPEC.md 5.3) — this suite never calls risksForCreator, the
                         // only method that touches DealRiskService.
-                        null);
+                        null,
+                        dealOfferHistoryRepository,
+                        meeraDraftRepository);
+
+        // B0-43 — recordOffer takes the collaboration row lock and CHECKS it, so every write path in
+        // this suite needs the locked read stubbed. One call, not one per test: see
+        // DealOfferLedgerFixture for why the placeholder row is the right answer here and what would
+        // make it the wrong one. The reject tests stub findByIdForUpdate with their own entity
+        // afterwards, and a later stubbing wins.
+        DealOfferLedgerFixture.stubOfferLedgerRowLock(collaborationRepository);
     }
 
     private static Collaboration invitedDeal() {
@@ -615,7 +647,7 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null, null);
         DealResponse response = service.counter(brandPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
@@ -661,7 +693,7 @@ class DealServiceTest {
                         List.of(new DeliverableSlot("REEL", 2)),
                         "2026-08-15",
                         "6 months",
-                        null);
+                        null, null);
         service.counter(brandPrincipal, DEAL_ID, body, null);
 
         // usageRights is now a real column update, exactly as createProposal does it — before the
@@ -718,7 +750,7 @@ class DealServiceTest {
                         });
 
         // activeCampaign()'s budgetMax is 50000. Pre-fix this 400'd with AMOUNT_EXCEEDS_BUDGET.
-        CounterRequest body = new CounterRequest(new BigDecimal("75000"), "Let's do 75k", null, null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("75000"), "Let's do 75k", null, null, null, null, null);
         DealResponse response = service.counter(creatorPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
@@ -759,7 +791,7 @@ class DealServiceTest {
 
         // Above budgetMax(50000) but below the creator's hypothetical prior ask — a genuine
         // meet-in-the-middle compromise, which the symmetric fix must also allow.
-        CounterRequest body = new CounterRequest(new BigDecimal("60000"), "Let's meet at 60k", null, null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("60000"), "Let's meet at 60k", null, null, null, null, null);
         DealResponse response = service.counter(brandPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
@@ -778,7 +810,7 @@ class DealServiceTest {
         when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
 
         // activeCampaign()'s budgetMin is 10000.
-        CounterRequest body = new CounterRequest(new BigDecimal("5000"), "Lowball counter", null, null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("5000"), "Lowball counter", null, null, null, null, null);
 
         ApiException ex =
                 assertThrows(
@@ -998,7 +1030,7 @@ class DealServiceTest {
                                         brandPrincipal,
                                         DEAL_ID,
                                         new CounterRequest(
-                                                new BigDecimal("25000"), "no", null, null, null, null),
+                                                new BigDecimal("25000"), "no", null, null, null, null, null),
                                         null));
 
         assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
@@ -1310,7 +1342,19 @@ class DealServiceTest {
 
         service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
 
-        verify(collaborationRepository).findByIdForUpdate(DEAL_ID);
+        // TWICE as of B0-43, not once. doReject takes the lock itself (Kabir finding #6) and
+        // recordOffer takes it again before deriving sequence_no as a count plus one -- SPEC.md 2.6
+        // claims all four write points already hold it, but only this one did, so the helper acquires
+        // it rather than assuming it. A row lock is re-entrant inside a transaction, so the second
+        // acquisition is free and changes nothing about the race this test guards.
+        //
+        // The ORDERING is what the finding is really about: the lock must precede the
+        // check-then-write, and reverting doReject to the unlocked instance still fails here because
+        // the first acquisition would move after the save.
+        InOrder order = inOrder(collaborationRepository);
+        order.verify(collaborationRepository).findByIdForUpdate(DEAL_ID);
+        order.verify(collaborationRepository).save(any(Collaboration.class));
+        verify(collaborationRepository, times(2)).findByIdForUpdate(DEAL_ID);
     }
 
     /**
@@ -1673,7 +1717,7 @@ class DealServiceTest {
         service.counter(
                 brandPrincipal,
                 DEAL_ID,
-                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null),
+                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null, null),
                 null);
 
         ArgumentCaptor<DealMessageResponse> published =
@@ -2224,7 +2268,7 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null, null);
         service.counter(brandPrincipal, DEAL_ID, body, null);
 
         // doCounter records no ApplicationHistoryEvent of its own (there is no COUNTER value in
@@ -2339,7 +2383,7 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Let's do 25k", null, null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Let's do 25k", null, null, null, null, null);
         service.counter(creatorPrincipal, DEAL_ID, body, null);
 
         verify(applicationHistoryService, never())
@@ -2610,5 +2654,412 @@ class DealServiceTest {
                 response.escrowFunded(),
                 "F-0656: the amendment's own payment plan was never funded — the predecessor's"
                         + " stale hold must not report it as funded");
+    }
+
+    // ==================================================================
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 2.6), B0-43 — the four offer-history
+    // write points.
+    //
+    // WHY THE TABLE EXISTS AT ALL: Collaboration.agreedRate is OVERWRITTEN on
+    // every counter, so after three rounds the first two offers are gone and
+    // nothing can say what a negotiation actually did. SPEC.md 14.1.d's
+    // meeraAnchoredShare — the number the B0-to-B1 decision turns on — is the
+    // share of negotiations carrying a Meera-drafted counter, and it is not
+    // recoverable later without a per-event authorship stamp captured at write
+    // time. Hence a row on all four transitions, not only on the interesting one.
+    // ==================================================================
+
+    private DealOfferHistory capturedOfferRow() {
+        ArgumentCaptor<DealOfferHistory> captor = ArgumentCaptor.forClass(DealOfferHistory.class);
+        verify(dealOfferHistoryRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("offer history 1/4 — createProposal records OFFER, actor BRAND, at sequence 1")
+    void testCreateProposalRecordsOfferHistory() {
+        stubProposalCampaign();
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(
+                        Optional.of(
+                                CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+
+        // Stubbed, not left to Mockito's zero default. Unstubbed, this assertion passed off the
+        // default int and would have gone on passing against a recordOffer that hardcoded
+        // sequenceNo = 1 and never consulted the ledger at all — the derivation, not the literal, is
+        // what the unique key (collaboration_id, sequence_no) depends on.
+        when(dealOfferHistoryRepository.countByCollaborationId(anyString())).thenReturn(0);
+
+        service.createProposal(brandPrincipal, proposalRequest());
+
+        DealOfferHistory row = capturedOfferRow();
+        assertTrue(row.getCollaborationId() != null, "the row is bound to the collaboration just created");
+        assertEquals(OfferEvent.OFFER, row.getEvent());
+        assertEquals(OfferActor.BRAND, row.getActor());
+        assertEquals(new BigDecimal("25000"), row.getAmount());
+        assertEquals("INR", row.getCurrency());
+        assertFalse(row.isMeeraDrafted());
+        // countByCollaborationId returns 0 on a fresh collaboration, so the first row is 1-based.
+        assertEquals(1, row.getSequenceNo());
+        // And the 1 is count + 1 for THIS collaboration, asked of the ledger.
+        verify(dealOfferHistoryRepository).countByCollaborationId(row.getCollaborationId());
+    }
+
+    /**
+     * B0-43, PRIYA-COMPAT-0912 — the test that makes the CHECK on the lock read real rather than
+     * documented.
+     *
+     * <p>{@code recordOffer} takes the collaboration row lock and {@code orElseThrow}s on an empty
+     * result. Every other test in this file supplies a lockable row, so deleting the
+     * {@code orElseThrow} and keeping the {@code findByIdForUpdate} call leaves all of them green:
+     * the condition would have shipped pinned by nothing but its own javadoc. This is the one test
+     * that goes red for that edit.
+     *
+     * <p><b>{@link IllegalStateException}, not {@code ApiException}, and the type is the assertion.</b>
+     * An unlockable row cannot be produced by a caller — {@code createProposal} saved it three
+     * statements earlier — so this is a programmer error, and {@code GlobalExceptionHandler} only
+     * logs and records the generic 500 path. A {@code DEAL_NOT_FOUND} 404 here would be the quieter
+     * of the two and would be indistinguishable from the ordinary not-found a caller can trigger.
+     * See {@code DealService#recordOffer}'s javadoc for the full ruling.
+     *
+     * <p>Stubs nothing the pre-{@code recordOffer} path does not touch — in particular not {@code
+     * brandPrincipal.getUserId()}, which {@code persistProposalMessage} reads only AFTER this throws,
+     * and which strict stubs would report as unused.
+     */
+    @Test
+    @DisplayName(
+            "[B0-43] a collaboration row that cannot be locked fails the write loudly — no ledger row,"
+                    + " no count, and a programmer-error exception rather than a user-facing 404")
+    void testRecordOfferRefusesAnUnlockableRow() {
+        stubProposalCampaign();
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(
+                        Optional.of(
+                                CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        // Overrides the suite-wide DealOfferLedgerFixture stub: the locked read finds nothing.
+        when(collaborationRepository.findByIdForUpdate(anyString())).thenReturn(Optional.empty());
+
+        IllegalStateException ex =
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> service.createProposal(brandPrincipal, proposalRequest()));
+        assertTrue(
+                ex.getMessage().contains("could not lock collaboration"),
+                "the message must name the invariant a maintainer just broke, not read as a 404");
+
+        // The sequence number is derived from a count; neither may happen outside the lock.
+        verify(dealOfferHistoryRepository, never()).countByCollaborationId(anyString());
+        verify(dealOfferHistoryRepository, never()).save(any(DealOfferHistory.class));
+    }
+
+    @Test
+    @DisplayName("offer history 2/4 — a hand-typed counter records COUNTER with meeraDrafted false")
+    void testCounterRecordsCounterOfferHistory() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        stubCounterCollaboration();
+
+        service.counter(
+                brandPrincipal,
+                DEAL_ID,
+                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null, null),
+                null);
+
+        DealOfferHistory row = capturedOfferRow();
+        assertEquals(DEAL_ID, row.getCollaborationId());
+        assertEquals(OfferEvent.COUNTER, row.getEvent());
+        assertEquals(OfferActor.BRAND, row.getActor());
+        assertEquals(new BigDecimal("25000"), row.getAmount());
+        assertFalse(row.isMeeraDrafted());
+    }
+
+    /**
+     * The Meera-drafted stamp, EARNED. This test used to drive a BRAND principal with the string
+     * {@code "draft-7"} and assert {@code MEERA_COUNTER / meeraDrafted=true / actor BRAND}, green —
+     * which is exactly the forgery {@code DealService.meeraDraftedAuthorship} now refuses, and the two
+     * tests below pin. The stamp requires a CREATOR actor and a draft row that resolves to this
+     * creator on this deal.
+     */
+    @Test
+    @DisplayName(
+            "offer history 2/4 — a creator's counter approved from a draft that RESOLVES on this deal"
+                    + " records MEERA_COUNTER and stamps authorship, actor CREATOR")
+    void testCounterFromMeeraDraftRecordsMeeraCounter() {
+        stubCreatorPrincipal();
+        stubCreatorCounterCollaboration();
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(
+                                CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(meeraDraftRepository.findByIdAndCreatorProfileId(MEERA_DRAFT_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(counterDraftOn(DEAL_ID)));
+
+        service.counter(
+                creatorPrincipal,
+                DEAL_ID,
+                new CounterRequest(
+                        new BigDecimal("31000"),
+                        "Meera drafted this",
+                        null,
+                        null,
+                        null,
+                        null,
+                        MEERA_DRAFT_ID),
+                null);
+
+        DealOfferHistory row = capturedOfferRow();
+        assertEquals(OfferEvent.MEERA_COUNTER, row.getEvent());
+        assertTrue(row.isMeeraDrafted(), "authorship is what 14.1.d's share is computed from");
+        assertEquals(
+                OfferActor.CREATOR,
+                row.getActor(),
+                "actor answers whose offer this is; a creator owns a counter she approved");
+    }
+
+    /**
+     * The blocker this whole guard exists for. {@code POST /deals/{id}/counter} is MUTUAL, so a brand
+     * client sets {@code meeraDraftId} too. While the flag was derived from "the string is non-blank",
+     * one brand could write {@code MEERA_COUNTER / meera_drafted = true} rows onto any negotiation it
+     * was party to, and those rows are what {@code meeraAnchoredShare} counts — the share that labels
+     * a creator's price "mostly Meera-quoted" and that SPEC.md &sect;14.5.c's gate reads to decide
+     * whether Phase B1 starts.
+     */
+    @Test
+    @DisplayName(
+            "[SEC] a BRAND cannot forge Meera authorship: any meeraDraftId on a brand counter records a"
+                    + " plain COUNTER, and the draft table is never even consulted")
+    void testBrandCannotForgeMeeraAuthorshipOnACounter() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        stubCounterCollaboration();
+
+        service.counter(
+                brandPrincipal,
+                DEAL_ID,
+                new CounterRequest(
+                        new BigDecimal("31000"),
+                        "Meera drafted this, honestly",
+                        null,
+                        null,
+                        null,
+                        null,
+                        "any-string-at-all"),
+                null);
+
+        DealOfferHistory row = capturedOfferRow();
+        assertEquals(
+                OfferEvent.COUNTER,
+                row.getEvent(),
+                "a brand-actor row must never reach the MEERA_COUNTER the share selects on");
+        assertFalse(row.isMeeraDrafted(), "the counterparty does not get to set this number");
+        assertEquals(OfferActor.BRAND, row.getActor());
+        // The refusal is on the actor, BEFORE any lookup: a brand must not be able to probe which
+        // draft ids exist by timing or by behaviour differences between a hit and a miss.
+        verify(meeraDraftRepository, never()).findByIdAndCreatorProfileId(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "[SEC] a creator's draft id that belongs to a DIFFERENT deal is not evidence about this one"
+                    + " — plain COUNTER")
+    void testCreatorDraftFromAnotherDealDoesNotStampAuthorship() {
+        stubCreatorPrincipal();
+        stubCreatorCounterCollaboration();
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(
+                                CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(meeraDraftRepository.findByIdAndCreatorProfileId(MEERA_DRAFT_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(counterDraftOn("01HOTHERDEAL9876543210")));
+
+        service.counter(
+                creatorPrincipal,
+                DEAL_ID,
+                new CounterRequest(
+                        new BigDecimal("31000"), "reused draft", null, null, null, null, MEERA_DRAFT_ID),
+                null);
+
+        DealOfferHistory row = capturedOfferRow();
+        assertEquals(OfferEvent.COUNTER, row.getEvent());
+        assertFalse(row.isMeeraDrafted());
+        assertEquals(OfferActor.CREATOR, row.getActor());
+    }
+
+    @Test
+    @DisplayName("offer history 3/4 — doAccept records ACCEPT at the collaboration's agreed rate")
+    void testAcceptRecordsOfferHistory() {
+        stubCreatorPrincipal();
+        Collaboration collaboration = invitedDeal();
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any())).thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(idempotencyService.executeOnce(
+                        eq("deal-accept:" + DEAL_ID), eq(CREATOR_USER_ID), eq("deal.accept"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        service.accept(creatorPrincipal, DEAL_ID, null);
+
+        DealOfferHistory row = capturedOfferRow();
+        assertEquals(OfferEvent.ACCEPT, row.getEvent());
+        assertEquals(
+                OfferActor.CREATOR,
+                row.getActor(),
+                "accept is mutual — the actor comes from the role, not an assumption");
+        assertEquals(new BigDecimal("25000"), row.getAmount());
+    }
+
+    @Test
+    @DisplayName(
+            "offer history 4/4 — doReject records REJECT with NO amount, and the actor follows the role"
+                    + " because this method is also the creator's own withdrawal path")
+    void testRejectRecordsOfferHistory() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.findByIdForUpdate(DEAL_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        mockRejectIdempotencyExecuteOnce();
+
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
+
+        DealOfferHistory row = capturedOfferRow();
+        assertEquals(OfferEvent.REJECT, row.getEvent());
+        assertEquals(OfferActor.BRAND, row.getActor());
+        assertEquals(null, row.getAmount(), "a refusal is not a number");
+    }
+
+    @Test
+    @DisplayName(
+            "the sequence number is a COUNT plus one taken under the collaboration row lock, never a"
+                    + " max(sequence_no) read")
+    void testSequenceNumberIsCountPlusOneUnderTheRowLock() {
+        stubBrandWorkspace();
+        when(brandPrincipal.getUserId()).thenReturn(BRAND_USER_ID);
+        stubCounterCollaboration();
+        // Three rows already on this negotiation.
+        when(dealOfferHistoryRepository.countByCollaborationId(DEAL_ID)).thenReturn(3);
+
+        service.counter(
+                brandPrincipal,
+                DEAL_ID,
+                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null, null),
+                null);
+
+        assertEquals(4, capturedOfferRow().getSequenceNo());
+
+        // The lock is what makes count+1 safe, and doCounter does not otherwise take it: SPEC.md 2.6
+        // asserts all four write points already hold it, but only doReject does. recordOffer takes it
+        // itself, so this verify is the proof that the premise is true rather than assumed.
+        InOrder order = inOrder(collaborationRepository, dealOfferHistoryRepository);
+        order.verify(collaborationRepository).findByIdForUpdate(DEAL_ID);
+        order.verify(dealOfferHistoryRepository).countByCollaborationId(DEAL_ID);
+        order.verify(dealOfferHistoryRepository).save(any(DealOfferHistory.class));
+    }
+
+    /**
+     * A PENDING COUNTER draft owned by {@link #CREATOR_PROFILE_ID}, targeting the deal passed in. The
+     * collaboration id is the parameter because "does this draft target THIS deal" is the third of
+     * {@code meeraDraftedAuthorship}'s three conditions and needs both answers exercised.
+     */
+    private static MeeraDraft counterDraftOn(String collaborationId) {
+        return MeeraDraft.create(
+                MEERA_DRAFT_ID,
+                CREATOR_PROFILE_ID,
+                null,
+                collaborationId,
+                null,
+                null,
+                DraftKind.COUNTER,
+                null,
+                "How about 31,000?",
+                new BigDecimal("31000"),
+                null);
+    }
+
+    /**
+     * The creator-side counter harness, mirroring {@link #stubCounterCollaboration} for the other
+     * party. Modelled on {@code testCreatorCounterRecordsNoApplicationViewed}: {@code
+     * brandContext.resolveBillingRecipient} is left unstubbed so {@code notifyBidCountered} returns
+     * early, which is why {@code creatorProfileRepository.findByUserId} is stubbed by the CALLER here
+     * — on this path it is consumed only by the draft resolution under test.
+     */
+    private void stubCreatorCounterCollaboration() {
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndCreatorId(DEAL_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any())).thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(idempotencyService.executeOnce(anyString(), eq(CREATOR_USER_ID), eq("deal.counter"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+    }
+
+    /** The full stubbing one brand-side counter call needs, shared by the counter tests above. */
+    private void stubCounterCollaboration() {
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(campaignRepository.findById(CAMPAIGN_ID)).thenReturn(Optional.of(activeCampaign()));
+        when(collaborationRepository.save(any(Collaboration.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(dealMessageRepository.save(any(DealMessage.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(contractRepository.findByCollaborationIdOrderByVersionDescCreatedAtDesc(DEAL_ID))
+                .thenReturn(List.of());
+        when(escrowHoldRepository.hasEscrowForCollaboration(anyString(), any())).thenReturn(false);
+        when(dealMessageRepository.findFirstByCollaborationIdOrderByCreatedAtDesc(DEAL_ID))
+                .thenReturn(Optional.empty());
+        when(dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(DEAL_ID))
+                .thenReturn(List.of());
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(
+                                CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Creator")));
+        when(idempotencyService.executeOnce(anyString(), eq(WORKSPACE_ID), eq("deal.counter"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
     }
 }

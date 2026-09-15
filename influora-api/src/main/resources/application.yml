@@ -283,6 +283,16 @@ influora:
   # SecretsStartupValidator check its siblings already have.
   creator-copilot-ai:
     base-url: ${CREATOR_COPILOT_AI_BASE_URL:http://localhost:8000}
+    # Both timeouts are stated here rather than left to CreatorSuggestionAiProperties' Java field
+    # defaults, which is what they were until now. They are the whole latency budget of a creator's
+    # brief paste (MeeraBriefAiClient sets connect on the HttpClient and request on the HttpRequest),
+    # and a number that exists only as a field default cannot be turned down during an incident
+    # without a redeploy. Same values as the field defaults, so this changes nothing today; it makes
+    # them operable. CreatorBriefService no longer holds a JDBC connection across this call, so the
+    # cost of a hung provider is the paste and not the pool -- but 5+15 is still 20 seconds a creator
+    # waits, so treat it as a ceiling to tighten, not a target.
+    connect-timeout-seconds: ${CREATOR_COPILOT_AI_CONNECT_TIMEOUT_SECONDS:5}
+    request-timeout-seconds: ${CREATOR_COPILOT_AI_REQUEST_TIMEOUT_SECONDS:15}
   internal-service-token:
     # Kabir 2.2/2.4, MF-2, LB-2 — distinct secret from every other key (JWT/stream/R2/Razorpay).
     # Verifies X-Meera-Service-Token (aud=influora-internal, iss=meera-python, exp<=60s) and signs

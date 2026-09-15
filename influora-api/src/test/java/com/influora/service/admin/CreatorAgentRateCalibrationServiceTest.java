@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
+import com.influora.domain.enums.OfferActor;
 import com.influora.domain.enums.OfferEvent;
 import com.influora.repository.AuditLogEntryRepository;
 import com.influora.repository.CollaborationRepository;
@@ -71,7 +72,7 @@ class CreatorAgentRateCalibrationServiceTest {
                 .when(auditLogEntryRepository.findDetailJsonByEventTypeSince(anyString(), any()))
                 .thenReturn(List.of());
         lenient()
-                .when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(any(), any()))
+                .when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(any(), any(), any()))
                 .thenReturn(List.of());
     }
 
@@ -135,7 +136,7 @@ class CreatorAgentRateCalibrationServiceTest {
     @DisplayName("The meera_anchored_share is suppressed under the same floor - at n=1 it is exactly 0.0 or 1.0 and states an attribute of one identifiable deal")
     void shareIsSuppressedBelowTheFloorToo() {
         givenBand(nanoRow("2000", "ws-1", "co-1"));
-        when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(any(), any()))
+        when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(any(), any(), any()))
                 .thenReturn(List.of("co-1"));
 
         RateCalibrationTier nano = tier(service.getRateCalibration(), "NANO");
@@ -197,7 +198,7 @@ class CreatorAgentRateCalibrationServiceTest {
         // The repository method is the DISTINCT one by construction; this asserts the consuming
         // side does not re-introduce a row count by, say, counting a returned list with dupes.
         when(dealOfferHistoryRepository.findDistinctCollaborationIdsByEvent(
-                        any(), eq(OfferEvent.MEERA_COUNTER)))
+                        any(), eq(OfferEvent.MEERA_COUNTER), eq(OfferActor.CREATOR)))
                 .thenReturn(List.of("co-1", "co-1", "co-2"));
 
         RateCalibrationTier nano = tier(service.getRateCalibration(), "NANO");
