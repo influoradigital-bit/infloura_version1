@@ -88,7 +88,11 @@ public class WooCommerceIntegrationService {
 
         WooCommerceIntegration saved;
         if (existing.isPresent()) {
-            existing.get().rotateSecret(encrypted);
+            // F-0520/F-0766 — siteUrl MUST be threaded through here too: this branch is reached
+            // whenever a reconnect targets a DIFFERENT site than the row already holds (the lookup
+            // above is by workspaceId alone), and rotateSecret now requires it as a parameter
+            // precisely so this call cannot compile without it.
+            existing.get().rotateSecret(encrypted, siteUrl);
             saved = repository.save(existing.get());
         } else {
             WooCommerceIntegration entity =

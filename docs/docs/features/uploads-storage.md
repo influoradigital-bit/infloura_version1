@@ -30,7 +30,7 @@ Cleanup job → delete superseded/abandoned keys (dry-run default, escrow-guarde
 - Uploads are multipart methods on domain controllers (deliverables, portfolio) — **no generic UploadController**.
 
 ## Database
-`deliverables.files_json` (V37, active media metadata), `deliverable_metrics.proof_screenshot_r2_key` (V19), contract/invoice `pdf_r2_key`, creator cover key. `file_uploads` (V1) is orphaned. See [../database.md](../database.md).
+`deliverables.files_json` (V37, active media metadata), `deliverable_metrics.proof_screenshot_r2_key` (V19), contract/invoice `pdf_r2_key`, creator cover key. `file_uploads` (V1) is orphaned. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `POST /creator/deliverables/{id}/upload|proof`, `POST /me/portfolio/cover`, contract/invoice PDF download URLs. (Frontend `uploads.upload` → `POST /uploads` has **no backend controller**.)
@@ -69,5 +69,5 @@ Streaming uploads (never buffer whole file); presigned downloads offload to Clou
 
 ## Production Readiness
 - **Health**: 7/10 · **Completion**: ~78%
-- **Known issues**: `presignPut` is dead code (no client-PUT flow); `file_uploads` table orphaned; `src/lib/upload.ts` is mock; `POST /uploads` has no controller. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: `presignPut` is dead code (no client-PUT flow); `file_uploads` table orphaned; `src/lib/upload.ts` is mock; `POST /uploads` has no controller. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

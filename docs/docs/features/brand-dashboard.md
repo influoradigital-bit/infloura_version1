@@ -29,7 +29,7 @@ Aggregates many controllers — primarily `DashboardController` for the landing 
 Reads across `campaigns`, `collaborations`, `wallets`, `deliverables`, `notifications`, etc. No dedicated table.
 
 ## APIs
-`GET /dashboard/*` (KPIs) plus the per-feature endpoints in [../api.md](../api.md).
+`GET /dashboard/*` (KPIs) plus the per-feature endpoints [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "in [../api.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## AI
 The Meera workspace (`/brand/meera`) is embedded here; see [meera-ai.md](meera-ai.md).

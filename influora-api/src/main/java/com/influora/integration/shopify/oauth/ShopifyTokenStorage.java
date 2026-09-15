@@ -85,7 +85,11 @@ public class ShopifyTokenStorage {
         Optional<ShopifyIntegration> existing = repository.findByWorkspaceIdAndRevokedFalse(workspaceId);
 
         if (existing.isPresent()) {
-            existing.get().rotateToken(encrypted, scopesJson);
+            // F-0519 — shopDomain MUST be threaded through here too: this branch is reached
+            // whenever a reconnect targets a DIFFERENT store than the row already holds (the
+            // lookup above is by workspaceId alone), and rotateToken now requires it as a
+            // parameter precisely so this call cannot compile without it.
+            existing.get().rotateToken(encrypted, scopesJson, shopDomain);
             repository.save(existing.get());
         } else {
             ShopifyIntegration entity =

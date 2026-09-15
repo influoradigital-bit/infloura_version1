@@ -26,7 +26,7 @@ Admin edits fee config (optimistic-locked singleton) → new rate applies going 
 - **Services**: `PlatformFeeService` (`resolveCreatorFeeBps`, `split`, `deductAtRelease`), `BrandCampaignFeeService` (`resolveBrandFeeBps`, `chargeOnPublish`), `PlatformFeeAdminService`, `AmountDerivationService` (AI percent fee).
 
 ## Database
-`platform_fee_config` (V41/V42/V44 — **singleton `id='default'`**, `default_fee_bps=1500`, `brand_fee_bps=1000`, min/max, `version`). See [../database.md](../database.md).
+`platform_fee_config` (V41/V42/V44 — **singleton `id='default'`**, `default_fee_bps=1500`, `brand_fee_bps=1000`, min/max, `version`). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /brand/platform-fee`, `GET /creator/platform-fee`, `GET/PUT /admin/finance/fee-config` (+`/history`).

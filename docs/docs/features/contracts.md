@@ -27,7 +27,7 @@ Brand generates contract (milestones required) → total = Σ milestone.amount (
 - **Service**: `ContractService` (generate, recordSignature, recordSignatureForCreator, PDF).
 
 ## Database
-`contracts` (V10; `terms` stores a SHA-256 tamper hash, `pdf_r2_key`), `payment_milestones` (V10, +V52 release_condition — unmapped). See [../database.md](../database.md).
+`contracts` (V10; `terms` stores a SHA-256 tamper hash, `pdf_r2_key`), `payment_milestones` (V10, +V52 release_condition — unmapped). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `POST /contracts`, `GET /contracts`, `GET /contracts/unsigned` (creator), `GET /contracts/{id}`, `POST /contracts/{id}/sign` (Idempotency-Key), `GET /contracts/{id}/pdf-download-url`.
@@ -36,7 +36,7 @@ Brand generates contract (milestones required) → total = Σ milestone.amount (
 Not involved.
 
 ## Notifications
-`ContractSignedEvent` (both parties), `ContractReadyForEscrowEvent` (escrow-funding prompt — **note: this event currently has no listener**, see [../known-limitations.md](../known-limitations.md)).
+`ContractSignedEvent` (both parties), `ContractReadyForEscrowEvent` (escrow-funding prompt — [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0805-cross: this line said "currently has no listener" — false; `NotificationListener.on(ContractReadyForEscrowEvent)` (NotificationListener.java:376) handles it, consistent with notifications.md's corrected "all 34 have listeners"; also removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed]).
 
 ## Dependencies
 - **Depends on**: collaborations/deals (source), R2 (PDF), escrow (milestones fund/release).
@@ -66,5 +66,5 @@ Contract service tests cover generate/sign idempotency. Regression risks: total 
 
 ## Production Readiness
 - **Health**: 7/10 · **Completion**: ~80%
-- **Known issues**: `release_condition` (V52) unmapped on the entity; `ContractReadyForEscrowEvent` has no listener; brand-relay creator signature caveat.
+- **Known issues**: `release_condition` (V52) unmapped on the entity; [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0805-cross: this line also repeated "`ContractReadyForEscrowEvent` has no listener" — false, see Notifications section above]; brand-relay creator signature caveat.
 - **Last verified**: 2026-07-15

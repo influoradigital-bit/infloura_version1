@@ -28,13 +28,13 @@ Brand dashboard load → GET /brand/trendspark/nudge → pick best trend by them
 - **AI client**: `integration/ai/TrendSparkAiClient` (phrasing only, fail-open).
 
 ## Database
-`trends` (V51, n8n-owned), `snapsby_catalog_video` (V51, seeded), `nudge_log` (V51, the flywheel), `brand_profiles` (V11, `theme_tags` + `last_posted_at`). See [../database.md](../database.md).
+`trends` (V51, n8n-owned), `snapsby_catalog_video` (V51, seeded), `nudge_log` (V51, the flywheel), `brand_profiles` (V11, `theme_tags` + `last_posted_at`). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /brand/trendspark/nudge` (200/204), `POST /brand/trendspark/nudge/{id}/click`, `.../purchase`.
 
 ## AI
-`TrendSparkAiClient` phrases the nudge copy (never invents facts; price always from `SnapsbyCatalogVideo.priceInr`; hallucinated video ids dropped). Fail-open to a deterministic templated fallback (`messageSource=FALLBACK`). See [../ai.md](../ai.md).
+`TrendSparkAiClient` phrases the nudge copy (never invents facts; price always from `SnapsbyCatalogVideo.priceInr`; hallucinated video ids dropped). Fail-open to a deterministic templated fallback (`messageSource=FALLBACK`). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../ai.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## Notifications
 The nudge itself is the in-dashboard surface; `nudge_log` tracks impression→click→purchase.

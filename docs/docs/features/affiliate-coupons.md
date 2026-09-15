@@ -28,7 +28,7 @@ Brand creates coupon (per campaign+creator) → shopper uses code at checkout
 - **Jobs**: `AffiliateEarningReconciliationJob` (hourly), `AffiliateSettlementJob` (monthly).
 
 ## Database
-`coupon_codes` (V24), `coupon_redemptions` (V24), `affiliate_earnings` (V28), `affiliate_settlement_batches` (V28). See [../database.md](../database.md).
+`coupon_codes` (V24), `coupon_redemptions` (V24), `affiliate_earnings` (V28), `affiliate_settlement_batches` (V28). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /creator/coupons`, `GET /creator/affiliate-earnings`, coupon creation via `POST /campaigns/{id}/coupons`, store webhooks feed redemption.
@@ -69,5 +69,5 @@ Affiliate/redemption tests. Regression risks: commission math, workspace-scoped 
 
 ## Production Readiness
 - **Health**: 5/10 · **Completion**: ~65%
-- **Known issues**: the advertised **synchronous accrual does not exist** — earnings are created only by the hourly backfill job (≥30min lag; WARNs every run); settlement is **not period-bounded** (sweeps entire backlog, misstating the month); currency hardcoded `INR`; settlement is internal-ledger only (no real disbursement). See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: the advertised **synchronous accrual does not exist** — earnings are created only by the hourly backfill job (≥30min lag; WARNs every run); settlement is **not period-bounded** (sweeps entire backlog, misstating the month); currency hardcoded `INR`; settlement is internal-ledger only (no real disbursement). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

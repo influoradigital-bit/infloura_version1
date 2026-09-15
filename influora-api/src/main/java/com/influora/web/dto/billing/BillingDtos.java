@@ -56,7 +56,6 @@ public final class BillingDtos {
             Integer trackedCreatorLimit,
             int analyticsViewsUsed,
             Integer analyticsViewsLimit,
-            int exportsUsed,
             boolean exportEnabled,
             int aiCreditsRemaining,
             int aiCreditsMonthlyAllotment,

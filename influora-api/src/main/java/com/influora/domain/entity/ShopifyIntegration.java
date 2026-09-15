@@ -21,6 +21,28 @@ import org.hibernate.type.SqlTypes;
  * inbound webhook to resolve a workspace -- see that controller's class javadoc for the full trust
  * model (the HMAC signature proves the request came from Shopify for *some* shop; this table's
  * {@code UNIQUE(shop_domain)} is what maps that shop to the correct workspace).
+ *
+ * <p><b>F-0519 -- rotate updates {@code shopDomain} in place, it does not revoke-and-replace.</b>
+ * {@code ShopifyTokenStorage#storeToken} looks up the existing row by {@code workspaceId} alone (a
+ * workspace has at most one active store connection), so a brand disconnecting store A and
+ * reconnecting to store B lands on the SAME row via the existing-row branch even though the shop
+ * is different. Before this fix {@link #rotateToken} took only the token + scopes, so that branch
+ * rotated the secret and silently left {@code shopDomain} pointing at store A forever -- API calls
+ * kept hitting A (401, since the token is B's), and webhooks from B could never resolve a
+ * workspace via {@code UNIQUE(shop_domain)} 404ing there too, while the connect response and the
+ * UI both reported B. The fix threads {@code shopDomain} through {@code rotateToken} as a required
+ * parameter (a caller that forgets it does not compile) rather than revoking the row and inserting
+ * a fresh one, because: (1) the workspace-scoped invariant this class already documents means at
+ * most one row can ever be active per workspace, so there is nothing a fresh id/row buys that an
+ * in-place update does not; (2) no foreign key anywhere in this schema references
+ * {@code shopify_integrations.id}, so nothing downstream depends on the id surviving a reconnect,
+ * but nothing depends on it churning either; (3) revoke-and-replace would still need to handle the
+ * same {@code UNIQUE(shop_domain)} collision case (reconnecting to a shop some OTHER workspace
+ * previously connected and later revoked) that an in-place update has to handle -- swapping
+ * update-in-place for insert does not remove that edge case, it just moves it, so there is no
+ * correctness reason to prefer it here. That collision case itself is NOT handled by this fix (see
+ * the gate's NOT CHECKED block) -- it is pre-existing and orthogonal to F-0519's defect, which is
+ * specifically that the identifier was never rewritten at all, not that the rewrite can conflict.
  */
 @Entity
 @Table(name = "shopify_integrations")
@@ -100,10 +122,16 @@ public class ShopifyIntegration {
         return updatedAt;
     }
 
-    /** Replaces the encrypted token + scopes on reconnect/re-auth (does not change id/workspace/shop). */
-    public void rotateToken(String encryptedAccessToken, String grantedScopesJson) {
+    /**
+     * Replaces the encrypted token + scopes + {@code shopDomain} on reconnect/re-auth (does not
+     * change id/workspace). {@code shopDomain} is a required parameter, not optional, so a caller
+     * cannot compile a rotate call that forgets it -- see this class's javadoc on why the row is
+     * updated in place rather than revoked-and-replaced (F-0519).
+     */
+    public void rotateToken(String encryptedAccessToken, String grantedScopesJson, String shopDomain) {
         this.encryptedAccessToken = encryptedAccessToken;
         this.grantedScopesJson = grantedScopesJson;
+        this.shopDomain = shopDomain;
         this.revoked = false;
         touch();
     }

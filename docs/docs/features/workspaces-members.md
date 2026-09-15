@@ -31,7 +31,7 @@ OWNER/ADMIN deactivates member → member inactive (guarded for sole owner)
 - **DTOs**: `web/dto/workspace/*`.
 
 ## Database
-`workspaces` (V2, +V36 suspension/KYC/verification), `workspace_members` (V2), `workspace_member_invites` (V59), KYC docs (V3). See [../database.md](../database.md).
+`workspaces` (V2, +V36 suspension/KYC/verification), `workspace_members` (V2), `workspace_member_invites` (V59), KYC docs (V3). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /workspaces/slug-check` (public), `GET /workspaces/me` (any active member), `PATCH /workspaces/me` (OWNER/ADMIN — brand Settings > General > Workspace Information: name/email/websiteUrl persist; `phone` persists — a real nullable column, written via `WorkspaceService.java:122` calling `Workspace#updatePhone` after a format check [CORRECTED 2026-09-06, doc-stale-doc, F-0555: this said the field was dropped silently]), `GET /workspaces/members`, `POST /workspaces/members/invite`, `GET/POST /workspaces/invites`, `POST /workspaces/members/{id}/deactivate`.
@@ -69,6 +69,6 @@ Covered by workspace/member service tests. Regression risks: sole-owner guard, s
 
 ## Production Readiness
 - **Health**: 8/10 · **Completion**: ~85%
-- **Known issues**: seat-limit enforcement depends on subscription state, which is affected by the subscription-webhook gap (see [../known-limitations.md](../known-limitations.md)).
+- **Known issues**: seat-limit enforcement depends on subscription state, which is affected by the subscription-webhook gap [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "see [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Missing**: richer invite acceptance UX in places.
 - **Last verified**: 2026-07-15

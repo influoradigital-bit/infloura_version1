@@ -25,7 +25,7 @@ Collaboration COMPLETED → each party posts one review (stars + text) → visib
 - **Service**: `ReviewService`.
 
 ## Database
-`reviews` (V43; `reviewer_type`, `stars` CHECK 1–5, `UNIQUE(collaboration_id, reviewer_type)`), `content_flags` (V43 widens to include REVIEW). See [../database.md](../database.md).
+`reviews` (V43; `reviewer_type`, `stars` CHECK 1–5, `UNIQUE(collaboration_id, reviewer_type)`), `content_flags` (V43 widens to include REVIEW). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `POST /brand/reviews`, `GET /brand/reviews/received`, `POST /brand/reviews/{id}/flag`; mirrored `/creator/reviews`.

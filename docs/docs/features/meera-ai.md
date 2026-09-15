@@ -30,13 +30,13 @@ Brand chats → Spring charges 1 credit + returns a 60s ES256 stream token
 - **Security**: `InternalServiceTokenFilter`, `InternalRequestVerifier`, `OnBehalfAuthResolver`, `NonceCache`, `SpringJwksKeyService`.
 
 ## Database
-`ai_conversations` (V12, ≤1 ACTIVE per workspace), `ai_messages` (V12), `brand_ai_credits` (V14/V16), `meera_tool_calls` (V14, idempotency ledger), `campaign_intents` (V13). See [../database.md](../database.md).
+`ai_conversations` (V12, ≤1 ACTIVE per workspace), `ai_messages` (V12), `brand_ai_credits` (V14/V16), `meera_tool_calls` (V14, idempotency ledger), `campaign_intents` (V13). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `POST /meera/turn`, `POST /internal/meera/{show_creators,calculate_budget,create_campaign,request_payment,confirm_launch,messages}`.
 
 ## AI (this is the AI feature)
-See [../ai.md](../ai.md) for the full model. Five tools / four tiers (R/D/C/Forbidden). Money safety: `create_campaign` leaves budget null; `request_payment` stages `PENDING_CONFIRM` with 1% drift rejection; `confirm_launch` requires DB-verified FUNDED escrow and charges the publish fee transactionally.
+The full model is documented separately from this feature summary [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../ai.md]" link — docs/docs/ contains only features/, so that file never existed]. Five tools / four tiers (R/D/C/Forbidden). Money safety: `create_campaign` leaves budget null; `request_payment` stages `PENDING_CONFIRM` with 1% drift rejection; `confirm_launch` requires DB-verified FUNDED escrow and charges the publish fee transactionally.
 
 ## Notifications
 Meera-related events (credits reset, site analyzed, campaign recommended) route in-app.
@@ -70,5 +70,5 @@ Tier/validator tests; executor idempotency tests. Regression risks: tier gate, e
 
 ## Production Readiness
 - **Health**: 7/10 · **Completion**: ~80% (safety model strong; LLM lives in Python)
-- **Known issues**: `MeeraSessionService` persists a placeholder assistant echo (real text from Python); JWKS/AI config not in committed yml (must inject; eager beans throw on blank keys). See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: `MeeraSessionService` persists a placeholder assistant echo (real text from Python); JWKS/AI config not in committed yml (must inject; eager beans throw on blank keys). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

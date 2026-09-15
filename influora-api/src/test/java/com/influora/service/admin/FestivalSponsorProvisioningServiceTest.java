@@ -40,6 +40,7 @@ import com.influora.repository.WorkspaceMemberRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.security.JwtService;
+import com.influora.service.billing.SubscriptionService;
 import com.influora.service.notification.event.PasswordResetEvent;
 import com.influora.web.dto.admin.FestivalSponsorProvisioningDtos.ExistingSponsorAccountResponse;
 import com.influora.web.dto.admin.FestivalSponsorProvisioningDtos.LinkExistingSponsorResponse;
@@ -83,6 +84,7 @@ class FestivalSponsorProvisioningServiceTest {
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private JwtService jwtService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private SubscriptionService subscriptionService;
     @Mock private HttpServletRequest httpRequest;
 
     private AuthPrincipal principal;
@@ -105,7 +107,8 @@ class FestivalSponsorProvisioningServiceTest {
                         passwordResetTokenRepository,
                         passwordEncoder,
                         jwtService,
-                        eventPublisher);
+                        eventPublisher,
+                        subscriptionService);
         Field f = FestivalSponsorProvisioningService.class.getDeclaredField("webBaseUrl");
         f.setAccessible(true);
         f.set(service, "http://localhost:5173");
@@ -160,6 +163,7 @@ class FestivalSponsorProvisioningServiceTest {
                         workspaceRepository,
                         workspaceMemberRepository,
                         walletRepository,
+                        subscriptionService,
                         campaignRepository,
                         passwordResetTokenRepository,
                         eventPublisher,
@@ -169,6 +173,9 @@ class FestivalSponsorProvisioningServiceTest {
         order.verify(workspaceRepository).save(any(Workspace.class));
         order.verify(workspaceMemberRepository).save(any(WorkspaceMember.class));
         order.verify(walletRepository).save(any(Wallet.class));
+        // F-4 (SUBSCRIPTION-MODEL-REDESIGN-0912.md) — Free-tier row provisioned in the same
+        // transaction as the workspace, before the campaign is created.
+        order.verify(subscriptionService).getOrCreateFreeSubscription(anyString());
         order.verify(campaignRepository).save(any(Campaign.class));
         order.verify(passwordResetTokenRepository).save(any(PasswordResetToken.class));
         order.verify(eventPublisher).publishEvent(any(PasswordResetEvent.class));
@@ -188,6 +195,8 @@ class FestivalSponsorProvisioningServiceTest {
         assertEquals(response.workspaceId(), enquiry.getProvisionedWorkspaceId());
         assertEquals(response.campaignId(), enquiry.getProvisionedCampaignId());
         assertNotNull(enquiry.getProvisionedAt());
+
+        verify(subscriptionService).getOrCreateFreeSubscription(response.workspaceId());
 
         ArgumentCaptor<Campaign> campaignCaptor = ArgumentCaptor.forClass(Campaign.class);
         verify(campaignRepository).save(campaignCaptor.capture());

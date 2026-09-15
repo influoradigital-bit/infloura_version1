@@ -24,6 +24,13 @@ import java.time.Instant;
  * delivery) to resolve which integration's secret to verify against -- see that controller's class
  * javadoc for the full trust model (this table's {@code UNIQUE(site_url)} is what maps a claimed
  * site to the correct workspace + secret).
+ *
+ * <p><b>F-0520/F-0766 -- rotate updates {@code siteUrl} in place, it does not revoke-and-replace.</b>
+ * Same class of defect and same fix rationale as {@link ShopifyIntegration}'s F-0519 javadoc:
+ * {@code WooCommerceIntegrationService#connect} looks up the existing row by {@code workspaceId}
+ * alone, so reconnecting to a different site landed on the same row via the existing-row branch
+ * while {@link #rotateSecret} (before this fix) only took the secret, silently leaving
+ * {@code siteUrl} pointing at the old site. Fixed by making {@code siteUrl} a required parameter.
  */
 @Entity
 @Table(name = "woocommerce_integrations")
@@ -88,9 +95,15 @@ public class WooCommerceIntegration {
         return updatedAt;
     }
 
-    /** Replaces the encrypted webhook secret on reconnect/rotate (does not change id/workspace/site). */
-    public void rotateSecret(String encryptedWebhookSecret) {
+    /**
+     * Replaces the encrypted webhook secret + {@code siteUrl} on reconnect/rotate (does not change
+     * id/workspace). {@code siteUrl} is required, not optional, so a caller cannot compile a rotate
+     * call that forgets it -- same F-0520/F-0766 discipline and same in-place-update rationale as
+     * {@link ShopifyIntegration#rotateToken}.
+     */
+    public void rotateSecret(String encryptedWebhookSecret, String siteUrl) {
         this.encryptedWebhookSecret = encryptedWebhookSecret;
+        this.siteUrl = siteUrl;
         this.revoked = false;
         touch();
     }

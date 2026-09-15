@@ -25,8 +25,6 @@ import com.influora.web.dto.billing.BillingDtos.PlanStatusResponse;
 import com.influora.web.dto.billing.BillingDtos.SubscriptionDto;
 import com.influora.web.dto.billing.BillingDtos.UsageSummaryResponse;
 import jakarta.validation.Valid;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -106,7 +104,15 @@ public class BillingController {
         return ResponseEntity.ok(ApiResponse.ok(invoices));
     }
 
-    /** Current-billing-cycle usage meters: tracked creators, analytics views, exports, AI credits. */
+    /**
+     * Current-billing-cycle usage meters: tracked creators, analytics views, AI credits. ({@code
+     * exportEnabled} on the response is a plan capability flag, not a meter — export is gated by
+     * {@code PlanGateInterceptor}, never counted.)
+     *
+     * <p>{@code periodStart} MUST come from {@link UsageCounterService#getCurrentPeriodStart}, the
+     * same anchor the counts beside it were read against — not a re-derived calendar month, which
+     * is only the no-subscription fallback and is wrong for every Razorpay/comp/renewed workspace.
+     */
     @GetMapping("/usage")
     public ResponseEntity<ApiResponse<UsageSummaryResponse>> getUsage(
             @AuthenticationPrincipal AuthPrincipal principal) {
@@ -114,11 +120,14 @@ public class BillingController {
         String workspaceId = workspace.getId();
         Plan plan = subscriptionService.getActivePlanForWorkspace(workspaceId);
 
+        // The period the counts below are actually read against (subscription currentPeriodStart
+        // when a Subscription row exists, calendar month only as the no-subscription fallback).
+        String periodStart = usageCounterService.getCurrentPeriodStart(workspaceId).toString();
+
         int trackedCreatorsUsed =
                 usageCounterService.getUsageForCurrentPeriod(workspaceId, UsageMetric.TRACKED_CREATOR);
         int analyticsViewsUsed =
                 usageCounterService.getUsageForCurrentPeriod(workspaceId, UsageMetric.CREATOR_ANALYTICS_VIEW);
-        int exportsUsed = usageCounterService.getUsageForCurrentPeriod(workspaceId, UsageMetric.EXPORT);
 
         int aiCreditsRemaining = 0;
         int aiCreditsMonthlyAllotment = plan.getAiMonthlyAllotment();
@@ -132,12 +141,11 @@ public class BillingController {
 
         UsageSummaryResponse response =
                 new UsageSummaryResponse(
-                        LocalDate.now(ZoneOffset.UTC).withDayOfMonth(1).toString(),
+                        periodStart,
                         trackedCreatorsUsed,
                         plan.getTrackedCreatorLimit(),
                         analyticsViewsUsed,
                         plan.getCreatorAnalyticsMonthlyLimit(),
-                        exportsUsed,
                         plan.isExportEnabled(),
                         aiCreditsRemaining,
                         aiCreditsMonthlyAllotment,

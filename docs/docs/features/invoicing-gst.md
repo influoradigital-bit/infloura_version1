@@ -35,7 +35,7 @@ Escrow release → Doc#2 (creatorInvoiceCode/FY/seq) + Doc#3 creator-leg (INF/CM
 - **PDF**: OpenPDF (`com.lowagie.text`).
 
 ## Database
-`invoices` (V54/V20260715170000), `campaign_service_invoices` (V20260715130000), `platform_commission_invoices` (V20260715140000), `invoice_number_sequences` (V20260715150000), `hsn_sac_codes` (V20260715160000), creator tax identity (V20260715120000). See [../database.md](../database.md).
+`invoices` (V54/V20260715170000), `campaign_service_invoices` (V20260715130000), `platform_commission_invoices` (V20260715140000), `invoice_number_sequences` (V20260715150000), `hsn_sac_codes` (V20260715160000), creator tax identity (V20260715120000). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /billing/{campaign-invoices,commission-invoices}` (+`/{id}/pdf`), mirrored `/creator/*`, `GET /billing/invoices/{id}/pdf` (Doc#1).
@@ -44,7 +44,7 @@ Escrow release → Doc#2 (creatorInvoiceCode/FY/seq) + Doc#3 creator-leg (INF/CM
 Not involved.
 
 ## Notifications
-`InvoiceReadyEvent` (**no listener currently** — see [../known-limitations.md](../known-limitations.md)).
+`InvoiceReadyEvent` ([CORRECTED 2026-09-13, doc-stale-doc-claim, F-0805-cross: this line said "no listener currently" — false; `NotificationListener.on(InvoiceReadyEvent)` (NotificationListener.java:592) handles it, consistent with notifications.md's corrected "all 34 have listeners"; also removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed]).
 
 ## Dependencies
 - **Depends on**: escrow (Doc#2/#3-creator), campaign publish (Doc#3-brand), subscription webhook (Doc#1), creator tax identity.
@@ -74,5 +74,5 @@ Invoice/GST split tests. Regression risks: FY boundary (Apr-1 IST), intra/inter-
 
 ## Production Readiness
 - **Health**: 6/10 · **Completion**: ~70% (structurally complete, not filing-ready)
-- **Known issues**: the split is real, not always IGST — `GstSplitUtil.java:28` compares supplier and customer GSTIN state codes and renders CGST+SGST when they match; it happens to yield IGST today only because the placeholder company GSTIN carries a different state code [CORRECTED 2026-09-06, doc-stale-doc, F-0547]; `company.state-code` is dead (split uses GSTIN prefixes); Doc#2 emits no GST for registered creators; Doc#3 split recomputed at render (not persisted); HSN/SAC placeholders pending CA; `CreatorTaxRegistrationStatus` stored but unused. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: the split is real, not always IGST — `GstSplitUtil.java:28` compares supplier and customer GSTIN state codes and renders CGST+SGST when they match; it happens to yield IGST today only because the placeholder company GSTIN carries a different state code [CORRECTED 2026-09-06, doc-stale-doc, F-0547]; `company.state-code` is dead (split uses GSTIN prefixes); Doc#2 emits no GST for registered creators; Doc#3 split recomputed at render (not persisted); HSN/SAC placeholders pending CA; `CreatorTaxRegistrationStatus` stored but unused. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

@@ -34,7 +34,7 @@ A separate mini-app under `src/admin/*`:
 `admin_users`, `admin_refresh_tokens`, `admin_audit_logs`, `content_flags`, `disputes`, `support_tickets`(+messages), `platform_fee_config`, plus read access across the platform.
 
 ## APIs
-`/admin/*` groups — see [../api.md](../api.md). Notable: `POST /admin/disputes/{id}/resolve`, `PUT /admin/finance/fee-config`, `POST /admin/creators/{id}/reviewApplication|suspend|reinstate`, `PUT /admin/brands/{id}/verifyKyc`.
+`/admin/*` groups [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "see [../api.md]" link — docs/docs/ contains only features/, so that file never existed]. Notable: `POST /admin/disputes/{id}/resolve`, `PUT /admin/finance/fee-config`, `POST /admin/creators/{id}/reviewApplication|suspend|reinstate`, `PUT /admin/brands/{id}/verifyKyc`.
 
 ## AI
 Not directly; admins review AI-scored content flags.

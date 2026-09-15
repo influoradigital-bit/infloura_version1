@@ -1,6 +1,7 @@
 package com.influora.domain.entity;
 
 import com.influora.domain.enums.BillingCycle;
+import com.influora.domain.enums.Entitlement;
 import com.influora.domain.enums.PlanCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -9,6 +10,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.OptionalInt;
 
 /**
  * Subscription pricing tiers (FREE/PRO) — defines limits, feature gates, and fee overrides.
@@ -121,6 +123,28 @@ public class Plan {
 
     public Integer getCreatorAnalyticsMonthlyLimit() {
         return creatorAnalyticsMonthlyLimit;
+    }
+
+    /**
+     * The read surface for CAPACITY/METERED {@link Entitlement} limits (redesign doc §3.1) —
+     * {@code empty} means unlimited. Deliberately does NOT cover {@code FLAG}/{@code RATE}
+     * entitlements ({@code EXPORT}/{@code CAMPAIGN_TEMPLATES}-style booleans, {@code
+     * BRAND_FEE_BPS}-style rates aren't "limits"; use {@link #isExportEnabled()} / {@link
+     * #isCampaignTemplatesEnabled()} / {@link #getFeeBps()} for those) — calling this with one of
+     * those throws, loudly, rather than silently returning a meaningless value.
+     *
+     * <p>The old per-field getters ({@link #getSeatLimit()}, {@link
+     * #getCreatorAnalyticsMonthlyLimit()}, {@link #getAiMonthlyAllotment()}) are kept, not removed:
+     * they are the plan state {@link Entitlement#limitIn} reads.
+     *
+     * <p><b>This method holds no logic of its own</b> — it delegates to {@link
+     * Entitlement#limitIn(Plan)}, which is where the entitlement→plan-state mapping lives, so this
+     * convenience surface and the resolution the production gates actually run can never diverge.
+     * See that method's javadoc for why production resolves through the enum rather than through
+     * here.
+     */
+    public OptionalInt limitFor(Entitlement entitlement) {
+        return entitlement.limitIn(this);
     }
 
     public boolean isExportEnabled() {

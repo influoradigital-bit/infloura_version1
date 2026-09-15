@@ -66,10 +66,48 @@ import org.springframework.transaction.annotation.Transactional;
  * again silently.
  *
  * <ul>
- *   <li>{@link #createFreeSubscription} — writes a {@code FREE}/{@code ACTIVE} row, reached from
- *       {@code GET /billing/plan} via {@link #getOrCreateFreeSubscription}. No payment risk: Free
- *       is the zero-cost baseline plan, the caller is scoped to their own workspace via {@code
- *       BrandContextService.requireBrandWorkspace}, and this path can never write {@code PRO}.
+ *   <li>{@link #createFreeSubscription} — writes a {@code FREE}/{@code ACTIVE} row. It is
+ *       {@code private}, and {@link #getOrCreateFreeSubscription} is its only caller. That method
+ *       has three callers: {@code BillingController#getPlan} ({@code GET /billing/plan}), which
+ *       provisions lazily on first read, plus — F-4, {@code
+ *       wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md} — {@code AuthService#brandRegister} and
+ *       {@code FestivalSponsorProvisioningService#provision}, which each call the same idempotent
+ *       method eagerly, inside the same transaction that creates the workspace.
+ *       <p><b>Where the {@code WorkspaceType.BRAND} guard actually is.</b> Not in this class.
+ *       Neither {@link #getOrCreateFreeSubscription} nor {@link #createFreeSubscription} inspects
+ *       the workspace type — both take a bare {@code workspaceId} {@code String} and never load
+ *       the {@code Workspace} at all. The {@code workspace.getType() == WorkspaceType.BRAND}
+ *       check exists only at the two eager call sites, and at both of them the workspace was
+ *       constructed a few statements earlier by {@code Workspace.newBrand(...)}, which
+ *       hard-assigns {@code type = BRAND}. The guard is therefore unconditionally true wherever
+ *       it appears today: it excludes nothing now and is purely forward-defensive, against a
+ *       future {@code Workspace.newAgency(...)}-shaped factory or a creation path that lets the
+ *       type be chosen (the same-shaped bug {@code AICreditResetJob}'s class javadoc records for
+ *       {@code BrandAiCredit}).
+ *       <p><b>An AGENCY workspace CAN be provisioned a Free row.</b> An earlier version of this
+ *       bullet claimed the guard meant one never could; that was false, and this is the
+ *       correction. The lazy path carries no workspace-type check: {@code
+ *       BillingController#getPlan} resolves its workspace through {@code
+ *       BrandContextService#requireBrandWorkspace}, which checks the USER's {@code
+ *       UserType.BRAND}, that user's soft-deletion, and {@code Workspace#isSuspended} — never
+ *       {@code Workspace#getType}. An {@code AGENCY} workspace is reachable in practice, too:
+ *       {@code OnboardingService#saveBrandCompany} passes the client-supplied {@code
+ *       BrandCompanyRequest.workspaceType} (declared {@code @NotNull WorkspaceType}, so {@code
+ *       AGENCY} is an accepted value) straight into {@code Workspace#applyCompanyDetails}, so a
+ *       brand user can flip their own workspace to {@code AGENCY} and then hit {@code
+ *       GET /billing/plan}. What is true is narrower than the old claim: the two eager
+ *       workspace-creation paths never provision an {@code AGENCY} workspace, because the only
+ *       workspace they can reach is one {@code Workspace.newBrand(...)} just built.
+ *       <p>The one-time backfill for workspaces created before F-4 (migration {@code
+ *       V20260912120000__backfill_free_subscriptions.sql}) carries its own {@code
+ *       WHERE w.type = 'BRAND'} predicate. Whether that predicate excludes any real row — or
+ *       instead skips pre-existing workspaces the backfill exists to repair — is OPEN at the
+ *       time of writing and needs production data no build environment here can reach ({@code
+ *       SELECT type, COUNT(*) FROM workspaces GROUP BY type}). This bullet asserts only that the
+ *       predicate is present in that file; it does not vouch for it.
+ *       <p>No payment risk regardless of caller or workspace type: {@link
+ *       #createFreeSubscription} hard-codes {@code PlanService#getFreePlan} and {@code
+ *       SubscriptionStatus.ACTIVE}, so this path can never write {@code PRO}.
  *   <li>{@link #cancel(String)} — reached from {@code POST /billing/cancel}. Sets {@code
  *       cancelAtPeriodEnd=true} on the caller's own workspace subscription; status is
  *       intentionally left unchanged (still {@code ACTIVE} until the period actually elapses —

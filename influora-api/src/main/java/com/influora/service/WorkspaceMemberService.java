@@ -10,6 +10,7 @@ import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.entity.WorkspaceMemberInvite;
+import com.influora.domain.enums.Entitlement;
 import com.influora.domain.enums.MemberInviteStatus;
 import com.influora.domain.enums.MemberRole;
 import com.influora.integration.msg91.Msg91EmailClient;
@@ -408,6 +409,15 @@ public class WorkspaceMemberService {
                 new WorkspaceSummary(workspace.getId(), workspace.getName(), workspace.getSlug(), member.getRole().name()));
     }
 
+    /**
+     * Entitlement: {@link Entitlement#SEATS} (CAPACITY). The limit compared against is NOT read
+     * here — {@link EntitlementService#requireCapacity(Entitlement, Plan, long,
+     * java.util.function.Supplier)} resolves it from the {@link Entitlement#SEATS} constant passed
+     * below, via {@link Entitlement#limitIn(Plan)}. That is the whole point: this method cannot
+     * hand the gate a limit of its own choosing (it used to pass {@code
+     * OptionalInt.of(plan.getSeatLimit())}, which meant one edit here — {@code OptionalInt.empty()}
+     * — silently disabled seat enforcement with every gate still green).
+     */
     private void enforceSeatLimit(String workspaceId) {
         Plan plan = subscriptionService.getActivePlanForWorkspace(workspaceId);
         long activeMembers = workspaceMemberRepository.countByWorkspaceIdAndActiveTrue(workspaceId);
@@ -417,13 +427,16 @@ public class WorkspaceMemberService {
         long pendingInvites =
                 workspaceMemberInviteRepository.countByWorkspaceIdAndStatusAndExpiresAtAfter(
                         workspaceId, MemberInviteStatus.PENDING, Instant.now());
-        if (activeMembers + pendingInvites >= plan.getSeatLimit()) {
-            throw new ApiException(
-                    "UPGRADE_REQUIRED",
-                    "Workspace is at its seat limit (" + plan.getSeatLimit() + ") for the " + plan.getName()
-                            + " plan — upgrade to add more members",
-                    HttpStatus.PAYMENT_REQUIRED);
-        }
+        EntitlementService.requireCapacity(
+                Entitlement.SEATS,
+                plan,
+                activeMembers + pendingInvites,
+                () ->
+                        "Workspace is at its seat limit ("
+                                + Entitlement.SEATS.limitIn(plan).orElseThrow()
+                                + ") for the "
+                                + plan.getName()
+                                + " plan — upgrade to add more members");
     }
 
     /**

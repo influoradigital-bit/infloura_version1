@@ -25,7 +25,7 @@ Order placed with a creator's coupon → WooCommerce webhook → resolve site �
 - **Services/clients**: `integration/woocommerce/webhook/WooCommerceWebhookSignatureVerifier`, `WooCommerceSiteUrl` (normalize).
 
 ## Database
-`woocommerce_integrations` (V29; `site_url` unique, encrypted webhook secret). See [../database.md](../database.md).
+`woocommerce_integrations` (V29; `site_url` unique, encrypted webhook secret). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `POST /woocommerce/connect`, `POST /webhooks/woocommerce` (public), `GET /integrations/store/status`, `DELETE /integrations/store/disconnect`.

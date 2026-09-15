@@ -217,6 +217,50 @@ class MetaTokenStorageTest {
     }
 
     @Test
+    @DisplayName(
+            "F-0816 regression: storeToken's existing-row branch rewrites igBusinessAccountId when"
+                    + " the brand/creator reconnects to a DIFFERENT Instagram business account, not"
+                    + " just the token")
+    void testStoreTokenRotatesToDifferentIgBusinessAccountId() {
+        String oldIgAccountId = "17841400000000077";
+        String newIgAccountId = "17841400000000999";
+        String newToken = "new-token-for-different-ig-account";
+        Instant newExpiry = Instant.now().plus(Duration.ofDays(60));
+
+        MetaOAuthToken existing =
+                MetaOAuthToken.builder()
+                        .id(TOKEN_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .creatorProfileId(CREATOR_PROFILE_ID)
+                        .igBusinessAccountId(oldIgAccountId)
+                        .encryptedAccessToken("old-encrypted")
+                        .expiresAt(Instant.now().plus(Duration.ofDays(1)))
+                        .grantedScopesJson("[\"instagram_basic\"]")
+                        .lastRefreshedAt(Instant.now().minus(Duration.ofDays(30)))
+                        .build();
+
+        // The lookup is by (workspaceId, creatorProfileId) alone -- it matches regardless of which
+        // IG business account the row currently points at, which is exactly why reconnecting to a
+        // different account lands on this same existing-row branch.
+        when(repository.findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse(WORKSPACE_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(existing));
+
+        storage.storeToken(CREATOR_PROFILE_ID, WORKSPACE_ID, newToken, newExpiry, List.of("instagram_basic"), newIgAccountId);
+
+        verify(repository).save(tokenCaptor.capture());
+        MetaOAuthToken saved = tokenCaptor.getValue();
+
+        assertEquals(TOKEN_ID, saved.getId(), "same row, not a duplicate insert");
+        assertEquals(
+                newIgAccountId,
+                saved.getIgBusinessAccountId(),
+                "F-0816: the row must now point at the NEW Instagram business account, not the one"
+                        + " it was originally connected to -- otherwise the new token is paired with"
+                        + " the FIRST account's id forever");
+        assertFalse(saved.getEncryptedAccessToken().equals("old-encrypted"));
+    }
+
+    @Test
     @DisplayName("encrypt/decrypt: round-trip produces original plaintext")
     void testEncryptDecryptRoundTrip() {
         String plainToken = "my-secret-token-12345";

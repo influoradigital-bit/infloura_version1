@@ -26,7 +26,7 @@ Admin resolve (BRAND/CREATOR/SPLIT + notes [+split %]) → settle frozen escrow 
 - **Service**: `DisputeService` (openDispute, resolveDispute); escrow settlement via `EscrowService.admin*ForDispute`.
 
 ## Database
-`disputes` (V45, +V53 `version` optimistic lock). No `workspace_id` — scoped via `collaboration → campaign → workspace`. See [../database.md](../database.md).
+`disputes` (V45, +V53 `version` optimistic lock). No `workspace_id` — scoped via `collaboration → campaign → workspace`. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `POST /deals/{dealId}/disputes`, `GET /brand/disputes` (+`/list`), `GET /creator/disputes`, `GET /admin/disputes`, `POST /admin/disputes/{id}/resolve`.

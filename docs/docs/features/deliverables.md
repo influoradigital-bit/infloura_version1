@@ -16,7 +16,7 @@ PENDING → upload (DRAFT, v++) → submit (SUBMITTED / RESUBMITTED)
   → brand approve (APPROVED) or revise (REVISION_REQUESTED, loop) → mark posted (POSTED)
   → report metrics (METRICS_REPORTED) → verification job (VERIFIED)
 ```
-`DeliverableStatus` (10): PENDING, DRAFT, SUBMITTED, REVISION_REQUESTED, RESUBMITTED, APPROVED, REJECTED (unreached), POSTED, METRICS_REPORTED, VERIFIED. `DeliverableType`: Instagram/YouTube/Facebook/TikTok variants.
+`DeliverableStatus` (10): PENDING, DRAFT, SUBMITTED, REVISION_REQUESTED, RESUBMITTED, APPROVED, REJECTED ([CORRECTED 2026-09-13, doc-stale-doc-claim, F-0581: reachable — `BrandDeliverableController.reject` (BrandDeliverableController.java:64-70) calls `BrandDeliverableService.reject`, and `DeliverableViewer.tsx:334` calls `api.deliverables.reject`]), POSTED, METRICS_REPORTED, VERIFIED. `DeliverableType`: Instagram/YouTube/Facebook/TikTok variants.
 
 ## Frontend
 - **Brand**: `components/brand/deliverables/DeliverableViewer`, `hooks/brand/useDeliverableDetail`, deal-deliverables-tab.
@@ -27,10 +27,10 @@ PENDING → upload (DRAFT, v++) → submit (SUBMITTED / RESUBMITTED)
 - **Services**: `CreatorDeliverableService`, `BrandDeliverableService`, `DeliverableMetricService`, `service/verification/DeliverableVerificationService`, `PostUrlIdentifier`.
 
 ## Database
-`deliverables` (V37, `files_json` holds R2 keys, `slot_index` unique per collab), `deliverable_metrics` (V19, +V20260713120000 verification: `source`, `platform_media_id`, `verified_at`). See [../database.md](../database.md).
+`deliverables` (V37, `files_json` holds R2 keys, `slot_index` unique per collab), `deliverable_metrics` (V19, +V20260713120000 verification: `source`, `platform_media_id`, `verified_at`). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
-Creator: `GET /creator/deliverables`, `POST .../upload|submit|metrics|proof|mark-posted`, `GET .../status`. Brand: `GET /deliverables/{id}`, `POST .../approve|revise`. Legacy: `PUT /deliverables/{milestoneId}/metrics`.
+Creator: `GET /creator/deliverables`, `POST .../upload|submit|metrics|proof|mark-posted`, `GET .../status`. Brand: `GET /deliverables/{id}`, `POST .../approve|revise|reject` ([CORRECTED 2026-09-13, doc-stale-doc-claim, F-0581: `reject` route added, `BrandDeliverableController.java:64-70`]). Legacy: `PUT /deliverables/{milestoneId}/metrics`.
 
 ## AI
 Not directly; verification uses Meta Instagram insights (not the LLM).
@@ -67,5 +67,5 @@ Streaming uploads (never buffers whole file); verification job offset schedule; 
 
 ## Production Readiness
 - **Health**: 8/10 · **Completion**: ~80%
-- **Known issues**: no YouTube verification; `REJECTED` status never entered; per-post `media_metrics` polling not wired.
+- **Known issues**: no YouTube verification; [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0581: `REJECTED` status IS reachable — see DeliverableStatus list above]; [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0608: per-post `media_metrics` polling IS wired — `MetricsPollingJob.pollRecentMedia` fetches/maps/saves rows (MetricsPollingJob.java:278-322), gated by `influora.meta.media-metrics-enabled` (default true)].
 - **Last verified**: 2026-07-15

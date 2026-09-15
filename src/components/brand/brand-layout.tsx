@@ -18,6 +18,7 @@ import {
   MessageCircle,
   KanbanSquare,
   FileText,
+  CreditCard,
   BarChart3,
   Star,
   AlertTriangle,
@@ -132,6 +133,11 @@ const navGroups: BrandNavGroup[] = [
     label: 'Payments',
     items: [
       { label: 'Wallet', href: '/brand/wallet', icon: Wallet },
+      // T-BILLNAV-0913: previously reachable only via a navigate() button buried in
+      // Settings (brand-settings.tsx:838) — no brand ever found the plan comparison,
+      // usage meters, or Upgrade CTA. Beside Wallet because a brand looking for their
+      // plan looks where their money already lives, not under Settings.
+      { label: 'Billing', href: '/brand/settings/billing', icon: CreditCard },
       // The contract is the document the money is released against — same errand.
       { label: 'Contracts', href: '/brand/contracts', icon: FileText },
     ],

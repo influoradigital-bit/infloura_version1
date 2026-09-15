@@ -115,7 +115,14 @@ public class MetaTokenStorage {
                 repository.findByWorkspaceIdAndCreatorProfileIdAndRevokedFalse(workspaceId, creatorProfileId);
 
         if (existing.isPresent()) {
-            existing.get().rotateToken(encrypted, expiresAt, scopesJson);
+            // F-0816 — igBusinessAccountId MUST be threaded through here too: this branch is
+            // reached whenever a reconnect (of this brand-owned row) targets a DIFFERENT Instagram
+            // business account than the row already holds (the lookup above is by
+            // workspaceId+creatorProfileId alone), and rotateToken now requires it as a parameter
+            // precisely so this call cannot compile without it. A plain refresh that hasn't
+            // changed accounts passes the row's own existing id back through (see
+            // MetaTokenRefreshService, which reads it off the row before calling this method).
+            existing.get().rotateToken(encrypted, expiresAt, scopesJson, igBusinessAccountId);
             repository.save(existing.get());
         } else {
             MetaOAuthToken entity =

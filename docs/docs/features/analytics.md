@@ -29,13 +29,13 @@ Brand views analytics (capped) / Creator views self analytics / deliverable metr
 - **Jobs**: `MetricsPollingJob`, `AudienceDemographicsJob`, `ScoreCalculationJob`.
 
 ## Database
-`creator_metrics` (V21), `media_metrics` (V21/V26), `audience_demographics` (V25), `creator_scores` (V22), `deliverable_metrics` (V19), usage counters (V16/V54/V58). See [../database.md](../database.md).
+`creator_metrics` (V21), `media_metrics` (V21/V26), `audience_demographics` (V25), `creator_scores` (V22), `deliverable_metrics` (V19), usage counters (V16/V54/V58). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /analytics/creators/{id}/{metrics,scores,demographics}`, `GET /creator/analytics/me/{metrics,scores,demographics,media}`.
 
 ## AI
-Scores are computed by pure-function scoring services (not the LLM). Brand-safety (GARM) would come from `BrandSafetyAiClient` but is **not wired** into the job (columns NULL).
+Scores are computed by pure-function scoring services (not the LLM). Brand-safety (GARM) comes from `BrandSafetyAiClient` via `BrandSafetyScoreService`, called from `ScoreCalculationJob` (ScoreCalculationJob.java:344) [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0585: this is wired, not absent — it is gated OFF by default behind `influora.brand-safety-scoring.enabled` (BrandSafetyScoringProperties.java), so the 3 columns stay NULL until that flag is turned on].
 
 ## Notifications
 None.
@@ -68,5 +68,5 @@ Scoring + analytics tests. Regression risks: cap dedup, score math, empty-shape 
 
 ## Production Readiness
 - **Health**: 6/10 · **Completion**: ~70%
-- **Known issues**: brand-safety scoring not wired (NULL); `audienceMatch` hardcoded 50; per-post `media_metrics` polling not wired; only latest snapshot available to the score job (growth-spike signal never fires); no YouTube. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0585: brand-safety scoring is wired but disabled by default (see AI section above), not "not wired"]; `audienceMatch` hardcoded 50; [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0608: per-post `media_metrics` polling IS wired — `MetricsPollingJob.pollRecentMedia` (MetricsPollingJob.java:278-322), gated by `influora.meta.media-metrics-enabled` (default true)]; only latest snapshot available to the score job (growth-spike signal never fires); no YouTube. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

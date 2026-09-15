@@ -28,7 +28,7 @@ Creator withdraw → creator → clearing (queues RazorpayX payout)
 - **Services**: `WalletService`, `WalletLedgerService` (**the sole ledger writer**), `WalletTopUpService`.
 
 ## Database
-`wallets` (V2; `owner_type` USER/WORKSPACE, `balance`, `escrow_balance`, unique per owner), `wallet_transactions` (V8; append-only DEBIT/CREDIT legs sharing `group_id`, per-leg `idempotency_key` unique), `wallet_topups` (V20260709155921). See [../database.md](../database.md).
+`wallets` (V2; `owner_type` USER/WORKSPACE, `balance`, `escrow_balance`, unique per owner), `wallet_transactions` (V8; append-only DEBIT/CREDIT legs sharing `group_id`, per-leg `idempotency_key` unique), `wallet_topups` (V20260709155921). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /wallet/balance`, `GET /wallet` (summary), `POST /wallet/topup` (Idempotency-Key), `POST /wallet/withdraw`, `GET /wallet/transactions`.
@@ -69,5 +69,5 @@ Ledger idempotency/locking tests. Regression risks: replay-match, deadlock order
 
 ## Production Readiness
 - **Health**: 8/10 · **Completion**: ~85% (core ledger solid)
-- **Known issues**: **`wallets.escrow_balance` is never written** — brand dashboard `escrowLocked` always 0.00 (funds actually live in the clearing wallet). See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: **`wallets.escrow_balance` is never written** — brand dashboard `escrowLocked` always 0.00 (funds actually live in the clearing wallet). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

@@ -30,7 +30,7 @@ Renewal/dunning jobs advance/halt periods
 - **Jobs**: `SubscriptionDunningJob`, `SubscriptionRenewalResetJob`, `AICreditResetJob`.
 
 ## Database
-`plans` (V54/V55 seed/V57), `subscriptions` (V54/V56/V63), `invoices` (V54, Doc#1 GST), `usage_counters` (V54), `usage_counter_details` (V58). See [../database.md](../database.md).
+`plans` (V54/V55 seed/V57), `subscriptions` (V54/V56/V63), `invoices` (V54, Doc#1 GST), `usage_counters` (V54), `usage_counter_details` (V58). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /billing/{plan,invoices,usage}`, `GET /billing/invoices/{id}/pdf`, `POST /billing/checkout`, `POST /billing/cancel`, `GET/POST /admin/billing/{subscriptions,metrics,comp,override}`.
@@ -39,7 +39,7 @@ Renewal/dunning jobs advance/halt periods
 Plan sets AI credit allotments (Free 100 / Pro 400) consumed by Meera; separate from the `UsageCounter` plan-cap mechanism.
 
 ## Notifications
-`SubscriptionHaltedEvent`, `SubscriptionPaymentFailedEvent` (**both now have after-commit listeners** in `NotificationListener.java` — they send billing email to the resolved billing address) [CORRECTED 2026-09-06, doc-stale-doc, F-0557: this line claimed neither had one — see [../known-limitations.md](../known-limitations.md)).
+`SubscriptionHaltedEvent`, `SubscriptionPaymentFailedEvent` (**both now have after-commit listeners** in `NotificationListener.java` — they send billing email to the resolved billing address) [CORRECTED 2026-09-06, doc-stale-doc, F-0557: this line claimed neither had one] [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "see [../known-limitations.md]" link that F-0557's own correction had quoted with a live target — docs/docs/ contains only features/, so that file never existed].
 
 ## Dependencies
 - **Depends on**: Razorpay subscriptions, workspaces, plan gating.
@@ -70,5 +70,5 @@ Subscription service tests. Regression risks: webhook idempotency, plan resoluti
 
 ## Production Readiness
 - **Health**: 5/10 · **Completion**: ~65%
-- **Known issues**: **subscription `*` webhooks are not routed** in `RazorpayWebhookController` — real Pro purchases never create a local ACTIVE row; `cancel` is unreachable for real customers; ACTIVE→PAST_DUE never triggers. The renewal/dunning jobs are effectively the only state mutators. `comp_expires_at` not enforced; `/billing/usage` period may diverge from counter period. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: **subscription `*` webhooks are not routed** in `RazorpayWebhookController` — real Pro purchases never create a local ACTIVE row; `cancel` is unreachable for real customers; ACTIVE→PAST_DUE never triggers. The renewal/dunning jobs are effectively the only state mutators. `comp_expires_at` not enforced; `/billing/usage` period may diverge from counter period. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

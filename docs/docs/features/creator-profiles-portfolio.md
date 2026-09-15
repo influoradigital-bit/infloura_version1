@@ -27,7 +27,7 @@ Admin: review application (APPROVED default) / suspend / reinstate
 - **Services**: `CreatorProfileService`, `service/portfolio/PortfolioService`, `CreatorInvoiceCodeService` (tax code).
 
 ## Database
-`creator_profiles` (V6, +V32 username/portfolio, +V38 moderation, +V20260715120000 tax identity), `content_flags` (moderation). See [../database.md](../database.md).
+`creator_profiles` (V6, +V32 username/portfolio, +V38 moderation, +V20260715120000 tax identity), `content_flags` (moderation). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET/PATCH /me/creator-profile`, `GET /portfolio/{username}` (public), `POST /portfolio/{username}/contact` (public), `GET/PATCH /me/portfolio`, `POST /me/portfolio/{sync,cover}`, `GET /me/portfolio/analytics`.
@@ -36,7 +36,7 @@ Admin: review application (APPROVED default) / suspend / reinstate
 Not directly (content may be scored by brand-safety indirectly).
 
 ## Notifications
-`PortfolioContactEvent` on public contact form (**note: no listener currently**, see [../known-limitations.md](../known-limitations.md)).
+`PortfolioContactEvent` on public contact form ([CORRECTED 2026-09-13, doc-stale-doc-claim, F-0592: has a listener — `NotificationListener.on(PortfolioContactEvent)` (NotificationListener.java:442-455), `@Async @TransactionalEventListener(phase = AFTER_COMMIT)`]; [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link that pointed a reader at a nonexistent file — docs/docs/ contains only features/, so that file never existed]).
 
 ## Dependencies
 - **Depends on**: collaborations/reviews (portfolio content), R2 (cover), Meta (audience cities).
@@ -59,12 +59,12 @@ Edit: PATCH /me/creator-profile → username normalize/uniqueness + rate-range c
 Self-scoped edits; public portfolio exposes only creator-approved data (visibility settings). Cover stored as R2 key, returned as presigned GET. Note the recurring scoping trap: `collaborations.creator_id → users.id` (not `creator_profiles.id`).
 
 ## Performance
-Portfolio stats computed on read (bounded to 12 completed collaborations); `@Cacheable` invoice code lookups.
+Portfolio stats computed on read [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0590: the 12-cap is on the displayed collab cards only (`PortfolioService.buildCollabs`, PortfolioService.java:827, `.limit(12)`) — `computeStats`/`computeOnTimeRate` (PortfolioService.java:775,891-920) run over the full unbounded `completed` list]; `@Cacheable` invoice code lookups.
 
 ## Testing
 Profile/portfolio service tests. Regression risks: username uniqueness, completeness scoring, on-time-rate computation.
 
 ## Production Readiness
 - **Health**: 8/10 · **Completion**: ~82%
-- **Known issues**: `PortfolioContactEvent` has no listener; some creator profile surfaces mock-backed.
+- **Known issues**: [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0592: `PortfolioContactEvent` has a listener — see Notifications section above]; some creator profile surfaces mock-backed.
 - **Last verified**: 2026-07-15

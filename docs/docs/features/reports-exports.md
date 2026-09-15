@@ -16,7 +16,7 @@ Brand (Pro) → request campaign export (csv|pdf) → server builds report from 
 ```
 
 ## Frontend
-- **API**: export method on the campaigns resource (though **no live frontend caller currently exists**).
+- **API**: export method on the campaigns resource ([CORRECTED 2026-09-13, doc-stale-doc-claim, F-0805a: this line said "no live frontend caller currently exists" — false; has a real frontend caller, `brand-campaign-detail.tsx:604` `handleExportReport`, wired to CSV/PDF buttons at `:1092,1098`; see Known issues below]).
 
 ## Backend
 - **Controller**: `ReportExportController` (`GET /campaigns/{id}/export`).
@@ -62,5 +62,5 @@ Export service tests. Regression risks: plan gate, CSV/PDF formatting.
 
 ## Production Readiness
 - **Health**: 6/10 · **Completion**: ~70%
-- **Known issues**: **no frontend caller**; CSV + PDF only (no XLSX); boolean plan-gate only (the `UsageMetric.EXPORT` counter isn't incremented here). See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0611: has a real frontend caller — `brand-campaign-detail.tsx:604` `handleExportReport`, wired to CSV/PDF buttons at `:1092,1098`, with a 402 mapped to an upgrade-plan toast at `:619-624`]; CSV + PDF only (no XLSX); boolean plan-gate only (the `UsageMetric.EXPORT` counter isn't incremented here). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

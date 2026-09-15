@@ -30,7 +30,7 @@ Creator login → onboarding (socials → profile → tour) → dashboard/deals
 `creator_profiles`, `collaborations`, `deliverables`, `wallets`, `meta_oauth_tokens`, `reviews`, `coupon_codes`, `affiliate_earnings`, etc.
 
 ## APIs
-Creator-scoped endpoints across [../api.md](../api.md) (deals, deliverables, analytics, wallet, coupons, affiliate, reviews, disputes, portfolio, meta OAuth).
+Creator-scoped endpoints [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "across [../api.md]" link — docs/docs/ contains only features/, so that file never existed] (deals, deliverables, analytics, wallet, coupons, affiliate, reviews, disputes, portfolio, meta OAuth).
 
 ## AI
 Not directly (Meera is brand-side). Creator content is scored by AI brand-safety indirectly.

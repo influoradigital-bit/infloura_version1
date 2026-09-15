@@ -26,7 +26,7 @@ External system posts signed conversion/redemption webhook → verify → count 
 - **Services**: `service/tracking/{RedemptionService,ConversionTrackingService,CampaignTrackingService}`, `integration/tracking/webhook/ConversionWebhookSignatureVerifier`.
 
 ## Database
-`conversion_webhook_secrets` (V31, per-workspace server-generated secret), `utm_campaigns` (V23, counters + attributed revenue), `coupon_codes`/`coupon_redemptions` (V24). See [../database.md](../database.md).
+`conversion_webhook_secrets` (V31, per-workspace server-generated secret), `utm_campaigns` (V23, counters + attributed revenue), `coupon_codes`/`coupon_redemptions` (V24). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `POST /webhooks/redemption`, `POST /webhooks/conversion`, `GET /track/click/{utmCampaignId}`, `POST /webhook-secret/generate`, `DELETE /webhook-secret`, `GET /integrations/store/status`, `DELETE /integrations/store/disconnect`.
@@ -66,5 +66,5 @@ Tracking/redemption tests. Regression risks: workspace-scoped idempotency, signa
 
 ## Production Readiness
 - **Health**: 6/10 · **Completion**: ~72%
-- **Known issues**: store webhooks do not feed UTM (documented cut — the ULID never rides an order object); affiliate accrual from redemptions is delayed (see [affiliate-coupons.md](affiliate-coupons.md)). See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: store webhooks do not feed UTM (documented cut — the ULID never rides an order object); affiliate accrual from redemptions is delayed (see [affiliate-coupons.md](affiliate-coupons.md)). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

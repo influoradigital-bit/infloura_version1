@@ -25,7 +25,7 @@ Shopper checks out with a creator's code → Shopify orders/paid webhook → ver
 - **Services/clients**: `integration/shopify/oauth/{ShopifyOAuthService,ShopifyOAuthStateStore}`, `integration/shopify/webhook/ShopifyWebhookSignatureVerifier`.
 
 ## Database
-`shopify_integrations` (V27; `shop_domain` unique, encrypted non-expiring token, scopes). See [../database.md](../database.md).
+`shopify_integrations` (V27; `shop_domain` unique, encrypted non-expiring token, scopes). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /shopify/oauth/authorize`, `GET /shopify/oauth/callback`, `POST /webhooks/shopify` (public), `GET /integrations/store/status`, `DELETE /integrations/store/disconnect`.

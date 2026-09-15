@@ -28,7 +28,7 @@ Dispute → freeze (FUNDED→FROZEN) → admin release/refund/split
 - **Service**: `EscrowService` (deriveFundAmount, initiateFund, confirmFunded, release, refund, admin dispute settlement).
 
 ## Database
-`escrow_holds` (V9; `amount` gross, `status`, `hold_txn_id`, `release_txn_id`, `idempotency_key`), `payment_milestones` (V10). See [../database.md](../database.md).
+`escrow_holds` (V9; `amount` gross, `status`, `hold_txn_id`, `release_txn_id`, `idempotency_key`), `payment_milestones` (V10). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `POST /wallet/escrow/fund` (Idempotency-Key, no amount — derived), `GET /wallet/escrow/{id}`, `POST /wallet/escrow/release`, `POST /wallet/escrow/refund`, `POST /wallet/escrow/payout`.
@@ -69,5 +69,5 @@ Escrow release/refund/split tests. Regression risks: fee split, dispute gate, id
 
 ## Production Readiness
 - **Health**: 7/10 · **Completion**: ~82%
-- **Known issues**: `release_condition` (V52) unmapped — release gates only on dispute + FUNDED; escrow-release net vs RazorpayX payout gross mismatch (see [payouts.md](payouts.md)); `escrow_balance` field never written. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: `release_condition` (V52) unmapped — release gates only on dispute + FUNDED; escrow-release net vs RazorpayX payout gross mismatch (see [payouts.md](payouts.md)); `escrow_balance` field never written. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

@@ -26,13 +26,13 @@ Brand → Discover → search/filter (niche, city, followers, rate, engagement, 
 - **Services**: `CreatorDiscoveryService` (search/facets/invite/save/featured/suggest/similar/public-profile), `CreatorProfileSpecifications` (null-safe JPA criteria), scoring services (`service/scoring/*`).
 
 ## Database
-`creator_profiles` (V6, +V32), `platform_stats` (V6), `saved_creators` (V6), `featured_creators` (V20260709163000), `creator_scores` (V22), seed creators (V7). See [../database.md](../database.md).
+`creator_profiles` (V6, +V32), `platform_stats` (V6), `saved_creators` (V6), `featured_creators` (V20260709163000), `creator_scores` (V22), seed creators (V7). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /creators`, `/creators/search` (+facets), `/creators/featured`, `POST /creators/suggestions`, `GET /creators/{username}/similar`, `GET /creators/{id}` / `/profile/{usernameOrId}`, `POST /creators/{id}/save`, `POST /creators/{id}/invite`.
 
 ## AI
-`suggest` is heuristic (keyword niche inference), **not** the LLM. Displayed scores (quality/fake-follower/rate) come from `ScoreCalculationJob` (computed daily); brand-safety score is currently NULL (not wired).
+`suggest` is heuristic (keyword niche inference), **not** the LLM. Displayed scores (quality/fake-follower/rate) come from `ScoreCalculationJob` (computed daily); brand-safety score is currently NULL [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0585: not because it is unwired — `ScoreCalculationJob` calls `BrandSafetyScoreService` (ScoreCalculationJob.java:344) — but because `influora.brand-safety-scoring.enabled` defaults to false].
 
 ## Notifications
 Invite creates a `Collaboration` (INVITED) → `creator.proposal_received`-style notification downstream.
@@ -66,5 +66,5 @@ Discovery service tests. Regression risks: spec composition, saved-state scoping
 
 ## Production Readiness
 - **Health**: 8/10 · **Completion**: ~82%
-- **Known issues**: brand-safety score not wired (NULL); `audienceMatch` in quality score hardcoded; suggestions are heuristic, not LLM.
+- **Known issues**: [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0585: brand-safety score is wired, just off by default — see AI section above]; `audienceMatch` in quality score hardcoded; suggestions are heuristic, not LLM.
 - **Last verified**: 2026-07-15

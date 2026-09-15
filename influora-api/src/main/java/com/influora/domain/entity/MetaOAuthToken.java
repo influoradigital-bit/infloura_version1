@@ -27,6 +27,11 @@ import org.hibernate.type.SqlTypes;
  * never match a null-workspace row — this is enforced by the query itself, not just true of every
  * current caller). See {@code MetaTokenStorage} for the creator-owned method pair and Kabir gate
  * finding F-1 for the revoke-before-insert discipline this nullability requires.
+ *
+ * <p><b>F-0816.</b> The brand-owned path ({@code MetaTokenStorage#storeToken}) mutates this row in
+ * place on reconnect rather than revoke-and-replace (unlike the creator-owned {@code
+ * storeCreatorToken} overloads, which always revoke-then-insert and so never had this defect
+ * class) — see {@link #rotateToken}'s javadoc for the fix.
  */
 @Entity
 @Table(name = "meta_oauth_tokens")
@@ -164,11 +169,25 @@ public class MetaOAuthToken {
         return updatedAt;
     }
 
-    /** Replaces the encrypted token + expiry on refresh (does not change id/creator/workspace). */
-    public void rotateToken(String encryptedAccessToken, Instant expiresAt, String grantedScopesJson) {
+    /**
+     * Replaces the encrypted token + expiry + scopes + {@code igBusinessAccountId} on
+     * refresh/reconnect (does not change id/creator/workspace). {@code igBusinessAccountId} is
+     * required, not optional -- before this fix (F-0816) this method had no way to receive it at
+     * all, so {@code MetaTokenStorage#storeToken}'s existing-row branch always rotated the token
+     * while silently keeping whatever Instagram business account id the row already had. A creator
+     * (or, on the brand-owned path this method serves, a brand) reconnecting to a DIFFERENT
+     * Instagram business account kept the FIRST account's id paired with the new token. A caller
+     * that already has the correct value to preserve (e.g. a plain token refresh, which does not
+     * change which IG account is linked) passes the row's own existing
+     * {@link #getIgBusinessAccountId()} back through -- see {@code MetaTokenRefreshService}, which
+     * already does exactly that.
+     */
+    public void rotateToken(
+            String encryptedAccessToken, Instant expiresAt, String grantedScopesJson, String igBusinessAccountId) {
         this.encryptedAccessToken = encryptedAccessToken;
         this.expiresAt = expiresAt;
         this.grantedScopesJson = grantedScopesJson;
+        this.igBusinessAccountId = igBusinessAccountId;
         this.lastRefreshedAt = Instant.now();
         touch();
     }

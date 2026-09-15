@@ -29,10 +29,10 @@ Campaign types (`CampaignIntentType`): **HYPE** (awareness), **DIRECT** (convers
 - **Services**: `CampaignService`, `CampaignValidator`, `CreatorCampaignService`, `CampaignTemplateService`, `BrandCampaignFeeService` (publish fee), `IntegrationHealthService` (DIRECT store gate).
 
 ## Database
-`campaigns` (V4, +V30 type, +V50 commission_rate), `campaign_intents` (V13), `campaign_templates` (V20260714150000, 4 seeded SYSTEM presets), `collaborations` (V6). See [../database.md](../database.md).
+`campaigns` (V4, +V30 type, +V50 commission_rate), `campaign_intents` (V13), `campaign_templates` (V20260714150000, 4 seeded SYSTEM presets), `collaborations` (V6). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
-`GET/POST /campaigns`, `GET/PATCH/DELETE /campaigns/{id}`, `POST /campaigns/{id}/duplicate`, `GET /campaigns/{id}/analytics`, `GET/POST/DELETE /campaign-templates`, creator browse/apply, admin list. See [../api.md](../api.md).
+`GET/POST /campaigns`, `GET/PATCH/DELETE /campaigns/{id}`, `POST /campaigns/{id}/duplicate`, `GET /campaigns/{id}/analytics`, `GET/POST/DELETE /campaign-templates`, creator browse/apply, admin list. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../api.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## AI
 Meera can **draft** a campaign (`create_campaign`, D-tier) — creates a DRAFT campaign + `CampaignIntent` with **budget null** (money not AI-writable), and later **launch** it (`confirm_launch`, C-tier) after DB-verified funded escrow. See [meera-ai.md](meera-ai.md).
@@ -55,7 +55,7 @@ Publish: PATCH /campaigns/{id} status=ACTIVE → CampaignService.update (findByI
 ```
 
 ## Error Handling
-`WORKSPACE_NOT_VERIFIED` (403), `CAMPAIGN_NOT_EDITABLE`/`NOT_DELETABLE` (409), `NO_STORE_INTEGRATION` (409, DIRECT), `INSUFFICIENT_WALLET_BALANCE_FOR_PUBLISH` (402), `CAMPAIGN_NOT_OPEN`/`APPLICATION_DEADLINE_PASSED`/`ALREADY_APPLIED` (409, creator apply), `SYSTEM_TEMPLATE_IMMUTABLE` (400).
+`WORKSPACE_NOT_VERIFIED` (403), `CAMPAIGN_NOT_EDITABLE`/`NOT_DELETABLE` (409), `NO_STORE_INTEGRATION` (409, DIRECT — [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0570: thrown in `CampaignService.create` (CampaignService.java:179-183), before the DRAFT row is ever persisted, not at publish; `update` has no equivalent check because `campaignType` is immutable post-creation (CampaignService.java:276)]), `INSUFFICIENT_WALLET_BALANCE_FOR_PUBLISH` (402), `CAMPAIGN_NOT_OPEN`/`APPLICATION_DEADLINE_PASSED`/`ALREADY_APPLIED` (409, creator apply), `SYSTEM_TEMPLATE_IMMUTABLE` (400).
 
 ## Security
 Multi-tenant scoping (`findByIdAndWorkspaceId`); private/invite-only campaigns hidden from non-invited creators (404); creator DTOs omit brand-contact/internal metrics.

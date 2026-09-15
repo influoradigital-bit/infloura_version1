@@ -25,6 +25,7 @@ import com.influora.repository.WorkspaceMemberRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.security.JwtService;
+import com.influora.service.billing.SubscriptionService;
 import com.influora.service.notification.event.PasswordResetEvent;
 import com.influora.web.dto.admin.FestivalSponsorProvisioningDtos.ExistingSponsorAccountResponse;
 import com.influora.web.dto.admin.FestivalSponsorProvisioningDtos.LinkExistingSponsorResponse;
@@ -142,6 +143,7 @@ public class FestivalSponsorProvisioningService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final ApplicationEventPublisher eventPublisher;
+    private final SubscriptionService subscriptionService;
 
     @Value("${influora.web-base-url}")
     private String webBaseUrl;
@@ -158,7 +160,8 @@ public class FestivalSponsorProvisioningService {
             PasswordResetTokenRepository passwordResetTokenRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            SubscriptionService subscriptionService) {
         this.adminContext = adminContext;
         this.adminAuditLogService = adminAuditLogService;
         this.festivalEnquiryRepository = festivalEnquiryRepository;
@@ -171,6 +174,7 @@ public class FestivalSponsorProvisioningService {
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.eventPublisher = eventPublisher;
+        this.subscriptionService = subscriptionService;
     }
 
     @Transactional
@@ -270,6 +274,18 @@ public class FestivalSponsorProvisioningService {
                     "An account with this email already exists — this cannot be attached to an"
                             + " existing account automatically",
                     HttpStatus.CONFLICT);
+        }
+
+        // F-4 (SUBSCRIPTION-MODEL-REDESIGN-0912.md) — same eager Free-tier provisioning as
+        // AuthService#brandRegister, in the same transaction as this workspace's creation, for the
+        // same reason: a sponsor who never opens billing settings must not fall back to a
+        // calendar-month usage anchor (UsageCounterService#resolvePeriodStart). Placed after the
+        // try/catch above so a hypothetical failure here is never mis-attributed to the
+        // EMAIL_ALREADY_REGISTERED translation. Guarded on WorkspaceType.BRAND for the identical
+        // defensive reason given there — Workspace.newBrand() above always constructs BRAND, so
+        // this is always true today.
+        if (workspace.getType() == WorkspaceType.BRAND) {
+            subscriptionService.getOrCreateFreeSubscription(workspaceId);
         }
 
         String campaignId = Ulids.newUlid();

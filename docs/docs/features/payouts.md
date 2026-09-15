@@ -27,7 +27,7 @@ Razorpay payout.processed/reversed webhook → confirm (intended)
 - **Client**: `integration/razorpay/RazorpayXClient` (raw HttpClient, HTTP Basic, `POST /payouts`, IMPS).
 
 ## Database
-`payment_milestones` (holds payout state — `idempotency_key`, `markPayoutQueued`), `creator_bank_accounts` (V47/V49/V62, encrypted, 24h cool-down), `payouts` (V48 — **dead code**). See [../database.md](../database.md).
+`payment_milestones` (holds payout state — `idempotency_key`, `markPayoutQueued`), `creator_bank_accounts` (V47/V49/V62, encrypted, 24h cool-down), `payouts` (V48 — **dead code**). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `POST /wallet/escrow/payout` (Idempotency-Key, no amount), `POST /wallet/withdraw`, `POST /webhooks/razorpay` (`payout.processed`/`reversed`).
@@ -66,6 +66,6 @@ Payout validation tests; `CreatorBankAccountService` is tested but unrouted.
 
 ## Production Readiness
 - **Health**: 4/10 · **Completion**: ~55% (**most incomplete money area**)
-- **Known issues**: `payouts` table/entity/repository are **dead code** (state on milestones); `confirmExecuted` is a **no-op** (payouts never leave `queued`, reversals invisible); live payout passes the **internal user id as `fund_account_id`** (placeholder — `RazorpayFundAccountService` never called); creator-facing bank-instrument endpoints EXIST and are called by the creator wallet page — `WalletController.java:191` (GET masked list), `:207` (POST add), `:223` (PUT promote-to-primary) [CORRECTED 2026-09-06, doc-stale-doc, F-0546]; escrow-release net vs payout **gross** amount mismatch. Works today only because RazorpayX `isConfigured()` is false in dev. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: `payouts` table/entity/repository are **dead code** (state on milestones); `confirmExecuted` is a **no-op** (payouts never leave `queued`, reversals invisible); live payout passes the **internal user id as `fund_account_id`** (placeholder — `RazorpayFundAccountService` never called); creator-facing bank-instrument endpoints EXIST and are called by the creator wallet page — `WalletController.java:191` (GET masked list), `:207` (POST add), `:223` (PUT promote-to-primary) [CORRECTED 2026-09-06, doc-stale-doc, F-0546]; escrow-release net vs payout **gross** amount mismatch. Works today only because RazorpayX `isConfigured()` is false in dev. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Missing**: bank-account HTTP routes, real fund-account provisioning, payout status reconciliation.
 - **Last verified**: 2026-07-15

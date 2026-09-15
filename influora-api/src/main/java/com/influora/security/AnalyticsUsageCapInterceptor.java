@@ -2,7 +2,8 @@ package com.influora.security;
 
 import com.influora.common.ApiException;
 import com.influora.domain.entity.Plan;
-import com.influora.domain.enums.UsageMetric;
+import com.influora.domain.enums.Entitlement;
+import com.influora.service.EntitlementService;
 import com.influora.service.billing.UsageCounterService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -79,14 +80,6 @@ public class AnalyticsUsageCapInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        Integer monthlyLimit = plan.getCreatorAnalyticsMonthlyLimit();
-        if (monthlyLimit == null) {
-            // Pro / unlimited — no cap to enforce, so no dedup bookkeeping is needed either.
-            // Tracked for observability only, same as before this fix.
-            usageCounterService.incrementUsage(workspaceId, UsageMetric.CREATOR_ANALYTICS_VIEW, 1);
-            return true;
-        }
-
         // Per-creator-lookup dedup (Task 22 Flag #1 fix, Rohan CFO ruling in SHARED_CONTEXT.md
         // 2026-07-14): "1 creator-analytics deep-dive/month" (SUBSCRIPTION-BILLING-PLAN.md §1.4/
         // §2) means one distinct creator looked at, not one API call. A brand's 4 sub-endpoint
@@ -95,15 +88,22 @@ public class AnalyticsUsageCapInterceptor implements HandlerInterceptor {
         // creatorId) and only counts a genuinely NEW creator against the limit, atomically and
         // race-safely (see UsageCounterService#recordCreatorLookup javadoc). Quota is never
         // consumed on a rejected request — recordCreatorLookup checks the limit BEFORE recording.
+        // Entitlement: CREATOR_ANALYTICS_VIEWS (METERED). This interceptor reads NEITHER the
+        // metric NOR the limit: EntitlementService.consume derives both from the Entitlement
+        // constant below (UsageMetric.CREATOR_ANALYTICS_VIEW via meteredMetricFor, the cap via
+        // Entitlement.limitIn(plan) -> plan.getCreatorAnalyticsMonthlyLimit(), empty == Pro/
+        // unlimited, which takes the incrementUsage-only observability path inside consume exactly
+        // as the inline `monthlyLimit == null` branch here used to). Passing a different constant
+        // would enforce a different plan column -- that is what makes the argument load-bearing.
         String creatorId = extractCreatorId(request);
         boolean allowed =
-                usageCounterService.recordCreatorLookup(
-                        workspaceId, UsageMetric.CREATOR_ANALYTICS_VIEW, creatorId, monthlyLimit);
+                EntitlementService.consume(
+                        Entitlement.CREATOR_ANALYTICS_VIEWS, usageCounterService, workspaceId, plan, creatorId);
         if (!allowed) {
             throw new ApiException(
                     "UPGRADE_REQUIRED",
                     "Free plan allows "
-                            + monthlyLimit
+                            + Entitlement.CREATOR_ANALYTICS_VIEWS.limitIn(plan).orElseThrow()
                             + " creator-analytics view(s) per month — upgrade to Pro for"
                             + " unlimited",
                     HttpStatus.PAYMENT_REQUIRED);

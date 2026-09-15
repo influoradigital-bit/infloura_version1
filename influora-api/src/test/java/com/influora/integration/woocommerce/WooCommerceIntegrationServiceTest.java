@@ -131,6 +131,44 @@ class WooCommerceIntegrationServiceTest {
         assertFalse(saved.getEncryptedWebhookSecret().equals("old-encrypted"));
     }
 
+    @Test
+    @DisplayName(
+            "F-0520/F-0766 regression: connect's existing-row branch rewrites siteUrl when the"
+                    + " workspace reconnects to a DIFFERENT site, not just the secret")
+    void testConnectRotatesToDifferentSiteUrl() {
+        String oldSite = SITE_URL;
+        String newSite = "https://a-completely-different-store.example.com";
+        String newSecret = "wc_new_secret_for_new_site";
+
+        WooCommerceIntegration existing =
+                WooCommerceIntegration.builder()
+                        .id(INTEGRATION_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .siteUrl(oldSite)
+                        .encryptedWebhookSecret("old-encrypted")
+                        .build();
+
+        // The lookup is by workspaceId alone (see class javadoc) -- it matches regardless of which
+        // site the row currently points at, which is exactly why reconnect-to-a-different-site
+        // lands on this same existing-row branch.
+        when(repository.findByWorkspaceIdAndRevokedFalse(WORKSPACE_ID)).thenReturn(Optional.of(existing));
+
+        service.connect(WORKSPACE_ID, newSite, newSecret);
+
+        verify(repository).save(integrationCaptor.capture());
+        WooCommerceIntegration saved = integrationCaptor.getValue();
+
+        assertEquals(INTEGRATION_ID, saved.getId(), "same row, not a duplicate insert");
+        assertEquals(
+                newSite,
+                saved.getSiteUrl(),
+                "F-0520/F-0766: the row must now point at the NEW site, not the one it was"
+                        + " originally connected to -- otherwise webhooks from the new site can never"
+                        + " resolve a workspace (404) while the connect response reports the new site"
+                        + " as connected");
+        assertFalse(saved.getEncryptedWebhookSecret().equals("old-encrypted"));
+    }
+
     // ------------------------------------------------------------------------------------------
     // Genuine round-trip test [Wave C4 lesson applied]: feeds the REAL connect() write path into
     // the REAL decryptSecret() read path -- not two isolated unit tests each asserting against a

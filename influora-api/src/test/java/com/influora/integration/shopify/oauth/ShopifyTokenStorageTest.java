@@ -143,6 +143,45 @@ class ShopifyTokenStorageTest {
         assertFalse(saved.getEncryptedAccessToken().equals("old-encrypted"));
     }
 
+    @Test
+    @DisplayName(
+            "F-0519 regression: storeToken's existing-row branch rewrites shopDomain when the"
+                    + " workspace reconnects to a DIFFERENT store, not just the token")
+    void testStoreTokenRotatesToDifferentShopDomain() {
+        String oldShop = SHOP_DOMAIN;
+        String newShop = "a-completely-different-store.myshopify.com";
+        String newToken = "shpat_token-for-the-new-store";
+
+        ShopifyIntegration existing =
+                ShopifyIntegration.builder()
+                        .id(INTEGRATION_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .shopDomain(oldShop)
+                        .encryptedAccessToken("old-encrypted")
+                        .grantedScopesJson("[\"read_orders\"]")
+                        .build();
+
+        // The lookup is by workspaceId alone (see class javadoc) -- it matches regardless of which
+        // shop the row currently points at, which is exactly why the reconnect-to-a-different-shop
+        // case lands on this same existing-row branch.
+        when(repository.findByWorkspaceIdAndRevokedFalse(WORKSPACE_ID)).thenReturn(Optional.of(existing));
+
+        storage.storeToken(WORKSPACE_ID, newShop, newToken, List.of("read_orders"));
+
+        verify(repository).save(integrationCaptor.capture());
+        ShopifyIntegration saved = integrationCaptor.getValue();
+
+        assertEquals(INTEGRATION_ID, saved.getId(), "same row, not a duplicate insert");
+        assertEquals(
+                newShop,
+                saved.getShopDomain(),
+                "F-0519: the row must now point at the NEW shop, not the one it was originally"
+                        + " connected to -- otherwise API calls keep hitting the old store (401) and"
+                        + " webhooks from the new store can never resolve a workspace (404) while the"
+                        + " connect response reports the new store as connected");
+        assertFalse(saved.getEncryptedAccessToken().equals("old-encrypted"));
+    }
+
     // ------------------------------------------------------------------------------------------
     // Genuine round-trip test [task brief requirement, Wave C4 lesson applied]: feeds the REAL
     // storeToken() write path into the REAL getValidToken() read path -- not two isolated unit

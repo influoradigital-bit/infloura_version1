@@ -27,7 +27,7 @@ Origin: brand invite (discovery) OR brand proposal (POST /deals) OR creator appl
 - **Service**: `DealService` (dual-role; `createProposal`, `accept`, `reject`, `counter`, `sendMessage`, `markRead`, `listMessages`).
 
 ## Database
-`collaborations` (V6, +V64 usage_rights), `deal_messages` (V33). See [../database.md](../database.md).
+`collaborations` (V6, +V64 usage_rights), `deal_messages` (V33). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /deals`, `GET /deals/{id}`, `POST /deals`, `POST /deals/{id}/{accept,reject,counter}` (Idempotency-Key), `GET/POST /deals/{dealId}/messages`, `POST /deals/{dealId}/messages/read`, `GET /deals/{dealId}/deliverables`, `POST /deals/{dealId}/disputes`.
@@ -66,5 +66,5 @@ Deal service tests. Regression risks: anti-self-accept, idempotency, currency so
 
 ## Production Readiness
 - **Health**: 8/10 · **Completion**: ~80%
-- **Known issues**: `DealResponse.deliverablesDone/Total/nextDeadline` are hardcoded stubs (drift); some chat surfaces mock-backed.
+- **Known issues**: [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0575: `DealResponse.deliverablesDone/Total/nextDeadline` are computed from real deliverable rows in `DealService.toDealResponse` (DealService.java:2131-2144), not hardcoded — a code comment there notes they "used to be hardcoded 0/0/null"] some chat surfaces mock-backed.
 - **Last verified**: 2026-07-15

@@ -25,7 +25,7 @@ Ticket exists → admin lists/filters → view thread → reply (adds ADMIN mess
 - **Service**: `service/admin/AdminSupportService`.
 
 ## Database
-`support_tickets`, `support_ticket_messages` (both V34; message `content` is PII, never logged). See [../database.md](../database.md).
+`support_tickets`, `support_ticket_messages` (both V34; message `content` is PII, never logged). [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
 `GET /admin/support/tickets` (filters + pagination), `GET .../{id}`, `POST .../{id}/reply`, `PUT .../{id}` (status), `POST .../{id}/assign`. **Both now implemented**: `escalate` at `AdminSupportController.java:105`, and `GET /admin/support/stats` on the sibling `AdminSupportStatsController` (it cannot live on `AdminSupportController`, which is mounted at `/admin/support/tickets`). [CORRECTED 2026-09-06, doc-stale-doc-claim, F-0527: this line claimed both 404.]
@@ -65,5 +65,5 @@ Support service tests. Regression risks: RBAC on assign, status stamping.
 
 ## Production Readiness
 - **Health**: 6/10 · **Completion**: ~70%
-- **Known issues**: `escalate` + `getStats` not implemented (frontend has live buttons → 404); no user-facing ticket creation endpoint; no status-transition enforcement. See [../known-limitations.md](../known-limitations.md).
+- **Known issues**: `escalate` + `getStats` not implemented (frontend has live buttons → 404); no user-facing ticket creation endpoint; no status-transition enforcement. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../known-limitations.md]" link — docs/docs/ contains only features/, so that file never existed].
 - **Last verified**: 2026-07-15

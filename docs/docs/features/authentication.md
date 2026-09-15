@@ -33,10 +33,10 @@ Logout → revoke all refresh tokens
 - **Validation/DTOs**: `web/dto/auth/*` (`@Pattern` OTP, password fields), `common/PasswordPolicy`.
 
 ## Database
-`users`, `refresh_tokens`, `admin_users`, `admin_refresh_tokens`, `password_reset_tokens`, `email_otp_challenges` (V2, V5, V34, V35). Tokens store SHA-256 hashes; passwords BCrypt-12. See [../database.md](../database.md).
+`users`, `refresh_tokens`, `admin_users`, `admin_refresh_tokens`, `password_reset_tokens`, `email_otp_challenges` (V2, V5, V34, V35). Tokens store SHA-256 hashes; passwords BCrypt-12. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../database.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## APIs
-See [../api.md](../api.md) Authentication section. Key: `POST /auth/{role}/{register,login}`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/admin/auth/login`, `/admin/auth/mfa/{setup,verify}`.
+The Authentication section is documented separately in the API reference [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../api.md]" link — docs/docs/ contains only features/, so that file never existed]. Key: `POST /auth/{role}/{register,login}`, `/auth/refresh`, `/auth/logout`, `/auth/forgot-password`, `/auth/reset-password`, `/admin/auth/login`, `/admin/auth/mfa/{setup,verify}`.
 
 ## AI
 Not involved.
@@ -62,7 +62,7 @@ Login form → api.auth.login → POST /auth/brand/login → AuthRateLimitFilter
 `EMAIL_ALREADY_EXISTS` (409), `INVALID_CREDENTIALS` (401), `WRONG_USER_TYPE` (403), `EMAIL_NOT_VERIFIED` (403), `WEAK_PASSWORD` (400), `INVALID_OTP` (400), `INVALID_REFRESH_TOKEN` (401), `MFA_REQUIRED`/`MFA_ENROLLMENT_REQUIRED`, rate-limit 429. Anti-enumeration on OTP send and forgot-password (uniform responses).
 
 ## Security
-BCrypt-12; HS256 access tokens (short TTL); refresh token opaque, hashed, HttpOnly SameSite=Strict cookie; single-use rotation; admin TOTP MFA with lockouts and AES-GCM-encrypted secret. Risks: access token in localStorage, no refresh-reuse detection, frontend refresh half-wired, admin lockout no in-app recovery. See [../security.md](../security.md).
+BCrypt-12; HS256 access tokens (short TTL); refresh token opaque, hashed, HttpOnly SameSite=Strict cookie; single-use rotation; admin TOTP MFA with lockouts and AES-GCM-encrypted secret. Risks: access token in localStorage, no refresh-reuse detection, frontend refresh half-wired, admin lockout no in-app recovery. [CORRECTED 2026-09-13, doc-stale-doc-claim, F-0807: removed a "See [../security.md]" link — docs/docs/ contains only features/, so that file never existed].
 
 ## Performance
 Rate limiting is in-memory/per-instance (needs Redis at scale). BCrypt-12 is intentionally CPU-costly on login/register.
