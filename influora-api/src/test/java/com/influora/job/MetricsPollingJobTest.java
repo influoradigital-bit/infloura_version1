@@ -31,10 +31,14 @@ import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
 import com.influora.config.MetaApiProperties;
 import com.influora.domain.entity.MediaMetric;
+import com.influora.integration.meta.dto.InstagramInsightsResponse;
 import com.influora.integration.meta.dto.InstagramMediaResponse;
+import com.influora.integration.meta.service.InstagramInsightValues;
 import com.influora.integration.meta.service.InstagramMetricsFetcher;
 import com.influora.repository.MediaMetricsRepository;
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.time.temporal.ChronoUnit;
@@ -223,6 +227,108 @@ class MetricsPollingJobTest {
                         mediaId, "caption", "IMAGE", null, "https://instagram.com/p/" + mediaId,
                         "2026-08-20T10:30:00+0000", 10L, 2L),
                 null);
+    }
+
+    // ---- F-0506 (dead-metric repair, T-DEADMETRIC-REPAIR-0915): CreatorMetric avg* fields ----
+    // These two tests assert the exact computed VALUE of avgReachPerPost/avgImpressionsPerPost/
+    // avgEngagementRate, not just non-nullness — a bytecode-scan gate (F-0490) can confirm a
+    // writer exists but cannot confirm the number is right; only an assertEquals on a known mean
+    // catches a wrong denominator, an off-by-one, or "absent treated as zero".
+
+    /**
+     * Builds one post's insights response with only the metrics that are non-null — mirrors real
+     * Meta behavior of omitting metrics it does not support/report (see {@code
+     * InstagramInsightValues}'s "absence is not zero" javadoc), so a null argument here genuinely
+     * means "Meta never sent this metric for this post", not "Meta sent zero".
+     */
+    private InstagramMetricsFetcher.MediaWithInsights mediaWithMetrics(
+            String mediaId, Long reach, Long views, Long engagement) {
+        List<InstagramInsightsResponse.InsightMetric> metrics = new ArrayList<>();
+        if (views != null) {
+            metrics.add(insightMetric(InstagramInsightValues.VIEWS, views));
+        }
+        if (reach != null) {
+            metrics.add(insightMetric(InstagramInsightValues.REACH, reach));
+        }
+        if (engagement != null) {
+            metrics.add(insightMetric(InstagramInsightValues.TOTAL_INTERACTIONS, engagement));
+        }
+        InstagramInsightsResponse insights = new InstagramInsightsResponse(metrics);
+        return new InstagramMetricsFetcher.MediaWithInsights(
+                new InstagramMediaResponse.MediaItem(
+                        mediaId, "caption", "IMAGE", null, "https://instagram.com/p/" + mediaId,
+                        "2026-08-20T10:30:00+0000", 10L, 2L),
+                insights);
+    }
+
+    private InstagramInsightsResponse.InsightMetric insightMetric(String name, Long value) {
+        return new InstagramInsightsResponse.InsightMetric(
+                name, "lifetime", name, name, List.of(new InstagramInsightsResponse.InsightValue(value, null)));
+    }
+
+    @Test
+    @DisplayName(
+            "pollMetrics: CreatorMetric avgReachPerPost/avgImpressionsPerPost/avgEngagementRate are"
+                    + " the real mean of this poll's MediaMetric rows, not merely non-null (F-0506"
+                    + " regression)")
+    void testPollMetricsComputesCreatorMetricAveragesFromMediaMetrics() {
+        arrangeHappyPath(); // profile has followers=10000 — used below to distinguish a
+        // reach-denominator engagement rate from a followers-denominator one.
+        when(metricsFetcher.fetchMediaWithInsights(
+                        eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(
+                        List.of(
+                                mediaWithMetrics("m1", 1000L, 200L, 100L),
+                                mediaWithMetrics("m2", 4000L, 800L, 200L)));
+
+        pollingJob.pollMetrics();
+
+        ArgumentCaptor<CreatorMetric> metricCaptor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(metricCaptor.capture());
+        CreatorMetric saved = metricCaptor.getValue();
+
+        // avgReachPerPost = (1000 + 4000) / 2 = 2500. A wrong denominator (e.g. dividing by 3) or
+        // an off-by-one moves this away from the unambiguous mean.
+        assertEquals(2500L, saved.getAvgReachPerPost());
+        // avgImpressionsPerPost = (200 + 800) / 2 = 500.
+        assertEquals(500L, saved.getAvgImpressionsPerPost());
+        // Per-post engagement/reach*100: m1 = 100/1000*100 = 10.0, m2 = 200/4000*100 = 5.0, mean
+        // 7.5. Using followers (10000, from arrangeHappyPath's profile) as the denominator instead
+        // of reach would give 1.0/2.0 -> mean 1.5 — a different, also-unambiguous number, so this
+        // single assertion also falsifies a followers-denominator regression.
+        assertEquals(0, new BigDecimal("7.5000").compareTo(saved.getAvgEngagementRate()));
+    }
+
+    @Test
+    @DisplayName(
+            "pollMetrics: a post missing a metric is EXCLUDED from that metric's average, never"
+                    + " counted as 0 (F-0506 regression — this is the whole reason the field was"
+                    + " dead)")
+    void testPollMetricsAveragesSkipPostsMissingTheMetric() {
+        arrangeHappyPath();
+        when(metricsFetcher.fetchMediaWithInsights(
+                        eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(
+                        List.of(
+                                mediaWithMetrics("m1", 1000L, 200L, 50L), // complete
+                                mediaWithMetrics("m2", null, 400L, 100L), // reach missing
+                                mediaWithMetrics("m3", 3000L, null, 150L))); // impressions missing
+
+        pollingJob.pollMetrics();
+
+        ArgumentCaptor<CreatorMetric> metricCaptor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(metricCaptor.capture());
+        CreatorMetric saved = metricCaptor.getValue();
+
+        // avgReachPerPost must average only m1+m3: (1000+3000)/2 = 2000. Treating m2's missing
+        // reach as 0 would instead give (1000+0+3000)/3 = 1333.
+        assertEquals(2000L, saved.getAvgReachPerPost());
+        // avgImpressionsPerPost must average only m1+m2: (200+400)/2 = 300. Treating m3's missing
+        // impressions as 0 would instead give (200+400+0)/3 = 200.
+        assertEquals(300L, saved.getAvgImpressionsPerPost());
+        // avgEngagementRate must average only posts with BOTH engagement and a positive reach: m1
+        // (50/1000*100=5.0) and m3 (150/3000*100=5.0) — m2 is excluded because it has no reach.
+        assertEquals(0, new BigDecimal("5.0000").compareTo(saved.getAvgEngagementRate()));
     }
 
     @Test

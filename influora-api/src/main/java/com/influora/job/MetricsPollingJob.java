@@ -19,10 +19,13 @@ import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -220,6 +223,21 @@ public class MetricsPollingJob {
             InstagramUserResponse profile =
                     instagramClient.getProfile(igBusinessAccountId, token.get(), authPath);
 
+            // F-0479/F-0506 — media_metrics has a writer (pollRecentMedia) and CreatorMetric's
+            // three avg* columns (avgReachPerPost, avgImpressionsPerPost, avgEngagementRate) are
+            // now aggregated from THIS SAME poll's per-post rows, rather than left permanently
+            // null. Fetched BEFORE the CreatorMetric row is built (not after, as media persistence
+            // used to run) so the averages can be included in the same immutable snapshot as the
+            // follower count they describe — CreatorMetric rows have no update/mutator method by
+            // design (see class javadoc), so there is no way to retrofit averages onto a row
+            // already saved. This still preserves the original fault-tolerance guarantee:
+            // pollRecentMedia never throws (its own try/catch swallows everything and returns an
+            // empty list), so a media/insights failure still can never prevent the profile
+            // snapshot below from being built and saved — it just means the averages are null,
+            // same as "no media metrics polled" already meant before this change.
+            List<MediaMetric> mediaRows =
+                    pollRecentMedia(creatorProfileId, igBusinessAccountId, token.get(), authPath);
+
             CreatorMetric metric =
                     CreatorMetric.builder()
                             .id(Ulids.newUlid())
@@ -233,18 +251,14 @@ public class MetricsPollingJob {
                             .following(profile.followsCount())
                             .mediaCount(
                                     profile.mediaCount() == null ? null : profile.mediaCount().intValue())
+                            .avgReachPerPost(averageOf(mediaRows, MediaMetric::getReach))
+                            .avgImpressionsPerPost(averageOf(mediaRows, MediaMetric::getImpressions))
+                            .avgEngagementRate(averageEngagementRate(mediaRows))
                             .dataSource(DATA_SOURCE_META_API)
                             .fetchedAt(Instant.now())
                             .build();
 
             creatorMetricsRepository.save(metric);
-
-            // F-0479 — media_metrics now has a writer. Deliberately AFTER the CreatorMetric save
-            // and inside its own try/catch: the profile poll is the row this method's contract is
-            // about, and a media/insights failure must never roll it back or flip this creator to
-            // "failed". Degrading here costs per-post detail; failing here would cost the follower
-            // snapshot too.
-            pollRecentMedia(creatorProfileId, igBusinessAccountId, token.get(), authPath);
 
             return true;
         } catch (MetaRateLimitException e) {
@@ -266,23 +280,29 @@ public class MetricsPollingJob {
      * F-0479 — fetches this creator's recent media with per-post insights and writes one immutable
      * {@code media_metrics} row per post (spec §3.1's inner loop).
      *
-     * <p>Never throws and never returns a verdict. {@code InstagramMetricsFetcher} already degrades
-     * a rate-limited or unsupported per-item insights call to {@code insights == null} rather than
-     * failing the batch, and this method additionally swallows anything it did not anticipate — the
-     * caller has already persisted the creator's profile snapshot and must not lose it here.
+     * <p>Never throws. {@code InstagramMetricsFetcher} already degrades a rate-limited or
+     * unsupported per-item insights call to {@code insights == null} rather than failing the batch,
+     * and this method additionally swallows anything it did not anticipate — the caller builds the
+     * creator's profile snapshot from this method's return value and must not lose that snapshot
+     * over a media/insights failure, so this always returns (never throws), an empty list meaning
+     * "nothing polled this cycle" in every failure/disabled/no-posts case alike.
      *
      * <p>Rows are immutable snapshots (one per poll per post, per the {@code MediaMetric} javadoc),
      * so this appends rather than upserting. {@code ScoreCalculationJob} reads the newest
      * {@code RECENT_MEDIA_LIMIT} rows, which is exactly one poll's worth.
+     *
+     * @return the rows written this cycle (possibly empty), used by {@link #pollOne} to compute
+     *     {@code CreatorMetric}'s {@code avgReachPerPost}/{@code avgImpressionsPerPost}/{@code
+     *     avgEngagementRate} (F-0506) from the SAME per-post snapshot the caller is about to save.
      */
-    private void pollRecentMedia(
+    private List<MediaMetric> pollRecentMedia(
             String creatorProfileId, String igBusinessAccountId, String token, MetaAuthPath authPath) {
         if (!metaProperties.isMediaMetricsEnabled()) {
             log.debug(
                     "MetricsPollingJob: media_metrics disabled (influora.meta.media-metrics-enabled=false),"
                             + " skipping per-post poll for creator {}",
                     creatorProfileId);
-            return;
+            return List.of();
         }
 
         try {
@@ -294,7 +314,7 @@ public class MetricsPollingJob {
                 // Either the creator has posted nothing, or the fetcher declined on rate limit. Both
                 // legitimately produce no rows; writing a placeholder would be F-0478 all over again.
                 log.debug("MetricsPollingJob: no media returned for creator {}", creatorProfileId);
-                return;
+                return List.of();
             }
 
             Instant fetchedAt = Instant.now();
@@ -319,13 +339,94 @@ public class MetricsPollingJob {
                     rows.size(),
                     creatorProfileId,
                     degraded);
+            return rows;
         } catch (Exception e) {
             // Includes anything the fetcher did not already absorb. The creator's CreatorMetric row
-            // is already committed; per-post detail is the only thing lost.
+            // is built from this method's return value, not lost by it: an empty list here just
+            // means null averages, the same outcome as "no media metrics polled" already produced.
             log.error(
                     "MetricsPollingJob: media_metrics poll failed for creator {} (profile snapshot kept)",
                     creatorProfileId,
                     e);
+            return List.of();
         }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // F-0506 (dead-metric repair, T-DEADMETRIC-REPAIR-0915) — CreatorMetric.avgReachPerPost /
+    // avgImpressionsPerPost / avgEngagementRate. GROUP 1 of that ticket: MediaMetric already stores
+    // real per-post reach/impressions/engagement (MediaMetricMapper.java:84-86), and this job is the
+    // one writer of those rows (pollRecentMedia above), so these three averages are computed HERE,
+    // from THIS poll's per-post rows, rather than at read time or in a separate scheduled job.
+    //
+    // WHY HERE, not a scheduled aggregation job or on-read: this job is the only place that already
+    // holds "this creator's freshest per-post snapshot" in memory in the same transaction as the
+    // CreatorMetric row that reports it — computing it here keeps followers/mediaCount (this poll)
+    // and avgReachPerPost/avgImpressionsPerPost/avgEngagementRate (this poll's own posts)
+    // temporally consistent as ONE snapshot, matching CreatorMetric's documented append-only,
+    // one-row-per-poll semantics. A separate scheduled aggregation job would have to re-derive which
+    // MediaMetric rows belong to "the latest poll" per creator (there is no explicit poll-id FK) and
+    // would run on its own cadence, decoupled from and possibly stale against the CreatorMetric row
+    // it annotates. Computing on read (in AnalyticsService, per API call) would recompute the same
+    // aggregate on every request instead of once per 6-hour poll, and would face the same "which
+    // MediaMetric rows count as this creator's latest batch" ambiguity with no poll-id to key on.
+    //
+    // DEFINITIONS (each stated explicitly per the ticket's instruction — these choices are visible
+    // to brands and creators, so silence here would be its own defect):
+    //   avgReachPerPost        = mean of MediaMetric.reach across this poll's fetched posts, over
+    //                            only the posts where Meta actually reported reach (never treating
+    //                            an absent metric as zero — same "absence is not zero" contract
+    //                            InstagramInsightValues documents). Null when no post in this poll
+    //                            has a reach value (nothing to average, not zero).
+    //   avgImpressionsPerPost  = same, over MediaMetric.impressions (Meta's "views" metric, per
+    //                            MediaMetricMapper's mapping comment).
+    //   avgEngagementRate      = mean, across posts with BOTH engagement and a positive reach, of
+    //                            each post's OWN engagement/reach*100. Denominator is reach, not
+    //                            followers: this mirrors the per-post engagementRate this codebase
+    //                            already computes and documents in
+    //                            AnalyticsDtos.ContentPerformanceResponse / AnalyticsService's
+    //                            private engagementRate() helper (also engagement/reach*100),
+    //                            rather than introducing a second, differently-denominated
+    //                            "engagement rate" for the exact same underlying numbers.
+    //                            engagement/followers is a legitimate alternate industry
+    //                            definition, but this codebase has already picked and shipped
+    //                            engagement/reach for per-post rate, and CreatorMetric's average of
+    //                            that same rate should not silently mean something else. Null when
+    //                            no post has both a positive reach and a reported engagement value.
+    // ------------------------------------------------------------------------------------------
+
+    /** Package-private for direct unit testing (see MetricsPollingJobTest). */
+    static Long averageOf(
+            List<MediaMetric> media, java.util.function.Function<MediaMetric, Long> extractor) {
+        List<Long> present = media.stream().map(extractor).filter(Objects::nonNull).toList();
+        if (present.isEmpty()) {
+            return null;
+        }
+        long sum = 0L;
+        for (Long value : present) {
+            sum += value;
+        }
+        return Math.round((double) sum / present.size());
+    }
+
+    /** Package-private for direct unit testing (see MetricsPollingJobTest). */
+    static BigDecimal averageEngagementRate(List<MediaMetric> media) {
+        List<BigDecimal> perPostRates = new ArrayList<>();
+        for (MediaMetric m : media) {
+            Long reach = m.getReach();
+            Long engagement = m.getEngagement();
+            if (reach != null && reach > 0 && engagement != null) {
+                BigDecimal rate =
+                        BigDecimal.valueOf(engagement)
+                                .multiply(BigDecimal.valueOf(100))
+                                .divide(BigDecimal.valueOf(reach), 6, RoundingMode.HALF_UP);
+                perPostRates.add(rate);
+            }
+        }
+        if (perPostRates.isEmpty()) {
+            return null;
+        }
+        BigDecimal sum = perPostRates.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        return sum.divide(BigDecimal.valueOf(perPostRates.size()), 4, RoundingMode.HALF_UP);
     }
 }

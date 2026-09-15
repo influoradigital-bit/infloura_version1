@@ -22,7 +22,9 @@ import com.influora.web.dto.admin.AdminSupportDtos.TicketDetailDto;
 import com.influora.web.dto.admin.AdminSupportDtos.TicketMessageDto;
 import com.influora.web.dto.admin.AdminSupportDtos.TicketSummaryDto;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.data.domain.Page;
@@ -271,12 +273,18 @@ public class AdminSupportService {
      * definition {@code AdminDashboardService.avgReviewTimeHours} uses, just unwindowed (this is
      * a support-team stats snapshot, not a rolling 30-day dashboard KPI).
      *
-     * <p>{@code avgResponseTime} is an honest {@code 0}, not fabricated: {@link SupportTicket} has
-     * no first-admin-reply timestamp column (only {@code resolvedAt}). Deriving "time to first
-     * admin reply" would mean scanning every ticket's message thread via {@link
-     * SupportTicketMessageRepository} per ticket — real but out of this cycle's scope. Follow-up:
-     * stamp a {@code first_responded_at} column in {@link #reply}, same pattern {@code resolvedAt}
-     * uses in {@link SupportTicket#updateStatus}.
+     * <p>{@code avgResponseTime} (hours) [F-0525, dead-metric repair, T-DEADMETRIC-REPAIR-0915]:
+     * previously a hardcoded {@code 0.0} with a javadoc note that {@link SupportTicket} has no
+     * first-admin-reply timestamp column. That reasoning assumed a dedicated column was required;
+     * it is not. {@link SupportTicketMessage} already records every reply with {@code senderType}
+     * and {@code createdAt}, so "time to first admin reply" is derivable directly from the existing
+     * thread data with no migration: {@link SupportTicketMessageRepository#findBySenderTypeOrderByCreatedAtAsc}
+     * returns every ADMIN message oldest-first, the first occurrence per {@code ticketId} is that
+     * ticket's first admin reply, and the mean of {@code firstReply - createdAt} (same hour unit as
+     * {@code avgResolutionTime}) over tickets that HAVE at least one admin reply is the real
+     * average. Tickets never yet replied to are excluded rather than counted as zero (a ticket
+     * nobody has answered is not a fast response — same "absence is not zero" discipline the Meta
+     * integration uses). {@code 0.0} only when no ticket has ever received an admin reply.
      */
     @Transactional(readOnly = true)
     public SupportStatsDto getStats(AuthPrincipal principal) {
@@ -296,10 +304,42 @@ public class AdminSupportService {
                                         .sum()
                                 / (double) resolved.size();
 
-        // Honest 0 -- see javadoc above, no first-response timestamp exists to average.
-        double avgResponseTime = 0.0;
+        double avgResponseTime = computeAvgResponseTimeHours();
 
         return new SupportStatsDto(open, inProgress, waitingUser, avgResponseTime, avgResolutionTime);
+    }
+
+    /**
+     * F-0525 — real mean of "first admin reply time" (hours) across every ticket that has at least
+     * one ADMIN-sent message, all-time (unwindowed, same scope as {@code avgResolutionTime} above).
+     * See {@link #getStats} javadoc for why no {@code first_responded_at} column was needed.
+     */
+    private double computeAvgResponseTimeHours() {
+        List<SupportTicketMessage> adminMessagesOldestFirst =
+                supportTicketMessageRepository.findBySenderTypeOrderByCreatedAtAsc(SenderType.ADMIN);
+        if (adminMessagesOldestFirst.isEmpty()) {
+            return 0.0;
+        }
+
+        // Ascending by createdAt, so the first entry seen per ticketId is genuinely that ticket's
+        // FIRST admin reply, not merely "an" admin reply.
+        Map<String, Instant> firstAdminReplyAtByTicketId = new LinkedHashMap<>();
+        for (SupportTicketMessage message : adminMessagesOldestFirst) {
+            firstAdminReplyAtByTicketId.putIfAbsent(message.getTicketId(), message.getCreatedAt());
+        }
+
+        List<SupportTicket> repliedTickets =
+                supportTicketRepository.findAllById(firstAdminReplyAtByTicketId.keySet());
+        if (repliedTickets.isEmpty()) {
+            return 0.0;
+        }
+
+        long totalHours = 0L;
+        for (SupportTicket ticket : repliedTickets) {
+            Instant firstReplyAt = firstAdminReplyAtByTicketId.get(ticket.getId());
+            totalHours += ChronoUnit.HOURS.between(ticket.getCreatedAt(), firstReplyAt);
+        }
+        return totalHours / (double) repliedTickets.size();
     }
 
     private SupportTicket requireTicket(String ticketId) {

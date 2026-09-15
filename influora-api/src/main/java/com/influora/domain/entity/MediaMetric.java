@@ -4,7 +4,6 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
@@ -74,8 +73,16 @@ public class MediaMetric {
     @Column(name = "video_views")
     private Long videoViews;
 
-    @Column(name = "avg_watch_time_seconds", precision = 10, scale = 2)
-    private BigDecimal avgWatchTimeSeconds;
+    // F-0689 (dead-metric repair, T-DEADMETRIC-REPAIR-0915): avgWatchTimeSeconds was REMOVED from
+    // this entity rather than repaired. InstagramInsightValues requests exactly views/reach/likes/
+    // comments/saved/shares/total_interactions from Meta — no watch-time insight metric is
+    // requested or mapped anywhere in MediaMetricMapper, so there is no real data to aggregate.
+    // Getting one means asking Meta for a new insight metric (a permissions/App-Review change, not
+    // a code change) and is out of this ticket's scope. The `avg_watch_time_seconds` DB column
+    // (V21 migration) is left in place, unmapped and always NULL going forward — dropping a column
+    // is a schema change this repair did not attempt to verify against a live database; an unused
+    // nullable column is harmless. See MediaMetricMapper class javadoc and AnalyticsDtos
+    // (ContentPerformanceResponse no longer carries this field either).
 
     @Column(name = "posted_at", columnDefinition = "DATETIME(6)")
     private Instant postedAt;
@@ -153,10 +160,6 @@ public class MediaMetric {
 
     public Long getVideoViews() {
         return videoViews;
-    }
-
-    public BigDecimal getAvgWatchTimeSeconds() {
-        return avgWatchTimeSeconds;
     }
 
     public Instant getPostedAt() {
@@ -259,11 +262,6 @@ public class MediaMetric {
 
         public Builder videoViews(Long videoViews) {
             m.videoViews = videoViews;
-            return this;
-        }
-
-        public Builder avgWatchTimeSeconds(BigDecimal avgWatchTimeSeconds) {
-            m.avgWatchTimeSeconds = avgWatchTimeSeconds;
             return this;
         }
 
