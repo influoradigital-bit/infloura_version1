@@ -1,6 +1,7 @@
 package com.influora.service.creatorcopilot;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -19,6 +20,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.influora.common.ApiException;
 import com.influora.config.CreatorCopilotProperties;
 import com.influora.domain.entity.CreatorNudgeLog;
@@ -31,8 +36,12 @@ import com.influora.repository.CreatorNudgeLogRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.TrendRepository;
 import com.influora.service.creatorcopilot.CreatorNudgeService.SuggestionResult;
+import com.influora.service.creatorcopilot.CreatorNudgeService.UnsafeHeadlineTopic;
 import com.influora.service.trendspark.ThemeMatchService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.annotation.Transactional;
+import java.lang.reflect.Method;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Iterator;
@@ -44,30 +53,42 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 /**
  * Unit tests for {@link CreatorNudgeService} — ledger F-0775. The service had zero direct unit
  * coverage; these tests pin every branch of {@code getSuggestion}/{@code markDismissed}/{@code
  * markActed} that a Mockito-level test can honestly reach.
  *
- * <p><b>What is deliberately NOT covered here, and why.</b> {@code getSuggestion}'s {@code catch
- * (DataIntegrityViolationException)} (CreatorNudgeService.java:162-170) is unreachable in
- * production: {@link CreatorNudgeLog}'s {@code @Id} is caller-assigned at line 149, the entity has
- * no {@code @Version} and does not implement {@code Persistable}, so Spring Data's {@code isNew()}
- * is false and {@code SimpleJpaRepository.save()} calls {@code em.merge()}, which schedules the
- * INSERT without flushing. The {@code uq_creator_nudge_day} violation therefore fires at
- * transaction commit — inside the {@code @Transactional} proxy, AFTER the try block has exited —
- * so the catch never runs and a genuine concurrent first-of-day race 500s today. A Mockito test
- * that stubs {@code save()} to throw would prove only that the mapping inside the catch compiles,
- * while reading as evidence that the per-day-cap race is handled. It is not, so no such test is
- * written here. Fixing the catch is a main-source change (and {@code saveAndFlush} alone is not
- * the fix — the recovery read at 166-167 would then run on a rollback-only persistence context);
- * the branch belongs to an H2 {@code @DataJpaTest}, following {@code
- * IdempotencyKeyRecordRepositoryPersistenceTest}'s precedent, not to this class.
+ * <p><b>F-0785 changed what this class can honestly claim — read this before trusting the
+ * race-recovery tests below.</b> The above USED to say the {@code catch
+ * (DataIntegrityViolationException)} was unreachable dead code, and it was: {@link CreatorNudgeLog}
+ * has a caller-assigned {@code @Id}, no {@code @Version} and no {@code Persistable}, so {@code
+ * SimpleJpaRepository.save()} routed through {@code em.merge()} and deferred the INSERT to the
+ * {@code @Transactional} proxy's commit — outside the try block. F-0785 removed
+ * {@code @Transactional} from {@code getSuggestion} and switched the write to {@code
+ * saveAndFlush}, so the violation now surfaces from the repository call itself, inside the try.
+ *
+ * <p>That makes a Mockito stub of {@code saveAndFlush} throwing {@code
+ * DataIntegrityViolationException} a FAITHFUL model of the runtime shape for the first time — but
+ * only of the shape. <b>What the three {@code lostDailyCapRace} tests below prove: the recovery
+ * LOGIC (re-read, return the winner, rethrow when there is no winner, rethrow when the re-read
+ * itself fails). What they CANNOT prove: that a real MySQL {@code uq_creator_nudge_day} violation
+ * actually arrives at that call site rather than at some later commit.</b> Only a real-MySQL test
+ * can falsify that, and it lives in {@code
+ * com.influora.integration.dbconstraints.CreatorNudgeDailyCapConcurrencyIntegrationTest}
+ * (Testcontainers, skipped where Docker is unreachable). Do not read a green run of this class as
+ * proof that the concurrent-500 is fixed.
+ *
+ * <p>{@link #getSuggestion_isNotTransactional_theAnnotationIsWhatMadeTheCatchDead()} exists because
+ * re-adding {@code @Transactional} to {@code getSuggestion} would silently reintroduce F-0785 and
+ * NO behavioural test in this class could notice: Mockito calls the bean directly and never goes
+ * through the Spring proxy where the annotation has its effect.
  *
  * <p><b>Mockito hazards observed.</b> Every "the AI client was not called" assertion uses {@link
  * org.mockito.Mockito#verifyNoInteractions}, never {@code verify(aiClient, never())
@@ -173,7 +194,7 @@ class CreatorNudgeServiceTest {
         assertEquals(SUGGESTION_ID, result.suggestion().id());
         // THE PER-DAY CAP READ PATH: a same-day repeat must not re-score or re-phrase.
         verifyNoInteractions(trendRepository, aiClient);
-        verify(creatorNudgeLogRepository, never()).save(any());
+        verifyNoNudgeRowWritten();
     }
 
     @Test
@@ -212,7 +233,7 @@ class CreatorNudgeServiceTest {
         assertEquals("pending_tagging", result.status());
         assertNull(result.suggestion());
         verifyNoInteractions(trendRepository, aiClient);
-        verify(creatorNudgeLogRepository, never()).save(any());
+        verifyNoNudgeRowWritten();
     }
 
     @ParameterizedTest(name = "theme_tags = [{0}]")
@@ -227,7 +248,7 @@ class CreatorNudgeServiceTest {
         assertEquals("pending_tagging", result.status());
         assertNull(result.suggestion());
         verifyNoInteractions(trendRepository, aiClient);
-        verify(creatorNudgeLogRepository, never()).save(any());
+        verifyNoNudgeRowWritten();
     }
 
     @Test
@@ -241,7 +262,7 @@ class CreatorNudgeServiceTest {
 
         assertEquals("no_suggestion_today", result.status());
         verifyNoInteractions(aiClient);
-        verify(creatorNudgeLogRepository, never()).save(any());
+        verifyNoNudgeRowWritten();
     }
 
     // ---------------------------------------------------------------------------------------
@@ -261,7 +282,7 @@ class CreatorNudgeServiceTest {
         assertEquals("no_suggestion_today", result.status());
         assertNull(result.suggestion());
         verifyNoInteractions(aiClient);
-        verify(creatorNudgeLogRepository, never()).save(any());
+        verifyNoNudgeRowWritten();
     }
 
     @Test
@@ -277,7 +298,7 @@ class CreatorNudgeServiceTest {
 
         assertEquals("no_suggestion_today", result.status());
         verifyNoInteractions(aiClient);
-        verify(creatorNudgeLogRepository, never()).save(any());
+        verifyNoNudgeRowWritten();
     }
 
     @Test
@@ -292,7 +313,7 @@ class CreatorNudgeServiceTest {
 
         assertEquals("no_suggestion_today", result.status());
         verifyNoInteractions(aiClient);
-        verify(creatorNudgeLogRepository, never()).save(any());
+        verifyNoNudgeRowWritten();
     }
 
     @Test
@@ -518,7 +539,7 @@ class CreatorNudgeServiceTest {
         // A DIFFERENT instance than the argument: with returnsFirstArg the two would be the same
         // object reference and this assertion could not distinguish line 172 from line 161.
         CreatorNudgeLog persisted = existingRow(SUGGESTION_ID, "wellness");
-        when(creatorNudgeLogRepository.save(any(CreatorNudgeLog.class))).thenReturn(persisted);
+        when(creatorNudgeLogRepository.saveAndFlush(any(CreatorNudgeLog.class))).thenReturn(persisted);
 
         SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
 
@@ -604,7 +625,7 @@ class CreatorNudgeServiceTest {
         assertEquals("SUGGESTION_NOT_FOUND", thrown.getCode());
         assertEquals(HttpStatus.NOT_FOUND, thrown.getStatus());
         assertEquals("Suggestion not found", thrown.getMessage());
-        verify(creatorNudgeLogRepository, never()).save(any());
+        verifyNoNudgeRowWritten();
     }
 
     @Test
@@ -660,7 +681,7 @@ class CreatorNudgeServiceTest {
         assertEquals("SUGGESTION_NOT_FOUND", thrown.getCode());
         assertEquals(HttpStatus.NOT_FOUND, thrown.getStatus());
         assertEquals("Suggestion not found", thrown.getMessage());
-        verify(creatorNudgeLogRepository, never()).save(any());
+        verifyNoNudgeRowWritten();
     }
 
     @Test
@@ -760,12 +781,402 @@ class CreatorNudgeServiceTest {
         // And no scenario may mutate or persist anything.
         assertNull(foreignRow.getDismissedAt());
         assertNull(foreignRow.getActedAt());
+        verifyNoNudgeRowWritten();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0786 — content filter on the fallback path
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * One test per rejected category, driven off the enum itself.
+     *
+     * <p>{@link #sampleFor} is an EXHAUSTIVE switch expression over {@link UnsafeHeadlineTopic}, so
+     * adding a fifth category without also adding a sample headline for it is a COMPILE error here
+     * — not a silently-uncovered category that this suite would keep reporting green.
+     *
+     * <p><b>Anti-vacuity.</b> These four would all pass just as happily if the filter rejected
+     * EVERY headline, which would be its own (product-destroying) bug. The counterweight already
+     * exists and is untouched: {@link
+     * #getSuggestion_aiReturnsNull_usesTemplatedFallbackWithMessageSourceFallback()} asserts a
+     * benign headline IS still quoted verbatim, and {@link
+     * #getSuggestion_benignHeadlineIsStillQuoted(String)} pins the specific near-miss words the
+     * filter documents as deliberately excluded.
+     */
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(UnsafeHeadlineTopic.class)
+    @DisplayName("F-0786: a headline in an unsafe category never reaches creator copy")
+    void getSuggestion_unsafeHeadline_neverReachesCreatorCopy(UnsafeHeadlineTopic category) {
+        UnsafeHeadlineSample sample = sampleFor(category);
+
+        assertEquals(
+                category,
+                CreatorNudgeService.firstUnsafeTopic(sample.headline()),
+                "test premise broken: this sample headline is not classified as " + category);
+
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), sample.headline()));
+        // Force the fallback path — the one F-0786 is about, which runs when influora-ai is
+        // unreachable and no AI-side safety layer is in play.
+        when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
+
+        SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
+
+        // Silent-but-functional: the co-pilot degrades, it does not throw and does not go dark.
+        assertEquals("ready", result.status());
+        assertNotNull(result.suggestion());
+
+        CreatorNudgeLog saved = captureSaved();
+        assertEquals(NudgeMessageSource.FALLBACK, saved.getMessageSource());
+
+        // The persisted row...
+        assertHeadlineAbsent(sample, saved.getHeadline(), saved.getContentIdea(), "persisted row");
+        // ...and the DTO the creator is actually served.
+        assertHeadlineAbsent(
+                sample,
+                result.suggestion().headline(),
+                result.suggestion().contentIdea(),
+                "returned DTO");
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                // "issue"/"pursue" must not trip LEGAL's "sue" — whole-token matching, not
+                // String.contains.
+                "Big issue with the new fitness app launch",
+                "Brands pursue creator-led campaigns this season",
+                // "audience" must not trip DEATH's "die".
+                "Audience numbers climb for regional creators",
+                // Each of the next three pins a term the filter DOCUMENTS as deliberately excluded
+                // for false-positive reasons. If someone "hardens" the filter by adding killer /
+                // court / mob back, these go red and force the trade-off to be re-argued.
+                "Killer ab workout routine goes viral",
+                "Tennis court resurfacing trend in Mumbai clubs",
+                "Flash mob proposal video breaks records"
+            })
+    @DisplayName("F-0786: a benign headline is still quoted verbatim — the filter is not a blanket reject")
+    void getSuggestion_benignHeadlineIsStillQuoted(String benignHeadline) {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(benignHeadline),
+                "benign headline was classified unsafe: " + benignHeadline);
+
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), benignHeadline));
+        when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
+
+        service.getSuggestion(CREATOR_PROFILE_ID);
+
+        CreatorNudgeLog saved = captureSaved();
+        assertEquals(NudgeMessageSource.FALLBACK, saved.getMessageSource());
+        assertTrue(
+                saved.getContentIdea().contains(benignHeadline),
+                "a safe headline must still be quoted, got: " + saved.getContentIdea());
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "MURDER probe widens in Pune",
+                "Murder, probe widens in Pune",
+                "murder-probe widens in Pune",
+                "Probe widens in Pune (murder)"
+            })
+    @DisplayName("F-0786: matching survives case and punctuation around the term")
+    void firstUnsafeTopic_isCaseAndPunctuationInsensitive(String variant) {
+        assertEquals(UnsafeHeadlineTopic.CRIME, CreatorNudgeService.firstUnsafeTopic(variant));
+    }
+
+    @Test
+    @DisplayName("F-0786: a null headline fails closed — generic copy, no 'null' in the copy, no throw")
+    void getSuggestion_nullHeadline_failsClosedToGenericCopy() {
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), null));
+        when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
+
+        SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
+
+        assertEquals("ready", result.status());
+        CreatorNudgeLog saved = captureSaved();
+        assertEquals(NudgeMessageSource.FALLBACK, saved.getMessageSource());
+        // The pre-F-0786 template would have rendered: There's a trend around "null" that fits...
+        assertFalse(
+                saved.getContentIdea().toLowerCase(Locale.ROOT).contains("null"),
+                "a missing headline must not be rendered as the literal string 'null', got: "
+                        + saved.getContentIdea());
+        assertFalse(
+                saved.getHeadline().contains("your " + THEME_ACTION + " content"),
+                "a missing headline must degrade to generic copy, got: " + saved.getHeadline());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   "})
+    @DisplayName("F-0786: a blank headline fails closed to generic copy too")
+    void getSuggestion_blankHeadline_failsClosedToGenericCopy(String blankHeadline) {
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), blankHeadline));
+        when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
+
+        service.getSuggestion(CREATOR_PROFILE_ID);
+
+        CreatorNudgeLog saved = captureSaved();
+        assertFalse(
+                saved.getHeadline().contains("your " + THEME_ACTION + " content"),
+                "a blank headline must degrade to generic copy, got: " + saved.getHeadline());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0785 — daily-cap race recovery and the dead-catch regression guards
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * The single most important regression guard for F-0785, and the only one that can catch a
+     * re-added {@code @Transactional}: Mockito invokes the bean directly, never through the Spring
+     * proxy, so no behavioural test in this class would notice the annotation coming back — while
+     * in production it would once again defer the INSERT past the try block and restore the
+     * concurrent 500.
+     *
+     * <p>The {@code markDismissed} assertion is a POSITIVE CONTROL, not decoration: without it, a
+     * change that broke annotation retention or renamed the annotation would make every {@code
+     * assertNull} below pass vacuously.
+     */
+    @Test
+    @DisplayName("F-0785: getSuggestion is NOT @Transactional — that annotation is what made the catch dead")
+    void getSuggestion_isNotTransactional_theAnnotationIsWhatMadeTheCatchDead() throws Exception {
+        Method getSuggestion = CreatorNudgeService.class.getMethod("getSuggestion", String.class);
+
+        assertNull(
+                getSuggestion.getAnnotation(Transactional.class),
+                "getSuggestion must NOT be @Transactional: an outer transaction defers the"
+                        + " merge()-scheduled INSERT to commit, outside the try block, which is exactly"
+                        + " what made the DataIntegrityViolationException catch dead code (F-0785)");
+        assertNull(
+                CreatorNudgeService.class.getAnnotation(Transactional.class),
+                "a class-level @Transactional would apply to getSuggestion just the same");
+
+        // POSITIVE CONTROL — proves the reflection above can actually see this annotation.
+        assertNotNull(
+                CreatorNudgeService.class
+                        .getMethod("markDismissed", String.class, String.class)
+                        .getAnnotation(Transactional.class),
+                "markDismissed should still be @Transactional; if this is null the assertions above"
+                        + " are vacuous");
+    }
+
+    @Test
+    @DisplayName("F-0785: the suggestion row is written with saveAndFlush, never plain save")
+    void getSuggestion_writesViaSaveAndFlushNeverPlainSave() {
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT));
+
+        service.getSuggestion(CREATOR_PROFILE_ID);
+
+        verify(creatorNudgeLogRepository).saveAndFlush(any(CreatorNudgeLog.class));
+        // save() would route through merge() and only SCHEDULE the INSERT, putting the
+        // uq_creator_nudge_day violation somewhere other than inside the try block.
         verify(creatorNudgeLogRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("F-0785: losing the per-day-cap race returns the winner's row, not a 500")
+    void getSuggestion_lostDailyCapRace_returnsWinnersRowInsteadOfThrowing() {
+        CreatorNudgeLog winner = existingRow(SUGGESTION_ID, THEME_ACTION);
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        // First read: nothing yet (we are the first-of-day, as far as we can see). Second read:
+        // the concurrent winner's row, which committed between our read and our write.
+        when(creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+                        eq(CREATOR_PROFILE_ID), any()))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(winner));
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT));
+        when(creatorNudgeLogRepository.saveAndFlush(any(CreatorNudgeLog.class)))
+                .thenThrow(
+                        new DataIntegrityViolationException(
+                                "Duplicate entry for key 'uq_creator_nudge_day'"));
+
+        SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
+
+        assertEquals("ready", result.status());
+        assertEquals(
+                SUGGESTION_ID,
+                result.suggestion().id(),
+                "both racers must end up with the SAME row — the winner's");
+        assertEquals(winner.getHeadline(), result.suggestion().headline());
+    }
+
+    @Test
+    @DisplayName("F-0785: an integrity violation that is NOT the cap race still propagates")
+    void getSuggestion_integrityViolationWithNoWinnerRow_propagatesInsteadOfFakingSuccess() {
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        // Both reads miss: nothing was concurrently written, so the violation was something else
+        // (creator_nudge_log also carries FKs to creator_profiles and trends, which raise the very
+        // same exception type). Swallowing it would hide a real integrity bug forever.
+        givenNoRowYetToday();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT));
+        DataIntegrityViolationException fkViolation =
+                new DataIntegrityViolationException("fk_creator_nudge_log_trend violated");
+        when(creatorNudgeLogRepository.saveAndFlush(any(CreatorNudgeLog.class))).thenThrow(fkViolation);
+
+        DataIntegrityViolationException thrown =
+                assertThrows(
+                        DataIntegrityViolationException.class,
+                        () -> service.getSuggestion(CREATOR_PROFILE_ID));
+
+        assertSame(fkViolation, thrown, "the ORIGINAL violation must propagate, unwrapped");
+    }
+
+    @Test
+    @DisplayName("F-0785: a failing recovery read rethrows the original violation, with the read failure suppressed")
+    void getSuggestion_recoveryReadFails_rethrowsOriginalWithReadFailureSuppressed() {
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        IllegalStateException readFailure = new IllegalStateException("connection already closed");
+        when(creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+                        eq(CREATOR_PROFILE_ID), any()))
+                .thenReturn(Optional.empty())
+                .thenThrow(readFailure);
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT));
+        DataIntegrityViolationException race =
+                new DataIntegrityViolationException("Duplicate entry for key 'uq_creator_nudge_day'");
+        when(creatorNudgeLogRepository.saveAndFlush(any(CreatorNudgeLog.class))).thenThrow(race);
+
+        DataIntegrityViolationException thrown =
+                assertThrows(
+                        DataIntegrityViolationException.class,
+                        () -> service.getSuggestion(CREATOR_PROFILE_ID));
+
+        assertSame(race, thrown, "a recovery-path failure must not replace the diagnostic exception");
+        assertTrue(
+                List.of(thrown.getSuppressed()).contains(readFailure),
+                "the read failure must be attached as suppressed, not discarded");
+    }
+
+    @Test
+    @DisplayName("F-0785: dailyCapAdvisory is silent at 1 and explains the DB constraint otherwise")
+    void dailyCapAdvisory_silentWhenEnforceableAndExplicitWhenNot() {
+        assertNull(
+                CreatorNudgeService.dailyCapAdvisory(1),
+                "1 is exactly what uq_creator_nudge_day permits — nothing to warn about");
+
+        String advisory = CreatorNudgeService.dailyCapAdvisory(3);
+        assertNotNull(advisory);
+        assertTrue(advisory.contains("uq_creator_nudge_day"), "must name the real enforcement point");
+        assertTrue(advisory.contains("3"), "must name the configured value");
+    }
+
+    @Test
+    @DisplayName("F-0785: constructing the service reads the cap knob and warns when it cannot take effect")
+    void construction_warnsWhenConfiguredCapCannotTakeEffect() {
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(CreatorNudgeService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        serviceLogger.addAppender(appender);
+        try {
+            CreatorCopilotProperties capped = new CreatorCopilotProperties();
+            capped.setMaxSuggestionsPerCreatorPerDay(3);
+            newService(capped);
+
+            assertTrue(
+                    appender.list.stream()
+                            .anyMatch(
+                                    e ->
+                                            e.getLevel() == Level.WARN
+                                                    && e.getFormattedMessage()
+                                                            .contains("max-suggestions-per-creator-per-day")),
+                    "CREATOR_COPILOT_DAILY_CAP=3 cannot be enforced by uq_creator_nudge_day and must"
+                            + " not be silently ignored; logged events were: "
+                            + appender.list);
+
+            // And the enforceable value stays quiet — otherwise this would warn on every boot.
+            appender.list.clear();
+            newService(new CreatorCopilotProperties());
+            assertTrue(
+                    appender.list.isEmpty(),
+                    "a cap of 1 is enforceable and must produce no warning, got: " + appender.list);
+        } finally {
+            serviceLogger.detachAppender(appender);
+        }
     }
 
     // ---------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------
+
+    private CreatorNudgeService newService(CreatorCopilotProperties properties) {
+        return new CreatorNudgeService(
+                trendRepository,
+                creatorProfileRepository,
+                creatorNudgeLogRepository,
+                themeMatchService,
+                aiClient,
+                properties);
+    }
+
+    /** A realistic third-party news headline for one unsafe category, plus the distinctive words
+     * from it that must not survive into creator copy. */
+    private record UnsafeHeadlineSample(String headline, List<String> mustBeAbsent) {}
+
+    /**
+     * EXHAUSTIVE switch over {@link UnsafeHeadlineTopic} — deliberately a switch EXPRESSION with no
+     * {@code default} branch, so a newly added category fails to COMPILE here until it gets a
+     * sample headline. That is the coverage guard: "one unit test per rejected category" cannot
+     * quietly become "one per category we remembered".
+     */
+    private static UnsafeHeadlineSample sampleFor(UnsafeHeadlineTopic category) {
+        return switch (category) {
+            case DEATH ->
+                    new UnsafeHeadlineSample(
+                            "Veteran actor dies at 78 after long illness",
+                            List.of("dies", "actor", "veteran", "illness"));
+            case CRIME ->
+                    new UnsafeHeadlineSample(
+                            "Two arrested in Bengaluru jewellery robbery case",
+                            List.of("arrested", "robbery", "jewellery", "Bengaluru"));
+            case COMMUNAL ->
+                    new UnsafeHeadlineSample(
+                            "Curfew imposed after communal violence in Nagpur",
+                            List.of("curfew", "communal", "violence", "Nagpur"));
+            case LEGAL ->
+                    new UnsafeHeadlineSample(
+                            "Startup founder sued over alleged trademark infringement",
+                            List.of("sued", "trademark", "infringement", "founder"));
+        };
+    }
+
+    private static void assertHeadlineAbsent(
+            UnsafeHeadlineSample sample, String headline, String contentIdea, String where) {
+        String copy = headline + " || " + contentIdea;
+        String copyLower = copy.toLowerCase(Locale.ROOT);
+        String headlineLower = sample.headline().toLowerCase(Locale.ROOT);
+
+        assertFalse(
+                copyLower.contains(headlineLower),
+                "the raw headline leaked verbatim into the " + where + ": " + copy);
+
+        assertFalse(sample.mustBeAbsent().isEmpty(), "test premise: name at least one word");
+        for (String word : sample.mustBeAbsent()) {
+            String wordLower = word.toLowerCase(Locale.ROOT);
+            // Anti-vacuity: a typo'd or reworded entry would be trivially absent from the copy and
+            // would prove nothing at all.
+            assertTrue(
+                    headlineLower.contains(wordLower),
+                    "test premise broken: '" + word + "' does not occur in the sample headline");
+            // Word-level, not just verbatim: a future "quote the first 60 characters" teaser would
+            // slip past a verbatim-only check.
+            assertFalse(
+                    copyLower.contains(wordLower),
+                    "headline word '" + word + "' leaked into the " + where + ": " + copy);
+        }
+    }
 
     private void assertFallbackHeadlineStartsWithYou(String displayName) {
         givenProfile(displayName, themesJson(THEME_ACTION, THEME_STRENGTH));
@@ -800,8 +1211,12 @@ class CreatorNudgeServiceTest {
         when(trendRepository.findActive(any())).thenReturn(List.of(trends));
     }
 
+    /** F-0785: the suggestion write is {@code saveAndFlush}, not {@code save} — see {@link
+     * #getSuggestion_writesViaSaveAndFlushNeverPlainSave()} for why that distinction is the whole
+     * fix and must not be "simplified" back. */
     private void givenSaveEchoesArgument() {
-        when(creatorNudgeLogRepository.save(any(CreatorNudgeLog.class))).thenAnswer(returnsFirstArg());
+        when(creatorNudgeLogRepository.saveAndFlush(any(CreatorNudgeLog.class)))
+                .thenAnswer(returnsFirstArg());
     }
 
     private void givenOwnedRow(CreatorNudgeLog row) {
@@ -811,8 +1226,16 @@ class CreatorNudgeServiceTest {
 
     private CreatorNudgeLog captureSaved() {
         ArgumentCaptor<CreatorNudgeLog> captor = ArgumentCaptor.forClass(CreatorNudgeLog.class);
-        verify(creatorNudgeLogRepository).save(captor.capture());
+        verify(creatorNudgeLogRepository).saveAndFlush(captor.capture());
         return captor.getValue();
+    }
+
+    /** No suggestion row reached persistence by EITHER write method. Checking both (rather than
+     * just the one the service currently calls) means a future swap between {@code save} and
+     * {@code saveAndFlush} cannot turn these "stayed silent" assertions vacuous. */
+    private void verifyNoNudgeRowWritten() {
+        verify(creatorNudgeLogRepository, never()).save(any());
+        verify(creatorNudgeLogRepository, never()).saveAndFlush(any());
     }
 
     private static CreatorNudgeLog existingRow(String id, String theme) {
