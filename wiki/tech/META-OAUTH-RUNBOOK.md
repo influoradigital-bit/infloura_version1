@@ -168,6 +168,56 @@ curl -s -o /dev/null -w '%{url_effective}\n' -L \
 Landing on `accounts/login/` with `platform_app_id=…` and the scopes intact means the URL is
 accepted that far. It does **not** prove the redirect_uri is whitelisted — that is checked later.
 
+### 3.5 `callback -> 502`, Instagram `code 100` "Unsupported request - method type: get" (F-0818)
+
+**Logs (app):**
+```
+ERROR MetaOAuthService: Meta OAuth instagram-long-lived-exchange failed: status=400,
+  body={"error":{"message":"Unsupported request - method type: get",
+                 "type":"IGApiException","code":100}}
+
+# and the line that actually matters, which is a line that ISN'T there:
+docker logs influora-api 2>&1 | grep -c 'instagram-code-exchange failed'   ->  0
+```
+
+**Tell:** the long-lived exchange fails on every attempt while the code exchange reports **zero**
+failures — on a path that has never once succeeded. A leg with a 100% failure rate and no logged
+errors is not a healthy leg; it is a leg whose failure is silent.
+
+**Cause:** Business Login answers the code exchange with **HTTP 200** and the token inside a
+single-element `data` array:
+
+```json
+{"data":[{"access_token":"IGAA…","user_id":17841400000000001,
+          "permissions":"instagram_business_basic,instagram_business_manage_insights"}]}
+```
+
+`InstagramShortLivedTokenResponse` bound those three fields at the **top level** — the shape the
+older Basic Display exchange returned — with `@JsonIgnoreProperties(ignoreUnknown = true)`. Jackson
+found no top-level `access_token`, ignored `data`, and built a record of **all nulls without
+throwing**. `CreatorMetaOAuthService` passed that null on, `urlEncode(null)` produced
+`access_token=`, and graph.instagram.com answered the 400 above — **one leg later than the defect**.
+
+Two more mismatches in the same body: `permissions` is a **comma-separated string** here (a JSON
+array in the old shape), and `user_id` is a **JSON number**. On this path `user_id` is the only
+source of the Instagram account id — there is no Page to resolve one from — so losing it loses the
+connection even when a token is stored.
+
+**Fix:** a custom deserializer that accepts **both** shapes (unwraps `data[0]` when present, reads
+flat otherwise; parses `permissions` from either form; reads `user_id` with `asText()`), plus a
+guard in `connectViaInstagramLogin` that throws when the exchange yields no `access_token`, so the
+error names the leg that failed.
+
+**Why "the error moved" is the expected outcome here.** This was the third defect stacked on this
+path (F-0812 → F-0814 → F-0818). Each fix revealed the next. Do not read a changed error as a
+regression.
+
+**The general rule this cost us two days to apply:** when call B fails on a value produced by call
+A, and A reports no failures on a path that has never succeeded, **suspect A's parsing before B's
+URL.** Lenient deserialization reports success by staying silent. Probing B's endpoint, verb and
+API version — all of which were correct — found nothing, because nothing was wrong there.
+
+
 ---
 
 ## 4. Diagnostics that actually work
@@ -206,8 +256,11 @@ and silently applies nothing.
   lookup (Business Discovery) falls back to borrowing an arbitrary connected creator's token,
   which the code itself flags as needing a platform-terms ruling. `external_creators` is empty, so
   brand-side Instagram search returns nothing.
-- **INSTAGRAM_LOGIN has never completed.** Zero tokens with that `auth_path`. Reachable, but
-  unproven end to end.
+- **INSTAGRAM_LOGIN has never completed.** Zero tokens with that `auth_path` as of 2026-09-15.
+  F-0818 (below) removed the defect that made it impossible, but **no live connect has been run
+  since the fix** — the code path is proven only by tests. The next real creator connect is the
+  first evidence that matters: `SELECT auth_path, revoked, (ig_business_account_id IS NOT NULL)
+  FROM meta_oauth_tokens WHERE auth_path='INSTAGRAM_LOGIN'`.
 - **Advanced Access on the Instagram scopes is unverified.**
 - **Long-lived token expiry is assumed.** `CreatorMetaOAuthService` logs *"omitted expires_in;
   falling back to the documented ~60-day default"* — if Meta ever issues a shorter-lived token we
@@ -226,3 +279,15 @@ and silently applies nothing.
 | 11:12:00 | first token ever stored `revoked=0, has_ig=1` |
 
 Ledger: **F-0801, F-0812, F-0814**. Related: F-0706, F-0116/CR-103, CR-118, CR-120, T-IGTRUST-0907.
+
+## 7. Timeline, 2026-09-15
+
+| | |
+|---|---|
+| weekend | 36 `authorize?authPath=INSTAGRAM_LOGIN -> 200`, 19 × `callback -> 502`, 0 tokens |
+| | 50 × `instagram-long-lived-exchange failed … code 100`, 0 code-exchange failures |
+| F-0818 | code-exchange body binds `data[0]`; missing `access_token` now fails on its own leg |
+
+**Not yet proven live.** F-0818 is closed on tests and on Meta's documented response shape. It has
+not been run against Instagram itself. Verify with a real connect before telling a creator the
+Instagram-only path works.

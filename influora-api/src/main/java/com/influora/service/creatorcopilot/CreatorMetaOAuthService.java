@@ -188,6 +188,16 @@ public class CreatorMetaOAuthService {
      */
     private ConnectResult connectViaInstagramLogin(String creatorProfileId, String code) {
         InstagramShortLivedTokenResponse shortLived = oAuthService.exchangeInstagramCodeForToken(code);
+        // F-0818 — fail HERE, on the leg that actually went wrong. Instagram answers the code
+        // exchange with HTTP 200 and a body we may not understand, so a parse miss arrives as a
+        // record full of nulls, not as an exception. Passing that null on produced a misleading
+        // "instagram-long-lived-exchange failed" 400 from graph.instagram.com while
+        // "instagram-code-exchange failures" stayed at zero for a leg that had never once worked.
+        if (shortLived == null || shortLived.accessToken() == null || shortLived.accessToken().isBlank()) {
+            throw new MetaApiException(
+                    "Instagram code exchange returned no access_token — the response shape is not the"
+                            + " one this client parses; nothing to exchange for a long-lived token");
+        }
         MetaTokenResponse longLived =
                 oAuthService.exchangeInstagramForLongLivedToken(shortLived.accessToken());
 
