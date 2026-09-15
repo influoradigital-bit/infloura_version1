@@ -152,8 +152,41 @@ const CAMPAIGN_RULES = {
 };
 
 // ── helpers ──────────────────────────────────────────────────────────────────
+/**
+ * F-0784 — whole-word / whole-phrase containment.
+ *
+ * Both the theme keyword map and the campaign keyword lists used to be matched with plain
+ * `haystack.includes(keyword)`, so a keyword matched INSIDE an unrelated longer word: 'onam' inside
+ * the personal name "Sonam" (Sonam Kapoor), 'holi' inside "holiday", 'eid' inside "Heidi". The trend
+ * source is Indian entertainment headlines, which are dense with personal names, so this fired
+ * constantly — mis-tagging a name as a festival AND typing the trend SEASONAL with a 21-day peak
+ * window instead of HYPE's 3.
+ *
+ * Why an indexOf scan and not a regex: the keyword vocabulary contains multi-word phrases
+ * ('durga puja', 'raksha bandhan', 'how to', 'benefits of'), so a per-word tokenizer cannot express
+ * the keys at all; and building a regex per keyword would need escaping (the vocab is data, not
+ * source) plus lookbehind, which is not guaranteed in every n8n Code-node runtime. Scanning for each
+ * occurrence and rejecting the ones glued to an adjacent letter or digit needs neither, and is the
+ * exact same rule as the Java side's (?<![\p{L}\p{N}]) … (?![\p{L}\p{N}]) lookarounds in
+ * influora-api/.../service/trendspark/ThemeMatchService.java — keep the two in step.
+ *
+ * Only the two EDGES of the phrase are anchored; interior spaces and hyphens are untouched.
+ * NOTE: tagger-sync.check.js compares only the VOCAB consts, so it cannot catch drift in this
+ * function — it must be changed identically in theme-tagger.js and the inline Code node by hand.
+ */
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+function containsWord(haystack, needle) {
+  if (!haystack || !needle) return false;
+  for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + 1)) {
+    const before = i > 0 ? haystack[i - 1] : '';
+    const after = i + needle.length < haystack.length ? haystack[i + needle.length] : '';
+    if (!WORD_CHAR.test(before) && !WORD_CHAR.test(after)) return true;
+  }
+  return false;
+}
+
 function matchesAny(haystack, keywords) {
-  return keywords.some((k) => haystack.includes(k));
+  return keywords.some((k) => containsWord(haystack, k));
 }
 
 /**
@@ -204,7 +237,8 @@ function tagTrend(raw) {
   // Collect themes from keyword hits in the trend text.
   const collected = new Set();
   for (const [keyword, themes] of Object.entries(KEYWORD_TO_THEMES)) {
-    if (lowered.includes(keyword)) themes.forEach((t) => collected.add(t));
+    // F-0784: whole-word/phrase match, not bare containment — see containsWord above.
+    if (containsWord(lowered, keyword)) themes.forEach((t) => collected.add(t));
   }
   // Add themes from the category/niche label, if present.
   if (category && NICHE_TO_THEMES[category]) {
@@ -261,8 +295,8 @@ function capRows(rows, maxRows = DEFAULT_MAX_ROWS_PER_RUN, log = console.warn) {
 // CommonJS export for reuse / testing (n8n Code node inlines the body instead).
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    tagTrend, deriveCampaignType, THEMES, KEYWORD_TO_THEMES, NICHE_TO_THEMES, CAMPAIGN_RULES,
-    capRows, DEFAULT_MAX_ROWS_PER_RUN,
+    tagTrend, deriveCampaignType, containsWord, THEMES, KEYWORD_TO_THEMES, NICHE_TO_THEMES,
+    CAMPAIGN_RULES, capRows, DEFAULT_MAX_ROWS_PER_RUN,
   };
 }
 
@@ -327,6 +361,32 @@ if (typeof require !== 'undefined' && require.main === module) {
   console.log(`${capOk ? 'PASS' : 'FAIL'} | capRows per-run cap (100 default, first-N, logs dropped count)`);
   if (!capOk) failed++;
 
-  console.log(`\n${failed === 0 ? 'ALL PASS' : failed + ' FAILED'} (${cases.length + 1} cases)`);
+  // F-0784 — word-boundary anchoring. Each false positive must produce NO festive/seasonal
+  // signal (themes empty AND not typed SEASONAL), while the genuine keyword as its own word
+  // must still tag and still type SEASONAL.
+  const boundaryCases = [
+    { name: "'onam' inside \"Sonam\"", raw: { text: 'Sonam Kapoor spotted at the airport' }, match: false },
+    { name: "'holi' inside \"holiday\"", raw: { text: 'Book your holiday packages now' }, match: false },
+    { name: "'eid' inside \"Heidi\"", raw: { text: 'Heidi Klum returns to television' }, match: false },
+    { name: "'Onam' as a whole word", raw: { text: 'Onam celebrations begin in Kerala' }, match: true },
+    { name: "'Holi' as a whole word", raw: { text: 'Holi colours light up the city' }, match: true },
+    { name: "'Eid' as a whole word", raw: { text: 'Eid Mubarak wishes flood timelines' }, match: true },
+    { name: "multi-word 'durga puja' still matches", raw: { text: 'Durga Puja pandal hopping guide' }, match: true },
+  ];
+  let boundaryFailed = 0;
+  for (const c of boundaryCases) {
+    const out = tagTrend(c.raw);
+    const tagged = out.themes.length > 0;
+    const seasonal = out.campaign_type === 'SEASONAL';
+    const pass = c.match ? (tagged && seasonal) : (!tagged && !seasonal);
+    if (!pass) { boundaryFailed++; failed++; }
+    console.log(
+      `${pass ? 'PASS' : 'FAIL'} | F-0784 boundary: ${c.name}\n` +
+      `      → themes=[${out.themes.join(', ')}] campaign_type=${out.campaign_type} peak=${out.peak_window_days}`
+    );
+  }
+  console.log(`${boundaryFailed === 0 ? 'PASS' : 'FAIL'} | F-0784 word-boundary anchoring (${boundaryCases.length} cases)`);
+
+  console.log(`\n${failed === 0 ? 'ALL PASS' : failed + ' FAILED'} (${cases.length + 1 + boundaryCases.length} cases)`);
   process.exit(failed === 0 ? 0 : 1);
 }
