@@ -448,6 +448,38 @@ class MetricsPollingJobTest {
     }
 
     @Test
+    @DisplayName("averageEngagementRate: a negative count is treated as absent, not subtracted")
+    void testAverageEngagementRateNegativeCountTreatedAsAbsent() {
+        // likes -500 absent, comments 100 counts -> mean 100 -> 100 / 1000 * 100 = 10.0.
+        // Subtracting it would give -40.0, which lands in RateEstimationService's -30% band.
+        List<MediaMetric> media = List.of(mediaMetric(-500L, 100L));
+        BigDecimal result = MetricsPollingJob.averageEngagementRate(media, 1000L);
+        assertEquals(new BigDecimal("10.0000"), result);
+    }
+
+    @Test
+    @DisplayName("averageEngagementRate: a post with only negative counts is excluded")
+    void testAverageEngagementRateAllNegativePostExcluded() {
+        List<MediaMetric> media = List.of(mediaMetric(100L, 0L), mediaMetric(-5L, -5L));
+        // Excluded: mean 100 -> 10.0. Counted as 0 it would be 5.0; subtracted, 4.5.
+        BigDecimal result = MetricsPollingJob.averageEngagementRate(media, 1000L);
+        assertEquals(new BigDecimal("10.0000"), result);
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(List.of(mediaMetric(-1L, -1L)), 1000L));
+    }
+
+    @Test
+    @DisplayName("averageEngagementRate: a likes+comments sum that overflows long returns null")
+    void testAverageEngagementRateSumOverflowReturnsNull() {
+        // Unchecked, MAX_VALUE + 1 wraps to MIN_VALUE and yields a negative rate.
+        List<MediaMetric> media = List.of(mediaMetric(Long.MAX_VALUE, 1L));
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(media, Long.MAX_VALUE));
+        // Across posts: each fits, the running total does not.
+        List<MediaMetric> twoPosts =
+                List.of(mediaMetric(Long.MAX_VALUE - 1, 0L), mediaMetric(Long.MAX_VALUE - 1, 0L));
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(twoPosts, Long.MAX_VALUE));
+    }
+
+    @Test
     @DisplayName("averageEngagementRate: a non-terminating rate rounds half up at 4 decimals")
     void testAverageEngagementRateRoundsHalfUp() {
         List<MediaMetric> media =

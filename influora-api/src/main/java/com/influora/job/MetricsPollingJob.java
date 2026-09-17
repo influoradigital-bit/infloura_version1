@@ -411,8 +411,8 @@ public class MetricsPollingJob {
     //                            two services above).
     //
     //                            Overflow: the column is DECIMAL(8,4) (V21__creator_metrics.sql),
-    //                            max magnitude 9999.9999. Likes+comments and followers are both
-    //                            non-negative, so the rate is always >= 0; the worst case is a
+    //                            max magnitude 9999.9999. Negative likes/comments are treated as
+    //                            absent, so the rate is always >= 0; the worst case is a
     //                            small/new follower count with a viral post (e.g. followers=1,
     //                            likes+comments in the thousands), which is arithmetically
     //                            unbounded and CAN exceed the column. NOT clamped — a follower
@@ -460,12 +460,21 @@ public class MetricsPollingJob {
         long sumLikesPlusComments = 0L;
         int contributingPosts = 0;
         for (MediaMetric m : media) {
-            Long likes = m.getLikes();
-            Long comments = m.getComments();
+            // A negative count is not a reading; treat it as absent rather than let it push the
+            // rate into RateEstimationService's -30% band.
+            Long likes = nonNegativeOrNull(m.getLikes());
+            Long comments = nonNegativeOrNull(m.getComments());
             if (likes == null && comments == null) {
                 continue; // no data at all for this post — excluded, not counted as 0
             }
-            sumLikesPlusComments += nullToZero(likes) + nullToZero(comments);
+            try {
+                sumLikesPlusComments =
+                        Math.addExact(
+                                sumLikesPlusComments,
+                                Math.addExact(nullToZero(likes), nullToZero(comments)));
+            } catch (ArithmeticException overflow) {
+                return null; // a wrapped sum would read as a small, valid-looking rate
+            }
             contributingPosts++;
         }
         if (contributingPosts == 0) {
@@ -489,5 +498,9 @@ public class MetricsPollingJob {
 
     private static long nullToZero(Long value) {
         return value == null ? 0L : value;
+    }
+
+    private static Long nonNegativeOrNull(Long value) {
+        return value == null || value < 0 ? null : value;
     }
 }
