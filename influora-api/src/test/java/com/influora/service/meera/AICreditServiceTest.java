@@ -337,6 +337,39 @@ class AICreditServiceTest {
     }
 
     @Test
+    @DisplayName(
+            "F-3/SM-0.2: the loyalty bonus STACKS on whatever planAllotment is current -- Pro +"
+                    + " funded campaign = 450, not a flat 150 that clobbers the Pro allotment")
+    void testLoyaltyBonusStacksOnProPlanAllotment() {
+        // Workspace is on Pro (planAllotment synced to 400 by AICreditResetJob/SubscriptionService
+        // before this ever runs in production) -- simulate that via applyPlanAllotment directly.
+        BrandAiCredit credit = createCredit(400, 400, null, 0);
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+
+        Instant unlimitedUntil = Instant.now().plusSeconds(86400 * 7);
+        creditService.applyEscrowFundedReset(WORKSPACE_ID, unlimitedUntil);
+
+        assertEquals(450, credit.getMonthlyAllotment(), "Pro (400) + loyalty bonus (50) must be 450");
+        assertEquals(450, credit.getCreditsRemaining());
+        assertEquals(50, credit.getLoyaltyBonus());
+        assertEquals(400, credit.getPlanAllotment(), "planAllotment itself must be untouched by the bonus");
+    }
+
+    @Test
+    @DisplayName("F-3: applyPlanAllotment writes planAllotment only, never the loyalty bonus")
+    void testApplyPlanAllotmentDoesNotTouchLoyaltyBonus() {
+        BrandAiCredit credit = createCredit(150, 100, null, 0);
+        credit.setLoyaltyBonus(50); // workspace already earned the bonus on Free (100 + 50 = 150)
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400); // upgrades to Pro
+
+        assertEquals(400, credit.getPlanAllotment());
+        assertEquals(50, credit.getLoyaltyBonus(), "upgrading plan must not wipe an already-earned bonus");
+        assertEquals(450, credit.getMonthlyAllotment(), "derived total must reflect both writers");
+    }
+
+    @Test
     @DisplayName("resetForNewCycle: resets credits to monthly allotment")
     void testResetForNewCycleResetsCredits() {
         BrandAiCredit credit = createCredit(20, 100, null, 0);

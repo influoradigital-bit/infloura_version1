@@ -1,7 +1,6 @@
 package com.influora.job;
 
 import com.influora.domain.entity.Plan;
-import com.influora.domain.enums.PlanCode;
 import com.influora.domain.enums.WorkspaceType;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.billing.SubscriptionService;
@@ -23,11 +22,21 @@ import org.springframework.stereotype.Component;
  * every active workspace's {@code BrandAiCredit.creditsRemaining} to {@code monthlyAllotment}
  * (Free = 100→150 after first funded campaign; Pro = 400).
  *
- * <p>Pro tier 400/mo support (Task 21, wired): before resetting each workspace, checks {@code
- * subscriptionService.getActivePlanForWorkspace(workspaceId)} — if the workspace has an ACTIVE Pro
- * subscription, {@code aiCreditService.applyPlanAllotment} syncs {@code monthlyAllotment} to Pro's
- * 400 before {@code resetForNewCycle} applies it. Free-tier workspaces (the overwhelming majority)
- * skip that call entirely, so their existing 100/150 loyalty-bump allotment is left untouched.
+ * <p>Pro tier 400/mo support (Task 21, wired): before resetting each workspace, {@code
+ * aiCreditService.applyPlanAllotment} syncs {@code planAllotment} to whatever plan {@code
+ * subscriptionService.getActivePlanForWorkspace(workspaceId)} currently resolves — Free's 100 or
+ * Pro's 400 — before {@code resetForNewCycle} applies the (derived) result.
+ *
+ * <p><b>F-0836 fix [vikram · 2026-09-17]:</b> this used to only sync when the resolved plan was
+ * PRO ({@code applyProAllotmentIfActive}), on the theory that Free-tier workspaces' allotment
+ * "was already right". That is true the day a workspace is created, but false forever after a
+ * brand has ever been Pro and then cancelled: {@code getActivePlanForWorkspace} correctly falls
+ * back to Free, but nothing wrote Free's 100 back into {@code planAllotment} — the stale Pro 400
+ * (or 450 with the loyalty bonus) survived every monthly reset indefinitely, since {@link
+ * AICreditService#resetForNewCycle} only re-applies whatever allotment is already stored. Syncing
+ * unconditionally (Free workspaces just get re-synced to the same 100 they already had — a no-op)
+ * closes that gap without special-casing either direction.
+ *   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3 (audit F-3), F-0836
  */
 @Component
 public class AICreditResetJob {
@@ -80,8 +89,9 @@ public class AICreditResetJob {
         // sweep in AGENCY workspaces and silently create spurious 100-credit rows for them via
         // AICreditService#ensureInitialized. Scope to BRAND only.
         //
-        // Every brand workspace gets a reset; Pro-tier workspaces additionally get their
-        // monthlyAllotment synced to the plan's 400/mo just before the reset applies it (Task 21).
+        // Every brand workspace gets a reset, and every workspace's planAllotment is synced to its
+        // CURRENT active plan (Free or Pro) just before the reset applies it (Task 21; F-0836 fix
+        // above — this sync used to be Pro-only).
         List<String> workspaceIds = workspaceRepository.findIdsByType(WorkspaceType.BRAND);
 
         int resetCount = 0;
@@ -89,7 +99,7 @@ public class AICreditResetJob {
 
         for (String workspaceId : workspaceIds) {
             try {
-                applyProAllotmentIfActive(workspaceId);
+                syncPlanAllotment(workspaceId);
                 aiCreditService.resetForNewCycle(workspaceId);
                 resetCount++;
             } catch (Exception e) {
@@ -110,21 +120,30 @@ public class AICreditResetJob {
     }
 
     /**
-     * Syncs {@code BrandAiCredit.monthlyAllotment} to Pro's 400/mo for a workspace with an ACTIVE
-     * Pro subscription, immediately before {@code resetForNewCycle} applies whatever allotment is
-     * currently persisted. No-op for Free (the overwhelming majority) — {@code
-     * getActivePlanForWorkspace} already falls back to the Free plan for no-subscription,
-     * PAST_DUE/HALTED/CANCELLED, and deactivated-plan cases, so the {@code PRO} check here is
-     * sufficient to leave every Free-tier workspace's existing 100/150 loyalty value untouched.
+     * Syncs {@code BrandAiCredit.planAllotment} to the workspace's CURRENT active plan (Free or
+     * Pro), immediately before {@code resetForNewCycle} applies the resulting (derived)
+     * allotment. {@code loyaltyBonus} is untouched here — {@link
+     * AICreditService#applyPlanAllotment} only ever writes {@code planAllotment} — so an earned
+     * bonus survives this sync in either direction.
+     *
+     * <p>F-0836 [vikram · 2026-09-17]: previously named {@code applyProAllotmentIfActive} and only
+     * called {@code applyPlanAllotment} when {@code plan.getCode() == PlanCode.PRO}. A workspace
+     * that had been Pro and then cancelled resolves back to the Free plan here (via {@code
+     * getActivePlanForWorkspace}'s fallback), but the Pro-only guard meant this method did nothing
+     * for it — so {@code planAllotment} (and therefore the derived {@code monthlyAllotment})
+     * stayed at Pro's 400 forever, and every subsequent monthly reset re-applied that stale value.
+     * Syncing unconditionally fixes it: a cancelled-Pro workspace's very next reset now writes
+     * Free's 100 back into {@code planAllotment} before resetting credits to it.
+     *   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3, F-0836
      *
      * <p>Intentionally NOT wrapped in its own try/catch — this runs inside the per-workspace catch
      * in {@link #runReset()} already, so a plan-resolution failure here is logged and skips just
      * this one workspace's reset for this cycle, same as any other failure in the loop; it does
      * not abort the batch.
      */
-    private void applyProAllotmentIfActive(String workspaceId) {
+    private void syncPlanAllotment(String workspaceId) {
         Plan plan = subscriptionService.getActivePlanForWorkspace(workspaceId);
-        if (plan != null && plan.getCode() == PlanCode.PRO) {
+        if (plan != null) {
             aiCreditService.applyPlanAllotment(workspaceId, plan.getAiMonthlyAllotment());
         }
     }

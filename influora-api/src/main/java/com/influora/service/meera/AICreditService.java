@@ -72,7 +72,14 @@ public class AICreditService {
     private static final Logger log = LoggerFactory.getLogger(AICreditService.class);
 
     private static final int DEFAULT_MONTHLY_ALLOTMENT = 100;
-    private static final int LOYALTY_MONTHLY_ALLOTMENT = 150;
+
+    // F-3/SM-0.2 [vikram · 2026-09-17] -- was LOYALTY_MONTHLY_ALLOTMENT = 150, a flat override
+    //   that clobbered BrandAiCredit.monthlyAllotment regardless of plan (a Pro brand's first
+    //   funded campaign silently dropped them from 400 to 150). Swapnil's ruling is that the
+    //   loyalty bonus STACKS on the current plan allotment: Free + funded = 150, Pro + funded =
+    //   450. This constant is now just the bonus itself, added via BrandAiCredit#setLoyaltyBonus.
+    //   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §7 SM-0.2
+    private static final int LOYALTY_BONUS = 50;
 
     /**
      * P4: hard cap on daily actions for unlimited-tier workspaces. This is roughly 30x a normal
@@ -271,13 +278,18 @@ public class AICreditService {
      * Seam for the escrow-funded event (V9, Domain A — not built in this phase). When wired,
      * this resets credits to the (possibly loyalty-bumped) monthly allotment and opens an
      * unlimited window through {@code campaignEndDate + 3 days}.
+     *
+     * <p>F-3/SM-0.2 [vikram · 2026-09-17]: sets {@code loyaltyBonus} (which stacks on whatever
+     * {@code planAllotment} the workspace currently has), not {@code monthlyAllotment} directly —
+     * see {@link BrandAiCredit} field javadoc for why the two writers were split.
+     *   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3, §7 SM-0.2
      */
     @Transactional
     public void applyEscrowFundedReset(String workspaceId, Instant unlimitedUntil) {
         BrandAiCredit credit = ensureInitialized(workspaceId);
         if (credit.getFirstCampaignAt() == null) {
             credit.setFirstCampaignAt(Instant.now());
-            credit.setMonthlyAllotment(LOYALTY_MONTHLY_ALLOTMENT);
+            credit.setLoyaltyBonus(LOYALTY_BONUS);
         }
         credit.setCreditsRemaining(credit.getMonthlyAllotment());
         credit.setUnlimitedUntil(unlimitedUntil);
@@ -285,15 +297,23 @@ public class AICreditService {
     }
 
     /**
-     * Syncs {@code monthlyAllotment} to the workspace's current subscription plan. Deliberately
-     * does NOT reset {@code creditsRemaining} — callers invoke {@link #resetForNewCycle} separately
+     * Syncs {@code planAllotment} to the workspace's current subscription plan. Deliberately does
+     * NOT reset {@code creditsRemaining} — callers invoke {@link #resetForNewCycle} separately
      * when a reset is intended (e.g. {@code AICreditResetJob}); {@code reconcileAiCreditAllotment}
      * calls this alone precisely to avoid resetting mid-cycle.
+     *
+     * <p>F-3 [vikram · 2026-09-17]: writes {@code planAllotment} only, never {@code
+     * loyaltyBonus} or {@code monthlyAllotment} directly — {@code monthlyAllotment} recomputes
+     * itself inside {@link BrandAiCredit#setPlanAllotment}. The {@code monthlyAllotment} parameter
+     * name is kept (not renamed to {@code planAllotment}) because it mirrors what every existing
+     * caller (e.g. {@code SubscriptionService#reconcileAiCreditAllotment},
+     * {@code Plan#getAiMonthlyAllotment()}) actually passes: the plan's own base allotment.
+     *   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3
      */
     @Transactional
     public void applyPlanAllotment(String workspaceId, int monthlyAllotment) {
         BrandAiCredit credit = ensureInitialized(workspaceId);
-        credit.setMonthlyAllotment(monthlyAllotment);
+        credit.setPlanAllotment(monthlyAllotment);
         creditRepository.save(credit);
     }
 
