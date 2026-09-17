@@ -26,6 +26,7 @@ import BrandCreatorProfilePage from '../brand-creator-profile';
 const getProfileMock = vi.fn();
 const similarMock = vi.fn();
 const campaignsListMock = vi.fn();
+const getCreatorDemographicsMock = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -43,9 +44,26 @@ vi.mock('@/lib/api', async () => {
         ...actual.api.campaigns,
         list: (...a: unknown[]) => campaignsListMock(...a),
       },
+      analytics: {
+        ...actual.api.analytics,
+        getCreatorDemographics: (...a: unknown[]) => getCreatorDemographicsMock(...a),
+      },
     },
   };
 });
+
+// F-0877: the real CreatorDemographicsResponse for a live creator with no audience data yet —
+// `hasData: false` is what AnalyticsController actually returns pre-data, and is what
+// deriveDemographicsView (brand-creator-profile.tsx) maps to `status: 'unavailable'`, the
+// branch that renders the explicit "Not available" copy under both headings below.
+const NO_DEMOGRAPHICS_DATA = {
+  hasData: false,
+  ageGenderBreakdown: null,
+  countryBreakdown: null,
+  cityBreakdown: null,
+  localeBreakdown: null,
+  fetchedAt: null,
+};
 
 // A real CreatorPublicProfile response — the DTO has no audience-demographics fields at all, so
 // buildLiveCreatorView produces ageGroups: [] / topCities: [] for this creator today.
@@ -88,6 +106,7 @@ describe('F-0295 — empty ageGroups/topCities never renders as a silent empty b
     vi.clearAllMocks();
     similarMock.mockResolvedValue({ similar: [] });
     campaignsListMock.mockResolvedValue({ campaigns: [], meta: { page: 1, limit: 50, hasMore: false } });
+    getCreatorDemographicsMock.mockResolvedValue(NO_DEMOGRAPHICS_DATA);
   });
 
   it('Age Distribution shows an explicit absent state, not an empty box, for a live creator with no age data', async () => {

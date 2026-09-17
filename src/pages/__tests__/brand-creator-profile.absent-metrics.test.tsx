@@ -21,6 +21,7 @@ import BrandCreatorProfilePage from '../brand-creator-profile';
 const getProfileMock = vi.fn();
 const similarMock = vi.fn();
 const campaignsListMock = vi.fn();
+const getCreatorDemographicsMock = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -38,9 +39,26 @@ vi.mock('@/lib/api', async () => {
         ...actual.api.campaigns,
         list: (...a: unknown[]) => campaignsListMock(...a),
       },
+      analytics: {
+        ...actual.api.analytics,
+        getCreatorDemographics: (...a: unknown[]) => getCreatorDemographicsMock(...a),
+      },
     },
   };
 });
+
+// F-0877: the real CreatorDemographicsResponse for a live creator with no audience data yet —
+// `hasData: false` is what AnalyticsController actually returns pre-data, and is what
+// deriveDemographicsView (brand-creator-profile.tsx) maps to `status: 'unavailable'`, the branch
+// that renders "Not available" instead of a fabricated 0/0/0 gender split.
+const NO_DEMOGRAPHICS_DATA = {
+  hasData: false,
+  ageGenderBreakdown: null,
+  countryBreakdown: null,
+  cityBreakdown: null,
+  localeBreakdown: null,
+  fetchedAt: null,
+};
 
 // A real CreatorPublicProfile response. The DTO has no avgLikes/avgComments/avgViews/gender
 // fields — this object is exactly what the live server actually returns, not a partial fixture.
@@ -83,6 +101,7 @@ describe('F-0260 — absent avg-likes/avg-views/gender never renders as a fabric
     vi.clearAllMocks();
     similarMock.mockResolvedValue({ similar: [] });
     campaignsListMock.mockResolvedValue({ campaigns: [], meta: { page: 1, limit: 50, hasMore: false } });
+    getCreatorDemographicsMock.mockResolvedValue(NO_DEMOGRAPHICS_DATA);
   });
 
   it('a real creator whose DTO carries no engagement-stat fields renders "—", never "0"', async () => {
