@@ -781,6 +781,18 @@ public class SubscriptionService {
      * concurrent webhook race exactly as before (see {@code SubscriptionRenewalResetJob} javadoc
      * FOCUS AREA 2b/Kabir's trace) — this change only removes the partial-commit window between
      * this job's own sequential steps, it does not alter cross-actor concurrency behavior.
+     *
+     * <p>F-0836 sibling [arjun · 2026-09-17]: the plan-allotment sync used to run only when the
+     * resolved plan was {@code PRO}. If {@code planAllotment} was ever left stale at a Pro value
+     * (e.g. {@link #reconcileAiCreditAllotment} failed, logged and swallowed), a renewal that
+     * resolves to Free skipped the sync and {@code resetForNewCycle} re-applied the stale 400/450.
+     * It now syncs unconditionally before the reset, exactly as {@code
+     * AICreditResetJob#syncPlanAllotment} does since 77fbb6b. {@code planAllotment} is the
+     * plan-sync-owned column only; the earned {@code loyaltyBonus} is untouched, so SM-0.2's
+     * stacking (Pro 450 with a funded campaign) is preserved. A null plan (the resolver falls back
+     * to Free, so it should never happen) is logged loudly rather than skipped silently.
+     *   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3, §7 SM-0.2; kabir L3 review
+     *   (LOW); precedent AICreditResetJob.java syncPlanAllotment
      */
     @Transactional
     public void applyRenewalSafetyNet(Subscription subscription, Instant newStart, Instant newEnd) {
@@ -789,8 +801,14 @@ public class SubscriptionService {
 
         String workspaceId = subscription.getWorkspaceId();
         Plan activePlan = getActivePlanForWorkspace(workspaceId);
-        if (activePlan != null && activePlan.getCode() == PlanCode.PRO) {
+        if (activePlan != null) {
             aiCreditService.applyPlanAllotment(workspaceId, activePlan.getAiMonthlyAllotment());
+        } else {
+            log.warn(
+                    "applyRenewalSafetyNet: getActivePlanForWorkspace returned null for workspace {}"
+                            + " -- planAllotment sync skipped, resetForNewCycle will re-apply the"
+                            + " stored allotment unchanged",
+                    workspaceId);
         }
         aiCreditService.resetForNewCycle(workspaceId);
     }

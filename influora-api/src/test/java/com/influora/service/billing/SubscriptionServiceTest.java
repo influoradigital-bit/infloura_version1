@@ -630,13 +630,18 @@ class SubscriptionServiceTest {
         // The MP-1 wiring assertion: all three steps actually fire from ONE call, matching what
         // used to be three separately auto-committing calls made directly by the job.
         verify(subscriptionRepository).save(sub);
-        verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 400);
-        verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(aiCreditService);
+        order.verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 400);
+        order.verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
     }
 
+    // F-0836 sibling [arjun · 2026-09-17]: this test used to assert the Free renewal did NOT call
+    // applyPlanAllotment, which locked in the bug — a planAllotment left stale at Pro's 400 then
+    // survived every Free renewal. It now asserts the sync to Free's 100 happens BEFORE the reset.
+    // Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3; precedent AICreditResetJobTest.
     @Test
-    @DisplayName("wiring: applyRenewalSafetyNet on a Free-tier workspace resets credits but does NOT call applyPlanAllotment")
-    void testApplyRenewalSafetyNetFreeTierSkipsAllotmentSync() {
+    @DisplayName("wiring: applyRenewalSafetyNet on a Free-tier workspace syncs planAllotment to Free before resetting credits")
+    void testApplyRenewalSafetyNetFreeTierSyncsAllotmentBeforeReset() {
         Subscription sub = freeSubscriptionRow();
         Instant newStart = sub.getCurrentPeriodEnd();
         Instant newEnd = newStart.plusSeconds(2592000);
@@ -647,8 +652,9 @@ class SubscriptionServiceTest {
         subscriptionService.applyRenewalSafetyNet(sub, newStart, newEnd);
 
         verify(subscriptionRepository).save(sub);
-        verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
-        verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(aiCreditService);
+        order.verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 100);
+        order.verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
     }
 
     @Test
@@ -868,6 +874,25 @@ class SubscriptionServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("ALREADY_PAID_SUBSCRIBER", ex.getCode());
         verify(subscriptionRepository, never()).save(any());
         verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
+    }
+
+    // F-0836 sibling [arjun · 2026-09-17]: a null plan (should never happen — the resolver falls
+    // back to Free) must not NPE or write an allotment, and the cycle reset still runs.
+    // Source: precedent AICreditResetJob.java syncPlanAllotment null branch (kabir L3 repair round).
+    @Test
+    @DisplayName("renewal safety net with an unresolvable plan still resets and never writes an allotment")
+    void applyRenewalSafetyNet_nullPlan_resetsWithoutAllotmentWrite() {
+        Subscription free = freeSubscriptionRow();
+        when(subscriptionRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.empty());
+        when(planService.getFreePlan()).thenReturn(null);
+
+        assertDoesNotThrow(
+                () ->
+                        subscriptionService.applyRenewalSafetyNet(
+                                free, Instant.now(), Instant.now().plusSeconds(2592000)));
+
+        verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
+        verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
     }
 
     private Subscription freeSubscriptionRow() {
