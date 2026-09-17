@@ -140,11 +140,28 @@ public class AICreditResetJob {
      * in {@link #runReset()} already, so a plan-resolution failure here is logged and skips just
      * this one workspace's reset for this cycle, same as any other failure in the loop; it does
      * not abort the batch.
+     *
+     * <p>REPAIR ROUND [vikram · 2026-09-17]: kabir's probe ("PROBE nullPlan -> monthly=400
+     * credits=400" for a workspace that had been on Pro) showed a null {@code plan} was silently
+     * skipping the sync and letting {@code resetForNewCycle} re-apply the stale stored allotment
+     * with no signal to ops — exactly the F-0836 staleness bug this job exists to close, just
+     * reached via a null plan resolution instead of a Pro-only guard. {@code
+     * getActivePlanForWorkspace} is documented to fall back to Free rather than return null in
+     * normal operation, so a null here means the resolver itself is in an unexpected state; log it
+     * loudly (mirroring the {@link #resetAllCreditsForNewMonth} crash-log pattern above) so a
+     * silently-stuck allotment is visible instead of indistinguishable from a correct sync.
+     *   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3, F-0836 repair round (kabir)
      */
     private void syncPlanAllotment(String workspaceId) {
         Plan plan = subscriptionService.getActivePlanForWorkspace(workspaceId);
         if (plan != null) {
             aiCreditService.applyPlanAllotment(workspaceId, plan.getAiMonthlyAllotment());
+        } else {
+            log.warn(
+                    "AICreditResetJob: getActivePlanForWorkspace returned null for workspace {} --"
+                            + " planAllotment sync skipped, resetForNewCycle will re-apply the"
+                            + " stored allotment unchanged",
+                    workspaceId);
         }
     }
 }

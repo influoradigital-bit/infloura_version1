@@ -1,8 +1,14 @@
 package com.influora.job;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.influora.domain.entity.BrandAiCredit;
 import com.influora.domain.entity.Plan;
 import com.influora.domain.enums.PlanCode;
@@ -16,12 +22,14 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 
 /**
  * F-0836 + audit F-3 [vikram · 2026-09-17]: {@link AICreditResetJob} must sync {@code
@@ -50,8 +58,15 @@ class AICreditResetJobTest {
     private AICreditResetJob job;
     private BrandAiCredit credit;
 
+    private Logger jobLogger;
+    private ListAppender<ILoggingEvent> logAppender;
+
     @BeforeEach
     void setUp() {
+        jobLogger = (Logger) LoggerFactory.getLogger(AICreditResetJob.class);
+        logAppender = new ListAppender<>();
+        logAppender.start();
+        jobLogger.addAppender(logAppender);
         aiCreditService = new AICreditService(creditRepository, idempotencyService);
         job = new AICreditResetJob(workspaceRepository, aiCreditService, subscriptionService);
 
@@ -69,6 +84,11 @@ class AICreditResetJobTest {
                         .lastReset(LocalDate.now())
                         .build();
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+    }
+
+    @AfterEach
+    void tearDown() {
+        jobLogger.detachAppender(logAppender);
     }
 
     private static Plan plan(PlanCode code, int aiMonthlyAllotment) {
@@ -153,5 +173,57 @@ class AICreditResetJobTest {
 
         assertEquals(450, credit.getMonthlyAllotment());
         assertEquals(450, credit.getCreditsRemaining());
+    }
+
+    // REPAIR ROUND [vikram · 2026-09-17] -- kabir's probe ("PROBE nullPlan -> monthly=400
+    // credits=400" for a workspace that had been on Pro) showed a null resolved plan silently
+    // skipped the planAllotment sync with no signal to ops, then resetForNewCycle re-applied the
+    // stale stored allotment unchanged -- the same staleness bug class F-0836 closes for the
+    // Pro-only-guard case, just reached via a null plan instead. Fix: log a WARN naming the
+    // workspace when getActivePlanForWorkspace returns null, so the silently-stuck allotment is
+    // now visible; the reset itself still proceeds unchanged (this method must not abort the
+    // per-workspace loop).
+    //   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3, F-0836 repair round (kabir)
+    @Test
+    @DisplayName(
+            "REPAIR ROUND (kabir): a null resolved plan logs a WARN naming the workspace instead of"
+                    + " silently skipping the sync, and the reset still re-applies the stored"
+                    + " allotment without throwing")
+    void nullResolvedPlan_logsWarnInsteadOfSilentSkip() {
+        // First reset while Pro, establishing a stored 400 allotment (mirrors kabir's probe setup:
+        // "a workspace that had been on Pro").
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID))
+                .thenReturn(plan(PlanCode.PRO, 400));
+        job.resetAllCreditsForNewMonth();
+        assertEquals(400, credit.getMonthlyAllotment());
+
+        // Plan resolver now returns null (unexpected resolver state, not a normal Free fallback).
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(null);
+
+        // Falsifiable core assertion: does not throw, and the per-workspace loop still completes.
+        job.resetAllCreditsForNewMonth();
+
+        // Old (pre-repair) behaviour, unchanged: sync is skipped, so the stale 400 is re-applied by
+        // resetForNewCycle rather than corrected -- this method never fixes staleness on its own,
+        // it only makes the skip visible.
+        assertEquals(400, credit.getMonthlyAllotment());
+        assertEquals(400, credit.getCreditsRemaining());
+
+        // New (repair-round) behaviour: the skip is no longer silent -- a WARN log names the
+        // affected workspace, exactly the assertion that fails against the pre-repair code (which
+        // logs nothing at all for a null plan).
+        List<ILoggingEvent> warnEvents =
+                logAppender.list.stream().filter(e -> e.getLevel() == Level.WARN).toList();
+        assertFalse(
+                warnEvents.isEmpty(),
+                "expected a WARN log when getActivePlanForWorkspace returns null, but nothing was"
+                        + " logged at all");
+        boolean namesTheWorkspace =
+                warnEvents.stream().anyMatch(e -> e.getFormattedMessage().contains(WORKSPACE_ID));
+        assertTrue(
+                namesTheWorkspace,
+                "expected the WARN log to identify the affected workspace (id=" + WORKSPACE_ID + ")"
+                        + " but got: "
+                        + warnEvents.stream().map(ILoggingEvent::getFormattedMessage).toList());
     }
 }
