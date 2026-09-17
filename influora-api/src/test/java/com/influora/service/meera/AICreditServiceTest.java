@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -19,8 +20,11 @@ import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.domain.entity.BrandAiCredit;
+import com.influora.domain.entity.Plan;
+import com.influora.domain.enums.PlanCode;
 import com.influora.repository.BrandAiCreditRepository;
 import com.influora.service.IdempotencyService;
+import com.influora.service.billing.SubscriptionService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -30,6 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -49,12 +54,17 @@ class AICreditServiceTest {
 
     @Mock private BrandAiCreditRepository creditRepository;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private SubscriptionService subscriptionService;
 
     private AICreditService creditService;
 
     @BeforeEach
     void setUp() {
-        creditService = new AICreditService(creditRepository, idempotencyService);
+        creditService = new AICreditService(creditRepository, idempotencyService, subscriptionService);
+    }
+
+    private static Plan plan(PlanCode code, int aiMonthlyAllotment) {
+        return Plan.builder().id(code.name()).code(code).aiMonthlyAllotment(aiMonthlyAllotment).build();
     }
 
     /** Stubs {@code idempotencyService.executeOnce(...)} (4-arg, no digest) to just run the supplier. */
@@ -138,10 +148,33 @@ class AICreditServiceTest {
         // Should NOT throw because the counter resets for a new day
         assertDoesNotThrow(() -> creditService.tryConsume(WORKSPACE_ID, 1));
 
-        // Verify the credit was saved (counter was reset and incremented)
-        verify(creditRepository).save(credit);
-        assertEquals(1, credit.getDailyActionsUsed());
-        assertEquals(LocalDate.now(ZoneOffset.UTC), credit.getDailyActionsDate());
+        // T-S3-F0879-0917: the daily-action bump is now a single atomic, single-column-scoped
+        // UPDATE (bumpDailyActions) -- NOT a full-entity save(credit) -- so this no longer asserts
+        // against the in-memory entity's mutated fields (tryConsume never mutates them any more;
+        // see AICreditService#tryConsume javadoc for why that mutation was the root cause of the
+        // credit-race finding).
+        verify(creditRepository).bumpDailyActions(WORKSPACE_ID, LocalDate.now(ZoneOffset.UTC));
+        verify(creditRepository, never()).save(any(BrandAiCredit.class));
+    }
+
+    @Test
+    @DisplayName(
+            "T-5/tech N4: tryConsume never calls the full-row save() for the daily-action bump --"
+                    + " only the atomic, single-column-scoped bumpDailyActions and the atomic"
+                    + " tryDecrement ever touch the row, so nothing can blind-overwrite a concurrent"
+                    + " decrement (unit-level proof the decrement path is conditional; the real"
+                    + " cross-transaction race is falsified in AICreditRaceIntegrationTest, Docker CI"
+                    + " only, NOT PROVEN locally)")
+    void testTryConsumeNeverFullRowSaves() {
+        BrandAiCredit credit = createCredit(1, 100, null, 0);
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        when(creditRepository.tryDecrement(WORKSPACE_ID, 1)).thenReturn(1);
+
+        assertDoesNotThrow(() -> creditService.tryConsume(WORKSPACE_ID, 1));
+
+        verify(creditRepository, never()).save(any(BrandAiCredit.class));
+        verify(creditRepository, times(1)).bumpDailyActions(eq(WORKSPACE_ID), any(LocalDate.class));
+        verify(creditRepository, times(1)).tryDecrement(WORKSPACE_ID, 1);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -325,6 +358,7 @@ class AICreditServiceTest {
     void testEscrowFundedResetBumpsLoyaltyAllotment() {
         BrandAiCredit credit = createCredit(20, 100, null, 0);
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan(PlanCode.FREE, 100));
 
         Instant unlimitedUntil = Instant.now().plusSeconds(86400 * 7); // 7 days
         creditService.applyEscrowFundedReset(WORKSPACE_ID, unlimitedUntil);
@@ -345,6 +379,7 @@ class AICreditServiceTest {
         // before this ever runs in production) -- simulate that via applyPlanAllotment directly.
         BrandAiCredit credit = createCredit(400, 400, null, 0);
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan(PlanCode.PRO, 400));
 
         Instant unlimitedUntil = Instant.now().plusSeconds(86400 * 7);
         creditService.applyEscrowFundedReset(WORKSPACE_ID, unlimitedUntil);
@@ -370,7 +405,94 @@ class AICreditServiceTest {
     }
 
     @Test
-    @DisplayName("resetForNewCycle: resets credits to monthly allotment")
+    @DisplayName(
+            "S3 item 1 'Pay -> no credits': Free-at-0-credits upgrades to Pro -> creditsRemaining is"
+                    + " topped up to the new allotment IMMEDIATELY, not only monthlyAllotment")
+    void testApplyPlanAllotmentTopsUpCreditsRemainingOnIncrease() {
+        BrandAiCredit credit = createCredit(0, 100, null, 0); // Free, 0 credits left
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400); // Free -> Pro upgrade webhook
+
+        assertEquals(400, credit.getMonthlyAllotment());
+        assertEquals(
+                400,
+                credit.getCreditsRemaining(),
+                "upgrading at 0 credits must leave the new Pro allotment available immediately");
+    }
+
+    @Test
+    @DisplayName(
+            "S3 item 1: the top-up is the INCREASE, capped at the new allotment -- a brand that had"
+                    + " already used some credits keeps its usage, it does not get reset to full")
+    void testApplyPlanAllotmentTopsUpByIncreaseOnlyCappedAtNewAllotment() {
+        BrandAiCredit credit = createCredit(30, 100, null, 0); // Free, 30 of 100 left (70 used)
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400); // Free(100) -> Pro(400), +300
+
+        assertEquals(400, credit.getMonthlyAllotment());
+        assertEquals(
+                330,
+                credit.getCreditsRemaining(),
+                "must top up by exactly the allotment increase (30 + 300), not reset to the full 400");
+    }
+
+    @Test
+    @DisplayName("S3 item 1: a plan DOWNGRADE (allotment decrease) never claws back creditsRemaining mid-cycle")
+    void testApplyPlanAllotmentDoesNotClawBackOnDecrease() {
+        BrandAiCredit credit = createCredit(380, 400, null, 0); // Pro, 380 of 400 left
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+
+        creditService.applyPlanAllotment(WORKSPACE_ID, 100); // Pro -> Free downgrade
+
+        assertEquals(100, credit.getMonthlyAllotment());
+        assertEquals(
+                380,
+                credit.getCreditsRemaining(),
+                "a downgrade must not claw back creditsRemaining mid-cycle (existing documented intent)");
+    }
+
+    @Test
+    @DisplayName(
+            "F-0879 invariant: applyEscrowFundedReset syncs planAllotment from the workspace's"
+                    + " CURRENT active plan BEFORE refilling -- a Free workspace stuck at a stale Pro"
+                    + " planAllotment=400 funding its first campaign is refilled to 150 (100 + 50 loyalty"
+                    + " bonus), not the stale 450")
+    void testEscrowFundedResetResyncsStalePlanAllotmentBeforeRefill() {
+        // Workspace downgraded Pro -> Free, but nothing has synced planAllotment since (F-0879
+        // scenario: it is stale at Pro's 400 the moment the campaign gets funded).
+        BrandAiCredit credit = createCredit(10, 400, null, 0);
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan(PlanCode.FREE, 100));
+
+        creditService.applyEscrowFundedReset(WORKSPACE_ID, Instant.now().plusSeconds(86_400 * 7));
+
+        assertEquals(100, credit.getPlanAllotment(), "planAllotment must be re-synced to the CURRENT plan");
+        assertEquals(50, credit.getLoyaltyBonus());
+        assertEquals(150, credit.getMonthlyAllotment(), "Free (100) + loyalty bonus (50) = 150, not stale 450");
+        assertEquals(150, credit.getCreditsRemaining(), "refill must use the RE-SYNCED allotment, not the stale one");
+    }
+
+    @Test
+    @DisplayName(
+            "F-0879 invariant, InOrder: applyEscrowFundedReset consults the active plan BEFORE"
+                    + " persisting the refill -- the invariant that every refill-from-monthlyAllotment"
+                    + " path syncs planAllotment first")
+    void testEscrowFundedResetSyncsPlanAllotmentBeforeSave() {
+        BrandAiCredit credit = createCredit(10, 400, null, 0);
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan(PlanCode.FREE, 100));
+
+        creditService.applyEscrowFundedReset(WORKSPACE_ID, Instant.now().plusSeconds(86_400 * 7));
+
+        InOrder order = inOrder(subscriptionService, creditRepository);
+        order.verify(subscriptionService).getActivePlanForWorkspace(WORKSPACE_ID);
+        order.verify(creditRepository).save(credit);
+    }
+
+    @Test
+    @DisplayName("resetForNewCycle: resets credits to monthly allotment (lastReset written in UTC)")
     void testResetForNewCycleResetsCredits() {
         BrandAiCredit credit = createCredit(20, 100, null, 0);
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
@@ -378,8 +500,50 @@ class AICreditServiceTest {
         creditService.resetForNewCycle(WORKSPACE_ID);
 
         assertEquals(100, credit.getCreditsRemaining()); // Reset to allotment
-        assertEquals(LocalDate.now(), credit.getLastReset());
+        assertEquals(LocalDate.now(ZoneOffset.UTC), credit.getLastReset());
         verify(creditRepository).save(credit);
+    }
+
+    @Test
+    @DisplayName(
+            "S3 item 3 'Reset runs twice': resetForNewCycleIfDue actually resets the FIRST time this"
+                    + " UTC month")
+    void testResetForNewCycleIfDueResetsFirstTimeThisMonth() {
+        BrandAiCredit credit = createCredit(20, 100, null, 0);
+        credit.setLastReset(LocalDate.now(ZoneOffset.UTC).minusMonths(1));
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+
+        creditService.resetForNewCycleIfDue(WORKSPACE_ID);
+
+        assertEquals(100, credit.getCreditsRemaining());
+        assertEquals(LocalDate.now(ZoneOffset.UTC), credit.getLastReset());
+        verify(creditRepository, times(1)).save(credit);
+    }
+
+    @Test
+    @DisplayName(
+            "S3 item 3 'Reset runs twice': a SECOND resetForNewCycleIfDue call in the same UTC month"
+                    + " is a no-op -- credits already spent this cycle are not blown back up to full"
+                    + " allotment")
+    void testResetForNewCycleIfDueSecondCallSameMonthIsNoOp() {
+        BrandAiCredit credit = createCredit(20, 100, null, 0);
+        credit.setLastReset(LocalDate.now(ZoneOffset.UTC).minusMonths(1));
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+
+        creditService.resetForNewCycleIfDue(WORKSPACE_ID); // 1st run this month -- resets to 100
+        assertEquals(100, credit.getCreditsRemaining());
+
+        // Workspace spends some credits after the reset.
+        credit.setCreditsRemaining(37);
+
+        creditService.resetForNewCycleIfDue(WORKSPACE_ID); // 2nd run, SAME UTC month -- must no-op
+
+        assertEquals(
+                37,
+                credit.getCreditsRemaining(),
+                "a duplicate run in the same UTC month must change nothing -- it must not blow the"
+                        + " already-spent-down balance back up to the full allotment");
+        verify(creditRepository, times(1)).save(credit); // only the FIRST call persisted a change
     }
 
     private BrandAiCredit createCredit(int remaining, int allotment, Instant unlimitedUntil, int dailyActions) {

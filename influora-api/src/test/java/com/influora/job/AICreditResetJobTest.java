@@ -67,7 +67,7 @@ class AICreditResetJobTest {
         logAppender = new ListAppender<>();
         logAppender.start();
         jobLogger.addAppender(logAppender);
-        aiCreditService = new AICreditService(creditRepository, idempotencyService);
+        aiCreditService = new AICreditService(creditRepository, idempotencyService, subscriptionService);
         job = new AICreditResetJob(workspaceRepository, aiCreditService, subscriptionService);
 
         when(workspaceRepository.findIdsByType(WorkspaceType.BRAND)).thenReturn(List.of(WORKSPACE_ID));
@@ -106,6 +106,11 @@ class AICreditResetJobTest {
         assertEquals(400, credit.getMonthlyAllotment(), "Pro reset must land at Pro's 400");
         assertEquals(400, credit.getCreditsRemaining());
 
+        // T-S3-F0879-0917: resetForNewCycleIfDue is now idempotent within a UTC month (S3 "Reset
+        // runs twice") -- roll lastReset back a month so this simulates the workspace's genuinely
+        // NEXT scheduled monthly run, not a same-day duplicate trigger.
+        credit.setLastReset(credit.getLastReset().minusMonths(1));
+
         // Brand cancels -> getActivePlanForWorkspace now falls back to Free.
         when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID))
                 .thenReturn(plan(PlanCode.FREE, 100));
@@ -136,6 +141,11 @@ class AICreditResetJobTest {
         assertEquals(450, credit.getMonthlyAllotment(), "still Pro -- reset must not disturb 450");
         assertEquals(450, credit.getCreditsRemaining());
 
+        // T-S3-F0879-0917: roll lastReset back a month so the cancellation below is picked up on a
+        // genuinely NEXT monthly run (resetForNewCycleIfDue is now a same-month no-op -- S3 "Reset
+        // runs twice" -- so without this the 3rd call below would be silently skipped too).
+        credit.setLastReset(credit.getLastReset().minusMonths(1));
+
         // Brand cancels.
         when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID))
                 .thenReturn(plan(PlanCode.FREE, 100));
@@ -148,6 +158,31 @@ class AICreditResetJobTest {
                         + " kept -- 150, not the stale Pro 450 and not a bonus-wiped 100");
         assertEquals(150, credit.getCreditsRemaining());
         assertEquals(50, credit.getLoyaltyBonus(), "loyalty bonus itself must survive a downgrade");
+    }
+
+    @Test
+    @DisplayName(
+            "T-S3-F0879-0917 S3 item 3 'Reset runs twice': the job run twice in the SAME UTC month"
+                    + " changes nothing the second time -- credits already spent are not blown back up"
+                    + " to the full allotment")
+    void jobRunTwiceInSameUtcMonthIsNoOpTheSecondTime() {
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID))
+                .thenReturn(plan(PlanCode.PRO, 400));
+
+        job.resetAllCreditsForNewMonth(); // 1st run this month
+        assertEquals(400, credit.getMonthlyAllotment());
+        assertEquals(400, credit.getCreditsRemaining());
+
+        // Workspace spends some credits after the first run.
+        credit.setCreditsRemaining(17);
+
+        job.resetAllCreditsForNewMonth(); // 2nd run, SAME UTC month (no clock advance)
+
+        assertEquals(
+                17,
+                credit.getCreditsRemaining(),
+                "a duplicate job trigger in the same UTC month must change nothing -- it must not"
+                        + " reset the already-spent-down balance back up to 400");
     }
 
     @Test
