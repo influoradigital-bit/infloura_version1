@@ -271,7 +271,26 @@ public class MetaOAuthService {
                         + urlEncode(props.getInstagramAppSecret())
                         + "&access_token="
                         + urlEncode(shortLivedToken);
-        return fetchToken(url, "instagram-long-lived-exchange");
+        try {
+            return fetchToken(url, "instagram-long-lived-exchange");
+        } catch (MetaApiException e) {
+            // F-0819 — this exchange fails in production with code 100 "Unsupported request -
+            // method type: get" although the request matches Meta's docs and the code exchange
+            // before it produced a non-blank token. What is left to rule out are properties of the
+            // VALUES: token type, which app's secret, stray whitespace. Fingerprints only — see
+            // MetaDiagnostics for why each is safe to print.
+            log.warn(
+                    "F-0819 instagram-long-lived-exchange diagnostics: shortLivedToken={},"
+                            + " instagramAppId={}, instagramAppSecret={}, facebookAppSecret={},"
+                            + " instagramSecretEqualsFacebookSecret={}",
+                    MetaDiagnostics.tokenFingerprint(shortLivedToken),
+                    props.getInstagramAppId(),
+                    MetaDiagnostics.secretFingerprint(props.getInstagramAppSecret()),
+                    MetaDiagnostics.secretFingerprint(props.getAppSecret()),
+                    props.getInstagramAppSecret() != null
+                            && props.getInstagramAppSecret().equals(props.getAppSecret()));
+            throw e;
+        }
     }
 
     /**

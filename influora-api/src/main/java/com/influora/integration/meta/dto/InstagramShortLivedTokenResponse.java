@@ -8,9 +8,12 @@ import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.node.MissingNode;
+import com.influora.integration.meta.oauth.MetaDiagnostics;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Business Login for Instagram code-exchange response (T-IGLOGIN-0820).
@@ -35,13 +38,14 @@ import java.util.List;
  *             "permissions":"instagram_business_basic,instagram_business_manage_insights"}]}
  * </pre>
  *
- * <p>With {@code ignoreUnknown = true} and no top-level {@code access_token}, Jackson built a
- * record whose every component was {@code null} <b>and threw nothing</b>. That is why production
- * logged {@code instagram-code-exchange failures: 0} for a leg that had never once succeeded:
- * the exchange "worked", handed a null token to
- * {@code exchangeInstagramForLongLivedToken}, and the failure surfaced one call later as an
- * {@code IGApiException} from graph.instagram.com. Nineteen creator connects died this way over
- * 2026-09-13..15 with zero {@code INSTAGRAM_LOGIN} rows ever stored.
+ * <p>With {@code ignoreUnknown = true} and no top-level {@code access_token}, Jackson would build a
+ * record whose every component is {@code null} <b>and throw nothing</b>.
+ *
+ * <p><b>Correction, 2026-09-17:</b> this was believed to cause the production failure
+ * ({@code instagram-long-lived-exchange} 400 "Unsupported request - method type: get"). It did
+ * not. With this fix deployed, a real connect produced a non-blank token and graph.instagram.com
+ * returned the identical error. Which shape Meta actually sends was never observed — the
+ * deserializer below now logs it (F-0819), and the real cause is still being diagnosed.
  *
  * <p>The deserializer therefore accepts <b>both</b> shapes rather than swapping one guess for
  * another — a wrapped body is unwrapped, a flat body is read as-is. Same for {@code permissions},
@@ -62,15 +66,49 @@ public record InstagramShortLivedTokenResponse(
     /** Reads either the {@code data}-wrapped Business Login body or the older flat one. */
     static final class Deserializer extends JsonDeserializer<InstagramShortLivedTokenResponse> {
 
+        private static final Logger log = LoggerFactory.getLogger(InstagramShortLivedTokenResponse.class);
+
         @Override
         public InstagramShortLivedTokenResponse deserialize(
                 JsonParser parser, DeserializationContext context) throws IOException {
             JsonNode root = parser.readValueAsTree();
             JsonNode body = unwrap(root);
-            return new InstagramShortLivedTokenResponse(
-                    text(body, "access_token"),
-                    text(body, "user_id"),
-                    permissions(body.get("permissions")));
+            InstagramShortLivedTokenResponse parsed =
+                    new InstagramShortLivedTokenResponse(
+                            text(body, "access_token"),
+                            text(body, "user_id"),
+                            permissions(body.get("permissions")));
+            // F-0819 — record what Meta actually sent, as names and fingerprints only. The F-0818
+            // fix rested on a documented shape nobody had observed; this line observes it.
+            log.info(
+                    "F-0819 instagram code-exchange response: shape={}, topLevelKeys={}, bodyKeys={},"
+                            + " accessToken={}, userIdPresent={}, permissions={}",
+                    shapeOf(root),
+                    fieldNames(root),
+                    fieldNames(body),
+                    MetaDiagnostics.tokenFingerprint(parsed.accessToken()),
+                    parsed.userId() != null,
+                    parsed.permissions());
+            return parsed;
+        }
+
+        private static String shapeOf(JsonNode root) {
+            if (root == null || !root.isObject()) {
+                return "not-an-object";
+            }
+            JsonNode data = root.get("data");
+            if (data != null && data.isArray()) {
+                return data.isEmpty() ? "data-wrapped-empty" : "data-wrapped";
+            }
+            return "flat";
+        }
+
+        private static List<String> fieldNames(JsonNode node) {
+            List<String> names = new ArrayList<>();
+            if (node != null && node.isObject()) {
+                node.fieldNames().forEachRemaining(names::add);
+            }
+            return names;
         }
 
         /**
