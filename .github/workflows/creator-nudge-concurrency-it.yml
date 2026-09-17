@@ -1,0 +1,79 @@
+name: Creator Nudge Concurrency IT
+
+# F-0822 — CreatorNudgeDailyCapConcurrencyIntegrationTest extends AbstractIntegrationTest, whose
+# DockerAvailableCondition DISABLES the class when no Docker daemon is reachable. On the Windows dev
+# box that means it has never executed: surefire reports it "Skipped" and mvn still says BUILD
+# SUCCESS. ubuntu-latest runners ship a running Docker daemon, so Testcontainers can start
+# mysql:8.0.40 here.
+#
+# A skipped run proves nothing, so this job FAILS unless surefire's own report for the class says
+# exactly `Tests run: 1, Failures: 0, Errors: 0, Skipped: 0`. Keep the expected count in sync with
+# the number of @Test methods in the class.
+#
+# Setup (checkout, temurin 21, maven cache, `mvn -B` in influora-api) copied from backend-ci.yml.
+# No `services:` MySQL here on purpose: this class uses its own Testcontainers MySQL, not the
+# backend-tests.yml service container.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'influora-api/**'
+      - '.github/workflows/creator-nudge-concurrency-it.yml'
+  pull_request:
+    paths:
+      - 'influora-api/**'
+      - '.github/workflows/creator-nudge-concurrency-it.yml'
+  workflow_dispatch:
+
+jobs:
+  concurrency-it:
+    runs-on: ubuntu-latest
+    name: CreatorNudge daily-cap concurrency (Testcontainers, must not skip)
+    env:
+      TEST_CLASS: CreatorNudgeDailyCapConcurrencyIntegrationTest
+      REPORT: influora-api/target/surefire-reports/com.influora.integration.dbconstraints.CreatorNudgeDailyCapConcurrencyIntegrationTest.txt
+      EXPECTED: 'Tests run: 1, Failures: 0, Errors: 0, Skipped: 0'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Docker must be reachable (otherwise the class would silently skip)
+        run: docker info --format 'Docker server {{.ServerVersion}}'
+
+      - name: Run the concurrency integration test
+        working-directory: influora-api
+        # Not piped: `mvn | grep` reports grep's exit code and hides BUILD FAILURE.
+        run: mvn -B test -Dtest="$TEST_CLASS" -Dsurefire.failIfNoSpecifiedTests=false
+
+      - name: Fail unless it actually ran (Skipped 0) and passed
+        if: always()
+        run: |
+          if [ ! -f "$REPORT" ]; then
+            echo "::error::surefire report not found: $REPORT -- the class did not run (compile failure, rename, or -Dtest matched nothing)"
+            ls -la influora-api/target/surefire-reports/ || true
+            exit 1
+          fi
+          cat "$REPORT"
+          if ! grep -qF "$EXPECTED" "$REPORT"; then
+            echo "::error::expected '$EXPECTED' in $REPORT -- a skipped or failed run is not evidence for F-0785/F-0822"
+            exit 1
+          fi
+          echo "OK: $TEST_CLASS ran with Docker: $EXPECTED"
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creator-nudge-concurrency-it-reports
+          path: influora-api/target/surefire-reports/
+          retention-days: 7

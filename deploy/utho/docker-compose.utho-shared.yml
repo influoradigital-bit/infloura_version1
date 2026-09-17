@@ -1,7 +1,14 @@
 # Influora on Utho -- SHARED BOX variant (Snapsby + n8n already live on 150.241.245.242).
 #
-# Differs from docker-compose.utho.yml ONLY by JAVA_TOOL_OPTIONS. Everything else, including
-# the MySQL 8.0 container, is identical.
+# INTENDED to differ from docker-compose.utho.yml only by JAVA_TOOL_OPTIONS. Until F-0787
+# (2026-09-17) that was false: this file had silently drifted 9 influora-api env keys behind
+# (CREATOR_COPILOT_ENABLED, MEERA_CREATOR_ENABLED, SMTP_STARTTLS_ENABLE, SMTP_SSL_ENABLE,
+# CREATOR_INVITE_TOKEN_SECRET, META_CREATOR_MARKETPLACE_ENABLED, ADMIN_NOTIFICATION_EMAIL,
+# META_SYSTEM_IG_USER_ID, META_SYSTEM_IG_ACCESS_TOKEN) -- an explicit-map `environment:` forwards
+# ONLY listed keys, so those never reached the API from this file. The influora-api key SET is now
+# enforced equal by .proof-os/gates/utho-compose-keysets-match.sh. Some DEFAULTS still differ on
+# purpose: this file uses `${VAR:-default}` where utho.yml has a bare `${VAR}` (Q7.4). Values in
+# the other services (influora-ai etc.) are NOT checked by that gate.
 #
 # Why the mysql container is KEPT even though the host runs MySQL (measured 2026-08-21):
 #   - the host is MySQL 8.4.7. Flyway 10.10.0 supports up to 8.1 and warns that 8.4 is
@@ -195,6 +202,17 @@ services:
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      # ---- Creator AI Co-pilot batch (OFF unless set in .env) ---- F-0787: was missing here.
+      # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
+      # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.
+      # Q7.4: `:-false`, never a bare `${VAR}` — a present-but-empty value defeats Spring's
+      # `${VAR:default}` (that default applies only when the property is ABSENT) and has crashed boot.
+      CREATOR_COPILOT_ENABLED: ${CREATOR_COPILOT_ENABLED:-false}
+      # T-MEERA-CREATOR-PHASE-A rollback flag for the whole Meera for Creators surface. F-0787: was
+      # missing here. Default is `:-true`, NOT `:-false`: application.yml defaults it on and utho.yml
+      # pins "true", and while this key was unforwarded the shared box ran on that `true` default —
+      # `:-false` would 404 every CREATOR-audience Meera route on this box. Set false to roll back.
+      MEERA_CREATOR_ENABLED: ${MEERA_CREATOR_ENABLED:-true}
       INFLUORA_MEERA_STREAM_PUBLICCHATURL: https://${AI_DOMAIN}/chat
       CLAMAV_HOST: clamav
       # ---- Money + comms (no validator — break silently if wrong) ----
@@ -224,6 +242,11 @@ services:
       SMTP_PORT: ${SMTP_PORT}
       SMTP_USERNAME: ${SMTP_USERNAME}
       SMTP_PASSWORD: ${SMTP_PASSWORD}
+      # F-0787: were missing here. Utho drops outbound 587, so this box needs SMTP_PORT=465,
+      # SMTP_SSL_ENABLE=true, SMTP_STARTTLS_ENABLE=false (application.yml mail block) — and without
+      # these two lines the .env values never reached the API. Defaults match application.yml.
+      SMTP_STARTTLS_ENABLE: ${SMTP_STARTTLS_ENABLE:-true}
+      SMTP_SSL_ENABLE: ${SMTP_SSL_ENABLE:-false}
       # Signs one-click unsubscribe links (F-0390 A3) — no default is the git-committed placeholder
       UNSUBSCRIBE_SIGNING_SECRET: ${UNSUBSCRIBE_SIGNING_SECRET}
       # T-FESTIVALBOX-0905 -- salts the SHA-256 of the client address stored as
@@ -233,6 +256,10 @@ services:
       # the WHOLE API fails to boot. generate-env.sh generates a real value via the same mechanism
       # as UNSUBSCRIBE_SIGNING_SECRET above.
       FESTIVAL_IP_HASH_SALT: ${FESTIVAL_IP_HASH_SALT}
+      # Q5.5 (T-CREATORCONNECT-0902) — signs creator-invite links. F-0787: was missing here. Empty
+      # default, not the committed dev literal: InviteTokenService fails closed on an empty secret
+      # outside dev/test. See the full comment in docker-compose.utho.yml.
+      CREATOR_INVITE_TOKEN_SECRET: ${CREATOR_INVITE_TOKEN_SECRET:-}
       R2_ACCOUNT_ID: ${R2_ACCOUNT_ID}
       R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY}
@@ -252,6 +279,13 @@ services:
       META_INSTAGRAM_REDIRECT_URI: ${META_INSTAGRAM_REDIRECT_URI}
       # DISTINCT AES-256 key, must decode to EXACTLY 32 bytes (enforced in MetaTokenStorage).
       META_TOKEN_ENCRYPTION_KEY: ${META_TOKEN_ENCRYPTION_KEY}
+      # T-CREATORCONNECT-0902 / Q1.3 — F-0787: all four were missing here. Marketplace client gate
+      # (OFF until App Review), admin recipient for creator-connection emails, and the Influora-owned
+      # IG system caller for Business Discovery. Q7.4 `:-false`/`:-` forms; see utho.yml comments.
+      META_CREATOR_MARKETPLACE_ENABLED: ${META_CREATOR_MARKETPLACE_ENABLED:-false}
+      ADMIN_NOTIFICATION_EMAIL: ${ADMIN_NOTIFICATION_EMAIL:-}
+      META_SYSTEM_IG_USER_ID: ${META_SYSTEM_IG_USER_ID:-}
+      META_SYSTEM_IG_ACCESS_TOKEN: ${META_SYSTEM_IG_ACCESS_TOKEN:-}
       # ---- GST identity (CompanyTaxStartupValidator rejects placeholders) ----
       INFLUORA_COMPANY_GSTIN: ${INFLUORA_COMPANY_GSTIN}
       INFLUORA_COMPANY_ADDRESS: ${INFLUORA_COMPANY_ADDRESS}
