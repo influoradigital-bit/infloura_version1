@@ -1,0 +1,5 @@
+{"verdict": "proved", "oracle": "mvn", "isolation": "oracle",
+ "done_when": "A comp row past compExpiresAt is Free after one SubscriptionRenewalResetJob run; a lapsed Pro row whose Razorpay status is halted or pending is not extended and a fetch failure extends nothing; a lapsed Free row advances its period without resetForNewCycle; each test red with its guard removed, compiled from git archive of the commit.",
+ "evidence": {"oracle": "mvn", "command": "bash .proof-os/gates/F-0859-F-0860-F-0861-renewal-job.sh", "result": "exit 0, 62 tests, 0 failures, 0 skipped; exit 1 with comp guard removed", "where": ".proof-os/gates/F-0859-F-0860-F-0861-renewal-job.sh:1"},
+ "not_checked": ["the job against a real SubscriptionService and database", "a live Razorpay fetchSubscription call", "unverifiable Pro rows keeping Pro (F-0876)", "webhook controller emailing on a stale-skipped delivery (F-0880)"],
+ "skipped": []}
