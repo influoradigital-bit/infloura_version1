@@ -26,6 +26,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.common.ApiException;
 import com.influora.config.CreatorCopilotProperties;
@@ -42,11 +43,13 @@ import com.influora.repository.TrendRepository;
 import com.influora.service.creatorcopilot.CreatorNudgeService.SuggestionResult;
 import com.influora.service.creatorcopilot.CreatorNudgeService.UnsafeHeadlineTopic;
 import com.influora.service.trendspark.ThemeMatchService;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import java.lang.reflect.Method;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.time.ZoneOffset;
 import java.util.Iterator;
 import java.util.List;
@@ -1587,6 +1590,187 @@ class CreatorNudgeServiceTest {
 
         assertEquals("ready", result.status());
         assertEquals("abseiling", captureSaved().getTheme());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0838 — the theme gate runs before influora-ai is paid
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * The theme verdict cannot depend on the AI's answer, so an unsafe theme must be refused
+     * before the call. The client is stubbed LENIENTLY to return perfectly safe copy: that is the
+     * worst case for this assertion, because against the pre-fix order the call is made, succeeds,
+     * and its result is then discarded — nothing observable except the spend. Only {@code
+     * verifyNoInteractions} can see that (see the class javadoc on why not an {@code anyString()}
+     * never-verify).
+     */
+    @Test
+    @DisplayName("F-0838: an unsafe theme never reaches influora-ai — no AI spend, no row")
+    void getSuggestion_unsafeTheme_neverCallsTheAiClient() {
+        String poisoned = themesJson("abduction", THEME_ACTION);
+        givenProfile("Asha", poisoned);
+        givenNoRowYetToday();
+        givenActiveTrends(trend(TREND_ID, poisoned, TREND_TEXT));
+        lenient()
+                .when(aiClient.requestSuggestion(any(), any(), any()))
+                .thenReturn(new SuggestionCopy("Asha, a safe headline", "A safe idea.", "AI"));
+
+        SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
+
+        assertEquals("no_suggestion_today", result.status());
+        verifyNoInteractions(aiClient);
+        verifyNoNudgeRowWritten();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0834 — every real taxonomy theme is quotable
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * The theme arm of the gate refuses the whole suggestion, so a taxonomy theme that happened to
+     * contain a term (say "power" gaining a phrase, or a future "true crime" theme) would silently
+     * zero out every creator tagged with it. Loaded from the REAL classpath file, not a copy, so a
+     * taxonomy edit is what trips this.
+     */
+    @Test
+    @DisplayName("F-0834: every theme in trendspark/theme-taxonomy.json passes the content gate")
+    void everyTaxonomyTheme_isQuotableInCreatorCopy() throws Exception {
+        JsonNode root;
+        try (var in = new ClassPathResource("trendspark/theme-taxonomy.json").getInputStream()) {
+            root = new ObjectMapper().readTree(in);
+        }
+        JsonNode themes = root.get("themes");
+        assertNotNull(themes, "test premise broken: taxonomy file has no 'themes' array");
+        assertTrue(themes.isArray() && themes.size() > 0, "anti-vacuity: taxonomy has no themes");
+
+        List<String> unquotable = new ArrayList<>();
+        for (JsonNode theme : themes) {
+            assertTrue(theme.isTextual(), "non-string theme entry: " + theme);
+            if (!CreatorNudgeService.isQuotableInCreatorCopy(theme.asText())) {
+                unquotable.add(
+                        theme.asText() + "=" + CreatorNudgeService.firstUnsafeTopic(theme.asText()));
+            }
+        }
+        assertTrue(
+                unquotable.isEmpty(),
+                "taxonomy themes the gate would refuse (every creator tagged with one gets no"
+                        + " suggestion, ever): "
+                        + unquotable);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0832 / F-0837 — plurals of multi-word phrases
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * GENERATED from the live term sets, not hand-listed: F-0837 was a hand-written list of plurals
+     * that missed entries, and any phrase added later is covered here without anyone remembering.
+     * The plural is produced by this test's OWN regular-English rule ({@link #regularPlural}), not
+     * by the service's suffix logic, so the two can disagree — e.g. a future phrase ending in
+     * consonant-y fails here unless the service handles {@code ies}.
+     *
+     * <p>Carrier sentence "Town … case reopened" is asserted safe first, so a block can only come
+     * from the phrase. Some phrases are redundantly covered by their leading word ("terror
+     * attacks" via {@code terror}); those rows pass either way, which is fine — every row that is
+     * NOT redundant is what the falsification run showed going red.
+     */
+    @Test
+    @DisplayName("F-0832/F-0837: the plural of EVERY multi-word phrase term is blocked")
+    void firstUnsafeTopic_blocksThePluralOfEveryMultiWordPhrase() {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic("Town case reopened"),
+                "anti-vacuity control failed: the carrier sentence is itself unsafe");
+
+        List<String> phrases = new ArrayList<>();
+        List<String> leaked = new ArrayList<>();
+        for (UnsafeHeadlineTopic topic : UnsafeHeadlineTopic.values()) {
+            for (String term : topic.terms()) {
+                if (term.indexOf(' ') < 0) {
+                    continue;
+                }
+                phrases.add(term);
+                String plural = regularPlural(term);
+                String headline = "Town " + plural + " case reopened";
+                if (CreatorNudgeService.firstUnsafeTopic(headline) == null
+                        || CreatorNudgeService.isQuotableInCreatorCopy(headline)) {
+                    leaked.add(plural);
+                }
+            }
+        }
+        // Anti-vacuity: the term sets really do contain phrases (currently 19). If this drops to 0
+        // the loop above proves nothing.
+        assertTrue(phrases.size() >= 10, "expected the term sets to carry phrases, got: " + phrases);
+        assertTrue(leaked.isEmpty(), "plural phrase forms still evade the filter: " + leaked);
+    }
+
+    /** The existing single-word boundaries must survive the phrase-plural rule untouched. */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Killer ab workout routine goes viral",
+                "Big issue with the new fitness app launch",
+                "Tennis courts resurfaced across Mumbai clubs",
+                "Flash mobs take over the mall this weekend"
+            })
+    @DisplayName("F-0832: the plural rule does not widen single-word matching")
+    void firstUnsafeTopic_pluralRuleDoesNotWidenSingleWords(String benign) {
+        assertNull(CreatorNudgeService.firstUnsafeTopic(benign), "over-blocked: " + benign);
+    }
+
+    /** Regular English plural of a phrase's final word: s/x/z/ch/sh → es, consonant+y → ies,
+     * else s. Deliberately independent of the service's implementation. */
+    private static String regularPlural(String phrase) {
+        if (phrase.matches(".*(s|x|z|ch|sh)")) {
+            return phrase + "es";
+        }
+        if (phrase.matches(".*[^aeiou]y")) {
+            return phrase.substring(0, phrase.length() - 1) + "ies";
+        }
+        return phrase + "s";
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0833 — the suppression log names the field that actually failed
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("F-0833: suppression log names only the failing field, not MISSING_OR_BLANK for a clean one")
+    void getSuggestion_suppressionLog_namesOnlyTheFieldThatMatched() {
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT));
+        when(aiClient.requestSuggestion(any(), any(), any()))
+                .thenReturn(
+                        new SuggestionCopy(
+                                "Asha, the murder probe is trending",
+                                "A quick post today could land well.",
+                                "AI"));
+
+        Logger serviceLogger = (Logger) LoggerFactory.getLogger(CreatorNudgeService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        serviceLogger.addAppender(appender);
+        try {
+            service.getSuggestion(CREATOR_PROFILE_ID);
+        } finally {
+            serviceLogger.detachAppender(appender);
+        }
+
+        List<String> suppression =
+                appender.list.stream()
+                        .filter(e -> e.getLevel() == Level.WARN)
+                        .map(ILoggingEvent::getFormattedMessage)
+                        .filter(m -> m.contains("suppressed"))
+                        .toList();
+        assertEquals(1, suppression.size(), "expected one suppression warning, got: " + appender.list);
+        String line = suppression.get(0);
+        assertTrue(line.contains("headline=CRIME"), "must name the failing field and category: " + line);
+        assertFalse(
+                line.contains("MISSING_OR_BLANK"),
+                "contentIdea matched nothing and is not blank — naming it MISSING_OR_BLANK misleads: "
+                        + line);
+        assertFalse(line.contains("contentIdea"), "a passing field must not be named: " + line);
     }
 
     /**

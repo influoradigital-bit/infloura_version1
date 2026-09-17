@@ -246,26 +246,15 @@ public class CreatorNudgeService {
         // against. Never comes from the AI call or the fallback template.
         String theme = bestMatchedTheme(bestTrend, creatorThemeTags);
 
-        SuggestionCopy copy = callAiSafely(creatorProfileId, theme, bestTrend.getTrendText());
-        NudgeMessageSource messageSource;
-        String headline;
-        String contentIdea;
-        if (copy != null) {
-            headline = copy.headline();
-            contentIdea = copy.contentIdea();
-            // F-0825: read the label the AI service actually sent. A 200 is NOT proof a model wrote
-            // this — influora-ai's own fallback returns 200/success:true/message_source=FALLBACK.
-            messageSource = messageSourceOf(copy.messageSource(), creatorProfileId);
-        } else {
-            SuggestionCopy fallback = templatedFallback(profile, bestTrend, theme);
-            headline = fallback.headline();
-            contentIdea = fallback.contentIdea();
-            messageSource = NudgeMessageSource.FALLBACK;
-        }
-
         // -------------------------------------------------------------------------------------
-        // F-0825 — THE content gate. One place, on the copy about to be persisted, every path.
+        // F-0825 — THE content gate, theme arm. F-0838: it runs BEFORE the AI call.
         // -------------------------------------------------------------------------------------
+        // The theme is fully determined by this point and its verdict cannot depend on anything the
+        // AI returns, so checking it after callAiSafely only meant paying influora-ai (spend-gate
+        // budget, provider tokens, latency) for copy that was then thrown away unconditionally —
+        // and sending an unsafe theme string to the model as a prompt input on top. Do not move
+        // this below the AI call again.
+        //
         // THEME IS HANDLED SEPARATELY AND MORE STRICTLY, and the reason is not obvious: degrading
         // the COPY cannot launder the theme, because `theme` is persisted in its own column and
         // rendered on its own in SuggestionDto.theme. Emitting generic copy alongside a theme of
@@ -287,18 +276,40 @@ public class CreatorNudgeService {
             return SuggestionResult.noSuggestionToday();
         }
 
+        SuggestionCopy copy = callAiSafely(creatorProfileId, theme, bestTrend.getTrendText());
+        NudgeMessageSource messageSource;
+        String headline;
+        String contentIdea;
+        if (copy != null) {
+            headline = copy.headline();
+            contentIdea = copy.contentIdea();
+            // F-0825: read the label the AI service actually sent. A 200 is NOT proof a model wrote
+            // this — influora-ai's own fallback returns 200/success:true/message_source=FALLBACK.
+            messageSource = messageSourceOf(copy.messageSource(), creatorProfileId);
+        } else {
+            SuggestionCopy fallback = templatedFallback(profile, bestTrend, theme);
+            headline = fallback.headline();
+            contentIdea = fallback.contentIdea();
+            messageSource = NudgeMessageSource.FALLBACK;
+        }
+
+        // -------------------------------------------------------------------------------------
+        // F-0825 — THE content gate, copy arm. One place, on the copy about to be persisted.
+        // -------------------------------------------------------------------------------------
         if (!isQuotableInCreatorCopy(headline) || !isQuotableInCreatorCopy(contentIdea)) {
             // The copy itself is deliberately NOT logged — it is the exact text just judged unfit
             // for creator-facing copy, and keeping it out of the log stream means the rejection
             // cannot reappear verbatim wherever logs are shipped. ids are enough to reconstruct it.
+            // F-0833: only the field(s) that actually FAILED are named. Naming both, as this used
+            // to, stamped MISSING_OR_BLANK on a field that had simply matched nothing — pointing an
+            // incident responder at a blank-copy bug that did not exist.
             log.warn(
-                    "CreatorNudgeService: suppressed {} copy for creator={} trend={} (headline"
-                            + " category={}, contentIdea category={}) — persisting generic copy instead",
+                    "CreatorNudgeService: suppressed {} copy for creator={} trend={} (unquotable:"
+                            + " {}) — persisting generic copy instead",
                     messageSource,
                     creatorProfileId,
                     bestTrend.getId(),
-                    categoryNameFor(headline),
-                    categoryNameFor(contentIdea));
+                    unquotableFieldsFor(headline, contentIdea));
             SuggestionCopy degraded = safeGenericFallback(displayName(profile));
             headline = degraded.headline();
             contentIdea = degraded.contentIdea();
@@ -441,10 +452,31 @@ public class CreatorNudgeService {
     }
 
     /** Category name for a suppression log line, or a marker when nothing matched (i.e. the text
-     * was rejected by the fail-closed null/blank/all-invisible arm rather than by a term). */
+     * was rejected by the fail-closed null/blank/all-invisible arm rather than by a term).
+     *
+     * <p><b>Only meaningful for text already known to be UNQUOTABLE</b> (F-0833): for quotable text
+     * {@code firstUnsafeTopic} is also {@code null}, so this would wrongly report
+     * MISSING_OR_BLANK. Callers with a mix of passing and failing fields use {@link
+     * #unquotableFieldsFor}. */
     private static String categoryNameFor(String text) {
         UnsafeHeadlineTopic topic = firstUnsafeTopic(text);
         return topic == null ? "MISSING_OR_BLANK" : topic.name();
+    }
+
+    /** F-0833 — {@code "headline=CRIME"}, {@code "contentIdea=MISSING_OR_BLANK"}, or both joined by
+     * {@code ", "}: names ONLY the fields that failed the gate, each with what it failed on. */
+    static String unquotableFieldsFor(String headline, String contentIdea) {
+        StringBuilder out = new StringBuilder();
+        if (!isQuotableInCreatorCopy(headline)) {
+            out.append("headline=").append(categoryNameFor(headline));
+        }
+        if (!isQuotableInCreatorCopy(contentIdea)) {
+            if (out.length() > 0) {
+                out.append(", ");
+            }
+            out.append("contentIdea=").append(categoryNameFor(contentIdea));
+        }
+        return out.toString();
     }
 
     /**
@@ -600,6 +632,8 @@ public class CreatorNudgeService {
      *       literal strings; there is no stemmer. {@code blasting} is not covered by {@code
      *       blast}, {@code massacring} is not covered by {@code massacre}. The closure added here
      *       is the one F-0826 enumerated plus the obvious siblings of those exact words, no more.
+     *       The one systematic exception (F-0832): every MULTI-WORD phrase also matches with a
+     *       regular plural on its final word — see {@code matchesTerm}. Single words stay literal.
      *   <li><b>COMMUNAL targets CONFLICT, not IDENTITY.</b> There are no religion or caste
      *       identifiers here ({@code hindu}, {@code muslim}, {@code temple}, {@code mosque},
      *       {@code church}, {@code dalit}). This is an India-first product whose legitimate trend
@@ -852,12 +886,56 @@ public class CreatorNudgeService {
         }
         for (UnsafeHeadlineTopic topic : UnsafeHeadlineTopic.values()) {
             for (String term : topic.terms()) {
-                if (containsTerm(normalized, compactTerm(term))) {
+                if (matchesTerm(normalized, term)) {
                     return topic;
                 }
             }
         }
         return null;
+    }
+
+    /**
+     * F-0832 / F-0837 — a term matches in its listed form, or, <b>for a multi-word phrase only</b>,
+     * with a regular English plural on its final word.
+     *
+     * <p><b>Why a suffix rule and not listed plurals.</b> The token-END anchor in {@link
+     * #containsTerm} is what keeps {@code kill} out of {@code killer}; applied to a phrase it also
+     * kept {@code school shooting} out of {@code school shootings}, so every phrase was blocked in
+     * the singular and passed in the plural ("mass shootings", "acid attacks", "hate crimes",
+     * "lynch mobs", "high courts"). F-0837 was a hand-picked list of plurals that missed some —
+     * listing plurals by hand is exactly the failure mode, because the next phrase added gets its
+     * singular and nobody remembers the plural. A rule applied to every multi-word entry cannot be
+     * forgotten for one.
+     *
+     * <p><b>Why multi-word only.</b> Single words keep their existing, literal behaviour — their
+     * inflections are enumerated case by case in {@link UnsafeHeadlineTopic}, several were weighed
+     * and deliberately left out, and a blanket suffix would silently change those judgements
+     * (e.g. {@code ied} + {@code s}, {@code plea} + {@code s}). A phrase is already qualified by its
+     * leading word ("lynch", "high", "acid"), which is what made the phrase safe to list at all, so
+     * pluralizing its head noun adds no new false-positive surface worth the name.
+     *
+     * <p><b>Which suffixes:</b> {@code +s}, {@code +es} (clash→clashes, speech→speeches) and
+     * consonant-{@code y}→{@code ies}. Accepting {@code es} unconditionally costs nothing here: a
+     * non-word like "high courtes" still has to begin and end on token boundaries. Irregular
+     * plurals are not generated; none of the current phrases has one — a phrase that needs one must
+     * list it explicitly.
+     */
+    private static boolean matchesTerm(NormalizedText normalized, String term) {
+        String compact = compactTerm(term);
+        if (containsTerm(normalized, compact)) {
+            return true;
+        }
+        if (term.indexOf(' ') < 0) {
+            return false;
+        }
+        if (containsTerm(normalized, compact + "s") || containsTerm(normalized, compact + "es")) {
+            return true;
+        }
+        int n = compact.length();
+        return n >= 2
+                && compact.charAt(n - 1) == 'y'
+                && "aeiou".indexOf(compact.charAt(n - 2)) < 0
+                && containsTerm(normalized, compact.substring(0, n - 1) + "ies");
     }
 
     private static String compactTerm(String term) {
