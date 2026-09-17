@@ -253,7 +253,8 @@ public class MetricsPollingJob {
                                     profile.mediaCount() == null ? null : profile.mediaCount().intValue())
                             .avgReachPerPost(averageOf(mediaRows, MediaMetric::getReach))
                             .avgImpressionsPerPost(averageOf(mediaRows, MediaMetric::getImpressions))
-                            .avgEngagementRate(averageEngagementRate(mediaRows))
+                            .avgEngagementRate(
+                                    averageEngagementRate(mediaRows, profile.followersCount()))
                             .dataSource(DATA_SOURCE_META_API)
                             .fetchedAt(Instant.now())
                             .build();
@@ -380,19 +381,47 @@ public class MetricsPollingJob {
     //                            has a reach value (nothing to average, not zero).
     //   avgImpressionsPerPost  = same, over MediaMetric.impressions (Meta's "views" metric, per
     //                            MediaMetricMapper's mapping comment).
-    //   avgEngagementRate      = mean, across posts with BOTH engagement and a positive reach, of
-    //                            each post's OWN engagement/reach*100. Denominator is reach, not
-    //                            followers: this mirrors the per-post engagementRate this codebase
-    //                            already computes and documents in
-    //                            AnalyticsDtos.ContentPerformanceResponse / AnalyticsService's
-    //                            private engagementRate() helper (also engagement/reach*100),
-    //                            rather than introducing a second, differently-denominated
-    //                            "engagement rate" for the exact same underlying numbers.
-    //                            engagement/followers is a legitimate alternate industry
-    //                            definition, but this codebase has already picked and shipped
-    //                            engagement/reach for per-post rate, and CreatorMetric's average of
-    //                            that same rate should not silently mean something else. Null when
-    //                            no post has both a positive reach and a reported engagement value.
+    //   avgEngagementRate      = (T-ENGAGEMENT-DENOMINATOR-0917, Swapnil ruling 2026-09-17, wiki/
+    //                            tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §7) mean, across posts
+    //                            with at least one of likes/comments present, of (likes + comments)
+    //                            per post, divided by FOLLOWERS (this poll's profile snapshot) x
+    //                            100. This matches QualityScoreService.calculateEngagementRate and
+    //                            FakeFollowerDetectionService's private method of the same name —
+    //                            the scale RateEstimationService's +30%/-30% thresholds (lines
+    //                            ~92-110) were built against. The previous version of this comment
+    //                            claimed the codebase had "already picked" engagement/reach; that
+    //                            was wrong — REACH ran several times higher than the follower
+    //                            scale and pushed most creators into the +30% band the moment
+    //                            e71938c started writing this field (previously always null, so
+    //                            the multiplier sat neutral).
+    //
+    //                            Two deliberate differences from QualityScoreService, both because
+    //                            this value is STORED and read later (QualityScoreService computes
+    //                            it fresh, in-request, and returns 0 for these same cases):
+    //                              1. followers null or 0 -> NULL, never 0. A stored 0 would trip
+    //                                 RateEstimationService's `< 1` branch and apply the -30%
+    //                                 penalty to a creator we simply have no follower reading for;
+    //                                 null leaves that multiplier at neutral 1.0 (confirmed at
+    //                                 RateEstimationService.java ~104-110 — avgEngagement == null
+    //                                 skips the branch entirely, per the F-0749 comment there).
+    //                              2. no contributing posts -> NULL, never 0, for the same reason.
+    //                            A post with BOTH likes and comments absent is excluded from the
+    //                            mean entirely (no data is not zero); a post with only one of the
+    //                            two absent counts the missing one as 0 (mirrors nullToZero in the
+    //                            two services above).
+    //
+    //                            Overflow: the column is DECIMAL(8,4) (V21__creator_metrics.sql),
+    //                            max magnitude 9999.9999. Likes+comments and followers are both
+    //                            non-negative, so the rate is always >= 0; the worst case is a
+    //                            small/new follower count with a viral post (e.g. followers=1,
+    //                            likes+comments in the thousands), which is arithmetically
+    //                            unbounded and CAN exceed the column. NOT clamped — a follower
+    //                            base too small to divide by meaningfully is the same defect class
+    //                            as followers=0 above: clamping to 9999.9999 would hand
+    //                            RateEstimationService's `> 5` branch its maximum +30% multiplier
+    //                            for a number that carries no signal, exactly the over-reward the
+    //                            ruling exists to prevent. Returns null instead, same as the
+    //                            null-followers/no-posts cases, so the multiplier stays neutral.
     // ------------------------------------------------------------------------------------------
 
     /** Package-private for direct unit testing (see MetricsPollingJobTest). */
@@ -409,24 +438,56 @@ public class MetricsPollingJob {
         return Math.round((double) sum / present.size());
     }
 
-    /** Package-private for direct unit testing (see MetricsPollingJobTest). */
-    static BigDecimal averageEngagementRate(List<MediaMetric> media) {
-        List<BigDecimal> perPostRates = new ArrayList<>();
-        for (MediaMetric m : media) {
-            Long reach = m.getReach();
-            Long engagement = m.getEngagement();
-            if (reach != null && reach > 0 && engagement != null) {
-                BigDecimal rate =
-                        BigDecimal.valueOf(engagement)
-                                .multiply(BigDecimal.valueOf(100))
-                                .divide(BigDecimal.valueOf(reach), 6, RoundingMode.HALF_UP);
-                perPostRates.add(rate);
-            }
-        }
-        if (perPostRates.isEmpty()) {
+    /**
+     * DECIMAL(8,4) ceiling from V21__creator_metrics.sql. A computed rate above this returns null
+     * rather than being clamped to it — see the overflow note above.
+     */
+    private static final BigDecimal MAX_ENGAGEMENT_RATE = new BigDecimal("9999.9999");
+
+    /**
+     * Package-private for direct unit testing (see MetricsPollingJobTest).
+     *
+     * @param followers this poll's profile-snapshot follower count — the same reading {@code
+     *     pollOne} writes onto this CreatorMetric row's {@code followers} column, passed through
+     *     as the raw nullable {@code InstagramUserResponse.followersCount()} (not the 0-defaulted
+     *     value the row itself stores). Null and 0 both return null here — see the overflow/null
+     *     comment block above this method.
+     */
+    static BigDecimal averageEngagementRate(List<MediaMetric> media, Long followers) {
+        if (followers == null || followers <= 0) {
             return null;
         }
-        BigDecimal sum = perPostRates.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-        return sum.divide(BigDecimal.valueOf(perPostRates.size()), 4, RoundingMode.HALF_UP);
+        long sumLikesPlusComments = 0L;
+        int contributingPosts = 0;
+        for (MediaMetric m : media) {
+            Long likes = m.getLikes();
+            Long comments = m.getComments();
+            if (likes == null && comments == null) {
+                continue; // no data at all for this post — excluded, not counted as 0
+            }
+            sumLikesPlusComments += nullToZero(likes) + nullToZero(comments);
+            contributingPosts++;
+        }
+        if (contributingPosts == 0) {
+            return null;
+        }
+        BigDecimal meanEngagement =
+                BigDecimal.valueOf(sumLikesPlusComments)
+                        .divide(BigDecimal.valueOf(contributingPosts), 10, RoundingMode.HALF_UP);
+        BigDecimal rate =
+                meanEngagement
+                        .multiply(BigDecimal.valueOf(100))
+                        .divide(BigDecimal.valueOf(followers), 4, RoundingMode.HALF_UP);
+        if (rate.compareTo(MAX_ENGAGEMENT_RATE) > 0) {
+            // Follower base too small to divide by meaningfully — same "no real reading" case as
+            // followers null/0, not a number to clamp and hand to RateEstimationService's +30%
+            // branch. See the overflow note in the DEFINITIONS block above.
+            return null;
+        }
+        return rate;
+    }
+
+    private static long nullToZero(Long value) {
+        return value == null ? 0L : value;
     }
 }

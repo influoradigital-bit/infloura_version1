@@ -261,6 +261,22 @@ class MetricsPollingJobTest {
                 insights);
     }
 
+    /**
+     * Builds one post with a given like/comment count and NO insights response, so {@code
+     * MediaMetricMapper} falls back to the media item's own {@code like_count}/{@code
+     * comments_count} (see its javadoc) — used by the T-ENGAGEMENT-DENOMINATOR-0917
+     * avgEngagementRate tests, which need likes/comments to vary per post, unlike {@link
+     * #mediaWithMetrics} which fixes them at 10/2.
+     */
+    private InstagramMetricsFetcher.MediaWithInsights mediaWithLikesComments(
+            String mediaId, Long likes, Long comments) {
+        return new InstagramMetricsFetcher.MediaWithInsights(
+                new InstagramMediaResponse.MediaItem(
+                        mediaId, "caption", "IMAGE", null, "https://instagram.com/p/" + mediaId,
+                        "2026-08-20T10:30:00+0000", likes, comments),
+                null);
+    }
+
     private InstagramInsightsResponse.InsightMetric insightMetric(String name, Long value) {
         return new InstagramInsightsResponse.InsightMetric(
                 name, "lifetime", name, name, List.of(new InstagramInsightsResponse.InsightValue(value, null)));
@@ -272,8 +288,10 @@ class MetricsPollingJobTest {
                     + " the real mean of this poll's MediaMetric rows, not merely non-null (F-0506"
                     + " regression)")
     void testPollMetricsComputesCreatorMetricAveragesFromMediaMetrics() {
-        arrangeHappyPath(); // profile has followers=10000 — used below to distinguish a
-        // reach-denominator engagement rate from a followers-denominator one.
+        arrangeHappyPath(); // profile has followers=10000 — the denominator avgEngagementRate now
+        // uses (T-ENGAGEMENT-DENOMINATOR-0917). mediaWithMetrics fixes every post's own
+        // like_count/comments_count at 10/2 (see its javadoc), independent of the reach/views/
+        // engagement args below, so both posts here contribute likes+comments=12 each.
         when(metricsFetcher.fetchMediaWithInsights(
                         eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(
@@ -292,11 +310,13 @@ class MetricsPollingJobTest {
         assertEquals(2500L, saved.getAvgReachPerPost());
         // avgImpressionsPerPost = (200 + 800) / 2 = 500.
         assertEquals(500L, saved.getAvgImpressionsPerPost());
-        // Per-post engagement/reach*100: m1 = 100/1000*100 = 10.0, m2 = 200/4000*100 = 5.0, mean
-        // 7.5. Using followers (10000, from arrangeHappyPath's profile) as the denominator instead
-        // of reach would give 1.0/2.0 -> mean 1.5 — a different, also-unambiguous number, so this
-        // single assertion also falsifies a followers-denominator regression.
-        assertEquals(0, new BigDecimal("7.5000").compareTo(saved.getAvgEngagementRate()));
+        // avgEngagementRate = mean over posts of (likes+comments), divided by followers, x100
+        // (T-ENGAGEMENT-DENOMINATOR-0917 — matches QualityScoreService/FakeFollowerDetectionService).
+        // Both posts contribute likes+comments=12 (10+2, fixed by mediaWithMetrics), mean=12,
+        // followers=10000: 12/10000*100 = 0.12. Using reach as the denominator instead (the
+        // pre-ruling behavior) would give 7.5 — a different, also-unambiguous number, so this
+        // single assertion also falsifies a reach-denominator regression.
+        assertEquals(0, new BigDecimal("0.1200").compareTo(saved.getAvgEngagementRate()));
     }
 
     @Test
@@ -326,9 +346,13 @@ class MetricsPollingJobTest {
         // avgImpressionsPerPost must average only m1+m2: (200+400)/2 = 300. Treating m3's missing
         // impressions as 0 would instead give (200+400+0)/3 = 200.
         assertEquals(300L, saved.getAvgImpressionsPerPost());
-        // avgEngagementRate must average only posts with BOTH engagement and a positive reach: m1
-        // (50/1000*100=5.0) and m3 (150/3000*100=5.0) — m2 is excluded because it has no reach.
-        assertEquals(0, new BigDecimal("5.0000").compareTo(saved.getAvgEngagementRate()));
+        // avgEngagementRate (T-ENGAGEMENT-DENOMINATOR-0917) is keyed on likes/comments and
+        // followers, not reach — m1/m2/m3 all carry mediaWithMetrics' fixed likes=10/comments=2,
+        // so a missing reach (m2) no longer excludes a post from this average; all three
+        // contribute. mean=12, followers=10000: 12/10000*100 = 0.12. Reach-presence exclusion is
+        // covered by avgReachPerPost above; likes/comments exclusion semantics are covered by the
+        // dedicated averageEngagementRate unit tests below.
+        assertEquals(0, new BigDecimal("0.1200").compareTo(saved.getAvgEngagementRate()));
     }
 
     @Test
@@ -363,19 +387,16 @@ class MetricsPollingJobTest {
 
     @Test
     @DisplayName(
-            "pollMetrics: a post with NO engagement value at all is EXCLUDED from avgEngagementRate,"
-                    + " never counted as 0 engagement (T-DEADMETRIC-REPAIR-0915 fix-round M11 — every"
-                    + " prior F-0506 test gave every post an engagement value, so treating a missing"
-                    + " engagement as 0 instead of skipping the post stayed green; this case would"
-                    + " have caught it)")
-    void testPollMetricsEngagementRateExcludesPostMissingEngagement() {
-        arrangeHappyPath();
+            "pollMetrics: avgEngagementRate is computed from THIS poll's followers snapshot, wired"
+                    + " end-to-end through pollOne (T-ENGAGEMENT-DENOMINATOR-0917)")
+    void testPollMetricsEngagementRateUsesThisPollsFollowerSnapshot() {
+        arrangeHappyPath(); // followers=10000
         when(metricsFetcher.fetchMediaWithInsights(
                         eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(
                         List.of(
-                                mediaWithMetrics("m1", 1000L, 200L, 100L), // engagement present: rate 10.0
-                                mediaWithMetrics("m2", 2000L, 400L, null))); // engagement MISSING, reach present
+                                mediaWithLikesComments("m1", 100L, 50L),
+                                mediaWithLikesComments("m2", 300L, 50L)));
 
         pollingJob.pollMetrics();
 
@@ -383,9 +404,132 @@ class MetricsPollingJobTest {
         verify(creatorMetricsRepository).save(metricCaptor.capture());
         CreatorMetric saved = metricCaptor.getValue();
 
-        // Only m1 counts: 100/1000*100 = 10.0. Treating m2's missing engagement as 0 would instead
-        // average in a 0.0 rate for m2 and give (10.0+0.0)/2 = 5.0.
-        assertEquals(0, new BigDecimal("10.0000").compareTo(saved.getAvgEngagementRate()));
+        // mean(likes+comments) = mean(150, 350) = 250. followers = 10000 (this poll's profile
+        // snapshot, the SAME value saved.getFollowers() carries). 250/10000*100 = 2.5.
+        assertEquals(10000L, saved.getFollowers());
+        assertEquals(0, new BigDecimal("2.5000").compareTo(saved.getAvgEngagementRate()));
+    }
+
+    // ---- T-ENGAGEMENT-DENOMINATOR-0917: MetricsPollingJob.averageEngagementRate direct unit
+    // tests. The method is package-private specifically "for direct unit testing" (see its
+    // javadoc) — calling it directly here, rather than through the full pollMetrics() mock chain,
+    // is what lets every branch (null/zero followers, no contributing posts, one-sided-null
+    // likes/comments, both-null exclusion) get an exact BigDecimal assertion without a wall of
+    // Meta-client mocking per case.
+
+    private MediaMetric mediaMetric(Long likes, Long comments) {
+        return mediaMetric(likes, comments, null, null);
+    }
+
+    private MediaMetric mediaMetric(Long likes, Long comments, Long saves, Long shares) {
+        return MediaMetric.builder()
+                .id("01HWMEDIA" + System.nanoTime())
+                .mediaId("m")
+                .creatorProfileId(CREATOR_ID)
+                .platform("INSTAGRAM")
+                .mediaType("IMAGE")
+                .likes(likes)
+                .comments(comments)
+                .saves(saves)
+                .shares(shares)
+                .build();
+    }
+
+    @Test
+    @DisplayName(
+            "averageEngagementRate: exact value for known likes/comments/followers"
+                    + " (T-ENGAGEMENT-DENOMINATOR-0917)")
+    void testAverageEngagementRateExactValue() {
+        List<MediaMetric> media =
+                List.of(mediaMetric(80L, 20L), mediaMetric(150L, 50L)); // 100, 200 -> mean 150
+        // 150 / 5000 followers * 100 = 3.0
+        BigDecimal result = MetricsPollingJob.averageEngagementRate(media, 5000L);
+        assertEquals(0, new BigDecimal("3.0000").compareTo(result));
+    }
+
+    @Test
+    @DisplayName(
+            "averageEngagementRate: a post missing comments but with likes present still"
+                    + " contributes, comments counted as 0 (T-ENGAGEMENT-DENOMINATOR-0917)")
+    void testAverageEngagementRatePostMissingCommentsStillContributes() {
+        List<MediaMetric> media =
+                List.of(mediaMetric(100L, null)); // comments absent -> treated as 0, NOT excluded
+        // mean = 100 (the single post). 100 / 1000 * 100 = 10.0. If the post were wrongly excluded
+        // this would be null instead.
+        BigDecimal result = MetricsPollingJob.averageEngagementRate(media, 1000L);
+        assertEquals(0, new BigDecimal("10.0000").compareTo(result));
+    }
+
+    @Test
+    @DisplayName(
+            "averageEngagementRate: a post missing BOTH likes and comments is excluded, not"
+                    + " counted as 0 (T-ENGAGEMENT-DENOMINATOR-0917)")
+    void testAverageEngagementRatePostMissingBothExcluded() {
+        List<MediaMetric> media =
+                List.of(
+                        mediaMetric(100L, 0L), // real data: rate contribution 100
+                        mediaMetric(null, null)); // no data at all: excluded, not a 0
+        // If m2 counted as 0 the mean would be (100+0)/2 = 50 -> 50/1000*100 = 5.0. Excluding it,
+        // the mean is 100 (m1 alone) -> 100/1000*100 = 10.0.
+        BigDecimal result = MetricsPollingJob.averageEngagementRate(media, 1000L);
+        assertEquals(0, new BigDecimal("10.0000").compareTo(result));
+    }
+
+    @Test
+    @DisplayName(
+            "averageEngagementRate: followers = 0 returns null, never 0"
+                    + " (T-ENGAGEMENT-DENOMINATOR-0917 — a stored 0 would trigger"
+                    + " RateEstimationService's -30% penalty)")
+    void testAverageEngagementRateFollowersZeroReturnsNull() {
+        List<MediaMetric> media = List.of(mediaMetric(100L, 50L));
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(media, 0L));
+    }
+
+    @Test
+    @DisplayName(
+            "averageEngagementRate: followers = null returns null (T-ENGAGEMENT-DENOMINATOR-0917)")
+    void testAverageEngagementRateFollowersNullReturnsNull() {
+        List<MediaMetric> media = List.of(mediaMetric(100L, 50L));
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(media, null));
+    }
+
+    @Test
+    @DisplayName(
+            "averageEngagementRate: no posts returns null (T-ENGAGEMENT-DENOMINATOR-0917)")
+    void testAverageEngagementRateNoPostsReturnsNull() {
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(List.of(), 1000L));
+    }
+
+    @Test
+    @DisplayName(
+            "averageEngagementRate: saves/shares do NOT affect the rate, only likes+comments"
+                    + " (T-ENGAGEMENT-DENOMINATOR-0917 — MediaMetricMapper.java:95-96 populates"
+                    + " saves/shares in production; a numerator that silently absorbed them would"
+                    + " inflate rates into RateEstimationService's +30% band, the exact thing the"
+                    + " ruling exists to prevent)")
+    void testAverageEngagementRateIgnoresSavesAndShares() {
+        List<MediaMetric> media =
+                List.of(
+                        mediaMetric(80L, 20L, 5000L, 5000L), // large saves/shares, likes+comments=100
+                        mediaMetric(150L, 50L, 9000L, 9000L)); // likes+comments=200
+        // mean(likes+comments) = mean(100, 200) = 150. followers=5000: 150/5000*100 = 3.0 — the
+        // SAME value as testAverageEngagementRateExactValue, which uses null saves/shares. If saves
+        // and shares leaked into the numerator this would instead be enormous (mean ~14150).
+        BigDecimal result = MetricsPollingJob.averageEngagementRate(media, 5000L);
+        assertEquals(0, new BigDecimal("3.0000").compareTo(result));
+    }
+
+    @Test
+    @DisplayName(
+            "averageEngagementRate: a rate that would exceed the DECIMAL(8,4) column ceiling"
+                    + " returns null, it is NOT clamped (T-ENGAGEMENT-DENOMINATOR-0917 — clamping to"
+                    + " 9999.9999 would hand RateEstimationService's +30% branch a number that"
+                    + " carries no real signal; a follower base too small to divide by meaningfully"
+                    + " is the same case as followers=0)")
+    void testAverageEngagementRateOverflowReturnsNull() {
+        // mean(likes+comments) = 20000. followers=1: 20000/1*100 = 2,000,000 — far above 9999.9999.
+        List<MediaMetric> media = List.of(mediaMetric(15000L, 5000L));
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(media, 1L));
     }
 
     @Test
