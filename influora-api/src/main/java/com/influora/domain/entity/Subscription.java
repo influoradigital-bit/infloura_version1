@@ -231,6 +231,21 @@ public class Subscription {
         touch();
     }
 
+    /**
+     * Clears an admin-comp grant (F-0859, {@code SubscriptionRenewalResetJob}) — used when a comp
+     * row's {@link #compExpiresAt} has passed and it is being demoted back to ordinary Free, as
+     * opposed to {@link #linkRazorpaySubscription} which clears comp because a REAL paid
+     * subscription now supersedes it. Distinct method so each clearing path's own trigger stays
+     * documented at its call site instead of collapsing into one ambiguous reset.
+     */
+    public void clearComp() {
+        this.comp = false;
+        this.compReason = null;
+        this.compGrantedBy = null;
+        this.compExpiresAt = null;
+        touch();
+    }
+
     /** Re-points this row at a different plan — used when a webhook-resolved plan differs from what this row currently references (e.g. Free row being upgraded to Pro). */
     public void changePlan(String planId) {
         this.planId = planId;

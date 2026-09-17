@@ -12,10 +12,9 @@ import com.influora.service.IdempotencyService;
 import com.influora.service.PayoutReconciliationService;
 import com.influora.service.WalletTopUpService;
 import com.influora.service.billing.InvoiceService;
+import com.influora.service.billing.SubscriptionBillingEmailPublisher;
 import com.influora.service.billing.SubscriptionService;
 import com.influora.service.notification.event.InvoiceReadyEvent;
-import com.influora.service.notification.event.SubscriptionHaltedEvent;
-import com.influora.service.notification.event.SubscriptionPaymentFailedEvent;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -417,35 +416,27 @@ public class RazorpayWebhookController {
     }
 
     /**
-     * {@code subscription.halted} only — mirrors {@code SubscriptionDunningJob#publishHaltedEmail}
-     * exactly, including sharing the same {@link SubscriptionHaltedEvent} shape so a genuine
-     * double-fire (this webhook AND the local dunning safety net both eventually firing for the
+     * {@code subscription.halted} only — delegates to {@link SubscriptionBillingEmailPublisher},
+     * shared (S2 review) with {@code SubscriptionRenewalResetJob}'s job-driven HALTED transition,
+     * so a genuine double-fire (this webhook AND a local safety net both eventually firing for the
      * same halt) naturally dedupes at the {@code EmailOutbox} idempotency-key layer instead of
      * double-emailing the brand.
      */
     private void publishSubscriptionHaltedEmail(String workspaceId, String subscriptionId) {
-        BillingRecipient recipient = brandContextService.resolveBillingRecipient(workspaceId);
-        if (recipient != null && recipient.email() != null) {
-            eventPublisher.publishEvent(
-                    new SubscriptionHaltedEvent(recipient.userId(), workspaceId, subscriptionId, recipient.email()));
-        }
+        SubscriptionBillingEmailPublisher.publishHalted(
+                brandContextService, eventPublisher, workspaceId, subscriptionId);
     }
 
     /**
      * [Track B, P2] {@code subscription.pending} only — Razorpay attempted a renewal charge and it
      * failed, but Razorpay's own dunning retries are not yet exhausted (that terminal state is
-     * {@code subscription.halted}, handled by {@link #publishSubscriptionHaltedEmail}). Mirrors that
-     * method's shape exactly, publishing {@link SubscriptionPaymentFailedEvent} instead — see that
-     * event's own javadoc for why the listener ({@code
-     * NotificationListener.on(SubscriptionPaymentFailedEvent)}) was already wired ahead of this.
+     * {@code subscription.halted}, handled by {@link #publishSubscriptionHaltedEmail}). Delegates to
+     * {@link SubscriptionBillingEmailPublisher} — see that class's javadoc for why the logic moved
+     * out of this controller.
      */
     private void publishSubscriptionPaymentFailedEmail(String workspaceId, String subscriptionId) {
-        BillingRecipient recipient = brandContextService.resolveBillingRecipient(workspaceId);
-        if (recipient != null && recipient.email() != null) {
-            eventPublisher.publishEvent(
-                    new SubscriptionPaymentFailedEvent(
-                            recipient.userId(), workspaceId, subscriptionId, recipient.email()));
-        }
+        SubscriptionBillingEmailPublisher.publishPaymentFailed(
+                brandContextService, eventPublisher, workspaceId, subscriptionId);
     }
 
     /**

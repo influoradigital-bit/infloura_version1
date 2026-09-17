@@ -683,6 +683,87 @@ class SubscriptionServiceTest {
     }
 
     /**
+     * [Kabir S2 MEDIUM fix] Wiring tests for {@link SubscriptionService#applyRenewalSafetyNetIfUnchanged}
+     * — the fetch-to-write-race guard {@code SubscriptionRenewalResetJob} now goes through instead
+     * of calling {@link SubscriptionService#applyRenewalSafetyNet} directly.
+     */
+    @Test
+    @DisplayName("wiring [S2-MEDIUM]: applyRenewalSafetyNetIfUnchanged renews when the fresh row still matches what the job read")
+    void testApplyRenewalSafetyNetIfUnchangedRenewsWhenRowUnchanged() {
+        Subscription sub = proSubscriptionRow();
+        Instant expectedPeriodEnd = sub.getCurrentPeriodEnd();
+        Instant newStart = expectedPeriodEnd;
+        Instant newEnd = newStart.plusSeconds(2592000);
+
+        when(subscriptionRepository.findById(sub.getId())).thenReturn(Optional.of(sub));
+        when(subscriptionRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(sub));
+        when(planRepository.findById(PRO_PLAN_ID)).thenReturn(Optional.of(proPlan));
+
+        boolean applied =
+                subscriptionService.applyRenewalSafetyNetIfUnchanged(
+                        sub.getId(), expectedPeriodEnd, newStart, newEnd);
+
+        assertTrue(applied);
+        verify(subscriptionRepository).save(sub);
+        verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 400);
+        verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
+    }
+
+    @Test
+    @DisplayName("wiring [S2-MEDIUM]: applyRenewalSafetyNetIfUnchanged does nothing when the row's status changed since it was read")
+    void testApplyRenewalSafetyNetIfUnchangedSkipsWhenStatusChanged() {
+        Subscription sub = proSubscriptionRow();
+        Instant expectedPeriodEnd = sub.getCurrentPeriodEnd();
+        // Simulates a real webhook that landed between the job's read and this call, e.g. moving
+        // the row to HALTED.
+        sub.setStatus(SubscriptionStatus.HALTED);
+
+        when(subscriptionRepository.findById(sub.getId())).thenReturn(Optional.of(sub));
+
+        boolean applied =
+                subscriptionService.applyRenewalSafetyNetIfUnchanged(
+                        sub.getId(), expectedPeriodEnd, expectedPeriodEnd, expectedPeriodEnd.plusSeconds(2592000));
+
+        assertFalse(applied);
+        verify(subscriptionRepository, never()).save(any());
+        verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
+        verify(aiCreditService, never()).resetForNewCycle(any());
+    }
+
+    @Test
+    @DisplayName("wiring [S2-MEDIUM]: applyRenewalSafetyNetIfUnchanged does nothing when the row's currentPeriodEnd changed since it was read")
+    void testApplyRenewalSafetyNetIfUnchangedSkipsWhenPeriodEndChanged() {
+        Subscription sub = proSubscriptionRow();
+        Instant expectedPeriodEnd = sub.getCurrentPeriodEnd();
+        // Simulates a real subscription.charged webhook that already advanced the period.
+        sub.renewPeriod(sub.getCurrentPeriodEnd(), sub.getCurrentPeriodEnd().plusSeconds(2592000));
+
+        when(subscriptionRepository.findById(sub.getId())).thenReturn(Optional.of(sub));
+
+        boolean applied =
+                subscriptionService.applyRenewalSafetyNetIfUnchanged(
+                        sub.getId(), expectedPeriodEnd, expectedPeriodEnd, expectedPeriodEnd.plusSeconds(2592000));
+
+        assertFalse(applied);
+        verify(subscriptionRepository, never()).save(any());
+        verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
+        verify(aiCreditService, never()).resetForNewCycle(any());
+    }
+
+    @Test
+    @DisplayName("wiring [S2-MEDIUM]: applyRenewalSafetyNetIfUnchanged does nothing when the row no longer exists")
+    void testApplyRenewalSafetyNetIfUnchangedSkipsWhenRowMissing() {
+        when(subscriptionRepository.findById("gone")).thenReturn(Optional.empty());
+
+        boolean applied =
+                subscriptionService.applyRenewalSafetyNetIfUnchanged(
+                        "gone", Instant.now(), Instant.now(), Instant.now().plusSeconds(2592000));
+
+        assertFalse(applied);
+        verify(subscriptionRepository, never()).save(any());
+    }
+
+    /**
      * BL-2 fix (BrandF.md §98) wiring tests for {@link SubscriptionService#finalizeLapsedCancellation}
      * — the terminal write {@code SubscriptionRenewalResetJob} now makes for a cancel-at-period-end
      * row whose period has lapsed, instead of silently re-renewing it forever.
@@ -893,6 +974,111 @@ class SubscriptionServiceTest {
 
         verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
         verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
+    }
+
+    /**
+     * F-0859 wiring tests for {@link SubscriptionService#expireComp} — the demotion {@code
+     * SubscriptionRenewalResetJob} now makes for a comp row whose {@code compExpiresAt} has
+     * passed, instead of silently re-renewing it forever (the "Known gap" {@code
+     * AdminBillingController}'s class javadoc used to document).
+     */
+    @Test
+    @DisplayName("wiring [F-0859]: expireComp reassigns the row to Free, clears every comp field, via saveAndFlush, and reconciles AI-credit allotment down to Free's 100 immediately")
+    void testExpireCompDemotesToFreeAndClearsCompFields() {
+        Subscription sub = proSubscriptionRow();
+        // A comp row is never Razorpay-backed in practice (linkRazorpaySubscription clears comp
+        // the instant a real subscription id is linked) — model that explicitly rather than
+        // relying on proSubscriptionRow()'s razorpaySubscriptionId, which this test does not care
+        // about either way since expireComp does not consult it.
+        sub.markComp("beta tester", "01HADMIN0000000000000001", Instant.now().minusSeconds(1));
+
+        when(subscriptionRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(sub));
+        when(planService.getFreePlan()).thenReturn(freePlan);
+
+        subscriptionService.expireComp(sub);
+
+        assertEquals(FREE_PLAN_ID, sub.getPlanId());
+        assertFalse(sub.isComp());
+        assertNull(sub.getCompReason());
+        assertNull(sub.getCompGrantedBy());
+        assertNull(sub.getCompExpiresAt());
+        assertEquals(SubscriptionStatus.ACTIVE, sub.getStatus());
+        verify(subscriptionRepository).saveAndFlush(sub);
+        verify(subscriptionRepository, never()).save(sub);
+        // getActivePlanForWorkspace resolves this now-Free row's plan, so reconciliation re-syncs
+        // the allotment down to Free's 100 immediately, not left stale until the next monthly reset.
+        verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 100);
+    }
+
+    @Test
+    @DisplayName("wiring [F-0859]: expireComp anchors the new Free period to the 1st of the current UTC month, same as a freshly lazily-created Free row")
+    void testExpireCompAnchorsPeriodLikeFreshFreeRow() {
+        Subscription sub = proSubscriptionRow();
+        sub.markComp("promo", "01HADMIN0000000000000001", Instant.now().minusSeconds(1));
+
+        when(subscriptionRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(sub));
+        when(planService.getFreePlan()).thenReturn(freePlan);
+
+        subscriptionService.expireComp(sub);
+
+        Instant expectedStart = SubscriptionService.currentBillingCycleStart();
+        Instant expectedEnd = SubscriptionService.nextBillingCycleStart(expectedStart);
+        assertEquals(expectedStart, sub.getCurrentPeriodStart());
+        assertEquals(expectedEnd, sub.getCurrentPeriodEnd());
+    }
+
+    /**
+     * F-0861 wiring tests for {@link SubscriptionService#advanceFreePeriod} — the period-only
+     * advance {@code SubscriptionRenewalResetJob} now makes for a lapsed Free row, instead of
+     * either sweeping it into the Pro renewal/credit-reset path (the original bug) or silently
+     * skipping it (which would freeze {@code UsageCounterService#resolvePeriodStart}'s usage-cap
+     * anchor forever).
+     */
+    @Test
+    @DisplayName("wiring [F-0861]: advanceFreePeriod advances the period anchor via save, WITHOUT touching AI credits or plan allotment")
+    void testAdvanceFreePeriodAdvancesPeriodWithNoCreditInvolvement() {
+        Subscription sub = freeSubscriptionRow();
+        sub.renewPeriod(Instant.now().minusSeconds(2592000 + 86400), Instant.now().minusSeconds(86400));
+
+        subscriptionService.advanceFreePeriod(sub);
+
+        Instant expectedStart = SubscriptionService.currentBillingCycleStart();
+        Instant expectedEnd = SubscriptionService.nextBillingCycleStart(expectedStart);
+        assertEquals(expectedStart, sub.getCurrentPeriodStart());
+        assertEquals(expectedEnd, sub.getCurrentPeriodEnd());
+        verify(subscriptionRepository).save(sub);
+        verify(subscriptionRepository, never()).saveAndFlush(sub);
+        // The whole point of F-0861: Free's credit reset belongs to AICreditResetJob's monthly
+        // sweep, not this job — a second reset here would double-reset the same workspace.
+        verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
+        verify(aiCreditService, never()).resetForNewCycle(any());
+    }
+
+    /**
+     * {@link SubscriptionService#isFreePlan} — the routing check {@code
+     * SubscriptionRenewalResetJob} uses to tell a lapsed Free row (period-advance only) apart from
+     * an unverifiable stale Pro row with no comp flag and no {@code razorpaySubscriptionId} (which
+     * the job refuses to extend).
+     */
+    @Test
+    @DisplayName("isFreePlan: true for the FREE plan id")
+    void testIsFreePlanTrueForFreePlanId() {
+        when(planRepository.findById(FREE_PLAN_ID)).thenReturn(Optional.of(freePlan));
+        assertTrue(subscriptionService.isFreePlan(FREE_PLAN_ID));
+    }
+
+    @Test
+    @DisplayName("isFreePlan: false for the PRO plan id")
+    void testIsFreePlanFalseForProPlanId() {
+        when(planRepository.findById(PRO_PLAN_ID)).thenReturn(Optional.of(proPlan));
+        assertFalse(subscriptionService.isFreePlan(PRO_PLAN_ID));
+    }
+
+    @Test
+    @DisplayName("isFreePlan: false (not true) for an unresolvable plan id — never the more permissive default")
+    void testIsFreePlanFalseForUnresolvablePlanId() {
+        when(planRepository.findById("nonexistent-plan-id")).thenReturn(Optional.empty());
+        assertFalse(subscriptionService.isFreePlan("nonexistent-plan-id"));
     }
 
     private Subscription freeSubscriptionRow() {

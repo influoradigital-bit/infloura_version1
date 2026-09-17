@@ -81,15 +81,14 @@ import org.springframework.web.bind.annotation.RestController;
  * Pro) are explicitly OUT of scope here and would need a separate follow-up task with its own
  * schema design — flagged for Arjun/Priya to confirm this narrowing is acceptable for Phase 4b.
  *
- * <p><b>Known gap — comp expiry is not auto-enforced.</b> {@code compExpiresAt} is stored ({@code
- * V63__subscription_comp_fields.sql}) and used as the row's {@code currentPeriodEnd}, but neither
- * {@code SubscriptionRenewalResetJob} nor {@code SubscriptionDunningJob} distinguishes comp rows
- * from real ones — a comp past its {@code compExpiresAt} will currently be picked up by {@code
- * SubscriptionRenewalResetJob}'s "stale ACTIVE subscription" sweep and have its period silently
- * ROLLED FORWARD (extended), not downgraded back to Free. Building real expiry enforcement (a new
- * job, or teaching the existing renewal job to treat {@code isComp=true} differently) is out of
- * scope for this task per the "narrow first pass" instruction — flagged explicitly here and in the
- * handoff so it isn't mistaken for working expiry enforcement.
+ * <p><b>Comp expiry is auto-enforced (F-0859).</b> {@code compExpiresAt} is stored ({@code
+ * V63__subscription_comp_fields.sql}) and used as the row's {@code currentPeriodEnd}. {@code
+ * SubscriptionRenewalResetJob} now checks {@link
+ * com.influora.domain.entity.Subscription#isComp()} before its generic stale-ACTIVE renewal path —
+ * a comp row past its {@code compExpiresAt} is demoted to Free via {@code
+ * SubscriptionService#expireComp} instead of being rolled forward. Previously (pre-F-0859) the job
+ * did not distinguish comp rows from real ones and would silently extend an expired comp forever;
+ * that gap is closed.
  */
 @RestController
 @RequestMapping("/admin/billing")

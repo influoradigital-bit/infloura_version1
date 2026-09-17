@@ -7,6 +7,7 @@ import com.razorpay.Plan;
 import com.razorpay.RazorpayException;
 import com.razorpay.Subscription;
 import java.math.BigDecimal;
+import java.time.Instant;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -263,6 +264,64 @@ public class RazorpayClient {
         }
     }
 
+    /**
+     * Fetches a Razorpay subscription's CURRENT status and billing period — used by {@code
+     * SubscriptionRenewalResetJob} (F-0860) to verify a locally-stale-ACTIVE, Razorpay-backed row
+     * against Razorpay before ever extending it, instead of blindly re-renewing on the assumption
+     * that a missed webhook always means "still paying". Deliberately read-only (no local state is
+     * written here — the caller applies whatever transition the returned status implies).
+     *
+     * <p>Dev/unconfigured mock mode returns a stub {@code "active"} snapshot with no period
+     * (matching every other method's dev-mode convention) — real period confirmation only ever
+     * happens against a live Razorpay account.
+     */
+    public SubscriptionSnapshot fetchSubscription(String razorpaySubscriptionId) {
+        if (!isConfigured()) {
+            requireConfiguredOutsideDev("fetch subscription");
+            log.info("[MOCK] Razorpay subscription would be fetched: id={}", razorpaySubscriptionId);
+            return new SubscriptionSnapshot("active", null, null, null);
+        }
+
+        try {
+            Subscription subscription = getSdkClient().subscriptions.fetch(razorpaySubscriptionId);
+            SubscriptionSnapshot snapshot = parseSubscriptionSnapshot(subscription);
+            log.debug(
+                    "Razorpay subscription fetched: id={}, status={}, currentStart={}, currentEnd={}",
+                    razorpaySubscriptionId, snapshot.status(), snapshot.currentStart(), snapshot.currentEnd());
+            return snapshot;
+        } catch (RazorpayException e) {
+            log.error(
+                    "Razorpay subscription fetch failed: id={}, error={}",
+                    razorpaySubscriptionId, e.getMessage());
+            throw new RazorpayIntegrationException("Failed to fetch Razorpay subscription", e);
+        }
+    }
+
+    /**
+     * Parses the SDK's {@link Subscription} entity into a {@link SubscriptionSnapshot}. Package-
+     * private and static so a test can exercise the actual parsing logic against a realistic raw
+     * Razorpay payload by constructing a real {@code com.razorpay.Subscription} from a hand-built
+     * {@link JSONObject} (its constructor is public) — mocking {@link #getSdkClient()} instead
+     * would stub out exactly the layer a parsing bug (e.g. a missing {@code current_end}) would
+     * live in.
+     */
+    static SubscriptionSnapshot parseSubscriptionSnapshot(Subscription subscription) {
+        JSONObject json = subscription.toJson();
+        String status = optString(json, "status");
+        Instant currentStart = optInstant(json, "current_start");
+        Instant currentEnd = optInstant(json, "current_end");
+        String planId = optString(json, "plan_id");
+        return new SubscriptionSnapshot(status, currentStart, currentEnd, planId);
+    }
+
+    private static String optString(JSONObject json, String key) {
+        return (json.has(key) && !json.isNull(key)) ? json.getString(key) : null;
+    }
+
+    private static Instant optInstant(JSONObject json, String key) {
+        return (json.has(key) && !json.isNull(key)) ? Instant.ofEpochSecond(json.getLong(key)) : null;
+    }
+
     public record OrderResult(String orderId, String status, String rawResponse) {
         public OrderResult(String orderId, String status) {
             this(orderId, status, null);
@@ -270,4 +329,13 @@ public class RazorpayClient {
     }
 
     public record SubscriptionResult(String subscriptionId, String status, String shortUrl) {}
+
+    /**
+     * {@code status} is Razorpay's raw lowercase value ({@code active}, {@code authenticated},
+     * {@code pending}, {@code halted}, {@code cancelled}, {@code completed}, {@code expired}, ...)
+     * — the caller (not this client) maps it to a local {@code SubscriptionStatus}. {@code
+     * currentStart}/{@code currentEnd} are {@code null} when Razorpay's payload didn't carry them
+     * (e.g. a status-only response) — callers must fall back to their own estimate in that case.
+     */
+    public record SubscriptionSnapshot(String status, Instant currentStart, Instant currentEnd, String planId) {}
 }

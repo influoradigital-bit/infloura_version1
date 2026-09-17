@@ -45,7 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
  * request").
  *
  * <p><b>BL-5 correction (BrandF.md §101, re-corrected after Priya's review; scope widened for
- * F-0141):</b> the system has SIX other {@code Subscription} writers, none of which goes through
+ * F-0141):</b> the system has EIGHT other {@code Subscription} writers, none of which goes through
  * the webhook, and the sentence above must not be read as "only ever written from a verified
  * webhook" — that generalization is false and was the load-bearing (and incorrect) claim of an
  * earlier audit pass.
@@ -59,7 +59,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <em>in this class</em>, which made it accurate about itself and misleading about the table: the
  * invariant stated at the bottom is about who can write a {@code Subscription} row at all, so a
  * writer in another class falsifies it just as effectively as one in this file. The list below is
- * re-derived from every writer of a {@code Subscription} row anywhere in the codebase — six
+ * re-derived from every writer of a {@code Subscription} row anywhere in the codebase — eight
  * non-webhook, plus the two save sites inside {@link #applySubscriptionWebhookUpdate}. {@code
  * gates/F-0141-writer-enumeration-exhaustive.py} re-derives the same set and fails on any bullet
  * this list is missing or any count word that disagrees with it, so the two cannot drift apart
@@ -113,10 +113,15 @@ import org.springframework.transaction.annotation.Transactional;
  *       intentionally left unchanged (still {@code ACTIVE} until the period actually elapses —
  *       see that method's own comment). No plan/status escalation and no payment risk: this path
  *       can only schedule a future cancellation, never grant or extend paid entitlement.
- *   <li>{@link #applyRenewalSafetyNet} — advances the current period on an existing row. Not
- *       reachable from any controller; called only by {@link
- *       com.influora.job.SubscriptionRenewalResetJob}, an internal scheduled job with no HTTP
- *       entry point.
+ *   <li>{@link #applyRenewalSafetyNet} — advances the current period on an existing row, now only
+ *       after {@code SubscriptionRenewalResetJob} has confirmed {@code active} status against
+ *       Razorpay AND that Razorpay reports a genuinely newer, already-elapsed period (F-0860,
+ *       Kabir S2 HIGH fix -- {@code authenticated} no longer renews, and an unchanged {@code
+ *       current_end} is left alone rather than estimated). Not reachable from any controller;
+ *       called only by {@link com.influora.job.SubscriptionRenewalResetJob}, an internal
+ *       scheduled job with no HTTP entry point, and (Kabir S2 MEDIUM fix) normally reached
+ *       indirectly through the freshness-guarded {@link #applyRenewalSafetyNetIfUnchanged},
+ *       not called directly.
  *   <li>{@link #grantAdminPlan} — comp/override writes, any plan. SUPER_ADMIN + MFA-gated via
  *       {@code AdminBillingService}; intentionally an administrator-triggered exception to the
  *       "webhook-only" default, not a gap in it.
@@ -131,7 +136,21 @@ import org.springframework.transaction.annotation.Transactional;
  *       from any controller; called only by that scheduled job, same trust boundary as {@link
  *       #applyRenewalSafetyNet}. No plan/status escalation and no payment risk: {@code HALTED} is
  *       strictly downward from {@code PAST_DUE}, and it reconciles AI credits on the way.
+ *   <li>{@link #expireComp} — F-0859 fix: demotes a lapsed admin-comp row to Free. Same trust
+ *       boundary as {@link #finalizeLapsedCancellation}; can only move a row DOWN to Free, never
+ *       escalate it.
+ *   <li>{@link #advanceFreePeriod} — F-0861 fix: advances a lapsed Free row's period anchor only
+ *       (no credit/allotment call). Same trust boundary as the two entries above.
  * </ul>
+ *
+ * <p>{@code SubscriptionRenewalResetJob} (F-0860) also reaches {@link
+ * #applySubscriptionWebhookUpdate} itself directly — for a Razorpay-backed row whose fetched
+ * status is {@code pending}/{@code halted}/{@code cancelled}/{@code completed}/{@code expired},
+ * the job applies the identical status-only transition the real webhook would, rather than
+ * duplicating that logic. This does not weaken the "paid Pro only from a verified webhook"
+ * invariant below: the job only ever downgrades/reclassifies a row it independently re-verified
+ * against Razorpay's own API moments earlier — it can never move a row TO Pro/ACTIVE with no
+ * corresponding Razorpay confirmation.
  *
  * <p>The actual invariant this class enforces is narrower than "webhook-only": <b>no path other
  * than the verified webhook can ever write a paid ({@code PRO}) row funded by an unauthenticated
@@ -568,9 +587,15 @@ public class SubscriptionService {
      *     cron path). The monthly cron still runs for every brand as the steady-state reset;
      *     this closes the "up to a month of drift on every mid-cycle plan change" gap on top of
      *     it, not a replacement for it.
+     * @return {@code true} if this delivery was actually applied (new row created, or an existing
+     *     row's status/period written); {@code false} if it was a no-op because a newer delivery
+     *     had already been applied to this row (the out-of-order-delivery guard below fired).
+     *     [Kabir S2R3 item 2] {@code RazorpayWebhookController} ignores this — its own transition
+     *     is idempotent either way. {@code SubscriptionRenewalResetJob} uses it to gate its audit
+     *     log and billing email: a skipped write must not be reported or emailed as if it happened.
      */
     @Transactional
-    public void applySubscriptionWebhookUpdate(
+    public boolean applySubscriptionWebhookUpdate(
             String razorpaySubscriptionId,
             String workspaceId,
             String razorpayPlanId,
@@ -618,7 +643,7 @@ public class SubscriptionService {
                             .build();
             subscriptionRepository.save(subscription);
             reconcileAiCreditAllotment(workspaceId);
-            return;
+            return true;
         }
 
         // [SEC: Kabir red-team MEDIUM-1] Reject/no-op an out-of-order delivery rather than
@@ -636,7 +661,7 @@ public class SubscriptionService {
                             + " lastAppliedEventAt={} — a newer event was already applied to this row",
                     razorpaySubscriptionId, workspaceId, targetStatus, webhookEventAt,
                     subscription.getLastWebhookEventAt());
-            return;
+            return false;
         }
 
         // Captured BEFORE the writes below overwrite them — the ACTIVE branch needs to know what
@@ -716,6 +741,7 @@ public class SubscriptionService {
         // this is a webhook-invoked, retry-friendly path, so letting it propagate is correct here.
         subscriptionRepository.saveAndFlush(subscription);
         reconcileAiCreditAllotment(workspaceId);
+        return true;
     }
 
     /**
@@ -814,6 +840,47 @@ public class SubscriptionService {
     }
 
     /**
+     * [Kabir S2 MEDIUM fix] Guarded entry point for {@code SubscriptionRenewalResetJob}'s
+     * Razorpay-confirmed renewal path: re-reads the row FRESH, inside THIS method's own
+     * transaction, and refuses to renew unless it still matches what the job observed BEFORE it
+     * called out to Razorpay. Without this, the job's renewal ran against its own stale in-memory
+     * {@link Subscription} object — if a real webhook (e.g. {@code subscription.charged} or {@code
+     * .halted}) landed in the window between the job reading the row, calling Razorpay, and
+     * writing its own result, the job's write would silently clobber whatever that webhook had
+     * just applied.
+     *
+     * <p>{@code expectedCurrentPeriodEnd} is the {@code currentPeriodEnd} the job observed when it
+     * first read the row (before calling Razorpay). The fresh read must still be {@code ACTIVE}
+     * with that EXACT {@code currentPeriodEnd} — status or period changing either one means the
+     * row moved, and this method does nothing and returns {@code false} rather than guess which
+     * write should win.
+     *
+     * <p>Delegates the actual write to {@link #applyRenewalSafetyNet} via a same-class call —
+     * still runs inside the ONE transaction opened for this method (plain self-invocation here
+     * only forfeits the inner call's own separate proxy interception, which does not matter since
+     * a transaction is already active), so the freshness check and the write are atomic together.
+     * Deliberately does not itself call {@code subscriptionRepository.save(...)} — see {@link
+     * #applyRenewalSafetyNet} in the class javadoc's writer enumeration; this method makes no new
+     * repository write call of its own.
+     *
+     * @return {@code true} if the renewal was applied, {@code false} if the row had already moved
+     *     and nothing was written.
+     */
+    @Transactional
+    public boolean applyRenewalSafetyNetIfUnchanged(
+            String subscriptionId, Instant expectedCurrentPeriodEnd, Instant newStart, Instant newEnd) {
+        Subscription fresh = subscriptionRepository.findById(subscriptionId).orElse(null);
+        if (fresh == null
+                || fresh.getStatus() != SubscriptionStatus.ACTIVE
+                || fresh.getCurrentPeriodEnd() == null
+                || !fresh.getCurrentPeriodEnd().equals(expectedCurrentPeriodEnd)) {
+            return false;
+        }
+        applyRenewalSafetyNet(fresh, newStart, newEnd);
+        return true;
+    }
+
+    /**
      * BL-2 fix (BrandF.md §98): terminal transition for a subscription the customer already
      * cancelled ({@link Subscription#isCancelAtPeriodEnd()} {@code == true}) whose paid period has
      * now lapsed. Called only from {@link com.influora.job.SubscriptionRenewalResetJob}, for rows
@@ -850,6 +917,77 @@ public class SubscriptionService {
         // halt, SubscriptionDunningJob#haltOne) rather than leaving it to drift until the next
         // monthly AICreditResetJob.
         reconcileAiCreditAllotment(subscription.getWorkspaceId());
+    }
+
+    /**
+     * F-0859 fix ({@code SubscriptionRenewalResetJob}): demotes an admin comp/override
+     * subscription whose {@link Subscription#getCompExpiresAt()} has passed back to ordinary
+     * Free. Nothing else in the system enforces comp expiry — {@code AdminBillingController}'s
+     * class javadoc previously documented this as a known gap ({@code
+     * SubscriptionRenewalResetJob}'s old unconditional "stale ACTIVE" sweep instead rolled the
+     * lapsed comp period FORWARD, i.e. renewed it forever). Called only from that job, for a comp
+     * row its stale-period query would otherwise still match.
+     *
+     * <p>Reassigns the plan to FREE, clears the comp flags ({@link Subscription#clearComp()} —
+     * an expired-comp demotion, not a real-subscription supersession, so the distinct clearing
+     * path from {@link Subscription#linkRazorpaySubscription} is used), and re-anchors the period
+     * exactly like a fresh Free row ({@link #currentBillingCycleStart()}/{@link
+     * #nextBillingCycleStart(Instant)} — the same anchor {@link #createFreeSubscription} uses) so
+     * {@code UsageCounterService#resolvePeriodStart} does not inherit a stale comp-period anchor.
+     * {@code saveAndFlush} + {@link #reconcileAiCreditAllotment}, matching {@link
+     * #finalizeLapsedCancellation}'s shape: a lock failure propagates to the job's own per-row
+     * catch, leaving the row ACTIVE/comp/lapsed so it is retried cleanly next run.
+     */
+    @Transactional
+    public void expireComp(Subscription subscription) {
+        Plan freePlan = planService.getFreePlan();
+        Instant periodStart = currentBillingCycleStart();
+        Instant periodEnd = nextBillingCycleStart(periodStart);
+
+        subscription.changePlan(freePlan.getId());
+        subscription.renewPeriod(periodStart, periodEnd);
+        subscription.clearComp();
+        subscriptionRepository.saveAndFlush(subscription);
+        reconcileAiCreditAllotment(subscription.getWorkspaceId());
+    }
+
+    /**
+     * F-0861 fix ({@code SubscriptionRenewalResetJob}): advances a lapsed Free-tier subscription's
+     * billing period ONLY — no AI-credit reset, no plan-allotment call. Free's AI-credit allotment
+     * is not tied to its own billing cycle the way Pro's is; {@code AICreditResetJob} already
+     * resets every workspace (Free and Pro alike) monthly on the 1st, so calling {@code
+     * aiCreditService.resetForNewCycle} here would be a second, redundant reset for the same
+     * workspace. This method exists purely so {@code UsageCounterService#resolvePeriodStart}
+     * (which reads {@code currentPeriodStart} unconditionally, Free or Pro) never resolves a
+     * frozen period for a Free row the renewal-safety-net job would otherwise have skipped
+     * entirely.
+     *
+     * <p>Anchored identically to a freshly lazily-created Free row ({@link
+     * #createFreeSubscription}) — {@link #currentBillingCycleStart()}/{@link
+     * #nextBillingCycleStart(Instant)}, the 1st of the current UTC calendar month — not the
+     * previous-cycle-length estimate {@link #applyRenewalSafetyNet} uses for Pro, since Free has
+     * no Razorpay-side cycle to approximate.
+     */
+    @Transactional
+    public void advanceFreePeriod(Subscription subscription) {
+        Instant periodStart = currentBillingCycleStart();
+        Instant periodEnd = nextBillingCycleStart(periodStart);
+        subscription.renewPeriod(periodStart, periodEnd);
+        subscriptionRepository.save(subscription);
+    }
+
+    /**
+     * True if {@code planId} resolves to the FREE plan. Used by {@code
+     * SubscriptionRenewalResetJob} to tell a lapsed Free row (advance period only, {@link
+     * #advanceFreePeriod}) apart from a lapsed Pro row with no {@code razorpaySubscriptionId} and
+     * no comp flag (an unverifiable, presumed-anomalous state that job refuses to extend — see its
+     * class javadoc). Defaults to {@code false} (i.e. "treat as Pro/paid, don't touch it") for an
+     * unresolvable {@code planId} — never the more permissive default, since the caller uses this
+     * to decide whether it is safe to extend access for free.
+     */
+    @Transactional(readOnly = true)
+    public boolean isFreePlan(String planId) {
+        return planRepository.findById(planId).map(plan -> plan.getCode() == PlanCode.FREE).orElse(false);
     }
 
     private Plan resolvePlanForWebhook(String razorpayPlanId) {
