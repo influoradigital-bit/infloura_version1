@@ -170,6 +170,54 @@ L16 cap/holdout/credits rulings). New from Priya's creator answers:
 
 ---
 
+## P1c — Work from the 2026-09-17 rulings
+
+Rulings: `wiki/decisions/CMO-PRO-DUNNING-GRACE-0917.md` (Tejas) and
+`wiki/decisions/CFO-BRAND-FEE-GST-TOPUP-0917.md` (Rohan). Tejas's "comparable products" examples (Zoho,
+Freshworks) were not checked by Arjun and are cited as market context, not evidence.
+
+### S18 · Vikram (BE) + Ananya (FE) + Nisha (copy) · Pro stays on during 7-day grace — **append to S2 then S1, and S4**
+| Item | Work | Files (owner lane) |
+|---|---|---|
+| Grace | PAST_DUE counts as active Pro for 7 days from the first failed charge; HALTED ends it. The 7% fee applies during grace. | `SubscriptionService.getActivePlanForWorkspace` (S1), `SubscriptionDunningJob` (S2) |
+| End of grace | HALTED → Free: templates and export paused, data kept, allotment 100 at next reset | same |
+| Banner | Yellow "payment failed, retry" banner during grace (copy in Tejas's ruling) | `brand-billing-settings.tsx` (S4) |
+| Emails | Payment-failed and halted emails use the ruling's copy | email templates |
+| Metric | Recovery rate within grace (target >70%) — a query, not a dashboard, for now | Tara |
+
+**done_when:** a PAST_DUE brand on day 3 is charged 7% and can export; on day 8 (HALTED) is charged 10% and cannot; both red with the grace check removed.
+
+### S19 · Vikram · fee shown = fee charged (10% Free / 7% Pro)
+| Item | Work |
+|---|---|
+| Plan-blind copy | `BrandPlatformFeeService` reads the workspace's real `fee_bps`, not a hardcoded "10%" |
+| Stray 15% | Remove `PLATFORM_FEE_PERCENT` (15.00) or point `AmountDerivationService` at the plan-aware fee |
+| Pricing page | `pricing.tsx` shows 10% Free / 7% Pro (Ananya) |
+
+**Before starting:** check the other session's fee tickets (F-0840–F-0851, `CTO-BRAND-PRICING-ANSWERS-0917.md`) — if one already owns `BrandPlatformFeeService`, append there instead.
+**done_when:** a Pro brand's fee endpoint returns 7% and a Free brand's 10%; no `15` fee constant remains; test red on current code.
+
+### S17 · Vikram (BE) + Ananya (FE) + Kabir (gate) · Brand AI top-up packs
+Catalogue **proposed by Rohan, prices need Swapnil**: 50 credits ₹999 · 150 ₹2,499 · 400 ₹5,999 (GST-inclusive; Pro stays cheaper per credit at ₹12.50). Purchased credits never expire and are used only after the monthly allotment.
+| Item | Work |
+|---|---|
+| Balance | `purchasedBalance` bucket on `brand_ai_credits`; debit monthly first, then purchased; refunds return to their bucket |
+| Orders | pack catalogue + `brand_credit_orders` migrations; Razorpay one-time order; webhook branch credits exactly once |
+| Routes | `GET` packs, `POST` order, `GET` order status |
+| FE | "Buy credits" next to "Fund a campaign" on the zero-credit paywall (`CreditPaywall`, `meera-copy.ts`, `MeeraChatPanel.tsx`) |
+
+**Depends on:** S3 (same credit files — after L3/S3 lands), S1 (webhook hardening), S5 (signature test), Swapnil confirming prices.
+**done_when:** duplicate webhook credits once; a failed order credits nothing; a brand at 0 credits buys a pack and its next turn succeeds; Kabir approves the money path.
+```
+/proof-os:work S17 brand AI credit top-up packs — Vikram + Ananya. done_when: Kabir and Kavya approve; duplicate webhook credits once
+```
+
+### Still open for Swapnil
+- **GST on the campaign fee.** Invoices print fee + 18% GST, but only the fee is debited. Rohan recommends **the fee is GST-inclusive, and the invoice backs it out** (no extra charge to brands). The alternative adds +₹900 (Free) or +₹630 (Pro) on a ₹50,000 campaign. Blocks the invoice fix.
+- **Confirm the top-up pack prices** above.
+
+---
+
 ## P3 — Live proof (last)
 
 ### S16 · Swapnil (payer) + Meera (DB checks)
@@ -180,13 +228,13 @@ Run Priya's T-12 live test with a real ₹4,999: sidebar Billing → Upgrade →
 
 ## Decisions only Swapnil can make (new; D1–D3 and B1–B3 are in the other files)
 
-| # | Question | Blocks |
-|---|---|---|
-| R1 | Should Pro stay on during the 7-day dunning grace? Code drops to Free at the first failed charge. | S2 |
-| R2 | Brand fee number: Pro brands are told 10% by `BrandPlatformFeeService`, Meera quotes 15%, pricing says 7%. Which is real? (with Rohan) | fee copy fix |
-| R3 | Is ₹4,999 GST-inclusive (code: net ≈ ₹4,236) or ₹4,999 + GST? (with Rohan) | S16, invoices |
-| R4 | Brand voice (speak/transcribe) costs no credits on any plan. Meter it? (with Rohan) | — |
-| R5 | Brand AI top-up packs: build one (like the creator packs), or is "upgrade to Pro" the only answer at 0 credits? | new lane if yes |
+| # | Question | Ruling (Swapnil, 2026-09-17) | Blocks |
+|---|---|---|---|
+| R1 | Should Pro stay on during the 7-day dunning grace? Code drops to Free at the first failed charge. | **Delegated to Tejas, market-based** → `wiki/decisions/CMO-PRO-DUNNING-GRACE-0917.md` | S2 |
+| R2 | Brand fee number: Pro brands are told 10%, Meera quotes 15%, pricing says 7%. | **10% Free, 7% Pro.** Rohan formalises → `wiki/decisions/CFO-BRAND-FEE-GST-TOPUP-0917.md` | fee copy fix |
+| R3 | Is ₹4,999 GST-inclusive or ₹4,999 + GST? | **GST-inclusive** (matches current code). GST on the *campaign fee* is still open — Rohan to recommend | S16, invoices |
+| R4 | Brand voice costs no credits on any plan. Meter it? | **Keep it free.** No work; Rohan records the cost exposure | — |
+| R5 | Brand AI top-up packs? | **Yes, build them.** Rohan proposes the pack catalogue and prices | new lane S17 |
 
 ---
 
