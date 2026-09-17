@@ -4,8 +4,11 @@ import com.influora.common.JsonLists;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.domain.entity.PlatformStat;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.client.FacebookPageClient;
+import com.influora.integration.meta.client.MetaGraphApiClient;
 import com.influora.integration.meta.dto.FacebookAccountsListResponse;
+import com.influora.integration.meta.dto.InstagramUserResponse;
 import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.oauth.MetaTokenStorage;
 import com.influora.repository.MetaOAuthTokenRepository;
@@ -39,20 +42,31 @@ public class MetaConnectionService {
     private static final Logger log = LoggerFactory.getLogger(MetaConnectionService.class);
     private static final String PLATFORM_INSTAGRAM = "instagram";
 
+    /**
+     * {@code /me}, not {@code /{ig-user-id}}, so a row whose stored account id is missing still
+     * resolves. Only the two fields the status response shows — the Instagram-Login user node does
+     * not support every field the Facebook-Login one does, and one unsupported field fails the
+     * whole request.
+     */
+    static final String INSTAGRAM_LOGIN_PROFILE_PATH = "/me?fields=username,followers_count";
+
     private final MetaOAuthTokenRepository tokenRepository;
     private final MetaTokenStorage tokenStorage;
     private final PlatformStatRepository platformStatRepository;
     private final FacebookPageClient facebookPageClient;
+    private final MetaGraphApiClient graphApiClient;
 
     public MetaConnectionService(
             MetaOAuthTokenRepository tokenRepository,
             MetaTokenStorage tokenStorage,
             PlatformStatRepository platformStatRepository,
-            FacebookPageClient facebookPageClient) {
+            FacebookPageClient facebookPageClient,
+            MetaGraphApiClient graphApiClient) {
         this.tokenRepository = tokenRepository;
         this.tokenStorage = tokenStorage;
         this.platformStatRepository = platformStatRepository;
         this.facebookPageClient = facebookPageClient;
+        this.graphApiClient = graphApiClient;
     }
 
     @Transactional(readOnly = true)
@@ -84,15 +98,34 @@ public class MetaConnectionService {
         Optional<String> accessToken = tokenStorage.getValidCreatorToken(profile.getId());
         if (accessToken.isPresent()) {
             try {
-                FacebookAccountsListResponse.InstagramBusinessAccount igAccount =
-                        facebookPageClient.resolveConnectedInstagram(accessToken.get());
-                if (igAccount != null) {
-                    if (igAccount.username() != null) {
-                        handle = formatHandle(igAccount.username());
-                    }
-                    if (igAccount.followersCount() != null) {
-                        followers = igAccount.followersCount();
-                    }
+                String liveUsername;
+                Long liveFollowers;
+                if (token.getAuthPath() == MetaAuthPath.INSTAGRAM_LOGIN) {
+                    // F-0871 — an Instagram-Login token has no Facebook Page behind it and is only
+                    // accepted by graph.instagram.com. Sending it to graph.facebook.com
+                    // /me/accounts (the Facebook branch below) failed every status call with
+                    // `190 "Invalid OAuth access token - Cannot parse access token"`, observed on
+                    // the first ever successful Instagram-Login connect (2026-09-17 10:48 UTC).
+                    InstagramUserResponse igUser =
+                            graphApiClient.get(
+                                    INSTAGRAM_LOGIN_PROFILE_PATH,
+                                    accessToken.get(),
+                                    InstagramUserResponse.class,
+                                    rateLimitKey(token, profile),
+                                    MetaAuthPath.INSTAGRAM_LOGIN);
+                    liveUsername = igUser != null ? igUser.username() : null;
+                    liveFollowers = igUser != null ? igUser.followersCount() : null;
+                } else {
+                    FacebookAccountsListResponse.InstagramBusinessAccount igAccount =
+                            facebookPageClient.resolveConnectedInstagram(accessToken.get());
+                    liveUsername = igAccount != null ? igAccount.username() : null;
+                    liveFollowers = igAccount != null ? igAccount.followersCount() : null;
+                }
+                if (liveUsername != null) {
+                    handle = formatHandle(liveUsername);
+                }
+                if (liveFollowers != null) {
+                    followers = liveFollowers;
                 }
             } catch (MetaApiException e) {
                 log.warn(
@@ -121,6 +154,12 @@ public class MetaConnectionService {
     private static MetaConnectionStatusResponse disconnected() {
         return new MetaConnectionStatusResponse(
                 false, null, null, null, Collections.emptyList());
+    }
+
+    /** The Instagram account id when stored; the creator id otherwise, so throttling still keys per creator. */
+    private static String rateLimitKey(MetaOAuthToken token, CreatorProfile profile) {
+        String igId = token.getIgBusinessAccountId();
+        return igId != null && !igId.isBlank() ? igId : profile.getId();
     }
 
     private static String formatHandle(String username) {
