@@ -20,10 +20,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import static org.junit.jupiter.params.provider.Arguments.arguments;
+
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.common.ApiException;
 import com.influora.config.CreatorCopilotProperties;
 import com.influora.domain.entity.CreatorNudgeLog;
@@ -32,6 +35,7 @@ import com.influora.domain.entity.Trend;
 import com.influora.domain.enums.NudgeMessageSource;
 import com.influora.integration.ai.CreatorSuggestionAiClient;
 import com.influora.integration.ai.CreatorSuggestionAiClient.SuggestionCopy;
+import com.influora.integration.ai.dto.CreatorSuggestionAiDtos.SuggestionResponse;
 import com.influora.repository.CreatorNudgeLogRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.TrendRepository;
@@ -48,12 +52,15 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -408,7 +415,9 @@ class CreatorNudgeServiceTest {
         when(aiClient.requestSuggestion(any(), any(), any()))
                 .thenReturn(
                         new SuggestionCopy(
-                                "Your luxury content is trending", "Post about luxury and heritage"));
+                                "Your luxury content is trending",
+                                "Post about luxury and heritage",
+                                "AI"));
 
         service.getSuggestion(CREATOR_PROFILE_ID);
 
@@ -440,7 +449,7 @@ class CreatorNudgeServiceTest {
         givenSaveEchoesArgument();
         givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT));
         when(aiClient.requestSuggestion(any(), any(), any()))
-                .thenReturn(new SuggestionCopy("AI headline", "AI content idea"));
+                .thenReturn(new SuggestionCopy("AI headline", "AI content idea", "AI"));
 
         service.getSuggestion(CREATOR_PROFILE_ID);
 
@@ -1105,6 +1114,550 @@ class CreatorNudgeServiceTest {
         } finally {
             serviceLogger.detachAppender(appender);
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0826 — Kabir's 22 proven term-list bypasses
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Every bypass string from Kabir's blocking review of commit ab87c46, one row each, in the
+     * order he reported them: eight inflections whose base form was already listed, then fourteen
+     * terms from categories that were absent outright.
+     *
+     * <p>Column 3 is the ANTI-VACUITY CONTROL and is the reason this suite has teeth: it is the
+     * same headline with the offending word removed, and it must be classified SAFE. Without it a
+     * row would still pass if some other word in the fixture ("police", "died") were doing the
+     * blocking, which is exactly how a filter test goes green while the gap it names stays open.
+     * Every row therefore proves two things at once — this headline blocks, and it blocks BECAUSE
+     * OF the term under test.
+     */
+    static Stream<Arguments> kabirTermListBypasses() {
+        return Stream.of(
+                // --- inflections of terms that were already present in some other form ---
+                arguments("murderer", "Serial murderer still at large", "Serial still at large"),
+                arguments("rapes", "Man rapes minor, say reports", "Man minor, say reports"),
+                arguments("rapists", "Rapists identified in the case file", "identified in the case file"),
+                arguments("killings", "Wave of killings grips the district", "Wave of grips the district"),
+                arguments("stabs", "Teen stabs classmate at school", "Teen classmate at school"),
+                arguments("molestation", "Molestation complaint filed in Thane", "complaint filed in Thane"),
+                arguments("arrests", "Six arrests in the Pune racket", "Six in the Pune racket"),
+                arguments("abducted", "Two children abducted from a fair", "Two children from a fair"),
+                // --- categories that were absent outright ---
+                arguments("massacre", "Village massacre leaves the state stunned", "Village leaves the state stunned"),
+                arguments("homicide", "Homicide unit takes over the file", "unit takes over the file"),
+                arguments("manslaughter", "Driver charged with manslaughter", "Driver charged with it"),
+                arguments("beheaded", "Statue beheaded in an overnight raid", "Statue in an overnight raid"),
+                arguments("hostage", "Hostage standoff ends at the mall", "standoff ends at the mall"),
+                arguments("bomb", "Bomb found near the metro gate", "found near the metro gate"),
+                arguments("blast", "Blast rips through a market lane", "rips through a market lane"),
+                arguments("explosion", "Explosion reported at the plant", "reported at the plant"),
+                arguments("ied", "IED recovered ahead of the rally", "recovered ahead of the rally"),
+                arguments("self harm (spaced)", "Self harm helpline sees record calls", "helpline sees record calls"),
+                arguments("self-harm (hyphenated)", "Self-harm reports rise among teens", "reports rise among teens"),
+                arguments("grooming", "Grooming case against a tuition teacher", "case against a tuition teacher"),
+                arguments("child exploitation", "Child exploitation racket traced online", "racket traced online"),
+                arguments("csam", "CSAM network traced to three states", "network traced to three states"));
+    }
+
+    @ParameterizedTest(name = "[{0}] {1}")
+    @MethodSource("kabirTermListBypasses")
+    @DisplayName("F-0826: each of Kabir's 22 term-list bypasses is now blocked")
+    void firstUnsafeTopic_blocksEveryKabirTermListBypass(
+            String term, String bypassHeadline, String sameHeadlineWithoutTheTerm) {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(sameHeadlineWithoutTheTerm),
+                "anti-vacuity control failed: '"
+                        + sameHeadlineWithoutTheTerm
+                        + "' is blocked by something OTHER than '"
+                        + term
+                        + "', so this row proves nothing about that term");
+
+        assertNotNull(
+                CreatorNudgeService.firstUnsafeTopic(bypassHeadline),
+                "F-0826 bypass still open for '" + term + "': " + bypassHeadline);
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(bypassHeadline),
+                "bypass headline must not be quotable in creator copy: " + bypassHeadline);
+    }
+
+    /**
+     * The phrase-rescue technique F-0786 invented for {@code mob}/{@code court}, applied to the
+     * three words it had skipped. Both halves are asserted in ONE test on purpose: a future
+     * "hardening" that adds bare {@code shooting}/{@code attack}/{@code clash} would make the
+     * blocked half pass for the wrong reason, and only the excluded half can catch that.
+     */
+    @Test
+    @DisplayName("F-0826: shooting/attack/clash block as PHRASES while the bare words stay excluded")
+    void firstUnsafeTopic_phraseRescueBlocksPhrasesButNotBareWords() {
+        for (String blocked :
+                List.of(
+                        "School shooting coverage dominates the feed",
+                        "Mass shooting reported in the suburb",
+                        "Acid attack survivor speaks out",
+                        "Terror attack foiled near the border",
+                        "Communal clash erupts in the old city")) {
+            assertNotNull(
+                    CreatorNudgeService.firstUnsafeTopic(blocked),
+                    "phrase must be blocked: " + blocked);
+        }
+
+        // The bare words remain deliberately excluded — "shooting a reel", "attack the day" and
+        // "clash of styles" are ordinary copy in this product's niche, and that judgement call is
+        // what the phrase technique exists to preserve. If someone adds them, these go red.
+        for (String stillAllowed :
+                List.of(
+                        "Shooting a reel at golden hour",
+                        "Attack the day with this morning routine",
+                        "Clash of styles in this season's lookbook")) {
+            assertNull(
+                    CreatorNudgeService.firstUnsafeTopic(stillAllowed),
+                    "bare word must stay excluded (too common in-niche): " + stillAllowed);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0827 — Unicode evasion
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Every evasion technique Kabir's compiled harness landed against the pre-fix
+     * {@code normalizeForMatching}. All of them carry the SAME fixture sentence, "Town … case
+     * reopened", so the two controls in {@link
+     * #firstUnsafeTopic_blocksEveryUnicodeEvasion(String, String)} are shared and exact: the plain
+     * sentence blocks, and the sentence with the word removed does not.
+     *
+     * <p>The realistic channel is not hypothetical — YouTube video titles are one of the three
+     * trend sources, they are user-authored, and fullwidth/stylized Unicode is ordinary creator
+     * styling there, so this arrives as ambient traffic rather than only as a deliberate attack.
+     *
+     * <p>Kabir's write-up names thirteen distinct techniques plus a count of fourteen; both
+     * candidates for the fourteenth are covered here (hyphen-separation alongside dot-separation)
+     * and a STACKED case — fullwidth + zero-width + homoglyph in one word — is added because it is
+     * strictly harder than any single technique and is what an attacker who reads this fix will
+     * actually send.
+     */
+    static Stream<Arguments> unicodeEvasions() {
+        return Stream.of(
+                arguments("ZWSP U+200B", "Town mur​der case reopened"),
+                arguments("ZWNJ U+200C", "Town mur‌der case reopened"),
+                arguments("ZWJ U+200D", "Town mur‍der case reopened"),
+                arguments("soft hyphen U+00AD", "Town mur­der case reopened"),
+                arguments("BOM U+FEFF", "Town mur﻿der case reopened"),
+                arguments("word joiner U+2060", "Town mur⁠der case reopened"),
+                arguments("RTL override U+202E", "Town mur‮der case reopened"),
+                // VISUAL lookalikes only — Cyrillic м/ԁ/е for Latin m/d/e. Note there is no Cyrillic
+                // or Greek lookalike for Latin 'r' or, in Cyrillic, for 'u': substituting Cyrillic
+                // р (which looks like 'p') into the 'r' slot renders as "mupder", which is not the
+                // word murder to any reader and so is not a homoglyph attack at all. The fold is
+                // SHAPE-based, and these fixtures are built the same way.
+                arguments("Cyrillic homoglyphs (U+043C, U+0501, U+0435)", "Town мurԁеr case reopened"),
+                arguments("Cyrillic e only (U+0435 — Kabir's named sample)", "Town murdеr case reopened"),
+                arguments("Greek homoglyphs (U+03BC, U+03C5, U+03B5)", "Town μυrdεr case reopened"),
+                arguments("fullwidth forms", "Town ｍｕｒｄｅｒ case reopened"),
+                arguments("combining mark U+0308", "Town mürder case reopened"),
+                arguments("dot separation", "Town m.u.r.d.e.r case reopened"),
+                arguments("hyphen separation", "Town m-u-r-d-e-r case reopened"),
+                arguments(
+                        "stacked: fullwidth + ZWSP + Cyrillic",
+                        "Town ｍｕ​ｒｄеｒ case reopened"));
+    }
+
+    @ParameterizedTest(name = "[{0}]")
+    @MethodSource("unicodeEvasions")
+    @DisplayName("F-0827: each Unicode evasion of 'murder' is now normalized back into a match")
+    void firstUnsafeTopic_blocksEveryUnicodeEvasion(String technique, String evadedHeadline) {
+        // Positive control: the fixture sentence with the plain word IS blocked, and as CRIME.
+        assertEquals(
+                UnsafeHeadlineTopic.CRIME,
+                CreatorNudgeService.firstUnsafeTopic("Town murder case reopened"),
+                "test premise broken: the un-evaded fixture sentence is not classified CRIME");
+        // Negative control: nothing ELSE in the fixture sentence blocks, so a pass below can only
+        // come from the evaded word being normalized back to "murder".
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic("Town case reopened"),
+                "anti-vacuity control failed: the carrier sentence is itself unsafe");
+
+        assertEquals(
+                UnsafeHeadlineTopic.CRIME,
+                CreatorNudgeService.firstUnsafeTopic(evadedHeadline),
+                "F-0827 evasion still succeeds via " + technique);
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(evadedHeadline),
+                "evaded headline must not be quotable in creator copy (" + technique + ")");
+    }
+
+    @Test
+    @DisplayName("F-0827: math-bold 'rape' is normalized back into a match (Kabir's own sample)")
+    void firstUnsafeTopic_blocksMathBoldRape() {
+        // U+1D42B U+1D41A U+1D429 U+1D41E — MATHEMATICAL BOLD SMALL R/A/P/E.
+        String mathBold = "𝐫𝐚𝐩𝐞";
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic("Town case reopened"),
+                "anti-vacuity control failed: the carrier sentence is itself unsafe");
+
+        assertEquals(
+                UnsafeHeadlineTopic.CRIME,
+                CreatorNudgeService.firstUnsafeTopic("Town " + mathBold + " case reopened"));
+    }
+
+    /**
+     * The other half of F-0827, and the half a "does it block?" suite cannot see: normalization
+     * that folds aggressively enough to catch homoglyphs must not start folding ORDINARY copy into
+     * accidental matches. These are the words the term list would hit if the token-boundary anchors
+     * were dropped while separators were being ignored — which is precisely the trade the new
+     * matcher makes.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                // "bomb" must not match inside a larger token, in either position.
+                "Bombay street food tour goes viral",
+                "Bombshell reveal in the finale episode",
+                "Photobomb compilation hits a million views",
+                // "kill"/"sue"/"die" — the original near-misses, re-checked under the new matcher.
+                "Killer ab workout routine goes viral",
+                "Big issue with the new fitness app launch",
+                "Audience numbers climb for regional creators",
+                // Non-Latin script must survive normalization without becoming an English term.
+                "दिवाली मॉर्निंग वर्कआउट चैलेंज"
+            })
+    @DisplayName("F-0827: aggressive normalization does not create new false positives")
+    void firstUnsafeTopic_normalizationDoesNotOverBlock(String benign) {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(benign),
+                "normalization over-blocked a benign headline: " + benign);
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(benign),
+                "normalization over-blocked a benign headline: " + benign);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // LOW-6 — fail-closed on an all-invisible headline
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("LOW-6: an all-zero-width headline is NOT quotable, even though isBlank() says false")
+    void isQuotableInCreatorCopy_allInvisibleHeadline_failsClosed() {
+        String invisible = "​‌‍﻿⁠­";
+
+        // The premise of the whole finding: String.isBlank() answers FALSE here, because a format
+        // character is not whitespace. That is why the old blank-guard let this through.
+        assertFalse(
+                invisible.isBlank(),
+                "test premise broken: if isBlank() were true the old guard already covered this and"
+                        + " this test proves nothing");
+
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(invisible),
+                "an all-invisible headline must fail closed — it produces an empty-looking quotation");
+        // And it fails closed via the EMPTY-NORMALIZED-FORM arm, not via a term match.
+        assertNull(CreatorNudgeService.firstUnsafeTopic(invisible));
+    }
+
+    @Test
+    @DisplayName("LOW-6: an all-invisible trend headline degrades to generic copy, not an empty quote")
+    void getSuggestion_allInvisibleHeadline_producesNoEmptyQuotation() {
+        String invisible = "​‌‍﻿";
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), invisible));
+        when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
+
+        service.getSuggestion(CREATOR_PROFILE_ID);
+
+        CreatorNudgeLog saved = captureSaved();
+        assertEquals(NudgeMessageSource.FALLBACK, saved.getMessageSource());
+        assertFalse(
+                saved.getContentIdea().contains("There's a trend around"),
+                "an all-invisible headline must not be quoted at all, got: " + saved.getContentIdea());
+        assertFalse(
+                saved.getHeadline().contains("your " + THEME_ACTION + " content"),
+                "an all-invisible headline must degrade to generic copy, got: " + saved.getHeadline());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0825 — the gate is on the persisted copy, and message_source is READ not derived
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * THE F-0825 test. Everything the previous commit's suite covered stubbed {@code
+     * requestSuggestion} to return {@code null} — i.e. only Java's own transport-failure fallback.
+     * This case is the one that actually ships in production: influora-ai answers HTTP 200 with
+     * {@code success: true} and {@code message_source: "FALLBACK"}, because its spend gate tripped
+     * or its provider errored, and its {@code fallback_message} has interpolated the raw trend text
+     * into the copy with no model and no prompt-safety layer anywhere in the path.
+     *
+     * <p>Against the pre-fix code this returns a non-null {@link SuggestionCopy}, so the service
+     * took the AI branch: the headline was persisted verbatim and stamped {@code AI}. Both halves
+     * are asserted here.
+     */
+    @Test
+    @DisplayName("F-0825: a python-side FALLBACK 200 carrying an unsafe headline is filtered AND logged FALLBACK")
+    void getSuggestion_pythonFallbackWithUnsafeCopy_isFilteredAndRecordedAsFallback() {
+        String unsafeHeadline = "Actor's son found dead in Mumbai flat, police suspect suicide";
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), unsafeHeadline));
+        // Exactly what influora-ai's fallback_message branch returns: a SUCCESSFUL call.
+        when(aiClient.requestSuggestion(any(), any(), any()))
+                .thenReturn(
+                        new SuggestionCopy(
+                                "Asha, your action content is trending right now",
+                                "There's a trend around \"" + unsafeHeadline + "\" that fits your niche.",
+                                "FALLBACK"));
+
+        SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
+
+        assertEquals("ready", result.status());
+        CreatorNudgeLog saved = captureSaved();
+
+        // Half 1 — the content gate now runs on this path.
+        for (String leaked : List.of("dead", "police", "suicide", unsafeHeadline)) {
+            assertFalse(
+                    (saved.getHeadline() + " || " + saved.getContentIdea())
+                            .toLowerCase(Locale.ROOT)
+                            .contains(leaked.toLowerCase(Locale.ROOT)),
+                    "'" + leaked + "' reached the persisted row: " + saved.getContentIdea());
+            assertFalse(
+                    (result.suggestion().headline() + " || " + result.suggestion().contentIdea())
+                            .toLowerCase(Locale.ROOT)
+                            .contains(leaked.toLowerCase(Locale.ROOT)),
+                    "'" + leaked + "' reached the served DTO: " + result.suggestion().contentIdea());
+        }
+
+        // Half 2 — the audit trail. Pre-fix this row said AI.
+        assertEquals(
+                NudgeMessageSource.FALLBACK,
+                saved.getMessageSource(),
+                "a python-side fallback must never be recorded as AI");
+    }
+
+    /**
+     * The anti-vacuity counterweight to the test above, and the only one that can tell "the label
+     * is READ from the wire" apart from "the label is FALLBACK because the copy got suppressed".
+     * Safe copy, so no suppression happens at all — and the row must still say FALLBACK purely
+     * because influora-ai said so.
+     */
+    @Test
+    @DisplayName("F-0825: a python-side FALLBACK 200 with SAFE copy keeps the copy and still records FALLBACK")
+    void getSuggestion_pythonFallbackWithSafeCopy_keepsCopyAndStillRecordsFallback() {
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT));
+        when(aiClient.requestSuggestion(any(), any(), any()))
+                .thenReturn(
+                        new SuggestionCopy(
+                                "Asha, your action content is trending",
+                                "A quick post today could land well.",
+                                "FALLBACK"));
+
+        service.getSuggestion(CREATOR_PROFILE_ID);
+
+        CreatorNudgeLog saved = captureSaved();
+        assertEquals(
+                NudgeMessageSource.FALLBACK,
+                saved.getMessageSource(),
+                "message_source must be read from the response, not derived from 'the call worked'");
+        // Unsuppressed: the copy is untouched, which is what proves the FALLBACK label above did
+        // not come from the suppression path.
+        assertEquals("Asha, your action content is trending", saved.getHeadline());
+        assertEquals("A quick post today could land well.", saved.getContentIdea());
+    }
+
+    @Test
+    @DisplayName("F-0825: copy labelled AI is filtered too — the gate does not trust the label")
+    void getSuggestion_aiLabelledUnsafeCopy_isStillFilteredAndDowngraded() {
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT));
+        when(aiClient.requestSuggestion(any(), any(), any()))
+                .thenReturn(
+                        new SuggestionCopy(
+                                "Asha, the murder probe is trending in your niche",
+                                "Post about the murder probe while it's hot.",
+                                "AI"));
+
+        service.getSuggestion(CREATOR_PROFILE_ID);
+
+        CreatorNudgeLog saved = captureSaved();
+        assertFalse(
+                (saved.getHeadline() + saved.getContentIdea()).toLowerCase(Locale.ROOT).contains("murder"),
+                "model-INVENTED unsafe copy must be filtered too, got: " + saved.getContentIdea());
+        assertEquals(
+                NudgeMessageSource.FALLBACK,
+                saved.getMessageSource(),
+                "a suppressed row holds OUR copy, not the model's — labelling it AI would be the same"
+                        + " class of audit-trail lie F-0825 is about");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "   ", "AI_FALLBACK", "MODEL", "fallback_message"})
+    @DisplayName("F-0825: an absent or unrecognised message_source fails closed to FALLBACK")
+    void getSuggestion_unrecognisedMessageSource_failsClosedToFallback(String wireValue) {
+        assertMessageSourceRecordedAs(wireValue, NudgeMessageSource.FALLBACK);
+    }
+
+    @Test
+    @DisplayName("F-0825: a null message_source fails closed to FALLBACK, and 'AI'/'ai' still map to AI")
+    void getSuggestion_messageSourceMapping_nullFailsClosedAndAiStillMapsToAi() {
+        assertMessageSourceRecordedAs(null, NudgeMessageSource.FALLBACK);
+        // Positive control: if this were also FALLBACK the assertions above would be vacuous —
+        // every row would be FALLBACK regardless of what the AI service said.
+        assertMessageSourceRecordedAs("AI", NudgeMessageSource.AI);
+        assertMessageSourceRecordedAs("ai", NudgeMessageSource.AI);
+        // Surrounding whitespace is trimmed, not treated as an unrecognised value — pinned here so
+        // the trim is a decision rather than an accident. (An earlier draft of the suite listed
+        // "ai " among the UNRECOGNISED values and went red against this line; the fixture was
+        // wrong, the code was right.)
+        assertMessageSourceRecordedAs(" AI ", NudgeMessageSource.AI);
+        assertMessageSourceRecordedAs("\tFALLBACK\n", NudgeMessageSource.FALLBACK);
+    }
+
+    /**
+     * The wire-binding guard. Everything above stubs {@link CreatorSuggestionAiClient}, so it would
+     * ALL stay green if {@code @JsonProperty("message_source")} were misspelled — {@code
+     * @JsonIgnoreProperties(ignoreUnknown = true)} means a wrong name binds {@code null} silently,
+     * every row would fail closed to FALLBACK, and no service-level test could tell that apart from
+     * a correctly-read FALLBACK. This deserializes the response body influora-ai actually sends
+     * ({@code app/routes/creator_suggestion.py} lines 255-257 and 350-352, copied verbatim).
+     */
+    @Test
+    @DisplayName("F-0825: message_source actually binds off the wire — not just off a mocked client")
+    void suggestionResponse_bindsMessageSourceFromThePythonResponseBody() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+
+        SuggestionResponse fallback =
+                mapper.readValue(
+                        "{\"success\": true, \"data\": {\"headline\": \"h\","
+                                + " \"content_idea\": \"c\", \"message_source\": \"FALLBACK\"}}",
+                        SuggestionResponse.class);
+        assertEquals("FALLBACK", fallback.data().messageSource());
+        assertEquals("c", fallback.data().contentIdea(), "content_idea must still bind");
+
+        SuggestionResponse ai =
+                mapper.readValue(
+                        "{\"success\": true, \"data\": {\"headline\": \"h\","
+                                + " \"content_idea\": \"c\", \"message_source\": \"AI\"}}",
+                        SuggestionResponse.class);
+        assertEquals("AI", ai.data().messageSource());
+    }
+
+    /**
+     * The theme arm of the F-0825 gate. Degrading the COPY cannot launder the theme, because the
+     * theme is persisted in its own column and rendered on its own in {@code SuggestionDto.theme} —
+     * so an unsafe theme must stop the suggestion entirely rather than ship alongside generic copy.
+     *
+     * <p>The fixture is not contrived: {@code ThemeMatchService.parseThemeJson} returns whatever
+     * strings sit in {@code trends.themes_json} without validating them against {@code
+     * knownThemes}, which is the documented reason {@code theme} is not provably closed-vocab.
+     * "abduction" is chosen because it sorts BEFORE "action", so {@code bestMatchedTheme}'s
+     * {@code .sorted().findFirst()} actually selects it.
+     */
+    @Test
+    @DisplayName("F-0825: an unsafe server-derived theme stops the suggestion — no row, no generic-copy cover")
+    void getSuggestion_unsafeTheme_returnsNoSuggestionAndWritesNoRow() {
+        String poisoned = themesJson("abduction", THEME_ACTION);
+        givenProfile("Asha", poisoned);
+        givenNoRowYetToday();
+        givenActiveTrends(trend(TREND_ID, poisoned, TREND_TEXT));
+
+        SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
+
+        assertEquals("no_suggestion_today", result.status());
+        assertNull(result.suggestion());
+        verifyNoNudgeRowWritten();
+    }
+
+    @Test
+    @DisplayName("F-0825: the theme arm is not a blanket reject — a clean theme still produces a row")
+    void getSuggestion_safeTheme_stillProducesARow() {
+        // Anti-vacuity counterweight to the test above: same shape, same code path, clean theme.
+        String clean = themesJson("abseiling", THEME_ACTION);
+        givenProfile("Asha", clean);
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, clean, TREND_TEXT));
+
+        SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
+
+        assertEquals("ready", result.status());
+        assertEquals("abseiling", captureSaved().getTheme());
+    }
+
+    /**
+     * The degrade's own degrade. A creator picks their own display name, so "first-party" is not
+     * "safe": interpolating it into the generic fallback could persist copy the gate had just
+     * rejected. {@code safeGenericFallback} therefore drops to the name-free variant.
+     */
+    @Test
+    @DisplayName("F-0825: suppression falls back to 'You' when the creator's own display name is unsafe")
+    void getSuggestion_suppressionWithUnsafeDisplayName_dropsToTheNameFreeCopy() {
+        givenProfile("Murder Mavens", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT));
+        when(aiClient.requestSuggestion(any(), any(), any()))
+                .thenReturn(
+                        new SuggestionCopy(
+                                "A riot of colour — and a real riot downtown",
+                                "Post about the riot while it's hot.",
+                                "AI"));
+
+        service.getSuggestion(CREATOR_PROFILE_ID);
+
+        CreatorNudgeLog saved = captureSaved();
+        String copy = (saved.getHeadline() + " || " + saved.getContentIdea()).toLowerCase(Locale.ROOT);
+        assertFalse(copy.contains("riot"), "suppressed copy leaked: " + copy);
+        assertFalse(
+                copy.contains("murder"),
+                "the creator's own display name is not automatically safe, got: " + copy);
+        assertTrue(
+                saved.getHeadline().startsWith("You, "),
+                "expected the name-free last-resort copy, got: " + saved.getHeadline());
+    }
+
+    private void assertMessageSourceRecordedAs(String wireValue, NudgeMessageSource expected) {
+        // A fresh service+mock per assertion: these are invoked several times from one test method,
+        // and captureSaved() verifies exactly ONE saveAndFlush.
+        CreatorNudgeLogRepository logRepository = mock(CreatorNudgeLogRepository.class);
+        CreatorProfileRepository profileRepository = mock(CreatorProfileRepository.class);
+        TrendRepository trends = mock(TrendRepository.class);
+        CreatorSuggestionAiClient ai = mock(CreatorSuggestionAiClient.class);
+
+        CreatorProfile profile =
+                CreatorProfile.newForUser(CREATOR_PROFILE_ID, ulid26("USER1"), "Asha");
+        profile.setThemeTagsJson(themesJson(THEME_ACTION, THEME_STRENGTH));
+        when(profileRepository.findById(CREATOR_PROFILE_ID)).thenReturn(Optional.of(profile));
+        when(logRepository.findByCreatorProfileIdAndShownAtAfter(eq(CREATOR_PROFILE_ID), any()))
+                .thenReturn(Optional.empty());
+        // Hoisted out of thenReturn(...) deliberately: trend() stubs a mock of its own, and doing
+        // that inside an in-progress when() is the UnfinishedStubbingException hazard — Mockito
+        // sees the inner stubbing before the outer one is completed.
+        Trend activeTrend = trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), TREND_TEXT);
+        when(trends.findActive(any())).thenReturn(List.of(activeTrend));
+        when(logRepository.saveAndFlush(any(CreatorNudgeLog.class))).thenAnswer(returnsFirstArg());
+        when(ai.requestSuggestion(any(), any(), any()))
+                .thenReturn(
+                        new SuggestionCopy(
+                                "Asha, your action content is trending",
+                                "A quick post today could land well.",
+                                wireValue));
+
+        new CreatorNudgeService(
+                        trends, profileRepository, logRepository, themeMatchService, ai, props)
+                .getSuggestion(CREATOR_PROFILE_ID);
+
+        ArgumentCaptor<CreatorNudgeLog> captor = ArgumentCaptor.forClass(CreatorNudgeLog.class);
+        verify(logRepository).saveAndFlush(captor.capture());
+        assertEquals(
+                expected,
+                captor.getValue().getMessageSource(),
+                "message_source '" + wireValue + "' must be recorded as " + expected);
     }
 
     // ---------------------------------------------------------------------------------------

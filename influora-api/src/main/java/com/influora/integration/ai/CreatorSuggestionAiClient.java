@@ -38,6 +38,15 @@ import org.springframework.stereotype.Component;
  * phrasing output, which this class does not attempt to structurally re-validate (same as Trend-
  * Spark's {@code message} field: content-safety is a prompt/prompt-injection concern owned by the
  * Python route, not a structural one this client can enforce).
+ *
+ * <p><b>F-0825 correction to the sentence above.</b> "Owned by the Python route" was an UNVERIFIED
+ * upstream assumption, and it is false on the route's own fallback branch: when influora-ai's
+ * spend gate trips, its provider errors, or its model-output validation fails, the route returns
+ * 200/{@code success: true} with copy built by {@code fallback_message} — which interpolates the
+ * raw {@code trend_text} and passes through no model or prompt safety layer at all. Content-safety
+ * for creator-facing copy is therefore enforced SERVER-SIDE in {@code CreatorNudgeService}, on the
+ * copy about to be persisted, on every path. This client stays a dumb transport; do not add a
+ * filter here, and do not remove the one there on the belief that Python covers it.
  */
 @Component
 @Lazy
@@ -89,10 +98,20 @@ public class CreatorSuggestionAiClient {
         return client;
     }
 
-    /** Result of a successful AI phrasing call — same two-value tuple shape the templated fallback
-     * returns (be-services-plan.md §1 step 6), so {@code CreatorNudgeService} never branches on
-     * "AI gives 2 fields, template gives 1". */
-    public record SuggestionCopy(String headline, String contentIdea) {}
+    /**
+     * Result of a successful AI phrasing call — the same {@code (headline, contentIdea)} tuple the
+     * templated fallback returns (be-services-plan.md §1 step 6), so {@code CreatorNudgeService}
+     * never branches on "AI gives 2 fields, template gives 1".
+     *
+     * <p><b>F-0825 — {@code messageSource} is the RAW wire value</b> ({@code "AI"} or
+     * {@code "FALLBACK"}, possibly {@code null} against an older influora-ai), not a
+     * {@code NudgeMessageSource}. A 200 with {@code success: true} does NOT mean a model produced
+     * this copy: influora-ai's own {@code fallback_message} returns exactly that shape on a
+     * spend-gate trip, a provider error, or a model-output-validation failure. Callers must
+     * interpret this field instead of inferring the label from "the call succeeded" — see
+     * {@code CreatorNudgeService.messageSourceOf}, which fails closed to {@code FALLBACK}.
+     */
+    public record SuggestionCopy(String headline, String contentIdea, String messageSource) {}
 
     /**
      * Requests phrasing for a theme/trend pairing already fully decided by Java rules. Returns
@@ -175,7 +194,11 @@ public class CreatorSuggestionAiClient {
             return null;
         }
 
-        return new SuggestionCopy(parsed.data().headline(), parsed.data().contentIdea());
+        // F-0825: message_source is carried through, NOT discarded. A blank/absent value is passed
+        // along as-is so the caller — not this client — owns the fail-closed decision and the
+        // warning, keeping "never throws, never decides policy" true of this class.
+        return new SuggestionCopy(
+                parsed.data().headline(), parsed.data().contentIdea(), parsed.data().messageSource());
     }
 
     private String extractErrorCode(String rawJson) {

@@ -14,10 +14,19 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * already matched against (server-derived, never attacker-influenced); {@code trend_text} is the
  * one remaining untrusted field and is wrapped server-side (Python route responsibility).
  *
- * <p>Response {@code Data} tolerates an unrecognized {@code message_source} field the Python route
- * may also send ({@code @JsonIgnoreProperties(ignoreUnknown = true)}) — this Java client derives
- * its own {@code NudgeMessageSource} from whether the call succeeded at all, per {@code
- * CreatorNudgeService}, so that field is read-and-discard here rather than mapped.
+ * <p><b>F-0825 — {@code message_source} is MAPPED, not discarded. Do not "simplify" it away
+ * again.</b> This javadoc used to say the field was read-and-discard because Java derived its own
+ * {@code NudgeMessageSource} from whether the HTTP call succeeded. That was wrong, and it was a
+ * security defect, not a cosmetic one: {@code influora-ai}'s own internal fallback
+ * ({@code app/prompt/creator_suggestion.py}'s {@code fallback_message}, fired by the route on
+ * spend-gate trip, provider error or model-output-validation failure) returns HTTP <b>200</b> with
+ * {@code success: true} and {@code message_source: "FALLBACK"}. Deriving the label from "did the
+ * call succeed" therefore stamped every python-side fallback as {@code AI} in
+ * {@code creator_nudge_log}, destroying the audit trail exactly where it mattered most — the rows
+ * whose copy no model ever vetted. The route sends this field on BOTH branches
+ * ({@code app/routes/creator_suggestion.py} lines 248/256 FALLBACK, 343/351 AI), so it is always
+ * present; {@code CreatorNudgeService.messageSourceOf} still fails closed to {@code FALLBACK} on a
+ * missing or unrecognized value rather than assuming {@code AI}.
  */
 public final class CreatorSuggestionAiDtos {
 
@@ -32,7 +41,14 @@ public final class CreatorSuggestionAiDtos {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record SuggestionResponse(boolean success, Data data) {
         @JsonIgnoreProperties(ignoreUnknown = true)
-        public record Data(String headline, @JsonProperty("content_idea") String contentIdea) {}
+        public record Data(
+                String headline,
+                @JsonProperty("content_idea") String contentIdea,
+                /* Raw wire value ("AI" | "FALLBACK"), deliberately NOT bound straight to the
+                 * NudgeMessageSource enum: Jackson would throw on an unrecognized value and this
+                 * client's contract is that it never throws. The string is interpreted (and failed
+                 * closed) by CreatorNudgeService.messageSourceOf. */
+                @JsonProperty("message_source") String messageSource) {}
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
