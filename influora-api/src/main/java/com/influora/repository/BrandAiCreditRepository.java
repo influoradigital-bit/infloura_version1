@@ -65,4 +65,31 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
             @Param("workspaceId") String workspaceId,
             @Param("amount") int amount,
             @Param("today") LocalDate today);
+
+    /**
+     * T-S3-F0879-0917 [vikram · 2026-09-17] -- credit-race fix. Atomically bumps the P4 daily
+     * action counter (rolling over to 1 if {@code dailyActionsDate} is not {@code :today}) WITHOUT
+     * touching {@code creditsRemaining} or any other column. This replaces the old {@code
+     * AICreditService#tryConsume} pattern of mutating the managed {@code BrandAiCredit} entity's
+     * daily-action fields and calling {@code save(credit)} -- that blind full-row save wrote back
+     * EVERY mapped column using the entity's IN-MEMORY state as read at the start of the
+     * transaction, including {@code creditsRemaining}. Under concurrency, that stale write could
+     * land AFTER a concurrent transaction's {@link #tryDecrement} had already correctly decremented
+     * {@code creditsRemaining}, silently reverting it back to the pre-decrement value -- letting a
+     * second turn spend a credit that was already spent (two turns at 1 remaining credit both
+     * succeeding). Isolating the daily-action bump to its own single-column-scoped UPDATE, and never
+     * calling a setter on the managed entity for these fields in {@code tryConsume} any more, means
+     * nothing in that hot path ever writes {@code creditsRemaining} except {@link #tryDecrement}
+     * itself.
+     *   Source: assignments-0917-subscription.md S3 "Credit race" (tech N4, T-5)
+     */
+    @Modifying
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET c.dailyActionsUsed = "
+                    + "CASE WHEN c.dailyActionsDate = :today THEN c.dailyActionsUsed + 1 ELSE 1 END, "
+                    + "c.dailyActionsDate = :today, "
+                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "WHERE c.workspaceId = :workspaceId")
+    int bumpDailyActions(@Param("workspaceId") String workspaceId, @Param("today") LocalDate today);
 }

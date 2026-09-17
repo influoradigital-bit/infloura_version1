@@ -100,7 +100,13 @@ public class AICreditResetJob {
         for (String workspaceId : workspaceIds) {
             try {
                 syncPlanAllotment(workspaceId);
-                aiCreditService.resetForNewCycle(workspaceId);
+                // T-S3-F0879-0917 [vikram · 2026-09-17]: was resetForNewCycle (unconditional) —
+                // a second trigger of this job in the same UTC month (e.g. an ops re-run, or a
+                // scheduler misfire) used to blow away credits already spent this cycle back up
+                // to full allotment every time it ran. resetForNewCycleIfDue is a no-op if this
+                // workspace's lastReset already falls in the current UTC year+month.
+                //   Source: assignments-0917-subscription.md S3 "Reset runs twice" (tech N3)
+                aiCreditService.resetForNewCycleIfDue(workspaceId);
                 resetCount++;
             } catch (Exception e) {
                 // Defensive catch-all: one workspace's failure must never abort the rest of the

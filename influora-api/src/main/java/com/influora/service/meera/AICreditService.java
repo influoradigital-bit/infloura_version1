@@ -3,13 +3,16 @@ package com.influora.service.meera;
 import com.influora.common.ApiException;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.BrandAiCredit;
+import com.influora.domain.entity.Plan;
 import com.influora.repository.BrandAiCreditRepository;
 import com.influora.service.IdempotencyService;
+import com.influora.service.billing.SubscriptionService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -96,10 +99,29 @@ public class AICreditService {
 
     private final BrandAiCreditRepository creditRepository;
     private final IdempotencyService idempotencyService;
+    private final SubscriptionService subscriptionService;
 
-    public AICreditService(BrandAiCreditRepository creditRepository, IdempotencyService idempotencyService) {
+    /**
+     * T-S3-F0879-0917 [vikram · 2026-09-17]: {@code subscriptionService} is {@code @Lazy} because
+     * {@link SubscriptionService} already depends on {@code AICreditService} directly (constructor
+     * field) -- a plain, eager dependency here would be a genuine circular bean-creation cycle that
+     * Spring cannot construct. {@code @Lazy} hands this constructor a deferred proxy instead of the
+     * real bean, breaking the cycle without touching {@code SubscriptionService.java} (out of scope
+     * for this lane). Same precedent already used in this codebase to break circular-bean cycles:
+     * {@code CampaignServiceInvoiceService}'s {@code @Lazy} self-reference and {@code
+     * AffiliateEarningsService}'s {@code @Lazy} self-reference. Only {@link
+     * SubscriptionService#getActivePlanForWorkspace} is called on it, which is {@code
+     * @Transactional(readOnly = true)} and does not call back into {@code AICreditService}, so there
+     * is no re-entrancy risk.
+     *   Source: assignments-0917-subscription.md S3 item 5 (F-0879)
+     */
+    public AICreditService(
+            BrandAiCreditRepository creditRepository,
+            IdempotencyService idempotencyService,
+            @Lazy SubscriptionService subscriptionService) {
         this.creditRepository = creditRepository;
         this.idempotencyService = idempotencyService;
+        this.subscriptionService = subscriptionService;
     }
 
     /** Ensures a credit row exists for the workspace, creating the default allotment if not. */
@@ -130,23 +152,36 @@ public class AICreditService {
         BrandAiCredit credit = ensureInitialized(workspaceId);
         LocalDate todayUtc = LocalDate.now(ZoneOffset.UTC);
 
-        // P4: 500/day hard cap — applies EVEN to unlimited-tier workspaces as abuse prevention.
-        // Check + increment the daily counter; reset if the date has rolled over.
-        if (!todayUtc.equals(credit.getDailyActionsDate())) {
-            credit.setDailyActionsDate(todayUtc);
-            credit.setDailyActionsUsed(0);
-        }
+        // T-S3-F0879-0917 [vikram · 2026-09-17] CREDIT RACE FIX: this used to mutate `credit`'s
+        // daily-action setters and call creditRepository.save(credit) -- a full-row write using
+        // EVERY mapped column from the entity's in-memory state, including creditsRemaining as
+        // read at the START of this transaction. Under concurrency, two turns hitting a
+        // workspace with 1 credit left could both pass this point, and one transaction's blind
+        // save(credit) could land AFTER the other's tryDecrement below had already correctly
+        // decremented creditsRemaining in the DB, silently reverting it back to the
+        // pre-decrement value -- letting BOTH turns succeed against a single remaining credit.
+        // Fix: never call a setter on the managed `credit` entity in this method (so Hibernate
+        // has nothing to dirty-flush for it), and read the daily-cap value from an untouched
+        // local snapshot instead. The daily-actions counter itself is now written via a single
+        // atomic, single-column-scoped UPDATE (bumpDailyActions) that cannot touch
+        // creditsRemaining even under concurrent execution.
+        //   Source: assignments-0917-subscription.md S3 "Credit race" (tech N4, T-5)
+        boolean dailyActionsRolledOver = !todayUtc.equals(credit.getDailyActionsDate());
+        int dailyActionsUsedToday = dailyActionsRolledOver ? 0 : credit.getDailyActionsUsed();
 
-        if (credit.getDailyActionsUsed() >= DAILY_ACTION_HARD_CAP) {
+        // P4: 500/day hard cap — applies EVEN to unlimited-tier workspaces as abuse prevention.
+        // This check is a best-effort snapshot read (matches the existing SOFT abuse-cap
+        // semantics documented in the class javadoc — not the primary billing gate) and is not
+        // itself claimed to be perfectly race-free; only the creditsRemaining path below is.
+        if (dailyActionsUsedToday >= DAILY_ACTION_HARD_CAP) {
             throw new ApiException(
                     "DAILY_ACTION_LIMIT_EXCEEDED",
                     "Daily action limit (500 actions/day) exceeded for this workspace; resets at midnight UTC",
                     HttpStatus.TOO_MANY_REQUESTS);
         }
 
-        // Increment the daily counter (applies to all tiers).
-        credit.setDailyActionsUsed(credit.getDailyActionsUsed() + 1);
-        creditRepository.save(credit);
+        // Atomic, single-column-scoped bump — never touches creditsRemaining (applies to all tiers).
+        creditRepository.bumpDailyActions(workspaceId, todayUtc);
 
         if (credit.isUnlimited(Instant.now())) {
             // Unlimited window (funded campaign) — no credit decrement, but still gated/allowed.
@@ -287,6 +322,33 @@ public class AICreditService {
     @Transactional
     public void applyEscrowFundedReset(String workspaceId, Instant unlimitedUntil) {
         BrandAiCredit credit = ensureInitialized(workspaceId);
+
+        // F-0879 [vikram · 2026-09-17]: re-derive planAllotment from the workspace's CURRENT
+        // active plan BEFORE refilling. Previously this refilled straight to the STORED
+        // monthlyAllotment, which is only kept in sync by applyPlanAllotment — called from
+        // SubscriptionService's webhook/renewal/reset paths, none of which are guaranteed to have
+        // run between a plan change and a campaign being funded. A workspace whose planAllotment
+        // was stale at the moment a campaign is funded (e.g. downgraded from Pro to Free with no
+        // sync in between) was refilled to the STALE allotment — a Free workspace stuck at a
+        // stale Pro planAllotment=400 was refilled to 450 instead of the correct 150 (100 + the
+        // 50 loyalty bonus). Syncing here makes this method self-contained: it no longer depends
+        // on some other caller having synced planAllotment first.
+        //   Source: F-0879, assignments-0917-subscription.md S3 item 5
+        Plan activePlan = subscriptionService.getActivePlanForWorkspace(workspaceId);
+        if (activePlan != null) {
+            credit.setPlanAllotment(activePlan.getAiMonthlyAllotment());
+        } else {
+            // Mirrors AICreditResetJob#syncPlanAllotment's null-plan handling: getActivePlanForWorkspace
+            // is documented to fall back to Free rather than return null in normal operation, so a
+            // null here means the resolver itself is in an unexpected state — log it loudly instead
+            // of silently refilling to a possibly-stale stored allotment.
+            log.warn(
+                    "applyEscrowFundedReset: getActivePlanForWorkspace returned null for workspace {}"
+                            + " -- planAllotment sync skipped, refill will use the stored allotment"
+                            + " unchanged",
+                    workspaceId);
+        }
+
         if (credit.getFirstCampaignAt() == null) {
             credit.setFirstCampaignAt(Instant.now());
             credit.setLoyaltyBonus(LOYALTY_BONUS);
@@ -313,17 +375,77 @@ public class AICreditService {
     @Transactional
     public void applyPlanAllotment(String workspaceId, int monthlyAllotment) {
         BrandAiCredit credit = ensureInitialized(workspaceId);
+        int oldMonthlyAllotment = credit.getMonthlyAllotment();
         credit.setPlanAllotment(monthlyAllotment);
+        int newMonthlyAllotment = credit.getMonthlyAllotment();
+
+        // T-S3-F0879-0917 [vikram · 2026-09-17] "Pay -> no credits": on an allotment INCREASE
+        // (e.g. Free -> Pro upgrade), top creditsRemaining up by the increase IMMEDIATELY, never
+        // above the new monthlyAllotment -- a brand that upgrades at 0 credits must have Pro
+        // credits available right away, not only from the next reset. On a DECREASE, do nothing
+        // here: creditsRemaining is never clawed back mid-cycle (existing documented intent —
+        // see resetForNewCycle for where a decreased allotment eventually takes effect).
+        //   Source: assignments-0917-subscription.md S3 item 1 (brand N1, blocker 1)
+        if (newMonthlyAllotment > oldMonthlyAllotment) {
+            int increase = newMonthlyAllotment - oldMonthlyAllotment;
+            int toppedUp = Math.min(credit.getCreditsRemaining() + increase, newMonthlyAllotment);
+            credit.setCreditsRemaining(toppedUp);
+        }
         creditRepository.save(credit);
     }
 
-    /** Monthly reset cron seam (1st of month) — resets non-live brands to their allotment. */
+    /**
+     * Monthly reset cron seam (1st of month) — resets non-live brands to their allotment.
+     * Unconditional: always resets, regardless of when it was last reset. {@code
+     * AICreditResetJob} (and any other automated monthly-cron caller) must call {@link
+     * #resetForNewCycleIfDue} instead so a duplicate trigger in the same UTC month is a no-op —
+     * see that method's javadoc for why the guard lives there and not here.
+     */
     @Transactional
     public void resetForNewCycle(String workspaceId) {
         BrandAiCredit credit = ensureInitialized(workspaceId);
         credit.setCreditsRemaining(credit.getMonthlyAllotment());
-        credit.setLastReset(LocalDate.now());
+        credit.setLastReset(LocalDate.now(ZoneOffset.UTC));
         creditRepository.save(credit);
+    }
+
+    /**
+     * T-S3-F0879-0917 [vikram · 2026-09-17] "Reset runs twice": idempotent wrapper around {@link
+     * #resetForNewCycle} for {@code AICreditResetJob} — a no-op if this workspace was already
+     * reset in the same UTC calendar month (compares {@code lastReset}'s year+month).
+     *
+     * <p>Deliberately kept SEPARATE from {@link #resetForNewCycle} rather than adding the guard
+     * to that method directly: {@code SubscriptionService#applyRenewalSafetyNet} also calls
+     * {@code resetForNewCycle}, but on a PER-SUBSCRIPTION renewal boundary that does not
+     * necessarily land on the calendar month (e.g. a workspace that subscribed on the 15th
+     * renews on the 15th of the next month). Guarding THAT call by calendar month would wrongly
+     * skip a legitimate mid-month renewal reset — a business-logic change outside this lane's
+     * scope (S1/S2 own {@code SubscriptionService.java}). This method is only the job-specific
+     * idempotency guard the ticket asked for.
+     *
+     * <p>Catch-up on startup (a missed monthly run, e.g. the app was down at 2am UTC on the 1st)
+     * is intentionally NOT implemented here — reliably distinguishing "the scheduler never fired
+     * this month" from "it fired and is merely not yet due again" needs either a dedicated
+     * last-run ledger or an ops/monitoring signal, and deciding how far to catch up (immediately
+     * on next boot vs. next real cron tick) is a scheduling/ops call, not something this lane
+     * should decide unilaterally. NOT DONE; reported as such.
+     *   Source: assignments-0917-subscription.md S3 item 3 (tech N3)
+     */
+    @Transactional
+    public void resetForNewCycleIfDue(String workspaceId) {
+        BrandAiCredit credit = ensureInitialized(workspaceId);
+        LocalDate todayUtc = LocalDate.now(ZoneOffset.UTC);
+        LocalDate lastReset = credit.getLastReset();
+        if (lastReset != null
+                && lastReset.getYear() == todayUtc.getYear()
+                && lastReset.getMonth() == todayUtc.getMonth()) {
+            log.info(
+                    "resetForNewCycleIfDue: workspace {} already reset this UTC month ({}) -- no-op",
+                    workspaceId,
+                    todayUtc);
+            return;
+        }
+        resetForNewCycle(workspaceId);
     }
 
     /** Unused-but-available helper for future callers needing a fresh ULID for related rows. */
