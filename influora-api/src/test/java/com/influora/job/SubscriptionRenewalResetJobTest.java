@@ -921,11 +921,16 @@ class SubscriptionRenewalResetJobTest {
 
         verify(subscriptionService, never())
                 .applyRenewalSafetyNetIfUnchanged(any(), any(), any(), any());
+        verify(subscriptionService, never()).applyRenewalSafetyNet(any(), any(), any());
+        verify(subscriptionService, never()).expireComp(any());
+        verify(subscriptionService, never()).advanceFreePeriod(any());
+        verify(subscriptionService, never()).finalizeLapsedCancellation(any());
         verify(subscriptionService, never())
                 .applySubscriptionWebhookUpdate(any(), any(), any(), any(), any(), any(), any());
         verify(eventPublisher, never()).publishEvent(any());
         verify(auditLog, never())
                 .recordMoneyEvent(any(), anyString(), any(), any(), any(), anyString(), any());
+        assertEquals(oldEnd, sub.getCurrentPeriodEnd());
     }
 
     /**
