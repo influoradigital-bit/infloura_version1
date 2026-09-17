@@ -23,6 +23,7 @@ import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.ReviewRepository;
 import com.influora.repository.SavedCreatorRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.billing.SubscriptionService;
 import com.influora.service.portfolio.PortfolioService;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -71,6 +72,7 @@ class CreatorDiscoveryServiceInviteDraftGuardTest {
     @Mock private com.influora.repository.EscrowHoldRepository escrowHoldRepository;
     @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
     @Mock private DealMessageRepository dealMessageRepository;
+    @Mock private SubscriptionService subscriptionService;
     @Mock private AuthPrincipal principal;
 
     private CreatorDiscoveryService service;
@@ -91,7 +93,8 @@ class CreatorDiscoveryServiceInviteDraftGuardTest {
                         portfolioService,
                         new CollaborationReviveService(
                                 collaborationRepository, contractRepository, escrowHoldRepository, shipmentRepository),
-                        dealMessageRepository);
+                        dealMessageRepository,
+                        subscriptionService);
     }
 
     @Test

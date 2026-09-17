@@ -10,14 +10,17 @@ import java.util.OptionalInt;
  * boolean/int columns read by ad-hoc getters — is now the one place a plan limit is declared to
  * exist at all.
  *
- * <p><b>Deliberately closed.</b> This covers exactly the six limits enforced in production today:
- * {@link #SEATS}, {@link #CREATOR_ANALYTICS_VIEWS}, {@link #AI_CREDITS}, {@link #EXPORT}, {@link
- * #CAMPAIGN_TEMPLATES}, {@link #BRAND_FEE_BPS}. {@code SAVED_CREATORS} — the one entitlement the
- * redesign doc's diagnosis (§1) found sold, metered, and never enforced — is deliberately NOT
- * here yet: SM-0.1 ruled it should be enforced, but Phase 2 (the {@code toggleSaved} write-gate
- * itself) has not landed. Adding it to this enum before that write gate exists would make it just
- * another entitlement with a probe and no enforcement — exactly the failure mode this registry
- * exists to make impossible. See {@code EntitlementConformanceTest}.
+ * <p><b>Deliberately closed.</b> This covers exactly the seven limits enforced in production today:
+ * {@link #SEATS}, {@link #SAVED_CREATORS}, {@link #CREATOR_ANALYTICS_VIEWS}, {@link #AI_CREDITS},
+ * {@link #EXPORT}, {@link #CAMPAIGN_TEMPLATES}, {@link #BRAND_FEE_BPS}.
+ *
+ * <p>SM-0.1 [vikram · 2026-09-17] — {@code SAVED_CREATORS} was the one entitlement the redesign
+ * doc's diagnosis (§1) found sold, metered, and never enforced, and was deliberately withheld from
+ * this enum until its write gate landed (see git history on this javadoc) so that adding the
+ * constant could never precede real enforcement. That write gate — {@code
+ * CreatorDiscoveryService#toggleSaved} calling {@code EntitlementService.requireCapacity} — lands
+ * in the same change as this constant; see that method's javadoc. See {@code
+ * EntitlementConformanceTest}. Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §3.1/§3.2.
  *
  * <p><b>Each non-RATE constant names the HTTP boundary that must enforce it</b> ({@link
  * #httpMethod()} + {@link #endpoint()}) — enforced by the constructor, at class-load time: a
@@ -38,6 +41,14 @@ import java.util.OptionalInt;
  */
 public enum Entitlement {
     SEATS(Shape.CAPACITY, "POST", "/workspace/members/invite"),
+    // SM-0.1 [vikram · 2026-09-17] — endpoint is the real route CreatorController declares
+    // (@RequestMapping("/creators") + @PostMapping("/{creatorId}/save")), not the "/creators/{id}/save"
+    // shorthand in the redesign doc's §3.1 sketch -- everyDeclaredEndpointResolvesToARealHandler
+    // matches path-variable names exactly (see that test's javadoc re: the AI_CREDITS {id} drift it
+    // was written to catch), so the wrong variable name would fail this constant's own conformance
+    // check at build time.
+    // Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §3.1
+    SAVED_CREATORS(Shape.CAPACITY, "POST", "/creators/{creatorId}/save"),
     CREATOR_ANALYTICS_VIEWS(Shape.METERED, "GET", "/analytics/creators/{creatorId}/metrics"),
     // POST /meera/chat does not exist and never did: MeeraController is @RequestMapping("/meera")
     // and the turn that actually spends an AI credit (MeeraSessionService.doSendTurn ->
@@ -138,6 +149,15 @@ public enum Entitlement {
         Objects.requireNonNull(plan, "plan");
         return switch (this) {
             case SEATS -> OptionalInt.of(plan.getSeatLimit());
+            // SM-0.1 [vikram · 2026-09-17] — tracked_creator_limit already existed on this column
+            // (V54__subscription_billing.sql, seeded Free=5/Pro=null by V55) as the intended backing
+            // store for this entitlement (V54's own column comment: "Max SavedCreators (Free = 5,
+            // Pro = null = unlimited)") -- no migration needed, only the read-and-enforce wiring.
+            // Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §3.1
+            case SAVED_CREATORS ->
+                    plan.getTrackedCreatorLimit() == null
+                            ? OptionalInt.empty()
+                            : OptionalInt.of(plan.getTrackedCreatorLimit());
             case CREATOR_ANALYTICS_VIEWS ->
                     plan.getCreatorAnalyticsMonthlyLimit() == null
                             ? OptionalInt.empty()

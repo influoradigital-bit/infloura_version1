@@ -20,7 +20,9 @@ import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.CreatorScore;
+import com.influora.domain.entity.Plan;
 import com.influora.domain.entity.PlatformStat;
+import com.influora.domain.entity.SavedCreator;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.repository.CampaignRepository;
@@ -32,7 +34,9 @@ import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.ReviewRepository;
 import com.influora.repository.SavedCreatorRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.billing.SubscriptionService;
 import com.influora.service.portfolio.PortfolioService;
+import com.influora.web.dto.creator.CreatorDtos.SaveResponse;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioPinnedPost;
 import com.influora.web.dto.creator.DiscoveryDtos.CreatorSuggestionRequest;
 import java.math.BigDecimal;
@@ -77,6 +81,7 @@ class CreatorDiscoveryServiceTest {
     @Mock private com.influora.repository.EscrowHoldRepository escrowHoldRepository;
     @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
     @Mock private com.influora.repository.DealMessageRepository dealMessageRepository;
+    @Mock private SubscriptionService subscriptionService;
     @Mock private AuthPrincipal principal;
 
     private CreatorDiscoveryService service;
@@ -104,7 +109,8 @@ class CreatorDiscoveryServiceTest {
                                 contractRepository,
                                 escrowHoldRepository,
                                 shipmentRepository),
-                        dealMessageRepository);
+                        dealMessageRepository,
+                        subscriptionService);
     }
 
     private Workspace stubWorkspace() {
@@ -709,5 +715,125 @@ class CreatorDiscoveryServiceTest {
         // calling through here, this fails loudly — an N+1 portfolio read across a whole page
         // is the regression, and an assertion on the empty result alone would not catch it.
         verify(portfolioService, never()).getVisiblePinnedPosts(any());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // SM-0.1 [vikram · 2026-09-17] — toggleSaved() must enforce Entitlement.SAVED_CREATORS
+    // (CAPACITY), same 402 UPGRADE_REQUIRED shape WorkspaceMemberServiceTest asserts for SEATS,
+    // with a brand already over the limit grandfathered (kept, never trimmed).
+    // Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §3.1/§3.2
+    // ------------------------------------------------------------------------------------------
+
+    private Plan freePlanWithSavedCreatorLimit(int limit) {
+        return Plan.builder()
+                .id("plan-free")
+                .code(com.influora.domain.enums.PlanCode.FREE)
+                .name("Free")
+                .seatLimit(1)
+                .trackedCreatorLimit(limit)
+                .build();
+    }
+
+    @Test
+    @DisplayName(
+            "toggleSaved: a Free brand already at 5 saved creators is refused a 6th with"
+                    + " UPGRADE_REQUIRED/402, the same shape other entitlements use")
+    void testToggleSavedFreeAtLimitRefusedWithUpgradeRequired() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(profile));
+        when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID))
+                .thenReturn(freePlanWithSavedCreatorLimit(5));
+        when(savedCreatorRepository.countByWorkspaceIdAndSavedTrue(WORKSPACE_ID)).thenReturn(5L);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> service.toggleSaved(principal, CREATOR_PROFILE_ID, true));
+
+        assertEquals("UPGRADE_REQUIRED", ex.getCode());
+        assertEquals(402, ex.getStatus().value());
+        verify(savedCreatorRepository, never()).save(any(SavedCreator.class));
+    }
+
+    @Test
+    @DisplayName("toggleSaved: a Free brand under the limit (4 of 5) saves a new creator successfully")
+    void testToggleSavedFreeUnderLimitSaves() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(profile));
+        when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID))
+                .thenReturn(freePlanWithSavedCreatorLimit(5));
+        when(savedCreatorRepository.countByWorkspaceIdAndSavedTrue(WORKSPACE_ID)).thenReturn(4L);
+
+        SaveResponse response = service.toggleSaved(principal, CREATOR_PROFILE_ID, true);
+
+        assertTrue(response.saved());
+        verify(savedCreatorRepository, org.mockito.Mockito.times(1)).save(any(SavedCreator.class));
+    }
+
+    @Test
+    @DisplayName(
+            "toggleSaved: a brand already OVER its Free limit (6 saved, limit 5) keeps every existing"
+                    + " saved creator -- unsaving one it already holds is never blocked by the cap")
+    void testToggleSavedOverLimitCanStillUnsaveExisting() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(profile));
+        SavedCreator existingRow =
+                SavedCreator.of("row_1", WORKSPACE_ID, CREATOR_PROFILE_ID, true);
+        when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(existingRow));
+        when(savedCreatorRepository.save(any(SavedCreator.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // Grandfathering: nothing here ever stubs getActivePlanForWorkspace/countByWorkspaceIdAndSavedTrue
+        // for this call -- if the "isNewSave" gate regressed to firing on every toggleSaved call
+        // (not just a genuine 0->1 transition), this would NPE on the unstubbed Plan rather than
+        // silently passing, so the test fails loudly instead of coincidentally.
+        SaveResponse unsaveResponse = service.toggleSaved(principal, CREATOR_PROFILE_ID, false);
+        assertFalse(unsaveResponse.saved());
+        assertFalse(existingRow.isSaved());
+
+        // Re-saving the SAME creator it already holds (idempotent resend) is also not a capacity
+        // increase and must not be blocked, even though the workspace is at/over its limit.
+        existingRow.setSaved(true);
+        SaveResponse resaveResponse = service.toggleSaved(principal, CREATOR_PROFILE_ID, true);
+        assertTrue(resaveResponse.saved());
+
+        verify(savedCreatorRepository, org.mockito.Mockito.times(2)).save(existingRow);
+        verify(savedCreatorRepository, never())
+                .delete(org.mockito.ArgumentMatchers.any(SavedCreator.class));
+    }
+
+    @Test
+    @DisplayName("toggleSaved: Pro (unlimited, tracked_creator_limit=null) never gates the write")
+    void testToggleSavedProUnlimitedNeverGates() {
+        stubWorkspace();
+        CreatorProfile profile = stubDiscoverableProfile();
+        when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(profile));
+        when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.empty());
+        Plan proPlan =
+                Plan.builder()
+                        .id("plan-pro")
+                        .code(com.influora.domain.enums.PlanCode.PRO)
+                        .name("Pro")
+                        .seatLimit(5)
+                        .trackedCreatorLimit(null)
+                        .build();
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(proPlan);
+        when(savedCreatorRepository.countByWorkspaceIdAndSavedTrue(WORKSPACE_ID)).thenReturn(500L);
+
+        SaveResponse response = service.toggleSaved(principal, CREATOR_PROFILE_ID, true);
+
+        assertTrue(response.saved());
+        verify(savedCreatorRepository, org.mockito.Mockito.times(1)).save(any(SavedCreator.class));
     }
 }

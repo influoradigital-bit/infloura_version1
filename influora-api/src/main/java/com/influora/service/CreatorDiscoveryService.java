@@ -15,6 +15,7 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.CreatorScore;
 import com.influora.domain.entity.FeaturedCreator;
+import com.influora.domain.entity.Plan;
 import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.entity.Review;
 import com.influora.domain.entity.SavedCreator;
@@ -22,7 +23,9 @@ import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CollaborationSource;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.Entitlement;
 import com.influora.domain.enums.ReviewerType;
+import com.influora.service.billing.SubscriptionService;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CreatorProfileRepository;
@@ -111,6 +114,13 @@ public class CreatorDiscoveryService {
     private final CollaborationReviveService collaborationReviveService;
     /** F-0291 — the deal-room conversation an invitation must appear in. */
     private final DealMessageRepository dealMessageRepository;
+    /**
+     * SM-0.1 [vikram · 2026-09-17] — resolves the workspace's {@link Plan} for {@link
+     * #enforceSavedCreatorLimit}, mirroring how {@code WorkspaceMemberService.enforceSeatLimit}
+     * already holds this same dependency for the identical CAPACITY-shape pattern.
+     * Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §3.2
+     */
+    private final SubscriptionService subscriptionService;
 
     public CreatorDiscoveryService(
             BrandContextService brandContext,
@@ -124,7 +134,8 @@ public class CreatorDiscoveryService {
             ReviewRepository reviewRepository,
             PortfolioService portfolioService,
             CollaborationReviveService collaborationReviveService,
-            DealMessageRepository dealMessageRepository) {
+            DealMessageRepository dealMessageRepository,
+            SubscriptionService subscriptionService) {
         this.brandContext = brandContext;
         this.creatorProfileRepository = creatorProfileRepository;
         this.platformStatRepository = platformStatRepository;
@@ -137,6 +148,7 @@ public class CreatorDiscoveryService {
         this.portfolioService = portfolioService;
         this.collaborationReviveService = collaborationReviveService;
         this.dealMessageRepository = dealMessageRepository;
+        this.subscriptionService = subscriptionService;
     }
 
     public record PagedCreators(List<CreatorResponse> items, PageMeta meta) {}
@@ -437,6 +449,17 @@ public class CreatorDiscoveryService {
                 savedCreatorRepository
                         .findByWorkspaceIdAndCreatorProfileId(workspace.getId(), profile.getId())
                         .orElse(null);
+        // SM-0.1 [vikram · 2026-09-17] — only a write that actually GROWS the saved set (a fresh
+        // row, or an existing row flipping saved=false -> true) can push a workspace over its
+        // limit; re-saving an already-saved creator (idempotent resend) or unsaving must never be
+        // blocked by this gate, or a brand already at/over the limit (grandfathered per the
+        // redesign doc §3.2 "gating the write gives soft grandfathering for free") would lose the
+        // ability to unsave/resave creators it already holds.
+        // Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §3.2
+        boolean isNewSave = saved && (row == null || !row.isSaved());
+        if (isNewSave) {
+            enforceSavedCreatorLimit(workspace.getId());
+        }
         if (row == null) {
             if (saved) {
                 savedCreatorRepository.save(
@@ -447,6 +470,32 @@ public class CreatorDiscoveryService {
             savedCreatorRepository.save(row);
         }
         return new SaveResponse(saved);
+    }
+
+    /**
+     * Entitlement: {@link Entitlement#SAVED_CREATORS} (CAPACITY) — SM-0.1 [vikram · 2026-09-17].
+     * Mirrors {@code WorkspaceMemberService.enforceSeatLimit} exactly: the limit compared against
+     * is NOT read here — {@link EntitlementService#requireCapacity(Entitlement, Plan, long,
+     * java.util.function.Supplier)} resolves it from the {@link Entitlement#SAVED_CREATORS}
+     * constant passed below, via {@link Entitlement#limitIn(Plan)}, so this method cannot hand the
+     * gate a limit of its own choosing. Throws {@code 402 UPGRADE_REQUIRED} — same shape every
+     * other entitlement uses — when the workspace is already at/over its plan's saved-creator cap;
+     * a no-op (Pro, unlimited) when {@code tracked_creator_limit} is null.
+     * Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §3.1/§3.2
+     */
+    private void enforceSavedCreatorLimit(String workspaceId) {
+        Plan plan = subscriptionService.getActivePlanForWorkspace(workspaceId);
+        long currentSaved = savedCreatorRepository.countByWorkspaceIdAndSavedTrue(workspaceId);
+        EntitlementService.requireCapacity(
+                Entitlement.SAVED_CREATORS,
+                plan,
+                currentSaved,
+                () ->
+                        "Workspace is at its saved creators limit ("
+                                + Entitlement.SAVED_CREATORS.limitIn(plan).orElseThrow()
+                                + ") for the "
+                                + plan.getName()
+                                + " plan — upgrade to save more creators");
     }
 
     @Transactional

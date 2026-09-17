@@ -12,4 +12,10 @@ public interface SavedCreatorRepository extends JpaRepository<SavedCreator, Stri
 
     List<SavedCreator> findByWorkspaceIdAndCreatorProfileIdInAndSavedTrue(
             String workspaceId, Collection<String> creatorProfileIds);
+
+    // SM-0.1 [vikram · 2026-09-17] — backs CreatorDiscoveryService#enforceSavedCreatorLimit
+    // (Entitlement.SAVED_CREATORS, CAPACITY), mirroring
+    // WorkspaceMemberRepository#countByWorkspaceIdAndActiveTrue's identical shape for SEATS.
+    // Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §3.2
+    long countByWorkspaceIdAndSavedTrue(String workspaceId);
 }

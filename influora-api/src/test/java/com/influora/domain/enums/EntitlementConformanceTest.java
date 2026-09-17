@@ -333,6 +333,7 @@ class EntitlementConformanceTest {
                         .code(PlanCode.PRO)
                         .name("Sentinel")
                         .seatLimit(7)
+                        .trackedCreatorLimit(5)
                         .creatorAnalyticsMonthlyLimit(3)
                         .aiMonthlyAllotment(11)
                         .build();
@@ -343,6 +344,14 @@ class EntitlementConformanceTest {
                             + " enforcement is disabled outright: EntitlementService.requireCapacity"
                             + " returns without comparing anything when the limit is empty.")
                 .hasValue(7);
+        // SM-0.1 [vikram · 2026-09-17] — SAVED_CREATORS must resolve to tracked_creator_limit (5),
+        // a value distinct from every other sentinel column here, so both the "make it unlimited"
+        // (OptionalInt.empty()) and "point it at the wrong column" (e.g. seat_limit=7) mutations at
+        // this call site are caught, same discipline as SEATS/CREATOR_ANALYTICS_VIEWS/AI_CREDITS
+        // below. Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §3.1
+        assertThat(Entitlement.SAVED_CREATORS.limitIn(plan))
+                .as("SAVED_CREATORS must resolve to the plan's tracked_creator_limit column (5)")
+                .hasValue(5);
         assertThat(Entitlement.CREATOR_ANALYTICS_VIEWS.limitIn(plan))
                 .as("CREATOR_ANALYTICS_VIEWS must resolve to creator_analytics_monthly_limit (3)")
                 .hasValue(3);
@@ -356,11 +365,17 @@ class EntitlementConformanceTest {
                         .code(PlanCode.PRO)
                         .name("Sentinel")
                         .seatLimit(7)
+                        .trackedCreatorLimit(null)
                         .creatorAnalyticsMonthlyLimit(null)
                         .aiMonthlyAllotment(11)
                         .build();
         assertThat(Entitlement.CREATOR_ANALYTICS_VIEWS.limitIn(unlimitedAnalytics))
                 .as("a null creator_analytics_monthly_limit column is the ONLY unlimited case (Pro)")
+                .isEmpty();
+        // SM-0.1 [vikram · 2026-09-17] — real Pro-plan shape (V55__seed_billing_plans.sql):
+        // tracked_creator_limit is NULL for Pro, meaning unlimited saved creators.
+        assertThat(Entitlement.SAVED_CREATORS.limitIn(unlimitedAnalytics))
+                .as("a null tracked_creator_limit column means unlimited (Pro) SAVED_CREATORS")
                 .isEmpty();
         assertThat(Entitlement.SEATS.limitIn(unlimitedAnalytics))
                 .as("SEATS is never unlimited -- seat_limit is a NOT NULL column")
