@@ -332,6 +332,63 @@ class MetricsPollingJobTest {
     }
 
     @Test
+    @DisplayName(
+            "pollMetrics: avgReachPerPost/avgImpressionsPerPost ROUND a non-exact mean, they do not"
+                    + " truncate it (T-DEADMETRIC-REPAIR-0915 fix-round M10 — every prior F-0506 test"
+                    + " used values that divide exactly, so replacing averageOf's Math.round with"
+                    + " plain integer division stayed green; this case would have caught it)")
+    void testPollMetricsAveragesRoundNonExactMean() {
+        arrangeHappyPath();
+        when(metricsFetcher.fetchMediaWithInsights(
+                        eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(
+                        List.of(
+                                mediaWithMetrics("m1", 1000L, 100L, null),
+                                mediaWithMetrics("m2", 2000L, 200L, null),
+                                mediaWithMetrics("m3", 2000L, 200L, null)));
+
+        pollingJob.pollMetrics();
+
+        ArgumentCaptor<CreatorMetric> metricCaptor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(metricCaptor.capture());
+        CreatorMetric saved = metricCaptor.getValue();
+
+        // avgReachPerPost = (1000+2000+2000)/3 = 1666.666... -> Math.round -> 1667. Integer
+        // division (long/int truncation) would instead give 1666.
+        assertEquals(1667L, saved.getAvgReachPerPost());
+        // avgImpressionsPerPost = (100+200+200)/3 = 166.666... -> Math.round -> 167. Integer
+        // division would instead give 166.
+        assertEquals(167L, saved.getAvgImpressionsPerPost());
+    }
+
+    @Test
+    @DisplayName(
+            "pollMetrics: a post with NO engagement value at all is EXCLUDED from avgEngagementRate,"
+                    + " never counted as 0 engagement (T-DEADMETRIC-REPAIR-0915 fix-round M11 — every"
+                    + " prior F-0506 test gave every post an engagement value, so treating a missing"
+                    + " engagement as 0 instead of skipping the post stayed green; this case would"
+                    + " have caught it)")
+    void testPollMetricsEngagementRateExcludesPostMissingEngagement() {
+        arrangeHappyPath();
+        when(metricsFetcher.fetchMediaWithInsights(
+                        eq(IG_BUSINESS_ACCOUNT_ID), eq(TOKEN_VALUE), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+                .thenReturn(
+                        List.of(
+                                mediaWithMetrics("m1", 1000L, 200L, 100L), // engagement present: rate 10.0
+                                mediaWithMetrics("m2", 2000L, 400L, null))); // engagement MISSING, reach present
+
+        pollingJob.pollMetrics();
+
+        ArgumentCaptor<CreatorMetric> metricCaptor = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository).save(metricCaptor.capture());
+        CreatorMetric saved = metricCaptor.getValue();
+
+        // Only m1 counts: 100/1000*100 = 10.0. Treating m2's missing engagement as 0 would instead
+        // average in a 0.0 rate for m2 and give (10.0+0.0)/2 = 5.0.
+        assertEquals(0, new BigDecimal("10.0000").compareTo(saved.getAvgEngagementRate()));
+    }
+
+    @Test
     @DisplayName("pollMetrics: rate-limit pre-check at 90%+ usage skips the creator without crashing")
     void testPollMetricsSkipsWhenRateLimitApproaching() {
         MetaOAuthToken token = createTestToken(WORKSPACE_ID, CREATOR_ID);

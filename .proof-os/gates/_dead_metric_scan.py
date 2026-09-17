@@ -77,7 +77,14 @@ WRITE_CALL = re.compile(r"\b(increment\w*|record\w*|track\w*|add\w*|report\w*)\s
 METRIC_FIELD = re.compile(r"\bprivate\s+(?:\w+)\s+((?:avg|total|count|sum)[A-Z]\w*)\s*[;=]")
 LITERAL_STAT_VAR = re.compile(
     r"\b(?:double|float|int|long|Integer|Long|Double|BigDecimal)\s+"
-    r"((?:avg|total|count|sum)[A-Z]\w*)\s*=\s*-?\d+(?:\.\d+)?\s*;"
+    # T-DEADMETRIC-REPAIR-0915 (fix round, RULE 3 gate slip): the numeric literal may carry a
+    # Java type suffix (0d/0D/0f/0F/0l/0L, or the same on a decimal like 0.0d) — that suffix used
+    # to sit directly before the `;` this pattern required to immediately follow the digits, so
+    # `double avgResponseTime = 0d;` (or 0L/0f/0.0d/...) matched -\d+(?:\.\d+)?\s*; only up to the
+    # digits, left the trailing letter unconsumed before the expected `;`, and the whole pattern
+    # failed to match — the literal evaded RULE 3 entirely. The optional [dDfFlL]? below consumes
+    # that suffix so the `;` check still lines up.
+    r"((?:avg|total|count|sum)[A-Z]\w*)\s*=\s*-?\d+(?:\.\d+)?[dDfFlL]?\s*;"
 )
 STAT_CTOR = re.compile(r"\bnew\s+\w*(?:Dto|Stats|Response|Summary)\w*\s*\(")
 REASSIGN = re.compile(r"\s*(?:\+\+|--|[+\-*/]=|=(?!=))")

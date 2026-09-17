@@ -3,7 +3,6 @@ package com.influora.service.admin;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyIterable;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -14,8 +13,6 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.AdminUser;
 import com.influora.domain.entity.SupportTicket;
-import com.influora.domain.entity.SupportTicketMessage;
-import com.influora.domain.entity.SupportTicketMessage.SenderType;
 import com.influora.domain.enums.AdminRole;
 import com.influora.domain.enums.TicketPriority;
 import com.influora.domain.enums.TicketStatus;
@@ -175,44 +172,37 @@ class AdminSupportServiceTest {
                 .record(any(), any(), anyString(), anyString(), anyString(), any(), any(), anyString());
     }
 
-    // ---- F-0525 (dead-metric repair, T-DEADMETRIC-REPAIR-0915): getStats().avgResponseTime ----
+    // ---- F-0525 (dead-metric repair, T-DEADMETRIC-REPAIR-0915, fix round): getStats() unit +
+    // sub-hour precision. AdminSupportService now delegates the "first admin reply" MIN/JOIN/AVG
+    // entirely to SupportTicketMessageRepository#avgFirstAdminReplyMinutes (a native SQL
+    // aggregate, see that method's javadoc) rather than reducing entity lists in Java, so these
+    // tests assert the SERVICE's contract with that repository method — pass its returned minutes
+    // value through unmodified, and map a null (no admin replies yet) to 0.0 — not the SQL
+    // aggregate's own correctness, which a Mockito unit test cannot exercise (this suite has no
+    // Testcontainers/Docker discovery available in this environment, same constraint every other
+    // Admin*ServiceTest in this package works around; the aggregate's correctness rests on the
+    // query's own straightforward MIN/JOIN/AVG structure, reviewed by hand).
 
     @Test
     @DisplayName(
-            "getStats: avgResponseTime is the real mean time-to-first-admin-reply, derived from the"
-                    + " message thread (F-0525 regression)")
-    void testGetStatsComputesRealAvgResponseTime() {
+            "getStats: avgResponseTime is minutes, sub-hour precision preserved — a 45-minute mean"
+                    + " (from replies at 40 and 50 minutes) must render as 45, not truncate to 0"
+                    + " hours (F-0525 fix-round regression: the old ChronoUnit.HOURS.between"
+                    + " truncation collapsed anything under an hour to 0)")
+    void testGetStatsAvgResponseTimeIsMinutesNotHours() {
         when(adminContext.requireRoleWithMfaSatisfied(
                         principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.SUPPORT))
                 .thenReturn(supportAdmin);
         when(supportTicketRepository.countByStatusIn(anyList())).thenReturn(0L);
         when(supportTicketRepository.findByResolvedAtIsNotNull()).thenReturn(List.of());
-
-        String ticketA = "01HWXYZTICKETA000000001";
-        String ticketB = "01HWXYZTICKETB000000001";
-        Instant ticketACreatedAt = Instant.parse("2026-09-01T00:00:00Z");
-        Instant ticketBCreatedAt = Instant.parse("2026-09-02T00:00:00Z");
-        // Ticket A: first (and only counted) admin reply 2h after creation.
-        // Ticket B: first admin reply 4h after creation — a LATER second admin reply (6h) must be
-        // ignored, proving this reads "first reply", not "last reply" or "any reply".
-        SupportTicketMessage ticketAFirstReply =
-                messageAt("m1", ticketA, SenderType.ADMIN, ticketACreatedAt.plusSeconds(2 * 3600));
-        SupportTicketMessage ticketBFirstReply =
-                messageAt("m2", ticketB, SenderType.ADMIN, ticketBCreatedAt.plusSeconds(4 * 3600));
-        SupportTicketMessage ticketBSecondReply =
-                messageAt("m3", ticketB, SenderType.ADMIN, ticketBCreatedAt.plusSeconds(6 * 3600));
-        when(supportTicketMessageRepository.findBySenderTypeOrderByCreatedAtAsc(SenderType.ADMIN))
-                .thenReturn(List.of(ticketAFirstReply, ticketBFirstReply, ticketBSecondReply));
-
-        SupportTicket ticketARow = ticketWithIdAndCreatedAt(ticketA, ticketACreatedAt);
-        SupportTicket ticketBRow = ticketWithIdAndCreatedAt(ticketB, ticketBCreatedAt);
-        when(supportTicketRepository.findAllById(anyIterable()))
-                .thenReturn(List.of(ticketARow, ticketBRow));
+        // Mean of two sub-hour replies (40min, 50min) = 45.0 minutes. The old hours-based
+        // implementation would have truncated both individual replies to 0 hours before ever
+        // averaging, producing 0.0 here instead of 45.0.
+        when(supportTicketMessageRepository.avgFirstAdminReplyMinutes()).thenReturn(45.0);
 
         SupportStatsDto stats = adminSupportService.getStats(principal);
 
-        // (2h + 4h) / 2 = 3.0h — NOT (2+4+6)/3, which would prove the second reply wasn't excluded.
-        assertEquals(3.0, stats.avgResponseTime());
+        assertEquals(45.0, stats.avgResponseTime());
     }
 
     @Test
@@ -223,30 +213,49 @@ class AdminSupportServiceTest {
                 .thenReturn(supportAdmin);
         when(supportTicketRepository.countByStatusIn(anyList())).thenReturn(0L);
         when(supportTicketRepository.findByResolvedAtIsNotNull()).thenReturn(List.of());
-        when(supportTicketMessageRepository.findBySenderTypeOrderByCreatedAtAsc(SenderType.ADMIN))
-                .thenReturn(List.of());
+        // MySQL's AVG over zero grouped rows is NULL, not 0 — the repository method's contract.
+        when(supportTicketMessageRepository.avgFirstAdminReplyMinutes()).thenReturn(null);
 
         SupportStatsDto stats = adminSupportService.getStats(principal);
 
         assertEquals(0.0, stats.avgResponseTime());
+        // Bounded-query regression (fix round): the prior implementation additionally called
+        // findAllById with every replied-to ticket id; that call must no longer exist at all.
         verify(supportTicketRepository, never()).findAllById(any());
     }
 
-    private SupportTicketMessage messageAt(
-            String id, String ticketId, SenderType senderType, Instant createdAt) {
-        SupportTicketMessage message =
-                SupportTicketMessage.create(id, ticketId, ADMIN_ID, senderType, "reply body");
-        try {
-            Field createdAtField = SupportTicketMessage.class.getDeclaredField("createdAt");
-            createdAtField.setAccessible(true);
-            createdAtField.set(message, createdAt);
-        } catch (ReflectiveOperationException e) {
-            throw new RuntimeException(e);
-        }
-        return message;
+    @Test
+    @DisplayName(
+            "getStats: avgResolutionTime is minutes, sub-hour precision preserved — a 45-minute"
+                    + " mean (from resolutions at 40 and 50 minutes) must render as 45, not"
+                    + " truncate to 0 hours (F-0525 fix-round regression, resolution-time side of"
+                    + " the same ChronoUnit.HOURS.between truncation bug)")
+    void testGetStatsAvgResolutionTimeIsMinutesNotHours() {
+        when(adminContext.requireRoleWithMfaSatisfied(
+                        principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.SUPPORT))
+                .thenReturn(supportAdmin);
+        when(supportTicketRepository.countByStatusIn(anyList())).thenReturn(0L);
+        when(supportTicketMessageRepository.avgFirstAdminReplyMinutes()).thenReturn(null);
+
+        Instant createdAt = Instant.parse("2026-09-01T00:00:00Z");
+        SupportTicket resolvedIn40Min =
+                ticketWithCreatedAndResolvedAt(
+                        "01HWXYZTICKETA000000001", createdAt, createdAt.plusSeconds(40 * 60));
+        SupportTicket resolvedIn50Min =
+                ticketWithCreatedAndResolvedAt(
+                        "01HWXYZTICKETB000000001", createdAt, createdAt.plusSeconds(50 * 60));
+        when(supportTicketRepository.findByResolvedAtIsNotNull())
+                .thenReturn(List.of(resolvedIn40Min, resolvedIn50Min));
+
+        SupportStatsDto stats = adminSupportService.getStats(principal);
+
+        // (40 + 50) / 2 = 45.0 minutes. The old HOURS.between truncation would have reduced both
+        // to 0 hours first, producing 0.0 instead of 45.0.
+        assertEquals(45.0, stats.avgResolutionTime());
     }
 
-    private SupportTicket ticketWithIdAndCreatedAt(String id, Instant createdAt) {
+    private SupportTicket ticketWithCreatedAndResolvedAt(
+            String id, Instant createdAt, Instant resolvedAt) {
         try {
             java.lang.reflect.Constructor<SupportTicket> ctor = SupportTicket.class.getDeclaredConstructor();
             ctor.setAccessible(true);
@@ -260,8 +269,8 @@ class AdminSupportServiceTest {
             setField(ticket, "priority", TicketPriority.MEDIUM);
             setField(ticket, "assignedTo", null);
             setField(ticket, "createdAt", createdAt);
-            setField(ticket, "updatedAt", createdAt);
-            setField(ticket, "resolvedAt", null);
+            setField(ticket, "updatedAt", resolvedAt);
+            setField(ticket, "resolvedAt", resolvedAt);
             return ticket;
         } catch (ReflectiveOperationException e) {
             throw new RuntimeException(e);

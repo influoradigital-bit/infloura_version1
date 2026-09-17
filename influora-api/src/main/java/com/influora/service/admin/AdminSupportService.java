@@ -22,9 +22,7 @@ import com.influora.web.dto.admin.AdminSupportDtos.TicketDetailDto;
 import com.influora.web.dto.admin.AdminSupportDtos.TicketMessageDto;
 import com.influora.web.dto.admin.AdminSupportDtos.TicketSummaryDto;
 import jakarta.servlet.http.HttpServletRequest;
-import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.data.domain.Page;
@@ -268,23 +266,35 @@ public class AdminSupportService {
      * see that controller's class javadoc. Same role gate as {@link #list}/{@link #getById}.
      *
      * <p>{@code open}/{@code inProgress}/{@code waitingUser} are real counts (one {@code
-     * countByStatusIn} call per status). {@code avgResolutionTime} (hours) is a real mean of
-     * {@code resolvedAt - createdAt} across every resolved ticket, all-time — same duration
-     * definition {@code AdminDashboardService.avgReviewTimeHours} uses, just unwindowed (this is
-     * a support-team stats snapshot, not a rolling 30-day dashboard KPI).
+     * countByStatusIn} call per status). {@code avgResolutionTime} and {@code avgResponseTime} are
+     * both reported in <b>minutes</b> [fix round, T-DEADMETRIC-REPAIR-0915]: the consumer,
+     * {@code TicketList.tsx}'s {@code formatDuration(minutes: number)}, has always expected
+     * minutes, but this method previously handed it hours computed via {@code
+     * ChronoUnit.HOURS.between} — a double defect (wrong unit shown as-is, e.g. a real 3h average
+     * rendered as "3m"; AND truncation to whole hours, so any reply/resolution under an hour
+     * collapsed to {@code 0} and rendered as the same "No data yet" empty state as a queue with no
+     * data at all). Both figures now use {@code ChronoUnit.MINUTES}, so a 40-minute response
+     * contributes {@code 40}, not {@code 0}. Confirmed via grep (backend + {@code src/}) that
+     * {@code TicketList.tsx} is the only consumer of either field — {@code
+     * useSupportStats.ts}/{@code api-contracts.ts} only carry the type through, and {@code
+     * EmailQueuePage.tsx}'s superficially similar {@code formatDeliveryTime} reads an unrelated
+     * {@code avgDeliveryTime} field — so this unit change has no other caller to break.
      *
-     * <p>{@code avgResponseTime} (hours) [F-0525, dead-metric repair, T-DEADMETRIC-REPAIR-0915]:
-     * previously a hardcoded {@code 0.0} with a javadoc note that {@link SupportTicket} has no
-     * first-admin-reply timestamp column. That reasoning assumed a dedicated column was required;
-     * it is not. {@link SupportTicketMessage} already records every reply with {@code senderType}
-     * and {@code createdAt}, so "time to first admin reply" is derivable directly from the existing
-     * thread data with no migration: {@link SupportTicketMessageRepository#findBySenderTypeOrderByCreatedAtAsc}
-     * returns every ADMIN message oldest-first, the first occurrence per {@code ticketId} is that
-     * ticket's first admin reply, and the mean of {@code firstReply - createdAt} (same hour unit as
-     * {@code avgResolutionTime}) over tickets that HAVE at least one admin reply is the real
-     * average. Tickets never yet replied to are excluded rather than counted as zero (a ticket
-     * nobody has answered is not a fast response — same "absence is not zero" discipline the Meta
-     * integration uses). {@code 0.0} only when no ticket has ever received an admin reply.
+     * <p>{@code avgResolutionTime} is a real mean of {@code resolvedAt - createdAt} (minutes)
+     * across every resolved ticket, all-time — same duration definition {@code
+     * AdminDashboardService.avgReviewTimeHours} uses (just unwindowed, and now minutes instead of
+     * hours here specifically for this endpoint's consumer).
+     *
+     * <p>{@code avgResponseTime} [F-0525, dead-metric repair]: {@link SupportTicketMessage} records
+     * every reply with {@code senderType} and {@code createdAt}, so "time to first admin reply" is
+     * derivable directly from the existing thread data with no migration. {@link
+     * SupportTicketMessageRepository#avgFirstAdminReplyMinutes} computes the mean of {@code
+     * firstReply - createdAt} (minutes) over tickets that HAVE at least one admin reply as a single
+     * SQL aggregate — see that method's javadoc for why (replaces a prior unbounded
+     * load-every-admin-message-then-findAllById implementation). Tickets never yet replied to are
+     * excluded rather than counted as zero (a ticket nobody has answered is not a fast response —
+     * same "absence is not zero" discipline the Meta integration uses). {@code 0.0} only when no
+     * ticket has ever received an admin reply.
      */
     @Transactional(readOnly = true)
     public SupportStatsDto getStats(AuthPrincipal principal) {
@@ -300,46 +310,36 @@ public class AdminSupportService {
                 resolved.isEmpty()
                         ? 0.0
                         : resolved.stream()
-                                        .mapToLong(t -> ChronoUnit.HOURS.between(t.getCreatedAt(), t.getResolvedAt()))
+                                        .mapToLong(t -> ChronoUnit.MINUTES.between(t.getCreatedAt(), t.getResolvedAt()))
                                         .sum()
                                 / (double) resolved.size();
 
-        double avgResponseTime = computeAvgResponseTimeHours();
+        double avgResponseTime = computeAvgResponseTimeMinutes();
 
         return new SupportStatsDto(open, inProgress, waitingUser, avgResponseTime, avgResolutionTime);
     }
 
     /**
-     * F-0525 — real mean of "first admin reply time" (hours) across every ticket that has at least
-     * one ADMIN-sent message, all-time (unwindowed, same scope as {@code avgResolutionTime} above).
-     * See {@link #getStats} javadoc for why no {@code first_responded_at} column was needed.
+     * F-0525 — real mean of "first admin reply time" (minutes) across every ticket that has at
+     * least one ADMIN-sent message, all-time (unwindowed, same scope as {@code avgResolutionTime}
+     * above). See {@link #getStats} javadoc for why no {@code first_responded_at} column was
+     * needed.
+     *
+     * <p>[Fix round, T-DEADMETRIC-REPAIR-0915] Previously loaded every ADMIN-sent {@link
+     * SupportTicketMessage} ever written ({@code
+     * SupportTicketMessageRepository#findBySenderTypeOrderByCreatedAtAsc}), reduced that in Java to
+     * one first-reply {@link Instant} per ticket, then called {@code
+     * supportTicketRepository.findAllById} with every one of those ticket ids — an unbounded read
+     * that grows without limit as the support inbox grows, on every single stats request. {@link
+     * SupportTicketMessageRepository#avgFirstAdminReplyMinutes} replaces the whole thing with one
+     * SQL aggregate: a {@code MIN(created_at) GROUP BY ticket_id} subquery over ADMIN messages,
+     * joined back to {@code support_tickets} and averaged with {@code TIMESTAMPDIFF(MINUTE, ...)}
+     * — MySQL computes the mean itself and only ever returns a single row (or {@code NULL} when no
+     * ticket has an admin reply yet), so nothing here scales with message or ticket count.
      */
-    private double computeAvgResponseTimeHours() {
-        List<SupportTicketMessage> adminMessagesOldestFirst =
-                supportTicketMessageRepository.findBySenderTypeOrderByCreatedAtAsc(SenderType.ADMIN);
-        if (adminMessagesOldestFirst.isEmpty()) {
-            return 0.0;
-        }
-
-        // Ascending by createdAt, so the first entry seen per ticketId is genuinely that ticket's
-        // FIRST admin reply, not merely "an" admin reply.
-        Map<String, Instant> firstAdminReplyAtByTicketId = new LinkedHashMap<>();
-        for (SupportTicketMessage message : adminMessagesOldestFirst) {
-            firstAdminReplyAtByTicketId.putIfAbsent(message.getTicketId(), message.getCreatedAt());
-        }
-
-        List<SupportTicket> repliedTickets =
-                supportTicketRepository.findAllById(firstAdminReplyAtByTicketId.keySet());
-        if (repliedTickets.isEmpty()) {
-            return 0.0;
-        }
-
-        long totalHours = 0L;
-        for (SupportTicket ticket : repliedTickets) {
-            Instant firstReplyAt = firstAdminReplyAtByTicketId.get(ticket.getId());
-            totalHours += ChronoUnit.HOURS.between(ticket.getCreatedAt(), firstReplyAt);
-        }
-        return totalHours / (double) repliedTickets.size();
+    private double computeAvgResponseTimeMinutes() {
+        Double avg = supportTicketMessageRepository.avgFirstAdminReplyMinutes();
+        return avg == null ? 0.0 : avg;
     }
 
     private SupportTicket requireTicket(String ticketId) {
