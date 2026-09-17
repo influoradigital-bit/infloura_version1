@@ -3,8 +3,38 @@
 > **Decision by:** Swapnil Maruti (CEO) — final authority on business direction
 > **Advised by:** Priya (CTO)
 > **Date:** 2026-09-15
-> **Status:** LOCKED
+> **Status:** ⚠️ SUPERSEDED 2026-09-17 — see below. Kept for the record, not for implementation.
 > **Unblocks:** Task 2.1 (`wiki/processes/task-creator-profile-and-copilot.md`), therefore Phase 2
+
+---
+
+## ⚠️ Superseded 2026-09-17 — follower-based, not reach-based
+
+A later, better-informed ruling reversed this. `wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §7`
+(verified on disk, ruling text confirmed verbatim) sets:
+
+`avgEngagementRate = mean((likes + comments) per post) / followers × 100`
+
+**Why this ruling missed something the later one caught:** this doc reasoned about
+`CreatorMetric.avgEngagementRate` in isolation. It did not know — I did not check — that
+`RateEstimationService` already applies a ±30% rate multiplier keyed on this exact field, with
+thresholds (`>5` / `<1`) calibrated against the follower-based scale `QualityScoreService` and
+`FakeFollowerDetectionService` already use. Reach runs several times higher than that scale, so
+shipping reach-based here (implemented once, in `e71938c`) would have pushed most creators into the
++30% band the moment the field stopped being null — silently, for a reason with nothing to do with
+their actual engagement. `bf886dc` reverted that and implemented the follower-based formula instead.
+
+The "harder to game" reasoning below is not wrong in the abstract — it is wrong as a reason to
+introduce a *second, differently-denominated* engagement rate next to two services that already
+committed to follower-based. One codebase, one definition, is worth more than the marginally
+better anti-gaming property of a value nothing else agrees with.
+
+**Standing lesson, not just a correction:** a ruling scoped to one field, made without checking
+every *other* consumer of that field's name, is a ruling made half-blind. Before locking a
+formula for a shared value, grep for every existing computation of something with the same name
+first.
+
+---
 
 ---
 
