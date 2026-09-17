@@ -22,6 +22,7 @@ import com.influora.config.PiiEncryptionProperties;
 import com.influora.config.R2Properties;
 import com.influora.config.RazorpayProperties;
 import com.influora.config.ShopifyProperties;
+import com.influora.config.TrendIngestProperties;
 import com.influora.config.TrendSparkAiProperties;
 import com.influora.config.TrendSparkProperties;
 import com.influora.config.WalletProperties;
@@ -62,6 +63,10 @@ import org.springframework.scheduling.annotation.EnableAsync;
     // CreatorSuggestionAiProperties — both are live-bean dependencies from day one.
     CreatorCopilotProperties.class,
     CreatorSuggestionAiProperties.class,
+    // TrendSpark trend-pull data sources (NewsAPI/TMDB/YouTube, T4 ingest job) — registered here
+    // explicitly for the same reason CreatorCopilotProperties is above: any @Component ingest job
+    // that constructor-injects TrendIngestProperties would otherwise fail the context at startup.
+    TrendIngestProperties.class,
     // meera_interaction_log retention purge (Priya's PARTIAL-2 hard gate,
     // wiki/build/partials-resolution-plan.md; Kabir L1, wiki/build/phase2-kabir-security.md) —
     // injected by @Component MeeraInteractionLogRetentionPurgeJob, so it must be registered here
