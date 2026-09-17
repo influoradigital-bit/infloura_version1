@@ -45,10 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
  * #SUPPORTED_PLATFORMS} — the per-platform loop and the cross-platform sum already generalize.
  *
  * <p><b>Engagement rate</b> is only written when {@code CreatorMetric.avgEngagementRate} is
- * non-null. {@code MetricsPollingJob} does not populate that field yet (see its class javadoc's
- * {@code media_metrics} TODO) — until it does, {@code platform_stats.engagement_rate} for
- * Instagram will legitimately stay at its existing/default value rather than being overwritten
- * with a fabricated number.
+ * non-null; a null rate leaves {@code platform_stats.engagement_rate} at its existing value.
  *
  * <p>Same resilience/overlap-guard conventions as {@code MetricsPollingJob}/{@code
  * ScoreCalculationJob}: per-creator try/catch isolation, an {@link AtomicBoolean} single-instance

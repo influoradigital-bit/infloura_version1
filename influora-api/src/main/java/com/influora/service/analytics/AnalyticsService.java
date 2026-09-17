@@ -131,11 +131,11 @@ public class AnalyticsService {
                     mostRecent.getAvgImpressionsPerPost() != null
                             ? BigDecimal.valueOf(mostRecent.getAvgImpressionsPerPost())
                             : null;
-            // totalEngagements is derived (never fabricated): reach * engagementRate% when both
-            // are present, else left at 0 rather than guessing.
-            if (mostRecent.getAvgReachPerPost() != null && engagementRate != null) {
+            // avgEngagementRate is likes+comments per post over this row's followers
+            // (MetricsPollingJob.averageEngagementRate), so followers is its denominator, not reach.
+            if (engagementRate != null) {
                 totalEngagements =
-                        BigDecimal.valueOf(mostRecent.getAvgReachPerPost())
+                        BigDecimal.valueOf(mostRecent.getFollowers())
                                 .multiply(engagementRate)
                                 .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
                                 .longValue();

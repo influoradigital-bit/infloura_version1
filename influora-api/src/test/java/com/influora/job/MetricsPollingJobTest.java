@@ -448,6 +448,16 @@ class MetricsPollingJobTest {
     }
 
     @Test
+    @DisplayName("averageEngagementRate: a non-terminating rate rounds half up at 4 decimals")
+    void testAverageEngagementRateRoundsHalfUp() {
+        List<MediaMetric> media =
+                List.of(mediaMetric(100L, 0L), mediaMetric(0L, 0L), mediaMetric(0L, 0L));
+        // mean 33.3333333333 * 100 / 7 = 476.190476... -> 476.1905 (DOWN would give 476.1904)
+        BigDecimal result = MetricsPollingJob.averageEngagementRate(media, 7L);
+        assertEquals(new BigDecimal("476.1905"), result);
+    }
+
+    @Test
     @DisplayName(
             "averageEngagementRate: a post missing comments but with likes present still"
                     + " contributes, comments counted as 0 (T-ENGAGEMENT-DENOMINATOR-0917)")

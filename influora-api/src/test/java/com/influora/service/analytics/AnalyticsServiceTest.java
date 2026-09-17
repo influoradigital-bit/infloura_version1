@@ -143,6 +143,59 @@ class AnalyticsServiceTest {
     }
 
     @Test
+    @DisplayName("getCreatorMetrics: totalEngagements scales the rate by followers, not by reach")
+    void testGetCreatorMetricsTotalEngagementsUsesFollowersNotReach() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
+                .thenReturn(CREATOR_ID);
+        // 10,000 followers averaging 600 likes+comments per post -> stored rate 6.0. Reach 30,000:
+        // reach * rate would report 1,800.
+        CreatorMetric metric =
+                CreatorMetric.builder()
+                        .id("01HMETRIC1234567890124")
+                        .creatorProfileId(CREATOR_ID)
+                        .platform("INSTAGRAM")
+                        .followers(10000)
+                        .avgEngagementRate(new BigDecimal("6.0000"))
+                        .avgReachPerPost(30000L)
+                        .time(Instant.parse("2026-07-01T00:00:00Z"))
+                        .build();
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(List.of(metric));
+
+        CreatorMetricsResponse result =
+                analyticsService.getCreatorMetrics(principal, CREATOR_ID, null, null);
+
+        assertEquals(600L, result.totalEngagements());
+    }
+
+    @Test
+    @DisplayName("getCreatorMetrics: totalEngagements rounds half up and needs no reach")
+    void testGetCreatorMetricsTotalEngagementsRoundsWithoutReach() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
+                .thenReturn(CREATOR_ID);
+        CreatorMetric metric =
+                CreatorMetric.builder()
+                        .id("01HMETRIC1234567890125")
+                        .creatorProfileId(CREATOR_ID)
+                        .platform("INSTAGRAM")
+                        .followers(1000)
+                        .avgEngagementRate(new BigDecimal("12.3556"))
+                        .time(Instant.parse("2026-07-01T00:00:00Z"))
+                        .build();
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(List.of(metric));
+
+        CreatorMetricsResponse result =
+                analyticsService.getCreatorMetrics(principal, CREATOR_ID, null, null);
+
+        assertEquals(124L, result.totalEngagements());
+    }
+
+    @Test
     @DisplayName("getCreatorMetrics: never calls repository with the raw caller-supplied creatorId")
     void testGetCreatorMetricsNeverPassesRawCreatorIdWhenAuthorizationRemapsIt() {
         // MetricsAuthorizationService is the ONLY source of the id passed to the repository — even

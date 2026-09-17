@@ -8,6 +8,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.influora.domain.entity.AdminUser;
+import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.User;
 import com.influora.domain.enums.AdminRole;
@@ -26,6 +27,8 @@ import com.influora.security.AuthPrincipal;
 import com.influora.web.dto.admin.AdminCreatorDtos.CreatorDetailDto;
 import com.influora.web.dto.admin.AdminCreatorDtos.CreatorSummaryDto;
 import com.influora.web.dto.admin.AdminCreatorDtos.PagedCreatorsDto;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -120,6 +123,36 @@ class AdminCreatorServiceTest {
         CreatorDetailDto dto = service.getById(principal, PROFILE_ID);
 
         assertNull(dto.phone());
+    }
+
+    @Test
+    @DisplayName("getById: avgEngagement scales the rate by followers, not by reach")
+    void testGetByIdAvgEngagementUsesFollowersNotReach() {
+        stubSuperAdminOrAdminOrSupport();
+        CreatorProfile profile = profile();
+        when(creatorProfileRepository.findById(PROFILE_ID)).thenReturn(Optional.of(profile));
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user(null)));
+        stubEmptyDetailCollaborators(profile);
+        // 10,000 followers averaging 600 likes+comments per post -> stored rate 6.0. Reach 30,000:
+        // reach * rate would report 1,800.
+        CreatorMetric metric =
+                CreatorMetric.builder()
+                        .id("01HMETRIC1234567890126")
+                        .creatorProfileId(PROFILE_ID)
+                        .platform("INSTAGRAM")
+                        .followers(10000)
+                        .avgEngagementRate(new BigDecimal("6.0000"))
+                        .avgReachPerPost(30000L)
+                        .time(Instant.parse("2026-07-01T00:00:00Z"))
+                        .build();
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
+                        PROFILE_ID, "INSTAGRAM"))
+                .thenReturn(Optional.of(metric));
+
+        CreatorDetailDto dto = service.getById(principal, PROFILE_ID);
+
+        assertEquals(30000L, dto.platformStats().avgReach());
+        assertEquals(600L, dto.platformStats().avgEngagement());
     }
 
     @Test

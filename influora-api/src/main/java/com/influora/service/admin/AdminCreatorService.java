@@ -635,14 +635,12 @@ public class AdminCreatorService {
                         .orElse(null);
 
         long avgReach = latest != null && latest.getAvgReachPerPost() != null ? latest.getAvgReachPerPost() : 0L;
-        // avgEngagement (absolute, not a %): reach * engagementRate%, when both are known — derived
-        // the same way AnalyticsService.getCreatorMetrics derives its "totalEngagements" tile, never
-        // fabricated. avgEngagementRate is a distinct concept from Creator.engagementRate (top-level
-        // field, sourced from the CreatorProfile row) — this one is per-post, from the metrics table.
+        // avgEngagementRate is likes+comments per post over this row's followers
+        // (MetricsPollingJob.averageEngagementRate), so followers is its denominator, not reach.
         long avgEngagement = 0L;
-        if (latest != null && latest.getAvgReachPerPost() != null && latest.getAvgEngagementRate() != null) {
+        if (latest != null && latest.getAvgEngagementRate() != null) {
             avgEngagement =
-                    BigDecimal.valueOf(latest.getAvgReachPerPost())
+                    BigDecimal.valueOf(latest.getFollowers())
                             .multiply(latest.getAvgEngagementRate())
                             .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
                             .longValue();
