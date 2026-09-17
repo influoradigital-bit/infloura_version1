@@ -22,10 +22,11 @@ import {
   Languages,
   Briefcase,
   IndianRupee,
+  Lock,
   type LucideIcon,
 } from 'lucide-react';
 import { api, isApiLive, ApiError, type CreatorPublicProfile, type SimilarCreator } from '@/lib/api';
-import type { Platform } from '@/lib/types';
+import type { Platform, CreatorDemographics } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { cssVars } from '@/lib/css-vars';
 import { Button } from '@/components/ui/button';
@@ -105,24 +106,6 @@ interface CreatorDisplayModel {
   };
   platforms: CreatorPlatformView[];
   audience: {
-    /**
-     * F-0295 — no backend audience-demographics endpoint exists at all (same DTO gap as
-     * `gender` below), so this was previously hardcoded to `[]` in live mode and rendered as a
-     * silent empty box under "Age Distribution" with no absent-state message. `null` (not an
-     * empty array) when unknown, matching the `gender`/`authenticity` pattern in this same type.
-     */
-    ageGroups: { range: string; percentage: number }[] | null;
-    /**
-     * F-0260 — no backend audience-demographics endpoint exists at all, so this was previously
-     * hardcoded to `{ female: 0, male: 0, other: 0 }` in live mode, rendering as a measured
-     * "Female 0% Male 0%" for every creator. `null` (not an all-zero split) when unknown.
-     */
-    gender: { female: number; male: number; other: number } | null;
-    /**
-     * F-0295 — same gap as `ageGroups` above: hardcoded to `[]` in live mode, rendering as a
-     * silent empty box under "Top Cities". `null` when unknown.
-     */
-    topCities: { city: string; percentage: number }[] | null;
     interests: string[];
     /**
      * BR-18 — real `100 - fakeFollowerScore` from `creator.scores.authenticity`
@@ -150,6 +133,98 @@ interface CreatorDisplayModel {
     completionRate: number | null;
     onTimeDelivery: number | null;
     repeatClients: number | null;
+  };
+}
+
+/**
+ * F-0795/F-0796 [ananya · 2026-09-17] — audience demographics view-model, rendered by the
+ * Audience tab below. A discriminated union rather than nullable fields: the pre-/post-consent
+ * split in wiki/decisions/2026-09-15-brand-preconsent-visibility.md (LOCKED) is a difference in
+ * *kind* of information (band vs. exact), not just presence/absence, so the two cannot share one
+ * shape without either fabricating a band from nothing or exposing exact numbers through a
+ * generic "has data" flag.
+ *
+ * 'locked' = AnalyticsController's /demographics 403'd (MetricsAuthorizationService found no
+ * active MetaOAuthToken pairing, i.e. no collaboration exists yet). The ruling calls for coarse
+ * bands here (an age-skew description, a gender-majority description, a no-percentage top-3
+ * city list), but CreatorDemographicsResponse itself returns nothing at all on a 403 — no
+ * breakdown to summarize into a band. Computing a *real* aggregate band pre-consent is a backend
+ * capability this ticket's FE-only scope cannot add, so 'locked' renders an honest "hidden until
+ * connected" message instead of an invented skew — never a fabricated band presented as read
+ * data, same rule as the null-vs-zero pattern elsewhere in this file. Wording is explicitly left
+ * to Ananya's call per the ruling's closing note.
+ * Source: wiki/decisions/2026-09-15-brand-preconsent-visibility.md
+ */
+type DemographicsView =
+  | { status: 'loading' }
+  | { status: 'locked' }
+  | { status: 'unavailable' }
+  | {
+      status: 'available';
+      ageGroups: { range: string; percentage: number }[];
+      gender: { female: number; male: number; other: number };
+      topCities: { city: string; percentage: number }[];
+    };
+
+/**
+ * F-0795/F-0796 [ananya · 2026-09-17] — CreatorDemographicsResponse (AnalyticsDtos.java) carries
+ * raw counts (`ageGenderBreakdown: Map<String, Long>`, keys like "18-24_female"), never
+ * pre-computed percentages. This page owns the count-to-percentage math so it can render exact
+ * numbers post-connection while never inventing a percentage the DTO didn't send.
+ * Source: wiki/decisions/2026-09-15-brand-preconsent-visibility.md
+ */
+function deriveAgeGroups(breakdown: Record<string, number>): { range: string; percentage: number }[] {
+  const byRange = new Map<string, number>();
+  let total = 0;
+  for (const [key, count] of Object.entries(breakdown)) {
+    const range = key.split('_')[0] ?? key;
+    byRange.set(range, (byRange.get(range) ?? 0) + count);
+    total += count;
+  }
+  if (total === 0) return [];
+  return Array.from(byRange.entries())
+    .map(([range, count]) => ({ range, percentage: Math.round((count / total) * 1000) / 10 }))
+    .sort((a, b) => b.percentage - a.percentage);
+}
+
+function deriveGender(breakdown: Record<string, number>): { female: number; male: number; other: number } {
+  let female = 0;
+  let male = 0;
+  let other = 0;
+  let total = 0;
+  for (const [key, count] of Object.entries(breakdown)) {
+    total += count;
+    const g = key.split('_')[1] ?? '';
+    if (g === 'female') female += count;
+    else if (g === 'male') male += count;
+    else other += count;
+  }
+  if (total === 0) return { female: 0, male: 0, other: 0 };
+  return {
+    female: Math.round((female / total) * 1000) / 10,
+    male: Math.round((male / total) * 1000) / 10,
+    other: Math.round((other / total) * 1000) / 10,
+  };
+}
+
+function deriveTopCities(breakdown: Record<string, number>): { city: string; percentage: number }[] {
+  const total = Object.values(breakdown).reduce((s, n) => s + n, 0);
+  if (total === 0) return [];
+  return Object.entries(breakdown)
+    .map(([city, count]) => ({ city, percentage: Math.round((count / total) * 1000) / 10 }))
+    .sort((a, b) => b.percentage - a.percentage)
+    .slice(0, 5);
+}
+
+function deriveDemographicsView(data: CreatorDemographics): DemographicsView {
+  if (!data.hasData) return { status: 'unavailable' };
+  const ageGender = data.ageGenderBreakdown ?? {};
+  const city = data.cityBreakdown ?? {};
+  return {
+    status: 'available',
+    ageGroups: deriveAgeGroups(ageGender),
+    gender: deriveGender(ageGender),
+    topCities: deriveTopCities(city),
   };
 }
 
@@ -215,20 +290,6 @@ const mockCreator: CreatorDisplayModel = {
   ],
 
   audience: {
-    ageGroups: [
-      { range: '18-24', percentage: 32 },
-      { range: '25-34', percentage: 45 },
-      { range: '35-44', percentage: 18 },
-      { range: '45+', percentage: 5 },
-    ],
-    gender: { female: 68, male: 30, other: 2 },
-    topCities: [
-      { city: 'Mumbai', percentage: 22 },
-      { city: 'Delhi', percentage: 18 },
-      { city: 'Bangalore', percentage: 15 },
-      { city: 'Hyderabad', percentage: 12 },
-      { city: 'Pune', percentage: 8 },
-    ],
     interests: ['Fashion', 'Beauty', 'Travel', 'Fitness', 'Food'],
     authenticity: 96,
   },
@@ -271,6 +332,27 @@ const mockCreator: CreatorDisplayModel = {
   },
 };
 
+// Mock-mode-only demographics (clearly synthetic, matches the mockDemographics pattern in
+// src/lib/api.ts). Always 'available' — mock mode never needs to demo the locked/pre-consent
+// state, since there's no real MetricsAuthorizationService gate to simulate here.
+const mockAudienceDemographics: DemographicsView = {
+  status: 'available',
+  ageGroups: [
+    { range: '18-24', percentage: 32 },
+    { range: '25-34', percentage: 45 },
+    { range: '35-44', percentage: 18 },
+    { range: '45+', percentage: 5 },
+  ],
+  gender: { female: 68, male: 30, other: 2 },
+  topCities: [
+    { city: 'Mumbai', percentage: 22 },
+    { city: 'Delhi', percentage: 18 },
+    { city: 'Bangalore', percentage: 15 },
+    { city: 'Hyderabad', percentage: 12 },
+    { city: 'Pune', percentage: 8 },
+  ],
+};
+
 // Format helpers
 const formatNumber = (n: number): string => {
   if (n >= 10000000) return `${(n / 10000000).toFixed(1)}Cr`;
@@ -297,9 +379,17 @@ const formatINR = (n: number): string => {
 // carries both (real completedCampaigns count, real avgRating — null, not 0, when unrated).
 //
 // The rest of what this page renders (reviews list, portfolio grid, past brands, per-platform
-// rate cards, work-quality metrics, audience demographics, website/availability/joinedDate)
-// still has no backend equivalent in either DTO — those keep their honest empty/zero fallback
-// below (each flagged // TODO(vikram)) rather than invented numbers.
+// rate cards, work-quality metrics, website/availability/joinedDate) still has no backend
+// equivalent in either DTO — those keep their honest empty/zero fallback below (each flagged
+// // TODO(vikram)) rather than invented numbers.
+//
+// F-0795/F-0796 [ananya · 2026-09-17] — audience demographics is NOT one of those gaps anymore:
+// GET /analytics/creators/{creatorId}/demographics (AnalyticsController.getDemographics) exists
+// and is wired below via the component's own effect (deriveDemographicsView), not through this
+// synchronous row-mapping function — the endpoint is gated per-creator by
+// MetricsAuthorizationService (403 pre-consent) and needs its own request/loading lifecycle,
+// which buildLiveCreatorView's synchronous shape can't express.
+// Source: wiki/decisions/2026-09-15-brand-preconsent-visibility.md
 // ---------------------------------------------------------------------------
 
 type LiveCreatorRow = CreatorPublicProfile;
@@ -370,15 +460,10 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       color: PLATFORM_COLOR[p.platform] ?? '#6B7280',
     })),
     audience: {
-      // F-0295 — was hardcoded to `[]`, rendering as a silent empty box under "Age Distribution"
-      // for every creator. `null`: DTO has no audience-demographics fields/endpoint.
-      ageGroups: null,
-      // F-0260 — was hardcoded to an all-zero split, rendering as a fabricated "Female 0% Male
-      // 0%" for every creator. `null`: no audience-demographics endpoint exists.
-      gender: null,
-      // F-0295 — was hardcoded to `[]`, rendering as a silent empty box under "Top Cities".
-      // `null`: DTO has no audience-demographics fields/endpoint.
-      topCities: null,
+      // F-0795/F-0796 [ananya · 2026-09-17] — age/gender/city breakdown moved out of this
+      // synchronous view-model entirely; see `deriveDemographicsView` and the component's own
+      // demographics effect below, which now call the real
+      // GET /analytics/creators/{creatorId}/demographics endpoint.
       interests: [],
       // BR-18 fix: was hardcoded to 0, which rendered as "0% — Excellent authenticity" — live
       // misleading UI. `row.scores.authenticity` is the real `100 - fakeFollowerScore` value;
@@ -402,6 +487,26 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       repeatClients: null,
     },
   };
+}
+
+/**
+ * F-0795/F-0796 [ananya · 2026-09-17] — the pre-consent "band" state for one audience-demographics
+ * card. Deliberately shows no number of any kind (not even a placeholder percentage) — see the
+ * DemographicsView 'locked' comment above for why a real band description isn't available here.
+ * Semantic tokens only (`text-muted-foreground`/`text-foreground`): `text-destructive` is
+ * unreadable in this theme, and this is an informational lock state, not an error.
+ * Source: wiki/decisions/2026-09-15-brand-preconsent-visibility.md
+ */
+function LockedAudienceBand({ copy }: { copy: string }) {
+  return (
+    <div className="flex items-start gap-2.5 text-sm">
+      <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+      <div>
+        <p className="font-medium text-foreground">Locked pre-connection</p>
+        <p className="mt-0.5 text-muted-foreground">{copy}</p>
+      </div>
+    </div>
+  );
 }
 
 export default function BrandCreatorProfilePage() {
@@ -451,6 +556,44 @@ export default function BrandCreatorProfilePage() {
   }, [liveApi, id, reloadToken]);
 
   const creator: CreatorDisplayModel | null = liveApi ? liveCreator : mockCreator;
+
+  /**
+   * F-0795/F-0796 [ananya · 2026-09-17] — GET /analytics/creators/{creatorId}/demographics
+   * (AnalyticsController.getDemographics), gated by MetricsAuthorizationService. Kept as its own
+   * effect/state (not folded into buildLiveCreatorView above) because a 403 here is an expected,
+   * routine pre-consent response — not a page-level load error — and must resolve into the
+   * 'locked' band state below, never the error/toast path `loadError` uses for the profile fetch.
+   * Source: wiki/decisions/2026-09-15-brand-preconsent-visibility.md
+   */
+  const [demographicsState, setDemographicsState] = React.useState<DemographicsView>({ status: 'loading' });
+  React.useEffect(() => {
+    if (!liveApi || !id) return;
+    let cancelled = false;
+    setDemographicsState({ status: 'loading' });
+    (async () => {
+      try {
+        const data = await api.analytics.getCreatorDemographics(id);
+        if (cancelled) return;
+        setDemographicsState(deriveDemographicsView(data));
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof ApiError && e.status === 403) {
+          // Pre-consent — MetricsAuthorizationService found no active MetaOAuthToken pairing.
+          // Render the locked band state, never an error toast (ruling, LOCKED).
+          setDemographicsState({ status: 'locked' });
+        } else {
+          // Any other failure (network, 5xx) — a secondary panel, so fail into the same honest
+          // "nothing to show yet" state rather than surfacing a raw error on the whole page.
+          setDemographicsState({ status: 'unavailable' });
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [liveApi, id]);
+
+  const audienceDemographics: DemographicsView = liveApi ? demographicsState : mockAudienceDemographics;
 
   const [isSaved, setIsSaved] = React.useState(false);
   const [isInviteOpen, setIsInviteOpen] = React.useState(false);
@@ -829,16 +972,26 @@ export default function BrandCreatorProfilePage() {
           {/* Audience Tab */}
           <TabsContent value="audience" className="space-y-6">
             <div className="grid gap-6 md:grid-cols-2">
-              {/* Age Distribution — F-0295. `null`/empty means no audience-demographics endpoint
-                  exists for this creator; must render an explicit not-available state rather
-                  than a silent empty box (same rule as Gender Split / Audience Authenticity). */}
+              {/*
+                F-0795/F-0796 [ananya · 2026-09-17] — Age Distribution / Gender Split / Top
+                Cities all key off the shared `audienceDemographics` state (deriveDemographicsView
+                / the component's demographics effect above). 'locked' renders the pre-consent
+                band state instead of exact numbers: MetricsAuthorizationService 403s this
+                endpoint until a MetaOAuthToken pairing exists, and the ruling forbids ever
+                showing an exact age/gender/city breakdown before that connection.
+                Source: wiki/decisions/2026-09-15-brand-preconsent-visibility.md
+              */}
               <div className="rounded-lg border p-5">
                 <h3 className="mb-4 font-medium">Age Distribution</h3>
-                {!creator.audience.ageGroups || creator.audience.ageGroups.length === 0 ? (
+                {audienceDemographics.status === 'loading' ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : audienceDemographics.status === 'locked' ? (
+                  <LockedAudienceBand copy="Age breakdown is hidden until this creator connects with your brand." />
+                ) : audienceDemographics.status === 'unavailable' || audienceDemographics.ageGroups.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Not available</p>
                 ) : (
                   <div className="space-y-3">
-                    {creator.audience.ageGroups.map((group) => (
+                    {audienceDemographics.ageGroups.map((group) => (
                       <div key={group.range} className="space-y-1.5">
                         <div className="flex justify-between text-sm">
                           <span>{group.range}</span>
@@ -851,53 +1004,55 @@ export default function BrandCreatorProfilePage() {
                 )}
               </div>
 
-              {/* Gender — F-0260. `null` means no audience-demographics endpoint exists for this
-                  creator; must render an explicit not-available state rather than a fabricated
-                  "Female 0% Male 0%" (same rule as Audience Authenticity below). */}
               <div className="rounded-lg border p-5">
                 <h3 className="mb-4 font-medium">Gender Split</h3>
-                {creator.audience.gender == null ? (
+                {audienceDemographics.status === 'loading' ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : audienceDemographics.status === 'locked' ? (
+                  <LockedAudienceBand copy="Gender split is hidden until this creator connects with your brand." />
+                ) : audienceDemographics.status === 'unavailable' ? (
                   <p className="text-sm text-muted-foreground">Not available</p>
                 ) : (
                   <>
                     <div className="flex h-4 overflow-hidden rounded-full">
                       <div
                         className="bg-pink-500 w-[var(--gender-female-w)]"
-                        ref={cssVars({ '--gender-female-w': `${creator.audience.gender.female}%` })}
+                        ref={cssVars({ '--gender-female-w': `${audienceDemographics.gender.female}%` })}
                       />
                       <div
                         className="bg-blue-500 w-[var(--gender-male-w)]"
-                        ref={cssVars({ '--gender-male-w': `${creator.audience.gender.male}%` })}
+                        ref={cssVars({ '--gender-male-w': `${audienceDemographics.gender.male}%` })}
                       />
                       <div
                         className="bg-purple-500 w-[var(--gender-other-w)]"
-                        ref={cssVars({ '--gender-other-w': `${creator.audience.gender.other}%` })}
+                        ref={cssVars({ '--gender-other-w': `${audienceDemographics.gender.other}%` })}
                       />
                     </div>
                     <div className="mt-3 flex gap-4 text-sm">
                       <span className="flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 rounded-full bg-pink-500" />
-                        Female {creator.audience.gender.female}%
+                        Female {audienceDemographics.gender.female}%
                       </span>
                       <span className="flex items-center gap-1.5">
                         <span className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                        Male {creator.audience.gender.male}%
+                        Male {audienceDemographics.gender.male}%
                       </span>
                     </div>
                   </>
                 )}
               </div>
 
-              {/* Top Cities — F-0295. `null`/empty means no audience-demographics endpoint exists
-                  for this creator; must render an explicit not-available state rather than a
-                  silent empty box (same rule as Gender Split / Audience Authenticity). */}
               <div className="rounded-lg border p-5">
                 <h3 className="mb-4 font-medium">Top Cities</h3>
-                {!creator.audience.topCities || creator.audience.topCities.length === 0 ? (
+                {audienceDemographics.status === 'loading' ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : audienceDemographics.status === 'locked' ? (
+                  <LockedAudienceBand copy="Top cities are hidden until this creator connects with your brand." />
+                ) : audienceDemographics.status === 'unavailable' || audienceDemographics.topCities.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Not available</p>
                 ) : (
                   <div className="space-y-3">
-                    {creator.audience.topCities.map((city, i) => (
+                    {audienceDemographics.topCities.map((city, i) => (
                       <div key={city.city} className="flex items-center gap-3">
                         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-medium">
                           {i + 1}
