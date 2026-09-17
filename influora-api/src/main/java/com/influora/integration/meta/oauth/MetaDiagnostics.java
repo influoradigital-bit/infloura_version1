@@ -6,7 +6,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 /**
- * F-0819 — safe-to-log fingerprints of Meta credentials, for diagnosing a connect failure without
+ * F-0870 — safe-to-log fingerprints of Meta credentials, for diagnosing a connect failure without
  * ever writing a usable token or secret to the log.
  *
  * <p><b>Why this exists.</b> The Instagram long-lived exchange fails in production with

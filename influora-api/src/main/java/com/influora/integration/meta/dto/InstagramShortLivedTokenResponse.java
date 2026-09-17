@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
  * ({@code instagram-long-lived-exchange} 400 "Unsupported request - method type: get"). It did
  * not. With this fix deployed, a real connect produced a non-blank token and graph.instagram.com
  * returned the identical error. Which shape Meta actually sends was never observed — the
- * deserializer below now logs it (F-0819), and the real cause is still being diagnosed.
+ * deserializer below now logs it (F-0870), and the real cause is still being diagnosed.
  *
  * <p>The deserializer therefore accepts <b>both</b> shapes rather than swapping one guess for
  * another — a wrapped body is unwrapped, a flat body is read as-is. Same for {@code permissions},
@@ -78,10 +78,10 @@ public record InstagramShortLivedTokenResponse(
                             text(body, "access_token"),
                             text(body, "user_id"),
                             permissions(body.get("permissions")));
-            // F-0819 — record what Meta actually sent, as names and fingerprints only. The F-0818
+            // F-0870 — record what Meta actually sent, as names and fingerprints only. The F-0818
             // fix rested on a documented shape nobody had observed; this line observes it.
             log.info(
-                    "F-0819 instagram code-exchange response: shape={}, topLevelKeys={}, bodyKeys={},"
+                    "F-0870 instagram code-exchange response: shape={}, topLevelKeys={}, bodyKeys={},"
                             + " accessToken={}, userIdPresent={}, permissions={}",
                     shapeOf(root),
                     fieldNames(root),

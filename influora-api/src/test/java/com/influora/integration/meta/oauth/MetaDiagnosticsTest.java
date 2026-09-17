@@ -9,7 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * F-0819 — the fingerprints go into production logs, so the property that matters most is what
+ * F-0870 — the fingerprints go into production logs, so the property that matters most is what
  * they must NEVER contain. Every test below asserts on leakage as well as on format.
  */
 class MetaDiagnosticsTest {
@@ -18,7 +18,7 @@ class MetaDiagnosticsTest {
     private static final String SECRET = "0123456789abcdef0123456789abcdef";
 
     @Test
-    @DisplayName("F-0819: a token prints its 4-char type marker and length, nothing more")
+    @DisplayName("F-0870: a token prints its 4-char type marker and length, nothing more")
     void tokenShowsOnlyTypeMarkerAndLength() {
         String fp = MetaDiagnostics.tokenFingerprint(TOKEN);
 
@@ -27,7 +27,7 @@ class MetaDiagnosticsTest {
     }
 
     @Test
-    @DisplayName("F-0819: a short value prints no prefix, since 4 chars would be most of it")
+    @DisplayName("F-0870: a short value prints no prefix, since 4 chars would be most of it")
     void shortTokenPrintsNoPrefix() {
         String fp = MetaDiagnostics.tokenFingerprint("IGAAshort");
 
@@ -35,7 +35,7 @@ class MetaDiagnosticsTest {
     }
 
     @Test
-    @DisplayName("F-0819: a trailing carriage return is flagged — the CRLF-pasted env value case")
+    @DisplayName("F-0870: a trailing carriage return is flagged — the CRLF-pasted env value case")
     void trailingCarriageReturnIsFlagged() {
         assertTrue(MetaDiagnostics.tokenFingerprint(TOKEN + "\r").contains("whitespace"));
         assertTrue(MetaDiagnostics.secretFingerprint(SECRET + "\r").contains("whitespace"));
@@ -43,7 +43,7 @@ class MetaDiagnosticsTest {
     }
 
     @Test
-    @DisplayName("F-0819: null and blank are named, not hashed")
+    @DisplayName("F-0870: null and blank are named, not hashed")
     void nullAndBlankAreNamed() {
         assertEquals("null", MetaDiagnostics.tokenFingerprint(null));
         assertEquals("blank(len=2)", MetaDiagnostics.tokenFingerprint("  "));
@@ -51,7 +51,7 @@ class MetaDiagnosticsTest {
     }
 
     @Test
-    @DisplayName("F-0819: a secret prints a hash prefix and length, and no character of the secret")
+    @DisplayName("F-0870: a secret prints a hash prefix and length, and no character of the secret")
     void secretNeverPrintsItself() {
         String fp = MetaDiagnostics.secretFingerprint(SECRET);
 
@@ -60,7 +60,7 @@ class MetaDiagnosticsTest {
     }
 
     @Test
-    @DisplayName("F-0819: equal secrets hash equal and different secrets differ, so they can be compared")
+    @DisplayName("F-0870: equal secrets hash equal and different secrets differ, so they can be compared")
     void secretFingerprintsAreComparable() {
         assertEquals(
                 MetaDiagnostics.secretFingerprint(SECRET), MetaDiagnostics.secretFingerprint(SECRET));

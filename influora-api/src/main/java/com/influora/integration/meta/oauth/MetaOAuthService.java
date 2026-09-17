@@ -274,13 +274,13 @@ public class MetaOAuthService {
         try {
             return fetchToken(url, "instagram-long-lived-exchange");
         } catch (MetaApiException e) {
-            // F-0819 — this exchange fails in production with code 100 "Unsupported request -
+            // F-0870 — this exchange fails in production with code 100 "Unsupported request -
             // method type: get" although the request matches Meta's docs and the code exchange
             // before it produced a non-blank token. What is left to rule out are properties of the
             // VALUES: token type, which app's secret, stray whitespace. Fingerprints only — see
             // MetaDiagnostics for why each is safe to print.
             log.warn(
-                    "F-0819 instagram-long-lived-exchange diagnostics: shortLivedToken={},"
+                    "F-0870 instagram-long-lived-exchange diagnostics: shortLivedToken={},"
                             + " instagramAppId={}, instagramAppSecret={}, facebookAppSecret={},"
                             + " instagramSecretEqualsFacebookSecret={}",
                     MetaDiagnostics.tokenFingerprint(shortLivedToken),

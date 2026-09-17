@@ -27,7 +27,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 /**
- * F-0819 — the diagnostics that decide why the Instagram long-lived exchange is refused.
+ * F-0870 — the diagnostics that decide why the Instagram long-lived exchange is refused.
  *
  * <p>Uses a REAL {@code RestClient} bound to {@link MockRestServiceServer}, not a Mockito mock of
  * it: the failure being diagnosed lives in what actually goes on the wire, and a stubbed client
@@ -78,7 +78,7 @@ class MetaOAuthServiceInstagramDiagnosticsTest {
     }
 
     @Test
-    @DisplayName("F-0819: a refused long-lived exchange logs fingerprints and still throws")
+    @DisplayName("F-0870: a refused long-lived exchange logs fingerprints and still throws")
     void refusedExchangeLogsDiagnosticsAndRethrows() {
         server.expect(method(HttpMethod.GET))
                 .andRespond(
@@ -94,7 +94,7 @@ class MetaOAuthServiceInstagramDiagnosticsTest {
         List<ILoggingEvent> diagnostics =
                 logs.list.stream()
                         .filter(e -> e.getLevel() == Level.WARN)
-                        .filter(e -> e.getFormattedMessage().startsWith("F-0819"))
+                        .filter(e -> e.getFormattedMessage().startsWith("F-0870"))
                         .toList();
         assertEquals(1, diagnostics.size(), "exactly one diagnostics line per refused exchange");
         String line = diagnostics.get(0).getFormattedMessage();
@@ -104,7 +104,7 @@ class MetaOAuthServiceInstagramDiagnosticsTest {
     }
 
     @Test
-    @DisplayName("F-0819: no log line anywhere contains the token or either secret")
+    @DisplayName("F-0870: no log line anywhere contains the token or either secret")
     void neverLogsCredentials() {
         server.expect(method(HttpMethod.GET)).andRespond(withBadRequest());
 
@@ -118,7 +118,7 @@ class MetaOAuthServiceInstagramDiagnosticsTest {
     }
 
     @Test
-    @DisplayName("F-0819: a successful exchange logs nothing extra")
+    @DisplayName("F-0870: a successful exchange logs nothing extra")
     void successLogsNoDiagnostics() {
         server.expect(method(HttpMethod.GET))
                 .andRespond(
@@ -130,12 +130,12 @@ class MetaOAuthServiceInstagramDiagnosticsTest {
         service.exchangeInstagramForLongLivedToken(SHORT_TOKEN);
 
         assertTrue(
-                logs.list.stream().noneMatch(e -> e.getFormattedMessage().startsWith("F-0819")),
+                logs.list.stream().noneMatch(e -> e.getFormattedMessage().startsWith("F-0870")),
                 allLogText());
     }
 
     @Test
-    @DisplayName("F-0819: the code-exchange body's shape is logged as names, never values")
+    @DisplayName("F-0870: the code-exchange body's shape is logged as names, never values")
     void codeExchangeShapeIsLoggedWithoutValues() throws Exception {
         String body =
                 "{\"data\":[{\"access_token\":\"" + SHORT_TOKEN + "\",\"user_id\":17841400000000001,"
@@ -147,7 +147,7 @@ class MetaOAuthServiceInstagramDiagnosticsTest {
         String line =
                 logs.list.stream()
                         .map(ILoggingEvent::getFormattedMessage)
-                        .filter(m -> m.startsWith("F-0819 instagram code-exchange response"))
+                        .filter(m -> m.startsWith("F-0870 instagram code-exchange response"))
                         .findFirst()
                         .orElseThrow(() -> new AssertionError("no shape line: " + allLogText()));
         assertTrue(line.contains("shape=data-wrapped"), line);
