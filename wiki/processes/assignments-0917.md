@@ -151,6 +151,45 @@ comments are removed.
 
 ---
 
+## P1b — Meera Creator Phase B, from Priya's creator Q&A (2026-09-17)
+
+Source: `.proof-os/tasks/T-B0-CREATOR-QA-0917/answers.md`. Arjun spot-checked 9 claims on disk
+(unmerged 44, unpushed, uncommitted paste screen + `GetBriefExecutor`, 0.75 cap, no credit code,
+marketing copy, creator turns uncharged, wired tool list, 1-in-5 holdout) — all true.
+
+### L13 · Owner of the b0 worktree (confirm with Swapnil) · `influora-b0/` uncommitted files
+| Item | Work |
+|---|---|
+| B0-STRAND | `PasteBriefCard.tsx`, `GetBriefExecutor.java`, their tests, and 39 modified files exist only on disk. Commit them on `feat/meera-creator-phase-b0` and push the branch. A lost worktree loses the only paste screen. |
+
+**done_when:** `git -C influora-b0 status --porcelain` is empty; `git ls-remote origin feat/meera-creator-phase-b0` returns a sha; `git archive` of that sha compiles and `PasteBriefCard.test.tsx` passes there.
+**Status:** ASSIGNED — P0 for Phase B. Blocks D1.
+
+### L14 · Tejas + Ananya · `src/pages/meera-for-creators.tsx` (main)
+| Item | Work |
+|---|---|
+| COPY-DRAFT | Live marketing says "Meera drafts the reply; you send it" and "Your own PR manager" (lines 44, 77, 109). No draft exists. Port the b0 fix, which is also uncommitted. |
+
+**done_when:** a grep gate for `drafts the reply` over `src/` exits 0 on the commit.
+
+### L15 · Vikram · `influora-b0` Phase B tests
+| Item | Work |
+|---|---|
+| AGENCY-LEAK | Floor has `FloorBarrierTest`; agency name has no Java test. Extend the barrier to agency name. |
+| LANG-FIXTURE | No Hindi, Hinglish, Marathi or Tamil brief fixture anywhere. Add one per language to `test_brief_extract.py`, and pass the locale to the model (today it is only logged). |
+| DATE-GUARD | Deadline passes through unchecked (`brief_extract.py:324`). Drop a date not present in the brief, same as numbers. |
+
+**Status:** ASSIGNED, after L13 lands (same branch).
+
+### L16 · Priya · rulings
+| Item | Question |
+|---|---|
+| CAP | Spec says creator cap US$2.00; code and deploy say 0.75. Which one? |
+| HOLDOUT | 1 in 5 creators never see an opening ask, with no explanation on the card. Keep silent, or label it? |
+| CREDITS | CREDITS-SPEC puts the brief charge in B1, but paste shipped in B0 with no hook. Add the hook now (flag off), or wait for B1? |
+
+---
+
 ## Decisions only Swapnil can make
 
 | # | Question |
