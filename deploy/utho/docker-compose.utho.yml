@@ -169,6 +169,11 @@ services:
       VOICE_AI_BASE_URL: http://influora-ai:8000
       ANALYZE_SITE_AI_BASE_URL: http://influora-ai:8000
       CREATOR_COPILOT_AI_BASE_URL: http://influora-ai:8000
+      # ---- TrendSpark trend-pull data sources (T4 ingest job) ----
+      TREND_INGEST_ENABLED: ${TREND_INGEST_ENABLED:-false}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # ---- Creator AI Co-pilot batch (OFF unless set in .env) ----
       # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
       # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.
