@@ -276,7 +276,38 @@ public class CreatorNudgeService {
             return SuggestionResult.noSuggestionToday();
         }
 
-        SuggestionCopy copy = callAiSafely(creatorProfileId, theme, bestTrend.getTrendText());
+        // -------------------------------------------------------------------------------------
+        // F-0854 — THE content gate, trend-headline arm, ahead of the AI call. (vikram, 2026-09-17,
+        // ticket F-0854 — a murder headline previously reached influora-ai and its paraphrase was
+        // persisted status=ready, message_source=AI, because only `theme` was checked above this
+        // point and callAiSafely (below) sends bestTrend.getTrendText() — a RAW THIRD-PARTY
+        // headline — to influora-ai as a prompt input regardless of its content.)
+        // -------------------------------------------------------------------------------------
+        // The theme check above says nothing about the headline: they are independent
+        // server-derived values, and a safe theme must not wave an unsafe headline through to the
+        // paid AI call. Unlike the theme arm, there IS a safe substitute here — templatedFallback
+        // already knows how to degrade an unsafe headline to generic copy (F-0786) — so the
+        // response to an unsafe headline is to withhold it from the AI call and go straight to
+        // that same degrade, exactly as if influora-ai were unreachable. That keeps `copy` and the
+        // eventual message_source/row outcome identical to the existing offline-fallback path,
+        // while guaranteeing the raw headline is never sent to the model and never labelled AI.
+        // F-0786/F-0825's gate on the RESULTING copy (below, after callAiSafely) stays in place —
+        // it is what catches a SAFE headline that the model paraphrases into something unsafe,
+        // which this arm cannot see. Never log the headline text itself, only its category.
+        boolean headlineSafeToSendToAi = isQuotableInCreatorCopy(bestTrend.getTrendText());
+        if (!headlineSafeToSendToAi) {
+            log.warn(
+                    "CreatorNudgeService: withholding the trend headline from the AI call for"
+                            + " creator={} trend={} (category={}) — degrading straight to fallback"
+                            + " copy instead of paying for a model call",
+                    creatorProfileId,
+                    bestTrend.getId(),
+                    categoryNameFor(bestTrend.getTrendText()));
+        }
+        SuggestionCopy copy =
+                headlineSafeToSendToAi
+                        ? callAiSafely(creatorProfileId, theme, bestTrend.getTrendText())
+                        : null;
         NudgeMessageSource messageSource;
         String headline;
         String contentIdea;

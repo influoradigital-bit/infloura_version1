@@ -830,15 +830,17 @@ class CreatorNudgeServiceTest {
         givenNoRowYetToday();
         givenSaveEchoesArgument();
         givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), sample.headline()));
-        // Force the fallback path — the one F-0786 is about, which runs when influora-ai is
-        // unreachable and no AI-side safety layer is in play.
-        when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
+        // F-0854 (vikram, 2026-09-17): an unsafe headline is now withheld from the AI call
+        // entirely (see CreatorNudgeService.getSuggestion's trend-headline gate), so this stub is
+        // never exercised — lenient, and verified unreached below via verifyNoInteractions.
+        lenient().when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
 
         SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
 
         // Silent-but-functional: the co-pilot degrades, it does not throw and does not go dark.
         assertEquals("ready", result.status());
         assertNotNull(result.suggestion());
+        verifyNoInteractions(aiClient);
 
         CreatorNudgeLog saved = captureSaved();
         assertEquals(NudgeMessageSource.FALLBACK, saved.getMessageSource());
@@ -910,11 +912,14 @@ class CreatorNudgeServiceTest {
         givenNoRowYetToday();
         givenSaveEchoesArgument();
         givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), null));
-        when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
+        // F-0854 (vikram, 2026-09-17): a null headline fails isQuotableInCreatorCopy, so it is now
+        // withheld from the AI call before this stub could ever be exercised — lenient.
+        lenient().when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
 
         SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
 
         assertEquals("ready", result.status());
+        verifyNoInteractions(aiClient);
         CreatorNudgeLog saved = captureSaved();
         assertEquals(NudgeMessageSource.FALLBACK, saved.getMessageSource());
         // The pre-F-0786 template would have rendered: There's a trend around "null" that fits...
@@ -935,10 +940,13 @@ class CreatorNudgeServiceTest {
         givenNoRowYetToday();
         givenSaveEchoesArgument();
         givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), blankHeadline));
-        when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
+        // F-0854 (vikram, 2026-09-17): a blank headline fails isQuotableInCreatorCopy, so it is
+        // now withheld from the AI call before this stub could ever be exercised — lenient.
+        lenient().when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
 
         service.getSuggestion(CREATOR_PROFILE_ID);
 
+        verifyNoInteractions(aiClient);
         CreatorNudgeLog saved = captureSaved();
         assertFalse(
                 saved.getHeadline().contains("your " + THEME_ACTION + " content"),
@@ -1366,10 +1374,13 @@ class CreatorNudgeServiceTest {
         givenNoRowYetToday();
         givenSaveEchoesArgument();
         givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), invisible));
-        when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
+        // F-0854 (vikram, 2026-09-17): an all-invisible headline fails isQuotableInCreatorCopy, so
+        // it is now withheld from the AI call before this stub could ever be exercised — lenient.
+        lenient().when(aiClient.requestSuggestion(any(), any(), any())).thenReturn(null);
 
         service.getSuggestion(CREATOR_PROFILE_ID);
 
+        verifyNoInteractions(aiClient);
         CreatorNudgeLog saved = captureSaved();
         assertEquals(NudgeMessageSource.FALLBACK, saved.getMessageSource());
         assertFalse(
@@ -1395,6 +1406,15 @@ class CreatorNudgeServiceTest {
      * <p>Against the pre-fix code this returns a non-null {@link SuggestionCopy}, so the service
      * took the AI branch: the headline was persisted verbatim and stamped {@code AI}. Both halves
      * are asserted here.
+     *
+     * <p><b>F-0854 update (vikram, 2026-09-17):</b> this fixture's headline is itself unsafe, so
+     * the new trend-headline gate now withholds it from the AI call before this scenario can even
+     * arise — the stub below is unreachable and is marked lenient, with {@code
+     * verifyNoInteractions} added to prove it. The assertions on the persisted/served copy are
+     * left as-is: they still hold (via {@code templatedFallback}'s own duplicate check) and remain
+     * the right regression guard for the case a SAFE headline comes back from a model paraphrase
+     * that happens to be unsafe, which {@link #getSuggestion_aiLabelledUnsafeCopy_isStillFilteredAndDowngraded()}
+     * covers directly.
      */
     @Test
     @DisplayName("F-0825: a python-side FALLBACK 200 carrying an unsafe headline is filtered AND logged FALLBACK")
@@ -1404,8 +1424,10 @@ class CreatorNudgeServiceTest {
         givenNoRowYetToday();
         givenSaveEchoesArgument();
         givenActiveTrends(trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), unsafeHeadline));
-        // Exactly what influora-ai's fallback_message branch returns: a SUCCESSFUL call.
-        when(aiClient.requestSuggestion(any(), any(), any()))
+        // Exactly what influora-ai's fallback_message branch returns: a SUCCESSFUL call. F-0854:
+        // now unreachable (the headline is withheld before the AI call), hence lenient.
+        lenient()
+                .when(aiClient.requestSuggestion(any(), any(), any()))
                 .thenReturn(
                         new SuggestionCopy(
                                 "Asha, your action content is trending right now",
@@ -1415,6 +1437,7 @@ class CreatorNudgeServiceTest {
         SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
 
         assertEquals("ready", result.status());
+        verifyNoInteractions(aiClient);
         CreatorNudgeLog saved = captureSaved();
 
         // Half 1 — the content gate now runs on this path.
@@ -1620,6 +1643,72 @@ class CreatorNudgeServiceTest {
         assertEquals("no_suggestion_today", result.status());
         verifyNoInteractions(aiClient);
         verifyNoNudgeRowWritten();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // F-0854 — the trend headline gate runs before influora-ai is paid
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * F-0854: a safe theme says nothing about the headline. Before this fix, only {@code theme}
+     * was checked ahead of {@code callAiSafely}, so a safe-themed trend carrying an unsafe
+     * headline sent the RAW headline (F-0786's "third-party news headline") to influora-ai as a
+     * prompt input — Kabir's finding was a murder headline reaching the AI and its paraphrase
+     * being persisted {@code status=ready}, {@code message_source=AI}. (vikram, 2026-09-17,
+     * F-0854)
+     *
+     * <p>Unlike the theme arm ({@link #getSuggestion_unsafeTheme_neverCallsTheAiClient()}), an
+     * unsafe headline does not blank out the whole suggestion: it withholds the headline from the
+     * AI call and degrades straight to the same generic fallback copy {@link
+     * #templatedFallback} already produces for this headline offline — so the co-pilot still
+     * returns {@code status=ready}, just never with the AI ever having seen the headline and never
+     * labelled {@code message_source=AI}. {@code verifyNoInteractions(aiClient)} is used, not an
+     * {@code anyString()} never()-verify, per this class's javadoc on why the latter passes
+     * vacuously against a null {@code trendText}. The AI client is stubbed (leniently, since it
+     * must not actually be invoked) to return copy labelled AI — the worst case for this
+     * assertion, since against the pre-fix code that is exactly what would have been persisted.
+     */
+    @Test
+    @DisplayName("F-0854: an unsafe trend headline with a SAFE theme never reaches the AI, and no AI-labelled row is saved")
+    void getSuggestion_unsafeTrendHeadlineWithSafeTheme_neverCallsAiAndSavesNoAiRow() {
+        String unsafeHeadline = "MURDER probe widens in Pune";
+        assertEquals(
+                UnsafeHeadlineTopic.CRIME,
+                CreatorNudgeService.firstUnsafeTopic(unsafeHeadline),
+                "test premise broken: this sample headline is not classified unsafe");
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(THEME_ACTION),
+                "test premise broken: the matched theme itself must be safe, or this test cannot"
+                        + " isolate the headline arm from the theme arm");
+
+        givenProfile("Asha", themesJson(THEME_ACTION, THEME_STRENGTH));
+        givenNoRowYetToday();
+        givenSaveEchoesArgument();
+        givenActiveTrends(
+                trend(TREND_ID, themesJson(THEME_STRENGTH, THEME_ACTION), unsafeHeadline));
+        // Stubbed leniently to return copy labelled AI: against the pre-fix code this is exactly
+        // what would have been persisted with message_source=AI, which is the bug this test pins.
+        // Lenient because the fix must never actually invoke this stub at all.
+        lenient()
+                .when(aiClient.requestSuggestion(any(), any(), any()))
+                .thenReturn(new SuggestionCopy("Asha, a safe headline", "A safe idea.", "AI"));
+
+        SuggestionResult result = service.getSuggestion(CREATOR_PROFILE_ID);
+
+        assertEquals("ready", result.status());
+        verifyNoInteractions(aiClient);
+        CreatorNudgeLog saved = captureSaved();
+        assertEquals(
+                NudgeMessageSource.FALLBACK,
+                saved.getMessageSource(),
+                "an unsafe headline must never be sent to the AI, and the saved row must never be"
+                        + " labelled message_source=AI");
+        assertFalse(
+                (saved.getHeadline() + " || " + saved.getContentIdea())
+                        .toLowerCase(Locale.ROOT)
+                        .contains("murder"),
+                "the unsafe headline must not be quoted in the persisted copy either: "
+                        + saved.getContentIdea());
     }
 
     // ---------------------------------------------------------------------------------------
