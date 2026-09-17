@@ -16,10 +16,11 @@ import java.lang.annotation.Target;
  * com.influora.domain.entity.Plan} for the request (it runs after {@code JwtAuthenticationFilter}
  * in {@code SecurityConfig}) — this annotation only makes sense on brand-authenticated routes.
  *
- * <p>As of BR-14, {@code CampaignTemplateController#saveAsTemplate} uses this with {@code
- * feature = PlanFeature.CAMPAIGN_TEMPLATES}. {@code EXPORT} still has no annotated endpoint; this
- * annotation + {@link PlanGateInterceptor} remain the ready mechanism for whichever future export
- * endpoint adds it.
+ * <p><b>Live call sites — both features are enforced on real endpoints.</b> {@code
+ * CampaignTemplateController#saveAsTemplate} uses {@code feature = PlanFeature.CAMPAIGN_TEMPLATES}
+ * (BR-14), and {@code ReportExportController#export} ({@code GET /campaigns/{campaignId}/export})
+ * uses {@code feature = PlanFeature.EXPORT}. Removing either annotation, or either branch of the
+ * switch in {@link PlanGateInterceptor}, un-gates a paid feature for Free workspaces.
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

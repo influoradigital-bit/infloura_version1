@@ -4,11 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.domain.entity.Plan;
 import com.influora.domain.enums.PlanFeature;
+import com.influora.web.ReportExportController;
 import java.lang.reflect.Method;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,13 +20,21 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.method.HandlerMethod;
 
 /**
- * Task 22 — real object test of {@link PlanGateInterceptor#preHandle}. Exercised here against a
- * throwaway {@code EXPORT}-annotated handler method (that feature still has no real endpoint), the
- * same way Spring MVC would resolve a real one, proving the mechanism itself is correctly wired.
- * The other {@link com.influora.domain.enums.PlanFeature}, {@code CAMPAIGN_TEMPLATES}, now has a
- * real annotated endpoint ({@code CampaignTemplateController#saveAsTemplate}, BR-14) — see {@code
- * CampaignTemplateControllerTest} for the 402 case driven against that real controller method
- * instead of a fake one.
+ * Task 22 — real object test of {@link PlanGateInterceptor#preHandle}.
+ *
+ * <p><b>Both {@link com.influora.domain.enums.PlanFeature} constants are enforced on real
+ * endpoints.</b> {@code EXPORT} gates {@code ReportExportController#export} ({@code GET
+ * /campaigns/&#123;campaignId&#125;/export}), which carries {@code @RequiresPlan(feature =
+ * PlanFeature.EXPORT)}; {@code CAMPAIGN_TEMPLATES} gates {@code
+ * CampaignTemplateController#saveAsTemplate} (BR-14) — see {@code CampaignTemplateControllerTest}
+ * for that one's 402 case. Nothing about the {@code EXPORT} branch is dead code.
+ *
+ * <p>The {@code FakeExportController} below still exists to cover the handler shapes a real
+ * controller cannot express (an UNannotated method, and a gated method reached with no plan
+ * resolved upstream). The {@code realExportEndpoint*} tests below resolve the ACTUAL {@code
+ * ReportExportController#export} method the way Spring MVC would, so deleting that annotation —
+ * or the {@code case EXPORT} branch of the interceptor's switch — turns this class RED instead of
+ * silently un-gating export for every Free workspace.
  */
 class PlanGateInterceptorTest {
 
@@ -80,6 +90,49 @@ class PlanGateInterceptorTest {
                 interceptor.preHandle(request, new MockHttpServletResponse(), handlerMethodFor("exportReport"));
 
         assertTrue(result);
+    }
+
+    /**
+     * The REAL production handler method, resolved exactly as Spring MVC resolves it. No fake
+     * controller: if {@code @RequiresPlan(feature = PlanFeature.EXPORT)} is ever removed from
+     * {@code ReportExportController#export}, {@code getMethodAnnotation} returns null and the
+     * interceptor no-ops, failing the two tests below.
+     */
+    private HandlerMethod realExportEndpoint() throws NoSuchMethodException {
+        Method method =
+                ReportExportController.class.getMethod(
+                        "export", AuthPrincipal.class, String.class, String.class);
+        return new HandlerMethod(new ReportExportController(null), method);
+    }
+
+    @Test
+    @DisplayName("REAL ReportExportController#export, Free plan: genuinely 402 UPGRADE_REQUIRED — export IS gated, the EXPORT branch is not dead code")
+    void testRealExportEndpointRejectsFreePlan() throws Exception {
+        Plan freePlan = mock(Plan.class);
+        when(freePlan.isExportEnabled()).thenReturn(false);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/campaigns/c1/export");
+        request.setAttribute(PlanGateFilter.RESOLVED_PLAN_ATTR, freePlan);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> interceptor.preHandle(request, new MockHttpServletResponse(), realExportEndpoint()));
+
+        assertEquals(HttpStatus.PAYMENT_REQUIRED, ex.getStatus());
+        assertEquals("UPGRADE_REQUIRED", ex.getCode());
+        verify(freePlan).isExportEnabled();
+    }
+
+    @Test
+    @DisplayName("REAL ReportExportController#export, Pro plan: genuinely allowed, and the decision genuinely came from Plan.isExportEnabled()")
+    void testRealExportEndpointAllowsProPlan() throws Exception {
+        Plan proPlan = mock(Plan.class);
+        when(proPlan.isExportEnabled()).thenReturn(true);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/campaigns/c1/export");
+        request.setAttribute(PlanGateFilter.RESOLVED_PLAN_ATTR, proPlan);
+
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), realExportEndpoint()));
+        verify(proPlan).isExportEnabled();
     }
 
     @Test

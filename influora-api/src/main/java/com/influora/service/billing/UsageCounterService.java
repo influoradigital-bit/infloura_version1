@@ -15,10 +15,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Per-workspace, per-metric, per-billing-cycle usage counters (tracked creators, creator-analytics
- * views, exports). Task 18 subscription-billing functional core, Phase 1. Task 22's {@code
- * PlanGateFilter} (Phase 3) will read {@link #getUsageForCurrentPeriod} before allowing a gated
- * operation and call {@link #incrementUsage} after.
+ * Per-workspace, per-metric, per-billing-cycle usage counters. The metrics that exist are exactly
+ * the constants of {@link UsageMetric}: tracked creators and creator-analytics views. Task 18
+ * subscription-billing functional core, Phase 1.
+ *
+ * <p><b>There is no export counter, and export is not counter-gated.</b> The {@code EXPORT}
+ * capability is a boolean on the plan ({@code Plan.isExportEnabled()}), enforced by {@code
+ * PlanGateInterceptor} on {@code ReportExportController#export} — it never reads or writes a
+ * counter row. F-2 deleted the structurally-dead {@code UsageMetric.EXPORT} meter; do not
+ * reintroduce one on the assumption that export is metered.
+ *
+ * <p>{@code AnalyticsUsageCapInterceptor} (Task 22 Phase 3) is the caller that reads {@link
+ * #getUsageForCurrentPeriod} before allowing a capped operation and calls {@link #incrementUsage}
+ * after — see the dedup note below for which entry point it actually uses.
  *
  * <p><b>Per-creator-lookup dedup (Task 22 Flag #1 fix, Rohan CFO ruling in SHARED_CONTEXT.md
  * 2026-07-14):</b> {@link #recordCreatorLookup} is the cap-checked entry point for metrics where
@@ -40,6 +49,25 @@ public class UsageCounterService {
         this.usageCounterRepository = usageCounterRepository;
         this.usageCounterDetailRepository = usageCounterDetailRepository;
         this.subscriptionService = subscriptionService;
+    }
+
+    /**
+     * The billing-cycle anchor every {@code *ForCurrentPeriod} read on this service is resolved
+     * against, exposed so a caller that REPORTS a period alongside those counts labels them with
+     * the period they were actually read from.
+     *
+     * <p>Do not re-derive it as "start of the current UTC calendar month": that is only the
+     * no-subscription fallback (see {@link #resolvePeriodStart}). A workspace with a Subscription
+     * row is anchored on {@code currentPeriodStart}, which is mid-month for anything Razorpay
+     * ({@code RazorpayWebhookController} upsert), admin-comp ({@code
+     * SubscriptionService#grantCompSubscription}, {@code periodStart = Instant.now()}) or the
+     * renewal safety net ({@code SubscriptionRenewalResetJob}, which advances by the previous
+     * cycle length) established — so the calendar-month guess and the real anchor genuinely differ
+     * for those workspaces, and the reported period would contradict both the counts beside it and
+     * {@code GET /billing/plan}'s {@code currentPeriodStart}.
+     */
+    public LocalDate getCurrentPeriodStart(String workspaceId) {
+        return resolvePeriodStart(workspaceId);
     }
 
     public int getUsageForCurrentPeriod(String workspaceId, UsageMetric metric) {

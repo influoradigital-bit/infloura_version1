@@ -27,8 +27,10 @@ import org.springframework.stereotype.Component;
  * delayed — a workspace whose subscription is still nominally {@code ACTIVE} but whose {@code
  * currentPeriodEnd} has already passed is stuck with a stale billing-cycle anchor: {@code
  * UsageCounterService#resolvePeriodStart} derives the "current period" straight from that column,
- * so a stale {@code currentPeriodStart} means usage caps (tracked creators, analytics views,
- * exports) never reset even though the workspace should be in a fresh billing cycle.
+ * so a stale {@code currentPeriodStart} means the metered usage caps (tracked creators, analytics
+ * views — the whole of {@code UsageMetric}) never reset even though the workspace should be in a
+ * fresh billing cycle. Export is NOT among them: it is a per-plan boolean
+ * ({@code Plan.isExportEnabled()}), not a counter, so it has nothing to reset.
  *
  * <p><b>Query naturally excludes already-renewed subscriptions</b> (per the task breakdown):
  * {@code currentPeriodEnd < now()} is only ever true for a subscription the webhook has NOT yet

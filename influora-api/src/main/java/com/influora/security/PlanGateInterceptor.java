@@ -15,12 +15,17 @@ import jakarta.servlet.http.HttpServletResponse;
  * missing attribute (non-brand caller, or a workspace {@link PlanGateFilter} could not resolve)
  * fails closed here rather than silently letting a gated feature through.
  *
- * <p>As of BR-14, {@code POST /campaign-templates} ({@code
- * CampaignTemplateController#saveAsTemplate}) carries {@code @RequiresPlan(CAMPAIGN_TEMPLATES)}
- * and is gated live by this interceptor — see {@code CampaignTemplateControllerTest} for the real
- * 402 case exercised against that endpoint. {@code EXPORT} still has no annotated endpoint; for
- * that feature this class remains the ready mechanism, and an unannotated route is a no-op here
- * (see {@code preHandle}: no annotation short-circuits on the very first check).
+ * <p><b>Both {@link com.influora.domain.enums.PlanFeature} constants are live on real endpoints —
+ * neither switch branch below is dead code.</b> {@code CAMPAIGN_TEMPLATES} gates {@code POST
+ * /campaign-templates} ({@code CampaignTemplateController#saveAsTemplate}, BR-14) — see {@code
+ * CampaignTemplateControllerTest} for the real 402 case. {@code EXPORT} gates {@code GET
+ * /campaigns/{campaignId}/export} ({@code ReportExportController#export}), which carries {@code
+ * @RequiresPlan(feature = PlanFeature.EXPORT)}: deleting {@code case EXPORT -> plan
+ * .isExportEnabled()} would silently un-gate campaign export for every Free workspace. {@code
+ * PlanGateInterceptorTest} drives that real controller method through this interceptor.
+ *
+ * <p>An unannotated route is a no-op here (see {@code preHandle}: no annotation short-circuits on
+ * the very first check).
  */
 public class PlanGateInterceptor implements HandlerInterceptor {
 
