@@ -38,7 +38,7 @@ price stored in paise (`V55__seed_billing_plans.sql:32` = 499900) and shown by `
 | A1 Push | ✅ DONE 2026-09-17 | `1921786` pushed; Backend CI, Frontend Checks, TrendSpark green |
 | A2 Razorpay keys on VPS | ⏳ Swapnil to run the check command | unchanged |
 | A3 Backfill on prod | ⏳ after A2, needs a deploy | unchanged |
-| **A4 Comp 27 brands** | ⛔ **BLOCKED on S2** | A comp's expiry is never enforced; the renewal job extends it forever. Comping today = permanent free Pro |
+| **A4 Comp 27 brands** | ⏳ Unblocked in code by S2 (`0b7f263`) — needs A3 and a deploy first | Comp expiry is now enforced by the renewal job; it only works on production once the new build is live |
 
 ---
 
@@ -59,6 +59,7 @@ price stored in paise (`V55__seed_billing_plans.sql:32` = 499900) and shown by `
 ```
 
 ### S2 · Vikram · `SubscriptionRenewalResetJob.java`, `SubscriptionDunningJob.java` — **must land before A4**
+**Status: ✅ DONE 2026-09-17** — `0b7f263` + `6c13982` (test) + `cde61e2` (gate). Kabir approved (3rd pass, 13 mutants), Kavya passed. F-0859/F-0860/F-0861 closed via `.proof-os/gates/F-0859-F-0860-F-0861-renewal-job.sh`. Also shipped: job-driven PAST_DUE/HALTED emails, race-safe writes. Left open: F-0876 (unverifiable Pro keeps Pro), F-0880 (webhook emails on a stale-skipped delivery). `SubscriptionDunningJob` was not changed.
 | Gap | Work | Source |
 |---|---|---|
 | Comps never expire | Revert a comp to Free at `compExpiresAt`. Exclude comp rows from the renewal sweep. | brand N3 |
