@@ -26,6 +26,11 @@ import { JsonLd, getBreadcrumbListSchema, getWebPageSchema } from '@/lib/seo/sch
  * later phases are specs. The storyboard was truth-checked by the CTO against
  * the phase specs (2026-09-05); keep the five cards in sync with the demo
  * script if either changes.
+ *
+ * ananya, 2026-09-17, L14: removed the reply-drafting claims and the "personal
+ * manager" framing — the shipped Phase A code only reads a pasted brief and advises
+ * (summary, risk flags, suggested price); it does not draft, send, or act on the
+ * creator's behalf. Put a claim back only once the code behind it exists.
  */
 
 const MeeraDemoPlayer = lazy(() =>
@@ -41,7 +46,7 @@ const CARDS = [
   {
     icon: FileText,
     title: 'Paste a brief, get a straight answer',
-    body: 'What is on offer, what is wrong with it, and what to ask for. Meera drafts the reply; you send it.',
+    body: 'What is on offer, what is wrong with it, and what to ask for.',
   },
   {
     icon: Wallet,
@@ -74,14 +79,14 @@ export default function MeeraForCreatorsPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Meera for Creators"
-        description="Your own PR manager, on your side. Paste a brand brief and Meera reads it, tells you the rate, and drafts the reply. Coming soon on Influora."
+        description="Paste a brand brief and Meera reads it, tells you the rate, and flags what's off. Coming soon on Influora."
         canonical="/meera-for-creators"
       />
       <JsonLd
         data={getWebPageSchema({
           name: 'Meera for Creators',
           description:
-            'A scripted preview of Meera, the creator-side AI PR manager coming to Influora: brief reading, rate guidance, approval-gated replies, money tracking, weekly notes, and brand discovery.',
+            'A scripted preview of Meera, the creator-side AI deal advisor coming to Influora: brief reading, rate guidance, risk flags, money tracking, weekly notes, and brand discovery.',
           url: '/meera-for-creators',
         })}
       />
@@ -103,11 +108,11 @@ export default function MeeraForCreatorsPage() {
                 In the works · coming soon
               </Badge>
               <h1 className="mt-4 text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-                Your own PR manager. On your side.
+                Someone in your corner. Before you reply.
               </h1>
               <p className="mt-4 text-lg text-muted-foreground">
-                Paste a brand brief. Meera reads it, tells you what to charge, and drafts the reply.
-                The send button is always yours.
+                Paste a brand brief. Meera reads it, tells you what to charge, and flags what's off.
+                What you say back is yours to write.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button
@@ -228,19 +233,18 @@ export default function MeeraForCreatorsPage() {
         <section className="border-t border-border/60 py-20">
           <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-2">
             <FadeUp>
-              <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Three promises</h2>
+              <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Two promises</h2>
               <ul className="mt-6 grid gap-4 text-left sm:grid-cols-2 lg:grid-cols-1">
                 <li className="rounded-xl border border-border/60 bg-background p-4 text-sm">
-                  <span className="font-semibold">You decide.</span> Every message goes out only after
-                  you approve it.
+                  <span className="font-semibold">You decide.</span> Meera tells you what she thinks.
+                  What you say to a brand is up to you, start to finish.
                 </li>
-                <li className="rounded-xl border border-border/60 bg-background p-4 text-sm">
-                  <span className="font-semibold">Brands will know.</span> Every reply is labelled:
-                  drafted with Meera, approved by you.
-                </li>
+                {/* ananya, 2026-09-17, L14: dropped the third promise ("Brands will know...
+                    drafted with Meera") — no reply is drafted and no brand-facing label exists in
+                    the shipped code. See file header. */}
                 <li className="rounded-xl border border-border/60 bg-background p-4 text-sm">
                   <span className="font-semibold">Your floor is yours.</span> A brand never sees it, and
-                  Meera never says yes below it.
+                  Meera flags any offer below it so you can decide.
                 </li>
               </ul>
             </FadeUp>
@@ -249,7 +253,7 @@ export default function MeeraForCreatorsPage() {
 
               indian-female-content-creator-sitting-at-an-outdoor--b0f487.jpg shows a
               phone running a fabricated Influora app screen ("Influora - Meera for
-              Creators / AI PR Manager") listing live brand deals with Nykaa, Zara
+              Creators / AI PR-Manager") listing live brand deals with Nykaa, Zara
               India (₹65k) and Myntra (₹50k), rendered with those companies' real
               trademarked logos.
 
