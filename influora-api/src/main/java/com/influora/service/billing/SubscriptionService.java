@@ -90,21 +90,16 @@ import org.springframework.transaction.annotation.Transactional;
  *       BillingController#getPlan} resolves its workspace through {@code
  *       BrandContextService#requireBrandWorkspace}, which checks the USER's {@code
  *       UserType.BRAND}, that user's soft-deletion, and {@code Workspace#isSuspended} — never
- *       {@code Workspace#getType}. An {@code AGENCY} workspace is reachable in practice, too:
- *       {@code OnboardingService#saveBrandCompany} passes the client-supplied {@code
- *       BrandCompanyRequest.workspaceType} (declared {@code @NotNull WorkspaceType}, so {@code
- *       AGENCY} is an accepted value) straight into {@code Workspace#applyCompanyDetails}, so a
- *       brand user can flip their own workspace to {@code AGENCY} and then hit {@code
- *       GET /billing/plan}. What is true is narrower than the old claim: the two eager
+ *       {@code Workspace#getType}. Since F-0892, {@code Workspace#applyCompanyDetails} stores
+ *       {@code BRAND} whatever type the client sends, so only a row written before migration
+ *       {@code V20260918140000} can still be {@code AGENCY}. The two eager
  *       workspace-creation paths never provision an {@code AGENCY} workspace, because the only
  *       workspace they can reach is one {@code Workspace.newBrand(...)} just built.
  *       <p>The one-time backfill for workspaces created before F-4 (migration {@code
  *       V20260912120000__backfill_free_subscriptions.sql}) carries its own {@code
- *       WHERE w.type = 'BRAND'} predicate. Whether that predicate excludes any real row — or
- *       instead skips pre-existing workspaces the backfill exists to repair — is OPEN at the
- *       time of writing and needs production data no build environment here can reach ({@code
- *       SELECT type, COUNT(*) FROM workspaces GROUP BY type}). This bullet asserts only that the
- *       predicate is present in that file; it does not vouch for it.
+ *       WHERE w.type = 'BRAND'} predicate, which skipped the 4 AGENCY workspaces on production;
+ *       {@code V20260918140000__convert_agency_workspaces_to_brand.sql} converts them and gives
+ *       them the same Free row.
  *       <p>No payment risk regardless of caller or workspace type: {@link
  *       #createFreeSubscription} hard-codes {@code PlanService#getFreePlan} and {@code
  *       SubscriptionStatus.ACTIVE}, so this path can never write {@code PRO}.

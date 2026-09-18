@@ -9,10 +9,14 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Entity
 @Table(name = "workspaces")
 public class Workspace {
+
+    private static final Logger log = LoggerFactory.getLogger(Workspace.class);
 
     @Id
     @Column(length = 26)
@@ -297,6 +301,29 @@ public class Workspace {
         return updatedAt;
     }
 
+    /**
+     * F-0892 (wiki/decisions/2026-09-18-agency-chooser-removed.md): "Onboarding offers BRAND only.
+     * The 4 existing AGENCY workspaces convert to BRAND." This entity is the single chokepoint
+     * every {@code type} write passes through ({@link #applyCompanyDetails}, reached from {@code
+     * OnboardingService} with the client's {@code workspaceType}), so it is where the ruling is
+     * enforced: {@code null} defaults to BRAND as before, and {@code AGENCY} is now coerced to
+     * BRAND too rather than stored. Coerce, not throw -- a stale cached frontend client that still
+     * sends the removed AGENCY choice must be able to finish onboarding as a BRAND workspace
+     * instead of hard-failing the request. {@link WorkspaceType#AGENCY} stays in the enum only so
+     * the 4 pre-ruling rows (until {@code V20260918140000} backfills them) and any other
+     * still-AGENCY row keep loading.
+     */
+    private WorkspaceType coerceType(WorkspaceType type) {
+        if (type == WorkspaceType.AGENCY) {
+            log.warn(
+                    "Workspace type AGENCY requested for workspace {} -- coerced to BRAND per"
+                            + " F-0892 (wiki/decisions/2026-09-18-agency-chooser-removed.md)",
+                    id);
+            return WorkspaceType.BRAND;
+        }
+        return type != null ? type : WorkspaceType.BRAND;
+    }
+
     public void applyCompanyDetails(
             String name,
             String slug,
@@ -308,7 +335,7 @@ public class Workspace {
             String logoUrl) {
         this.name = name;
         this.slug = slug;
-        this.type = type != null ? type : WorkspaceType.BRAND;
+        this.type = coerceType(type);
         this.industry = industry;
         this.companySize = companySize;
         this.websiteUrl = websiteUrl;

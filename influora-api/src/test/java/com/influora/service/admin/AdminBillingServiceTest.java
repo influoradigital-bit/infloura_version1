@@ -18,6 +18,7 @@ import com.influora.domain.enums.AdminRole;
 import com.influora.domain.enums.PlanCode;
 import com.influora.domain.enums.SubscriptionStatus;
 import com.influora.domain.enums.WorkspaceType;
+import org.springframework.test.util.ReflectionTestUtils;
 import com.influora.repository.SubscriptionRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
@@ -246,12 +247,10 @@ class AdminBillingServiceTest {
 
     private Workspace agencyWorkspace() {
         Workspace w = Workspace.newBrand(WORKSPACE_ID, "Some Agency", "some-agency", "Marketing", "1-10");
-        // newBrand() hardcodes WorkspaceType.BRAND — reflection isn't used elsewhere in this
-        // codebase's tests for entity state setup, so this test instead relies on
-        // applyCompanyDetails() to flip the type field to AGENCY, mirroring how the entity itself
-        // is the only supported mutation path.
-        w.applyCompanyDetails(
-                "Some Agency", "some-agency", WorkspaceType.AGENCY, "Marketing", "1-10", null, null, null);
+        // F-0892: applyCompanyDetails now coerces AGENCY to BRAND, so no code path can create an
+        // AGENCY workspace. Rows written before that still load as AGENCY until the conversion
+        // migration runs, which is the case this guard exists for; set the field the way JPA does.
+        ReflectionTestUtils.setField(w, "type", WorkspaceType.AGENCY);
         return w;
     }
 }
