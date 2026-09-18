@@ -144,7 +144,17 @@ services:
       MEERA_STREAM_SIGNING_SECRET: ${MEERA_STREAM_SIGNING_SECRET}
       INTERNAL_SERVICE_TOKEN_SECRET: ${INTERNAL_SERVICE_TOKEN_SECRET}
       INTERNAL_REQUEST_HMAC_SECRET: ${INTERNAL_REQUEST_HMAC_SECRET}
-      INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET: ${INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET}
+      # T-GOLIVE-0918-R2 [meera · 2026-09-18] — MEDIUM repair (compose-forwards-what-the-app-binds.sh
+      # gate): this line used to forward INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET, Spring's
+      # relaxed-binding alias, which has NO `${}` placeholder anywhere in application.yml — the
+      # property application.yml:279 actually binds via `${...}` is BRAND_SAFETY_SERVICE_TOKEN_SECRET
+      # (same rename Utho's two compose files and generate-env.sh already made — see
+      # wiki/processes/go-live-0918.md §2). An explicit `environment:` map still creates the OLD
+      # key's container env entry even when its backing host var is unset (Compose defaults it to
+      # "" and warns), and an OS-environment source deterministically outranks an application.yml
+      # placeholder-resolved value — so this line would have shadowed a correctly-set secret with a
+      # blank one on every Hostinger boot. Do not re-add the old name; see BrandSafetyServiceTokenProperties.java:42-56.
+      BRAND_SAFETY_SERVICE_TOKEN_SECRET: ${BRAND_SAFETY_SERVICE_TOKEN_SECRET}
       # ---- Keys with no YAML default (doc 06 §2.2) ----
       INFLUORA_JWKS_PRIVATEKEYPEM: ${INFLUORA_JWKS_PRIVATEKEYPEM}
       INFLUORA_JWKS_PUBLICKEYPEM: ${INFLUORA_JWKS_PUBLICKEYPEM}
@@ -185,10 +195,37 @@ services:
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      # T-GOLIVE-0918-R2 [meera · 2026-09-18] — MEDIUM repair (compose-forwards-what-the-app-binds.sh
+      # gate): TREND_INGEST_PULL_CRON, _MAX_ROWS_PER_RUN and _REGION all have a `${}` placeholder in
+      # application.yml:570-577 and are already forwarded by both Utho compose files, but were never
+      # forwarded here. TrendPullJob.java:166's own @Scheduled resolves pull-cron straight from the
+      # Environment (never through TrendIngestProperties#setPullCron's blank guard), so a
+      # present-but-empty value here would fail cron parsing at boot — same load-bearing default as
+      # Utho's copy of this comment. classifier-workspace-id is intentionally still blank-default;
+      # see the identical Utho comment and wiki/processes/go-live-0918.md §2 for why this lane does
+      # not pick a value for it.
+      TREND_INGEST_PULL_CRON: ${TREND_INGEST_PULL_CRON:-0 0 5 * * *}
+      TREND_INGEST_MAX_ROWS_PER_RUN: ${TREND_INGEST_MAX_ROWS_PER_RUN:-100}
+      TREND_INGEST_REGION: ${TREND_INGEST_REGION:-IN}
+      TREND_INGEST_CLASSIFIER_WORKSPACE_ID: ${TREND_INGEST_CLASSIFIER_WORKSPACE_ID:-}
       # ---- Creator AI Co-pilot batch (OFF unless set in .env) ----
       # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
       # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.
       CREATOR_COPILOT_ENABLED: ${CREATOR_COPILOT_ENABLED:-false}
+      # T-GOLIVE-0918-R2 [meera · 2026-09-18] — MEDIUM repair (compose-forwards-what-the-app-binds.sh
+      # gate): these 7 CreatorCopilotProperties tunables and the 2 BrandSafetyScoringProperties flags
+      # below all have a `${}` placeholder in application.yml:522-524,543-549 and are already
+      # forwarded by both Utho compose files, but were never forwarded here — same F-0787-class gap
+      # (explicit-map `environment:` only passes keys it lists). Defaults mirror application.yml.
+      CREATOR_COPILOT_SCORE_THRESHOLD: ${CREATOR_COPILOT_SCORE_THRESHOLD:-2}
+      CREATOR_COPILOT_DAILY_CAP: ${CREATOR_COPILOT_DAILY_CAP:-1}
+      CREATOR_COPILOT_PROMPT_VERSION: ${CREATOR_COPILOT_PROMPT_VERSION:-creator-copilot-v1}
+      CREATOR_COPILOT_CAPTION_SYNC_MEDIA_LIMIT: ${CREATOR_COPILOT_CAPTION_SYNC_MEDIA_LIMIT:-25}
+      CREATOR_COPILOT_CAPTION_SYNC_MAX_CREATORS_PER_RUN: ${CREATOR_COPILOT_CAPTION_SYNC_MAX_CREATORS_PER_RUN:-0}
+      CREATOR_COPILOT_CAPTION_SYNC_CRON: ${CREATOR_COPILOT_CAPTION_SYNC_CRON:-0 0 2 * * *}
+      CREATOR_COPILOT_THEME_TAG_CRON: ${CREATOR_COPILOT_THEME_TAG_CRON:-0 0 3 * * *}
+      BRAND_SAFETY_SCORING_ENABLED: ${BRAND_SAFETY_SCORING_ENABLED:-false}
+      BRAND_SAFETY_SCORING_MAX_CREATORS_PER_RUN: ${BRAND_SAFETY_SCORING_MAX_CREATORS_PER_RUN:-100}
       # T-MEERA-CREATOR-PHASE-A, Priya gate review defect 4 — rollback flag for the whole Meera
       # for Creators surface (see MeeraCreatorFeatureProperties/application.yml). On by default;
       # flip to "false" to 404 every CREATOR-audience Meera route without a code rollback.

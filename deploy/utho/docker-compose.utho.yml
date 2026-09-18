@@ -209,6 +209,23 @@ services:
       # this env file with the var present-but-empty. Source: application.yml:559,
       # TrendIngestProperties.java:33-35,104-110, TrendPullJob.java:123.
       TREND_INGEST_PULL_CRON: ${TREND_INGEST_PULL_CRON:-0 0 5 * * *}
+      # T-GOLIVE-0918-R2 [meera · 2026-09-18] — HIGH repair: these 3 TrendIngestProperties tunables
+      # (max-rows-per-run, region, classifier-workspace-id) got a `${}` placeholder in
+      # application.yml:575-577 in af23eb9's round-3 follow-up, but were never forwarded here —
+      # 0 matches for "CLASSIFIER" in this file before this fix. TREND_INGEST_MAX_ROWS_PER_RUN and
+      # TREND_INGEST_REGION are ordinary tunables with safe code defaults (application.yml:575-576);
+      # TREND_INGEST_CLASSIFIER_WORKSPACE_ID is the one this lane is NOT authorized to pick a value
+      # for (TrendIngestProperties#classifierWorkspaceId javadoc, application.yml:560-568) — no
+      # platform/system workspace concept exists anywhere in this codebase, so setting a real
+      # workspace id here would decide who pays for BrandSafetyAiClient#classify's per-headline,
+      # credit-metered call, which is Swapnil/Priya's call, not this lane's (hard rule 8). Forwarding
+      # the (blank-default) placeholder only makes it operator-settable once that ruling lands; while
+      # it stays blank, TrendPullJob.java:241 keeps failing every headline closed with
+      # reason=classifier_unconfigured, exactly as before this line existed. See §2/§4 of
+      # wiki/processes/go-live-0918.md for the go-live-blocker callout.
+      TREND_INGEST_MAX_ROWS_PER_RUN: ${TREND_INGEST_MAX_ROWS_PER_RUN:-100}
+      TREND_INGEST_REGION: ${TREND_INGEST_REGION:-IN}
+      TREND_INGEST_CLASSIFIER_WORKSPACE_ID: ${TREND_INGEST_CLASSIFIER_WORKSPACE_ID:-}
       # ---- Creator AI Co-pilot batch (OFF unless set in .env) ----
       # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
       # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.

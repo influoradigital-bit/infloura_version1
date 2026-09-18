@@ -36,6 +36,23 @@ variable is a placeholder" clause failed on 3 rows that are intentionally not pl
 weren't marked unambiguously as such. All 5 are fixed below, each marked **[REPAIR R3]** at its fix
 point. See the bottom "REPAIR ROUND 3 — defect-by-defect" section for the full mapping.
 
+**REPAIR ROUND 4 (2026-09-18, this revision):** an independent reviewer failed commit `39c829b` on
+1 HIGH, 3 MEDIUM and 2 LOW defects, plus the "every named variable is a placeholder or explicitly
+marked local" clause (2 misses: `ENV_PATH`, `REPLACE_ME`). 1 HIGH the runbook and both Utho compose
+files were stale against their own parent commit (`31f2351`), which had already bound
+`TREND_INGEST_CLASSIFIER_WORKSPACE_ID`/`_MAX_ROWS_PER_RUN`/`_REGION` in `application.yml` —
+`TrendPullJob` fails every headline closed with `reason=classifier_unconfigured` until the first of
+those gets a real value, which is a business ruling this lane cannot make, so the runbook now states
+it as an explicit go-live blocker rather than omitting it; 3 MEDIUM the §3.2 `influora-ai`
+healthcheck-wait loop fell through silently on a container stuck at `starting` instead of failing,
+`.proof-os/gates/compose-forwards-what-the-app-binds.sh` (Utho vs Hostinger) had gone red across R2/
+R3 without being reported here, and `CREATOR_COPILOT_ENABLED` had no stated required value or
+post-recreate check, the same F-0762 failure class already fixed for `TREND_INGEST_ENABLED`; 2 LOW
+`ENV_PATH`/`REPLACE_ME` weren't marked as non-Spring-property shell/literal values, and several
+`application.yml`/`TrendPullJob.java` line citations had drifted after R3's own additions shifted
+line numbers. All are fixed below, each marked **[REPAIR R4]** at its fix point — see the bottom
+"REPAIR ROUND 4 — defect-by-defect" section for the full mapping.
+
 ## READ THIS FIRST — two things that block a same-day go-live as briefed
 
 ### 1. The live box does not run docker-compose for Influora. `/usr/local/App/docker-compose.prod.yml` is Snapsby's file, not Influora's.
@@ -123,11 +140,16 @@ against the box via §3.0's read-only re-verification step before trusting them 
 Files owned by this lane: `deploy/utho/docker-compose.utho.yml`,
 `deploy/utho/docker-compose.utho-shared.yml`, `deploy/utho/generate-env.sh` (modified this round —
 see item 3.5 below), `.proof-os/gates/utho-compose-keysets-match.sh` (read, not modified — no new
-allow-list entry was needed), this file.
+allow-list entry was needed), this file. **[REPAIR R4]**
+`deploy/hostinger/docker-compose.hostinger.yml` also touched this round, in scope specifically
+because `.proof-os/gates/compose-forwards-what-the-app-binds.sh` requires it to stay in parity with
+Utho's forwarded keyset (see §0 item 8) — no other Hostinger-specific change was made.
 
 1. **`TREND_INGEST_PULL_CRON` was unforwarded in both compose files** (F-0787-class gap — an
-   explicit-map `environment:` block silently drops any key not listed). `application.yml:559`
-   reads `${TREND_INGEST_PULL_CRON:0 0 5 * * *}`; `TrendIngestProperties.java:33-35` documents the
+   explicit-map `environment:` block silently drops any key not listed). `application.yml:574`
+   (**[REPAIR R4] renumbered from :559 — R3's classifier-workspace-id/max-rows/region additions
+   shifted every line below them; re-cited throughout §0/§2/§4 this round**) reads
+   `${TREND_INGEST_PULL_CRON:0 0 5 * * *}`; `TrendIngestProperties.java:33-35` documents the
    same. Added to both files' `influora-api` block, mirroring the code default as the compose-side
    default (`${TREND_INGEST_PULL_CRON:-0 0 5 * * *}`) rather than an empty default, because an
    empty-but-present value is a known foot-gun in this codebase (see the `META_CREATOR_MARKETPLACE_ENABLED`
@@ -135,7 +157,8 @@ allow-list entry was needed), this file.
    **[REPAIR R1 — was wrong]** The original commit claimed `TrendIngestProperties.setPullCron`
    (`TrendIngestProperties.java:108-110`) also guards a blank value, making this
    "belt-and-suspenders, not load-bearing." That guard only runs for the
-   `@ConfigurationProperties`-bound bean. `TrendPullJob.java:123` — landed in `af23eb9`, *after*
+   `@ConfigurationProperties`-bound bean. `TrendPullJob.java:166` (renumbered from :123, same
+   reason) — landed in `af23eb9`, *after*
    `ba3fa62` was cut, on this same branch — schedules itself with its own
    `@Scheduled(cron = "${influora.trend-ingest.pull-cron:0 0 5 * * *}")`, which resolves the
    `influora.trend-ingest.pull-cron` property straight from the Spring `Environment` and never
@@ -187,7 +210,10 @@ allow-list entry was needed), this file.
    `SecretsStartupValidator` outside dev. Separately, running `generate-env.sh` at `a28ae79`
    unmodified fails outright — `bash generate-env.sh /tmp/gen.env` exits 1 with `line 31: app.:
    command not found` and `line 31: VAR: unbound variable` and writes a 0-byte file. Two pre-existing
-   comments inside the unquoted `cat > "$ENV_PATH" <<ENVEOF` heredoc (line 31 has no quotes around
+   comments inside the unquoted `cat > "$ENV_PATH" <<ENVEOF` heredoc (`ENV_PATH` **[REPAIR R4] is a
+   `generate-env.sh` shell-local variable** — set from `$1` at that script's own line 14, not a
+   Spring/`application.yml` property, and has no `${}` placeholder to check for that reason; line 31
+   has no quotes around
    `ENVEOF`, so every line — comments included — undergoes shell expansion) contained live shell
    syntax: backticks around `` `app.` `` (line 37, parsed as command substitution — runs `app.` as a
    command) and a bare `${VAR:default}` (line 91, a substring expansion on an unset `VAR`, which
@@ -195,7 +221,10 @@ allow-list entry was needed), this file.
    `BRAND_SAFETY_SERVICE_TOKEN_SECRET`, (b) replacing the backticks at line 37 with plain quotes, and
    (c) rewriting line 91's prose to describe the placeholder syntax without using live `${...}`
    inside the heredoc. **Green:** `bash generate-env.sh /tmp/gen4.env` now exits 0, writes a
-   complete 162-line file (`still REPLACE_ME: 31`, all 7 AES keys report 32 bytes), and
+   complete 162-line file (the script's own summary line reads `still REPLACE_ME: 31` — **[REPAIR
+   R4] `REPLACE_ME` here is the literal placeholder VALUE the script's closing `grep -c` counts
+   (`generate-env.sh:198`), not a variable name; it is not a Spring property and has no `${}`
+   placeholder to check for that reason**, all 7 AES keys report 32 bytes), and
    `docker compose --env-file /tmp/gen4.env -f docker-compose.utho.yml config` (and the
    `-shared` file) resolve `BRAND_SAFETY_SERVICE_TOKEN_SECRET` to the generated 48-char secret with
    no "not set" warning on either file. `bash .proof-os/gates/utho-compose-keysets-match.sh` still
@@ -224,23 +253,29 @@ allow-list entry was needed), this file.
    `props.isEnabled()` (line 126). This changes §4's post-deploy checks below: there is now a real
    log line to check for a trend pull.
 6. **Gate re-run against the working tree, after all compose fixes above (original two gaps, R1's
-   literal→placeholder fixes, and R2's brand-safety-var-name fix plus 9 new forwards):**
+   literal→placeholder fixes, R2's brand-safety-var-name fix plus 9 new forwards, and R4's 3 new
+   trend-classifier forwards — see item 8):**
    ```
    $ bash .proof-os/gates/utho-compose-keysets-match.sh
    allowed: JAVA_TOOL_OPTIONS only in deploy/utho/docker-compose.utho-shared.yml
-   checked: influora-api environment keys — 96 in deploy/utho/docker-compose.utho.yml, 97 in deploy/utho/docker-compose.utho-shared.yml
+   checked: influora-api environment keys — 99 in deploy/utho/docker-compose.utho.yml, 100 in deploy/utho/docker-compose.utho-shared.yml
    NOT CHECKED: key VALUES/defaults; other services (influora-ai, caddy, mysql); the live box's env file (/usr/local/App/influora/influora.env, not in this repo — F-0842)
    PASS: key sets match (modulo allow-list)
    ```
-   (96 vs 97 is expected and allow-listed, same as before: `JAVA_TOOL_OPTIONS` — **[REPAIR R3]
+   (99 vs 100 is expected and allow-listed, same as before: `JAVA_TOOL_OPTIONS` — **[REPAIR R3]
    intentionally NOT an `application.yml` `${VAR}` placeholder; it is a JVM launcher flag the `java`
    process reads directly from its OS environment, hardcoded as a literal in
    `docker-compose.utho-shared.yml:149` (`-Xmx900m -XX:MaxMetaspaceSize=256m`), by design not
    operator-overridable per deploy** — only belongs in the
    shared-box file, per the existing `ALLOW="JAVA_TOOL_OPTIONS"` entry, `utho-compose-keysets-match.sh:18`
-   — no new allow-list entry was needed. The count rose from 87/88 to 96/97: −1 for the renamed
-   brand-safety key (same slot, different name) +10 for the newly-forwarded Creator Co-pilot/
-   brand-safety-scoring tunables named in §2.)
+   — no new allow-list entry was needed. The count rose from 87/88 (pre-R2) to 96/97 (R3) to 99/100
+   (this revision): −1 for the renamed brand-safety key (same slot, different name), +10 for the
+   Creator Co-pilot/brand-safety-scoring tunables (R2/R3), +3 for the trend-classifier tunables added
+   this round (item 8). Mutation-tested: deleting `CREATOR_COPILOT_THEME_TAG_CRON` from one archived
+   file gives `KEY MISSING FROM deploy/utho/docker-compose.utho.yml: CREATOR_COPILOT_THEME_TAG_CRON
+   (present in deploy/utho/docker-compose.utho-shared.yml)`, exit 1; restoring it returns to
+   `PASS`, exit 0 — re-run against a `git archive` of this revision's final commit, not just the
+   working tree.)
 7. **YAML/interpolation validated locally**, on the REPAIR R2 revision: `yaml.safe_load(...)`
    parsed both files without error, and `docker compose -f docker-compose.utho.yml config` /
    `docker compose -f docker-compose.utho-shared.yml config` (run from `deploy/utho/`, exit code 0
@@ -257,6 +292,52 @@ allow-list entry was needed), this file.
    the container for every var named in §2, and that the brand-safety secret fix actually took
    (the wrong key is gone, the right one is present). This is config validation, not a database/
    persistence test — rule 5 does not apply to YAML.
+8. **[REPAIR R4 — MEDIUM] `.proof-os/gates/compose-forwards-what-the-app-binds.sh` (Utho vs
+   Hostinger, not the Utho-vs-Utho-shared gate in item 6 above) went red across R2/R3 and was never
+   reported here.** This gate compares `deploy/hostinger/docker-compose.hostinger.yml` against
+   `deploy/utho/docker-compose.utho.yml` — Utho is the reference (it is the live production
+   surface), so anything Utho forwards that Hostinger does not is a defect. **Red, before this
+   round's fix:**
+   ```
+   $ bash .proof-os/gates/compose-forwards-what-the-app-binds.sh
+   BROKEN: docker-compose.hostinger.yml does not forward 13 var(s) that Utho forwards and
+           application.yml binds. ...
+             BRAND_SAFETY_SCORING_ENABLED
+             BRAND_SAFETY_SCORING_MAX_CREATORS_PER_RUN
+             BRAND_SAFETY_SERVICE_TOKEN_SECRET
+             CREATOR_COPILOT_CAPTION_SYNC_CRON
+             CREATOR_COPILOT_CAPTION_SYNC_MAX_CREATORS_PER_RUN
+             CREATOR_COPILOT_CAPTION_SYNC_MEDIA_LIMIT
+             CREATOR_COPILOT_DAILY_CAP
+             CREATOR_COPILOT_PROMPT_VERSION
+             CREATOR_COPILOT_SCORE_THRESHOLD
+             CREATOR_COPILOT_THEME_TAG_CRON
+             TREND_INGEST_MAX_ROWS_PER_RUN
+             TREND_INGEST_PULL_CRON
+             TREND_INGEST_REGION
+   ```
+   `BRAND_SAFETY_SERVICE_TOKEN_SECRET` is exactly the fail-closed secret family this gate's own
+   header comment (`compose-forwards-what-the-app-binds.sh:5-14`) warns about — a stack missing it
+   fails `SecretsStartupValidator` outside dev and does not boot at all, the same class of defect as
+   the `META_TOKEN_ENCRYPTION_KEY` incident the gate was written for. Hostinger's copy also still
+   forwarded the do-not-set relaxed-binding alias
+   `INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET` instead. Both are this lane's files
+   (`deploy/hostinger/*.yml`, in scope here specifically because this gate requires Utho/Hostinger
+   parity), so fixed directly rather than left as a gap: the alias line was replaced with
+   `BRAND_SAFETY_SERVICE_TOKEN_SECRET: ${BRAND_SAFETY_SERVICE_TOKEN_SECRET}`, and all 13 missing
+   vars above (plus `TREND_INGEST_CLASSIFIER_WORKSPACE_ID`, added to all three compose files this
+   round — item 8's own change, see §2) were added to `docker-compose.hostinger.yml` with defaults
+   mirroring Utho's. **Green, this revision:**
+   ```
+   $ bash .proof-os/gates/compose-forwards-what-the-app-binds.sh
+   PROVED: both deploy compose files forward the same 90 application-bound env vars
+           to influora-api; nothing Utho passes is dropped on Hostinger.
+   ```
+   Re-run against a `git archive` of this revision's final commit, not just the working tree. This
+   gate is outside `utho-compose-keysets-match.sh`'s scope (that one only compares Utho's two files
+   to each other, never to Hostinger, and this lane does not own `docker-compose.hostinger.yml`
+   beyond what parity with this gate requires) — flagging both gates by name here going forward so
+   neither goes red silently again.
 
 ---
 
@@ -399,19 +480,37 @@ way and the code default cited applies.
 
 Grouped by today's release features, each cited to its file:line origin:
 
-**Trend ingest (T4 ingest job — clients exist, no scheduler yet; see §0.5)**
+**Trend ingest (T4 ingest job — see §0.5 and §0.8)**
+
+**[REPAIR R4 — HIGH] `TREND_INGEST_ENABLED=true` plus the 3 API keys alone does NOT start filling
+trends — this is a go-live blocker still awaiting a Swapnil/Priya ruling, not a documentation gap.**
+`TrendPullJob.java:241` (`if (!props.hasClassifierWorkspaceId())`) fails every headline closed with
+`reason=classifier_unconfigured` unless `influora.trend-ingest.classifier-workspace-id`
+(`TREND_INGEST_CLASSIFIER_WORKSPACE_ID` below) is set to a real workspace id — and this lane is NOT
+authorized to pick one (hard rule 8): `BrandSafetyAiClient#classify` bills a specific workspace's AI
+credits per call, and there is no platform/system workspace concept anywhere in this codebase
+(verified: grepping the whole tree for a `SYSTEM_WORKSPACE` or `PLATFORM_WORKSPACE` constant — not
+an env var and not a Spring property, just naming what does not exist — returns 0 hits). **If
+today's release is meant to
+actually produce trend rows** (not just exercise the job harmlessly), get that ruling from
+Swapnil/Priya before go-live — otherwise every run will "complete" (§4) while writing 0 rows,
+which looks like success unless you specifically check for `classifier_unconfigured` in the logs.
+
 | Var | Secret? | Source |
 |---|---|---|
-| `TREND_INGEST_ENABLED` | no | `application.yml:555` (`${TREND_INGEST_ENABLED:false}` — **defaults OFF**; **[REPAIR R2] must be explicitly set to `true`** in `influora.env` if today's release is meant to turn trend pull on, or `TrendPullJob.java:127`'s `props.isEnabled()` gate keeps it a no-op forever, silently, with only the disabled-log-line in §4 to notice by) |
-| `NEWSAPI_KEY` | **yes** | `application.yml:556` |
-| `TMDB_API_KEY` | **yes** | `application.yml:557` |
-| `YOUTUBE_API_KEY` | **yes** | `application.yml:558` |
-| `TREND_INGEST_PULL_CRON` | no | `application.yml:559` (now forwarded — §0.1) |
+| `TREND_INGEST_ENABLED` | no | `application.yml:570` (`${TREND_INGEST_ENABLED:false}` — **defaults OFF**; **[REPAIR R2] must be explicitly set to `true`** in `influora.env` if today's release is meant to turn trend pull on, or `TrendPullJob.java:170`'s `props.isEnabled()` gate keeps it a no-op forever, silently, with only the disabled-log-line in §4 to notice by) |
+| `NEWSAPI_KEY` | **yes** | `application.yml:571` |
+| `TMDB_API_KEY` | **yes** | `application.yml:572` |
+| `YOUTUBE_API_KEY` | **yes** | `application.yml:573` |
+| `TREND_INGEST_PULL_CRON` | no | `application.yml:574` (forwarded — §0.1) |
+| `TREND_INGEST_MAX_ROWS_PER_RUN` | no | `application.yml:575` (optional, has default) — **[REPAIR R4]** newly forwarded, §0.8 |
+| `TREND_INGEST_REGION` | no | `application.yml:576` (optional, has default) — **[REPAIR R4]** newly forwarded, §0.8 |
+| `TREND_INGEST_CLASSIFIER_WORKSPACE_ID` | no (a workspace id, not a fresh secret) | `application.yml:577` — **[REPAIR R4] BLOCKER, see the callout above.** Blank by default; forwarded (§0.8) only so it is operator-settable once the ruling lands, not because a value is decided |
 
 **Creator AI Co-pilot**
 | Var | Secret? | Source |
 |---|---|---|
-| `CREATOR_COPILOT_ENABLED` | no | `application.yml:542` |
+| `CREATOR_COPILOT_ENABLED` | no | `application.yml:542` (`${CREATOR_COPILOT_ENABLED:false}` — **defaults OFF, same as `TREND_INGEST_ENABLED` above. [REPAIR R4] must be explicitly set to `true`** in `influora.env` if today's release includes turning the Co-pilot on — `generate-env.sh` never writes this var (it only generates secrets/keys, not feature flags), and neither compose file's `:-false` default will turn it on for you. This is the exact F-0762 failure class recorded in `live-state.txt`'s EIGHTH CAPTURE: on a fresh box or any env rebuilt from `generate-env.sh`, the Co-pilot comes up silently off, and nothing catches it until the 02:00 UTC job's disabled-log-line (§4) or an operator report. **Immediately after §3.2's `docker run` recreates the container**, before waiting for the 02:00 UTC job, run `docker exec influora-api env \| grep -E 'CREATOR_COPILOT_ENABLED\|TREND_INGEST_ENABLED'` and confirm both read `true` if that is what this release intends — do not wait for §4's log-line check to discover a flag was left at its default |
 | `CREATOR_COPILOT_SCORE_THRESHOLD` | no | `application.yml:543` (optional, has default) |
 | `CREATOR_COPILOT_DAILY_CAP` | no | `application.yml:544` (optional) |
 | `CREATOR_COPILOT_PROMPT_VERSION` | no | `application.yml:545` (optional) |
@@ -574,6 +673,13 @@ docker build -t influora-api:latest .
 docker stop influora-api && docker rm influora-api
 docker run -d --name influora-api --network host --restart unless-stopped \
   --env-file influora.env influora-api:latest
+# [REPAIR R4] Feature flags (CREATOR_COPILOT_ENABLED, TREND_INGEST_ENABLED) both default to
+# `false` and generate-env.sh never writes either — verify the recreated container actually has
+# the value THIS RELEASE intends right now, not at 02:00 UTC when the scheduled job's disabled-log
+# line is the first thing to notice a flag left at its default (see §2, F-0762 class).
+sleep 3
+docker exec influora-api env | grep -E 'CREATOR_COPILOT_ENABLED|TREND_INGEST_ENABLED' || {
+  echo "FATAL: could not read feature-flag env from the recreated container" >&2; exit 1; }
 EOF
 
 # 3. Build and deploy influora-ai from the SAME approved SHA — no separate approval, same commit.
@@ -594,12 +700,21 @@ docker run -d --name influora-ai --network host --restart unless-stopped \
   --env-file /usr/local/App/influora-ai/influora-ai/influora-ai.env influora-ai:latest
 # Wait for the container's own HEALTHCHECK to report healthy before moving on — do not assume
 # "docker run succeeded" means the app is serving.
-for i in $(seq 1 30); do
+# [REPAIR R4 — MEDIUM] The loop used to just fall through after 30 iterations with no final check:
+# a container stuck on "starting" (crash-looping, or slow to fail) printed nothing, reached EOF and
+# the heredoc exited 0 — reported as a successful deploy. Reproduced with a fake `docker` that
+# always echoes "starting": old loop produced no output and exit=0. influora-ai/Dockerfile:45 sets
+# HEALTHCHECK --interval=30s --retries=3, so a broken app needs about 90s to reach "unhealthy" —
+# longer than this loop's 60s budget — which is exactly the silent-outage window this step exists
+# to catch. Fixed by widening the budget to 45 iterations (90s) and failing loudly if the loop ends
+# without ever seeing "healthy".
+for i in $(seq 1 45); do
   STATUS=$(docker inspect --format '{{.State.Health.Status}}' influora-ai 2>/dev/null || echo "starting")
   [ "$STATUS" = "healthy" ] && { echo "influora-ai healthy"; break; }
   [ "$STATUS" = "unhealthy" ] && { echo "FATAL: influora-ai unhealthy after redeploy" >&2; exit 1; }
   sleep 2
 done
+[ "$STATUS" = "healthy" ] || { echo "FATAL: influora-ai never reported healthy after 90s (last status: $STATUS) — do not treat this deploy as successful" >&2; exit 1; }
 EOF
 ```
 
@@ -662,19 +777,25 @@ mysql -u influora_app -p influora -e \
 
 - **[REPAIR R1 — was stale] Trend ingest now has a real log line.** §0.5's original claim that no
   `@Scheduled` job exists is out of date as of commit `af23eb9` on this branch:
-  `TrendPullJob.java:123` runs on `${influora.trend-ingest.pull-cron:0 0 5 * * *}` (UTC).
+  `TrendPullJob.java:166` runs on `${influora.trend-ingest.pull-cron:0 0 5 * * *}` (UTC).
+  **[REPAIR R4 — line citations below were stale against `31f2351`/`39c829b`; also see the
+  classifier-workspace-id blocker in §2 before reading a `classifier_unconfigured` line as a bug.]**
   ```bash
   docker logs influora-api --since 10m | grep "TrendPullJob"
   # on schedule (05:00 UTC, or TREND_INGEST_PULL_CRON if overridden), expect either:
   # "TrendPullJob: completed run — sourcesOk=N sourcesSkippedNoKey=N fetched=N deduped=N ..."
-  #   (TrendPullJob.java:254) or, if no source returned rows, the shorter
-  # "TrendPullJob: completed run — no rows fetched from any source (sourcesOk=..." (line 153)
+  #   (TrendPullJob.java:321) or, if no source returned rows, the shorter
+  # "TrendPullJob: completed run — no rows fetched from any source (sourcesOk=..." (line 196)
   # if TREND_INGEST_ENABLED is false or unset, expect instead:
-  # "TrendPullJob: disabled (influora.trend-ingest.enabled=false), skipping run" (line 127)
+  # "TrendPullJob: disabled (influora.trend-ingest.enabled=false), skipping run" (line 170)
+  # if TREND_INGEST_CLASSIFIER_WORKSPACE_ID is unset (the §2 blocker, expected until Swapnil/Priya
+  # rule on it), every headline is rejected individually and the run still logs "completed run"
+  # with written=0 — grep for the per-headline line to tell this apart from a real empty run:
+  # "TrendPullJob: rejected id=... source=... reason=classifier_unconfigured — no ..." (line 241)
   ```
   Same off-schedule-run technique as Creator Co-pilot below applies if same-day confirmation is
   needed before 05:00 UTC — there is no dedicated override cron property for this job in
-  `application.yml:554-559`; forcing an early run means editing `TREND_INGEST_PULL_CRON` to a
+  `application.yml:569-577`; forcing an early run means editing `TREND_INGEST_PULL_CRON` to a
   near-term cron expression and recreating the container, same mechanism.
 - **Creator Co-pilot** does have a real, previously-observed log line —
   `CreatorCaptionSyncJob.java:124-127` — and `live-state.txt:311-323` shows it firing exactly this
@@ -746,7 +867,7 @@ mid-incident.
 recreate-cycle): flip `MEERA_CREATOR_ENABLED=false`, `CREATOR_COPILOT_ENABLED=false`, or
 `TREND_INGEST_ENABLED=false` in `influora.env` and recreate the container (§3.2) — each is a
 plain boolean gate (`MeeraCreatorFeatureProperties.java:31`, `application.yml:542`,
-`application.yml:555`) with no migration dependency.
+`application.yml:570`) with no migration dependency.
 
 ---
 
@@ -817,3 +938,16 @@ plain boolean gate (`MeeraCreatorFeatureProperties.java:31`, `application.yml:54
 | 3 | MEDIUM | §1.5's `influora-ai` backup was prose only ("do the equivalent"), not a runnable script, and implied the same flat `cd` as `influora-api`'s backup — but `influora-ai`'s env file lives one directory level deeper (`/usr/local/App/influora-ai/influora-ai/influora-ai.env`, not `/usr/local/App/influora-ai/influora-ai.env`). §5's rollback compounded this: it `cd`'d into the shallower directory and referenced the backup as a bare relative filename, resolving to the wrong path regardless. Also, running each service's backup in its own `ssh` session gave them two DIFFERENT timestamps, while §3.2/§5 both assume ONE shared `<TS-from-§1.5>` | §1.5 rewritten: `TS` is now generated ONCE locally and forwarded into both remote heredocs (`ssh host "TS=$TS bash -s"`), so both services share one timestamp; the `influora-ai` backup is now a concrete script `cd`-ing into `/usr/local/App/influora-ai/influora-ai` (matching the real layout); §5's rollback now `cd`s into that same directory instead of its parent |
 | 4 | MEDIUM | §2's `CREATOR_COPILOT_AI_BASE_URL` row unconditionally told the operator to set a fresh value, but `live-state.txt`'s EIGHTH CAPTURE shows Creator Co-pilot already running successfully in prod with whatever value is already in `influora.env` (no code default exists in the prod profile) — overwriting it risks breaking a working integration for no documented reason, and the row also never mentioned the six sibling `*_AI_BASE_URL` vars that are not touched | Row rewritten: check and keep the CURRENT value first (via `ssh`/`docker exec env` or §4 check 4's AI-vs-FALLBACK query) unless it is confirmed broken; the `http://150.241.245.242:8000` guidance is now scoped explicitly to a FRESH box with no prior value, with the same bind/firewall verification steps as before |
 | 5 | MEDIUM | The "every named variable is a `${VAR}` placeholder" clause failed on 3 rows that are intentionally NOT placeholders (`INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET` — do-not-set; `MEERA_CREATOR_SEND_ENABLED` — not in this repo's code; `JAVA_TOOL_OPTIONS` — a JVM launcher flag, not a Spring property) but weren't marked unambiguously as such at their point of definition | Each of the 3 now carries an explicit "**[REPAIR R3] intentionally NOT a `${VAR}` placeholder**"-style marker at its first substantive mention, not just descriptive prose elsewhere in the document |
+
+---
+
+## REPAIR ROUND 4 — defect-by-defect (commit `39c829b` → this revision)
+
+| # | Sev | Finding | Fix |
+|---|---|---|---|
+| 1 | HIGH | The runbook (§2 trend table, §4) and both Utho compose files were stale against their own parent commit `31f2351`, which had already bound `TREND_INGEST_CLASSIFIER_WORKSPACE_ID`, `TREND_INGEST_MAX_ROWS_PER_RUN` and `TREND_INGEST_REGION` in `application.yml:575-577` — 0 grep hits for "CLASSIFIER" in the runbook or either compose file. While `classifier-workspace-id` stays blank, `TrendPullJob.java:241` rejects every headline with `reason=classifier_unconfigured` and the job still logs "completed run" with 0 rows written, which §4 presented as plain success | §2 gained 3 new rows plus an explicit go-live-blocker callout: this lane is not authorized to pick a workspace id (hard rule 8 — no platform/system workspace concept exists in this codebase), so `TREND_INGEST_ENABLED=true` plus the 3 API keys is stated as insufficient until Swapnil/Priya rule on it. §4's trend log-check block now shows the `reason=classifier_unconfigured` line so an operator can tell a real empty run from the blocked-by-ruling case. All 3 vars forwarded in both Utho compose files (§0 item 8) and, for keyset parity, in `docker-compose.hostinger.yml` |
+| 2 | MEDIUM | §3.2 step 3's `influora-ai` healthcheck-wait loop fell through silently: reproduced with a fake `docker` that always reports `starting` — the loop printed nothing and reached EOF with no failure. `influora-ai/Dockerfile:45`'s `HEALTHCHECK --interval=30s --retries=3` needs about 90s to report `unhealthy` for a genuinely broken app, longer than the loop's old 60s budget, so a slow-to-fail or crash-looping container read as a successful deploy | Loop widened to 45 iterations (90s) and a post-loop check now fails loudly (`exit 1`, FATAL message) unless the last observed status was `healthy`. Verified: a fake-`docker` harness that never reports healthy now exits 1 with an explicit FATAL line, where the unfixed loop had no such check at all |
+| 3 | MEDIUM | `.proof-os/gates/compose-forwards-what-the-app-binds.sh` (Utho vs Hostinger — a DIFFERENT gate from `utho-compose-keysets-match.sh` in §0 item 6) had gone red across R2/R3 (13 vars, including the fail-closed `BRAND_SAFETY_SERVICE_TOKEN_SECRET`, that Utho forwards and Hostinger does not; Hostinger also still forwarded the do-not-set alias `INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET`) without being reported anywhere in this document | §0 item 8 added, reporting the red-before/green-after gate output by name. `docker-compose.hostinger.yml` (in scope specifically because this gate requires parity) fixed: the alias line replaced with `BRAND_SAFETY_SERVICE_TOKEN_SECRET`, and all missing vars added with defaults mirroring Utho. Gate now prints `PROVED: both deploy compose files forward the same 90 application-bound env vars...` |
+| 4 | MEDIUM | `CREATOR_COPILOT_ENABLED` had no stated required value for this release (unlike `TREND_INGEST_ENABLED`, which already had one) and `generate-env.sh` never writes it — same F-0762 failure class already fixed for trend-ingest: on a fresh box, or any env rebuilt from `generate-env.sh`, the Co-pilot comes up silently off, and nothing catches it until the 02:00 UTC job's log line | §2's `CREATOR_COPILOT_ENABLED` row rewritten to mirror `TREND_INGEST_ENABLED`'s wording (must be explicitly set `true` if this release turns it on). §3.2 step 2 now runs `docker exec influora-api env \| grep -E 'CREATOR_COPILOT_ENABLED\|TREND_INGEST_ENABLED'` immediately after the container is recreated, instead of waiting for the scheduled job to reveal a wrong flag |
+| 5 | LOW | The done_when varcheck script's own failed run named 2 misses: `` `ENV_PATH` `` (a `generate-env.sh` shell-local variable, not a Spring property) and `` `REPLACE_ME` `` (the literal placeholder value the script counts, not a variable name) — neither was marked as such at its point of mention | Both now carry an explicit inline marker the first time they're named, matching the style already used for the 3 do-not-set vars from R3. Re-run with an equivalent extraction script (not the reviewer's original, which is not in this repo): `TOTAL 34 MISS 0` on this revision vs the un-annotated original text |
+| 6 | LOW | Several `application.yml`/`TrendPullJob.java` line citations had drifted: the runbook cited `application.yml:555-559` for the trend vars and `TrendPullJob.java:123/127/153/254`, but R3's own additions (`max-rows-per-run`, `region`, `classifier-workspace-id`) shifted every line below them — the real locations are `application.yml:570-577` and `TrendPullJob.java:166/170/196/241/321` | All citations in §0 item 1, §2's trend table and §4's trend log-check block re-verified against the file as committed and corrected |
