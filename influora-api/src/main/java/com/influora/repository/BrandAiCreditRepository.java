@@ -1,6 +1,7 @@
 package com.influora.repository;
 
 import com.influora.domain.entity.BrandAiCredit;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -92,4 +93,51 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
                     + "c.updatedAt = CURRENT_TIMESTAMP "
                     + "WHERE c.workspaceId = :workspaceId")
     int bumpDailyActions(@Param("workspaceId") String workspaceId, @Param("today") LocalDate today);
+
+    /**
+     * T-S3-F0879-0917 REPAIR ROUND [vikram · 2026-09-18] -- F-0885 (lost update) on the grant
+     * path. Syncs {@code planAllotment} (and the derived {@code monthlyAllotment}, recomputed
+     * server-side against the row's CURRENT {@code loyaltyBonus} rather than a possibly-stale
+     * in-memory value) via a single-scoped UPDATE that never touches {@code creditsRemaining} or
+     * any other column. Replaces {@code AICreditService#applyPlanAllotment}'s old blind full-row
+     * {@code save(credit)}, which could clobber a concurrent {@link #tryDecrement} the same way
+     * the credit-race fix closed for {@link #bumpDailyActions} -- see that method's javadoc for
+     * the shape this mirrors.
+     *   Source: F-0885 repair round (Kabir MEDIUM), RULING-upgrade-grant.md
+     */
+    @Modifying
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET c.planAllotment = :planAllotment, "
+                    + "c.monthlyAllotment = :planAllotment + c.loyaltyBonus, "
+                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "WHERE c.workspaceId = :workspaceId")
+    int syncPlanAllotment(@Param("workspaceId") String workspaceId, @Param("planAllotment") int planAllotment);
+
+    /**
+     * T-S3-F0879-0917 REPAIR ROUND [vikram · 2026-09-18] -- the grant itself (F-0881 ruling +
+     * F-0883 + F-0885). SETs {@code creditsRemaining} to the full new allotment, atomically
+     * guarded so a repeat grant for the SAME billing period (identified by the subscription's
+     * {@code currentPeriodEnd}, passed in as {@code periodEnd}) is a no-op (returns 0 rows
+     * updated) -- this is the authoritative guard, not just a pre-check in the service layer:
+     * two concurrent callers race on the same InnoDB row lock, so only one can ever win for a
+     * given {@code periodEnd}. {@code periodEnd IS NULL} (no resolvable subscription/billing
+     * period) intentionally disables the guard rather than blocking the grant -- see
+     * {@code AICreditService#applyPlanAllotment} javadoc for why failing open here is the safer
+     * default than silently withholding a paid brand's allowance.
+     *   Source: F-0881/F-0883/F-0885 repair round, RULING-upgrade-grant.md
+     */
+    @Modifying
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET c.creditsRemaining = :newAllotment, "
+                    + "c.creditGrantPeriodEnd = :periodEnd, "
+                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "WHERE c.workspaceId = :workspaceId "
+                    + "AND (:periodEnd IS NULL OR c.creditGrantPeriodEnd IS NULL "
+                    + "OR c.creditGrantPeriodEnd <> :periodEnd)")
+    int grantAllotmentIncrease(
+            @Param("workspaceId") String workspaceId,
+            @Param("newAllotment") int newAllotment,
+            @Param("periodEnd") Instant periodEnd);
 }

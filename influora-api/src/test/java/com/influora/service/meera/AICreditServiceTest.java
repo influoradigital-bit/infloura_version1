@@ -21,6 +21,7 @@ import static org.mockito.Mockito.when;
 import com.influora.common.ApiException;
 import com.influora.domain.entity.BrandAiCredit;
 import com.influora.domain.entity.Plan;
+import com.influora.domain.entity.Subscription;
 import com.influora.domain.enums.PlanCode;
 import com.influora.repository.BrandAiCreditRepository;
 import com.influora.service.IdempotencyService;
@@ -65,6 +66,48 @@ class AICreditServiceTest {
 
     private static Plan plan(PlanCode code, int aiMonthlyAllotment) {
         return Plan.builder().id(code.name()).code(code).aiMonthlyAllotment(aiMonthlyAllotment).build();
+    }
+
+    private static Subscription subscriptionWithPeriodEnd(Instant periodEnd) {
+        return Subscription.builder().workspaceId(WORKSPACE_ID).currentPeriodEnd(periodEnd).build();
+    }
+
+    /**
+     * T-S3-F0879-0917 REPAIR ROUND [vikram · 2026-09-18]: F-0885 closed applyPlanAllotment's lost
+     * update by replacing its full-row save() with two targeted atomic UPDATEs
+     * ({@code syncPlanAllotment}, {@code grantAllotmentIncrease}) -- the service method itself no
+     * longer mutates the managed {@code BrandAiCredit} at all. This stub simulates those two real
+     * atomic queries' SQL semantics against the SAME in-memory {@code credit} object so unit tests
+     * can still assert on its resulting state, mirroring {@code AICreditResetJobTest}'s "stubbed
+     * repository that mutates a single in-memory row" precedent (see that test's class javadoc for
+     * why a mock that only records calls would not prove the resulting numbers are right).
+     * {@code grantAllotmentIncrease}'s guard is reproduced faithfully: a call whose
+     * {@code periodEnd} equals the credit's CURRENT {@code creditGrantPeriodEnd} (non-null) is a
+     * no-op returning 0, exactly like the real WHERE clause.
+     */
+    private void stubAtomicPlanAllotmentWrites(BrandAiCredit credit) {
+        lenient()
+                .when(creditRepository.syncPlanAllotment(eq(WORKSPACE_ID), anyInt()))
+                .thenAnswer(
+                        invocation -> {
+                            credit.setPlanAllotment(invocation.getArgument(1));
+                            return 1;
+                        });
+        lenient()
+                .when(creditRepository.grantAllotmentIncrease(eq(WORKSPACE_ID), anyInt(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            int newAllotment = invocation.getArgument(1);
+                            Instant periodEnd = invocation.getArgument(2);
+                            boolean guardBlocks =
+                                    periodEnd != null && periodEnd.equals(credit.getCreditGrantPeriodEnd());
+                            if (guardBlocks) {
+                                return 0;
+                            }
+                            credit.setCreditsRemaining(newAllotment);
+                            credit.setCreditGrantPeriodEnd(periodEnd);
+                            return 1;
+                        });
     }
 
     /** Stubs {@code idempotencyService.executeOnce(...)} (4-arg, no digest) to just run the supplier. */
@@ -391,26 +434,44 @@ class AICreditServiceTest {
     }
 
     @Test
-    @DisplayName("F-3: applyPlanAllotment writes planAllotment only, never the loyalty bonus")
+    @DisplayName("F-3: applyPlanAllotment syncs planAllotment only, never the loyalty bonus")
     void testApplyPlanAllotmentDoesNotTouchLoyaltyBonus() {
         BrandAiCredit credit = createCredit(150, 100, null, 0);
         credit.setLoyaltyBonus(50); // workspace already earned the bonus on Free (100 + 50 = 150)
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        stubAtomicPlanAllotmentWrites(credit);
 
         creditService.applyPlanAllotment(WORKSPACE_ID, 400); // upgrades to Pro
 
         assertEquals(400, credit.getPlanAllotment());
         assertEquals(50, credit.getLoyaltyBonus(), "upgrading plan must not wipe an already-earned bonus");
         assertEquals(450, credit.getMonthlyAllotment(), "derived total must reflect both writers");
+        verify(creditRepository).syncPlanAllotment(WORKSPACE_ID, 400);
     }
+
+    // -----------------------------------------------------------------------------------------
+    // REPAIR ROUND [vikram · 2026-09-18], RULING-upgrade-grant.md: on an allotment INCREASE,
+    // creditsRemaining is now SET to the full new monthlyAllotment (never topped up by just the
+    // delta), granted at most once per BILLING PERIOD (Subscription.currentPeriodEnd, not the
+    // calendar month). This replaces the old S3 top-up rule -- see the two tests below for the
+    // exact behavior the old top-up-by-delta test (testApplyPlanAllotmentTopsUpByIncreaseOnly
+    // CappedAtNewAllotment, asserting 30+300=330) got wrong per the ruling: an upgrade now always
+    // grants the FULL new allotment, regardless of usage.
+    //
+    // F-0882 note: createCredit(0, ...) below now builds a GENUINE 0-credit row (see
+    // BrandAiCredit.Builder#creditsRemainingExplicitlySet / BrandAiCreditTest) -- pre-repair, this
+    // exact fixture silently held monthlyAllotment (100) instead of 0, so the pre-repair version
+    // of this test "passed" without ever proving the 0-credit case at all.
+    // -----------------------------------------------------------------------------------------
 
     @Test
     @DisplayName(
-            "S3 item 1 'Pay -> no credits': Free-at-0-credits upgrades to Pro -> creditsRemaining is"
-                    + " topped up to the new allotment IMMEDIATELY, not only monthlyAllotment")
-    void testApplyPlanAllotmentTopsUpCreditsRemainingOnIncrease() {
-        BrandAiCredit credit = createCredit(0, 100, null, 0); // Free, 0 credits left
+            "F-0881 ruling: Free-at-0-credits upgrades to Pro -> creditsRemaining is SET to the"
+                    + " full new allotment (400) immediately")
+    void testApplyPlanAllotmentSetsCreditsRemainingToFullAllotmentOnIncrease() {
+        BrandAiCredit credit = createCredit(0, 100, null, 0); // genuinely 0 credits (F-0882 fixed)
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        stubAtomicPlanAllotmentWrites(credit);
 
         creditService.applyPlanAllotment(WORKSPACE_ID, 400); // Free -> Pro upgrade webhook
 
@@ -419,23 +480,44 @@ class AICreditServiceTest {
                 400,
                 credit.getCreditsRemaining(),
                 "upgrading at 0 credits must leave the new Pro allotment available immediately");
+        verify(creditRepository).grantAllotmentIncrease(eq(WORKSPACE_ID), eq(400), any());
     }
 
     @Test
     @DisplayName(
-            "S3 item 1: the top-up is the INCREASE, capped at the new allotment -- a brand that had"
-                    + " already used some credits keeps its usage, it does not get reset to full")
-    void testApplyPlanAllotmentTopsUpByIncreaseOnlyCappedAtNewAllotment() {
+            "F-0881 ruling: an upgrade SETS creditsRemaining to the full new allotment (400), even"
+                    + " for a brand that had already used some of its old allotment -- it does NOT"
+                    + " top up by just the delta (30 + 300 = 330 is the OLD, now-wrong rule)")
+    void testApplyPlanAllotmentSetsFullAllotmentRegardlessOfPriorUsage() {
         BrandAiCredit credit = createCredit(30, 100, null, 0); // Free, 30 of 100 left (70 used)
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        stubAtomicPlanAllotmentWrites(credit);
 
-        creditService.applyPlanAllotment(WORKSPACE_ID, 400); // Free(100) -> Pro(400), +300
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400); // Free(100) -> Pro(400)
 
         assertEquals(400, credit.getMonthlyAllotment());
         assertEquals(
-                330,
+                400,
                 credit.getCreditsRemaining(),
-                "must top up by exactly the allotment increase (30 + 300), not reset to the full 400");
+                "the ruling replaces the top-up-by-delta rule -- an upgrade always grants the FULL"
+                        + " new allotment, not creditsRemaining + the increase");
+    }
+
+    @Test
+    @DisplayName(
+            "F-0881 ruling, SM-0.2: Free-at-0-credits upgrades to Pro WITH an earned loyalty bonus"
+                    + " -> creditsRemaining is SET to 450 (400 + the 50 bonus), not 400")
+    void testApplyPlanAllotmentSetsFullAllotmentIncludingLoyaltyBonusOnIncrease() {
+        BrandAiCredit credit = createCredit(0, 100, null, 0);
+        credit.setLoyaltyBonus(50); // already earned on Free (100 + 50 = 150 before the upgrade)
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        stubAtomicPlanAllotmentWrites(credit);
+
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400); // Free+bonus(150) -> Pro+bonus(450)
+
+        assertEquals(450, credit.getMonthlyAllotment());
+        assertEquals(450, credit.getCreditsRemaining());
+        verify(creditRepository).grantAllotmentIncrease(eq(WORKSPACE_ID), eq(450), any());
     }
 
     @Test
@@ -443,6 +525,7 @@ class AICreditServiceTest {
     void testApplyPlanAllotmentDoesNotClawBackOnDecrease() {
         BrandAiCredit credit = createCredit(380, 400, null, 0); // Pro, 380 of 400 left
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        stubAtomicPlanAllotmentWrites(credit);
 
         creditService.applyPlanAllotment(WORKSPACE_ID, 100); // Pro -> Free downgrade
 
@@ -451,6 +534,100 @@ class AICreditServiceTest {
                 380,
                 credit.getCreditsRemaining(),
                 "a downgrade must not claw back creditsRemaining mid-cycle (existing documented intent)");
+        verify(creditRepository, never()).grantAllotmentIncrease(any(), anyInt(), any());
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // F-0883 REPAIR ROUND [vikram · 2026-09-18]: the once-per-billing-period grant guard. A
+    // PAST_DUE<->ACTIVE flap re-syncs the SAME plan allotment on every reactivation (via
+    // SubscriptionService#reconcileAiCreditAllotment, out of scope here) -- without this guard,
+    // kabir's probe showed "granted=300 three times" under the OLD top-up rule; under the ruling's
+    // new SET-to-full rule an unguarded repeat would be worse, not better (a full re-grant on
+    // every flap instead of a partial one). The guard is keyed on the subscription's OWN
+    // currentPeriodEnd (Subscription.java:46-49), never the calendar month.
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "F-0883: a second allotment increase inside the SAME billing period grants nothing;"
+                    + " one in a NEW billing period grants again")
+    void testApplyPlanAllotmentGrantsOncePerBillingPeriodThenAgainNextPeriod() {
+        Instant period1End = Instant.parse("2026-10-15T00:00:00Z");
+        Instant period2End = Instant.parse("2026-11-15T00:00:00Z");
+        BrandAiCredit credit = createCredit(0, 100, null, 0); // Free, 0 credits
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        stubAtomicPlanAllotmentWrites(credit);
+
+        // 1st increase this billing period -- grants the full 400.
+        when(subscriptionService.getByWorkspaceId(WORKSPACE_ID))
+                .thenReturn(Optional.of(subscriptionWithPeriodEnd(period1End)));
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400);
+        assertEquals(400, credit.getCreditsRemaining());
+
+        // Brand spends some credits, then flaps down (a decrease, e.g. PAST_DUE) so the next call
+        // registers as a genuine increase again -- otherwise applyPlanAllotment would not even
+        // ATTEMPT a grant (old == new is not an increase), which would prove nothing about the
+        // guard itself.
+        credit.setCreditsRemaining(37);
+        creditService.applyPlanAllotment(WORKSPACE_ID, 100); // decrease, never touches credits
+        assertEquals(37, credit.getCreditsRemaining());
+
+        // A SECOND increase call lands in the SAME period (e.g. a duplicate webhook, or a repeat
+        // reconcile call) -- the atomic guard must block it: no-op.
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400); // same period, same target allotment
+        assertEquals(
+                37,
+                credit.getCreditsRemaining(),
+                "a repeat increase-grant inside the SAME billing period must change nothing");
+
+        // A THIRD call, but the subscription has now renewed into a NEW billing period -- must
+        // grant again, restoring the full allotment.
+        when(subscriptionService.getByWorkspaceId(WORKSPACE_ID))
+                .thenReturn(Optional.of(subscriptionWithPeriodEnd(period2End)));
+        creditService.applyPlanAllotment(WORKSPACE_ID, 100); // decrease again first
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400); // increase in the NEW period
+        assertEquals(
+                400,
+                credit.getCreditsRemaining(),
+                "a NEW billing period must grant again, even for the same target allotment");
+    }
+
+    @Test
+    @DisplayName(
+            "F-0883: PAST_DUE -> ACTIVE -> PAST_DUE -> ACTIVE inside ONE billing period grants"
+                    + " exactly once (kabir's 'granted=300 three times' probe, now guarded)")
+    void testApplyPlanAllotmentPastDueActiveFlapGrantsExactlyOnce() {
+        Instant periodEnd = Instant.parse("2026-10-15T00:00:00Z");
+        BrandAiCredit credit = createCredit(100, 100, null, 0); // starts Free-equivalent
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        when(subscriptionService.getByWorkspaceId(WORKSPACE_ID))
+                .thenReturn(Optional.of(subscriptionWithPeriodEnd(periodEnd)));
+        stubAtomicPlanAllotmentWrites(credit);
+
+        // ACTIVE (Pro) -- 1st increase this period, grants the full 400.
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400);
+        assertEquals(400, credit.getCreditsRemaining());
+
+        // Brand spends credits, then flaps to PAST_DUE (reconcileAiCreditAllotment syncs down to
+        // Free's 100 -- a decrease, never touches creditsRemaining).
+        credit.setCreditsRemaining(120);
+        creditService.applyPlanAllotment(WORKSPACE_ID, 100);
+        assertEquals(120, credit.getCreditsRemaining(), "a decrease must never claw back");
+
+        // Flaps back to ACTIVE (Pro) -- an increase again, but SAME billing period -> must no-op.
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400);
+        assertEquals(120, credit.getCreditsRemaining(), "repeat #1 in the same period must no-op");
+
+        // PAST_DUE again, then ACTIVE again -- still the SAME billing period -> still a no-op.
+        creditService.applyPlanAllotment(WORKSPACE_ID, 100);
+        creditService.applyPlanAllotment(WORKSPACE_ID, 400);
+        assertEquals(
+                120,
+                credit.getCreditsRemaining(),
+                "repeat #2 in the same period must ALSO no-op -- exactly one grant for the whole"
+                        + " flap sequence, not three (kabir's probe)");
+
+        verify(creditRepository, times(3)).grantAllotmentIncrease(eq(WORKSPACE_ID), eq(400), eq(periodEnd));
     }
 
     @Test
@@ -544,6 +721,90 @@ class AICreditServiceTest {
                 "a duplicate run in the same UTC month must change nothing -- it must not blow the"
                         + " already-spent-down balance back up to the full allotment");
         verify(creditRepository, times(1)).save(credit); // only the FIRST call persisted a change
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // F-0884 REPAIR ROUND [vikram · 2026-09-18]: resetForNewCycle's OWN billing-period guard,
+    // decided (not just flagged) without touching SubscriptionService.java. Closes "a missed
+    // renewal webhook means the safety-net resets mid-period AND the monthly job resets again on
+    // the 1st -- two full refills": SubscriptionService#applyRenewalSafetyNet calls
+    // resetForNewCycle directly on a per-subscription period boundary that resetForNewCycleIfDue's
+    // separate calendar-month guard cannot see at all (different call site, different file).
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "F-0884: resetForNewCycle called TWICE for the SAME resolved billing period (simulating"
+                    + " the renewal safety net firing, then AICreditResetJob's next monthly run"
+                    + " landing inside the same still-current period) resets only once")
+    void testResetForNewCycleGuardsOnSameBillingPeriod() {
+        Instant periodEnd = Instant.parse("2026-10-15T00:00:00Z");
+        BrandAiCredit credit = createCredit(20, 400, null, 0);
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        when(subscriptionService.getByWorkspaceId(WORKSPACE_ID))
+                .thenReturn(Optional.of(subscriptionWithPeriodEnd(periodEnd)));
+
+        creditService.resetForNewCycle(WORKSPACE_ID); // safety-net reset, mid-period
+        assertEquals(400, credit.getCreditsRemaining());
+
+        // Brand spends credits, then the monthly job's next run lands -- SAME billing period
+        // (the missed-webhook scenario: the subscription never actually renewed).
+        credit.setCreditsRemaining(55);
+        creditService.resetForNewCycle(WORKSPACE_ID);
+
+        assertEquals(
+                55,
+                credit.getCreditsRemaining(),
+                "a second reset resolving the SAME currentPeriodEnd must be a no-op -- otherwise"
+                        + " the workspace gets two full refills for one billing period (F-0884)");
+        verify(creditRepository, times(1)).save(credit); // only the first reset actually persisted
+    }
+
+    @Test
+    @DisplayName(
+            "F-0884: resetForNewCycle called again after the billing period genuinely ADVANCES"
+                    + " (a real renewal) resets again, restoring the full allotment")
+    void testResetForNewCycleResetsAgainOnceBillingPeriodAdvances() {
+        Instant period1End = Instant.parse("2026-10-15T00:00:00Z");
+        Instant period2End = Instant.parse("2026-11-15T00:00:00Z");
+        BrandAiCredit credit = createCredit(20, 400, null, 0);
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        when(subscriptionService.getByWorkspaceId(WORKSPACE_ID))
+                .thenReturn(Optional.of(subscriptionWithPeriodEnd(period1End)));
+
+        creditService.resetForNewCycle(WORKSPACE_ID);
+        assertEquals(400, credit.getCreditsRemaining());
+
+        credit.setCreditsRemaining(12); // spent down over the period
+
+        // Subscription genuinely renews (SubscriptionService#applyRenewalSafetyNet always calls
+        // subscription.renewPeriod BEFORE resetForNewCycle) -- currentPeriodEnd now differs.
+        when(subscriptionService.getByWorkspaceId(WORKSPACE_ID))
+                .thenReturn(Optional.of(subscriptionWithPeriodEnd(period2End)));
+        creditService.resetForNewCycle(WORKSPACE_ID);
+
+        assertEquals(
+                400,
+                credit.getCreditsRemaining(),
+                "a genuinely NEW billing period must still reset normally");
+        verify(creditRepository, times(2)).save(credit);
+    }
+
+    @Test
+    @DisplayName(
+            "F-0884: a workspace with no resolvable Subscription row (periodEnd null) disables the"
+                    + " guard -- unchanged unconditional-reset behavior for a plain Free workspace")
+    void testResetForNewCycleGuardDisabledWithoutSubscription() {
+        BrandAiCredit credit = createCredit(20, 100, null, 0);
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        // subscriptionService.getByWorkspaceId left unstubbed -> Optional.empty() -> periodEnd null
+
+        creditService.resetForNewCycle(WORKSPACE_ID);
+        credit.setCreditsRemaining(9);
+        creditService.resetForNewCycle(WORKSPACE_ID);
+
+        assertEquals(100, credit.getCreditsRemaining(), "both calls must reset -- no period to guard on");
+        verify(creditRepository, times(2)).save(credit);
     }
 
     private BrandAiCredit createCredit(int remaining, int allotment, Instant unlimitedUntil, int dailyActions) {

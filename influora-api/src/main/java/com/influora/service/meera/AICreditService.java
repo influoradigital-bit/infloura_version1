@@ -4,6 +4,7 @@ import com.influora.common.ApiException;
 import com.influora.common.Ulids;
 import com.influora.domain.entity.BrandAiCredit;
 import com.influora.domain.entity.Plan;
+import com.influora.domain.entity.Subscription;
 import com.influora.repository.BrandAiCreditRepository;
 import com.influora.service.IdempotencyService;
 import com.influora.service.billing.SubscriptionService;
@@ -359,53 +360,124 @@ public class AICreditService {
     }
 
     /**
-     * Syncs {@code planAllotment} to the workspace's current subscription plan. Deliberately does
-     * NOT reset {@code creditsRemaining} — callers invoke {@link #resetForNewCycle} separately
-     * when a reset is intended (e.g. {@code AICreditResetJob}); {@code reconcileAiCreditAllotment}
-     * calls this alone precisely to avoid resetting mid-cycle.
+     * Syncs {@code planAllotment} to the workspace's current subscription plan, and — per
+     * Swapnil's ruling (REPAIR-ROUND {@code RULING-upgrade-grant.md}, replacing the old top-up
+     * rule) — grants the FULL new allotment immediately on an INCREASE, at most once per billing
+     * period. A DECREASE still never claws back {@code creditsRemaining} mid-cycle (unchanged
+     * documented intent — see {@link #resetForNewCycle} for where a decreased allotment
+     * eventually takes effect).
      *
-     * <p>F-3 [vikram · 2026-09-17]: writes {@code planAllotment} only, never {@code
-     * loyaltyBonus} or {@code monthlyAllotment} directly — {@code monthlyAllotment} recomputes
-     * itself inside {@link BrandAiCredit#setPlanAllotment}. The {@code monthlyAllotment} parameter
-     * name is kept (not renamed to {@code planAllotment}) because it mirrors what every existing
-     * caller (e.g. {@code SubscriptionService#reconcileAiCreditAllotment},
-     * {@code Plan#getAiMonthlyAllotment()}) actually passes: the plan's own base allotment.
-     *   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3
+     * <p><b>F-0885 (lost update) [vikram · 2026-09-18 REPAIR ROUND]:</b> this method no longer
+     * mutates the managed {@code BrandAiCredit} entity or calls a full-row {@code save()} at all —
+     * every write here is a targeted, atomic UPDATE ({@link BrandAiCreditRepository
+     * #syncPlanAllotment}, {@link BrandAiCreditRepository#grantAllotmentIncrease}), the same
+     * discipline the credit-race fix already applies to {@link #tryConsume}'s daily-action bump.
+     * A concurrent {@link BrandAiCreditRepository#tryDecrement} racing this call can therefore
+     * never be silently reverted by a stale in-memory read here.
+     *
+     * <p><b>F-0881 ruling + F-0883 (repeat-grant) [vikram · 2026-09-18 REPAIR ROUND]:</b> the
+     * increase check below still uses the in-memory {@code oldMonthlyAllotment} snapshot to
+     * decide WHETHER to attempt a grant (a benign race against a concurrent plan-allotment call —
+     * not the credit-decrement race F-0885 is about), but the grant itself is authoritatively
+     * guarded server-side by {@link BrandAiCreditRepository#grantAllotmentIncrease}'s WHERE
+     * clause on {@code creditGrantPeriodEnd}, keyed on the subscription's OWN
+     * {@code currentPeriodStart}/{@code currentPeriodEnd} (Subscription.java:46-49) — not the
+     * calendar month {@code cycleStart}/{@code lastReset} already track. That is what makes a
+     * PAST_DUE→ACTIVE flap (which re-syncs the SAME Pro allotment on every reactivation, per
+     * {@code SubscriptionService#reconcileAiCreditAllotment}) grant exactly once per period
+     * instead of re-granting on every flap (Kabir's "granted=300 three times" probe).
+     * {@code periodEnd == null} (no resolvable subscription) fails OPEN — grants anyway, since
+     * this codebase treats "cannot prove a duplicate" as safer than silently withholding a paying
+     * brand's allowance; every real webhook-driven caller (only {@code
+     * SubscriptionService#reconcileAiCreditAllotment} and {@code #applyRenewalSafetyNet} — both
+     * out of scope for this lane) creates or already has a {@code Subscription} row before
+     * calling this, so {@code periodEnd} is expected to be resolvable in practice.
+     *
+     * <p>F-3 [vikram · 2026-09-17]: the {@code monthlyAllotment} parameter name is kept (not
+     * renamed to {@code planAllotment}) because it mirrors what every existing caller (e.g.
+     * {@code SubscriptionService#reconcileAiCreditAllotment}, {@code Plan#getAiMonthlyAllotment()})
+     * actually passes: the plan's own base allotment.
+     *   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3; F-0881/F-0883/F-0885 repair
+     *   round; RULING-upgrade-grant.md
      */
     @Transactional
     public void applyPlanAllotment(String workspaceId, int monthlyAllotment) {
         BrandAiCredit credit = ensureInitialized(workspaceId);
         int oldMonthlyAllotment = credit.getMonthlyAllotment();
-        credit.setPlanAllotment(monthlyAllotment);
-        int newMonthlyAllotment = credit.getMonthlyAllotment();
+        int loyaltyBonus = credit.getLoyaltyBonus();
 
-        // T-S3-F0879-0917 [vikram · 2026-09-17] "Pay -> no credits": on an allotment INCREASE
-        // (e.g. Free -> Pro upgrade), top creditsRemaining up by the increase IMMEDIATELY, never
-        // above the new monthlyAllotment -- a brand that upgrades at 0 credits must have Pro
-        // credits available right away, not only from the next reset. On a DECREASE, do nothing
-        // here: creditsRemaining is never clawed back mid-cycle (existing documented intent —
-        // see resetForNewCycle for where a decreased allotment eventually takes effect).
-        //   Source: assignments-0917-subscription.md S3 item 1 (brand N1, blocker 1)
+        creditRepository.syncPlanAllotment(workspaceId, monthlyAllotment);
+
+        int newMonthlyAllotment = monthlyAllotment + loyaltyBonus;
         if (newMonthlyAllotment > oldMonthlyAllotment) {
-            int increase = newMonthlyAllotment - oldMonthlyAllotment;
-            int toppedUp = Math.min(credit.getCreditsRemaining() + increase, newMonthlyAllotment);
-            credit.setCreditsRemaining(toppedUp);
+            Instant periodEnd = currentBillingPeriodEnd(workspaceId);
+            int granted = creditRepository.grantAllotmentIncrease(workspaceId, newMonthlyAllotment, periodEnd);
+            if (granted == 0) {
+                log.info(
+                        "applyPlanAllotment: skipping repeat allotment-increase grant for workspace"
+                                + " {} -- already granted for the current billing period"
+                                + " (endingAt={})",
+                        workspaceId,
+                        periodEnd);
+            }
         }
-        creditRepository.save(credit);
     }
 
     /**
-     * Monthly reset cron seam (1st of month) — resets non-live brands to their allotment.
-     * Unconditional: always resets, regardless of when it was last reset. {@code
+     * Resolves the workspace's current billing period end from its {@code Subscription} row
+     * (never the calendar month) — {@code null} if no subscription row exists yet. Shared by the
+     * grant-once-per-period guard in {@link #applyPlanAllotment} and the double-reset guard in
+     * {@link #resetForNewCycle}.
+     *   Source: F-0881/F-0883/F-0884 repair round
+     */
+    private Instant currentBillingPeriodEnd(String workspaceId) {
+        return subscriptionService.getByWorkspaceId(workspaceId).map(Subscription::getCurrentPeriodEnd).orElse(null);
+    }
+
+    /**
+     * Monthly reset cron seam (1st of month) — resets non-live brands to their allotment. {@code
      * AICreditResetJob} (and any other automated monthly-cron caller) must call {@link
-     * #resetForNewCycleIfDue} instead so a duplicate trigger in the same UTC month is a no-op —
-     * see that method's javadoc for why the guard lives there and not here.
+     * #resetForNewCycleIfDue} instead so a duplicate trigger in the same UTC CALENDAR MONTH is a
+     * no-op — see that method's javadoc for why that guard lives there and not here.
+     *
+     * <p><b>F-0884 (repeat-reset across the renewal safety net) [vikram · 2026-09-18 REPAIR
+     * ROUND]:</b> this method is ALSO called directly by {@code
+     * SubscriptionService#applyRenewalSafetyNet} on a per-subscription BILLING-PERIOD boundary
+     * that does not align to the calendar month — {@code resetForNewCycleIfDue}'s calendar-month
+     * guard alone cannot see that call at all (it is a different call site in a different, {@code
+     * SubscriptionService.java}, file this lane must not edit). Without a guard THIS method could
+     * see two full refills for the same billing period: the safety net resets mid-month when a
+     * renewal webhook is missed, and {@code AICreditResetJob}'s next 1st-of-month run (a
+     * DIFFERENT calendar month, so {@code resetForNewCycleIfDue}'s own guard does not block it)
+     * would reset the SAME still-current billing period again. Fixed here, inside this lane's own
+     * files, by guarding on the workspace's OWN {@code currentPeriodEnd}
+     * (Subscription.java:46-49) instead of the calendar month: a second call resolving the SAME
+     * {@code currentPeriodEnd} as the last reset is a no-op. When the period genuinely advances
+     * (a real renewal, {@code applyRenewalSafetyNet} always calls {@code subscription
+     * #renewPeriod} BEFORE this method) the resolved {@code currentPeriodEnd} differs from what
+     * was last stored, so the legitimate mid-period reset still proceeds — this guard only blocks
+     * a SECOND reset attempt for a period that was already reset. {@code periodEnd == null} (no
+     * subscription row — e.g. a workspace that has never touched billing) disables the guard, so
+     * behavior for every plain Free workspace is unchanged.
+     *   Source: F-0884 repair round
      */
     @Transactional
     public void resetForNewCycle(String workspaceId) {
         BrandAiCredit credit = ensureInitialized(workspaceId);
+
+        Instant periodEnd = currentBillingPeriodEnd(workspaceId);
+        if (periodEnd != null && periodEnd.equals(credit.getLastResetPeriodEnd())) {
+            log.info(
+                    "resetForNewCycle: workspace {} already reset for the current billing period"
+                            + " (endingAt={}) -- no-op (F-0884 double-reset guard)",
+                    workspaceId,
+                    periodEnd);
+            return;
+        }
+
         credit.setCreditsRemaining(credit.getMonthlyAllotment());
         credit.setLastReset(LocalDate.now(ZoneOffset.UTC));
+        credit.setLastResetPeriodEnd(periodEnd);
         creditRepository.save(credit);
     }
 

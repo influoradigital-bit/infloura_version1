@@ -80,4 +80,48 @@ class BrandAiCreditTest {
 
         assertEquals(450, credit.getMonthlyAllotment());
     }
+
+    // -----------------------------------------------------------------------------------------
+    // F-0882 REPAIR ROUND [vikram · 2026-09-18]: the test-fixture trap. build() used to rewrite
+    // ANY row whose creditsRemaining == 0 up to monthlyAllotment, with no way to tell "the caller
+    // never set it" apart from "the caller explicitly wants a genuine 0-credit row" -- every
+    // AICreditServiceTest fixture built with .creditsRemaining(0) silently held a FULL allotment
+    // instead. See BrandAiCredit.Builder#creditsRemainingExplicitlySet javadoc.
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "F-0882: Builder.creditsRemaining(0) is a genuine explicit zero, never silently"
+                    + " rewritten to monthlyAllotment")
+    void testBuilderExplicitZeroCreditsRemainingStaysZero() {
+        BrandAiCredit credit = baseBuilder().monthlyAllotment(100).creditsRemaining(0).build();
+
+        assertEquals(
+                0,
+                credit.getCreditsRemaining(),
+                "an explicit 0 must stay 0 -- this is exactly the fixture trap F-0882 found");
+    }
+
+    @Test
+    @DisplayName(
+            "F-0882: Builder.creditsRemaining(0) stays 0 even with a non-zero loyalty bonus"
+                    + " present (monthlyAllotment > 0 does not change the explicit-zero outcome)")
+    void testBuilderExplicitZeroCreditsRemainingStaysZeroWithLoyaltyBonus() {
+        BrandAiCredit credit =
+                baseBuilder().planAllotment(400).loyaltyBonus(50).creditsRemaining(0).build();
+
+        assertEquals(450, credit.getMonthlyAllotment());
+        assertEquals(0, credit.getCreditsRemaining());
+    }
+
+    @Test
+    @DisplayName(
+            "Builder: omitting creditsRemaining entirely still defaults it to the full"
+                    + " monthlyAllotment -- unchanged production behavior (e.g."
+                    + " AICreditResetJobTest's fixture relies on exactly this)")
+    void testBuilderOmittedCreditsRemainingDefaultsToAllotment() {
+        BrandAiCredit credit = baseBuilder().monthlyAllotment(250).build();
+
+        assertEquals(250, credit.getCreditsRemaining());
+    }
 }

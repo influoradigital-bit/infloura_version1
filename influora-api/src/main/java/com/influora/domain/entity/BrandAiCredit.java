@@ -53,6 +53,27 @@ public class BrandAiCredit {
     @Column(name = "first_campaign_at")
     private Instant firstCampaignAt;
 
+    // T-S3-F0879-0917 REPAIR ROUND [vikram · 2026-09-18] -- Swapnil's ruling (RULING-upgrade-grant.md):
+    //   an allotment INCREASE grants the full new monthlyAllotment at most once per BILLING PERIOD
+    //   (Subscription.currentPeriodStart/currentPeriodEnd), not the calendar month cycleStart/lastReset
+    //   already own. Stores the currentPeriodEnd this workspace's last increase-grant was applied for;
+    //   a repeat applyPlanAllotment call resolving the SAME currentPeriodEnd is a no-op (see
+    //   BrandAiCreditRepository#grantAllotmentIncrease). Written ONLY by that atomic query -- the
+    //   setter below exists for test fixtures and the (documented) full-row-save fallback paths.
+    //   Source: F-0881/F-0883 repair round
+    @Column(name = "credit_grant_period_end")
+    private Instant creditGrantPeriodEnd;
+
+    // T-S3-F0879-0917 REPAIR ROUND [vikram · 2026-09-18] -- F-0884: closes the "missed renewal
+    // webhook -> safety-net resets mid-period, monthly job resets again on the 1st -> two full
+    // refills" double-reset, WITHOUT touching SubscriptionService.java (out of scope for this
+    // lane). resetForNewCycle now guards on the workspace's billing period (this field) in
+    // addition to resetForNewCycleIfDue's separate calendar-month guard -- see
+    // AICreditService#resetForNewCycle javadoc.
+    //   Source: F-0884 repair round
+    @Column(name = "last_reset_period_end")
+    private Instant lastResetPeriodEnd;
+
     /** P4: daily action counter for the 500/day hard cap (20-ROHAN-COST-REVIEW.md section 5). */
     @Column(name = "daily_actions_used", nullable = false)
     private int dailyActionsUsed;
@@ -153,6 +174,24 @@ public class BrandAiCredit {
         touch();
     }
 
+    public Instant getCreditGrantPeriodEnd() {
+        return creditGrantPeriodEnd;
+    }
+
+    public void setCreditGrantPeriodEnd(Instant creditGrantPeriodEnd) {
+        this.creditGrantPeriodEnd = creditGrantPeriodEnd;
+        touch();
+    }
+
+    public Instant getLastResetPeriodEnd() {
+        return lastResetPeriodEnd;
+    }
+
+    public void setLastResetPeriodEnd(Instant lastResetPeriodEnd) {
+        this.lastResetPeriodEnd = lastResetPeriodEnd;
+        touch();
+    }
+
     public int getDailyActionsUsed() {
         return dailyActionsUsed;
     }
@@ -195,6 +234,19 @@ public class BrandAiCredit {
     public static final class Builder {
         private final BrandAiCredit c = new BrandAiCredit();
 
+        // F-0882 [vikram · 2026-09-18 REPAIR ROUND] -- build() used to rewrite ANY row whose
+        // creditsRemaining == 0 up to monthlyAllotment, with no way to tell "caller never set it"
+        // apart from "caller explicitly wants a genuine 0-credit row". Every test that built a
+        // "Free, 0 credits" fixture via .creditsRemaining(0) silently got a FULL allotment instead
+        // -- e.g. the pre-repair testApplyPlanAllotmentTopsUpCreditsRemainingOnIncrease "proved"
+        // 0 -> 400 while its fixture actually held 100 -> 400 the entire time. This flag is set
+        // ONLY by the explicit .creditsRemaining(int) call below, so build() can distinguish
+        // "explicitly zero" (kept as 0) from "never set" (defaulted, unchanged production
+        // behavior for every real caller, none of which ever omits it -- see AICreditService
+        // #ensureInitialized).
+        //   Source: F-0882 repair round
+        private boolean creditsRemainingExplicitlySet = false;
+
         public Builder workspaceId(String workspaceId) {
             c.workspaceId = workspaceId;
             return this;
@@ -202,6 +254,7 @@ public class BrandAiCredit {
 
         public Builder creditsRemaining(int creditsRemaining) {
             c.creditsRemaining = creditsRemaining;
+            creditsRemainingExplicitlySet = true;
             return this;
         }
 
@@ -237,6 +290,18 @@ public class BrandAiCredit {
             return this;
         }
 
+        /** Test-fixture convenience (F-0881/F-0883 repair round) -- see field javadoc above. */
+        public Builder creditGrantPeriodEnd(Instant creditGrantPeriodEnd) {
+            c.creditGrantPeriodEnd = creditGrantPeriodEnd;
+            return this;
+        }
+
+        /** Test-fixture convenience (F-0884 repair round) -- see field javadoc above. */
+        public Builder lastResetPeriodEnd(Instant lastResetPeriodEnd) {
+            c.lastResetPeriodEnd = lastResetPeriodEnd;
+            return this;
+        }
+
         public BrandAiCredit build() {
             Instant now = Instant.now();
             c.createdAt = now;
@@ -248,7 +313,11 @@ public class BrandAiCredit {
             //   defaulting it independently, or a builder that sets planAllotment/loyaltyBonus but
             //   not monthlyAllotment would leave the column at its Java-default 0.
             c.monthlyAllotment = c.planAllotment + c.loyaltyBonus;
-            if (c.creditsRemaining == 0) {
+            // F-0882 [vikram · 2026-09-18 REPAIR ROUND] -- only default an UNSET creditsRemaining
+            //   to the full allotment; an explicit .creditsRemaining(0) must stay a genuine 0. See
+            //   the creditsRemainingExplicitlySet field javadoc above for why == 0 alone can't tell
+            //   the two apart.
+            if (!creditsRemainingExplicitlySet) {
                 c.creditsRemaining = c.monthlyAllotment;
             }
             if (c.cycleStart == null) {

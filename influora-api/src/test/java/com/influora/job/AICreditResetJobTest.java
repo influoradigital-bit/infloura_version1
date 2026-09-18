@@ -3,6 +3,10 @@ package com.influora.job;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import ch.qos.logback.classic.Level;
@@ -84,6 +88,33 @@ class AICreditResetJobTest {
                         .lastReset(LocalDate.now())
                         .build();
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+
+        // T-S3-F0879-0917 REPAIR ROUND [vikram · 2026-09-18]: F-0885 replaced
+        // AICreditService#applyPlanAllotment's blind full-row save() with two targeted atomic
+        // UPDATEs (syncPlanAllotment / grantAllotmentIncrease) -- real Mockito mocks of those two
+        // methods do nothing to `credit` on their own, which would silently break this test's
+        // "single in-memory row mutated in place" simulation (the whole point of using a real
+        // AICreditService here, per this class's javadoc). These stubs simulate the atomic
+        // queries' real SQL semantics against the SAME `credit` row, same precedent as
+        // AICreditServiceTest#stubAtomicPlanAllotmentWrites. subscriptionService.getByWorkspaceId
+        // is left unstubbed in this job test (Optional.empty() -> periodEnd null), so the grant
+        // guard is always disabled here -- matching AICreditResetJob's real call site, which never
+        // resolves a billing period on its own.
+        lenient()
+                .when(creditRepository.syncPlanAllotment(eq(WORKSPACE_ID), anyInt()))
+                .thenAnswer(
+                        invocation -> {
+                            credit.setPlanAllotment(invocation.getArgument(1));
+                            return 1;
+                        });
+        lenient()
+                .when(creditRepository.grantAllotmentIncrease(eq(WORKSPACE_ID), anyInt(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            credit.setCreditsRemaining(invocation.getArgument(1));
+                            credit.setCreditGrantPeriodEnd(invocation.getArgument(2));
+                            return 1;
+                        });
     }
 
     @AfterEach
