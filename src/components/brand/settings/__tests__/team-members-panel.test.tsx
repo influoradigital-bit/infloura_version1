@@ -23,6 +23,48 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
+// F-0886 — the panel now also reads the billing plan (seat limit) and billing role via these two
+// react-query-backed hooks. Mocked at the module boundary (matching brand-billing-settings.
+// paise-units.test.tsx's established pattern) rather than wrapping a QueryClientProvider: a Pro
+// plan with room for more seats and an OWNER/ADMIN caller is this suite's baseline, since none of
+// these pre-existing tests are about the F-0886 gate itself (see team-members-panel.f0886-
+// upgrade-gate.test.tsx for that).
+vi.mock('@/hooks/brand/useBilling', () => ({
+  useBilling: () => ({
+    plan: {
+      plan: {
+        code: 'PRO',
+        name: 'Pro',
+        priceInr: 499900,
+        billingCycle: 'MONTHLY',
+        feeBps: 700,
+        aiMonthlyAllotment: 1500,
+        seatLimit: 5,
+        trackedCreatorLimit: null,
+        creatorAnalyticsMonthlyLimit: null,
+        exportEnabled: true,
+        campaignTemplatesEnabled: true,
+      },
+      subscription: {
+        status: 'ACTIVE',
+        currentPeriodStart: null,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+      },
+    },
+    usage: null,
+    invoices: [],
+    campaignInvoices: [],
+    commissionInvoices: [],
+    isLoading: false,
+    error: null,
+    refetch: () => {},
+  }),
+}));
+vi.mock('@/hooks/brand/useBrandBillingAccess', () => ({
+  useBrandBillingAccess: () => ({ role: 'OWNER', canManage: true, isLoading: false }),
+}));
+
 const listMock = vi.fn();
 const listInvitesMock = vi.fn();
 const inviteMock = vi.fn();

@@ -18,6 +18,8 @@ import { ContentPerformancePanel } from '@/components/analytics/ContentPerforman
 import { useCreatorMetrics } from '@/hooks/analytics/useCreatorMetrics';
 import { useCreatorScores } from '@/hooks/analytics/useCreatorScores';
 import { useContentPerformance } from '@/hooks/analytics/useContentPerformance';
+import { useBrandBillingAccess } from '@/hooks/brand/useBrandBillingAccess';
+import { UpgradeGate } from '@/components/brand/billing/UpgradeGate';
 import { isApiLive } from '@/lib/api';
 import { demoCreators } from '@/lib/demo-data';
 import type { AnalyticsDateRange } from '@/lib/types';
@@ -62,10 +64,13 @@ export default function BrandCreatorAnalyticsPage() {
     return { start, end };
   }, []);
 
-  const { data: metrics, loading: metricsLoading, error: metricsError } = useCreatorMetrics(
-    creatorId,
-    dateRange,
-  );
+  const {
+    data: metrics,
+    loading: metricsLoading,
+    error: metricsError,
+    upgradeRequired: metricsUpgradeRequired,
+  } = useCreatorMetrics(creatorId, dateRange);
+  const { canManage: canManageBilling } = useBrandBillingAccess();
   const { data: scores, loading: scoresLoading, error: scoresError } = useCreatorScores(creatorId);
   const {
     data: content,
@@ -117,62 +122,72 @@ export default function BrandCreatorAnalyticsPage() {
         </div>
       </div>
 
-      {(metricsError || scoresError) && (
+      {/* F-0886 — B39's per-creator monthly analytics limit 402s as UPGRADE_REQUIRED. Previously
+          this fell into the generic error banner below as plain text with no way to act on it;
+          now it renders the shared UpgradeGate instead of the (necessarily zeroed-out) metric
+          tiles, which would otherwise misleadingly show "0" reach/impressions for a blocked view. */}
+      {(metricsUpgradeRequired ? scoresError : metricsError || scoresError) && (
         <p className="text-sm text-destructive-foreground">
-          Some data couldn't be loaded: {metricsError ?? scoresError}
+          Some data couldn't be loaded: {metricsUpgradeRequired ? scoresError : metricsError ?? scoresError}
         </p>
       )}
 
-      {/* Metric tiles */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <CreatorMetricsCard
-          title="Total Reach"
-          value={metrics?.totalReach ?? 0}
-          format="compact"
-          icon={Eye}
-          loading={metricsLoading}
-        />
-        <CreatorMetricsCard
-          title="Total Impressions"
-          value={metrics?.totalImpressions ?? 0}
-          format="compact"
-          icon={Users}
-          loading={metricsLoading}
-        />
-        <CreatorMetricsCard
-          title="Avg. Views Per Post"
-          value={metrics?.avgViewsPerPost ?? 0}
-          format="compact"
-          icon={TrendingUp}
-          loading={metricsLoading}
-        />
-        <CreatorMetricsCard
-          title="Follower Growth"
-          value={metrics?.followerGrowth ?? 0}
-          format="compact"
-          icon={Users}
-          loading={metricsLoading}
-        />
-      </div>
+      {metricsUpgradeRequired ? (
+        <UpgradeGate feature="analytics" canManageBilling={canManageBilling} />
+      ) : (
+        <>
+          {/* Metric tiles */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <CreatorMetricsCard
+              title="Total Reach"
+              value={metrics?.totalReach ?? 0}
+              format="compact"
+              icon={Eye}
+              loading={metricsLoading}
+            />
+            <CreatorMetricsCard
+              title="Total Impressions"
+              value={metrics?.totalImpressions ?? 0}
+              format="compact"
+              icon={Users}
+              loading={metricsLoading}
+            />
+            <CreatorMetricsCard
+              title="Avg. Views Per Post"
+              value={metrics?.avgViewsPerPost ?? 0}
+              format="compact"
+              icon={TrendingUp}
+              loading={metricsLoading}
+            />
+            <CreatorMetricsCard
+              title="Follower Growth"
+              value={metrics?.followerGrowth ?? 0}
+              format="compact"
+              icon={Users}
+              loading={metricsLoading}
+            />
+          </div>
 
-      {/* Trend + engagement gauge */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <MetricsTrendChart
-          className="lg:col-span-2"
-          title="Follower & Reach Trend (30d)"
-          data={metrics?.trendData ?? []}
-          metrics={[
-            { key: 'followers', label: 'Followers', color: 'var(--chart-1)' },
-            { key: 'reach', label: 'Reach', color: 'var(--chart-2)' },
-          ]}
-          loading={metricsLoading}
-        />
-        {metricsLoading ? (
-          <Skeleton className="h-full min-h-[260px] w-full" />
-        ) : (
-          <EngagementRateGauge rate={metrics?.engagementRate ?? null} />
-        )}
-      </div>
+          {/* Trend + engagement gauge */}
+          <div className="grid gap-4 lg:grid-cols-3">
+            <MetricsTrendChart
+              className="lg:col-span-2"
+              title="Follower & Reach Trend (30d)"
+              data={metrics?.trendData ?? []}
+              metrics={[
+                { key: 'followers', label: 'Followers', color: 'var(--chart-1)' },
+                { key: 'reach', label: 'Reach', color: 'var(--chart-2)' },
+              ]}
+              loading={metricsLoading}
+            />
+            {metricsLoading ? (
+              <Skeleton className="h-full min-h-[260px] w-full" />
+            ) : (
+              <EngagementRateGauge rate={metrics?.engagementRate ?? null} />
+            )}
+          </div>
+        </>
+      )}
 
       {/* Scores */}
       <div className="grid gap-4 lg:grid-cols-3">

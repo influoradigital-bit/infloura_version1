@@ -40,6 +40,40 @@ vi.mock('@/lib/api', async () => {
   };
 });
 
+// F-0886 — see campaigns-list.test.tsx's identical comment: CampaignsList now reads these two
+// react-query-backed hooks, mocked here so this pre-existing (and unrelated) suite doesn't need a
+// QueryClientProvider. Pro plan / OWNER baseline, same as campaigns-list.test.tsx.
+vi.mock('@/hooks/brand/useBilling', () => ({
+  useBilling: () => ({
+    plan: {
+      plan: {
+        code: 'PRO',
+        name: 'Pro',
+        priceInr: 499900,
+        billingCycle: 'MONTHLY',
+        feeBps: 700,
+        aiMonthlyAllotment: 1500,
+        seatLimit: 5,
+        trackedCreatorLimit: null,
+        creatorAnalyticsMonthlyLimit: null,
+        exportEnabled: true,
+        campaignTemplatesEnabled: true,
+      },
+      subscription: { status: 'ACTIVE', currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    },
+    usage: null,
+    invoices: [],
+    campaignInvoices: [],
+    commissionInvoices: [],
+    isLoading: false,
+    error: null,
+    refetch: () => {},
+  }),
+}));
+vi.mock('@/hooks/brand/useBrandBillingAccess', () => ({
+  useBrandBillingAccess: () => ({ role: 'OWNER', canManage: true, isLoading: false }),
+}));
+
 function makeCampaign(id: string, status: Campaign['status']): Campaign {
   return {
     id,

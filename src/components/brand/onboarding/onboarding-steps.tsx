@@ -5,8 +5,6 @@ import {
   EyeOff,
   X,
   CheckCircle2,
-  Building2,
-  Users,
   Mail,
   ArrowRight,
   ArrowLeft,
@@ -1222,40 +1220,6 @@ export function CompanyDetailsStep({
               )}
             </div>
           )}
-        </div>
-
-        {/* Workspace type */}
-        <div className="flex flex-col gap-1.5">
-          <Label>Workspace type</Label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[
-              { value: 'BRAND' as WorkspaceType, icon: Building2, title: 'Brand', desc: 'Single company' },
-              { value: 'AGENCY' as WorkspaceType, icon: Users, title: 'Agency', desc: 'Multiple clients' },
-            ].map(({ value, icon: Icon, title, desc }) => (
-              <button
-                key={value}
-                type="button"
-                className={cn(
-                  'flex items-center gap-3 rounded-lg border-2 p-3.5 text-left transition-all',
-                  data.workspaceType === value
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/30',
-                )}
-                onClick={() => onUpdate({ workspaceType: value })}
-              >
-                <div className={cn(
-                  'flex h-9 w-9 items-center justify-center rounded-lg',
-                  data.workspaceType === value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
-                )}>
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-foreground">{title}</p>
-                  <p className="text-xs text-muted-foreground">{desc}</p>
-                </div>
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

@@ -38,7 +38,12 @@ vi.mock('@/lib/api', async () => {
 });
 
 vi.mock('@/hooks/analytics/useCreatorMetrics', () => ({
-  useCreatorMetrics: () => ({ data: null, loading: false, error: null, refresh: vi.fn() }),
+  useCreatorMetrics: () => ({ data: null, loading: false, error: null, upgradeRequired: false, refresh: vi.fn() }),
+}));
+// F-0886 — the page now also reads the billing role via this react-query-backed hook, mocked at
+// the module boundary so this pre-existing (and unrelated) suite doesn't need a QueryClientProvider.
+vi.mock('@/hooks/brand/useBrandBillingAccess', () => ({
+  useBrandBillingAccess: () => ({ role: 'OWNER', canManage: true, isLoading: false }),
 }));
 vi.mock('@/hooks/analytics/useCreatorScores', () => ({
   useCreatorScores: () => ({ data: null, loading: false, error: null, notFound: false, refresh: vi.fn() }),

@@ -37,6 +37,11 @@ function messageForMetricsError(err: unknown): string {
   return err instanceof Error ? err.message : 'Failed to load creator metrics';
 }
 
+/** F-0886 — was this specific failure the Pro-gate, as opposed to any other load error? */
+function isUpgradeRequiredError(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 402 || err.code === 'UPGRADE_REQUIRED');
+}
+
 /**
  * Sentinel creatorId meaning "the logged-in creator viewing their own analytics".
  * Hooks route this to the creator-self endpoints (/creator/analytics/me/*) instead
@@ -48,6 +53,12 @@ export interface UseCreatorMetricsResult {
   data: CreatorMetrics | null;
   loading: boolean;
   error: string | null;
+  /**
+   * F-0886 — true only when the load failed with a 402 `UPGRADE_REQUIRED` (B39's per-creator plan
+   * limit). Previously this collapsed into `error`'s string, which the page could only render as
+   * text — there was no way for a caller to branch and render the shared `<UpgradeGate>` instead.
+   */
+  upgradeRequired: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -58,6 +69,7 @@ export function useCreatorMetrics(
   const [data, setData] = useState<CreatorMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [upgradeRequired, setUpgradeRequired] = useState(false);
 
   const startIso = dateRange?.start?.toISOString();
   const endIso = dateRange?.end?.toISOString();
@@ -66,10 +78,12 @@ export function useCreatorMetrics(
     if (!creatorId) {
       setData(null);
       setLoading(false);
+      setUpgradeRequired(false);
       return;
     }
     setLoading(true);
     setError(null);
+    setUpgradeRequired(false);
     try {
       const result =
         creatorId === CREATOR_ANALYTICS_SELF
@@ -78,6 +92,7 @@ export function useCreatorMetrics(
       setData(result);
     } catch (err) {
       setError(messageForMetricsError(err));
+      setUpgradeRequired(isUpgradeRequiredError(err));
     } finally {
       setLoading(false);
     }
@@ -88,7 +103,7 @@ export function useCreatorMetrics(
     refresh();
   }, [refresh]);
 
-  return { data, loading, error, refresh };
+  return { data, loading, error, upgradeRequired, refresh };
 }
 
 export default useCreatorMetrics;

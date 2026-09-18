@@ -65,6 +65,9 @@ import {
 import { Zap } from 'lucide-react';
 import { HypeCampaignCard } from '@/components/brand/hype-campaign-card';
 import { demoHypeCampaign } from '@/lib/demo-data';
+import { useBilling } from '@/hooks/brand/useBilling';
+import { useBrandBillingAccess } from '@/hooks/brand/useBrandBillingAccess';
+import { UpgradeGate } from '@/components/brand/billing/UpgradeGate';
 
 // Mock campaigns data
 const mockCampaigns: (Campaign & { collaboratorsCount: number; progress: number })[] = [
@@ -267,6 +270,13 @@ export function CampaignsList() {
   const [saveTemplateTarget, setSaveTemplateTarget] = React.useState<CampaignRow | null>(null);
   const [templateName, setTemplateName] = React.useState('');
   const [templateBusy, setTemplateBusy] = React.useState(false);
+  // F-0886 — campaign templates are Pro-gated (`Plan.campaignTemplatesEnabled`, GET
+  // /billing/plan; POST /campaign-templates is @RequiresPlan CAMPAIGN_TEMPLATES). `templateUpgradeRequired`
+  // covers the reactive case (server 402s the save); the plan's own flag below covers the
+  // proactive case so the dialog renders the gate immediately rather than a doomed form.
+  const [templateUpgradeRequired, setTemplateUpgradeRequired] = React.useState(false);
+  const { plan: billingPlan } = useBilling();
+  const { canManage: canManageBilling } = useBrandBillingAccess();
   // Caller's own workspace role, for UX gating of Edit/Delete. Null = unknown (loading or the
   // members fetch failed) — we fail OPEN in that case (let the server enforce + show its clear
   // error) rather than wrongly disabling a real Owner's buttons on a flaky request.
@@ -398,6 +408,12 @@ export function CampaignsList() {
       setSaveTemplateTarget(null);
       setTemplateName('');
     } catch (e) {
+      // F-0886 — a 402 UPGRADE_REQUIRED flips the dialog to the shared UpgradeGate instead of a
+      // generic error toast the brand has no way to act on.
+      if (e instanceof ApiError && (e.status === 402 || e.code === 'UPGRADE_REQUIRED')) {
+        setTemplateUpgradeRequired(true);
+        return;
+      }
       toast({
         title: 'Could not save template',
         description: e instanceof ApiError ? e.message : 'Try again in a moment.',
@@ -407,6 +423,11 @@ export function CampaignsList() {
       setTemplateBusy(false);
     }
   };
+
+  // Proactive gate: only meaningful once we actually have a plan to check (live mode) — never
+  // fabricated in mock mode, where there is no real billing/plan lookup to gate on.
+  const campaignTemplatesGateActive =
+    templateUpgradeRequired || (liveApi && billingPlan != null && !billingPlan.plan.campaignTemplatesEnabled);
 
   const handleToggleStatus = async (campaign: CampaignRow, nextStatus: 'PAUSED' | 'ACTIVE') => {
     setPendingActionId(campaign.id);
@@ -1091,34 +1112,57 @@ export function CampaignsList() {
 
       <AlertDialog
         open={!!saveTemplateTarget}
-        onOpenChange={(open) => { if (!open) { setSaveTemplateTarget(null); setTemplateName(''); } }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSaveTemplateTarget(null);
+            setTemplateName('');
+            setTemplateUpgradeRequired(false);
+          }
+        }}
       >
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Save as template</AlertDialogTitle>
-            <AlertDialogDescription>
-              Reuse &ldquo;{saveTemplateTarget?.title}&rdquo;&rsquo;s setup when creating future
-              campaigns. Give this template a name.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-2">
-            <Input
-              autoFocus
-              value={templateName}
-              onChange={(e) => setTemplateName(e.target.value.slice(0, 200))}
-              placeholder="e.g. Diwali creator drop"
-            />
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={templateBusy}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={templateBusy || !templateName.trim()}
-              onClick={(e) => { e.preventDefault(); void handleSaveAsTemplate(); }}
-            >
-              {templateBusy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
-              Save template
-            </AlertDialogAction>
-          </AlertDialogFooter>
+          {campaignTemplatesGateActive ? (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Save as template</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Saving campaigns as reusable templates needs a Pro plan.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <UpgradeGate feature="campaign templates" canManageBilling={canManageBilling} />
+              <AlertDialogFooter>
+                <AlertDialogCancel>Close</AlertDialogCancel>
+              </AlertDialogFooter>
+            </>
+          ) : (
+            <>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Save as template</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Reuse &ldquo;{saveTemplateTarget?.title}&rdquo;&rsquo;s setup when creating future
+                  campaigns. Give this template a name.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="space-y-2">
+                <Input
+                  autoFocus
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value.slice(0, 200))}
+                  placeholder="e.g. Diwali creator drop"
+                />
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={templateBusy}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={templateBusy || !templateName.trim()}
+                  onClick={(e) => { e.preventDefault(); void handleSaveAsTemplate(); }}
+                >
+                  {templateBusy && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                  Save template
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </>
+          )}
         </AlertDialogContent>
       </AlertDialog>
     </div>

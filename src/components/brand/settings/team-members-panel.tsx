@@ -19,6 +19,9 @@ import {
   type WorkspaceInviteResponse,
 } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
+import { useBilling } from '@/hooks/brand/useBilling';
+import { useBrandBillingAccess } from '@/hooks/brand/useBrandBillingAccess';
+import { UpgradeGate } from '@/components/brand/billing/UpgradeGate';
 
 /**
  * [F-0443, unreachable-endpoint] Workspace team management.
@@ -70,6 +73,13 @@ export function TeamMembersPanel() {
   const [inviting, setInviting] = React.useState(false);
   const [emailError, setEmailError] = React.useState<string | undefined>();
   const [busyId, setBusyId] = React.useState<string | null>(null);
+  // F-0886 — seats are Pro-gated (`Plan.seatLimit`, GET /billing/plan). `upgradeRequired` covers
+  // the reactive case (the invite call itself 402s, e.g. a seat filled by someone else in the
+  // same moment); `seatLimitReached` below covers the proactive case using the plan we already
+  // have on hand, so the gate renders before a doomed request is even sent.
+  const [upgradeRequired, setUpgradeRequired] = React.useState(false);
+  const { plan: billingPlan } = useBilling();
+  const { canManage: canManageBilling } = useBrandBillingAccess();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -107,6 +117,13 @@ export function TeamMembersPanel() {
   const pendingInvites = invites.filter((i) => i.status === 'PENDING');
   const activeMembers = members.filter((m) => m.active);
 
+  // F-0886 — proactive gate: the plan's real `seatLimit` (GET /billing/plan) compared against the
+  // active member count already on hand. `billingPlan` is null while useBilling() is still
+  // loading or on mock/dev builds without a workspace yet — fails open (no gate) rather than
+  // blocking invites on an unresolved plan lookup.
+  const seatLimitReached =
+    billingPlan != null && activeMembers.length >= billingPlan.plan.seatLimit;
+
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();
     setInviting(true);
@@ -120,6 +137,10 @@ export function TeamMembersPanel() {
       setEmail('');
       await load();
     } catch (err) {
+      if (err instanceof ApiError && (err.status === 402 || err.code === 'UPGRADE_REQUIRED')) {
+        setUpgradeRequired(true);
+        return;
+      }
       if (err instanceof ApiError && err.fields?.length) {
         const named = err.fields.map((f) => ({ ...f, field: baseFieldName(f.field) }));
         const emailField = named.find((f) => f.field === 'email');
@@ -245,7 +266,17 @@ export function TeamMembersPanel() {
         </ul>
       </Card>
 
-      {canManage ? (
+      {canManage && (seatLimitReached || upgradeRequired) ? (
+        <UpgradeGate
+          feature="team invites"
+          reason={
+            billingPlan
+              ? `Your plan allows ${billingPlan.plan.seatLimit} seat${billingPlan.plan.seatLimit === 1 ? '' : 's'}. Upgrade to Pro to invite more teammates.`
+              : undefined
+          }
+          canManageBilling={canManageBilling}
+        />
+      ) : canManage ? (
         <Card className="p-6">
           <h3 className="font-semibold mb-1">Invite a colleague</h3>
           <p className="text-sm text-muted-foreground mb-6">

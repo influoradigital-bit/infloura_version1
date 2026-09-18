@@ -99,7 +99,12 @@ export default function BrandOnboardingPage() {
       await api.onboarding.saveBrandCompany({
         companyName: data.companyName,
         companySlug: data.companySlug,
-        workspaceType: data.workspaceType,
+        // F-0887 / 2026-09-18 ruling (wiki/decisions/2026-09-18-agency-chooser-removed.md):
+        // onboarding offers BRAND only now — the chooser card is gone from CompanyDetailsStep, and
+        // this is hardcoded rather than reading `data.workspaceType` so a stale/replayed
+        // `OnboardingData` (e.g. state kept across a step back-and-forth) can never smuggle
+        // AGENCY through. The 4 existing AGENCY workspaces are converted server-side (C5).
+        workspaceType: 'BRAND',
         industry: data.industry,
         companySize: data.companySize,
         websiteUrl: data.websiteUrl,

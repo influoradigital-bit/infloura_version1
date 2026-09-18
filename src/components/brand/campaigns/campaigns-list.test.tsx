@@ -40,6 +40,41 @@ vi.mock('@/lib/api', async () => {
   };
 });
 
+// F-0886 — CampaignsList now also reads the billing plan (campaignTemplatesEnabled) and billing
+// role via these two react-query-backed hooks, mocked at the module boundary (this file's own
+// suite is unrelated to that gate — see campaigns-list.f0886-upgrade-gate.test.tsx for it). A Pro
+// plan with templates enabled and an OWNER/ADMIN caller is the baseline here.
+vi.mock('@/hooks/brand/useBilling', () => ({
+  useBilling: () => ({
+    plan: {
+      plan: {
+        code: 'PRO',
+        name: 'Pro',
+        priceInr: 499900,
+        billingCycle: 'MONTHLY',
+        feeBps: 700,
+        aiMonthlyAllotment: 1500,
+        seatLimit: 5,
+        trackedCreatorLimit: null,
+        creatorAnalyticsMonthlyLimit: null,
+        exportEnabled: true,
+        campaignTemplatesEnabled: true,
+      },
+      subscription: { status: 'ACTIVE', currentPeriodStart: null, currentPeriodEnd: null, cancelAtPeriodEnd: false },
+    },
+    usage: null,
+    invoices: [],
+    campaignInvoices: [],
+    commissionInvoices: [],
+    isLoading: false,
+    error: null,
+    refetch: () => {},
+  }),
+}));
+vi.mock('@/hooks/brand/useBrandBillingAccess', () => ({
+  useBrandBillingAccess: () => ({ role: 'OWNER', canManage: true, isLoading: false }),
+}));
+
 function makeCampaign(id: string): Campaign {
   return {
     id,
