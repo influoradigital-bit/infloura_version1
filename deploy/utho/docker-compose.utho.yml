@@ -181,10 +181,17 @@ services:
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       # T-GOLIVE-0918 [meera · 2026-09-18] — was unforwarded (F-0787-class gap: explicit-map
       # environment: only passes listed keys). application.yml:559 reads
-      # ${TREND_INGEST_PULL_CRON:0 0 5 * * *}; TrendIngestProperties#setPullCron (L108-110)
-      # also guards a blank value back to the same default, so mirroring the default here is
-      # belt-and-suspenders, not load-bearing. Source: application.yml:559,
-      # TrendIngestProperties.java:33-35,104-110.
+      # ${TREND_INGEST_PULL_CRON:0 0 5 * * *}; TrendIngestProperties#setPullCron (L108-110) guards
+      # a blank value back to the same default for the @ConfigurationProperties bean, BUT
+      # TrendPullJob.java:123's own `@Scheduled(cron = "${influora.trend-ingest.pull-cron:0 0 5 * *
+      # *}")` resolves the SAME property key directly from the Environment and never goes through
+      # that setter — a blank-but-present TREND_INGEST_PULL_CRON here still becomes the resolved
+      # value of influora.trend-ingest.pull-cron (Spring only falls back to a `:` default when the
+      # key is wholly ABSENT, not when it resolves to ""), so @Scheduled would receive cron="" and
+      # fail to parse at boot. REPAIR ROUND 1 finding: this WAS mislabeled "belt-and-suspenders,
+      # not load-bearing" before TrendPullJob landed (af23eb9) — it is now load-bearing: never ship
+      # this env file with the var present-but-empty. Source: application.yml:559,
+      # TrendIngestProperties.java:33-35,104-110, TrendPullJob.java:123.
       TREND_INGEST_PULL_CRON: ${TREND_INGEST_PULL_CRON:-0 0 5 * * *}
       # ---- Creator AI Co-pilot batch (OFF unless set in .env) ----
       # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
@@ -193,7 +200,12 @@ services:
       # T-MEERA-CREATOR-PHASE-A, Priya gate review defect 4 — rollback flag for the whole Meera
       # for Creators surface (see MeeraCreatorFeatureProperties/application.yml). On by default;
       # flip to "false" to 404 every CREATOR-audience Meera route without a code rollback.
-      MEERA_CREATOR_ENABLED: "true"
+      # T-GOLIVE-0918 [meera · 2026-09-18] — REPAIR ROUND 1 LOW: was a bare "true" here while
+      # docker-compose.utho-shared.yml already used ${MEERA_CREATOR_ENABLED:-true}, so the §5
+      # rollback-by-env-var-flip instruction in wiki/processes/go-live-0918.md could not actually
+      # be applied to this file (docker-compose sees a literal string, not a placeholder, so
+      # editing influora.env would have had no effect). Matched to the shared file's form.
+      MEERA_CREATOR_ENABLED: ${MEERA_CREATOR_ENABLED:-true}
       INFLUORA_MEERA_STREAM_PUBLICCHATURL: https://${AI_DOMAIN}/chat
       CLAMAV_HOST: clamav
       # ---- Money + comms (no validator — break silently if wrong) ----
@@ -317,7 +329,13 @@ services:
       # default (same undeclared-flag pattern as F-0390). "0" disables the cap. Holds
       # are shared through REDIS_URL above; without Redis the cap is per-process and
       # influora-ai refuses to boot with more than one uvicorn worker.
-      AI_CREATOR_MONTHLY_CAP_USD: "0.75"
+      # T-GOLIVE-0918 [meera · 2026-09-18] — REPAIR ROUND 1 LOW: was a bare "0.75" literal, so
+      # wiki/processes/go-live-0918.md §2's instruction to "set AI_CREATOR_MONTHLY_CAP_USD in the
+      # env file" was false — Compose ignores the host env entirely for a literal value. Switched
+      # to the `${VAR:-default}` form so an operator override actually reaches the container; the
+      # 0.75 default is unchanged, so this is not a change to the Q7 pinned value, only to whether
+      # it can be overridden per box. Source: influora-ai/app/config.py:455-457.
+      AI_CREATOR_MONTHLY_CAP_USD: ${AI_CREATOR_MONTHLY_CAP_USD:-0.75}
       # P1 BLANK TURN fix (2026-07-24, wiki/ai-review/meera-blank-turn-ai-
       # review.md): previously UNSET here, silently inheriting the Python
       # default (384), which sat exactly on create_campaign's tool-JSON
