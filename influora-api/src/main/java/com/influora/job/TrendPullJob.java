@@ -80,6 +80,28 @@ public class TrendPullJob {
     private static final int EXPECTED_GARM_CATEGORY_COUNT = 10;
     private static final Set<String> VALID_GARM_RISK_LEVELS = Set.of("floor", "low", "medium", "high");
 
+    // T-GOLIVE-0918 repair round 2 [vikram · 2026-09-18] — LOW fix: repair round 1 checked only
+    // the COUNT of garm_flags (10), not which categories they named. Reviewer probe p04 sent 10
+    // flags all for "spam_or_harmful_content" at "floor" — none of the other 9 categories were
+    // present at all — and the headline was stored=1, because a count-only check can't tell 10
+    // duplicates of one category from one-of-each. influora-ai's own _validate_model_result
+    // enforces the real shape server-side today (so this is defence-in-depth against future
+    // contract drift, not a currently-reachable prod path), closed here by checking the exact
+    // category SET, not just its size. Source of the 10 fixed names:
+    // influora-ai/app/tools/schemas.py::GARM_CATEGORIES.
+    private static final Set<String> EXPECTED_GARM_CATEGORIES =
+            Set.of(
+                    "adult_explicit_sexual_content",
+                    "arms_ammunition",
+                    "crime_harmful_acts_to_individuals",
+                    "death_injury_military_conflict",
+                    "hate_speech_acts_of_aggression",
+                    "illegal_drugs_tobacco_alcohol",
+                    "obscenity_profanity",
+                    "spam_or_harmful_content",
+                    "terrorism",
+                    "debated_sensitive_social_issues");
+
     /** job-design.md step 12 verified typicals (HYPE 3, SEASONAL 21, PRIDE 1, EDUCATIONAL 30).
      * Only EDUCATIONAL is reachable today — see class javadoc "descoped" note. */
     private static final Map<TrendCampaignType, Integer> PEAK_WINDOW_DAYS =
@@ -211,13 +233,26 @@ public class TrendPullJob {
             boolean flagged;
             try {
                 flagged = isFlaggedByClassifier(id, raw.text());
-            } catch (BrandSafetyAiException e) {
+            } catch (RuntimeException e) {
+                // T-GOLIVE-0918 repair round 2 [vikram · 2026-09-18] — LOW fix: this used to catch
+                // only BrandSafetyAiException. BrandSafetyAiClient#classify calls
+                // BrandSafetyServiceTokenService#mint(workspaceId) BEFORE its own try/catch, so a
+                // JWT-signing/key-load failure there throws a plain RuntimeException (e.g.
+                // IllegalStateException), which fell through this catch, out of the for-loop, and
+                // out of pullTrends entirely — reviewer probe p01: "THREW IllegalStateException ...
+                // stored=0", discarding every headline already approved earlier in the SAME run,
+                // not just the one that hit the bad call. Widening to RuntimeException keeps the
+                // exact same fail-closed behavior per headline (still never stored, still counted
+                // and logged) but stops one classifier-path failure from aborting the whole run —
+                // matching every other per-item resilience discipline in this class (see
+                // #safeFetch) instead of contradicting it.
                 log.warn(
-                        "TrendPullJob: rejected id={} source={} reason=classifier_error error={} —"
+                        "TrendPullJob: rejected id={} source={} reason=classifier_error error={} ({}) —"
                                 + " failing closed, not stored",
                         id,
                         raw.source(),
-                        e.getMessage());
+                        e.getMessage(),
+                        e.getClass().getSimpleName());
                 classifierFailedOrUnconfigured++;
                 continue;
             }
@@ -332,8 +367,21 @@ public class TrendPullJob {
                             + " garm_flags, expected "
                             + EXPECTED_GARM_CATEGORY_COUNT);
         }
+        // T-GOLIVE-0918 repair round 2 [vikram · 2026-09-18] — LOW fix: a count check alone lets
+        // 10 flags all name the SAME category through (reviewer probe p04). Verify the categories
+        // are exactly the known 10, not just that there are 10 of them.
+        Set<String> seenCategories = new java.util.HashSet<>();
         boolean flagged = false;
         for (GarmFlag flag : flags) {
+            String category = flag.category();
+            if (category == null || !EXPECTED_GARM_CATEGORIES.contains(category)) {
+                throw new BrandSafetyAiException(
+                        "classification result for " + id + " carried an unknown category: " + category);
+            }
+            if (!seenCategories.add(category)) {
+                throw new BrandSafetyAiException(
+                        "classification result for " + id + " carried a duplicate category: " + category);
+            }
             String risk = flag.risk() == null ? null : flag.risk().toLowerCase(Locale.ROOT);
             if (risk == null || !VALID_GARM_RISK_LEVELS.contains(risk)) {
                 throw new BrandSafetyAiException(
@@ -342,6 +390,10 @@ public class TrendPullJob {
             if (!"floor".equals(risk)) {
                 flagged = true;
             }
+        }
+        if (!seenCategories.equals(EXPECTED_GARM_CATEGORIES)) {
+            throw new BrandSafetyAiException(
+                    "classification result for " + id + " did not cover all 10 known GARM categories");
         }
         return flagged;
     }

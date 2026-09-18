@@ -333,6 +333,75 @@ class TrendPullJobTest {
                 captor.getValue().isEmpty(), "a content_id mismatch must fail closed, not be read as safe");
     }
 
+    // --- repair round 2, LOW #1: a plain RuntimeException on the classifier path must not abort
+    // --- the whole run, only that headline ---------------------------------------------------
+
+    @Test
+    @DisplayName("a plain RuntimeException from the classifier path fails closed for that headline"
+            + " only — it does not abort the rest of the run")
+    void classifierRuntimeExceptionDoesNotAbortWholeRun() {
+        // T-GOLIVE-0918 repair round 2 [vikram · 2026-09-18] — regression test for reviewer probe
+        // p01: BrandSafetyServiceTokenService#mint(workspaceId), called by
+        // BrandSafetyAiClient#classify BEFORE its own try/catch, can throw a plain
+        // RuntimeException (e.g. IllegalStateException on a JWT key-load failure) that is not a
+        // BrandSafetyAiException. Before this fix that propagated out of pullTrends entirely and
+        // discarded every headline already approved earlier in the SAME run ("THREW
+        // IllegalStateException ... stored=0"). Two sources here: the first headline's classify
+        // call throws a plain RuntimeException, the second succeeds — the second's row must still
+        // be written.
+        when(tmdbClient.isConfigured()).thenReturn(true);
+        when(newsClient.isConfigured()).thenReturn(true);
+        when(youtubeClient.isConfigured()).thenReturn(false);
+        when(tmdbClient.fetch())
+                .thenReturn(List.of(new RawTrend("Diwali fashion haul trending this week", "tmdb", "")));
+        when(newsClient.fetch())
+                .thenReturn(
+                        List.of(new RawTrend("India wins thrilling cricket match today", "news", "")));
+        when(brandSafetyAiClient.classify(anyString(), anyList()))
+                .thenThrow(new IllegalStateException("JWT signing key not loaded"))
+                .thenAnswer(inv -> List.of(floorFlags(requestedId(inv))));
+
+        buildJob().pullTrends();
+
+        ArgumentCaptor<List<Trend>> captor = ArgumentCaptor.forClass(List.class);
+        verify(writer).writeAll(captor.capture());
+        assertEquals(
+                1,
+                captor.getValue().size(),
+                "the second headline must still be stored despite the first classify() call"
+                        + " throwing a plain RuntimeException");
+    }
+
+    // --- repair round 2, LOW #2: 10 flags all naming the same category must fail closed --------
+
+    @Test
+    @DisplayName("classifier result whose 10 flags don't cover the known category set fails closed")
+    void classifierFlagsWithWrongCategoriesFailsClosed() {
+        // T-GOLIVE-0918 repair round 2 [vikram · 2026-09-18] — regression test for reviewer probe
+        // p04: 10 flags, all category="spam_or_harmful_content" at risk="floor", covering none of
+        // the other 9 GARM categories. The old count-only check (flags.size() == 10) let this
+        // through and the headline was stored=1.
+        wireSingleSource(newsClient, "Diwali fashion haul trending this week");
+        when(brandSafetyAiClient.classify(anyString(), anyList()))
+                .thenAnswer(
+                        inv -> {
+                            String id = requestedId(inv);
+                            List<GarmFlag> flags = new ArrayList<>();
+                            for (int i = 0; i < 10; i++) {
+                                flags.add(new GarmFlag("spam_or_harmful_content", "floor", "n/a"));
+                            }
+                            return List.of(new ClassifiedItem(id, flags, "neutral", 0.0, 100.0, "n/a"));
+                        });
+
+        buildJob().pullTrends();
+
+        ArgumentCaptor<List<Trend>> captor = ArgumentCaptor.forClass(List.class);
+        verify(writer).writeAll(captor.capture());
+        assertTrue(
+                captor.getValue().isEmpty(),
+                "10 flags all naming the same category must fail closed, not be read as safe");
+    }
+
     // --- done_when: classifier failure/timeout stores nothing -------------------------------
 
     @Test

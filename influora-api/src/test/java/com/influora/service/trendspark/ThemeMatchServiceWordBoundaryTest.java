@@ -131,6 +131,41 @@ class ThemeMatchServiceWordBoundaryTest {
                 Set.of("celebration", "joy", "energy", "innovation", "style", "confidence"), themes);
     }
 
+    // ── defence-in-depth: a keyword mapped outside the loaded taxonomy is never trusted ───────
+
+    @Test
+    @DisplayName("M5c: a keyword mapped to a theme outside the loaded taxonomy is filtered out, not"
+            + " trusted")
+    void keywordMappedToUnknownThemeIsFiltered() throws Exception {
+        // T-GOLIVE-0918 repair round 2 [vikram · 2026-09-18] — regression test for mutation M5c
+        // (replacing `knownThemes.contains(theme)` with `if (true)` in #themesForText survived
+        // all 26 tests in this class + TrendPullJobTest). The SHIPPED taxonomy maps 0 keywords to
+        // a theme outside its own `themes` array, so the real taxonomy can never falsify this
+        // filter — it was defence-in-depth with no test able to defend it. Reflection injects a
+        // synthetic taxonomy where one keyword's mapped theme is deliberately absent from
+        // knownThemes, to prove the FILTER — not the taxonomy's own good luck — is what keeps it
+        // out.
+        java.lang.reflect.Method compile =
+                ThemeMatchService.class.getDeclaredMethod("compileKeywordMatchers", java.util.Map.class);
+        compile.setAccessible(true);
+        Object compiledMatchers =
+                compile.invoke(null, java.util.Map.of("zzzkeyword", java.util.List.of("not_a_real_theme")));
+
+        java.lang.reflect.Field knownThemesField = ThemeMatchService.class.getDeclaredField("knownThemes");
+        knownThemesField.setAccessible(true);
+        knownThemesField.set(service, Set.of("festive")); // deliberately excludes "not_a_real_theme"
+
+        java.lang.reflect.Field keywordMatchersField =
+                ThemeMatchService.class.getDeclaredField("keywordMatchers");
+        keywordMatchersField.setAccessible(true);
+        keywordMatchersField.set(service, compiledMatchers);
+
+        assertEquals(
+                Set.of(),
+                service.themesForText("this headline mentions zzzkeyword right here"),
+                "a keyword mapped to a theme outside the loaded taxonomy must never be trusted");
+    }
+
     // ── fail-closed contract on null/blank is unchanged ──────────────────────────────────────
 
     @Test
