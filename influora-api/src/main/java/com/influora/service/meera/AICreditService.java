@@ -440,40 +440,33 @@ public class AICreditService {
      * #resetForNewCycleIfDue} instead so a duplicate trigger in the same UTC CALENDAR MONTH is a
      * no-op — see that method's javadoc for why that guard lives there and not here.
      *
-     * <p><b>F-0884 (repeat-reset across the renewal safety net) [vikram · 2026-09-18 REPAIR
-     * ROUND]:</b> this method is ALSO called directly by {@code
-     * SubscriptionService#applyRenewalSafetyNet} on a per-subscription BILLING-PERIOD boundary
-     * that does not align to the calendar month — {@code resetForNewCycleIfDue}'s calendar-month
-     * guard alone cannot see that call at all (it is a different call site in a different, {@code
-     * SubscriptionService.java}, file this lane must not edit). Without a guard THIS method could
-     * see two full refills for the same billing period: the safety net resets mid-month when a
-     * renewal webhook is missed, and {@code AICreditResetJob}'s next 1st-of-month run (a
-     * DIFFERENT calendar month, so {@code resetForNewCycleIfDue}'s own guard does not block it)
-     * would reset the SAME still-current billing period again. Fixed here, inside this lane's own
-     * files, by guarding on the workspace's OWN {@code currentPeriodEnd}
-     * (Subscription.java:46-49) instead of the calendar month: a second call resolving the SAME
-     * {@code currentPeriodEnd} as the last reset is a no-op. When the period genuinely advances
-     * (a real renewal, {@code applyRenewalSafetyNet} always calls {@code subscription
-     * #renewPeriod} BEFORE this method) the resolved {@code currentPeriodEnd} differs from what
-     * was last stored, so the legitimate mid-period reset still proceeds — this guard only blocks
-     * a SECOND reset attempt for a period that was already reset. {@code periodEnd == null} (no
-     * subscription row — e.g. a workspace that has never touched billing) disables the guard, so
-     * behavior for every plain Free workspace is unchanged.
-     *   Source: F-0884 repair round
+     * <p><b>F-0884 double-reset guard REMOVED as a stopgap (F-0893) [vikram · 2026-09-18]:</b> the
+     * F-0884 repair round added a guard here comparing {@link #currentBillingPeriodEnd} to {@code
+     * credit.getLastResetPeriodEnd()}, no-opping a second reset for the same resolved billing
+     * period. {@code currentBillingPeriodEnd} reads the workspace's {@code Subscription} row with
+     * NO status filter, while {@code SubscriptionRenewalResetJob} only ever advances {@code
+     * currentPeriodEnd} for ACTIVE rows — so once a subscription goes CANCELLED or HALTED, its
+     * {@code currentPeriodEnd} freezes forever, and this guard then treated every subsequent
+     * monthly reset from {@code AICreditResetJob} as "already reset for this period" and silently
+     * no-op'd it forever, even though the workspace had long since fallen back to the Free plan
+     * allotment. Kabir's probe: a workspace reset as Free (wanting 100) stayed at 5 credits, with
+     * {@code resetEnd} frozen a month in the past. Approved by Swapnil 2026-09-18 as a small,
+     * surgical stopgap: the guard is removed and the reset is unconditional again, exactly as it
+     * was before the F-0884 repair round (commit e35d583). F-0884 itself is RE-OPENED, pending
+     * Priya's credit-clock ruling (Option A) on how a correctly status-scoped billing-period guard
+     * should actually work; this is not a redesign of that guard.
+     *   Source: F-0893 (HIGH), Kabir probe "p3 Dec1 reset as Free (want 100) credits=5 ...
+     *   resetEnd=2026-10-15"; F-0884 (re-opened)
      */
     @Transactional
     public void resetForNewCycle(String workspaceId) {
         BrandAiCredit credit = ensureInitialized(workspaceId);
 
+        // F-0893 [vikram · 2026-09-18] -- periodEnd is still resolved and stored below so the
+        // column stays populated for whatever the F-0884 credit-clock ruling ends up needing, but
+        // it no longer GATES the reset (see class-level javadoc above for why the guard itself was
+        // removed). Source: F-0893 stopgap.
         Instant periodEnd = currentBillingPeriodEnd(workspaceId);
-        if (periodEnd != null && periodEnd.equals(credit.getLastResetPeriodEnd())) {
-            log.info(
-                    "resetForNewCycle: workspace {} already reset for the current billing period"
-                            + " (endingAt={}) -- no-op (F-0884 double-reset guard)",
-                    workspaceId,
-                    periodEnd);
-            return;
-        }
 
         credit.setCreditsRemaining(credit.getMonthlyAllotment());
         credit.setLastReset(LocalDate.now(ZoneOffset.UTC));

@@ -23,6 +23,7 @@ import com.influora.domain.entity.BrandAiCredit;
 import com.influora.domain.entity.Plan;
 import com.influora.domain.entity.Subscription;
 import com.influora.domain.enums.PlanCode;
+import com.influora.domain.enums.SubscriptionStatus;
 import com.influora.repository.BrandAiCreditRepository;
 import com.influora.service.IdempotencyService;
 import com.influora.service.billing.SubscriptionService;
@@ -724,40 +725,76 @@ class AICreditServiceTest {
     }
 
     // -----------------------------------------------------------------------------------------
-    // F-0884 REPAIR ROUND [vikram · 2026-09-18]: resetForNewCycle's OWN billing-period guard,
-    // decided (not just flagged) without touching SubscriptionService.java. Closes "a missed
-    // renewal webhook means the safety-net resets mid-period AND the monthly job resets again on
-    // the 1st -- two full refills": SubscriptionService#applyRenewalSafetyNet calls
-    // resetForNewCycle directly on a per-subscription period boundary that resetForNewCycleIfDue's
-    // separate calendar-month guard cannot see at all (different call site, different file).
+    // F-0893 STOPGAP [vikram · 2026-09-18]: the F-0884 repair round added a billing-period guard
+    // to resetForNewCycle (comparing currentBillingPeriodEnd's Subscription lookup, which reads
+    // ANY status, to the stored lastResetPeriodEnd). SubscriptionRenewalResetJob only advances
+    // currentPeriodEnd for ACTIVE rows, so a CANCELLED/HALTED row's currentPeriodEnd freezes
+    // forever, and that guard then no-op'd EVERY later monthly reset permanently (Kabir probe:
+    // reset as Free wanting 100, stayed at 5). Approved by Swapnil 2026-09-18 as a stopgap: the
+    // guard is removed and resetForNewCycle is unconditional again. F-0884 itself is RE-OPENED
+    // pending Priya's credit-clock ruling (Option A). The two tests below replace the removed
+    // guard's coverage: they now assert what e35d583 got WRONG -- a frozen currentPeriodEnd from a
+    // CANCELLED/HALTED subscription must NOT block a legitimate monthly refill.
     // -----------------------------------------------------------------------------------------
 
     @Test
     @DisplayName(
-            "F-0884: resetForNewCycle called TWICE for the SAME resolved billing period (simulating"
-                    + " the renewal safety net firing, then AICreditResetJob's next monthly run"
-                    + " landing inside the same still-current period) resets only once")
-    void testResetForNewCycleGuardsOnSameBillingPeriod() {
-        Instant periodEnd = Instant.parse("2026-10-15T00:00:00Z");
-        BrandAiCredit credit = createCredit(20, 400, null, 0);
+            "F-0893: a CANCELLED ex-Pro subscription's frozen currentPeriodEnd (equal to the stored"
+                    + " lastResetPeriodEnd) must NOT block the monthly reset from refilling a Free"
+                    + " workspace -- the F-0884 guard treated this as an already-reset period"
+                    + " forever")
+    void testResetForNewCycleRefillsDespiteFrozenPeriodEndOnCancelledSubscription() {
+        Instant frozenPeriodEnd = Instant.parse("2026-08-15T00:00:00Z"); // month(s) in the past
+        BrandAiCredit credit = createCredit(5, 100, null, 0); // Free, spent down to 5
+        credit.setLastResetPeriodEnd(frozenPeriodEnd); // last reset already "saw" this period end
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
         when(subscriptionService.getByWorkspaceId(WORKSPACE_ID))
-                .thenReturn(Optional.of(subscriptionWithPeriodEnd(periodEnd)));
+                .thenReturn(Optional.of(
+                        Subscription.builder()
+                                .workspaceId(WORKSPACE_ID)
+                                .status(SubscriptionStatus.CANCELLED)
+                                .currentPeriodEnd(frozenPeriodEnd) // frozen: no ACTIVE job advances it
+                                .build()));
 
-        creditService.resetForNewCycle(WORKSPACE_ID); // safety-net reset, mid-period
-        assertEquals(400, credit.getCreditsRemaining());
-
-        // Brand spends credits, then the monthly job's next run lands -- SAME billing period
-        // (the missed-webhook scenario: the subscription never actually renewed).
-        credit.setCreditsRemaining(55);
         creditService.resetForNewCycle(WORKSPACE_ID);
 
         assertEquals(
-                55,
+                100,
                 credit.getCreditsRemaining(),
-                "a second reset resolving the SAME currentPeriodEnd must be a no-op -- otherwise"
-                        + " the workspace gets two full refills for one billing period (F-0884)");
-        verify(creditRepository, times(1)).save(credit); // only the first reset actually persisted
+                "monthly reset must refill a Free workspace to its 100 allotment even though the"
+                        + " CANCELLED subscription's currentPeriodEnd matches the stored"
+                        + " lastResetPeriodEnd -- that match is a frozen-clock artifact, not proof"
+                        + " this period was already reset");
+        verify(creditRepository).save(credit);
+    }
+
+    @Test
+    @DisplayName(
+            "F-0893: a HALTED ex-Pro subscription's frozen currentPeriodEnd (equal to the stored"
+                    + " lastResetPeriodEnd) must NOT block the monthly reset from refilling a Free"
+                    + " workspace")
+    void testResetForNewCycleRefillsDespiteFrozenPeriodEndOnHaltedSubscription() {
+        Instant frozenPeriodEnd = Instant.parse("2026-08-15T00:00:00Z");
+        BrandAiCredit credit = createCredit(5, 100, null, 0);
+        credit.setLastResetPeriodEnd(frozenPeriodEnd);
+        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        when(subscriptionService.getByWorkspaceId(WORKSPACE_ID))
+                .thenReturn(Optional.of(
+                        Subscription.builder()
+                                .workspaceId(WORKSPACE_ID)
+                                .status(SubscriptionStatus.HALTED)
+                                .currentPeriodEnd(frozenPeriodEnd)
+                                .build()));
+
+        creditService.resetForNewCycle(WORKSPACE_ID);
+
+        assertEquals(
+                100,
+                credit.getCreditsRemaining(),
+                "monthly reset must refill a Free workspace to its 100 allotment even though the"
+                        + " HALTED subscription's currentPeriodEnd matches the stored"
+                        + " lastResetPeriodEnd");
+        verify(creditRepository).save(credit);
     }
 
     @Test
