@@ -48,7 +48,8 @@ done
 # A directory junction, never `ln -s`: under Git Bash without Windows developer mode `ln -s`
 # silently COPIES the whole tree. The junction is left in $TMP; never `rm -rf` through it.
 if command -v cygpath >/dev/null 2>&1; then
-  cmd //c mklink /J "$(cygpath -w "$TMP/node_modules")" "$(cygpath -w "$ROOT/node_modules")" >/dev/null 2>&1
+  # `cmd //c mklink` mangles paths with spaces; PowerShell takes them quoted as-is.
+  powershell.exe -NoProfile -Command "New-Item -ItemType Junction -Path '$(cygpath -w "$TMP/node_modules")' -Target '$(cygpath -w "$ROOT/node_modules")' | Out-Null" >/dev/null 2>&1
 else
   ln -s "$ROOT/node_modules" "$TMP/node_modules"
 fi
