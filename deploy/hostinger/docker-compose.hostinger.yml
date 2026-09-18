@@ -238,8 +238,26 @@ services:
       # T-MEERA-CREATOR-PHASE-A, Priya gate review defect 4 — rollback flag for the whole Meera
       # for Creators surface (see MeeraCreatorFeatureProperties/application.yml). On by default;
       # flip to "false" to 404 every CREATOR-audience Meera route without a code rollback.
-      MEERA_CREATOR_ENABLED: "true"
-      INFLUORA_MEERA_STREAM_PUBLICCHATURL: https://${AI_DOMAIN}/chat
+      # T-GOLIVE-0918-R2 [meera · 2026-09-18] — REPAIR ROUND 7 LOW: was a bare "true" literal here
+      # while both Utho files already used ${MEERA_CREATOR_ENABLED:-true} (R1 fixed the pattern
+      # there but missed this file) — wiki/processes/go-live-0918.md §5's "flip
+      # MEERA_CREATOR_ENABLED=false" rollback instruction was a no-op on this stack, since
+      # docker-compose sees a literal string, not a placeholder, so editing influora.env would have
+      # had no effect. Matched to both Utho files' form and default.
+      MEERA_CREATOR_ENABLED: ${MEERA_CREATOR_ENABLED:-true}
+      # T-GOLIVE-0918-R2 [meera · 2026-09-18] — REPAIR ROUND 7 LOW: this used to forward
+      # INFLUORA_MEERA_STREAM_PUBLICCHATURL, Spring's relaxed-binding alias for
+      # influora.meera.stream.public-chat-url, which has NO ${} placeholder anywhere in
+      # application.yml/application-prod.yml. The canonical name application-prod.yml:109 actually
+      # binds (${MEERA_PUBLIC_CHAT_URL}, no default in prod) was never forwarded at all — same
+      # two-names-for-one-property pattern already fixed for BRAND_SAFETY_SERVICE_TOKEN_SECRET
+      # (HIGH) and ADMIN_MFA_SECRET_ENCRYPTION_KEY (LOW) in this file — renamed here so
+      # generate-env.sh/compose/application-prod.yml agree on one name. Source:
+      # MeeraStreamProperties.java:25, SecretsStartupValidator.java:624-636. If the live box's
+      # influora.env already holds INFLUORA_MEERA_STREAM_PUBLICCHATURL, rename that key in place
+      # (keep the value) — do not re-run generate-env.sh, same migration note as the admin-MFA
+      # rename above.
+      MEERA_PUBLIC_CHAT_URL: https://${AI_DOMAIN}/chat
       CLAMAV_HOST: clamav
       # ---- Money + comms (no validator — break silently if wrong) ----
       RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}

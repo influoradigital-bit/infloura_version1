@@ -91,6 +91,34 @@ instead of the specific file this run produced, masking a failed dump behind ear
 All 5 are fixed below, each marked **[REPAIR R6]** at its fix point — see the bottom
 "REPAIR ROUND 6 — defect-by-defect" section for the full mapping.
 
+**REPAIR ROUND 7 (2026-09-18, this revision):** an independent reviewer failed commit `6cad95b` on
+2 MEDIUM and 4 LOW defects. 1 MEDIUM only half-fixed R3's own finding 4 (the "six sibling
+`*_AI_BASE_URL` vars" this document never mentioned): `MEERA_CHAT_AI_BASE_URL`,
+`ANALYZE_SITE_AI_BASE_URL`, `VOICE_AI_BASE_URL`, `MEERA_PUBLIC_CHAT_URL` and `APP_ENV` (all
+**required, no default** once the prod profile is active — `application-prod.yml:90-118`) had 0
+mentions anywhere in this document, `TRENDSPARK_AI_BASE_URL` appeared only in repair-round prose,
+and `BRAND_SAFETY_AI_BASE_URL`'s row never said it too has no default. Re-reading the compose files
+while fixing this surfaced a live defect the reviewer had not yet found: all three compose files
+forward `MEERA_PUBLIC_CHAT_URL` under the WRONG name — `INFLUORA_MEERA_STREAM_PUBLICCHATURL`, a
+Spring relaxed-binding alias with **no** `${}` placeholder anywhere in this repo, exactly the
+two-names-for-one-property pattern already fixed once for brand-safety (R2) and once for admin-MFA
+(R5). 1 MEDIUM the runbook never listed the 8 migrations this release actually ships
+(`git diff --name-status bb3e640 6cad95b -- influora-api/src/main/resources/db/migration`), 2 of
+which are irreversible in effect — `V20260918140000__convert_agency_workspaces_to_brand.sql`
+converts every AGENCY workspace to BRAND with a plain `UPDATE`, which a code-only rollback cannot
+undo. 4 LOW: §3.2 step 2's `sleep 3` + `docker exec influora-api true` could pass while Spring was
+still mid-boot (the API's own `HEALTHCHECK` needs up to ~135s to report `unhealthy`,
+`influora-api/Dockerfile:56-57`); the `SPRING_JWKS_URL` row's claim that `localhost` is
+"unreachable across two separately hand-run containers" is simply wrong under this box's own
+`--network host` (§READ THIS FIRST §1: they share one network namespace, so `localhost` **is**
+reachable — `live-state.txt`'s FOURTH CAPTURE already runs influora-ai on localhost-based values);
+the `CREATOR_COPILOT_AI_BASE_URL` row cited `docker-compose.utho-shared.yml:224` as where that var
+is present, but line 224 is `TRENDSPARK_AI_BASE_URL` — the Co-pilot key is at `:230`; and
+Hostinger's `MEERA_CREATOR_ENABLED` is still a hardcoded `"true"` literal (R1 only fixed this
+pattern in the two Utho files), so §5's "flip `MEERA_CREATOR_ENABLED=false`" rollback instruction
+is a no-op on that stack. All 6 are fixed below, each marked **[REPAIR R7]** at its fix point — see
+the bottom "REPAIR ROUND 7 — defect-by-defect" section for the full mapping.
+
 ## READ THIS FIRST — two things that block a same-day go-live as briefed
 
 ### 1. The live box does not run docker-compose for Influora. `/usr/local/App/docker-compose.prod.yml` is Snapsby's file, not Influora's.
@@ -435,8 +463,11 @@ Utho's forwarded keyset (see §0 item 8) — no other Hostinger-specific change 
    noting `MEERA_CREATOR_ENABLED`'s default is `true` (the other two default `false`) — so the
    operator reads three concrete lines and compares them against what THIS release intends; no
    script can know that intent, release by release, only surface it. `FATAL` is now reserved for
-   what actually blocks verification: the container not running / its env unreadable at all, checked
-   first via a bare `docker exec influora-api true`.
+   what actually blocks verification: the container not running / its env unreadable at all —
+   **[REPAIR R7] originally checked via a bare `docker exec influora-api true` plus a fixed `sleep
+   3`, which only proved the process was alive, not that Spring had booted; now waits on the
+   container's own `HEALTHCHECK` status instead (§3.2 step 2, same fix class as item 8's `influora-ai`
+   STATUS loop).**
 8.7. **[REPAIR R5 — LOW, known gap, not fixed this round] Neither compose gate catches a required key
    deleted from BOTH Utho files at once.** `utho-compose-keysets-match.sh` (item 6) only diffs
    `docker-compose.utho.yml` against `docker-compose.utho-shared.yml` — if a key such as
@@ -477,6 +508,26 @@ Utho's forwarded keyset (see §0 item 8) — no other Hostinger-specific change 
    a verification step; **not re-checked against the live box this round** — flagging as `notProven`,
    consistent with how this lane has always distinguished config-authored-correctly from
    verified-on-the-box.
+8.9. **[REPAIR R7 — MEDIUM] §2 named 0 of `MEERA_CHAT_AI_BASE_URL`/`ANALYZE_SITE_AI_BASE_URL`/
+   `VOICE_AI_BASE_URL`/`MEERA_PUBLIC_CHAT_URL`/`APP_ENV` and only mentioned `TRENDSPARK_AI_BASE_URL`
+   in repair-round prose, despite all six sharing the exact no-default-in-prod contract already
+   documented for `CREATOR_COPILOT_AI_BASE_URL`/`BRAND_SAFETY_AI_BASE_URL`
+   (`application-prod.yml:90-118`).** Reproduced: `grep -c` for each of the five across the whole
+   document returned `0` before this revision. **Fixed**: new "Profile activation + AI service base
+   URLs" and "Meera voice + public chat" subsections added to §2 (before the Brand-safety client
+   table), covering all six plus the `SPRING_PROFILES_ACTIVE` precondition that makes their
+   no-default behavior active at all. Fixing this surfaced a live defect the reviewer had not yet
+   named: all three compose files forwarded `MEERA_PUBLIC_CHAT_URL` under the wrong name
+   (`INFLUORA_MEERA_STREAM_PUBLICCHATURL`, a relaxed-binding alias with no `${}` placeholder
+   anywhere in this repo — confirmed by `grep -rn` returning 0 hits in `application*.yml`), the same
+   two-names-for-one-property pattern already fixed for brand-safety (R2, HIGH) and admin-MFA (R5,
+   LOW). Rated LOW here, matching admin-MFA's reasoning, not brand-safety's HIGH: the alias carried
+   a real working literal (`https://${AI_DOMAIN}/chat`), not a blank one, so relaxed binding likely
+   already resolved it correctly — but it still failed the done_when name-agreement clause and
+   would silently ignore an operator who sets the literal name `application-prod.yml:109` itself
+   documents. Fixed in all three compose files (§0 item 8 below) to forward `MEERA_PUBLIC_CHAT_URL`
+   directly, dropping the alias, with a migration note for a box whose `influora.env` already holds
+   the old name (same pattern as the admin-MFA fix, §0.8.5).
 
 ---
 
@@ -676,14 +727,74 @@ which looks like success unless you specifically check for `classifier_unconfigu
 | `CREATOR_COPILOT_CAPTION_SYNC_MAX_CREATORS_PER_RUN` | no | `application.yml:547` (optional) |
 | `CREATOR_COPILOT_CAPTION_SYNC_CRON` | no | `application.yml:548` (optional) |
 | `CREATOR_COPILOT_THEME_TAG_CRON` | no | `application.yml:549` (optional) |
-| `CREATOR_COPILOT_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, non-loopback** | dev default `http://localhost:8000` at `application.yml:257`, but under the prod profile `application-prod.yml:100` overrides it with **no default** (`base-url: ${CREATOR_COPILOT_AI_BASE_URL}`) — Spring throws `PlaceholderResolutionException` at boot if it is unset at all (`application-prod.yml:55-77` spells this out as deliberate, "*** CRITICAL DEPLOY SEQUENCING ***"). Even if set, `SecretsStartupValidator.validateAiServiceUrls` (`SecretsStartupValidator.java:606-620`, calling `checkNotUnroutableHost` at line 703) rejects a loopback/localhost value outside dev — the check is a literal string match on host `localhost`, `127.0.0.1` or `::1` (`SecretsStartupValidator.java:720`) — and `SecretsStartupValidator.java:282-353` throws `IllegalStateException` (not just a warning) for any non-dev environment. Compose hardcodes `http://influora-ai:8000` in both files (`docker-compose.utho.yml:202`, `docker-compose.utho-shared.yml:230` — **[REPAIR R6] renumbered again, drifted from R6's own admin-MFA migration-note comment lines above them**) — that Docker-DNS name only resolves inside a shared Compose network, which the live box does not have (§READ THIS FIRST §1: both containers run `--network host`, not compose). **[REPAIR R3 — MEDIUM, corrects R2] Do NOT blindly set this to a fresh value on a redeploy.** R2 told the operator to unconditionally set this to `http://150.241.245.242:8000`, but `live-state.txt`'s EIGHTH CAPTURE (2026-09-08) shows Creator Co-pilot is **already enabled and running successfully in prod** (`CreatorCaptionSyncJob: completed run — 1 creators processed, 25 captions inserted, 0 skipped`) — since `application-prod.yml` has no default for this var, the box's `influora.env` must already hold a value that works, and this section overwriting it with an unverified new value risks *breaking* a working integration, not fixing a missing one, for no documented reason. **Before touching this var:** (1) if this is a redeploy of an already-running box, first read the CURRENT value (`ssh ... grep CREATOR_COPILOT_AI_BASE_URL /usr/local/App/influora/influora.env`, or `docker exec influora-api env | grep CREATOR_COPILOT_AI_BASE_URL` while the old container is still up) and leave it alone unless §4 check 4 (the `creator_nudge_log.message_source` query) or an operator report shows it is broken; (2) only if this is a FRESH box with no prior value, or the existing value is confirmed broken, set a concrete one. For that fresh-box case: with both containers on `--network host`, each binds directly to the box's own network interfaces, so `influora-ai`'s port 8000 is reachable from `influora-api` at the box's own routable address, not a Docker-internal name. `live-state.txt:33` confirms uvicorn is bound to `0.0.0.0:8000` (not `127.0.0.1:8000`) and `live-state.txt:129` confirms port 8000 is blocked/filtered from the public internet by the box's firewall already, so `http://150.241.245.242:8000` is both reachable from the box itself and not publicly exposed — but re-verify both facts against the live box before relying on them, since `live-state.txt` is 11 days stale (`docker exec influora-ai ss -tlnp` for the bind, the firewall's current rules for the filter). Never use `http://localhost:8000` or `http://127.0.0.1:8000` — both are rejected outside dev by `checkNotUnroutableHost`. Note `application-prod.yml:74-76`'s own comment claiming this var is "missing" from `docker-compose.utho-shared.yml` is stale — it has been present since before this lane's changes (`docker-compose.utho-shared.yml:224` — **[REPAIR R6] renumbered, same drift as the citations above**); that comment lives outside this lane's file scope to correct. |
-| `SPRING_JWKS_URL` | no (internal DNS/URL) | **[REPAIR R5 — new row]** `influora-ai/app/config.py:235`; used to verify every `X-Meera-Service-Token` the API mints, fails closed outside dev if unset (`config.py:544-552`). Same Docker-DNS trap as the row above, in the opposite direction: both compose files hardcode `http://influora-api:8080/api/v1/.well-known/jwks.json` (`docker-compose.utho.yml:378`, `docker-compose.utho-shared.yml:394` — **[REPAIR R6] renumbered, drifted from R6's own admin-MFA migration-note comment lines above them**), which only resolves inside a shared Compose network — the live box runs both containers with `--network host` (§READ THIS FIRST §1), where that Docker-DNS name resolves to nothing. Before using either compose value on the hand-run box, confirm `influora-api`'s **actual bound port** first — `live-state.txt:36-37,188,195-196` recorded it running with `SERVER_PORT=8082`, not the `8080` default (`application.yml:70`) both compose files assume — then point this at the box's own routable address (same pattern as `CREATOR_COPILOT_AI_BASE_URL` above), not `localhost` (unreachable across two separately hand-run containers) and not the compose value verbatim. **Not re-verified against the live box this round (§0.8)** — live-state's SEVENTH CAPTURE suggests the running box already has a working value, so keep it on a same-env-file redeploy; this only bites a FRESH box built from this runbook's compose files literally. |
+| `CREATOR_COPILOT_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, non-loopback** | dev default `http://localhost:8000` at `application.yml:257`, but under the prod profile `application-prod.yml:100` overrides it with **no default** (`base-url: ${CREATOR_COPILOT_AI_BASE_URL}`) — Spring throws `PlaceholderResolutionException` at boot if it is unset at all (`application-prod.yml:55-77` spells this out as deliberate, "*** CRITICAL DEPLOY SEQUENCING ***"). Even if set, `SecretsStartupValidator.validateAiServiceUrls` (`SecretsStartupValidator.java:606-620`, calling `checkNotUnroutableHost` at line 703) rejects a loopback/localhost value outside dev — the check is a literal string match on host `localhost`, `127.0.0.1` or `::1` (`SecretsStartupValidator.java:720`) — and `SecretsStartupValidator.java:282-353` throws `IllegalStateException` (not just a warning) for any non-dev environment. Compose hardcodes `http://influora-ai:8000` in both files (`docker-compose.utho.yml:202`, `docker-compose.utho-shared.yml:230` — **[REPAIR R6] renumbered again, drifted from R6's own admin-MFA migration-note comment lines above them**) — that Docker-DNS name only resolves inside a shared Compose network, which the live box does not have (§READ THIS FIRST §1: both containers run `--network host`, not compose). **[REPAIR R3 — MEDIUM, corrects R2] Do NOT blindly set this to a fresh value on a redeploy.** R2 told the operator to unconditionally set this to `http://150.241.245.242:8000`, but `live-state.txt`'s EIGHTH CAPTURE (2026-09-08) shows Creator Co-pilot is **already enabled and running successfully in prod** (`CreatorCaptionSyncJob: completed run — 1 creators processed, 25 captions inserted, 0 skipped`) — since `application-prod.yml` has no default for this var, the box's `influora.env` must already hold a value that works, and this section overwriting it with an unverified new value risks *breaking* a working integration, not fixing a missing one, for no documented reason. **Before touching this var:** (1) if this is a redeploy of an already-running box, first read the CURRENT value (`ssh ... grep CREATOR_COPILOT_AI_BASE_URL /usr/local/App/influora/influora.env`, or `docker exec influora-api env | grep CREATOR_COPILOT_AI_BASE_URL` while the old container is still up) and leave it alone unless §4 check 4 (the `creator_nudge_log.message_source` query) or an operator report shows it is broken; (2) only if this is a FRESH box with no prior value, or the existing value is confirmed broken, set a concrete one. For that fresh-box case: with both containers on `--network host`, each binds directly to the box's own network interfaces, so `influora-ai`'s port 8000 is reachable from `influora-api` at the box's own routable address, not a Docker-internal name. `live-state.txt:33` confirms uvicorn is bound to `0.0.0.0:8000` (not `127.0.0.1:8000`) and `live-state.txt:129` confirms port 8000 is blocked/filtered from the public internet by the box's firewall already, so `http://150.241.245.242:8000` is both reachable from the box itself and not publicly exposed — but re-verify both facts against the live box before relying on them, since `live-state.txt` is 11 days stale (`docker exec influora-ai ss -tlnp` for the bind, the firewall's current rules for the filter). Never use `http://localhost:8000` or `http://127.0.0.1:8000` — both are rejected outside dev by `checkNotUnroutableHost`. Note `application-prod.yml:74-76`'s own comment claiming this var is "missing" from `docker-compose.utho-shared.yml` is stale — it has been present since before this lane's changes (`docker-compose.utho-shared.yml:230` — **[REPAIR R7] corrects R6: this had drifted to the wrong line (`:224`, which is `TRENDSPARK_AI_BASE_URL`) — re-verified with `grep -n` against the file as committed**); that comment lives outside this lane's file scope to correct. |
+| `SPRING_JWKS_URL` | no (internal DNS/URL) | **[REPAIR R5 — new row]** `influora-ai/app/config.py:235`; used to verify every `X-Meera-Service-Token` the API mints, fails closed outside dev if unset (`config.py:544-552`). Same Docker-DNS trap as the row above, in the opposite direction: both compose files hardcode `http://influora-api:8080/api/v1/.well-known/jwks.json` (`docker-compose.utho.yml:378`, `docker-compose.utho-shared.yml:394` — **[REPAIR R6] renumbered, drifted from R6's own admin-MFA migration-note comment lines above them**), which only resolves inside a shared Compose network — the live box runs both containers with `--network host` (§READ THIS FIRST §1), where that Docker-DNS name resolves to nothing. Before using either compose value on the hand-run box, confirm `influora-api`'s **actual bound port** first — `live-state.txt:36-37,188,195-196` recorded it running with `SERVER_PORT=8082`, not the `8080` default (`application.yml:70`) both compose files assume — then point this at the box's own routable address (same pattern as `CREATOR_COPILOT_AI_BASE_URL` above). **[REPAIR R7 — corrects R5's own reasoning]** The old text here said not to use `localhost` because it is "unreachable across two separately hand-run containers" — that is wrong under `--network host` (§READ THIS FIRST §1): both containers share the box's single network namespace, so `localhost` **is** reachable between them, and `live-state.txt`'s FOURTH CAPTURE already shows `influora-ai` running on localhost-based values successfully. There is no `checkNotUnroutableHost`-style validator on the Python side for this var (`config.py:544-552` only checks it is non-empty, unlike `CREATOR_COPILOT_AI_BASE_URL`'s Java-side loopback rejection) — so a `localhost`/`127.0.0.1` value here is not rejected and, under `--network host`, is not actually broken either. On a redeploy of an already-working box, read the CURRENT value first (same caution as `CREATOR_COPILOT_AI_BASE_URL` above) rather than replacing it with the compose value verbatim, which resolves to nothing outside a shared Compose network. **Not re-verified against the live box this round (§0.8)** — live-state's SEVENTH CAPTURE suggests the running box already has a working value, so keep it on a same-env-file redeploy; this only bites a FRESH box built from this runbook's compose files literally. |
 | `SPRING_INTERNAL_BASE_URL` | no (internal DNS/URL) | **[REPAIR R5 — new row]** `influora-ai/app/config.py:294`, default `http://localhost:8080/api/v1` if unset — the same unroutable-under-`--network host` default this whole document exists to override for its Spring-side siblings. Same compose Docker-DNS trap and same port caveat as `SPRING_JWKS_URL` above (`docker-compose.utho.yml:379`, `docker-compose.utho-shared.yml:395` — **[REPAIR R6] renumbered, same drift as the row above**) — set to the same host:port as `SPRING_JWKS_URL`'s base, with `/api/v1` appended, once that address is confirmed against the live box. |
+
+**[REPAIR R7 — new subsection] Profile activation + AI service base URLs — six vars share ONE
+fail-closed contract, and this document named 0 of the first 5 before this revision**
+
+`application-prod.yml:65-77` ("*** CRITICAL DEPLOY SEQUENCING ***") is explicit: deploying that
+file to a box that does not already export **all five** `*_AI_BASE_URL` vars below makes
+influora-api **REFUSE TO BOOT** with `PlaceholderResolutionException` — none of the five has a
+default once the `prod` profile is active (`application-prod.yml:90-100`), unlike the
+`http://localhost:8000` dev defaults in `application.yml` (lines 243/245/247/249/257) that only
+apply when it is not. `APP_ENV` (`application-prod.yml:90`, `env: ${APP_ENV}`) is the sixth var in
+this same no-default family, for an unrelated reason (§0's comment at `application-prod.yml:82-89`:
+without it, a prod boot that forgot `APP_ENV` would silently behave like dev instead of failing
+loudly). **None of these six appeared anywhere in this document before this revision** except
+`CREATOR_COPILOT_AI_BASE_URL` (its own detailed row is below, under **Creator AI Co-pilot**) and
+`TRENDSPARK_AI_BASE_URL` (mentioned only inside other rows' repair-round prose, never its own row).
+
+**A precondition this whole family depends on, not itself one of the six:** all of the
+"no default in prod" behavior above only exists once `spring.profiles.active=prod` is actually
+active. **[REPAIR R7] `SPRING_PROFILES_ACTIVE` intentionally has NO `${}` placeholder anywhere in
+this repo's `application*.yml`** — unlike every other var in this document, Spring Boot itself
+reads it directly as a bootstrap-level externalized-configuration property (relaxed-bound from the
+OS environment before `application.yml` is even loaded), the same framework-level exception already
+noted for `JAVA_TOOL_OPTIONS`. Its correct value for this deploy (`prod`) is not in question — it
+is not a business/product decision, only a fact already established by every compose file below —
+so it is named here for completeness, not as a new placeholder to go add. All three compose files
+hardcode `SPRING_PROFILES_ACTIVE: prod` and `APP_ENV: prod` as
+literals (`docker-compose.utho.yml:125-126`, `docker-compose.utho-shared.yml:151-152`,
+`docker-compose.hostinger.yml:122-123`), so a compose-based deploy always has this right. **The
+live box's own hand-run `docker run --env-file influora.env ...` (§3.2) does not** — neither
+`generate-env.sh` nor this document wrote `SPRING_PROFILES_ACTIVE` anywhere before this revision.
+This is not itself one of the reviewer's six named vars, but it is the switch that makes `APP_ENV`
+and all five `*_AI_BASE_URL` vars' no-default behavior real rather than theoretical: if
+`influora.env` on the live box already has `SPRING_PROFILES_ACTIVE=prod` (it must, or none of
+`application-prod.yml`'s overrides — including the R1–R6 fixes already shipped for this same file —
+would ever have taken effect on a running box), no action is needed on a same-env-file redeploy;
+verify with `docker exec influora-api sh -c 'printenv SPRING_PROFILES_ACTIVE'` before assuming so
+on a fresh box built from this runbook alone.
+
+| Var | Secret? | Source |
+|---|---|---|
+| `APP_ENV` | no | `application-prod.yml:90` (`env: ${APP_ENV}`, **no default** once the prod profile is active — see the precondition above). Hardcoded `APP_ENV: prod` literal in all three compose files; must also be set to `prod` in `influora.env` on the hand-run live-box path for the same reason |
+| `BRAND_SAFETY_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, no default in prod** | dev default `http://localhost:8000` at `application.yml:243` — prod profile overrides with **no default** (`application-prod.yml:92`) |
+| `TRENDSPARK_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, no default in prod** | dev default `http://localhost:8000` at `application.yml:245` — prod profile overrides with **no default** (`application-prod.yml:94`) |
+| `MEERA_CHAT_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, no default in prod** | dev default `http://localhost:8000` at `application.yml:247` — prod profile overrides with **no default** (`application-prod.yml:96`); `VOICE_AI_BASE_URL` below falls back to this var's resolved value in dev only (`application.yml:231`), so getting this one wrong also silently affects voice |
+| `ANALYZE_SITE_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, no default in prod** | dev default `http://localhost:8000` at `application.yml:249` — prod profile overrides with **no default** (`application-prod.yml:98`). `application-prod.yml:40-60`'s own comment records the live incident this no-default rule fixed: an earlier `:https://ai.influora.internal` fallback resolved NOWHERE (NXDOMAIN), and every `brand_profiles` row created while it was live died silently, `created_at` to `updated_at` in under a second — too fast to hit either client timeout |
+| `CREATOR_COPILOT_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, non-loopback** | same no-default family — see its own dedicated row under **Creator AI Co-pilot** below, which also has an outright loopback rejection the other four do not |
+
+All five `*_AI_BASE_URL` vars resolve to the hardcoded literal `http://influora-ai:8000` in all
+three compose files today (`docker-compose.utho.yml:197-202`, `docker-compose.utho-shared.yml:223-230`,
+`docker-compose.hostinger.yml:196-201`) — that Docker-DNS name only resolves inside a shared
+Compose network, which the live box does not have (§READ THIS FIRST §1). On the hand-run
+`--network host` path, apply the same caution as `CREATOR_COPILOT_AI_BASE_URL`'s row below: read
+the box's CURRENT value first on a redeploy, and only set a fresh routable address on a confirmed
+FRESH box.
+
+**Meera voice + public chat (Spring; browser- and Sarvam-facing)**
+| Var | Secret? | Source |
+|---|---|---|
+| `VOICE_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, no default in prod** | dev default falls back to `MEERA_CHAT_AI_BASE_URL`, then `http://localhost:8000` (`application.yml:231`) — prod profile overrides with **no default** (`application-prod.yml:118`). Unset in prod (once the profile is active), boot fails the same as the `*_AI_BASE_URL` family above; if it is somehow set but wrong, every Meera voice reply silently degrades to `SpeakResult.fallback()` instead (`MeeraVoiceAiClient`'s own "never throws" contract) |
+| `MEERA_PUBLIC_CHAT_URL` | no (a PUBLIC hostname, not a secret) | `MeeraStreamProperties#publicChatUrl`, dev default `http://localhost:8000/chat` — prod profile overrides with **no default** (`application-prod.yml:109`). This is the browser-facing URL for Meera's SSE stream (`BLUEPRINT/06-DEPLOYMENT-AND-API-KEYS.md:300`, `docs/docs/features/meera-ai.md:54`), e.g. `https://ai.influora.in/chat` — a prior lane's own review (`.proof-os/tasks/T-UTHO-DEPLOY-0907/priya-review.md:197,248-258`) already found and recorded that exact value as live. **[REPAIR R7 — same two-names-for-one-property pattern as brand-safety (R2) and admin-MFA (R5)]** All three compose files forwarded `INFLUORA_MEERA_STREAM_PUBLICCHATURL` (Spring's relaxed-binding alias for `influora.meera.stream.public-chat-url` — **no `${}` placeholder anywhere in this repo**, confirmed by `grep -rn INFLUORA_MEERA_STREAM_PUBLICCHATURL influora-api/src/main/`) and never forwarded `MEERA_PUBLIC_CHAT_URL` itself at all — 0 hits before this revision. Unlike brand-safety's HIGH (where the wrong name resolved to a BLANK value and shadowed a real one), this alias carried a real, working literal (`https://${AI_DOMAIN}/chat`) and Spring's relaxed binding likely already resolves it correctly — same LOW-not-HIGH reasoning as the admin-MFA case (§0.8.5) — but it still fails the done_when name-agreement clause and silently ignores an operator who instead sets the literal name `application-prod.yml:109` itself documents. Fixed in all three compose files to forward `MEERA_PUBLIC_CHAT_URL` directly, dropping the alias entirely, same convention as the other two fixes. **If the live box's own `influora.env` already holds `INFLUORA_MEERA_STREAM_PUBLICCHATURL`**, rename that key to `MEERA_PUBLIC_CHAT_URL` IN PLACE (keep the value) on the next edit — same migration-note pattern as the admin-MFA rename (§0.8.5) — do not assume it is already named correctly just because compose is now fixed. |
 
 **Brand-safety client (Spring → influora-ai)**
 | Var | Secret? | Source |
 |---|---|---|
-| `BRAND_SAFETY_AI_BASE_URL` | no | `BrandSafetyAiProperties.java:19-32` (prefix `influora.brand-safety-ai`), `application.yml:243` |
+| `BRAND_SAFETY_AI_BASE_URL` | no, **REQUIRED, no default in prod** | see the "Profile activation + AI service base URLs" subsection above — moved there so all five `*_AI_BASE_URL` vars are documented together instead of split across two sections. `BrandSafetyAiProperties.java:19-32` (prefix `influora.brand-safety-ai`) |
 | `BRAND_SAFETY_SERVICE_TOKEN_SECRET` | **yes** | `BrandSafetyServiceTokenProperties.java:35-57` (prefix `influora.brand-safety-service-token`), `application.yml:279` — **this is the one to set.** |
 | `BRAND_SAFETY_SCORING_ENABLED` | no | `application.yml:523` (optional) |
 | `BRAND_SAFETY_SCORING_MAX_CREATORS_PER_RUN` | no | `application.yml:524` (optional) |
@@ -852,11 +963,24 @@ docker run -d --name influora-api --network host --restart unless-stopped \
 # operator reads three concrete lines and compares them to what THIS release intends -- no script
 # can know that intent, only surface it. FATAL is now reserved for what actually blocks
 # verification: the container not running / its env unreadable at all.
-sleep 3
-docker exec influora-api true 2>/dev/null || {
-  echo "FATAL: influora-api container is not running after recreate — cannot verify its feature-flag env at all" >&2
-  exit 1
-}
+# [REPAIR R7 -- LOW] `sleep 3` + `docker exec influora-api true` only proved the container process
+# was alive 3s after `docker run`, not that Spring had finished booting -- `influora-api/Dockerfile:
+# 56-57` sets HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3, so a genuinely
+# broken boot (a missing placeholder from item 8.9 above, a SecretsStartupValidator failure) needs
+# up to ~135s (45s start-period + 3*30s interval) to report "unhealthy" -- `true` inside the
+# container succeeds instantly regardless of whether the JVM has even started, so this check could
+# read "influora-api container is not running" as the only failure mode and pass straight through a
+# still-booting or crash-looping container, straight into the feature-flag printenv calls below
+# (which read stale/empty env from a container that never finished starting). Same failure class
+# already fixed once for influora-ai's redeploy (R4, the STATUS loop a few lines below this one).
+# Fixed the same way: wait on the container's own HEALTHCHECK status instead of a fixed sleep.
+for i in $(seq 1 70); do
+  STATUS=$(docker inspect --format '{{.State.Health.Status}}' influora-api 2>/dev/null || echo "starting")
+  [ "$STATUS" = "healthy" ] && { echo "influora-api healthy"; break; }
+  [ "$STATUS" = "unhealthy" ] && { echo "FATAL: influora-api unhealthy after recreate — cannot verify its feature-flag env at all" >&2; exit 1; }
+  sleep 2
+done
+[ "$STATUS" = "healthy" ] || { echo "FATAL: influora-api never reported healthy after 140s (last status: $STATUS) — cannot verify its feature-flag env at all" >&2; exit 1; }
 echo "CREATOR_COPILOT_ENABLED: $(docker exec influora-api sh -c 'printenv CREATOR_COPILOT_ENABLED' 2>/dev/null || echo 'unset (defaults false, application.yml:542)')"
 echo "TREND_INGEST_ENABLED: $(docker exec influora-api sh -c 'printenv TREND_INGEST_ENABLED' 2>/dev/null || echo 'unset (defaults false, application.yml:570)')"
 echo "MEERA_CREATOR_ENABLED: $(docker exec influora-api sh -c 'printenv MEERA_CREATOR_ENABLED' 2>/dev/null || echo 'unset (defaults TRUE, application.yml:215 -- creator Meera stays ON unless explicitly set to false)')"
@@ -940,9 +1064,17 @@ curl -s https://influora.in/api/v1/health
 
 # 3. workspaces sanity check (brief's requested query)
 mysql -u influora_app -p influora -e "SELECT type, COUNT(*) FROM workspaces GROUP BY type;"
-# workspaces.type is ENUM('BRAND','AGENCY') NOT NULL DEFAULT 'BRAND' —
-# db/migration/V2__core_auth.sql:26. Confirms the DB the freshly-recreated container is pointed
-# at is the real, non-empty production database, not a blank one from a bad SPRING_DATASOURCE_URL.
+# workspaces.type is ENUM('BRAND','AGENCY') NOT NULL DEFAULT 'BRAND' — db/migration/V2__core_auth.sql:26.
+# Confirms the DB the freshly-recreated container is pointed at is the real, non-empty production
+# database, not a blank one from a bad SPRING_DATASOURCE_URL.
+# [REPAIR R7 -- MEDIUM, corrects a stale reading of this same query] This release ships
+# V20260918140000__convert_agency_workspaces_to_brand.sql (see §5's Database section for the full
+# list of 8 migrations this release adds), which runs `UPDATE workspaces SET type = 'BRAND' WHERE
+# type = 'AGENCY'` -- once that migration has applied, EVERY row this query returns should read
+# `BRAND`, with `AGENCY` at 0 (or entirely absent from the result set). A NON-ZERO `AGENCY` count
+# here after this deploy does not just mean "some workspaces are agencies" (the old, pre-this-release
+# reading) -- it means the migration did not run, or ran against a database this container is NOT
+# actually pointed at. Do not read a nonzero AGENCY count as expected/normal on this release.
 
 # 4. [REPAIR R2] Creator Co-pilot AI ROUND-TRIP check — the log-line checks below only prove the
 #    scheduled JOB ran, not that its AI call to influora-ai actually succeeded. A wrong
@@ -1040,14 +1172,56 @@ instead — get that SHA from `git log` on this branch, not from guessing.
 **Database:** `.proof-os/tasks/T-PHASEB-LIVE-0918/meera-answers.md:93-98` (the parallel lane, §READ
 THIS FIRST §2) already proved there is **no rollback migration path** for Flyway on this project —
 community-edition Flyway ships no `undo`, and a `grep -n rollback` across
-`wiki/processes/schema-changes.md` and the migration files returns nothing. If today's release
-includes new migrations (check `influora-api/src/main/resources/db/migration/` for anything
-`git log` since the last known-good deploy), the only rollback is:
+`wiki/processes/schema-changes.md` and the migration files returns nothing.
+
+**[REPAIR R7 — MEDIUM] This is not a hypothetical "if" — confirm the exact list before deploying,
+and read the two below before assuming a full-restore rollback actually undoes everything.** This
+document previously treated new migrations as a conditional ("if today's release includes new
+migrations"); whether it does is a fact to check, not a guess, and two of this branch's own
+migrations are **not fully undone by a code-only rollback even with the §1 backup available**:
+
+```bash
+# Names the exact migration files between whatever SHA is already live and $DEPLOY_SHA (§3.2 step
+# 1) — do not assume the count or names below without re-running this against the day's actual SHAs:
+git diff --name-status <last-known-good-SHA> "$DEPLOY_SHA" -- influora-api/src/main/resources/db/migration
+```
+As of this revision, that comparison (against this branch's own migration history) lists 8 new
+files. 6 are additive (`ALTER TABLE ... ADD COLUMN` plus a same-column backfill that recomputes a
+value from data already on the row — reversible in effect, since the added columns are simply
+unused if the code that reads them is rolled back):
+`V20260917120000__brand_ai_credit_plan_loyalty_split.sql`,
+`V20260917130000__users_last_active_workspace.sql`,
+`V20260918150000__brand_ai_credit_grant_period.sql`,
+`V20260918160000__backfill_credit_grant_period_end.sql`,
+`V20260918170000__brand_ai_credit_escrow_funded_period_end.sql`,
+`V20260918180000__brand_ai_credit_escrow_funded_month.sql`.
+
+**2 are not reversible by rolling back code alone:**
+- `V20260912120000__backfill_free_subscriptions.sql` — inserts a Free/`ACTIVE` `subscriptions` row
+  for every `BRAND` workspace that lacks one. Idempotent and additive (a `NOT EXISTS` guard, never
+  updates or deletes an existing row), so this one is low-risk to leave in place even if the rest of
+  the release is rolled back.
+- `V20260918140000__convert_agency_workspaces_to_brand.sql` — runs a plain
+  `UPDATE workspaces SET type = 'BRAND' WHERE type = 'AGENCY'`, then backfills the same
+  `subscriptions` row for the newly-converted workspaces. **This one loses information**: once it
+  runs, nothing in the `workspaces` table still says which BRAND rows used to be AGENCY — rolling
+  back `influora-api` to the previous commit does not, and cannot, restore that distinction, because
+  the previous code never reads or writes a column that would let it. **Rolling back the CODE for
+  this release while leaving this migration applied silently strands every converted AGENCY
+  workspace as BRAND** — the old code just never notices, since nothing in it treats `type` values
+  specially beyond routing the removed chooser UI. The only way to actually undo this specific
+  change is the full-restore path below, from a backup taken **before** this migration ran.
+
+Given the above, if today's release includes `V20260918140000` specifically, treat the §1 backup as
+the ONLY real rollback for the schema, not a fallback of last resort — get sign-off before starting
+rather than mid-incident, exactly as the full-restore procedure below already says, but now for a
+concrete, identified reason rather than a generic Flyway-has-no-undo caveat:
 1. Stop `influora-api` (prevents further writes against the new schema).
 2. Restore the §1 `mysqldump` backup into a fresh database.
 3. Point `SPRING_DATASOURCE_URL` at the restored DB and recreate the container per §3.2.
-This is a full-restore rollback, not a targeted one — get sign-off before starting rather than
-mid-incident.
+This is a full-restore rollback, not a targeted one, and it also discards every legitimate write
+(new signups, campaigns, etc.) made between the backup and the rollback — there is no way to
+selectively undo only the AGENCY→BRAND conversion without one.
 
 **Feature flags** (fastest rollback, no restart needed if hot-reloadable, otherwise one
 recreate-cycle): flip `MEERA_CREATOR_ENABLED=false`, `CREATOR_COPILOT_ENABLED=false`, or
@@ -1162,3 +1336,16 @@ plain boolean gate (`MeeraCreatorFeatureProperties.java:31`, `application.yml:54
 | 3 | LOW | §2's `CREATOR_COPILOT_AI_BASE_URL` / `SPRING_JWKS_URL` / `SPRING_INTERNAL_BASE_URL` rows cited stale line numbers again — R5's own admin-MFA comment blocks (fix 2 above) shifted every line below them by 4 in each compose file. Verified with `grep -n`: `CREATOR_COPILOT_AI_BASE_URL` is now at `docker-compose.utho.yml:202` / `docker-compose.utho-shared.yml:230`, `SPRING_JWKS_URL`/`SPRING_INTERNAL_BASE_URL` at `:378-379` / `:394-395`, `TRENDSPARK_AI_BASE_URL` at `docker-compose.utho-shared.yml:224` | All 5 citations re-verified against the file as committed and corrected, in §2's table and in §0 item 8.8 |
 | 4 | LOW | The R5 intro (§0 top) points readers to a "REPAIR ROUND 5 — defect-by-defect" section at the bottom for the full mapping, but that section did not exist — headings ended at "REPAIR ROUND 4" | Added the "REPAIR ROUND 5 — defect-by-defect" section above, backfilling the mapping from §0 items 8.5–8.8 and the R5 intro paragraph |
 | 5 | LOW | §1's `mysqldump \| gzip` pipeline predates this lane and has no `pipefail`: a failing `mysqldump` (e.g. wrong password) is masked because the pipeline's exit status is gzip's, and a tiny-but-valid `.gz` from empty stdin passes `gzip -t`. On a second deploy, checking the `influora-*.sql.gz` glob also passes even when today's dump failed, because earlier good dumps already exist on the box — this is the only DB rollback path | §1 now sets `set -o pipefail`, captures this run's filename in `DB_BACKUP_FILE` (a runbook-local shell var, marked as such), fails loudly (`exit 1`) if the pipeline fails, and the verification step checks that ONE file's gzip validity and a minimum size, not a glob that earlier successful dumps can satisfy |
+
+---
+
+## REPAIR ROUND 7 — defect-by-defect (commit `6cad95b` → this revision)
+
+| # | Sev | Finding | Fix |
+|---|---|---|---|
+| 1 | MEDIUM | §2 named 0 of `MEERA_CHAT_AI_BASE_URL`/`ANALYZE_SITE_AI_BASE_URL`/`VOICE_AI_BASE_URL`/`MEERA_PUBLIC_CHAT_URL`/`APP_ENV` anywhere in the document, and mentioned `TRENDSPARK_AI_BASE_URL` only inside other rows' repair-round prose, despite all six sharing the same no-default-in-prod contract already documented for `CREATOR_COPILOT_AI_BASE_URL`/`BRAND_SAFETY_AI_BASE_URL` (`application-prod.yml:90-118`, boot fails with `PlaceholderResolutionException` if any is unset while the prod profile is active). The `BRAND_SAFETY_AI_BASE_URL` row itself never said it has no default either | New "Profile activation + AI service base URLs" and "Meera voice + public chat" subsections added to §2 (§0 item 8.9), covering all six plus the `SPRING_PROFILES_ACTIVE` precondition that makes the no-default behavior apply at all on the hand-run (non-compose) live-box path. Fixing this surfaced an actual defect: all three compose files forwarded `MEERA_PUBLIC_CHAT_URL` under the relaxed-binding alias `INFLUORA_MEERA_STREAM_PUBLICCHATURL` (no `${}` placeholder anywhere in this repo) and never forwarded the canonical name at all — same two-names-for-one-property pattern as brand-safety (R2, HIGH) and admin-MFA (R5, LOW), rated LOW here since the alias carried a real working literal rather than a blank one. Fixed in all three compose files, alias dropped, migration note added for a box whose `influora.env` still holds the old name |
+| 2 | MEDIUM | §4 check 3 and §5's Database section treated this release's migrations as a hypothetical ("if today's release includes new migrations") and still presented `workspaces.type ENUM('BRAND','AGENCY')` as a plain sanity check. `git diff --name-status <last-known-good-SHA> 6cad95b -- influora-api/src/main/resources/db/migration` lists 8 new migrations this release actually ships, 2 of which mutate existing rows: `V20260912120000__backfill_free_subscriptions.sql` (additive/idempotent, low risk) and `V20260918140000__convert_agency_workspaces_to_brand.sql`, which runs a plain `UPDATE workspaces SET type = 'BRAND' WHERE type = 'AGENCY'` — irreversible by a code-only rollback, since nothing in the schema or the previous code preserves which BRAND rows used to be AGENCY | §5's Database section now names all 8 migrations explicitly, flags the 2 that mutate data, and states plainly that rolling back `influora-api`'s code alone leaves every converted AGENCY workspace stranded as BRAND — only the §1 `mysqldump` restore (taken **before** this migration runs) actually undoes it. §4 check 3 now states the expected post-deploy result is `AGENCY` count = 0, not "some agencies is normal" |
+| 3 | LOW | §3.2 step 2's boot-verification (`sleep 3` + `docker exec influora-api true`) could pass while Spring was still mid-boot or crash-looping: `influora-api/Dockerfile:56-57`'s `HEALTHCHECK` needs up to ~135s (45s start-period + 3×30s interval) to report `unhealthy`, and a bare `true` inside the container succeeds instantly regardless of the JVM's actual state — the same failure class already fixed once for `influora-ai`'s own redeploy step (R4) | §3.2 step 2 rewritten to wait on `docker inspect --format '{{.State.Health.Status}}' influora-api` (70 iterations × 2s = 140s budget) and fail loudly (`exit 1`) unless the last observed status was `healthy`, same shape as the existing `influora-ai` STATUS loop a few lines below it; §0 item 8.6 updated to describe the new check instead of the old one |
+| 4 | LOW | The `SPRING_JWKS_URL` row claimed `localhost` is "unreachable across two separately hand-run containers" — wrong under this box's own `--network host` (§READ THIS FIRST §1), where both containers share one network namespace and `localhost` **is** reachable between them; `live-state.txt`'s FOURTH CAPTURE already records `influora-ai` running on localhost-based values successfully, and `config.py:544-552` has no loopback-rejecting validator on this var the way `CREATOR_COPILOT_AI_BASE_URL` does on the Java side | Row rewritten: the localhost-unreachable claim removed and replaced with the correct reasoning (shared network namespace, no Python-side loopback validator), while keeping the existing advice to read the box's CURRENT value before overwriting it on a redeploy |
+| 5 | LOW | The `CREATOR_COPILOT_AI_BASE_URL` row cited `docker-compose.utho-shared.yml:224` as where that var is present since before this lane's changes — line 224 is `TRENDSPARK_AI_BASE_URL`; the Co-pilot key is actually at `:230` (checked with `grep -n`) | Citation corrected to `:230` |
+| 6 | LOW | `deploy/hostinger/docker-compose.hostinger.yml:241` hardcodes `MEERA_CREATOR_ENABLED: "true"` as a literal, so §5's "flip `MEERA_CREATOR_ENABLED=false`" rollback instruction is a no-op on the Hostinger stack — R1 fixed the identical pattern (`${VAR:-default}` form) in the two Utho files only, never Hostinger | `docker-compose.hostinger.yml:241` switched to `${MEERA_CREATOR_ENABLED:-true}`, matching both Utho files' existing form and default |
