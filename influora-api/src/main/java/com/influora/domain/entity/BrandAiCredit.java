@@ -71,6 +71,15 @@ public class BrandAiCredit {
     // addition to resetForNewCycleIfDue's separate calendar-month guard -- see
     // AICreditService#resetForNewCycle javadoc.
     //   Source: F-0884 repair round
+    //
+    // T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- DEPRECATED, LEAVE UNUSED per Swapnil's ruling
+    // (wiki/decisions/2026-09-18-ai-credit-clock.md §4): the F-0884 double-reset problem is now
+    // closed by AICreditResetJob skipping BILLING_PERIOD workspaces entirely, not by a second
+    // period marker on this entity -- credit_grant_period_end alone is the single "billing period
+    // last filled" marker for both the grant and the renewal/reset paths. Nothing reads or writes
+    // this field any more. No destructive migration drops the column as part of this build; a
+    // later housekeeping migration may.
+    @Deprecated
     @Column(name = "last_reset_period_end")
     private Instant lastResetPeriodEnd;
 
@@ -183,10 +192,14 @@ public class BrandAiCredit {
         touch();
     }
 
+    /** @deprecated LEAVE UNUSED -- see field javadoc above. */
+    @Deprecated
     public Instant getLastResetPeriodEnd() {
         return lastResetPeriodEnd;
     }
 
+    /** @deprecated LEAVE UNUSED -- see field javadoc above. */
+    @Deprecated
     public void setLastResetPeriodEnd(Instant lastResetPeriodEnd) {
         this.lastResetPeriodEnd = lastResetPeriodEnd;
         touch();

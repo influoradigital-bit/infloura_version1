@@ -4,6 +4,7 @@ import com.influora.domain.entity.Plan;
 import com.influora.domain.enums.WorkspaceType;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.billing.SubscriptionService;
+import com.influora.service.billing.SubscriptionService.CreditClock;
 import com.influora.service.meera.AICreditService;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -95,10 +96,21 @@ public class AICreditResetJob {
         List<String> workspaceIds = workspaceRepository.findIdsByType(WorkspaceType.BRAND);
 
         int resetCount = 0;
+        int skippedCount = 0;
         int failedCount = 0;
 
         for (String workspaceId : workspaceIds) {
             try {
+                // T-CREDITCLOCK-0918 [vikram · 2026-09-18]: skip BILLING_PERIOD workspaces
+                // entirely -- no sync, no reset. Per wiki/decisions/2026-09-18-ai-credit-clock.md
+                // §2, those workspaces are refilled ONLY by their own billing-period events (the
+                // charged webhook / the renewal safety net); the monthly job resetting them too
+                // was F-0896 (a Pro brand who upgraded mid-month got 400 on upgrade AND another
+                // 400 on the 1st).
+                if (subscriptionService.creditClockFor(workspaceId) != CreditClock.CALENDAR_MONTH) {
+                    skippedCount++;
+                    continue;
+                }
                 syncPlanAllotment(workspaceId);
                 // T-S3-F0879-0917 [vikram · 2026-09-17]: was resetForNewCycle (unconditional) —
                 // a second trigger of this job in the same UTC month (e.g. an ops re-run, or a
@@ -120,8 +132,10 @@ public class AICreditResetJob {
         }
 
         log.info(
-                "AICreditResetJob: completed monthly reset — {} workspaces reset, {} failed",
+                "AICreditResetJob: completed monthly reset — {} workspaces reset, {} skipped"
+                        + " (billing-period clock), {} failed",
                 resetCount,
+                skippedCount,
                 failedCount);
     }
 

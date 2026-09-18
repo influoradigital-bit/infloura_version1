@@ -615,8 +615,8 @@ class SubscriptionServiceTest {
 
     @Test
     @DisplayName(
-            "wiring [SEC: Kabir red-team Phase 4a MEDIUM-2]: applyRenewalSafetyNet advances the"
-                    + " period AND syncs Pro allotment AND resets credits in one call")
+            "wiring [T-CREDITCLOCK-0918]: applyRenewalSafetyNet advances the period AND syncs Pro"
+                    + " allotment AND refills the billing period in one call")
     void testApplyRenewalSafetyNetSyncsProAllotmentAndResetsCredits() {
         Subscription sub = proSubscriptionRow();
         Instant newStart = sub.getCurrentPeriodEnd();
@@ -627,20 +627,30 @@ class SubscriptionServiceTest {
 
         subscriptionService.applyRenewalSafetyNet(sub, newStart, newEnd);
 
-        // The MP-1 wiring assertion: all three steps actually fire from ONE call, matching what
-        // used to be three separately auto-committing calls made directly by the job.
+        // The wiring assertion: all steps actually fire from ONE call, matching what used to be
+        // three separately auto-committing calls made directly by the job. T-CREDITCLOCK-0918:
+        // this is a billing-period renewal, so it now calls the billing refill primitive with the
+        // row's own newEnd, never the calendar-clock resetForNewCycle.
         verify(subscriptionRepository).save(sub);
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(aiCreditService);
         order.verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 400);
-        order.verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
+        order.verify(aiCreditService).refillForBillingPeriod(WORKSPACE_ID, newEnd);
+        verify(aiCreditService, never()).resetForNewCycle(any());
     }
 
     // F-0836 sibling [arjun · 2026-09-17]: this test used to assert the Free renewal did NOT call
     // applyPlanAllotment, which locked in the bug — a planAllotment left stale at Pro's 400 then
-    // survived every Free renewal. It now asserts the sync to Free's 100 happens BEFORE the reset.
-    // Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3; precedent AICreditResetJobTest.
+    // survived every Free renewal. It now asserts the sync to Free's 100 happens.
+    // T-CREDITCLOCK-0918: a Free-tier workspace is always on the CALENDAR_MONTH clock, so the
+    // safety net (a per-subscription BILLING renewal boundary) must not refill it at all — the
+    // monthly job owns Free's refill.
+    // Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3; precedent AICreditResetJobTest;
+    // wiki/decisions/2026-09-18-ai-credit-clock.md §2.
     @Test
-    @DisplayName("wiring: applyRenewalSafetyNet on a Free-tier workspace syncs planAllotment to Free before resetting credits")
+    @DisplayName(
+            "wiring [T-CREDITCLOCK-0918]: applyRenewalSafetyNet on a Free-tier workspace syncs"
+                    + " planAllotment to Free and does NOT refill (Free is on the calendar clock,"
+                    + " not the billing clock)")
     void testApplyRenewalSafetyNetFreeTierSyncsAllotmentBeforeReset() {
         Subscription sub = freeSubscriptionRow();
         Instant newStart = sub.getCurrentPeriodEnd();
@@ -652,9 +662,9 @@ class SubscriptionServiceTest {
         subscriptionService.applyRenewalSafetyNet(sub, newStart, newEnd);
 
         verify(subscriptionRepository).save(sub);
-        org.mockito.InOrder order = org.mockito.Mockito.inOrder(aiCreditService);
-        order.verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 100);
-        order.verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
+        verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 100);
+        verify(aiCreditService, never()).refillForBillingPeriod(any(), any());
+        verify(aiCreditService, never()).resetForNewCycle(any());
     }
 
     @Test
@@ -670,7 +680,7 @@ class SubscriptionServiceTest {
         when(planRepository.findById(PRO_PLAN_ID)).thenReturn(Optional.of(proPlan));
         doThrow(new RuntimeException("simulated credit-service outage"))
                 .when(aiCreditService)
-                .resetForNewCycle(WORKSPACE_ID);
+                .refillForBillingPeriod(eq(WORKSPACE_ID), any());
 
         // Unlike reconcileAiCreditAllotment (deliberately swallows failures — a best-effort side
         // effect of an already-committed webhook write), applyRenewalSafetyNet must NOT swallow:
@@ -706,7 +716,7 @@ class SubscriptionServiceTest {
         assertTrue(applied);
         verify(subscriptionRepository).save(sub);
         verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 400);
-        verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
+        verify(aiCreditService).refillForBillingPeriod(WORKSPACE_ID, newEnd);
     }
 
     @Test
@@ -727,7 +737,7 @@ class SubscriptionServiceTest {
         assertFalse(applied);
         verify(subscriptionRepository, never()).save(any());
         verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
-        verify(aiCreditService, never()).resetForNewCycle(any());
+        verify(aiCreditService, never()).refillForBillingPeriod(any(), any());
     }
 
     @Test
@@ -747,7 +757,7 @@ class SubscriptionServiceTest {
         assertFalse(applied);
         verify(subscriptionRepository, never()).save(any());
         verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
-        verify(aiCreditService, never()).resetForNewCycle(any());
+        verify(aiCreditService, never()).refillForBillingPeriod(any(), any());
     }
 
     @Test
@@ -918,6 +928,9 @@ class SubscriptionServiceTest {
         // The MP-1 assertion: the SAME reconciliation call a real Razorpay webhook activation
         // fires, not a parallel/duplicated "give them Pro benefits" code path.
         verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 400);
+        // T-CREDITCLOCK-0918: applyPlanAllotment is sync-only now -- the comp grant needs its own
+        // explicit "comp initial fill" (wiki/decisions/2026-09-18-ai-credit-clock.md §2).
+        verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
     }
 
     @Test
@@ -937,6 +950,7 @@ class SubscriptionServiceTest {
         assertEquals(SubscriptionStatus.ACTIVE, result.getStatus());
         verify(subscriptionRepository).save(existingFreeSub);
         verify(aiCreditService).applyPlanAllotment(WORKSPACE_ID, 400);
+        verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
     }
 
     @Test
@@ -955,13 +969,20 @@ class SubscriptionServiceTest {
         org.junit.jupiter.api.Assertions.assertEquals("ALREADY_PAID_SUBSCRIBER", ex.getCode());
         verify(subscriptionRepository, never()).save(any());
         verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
+        verify(aiCreditService, never()).resetForNewCycle(any());
     }
 
     // F-0836 sibling [arjun · 2026-09-17]: a null plan (should never happen — the resolver falls
-    // back to Free) must not NPE or write an allotment, and the cycle reset still runs.
-    // Source: precedent AICreditResetJob.java syncPlanAllotment null branch (kabir L3 repair round).
+    // back to Free) must not NPE or write an allotment. T-CREDITCLOCK-0918: with no resolvable
+    // Subscription row, creditClockFor treats the workspace as CALENDAR_MONTH (see its javadoc),
+    // so the billing refill primitive must never be called either -- there is no billing period to
+    // refill.
+    // Source: precedent AICreditResetJob.java syncPlanAllotment null branch (kabir L3 repair round);
+    // wiki/decisions/2026-09-18-ai-credit-clock.md §1.
     @Test
-    @DisplayName("renewal safety net with an unresolvable plan still resets and never writes an allotment")
+    @DisplayName(
+            "renewal safety net with an unresolvable plan never writes an allotment and never"
+                    + " refills (no resolvable Subscription row -> calendar clock, not billing)")
     void applyRenewalSafetyNet_nullPlan_resetsWithoutAllotmentWrite() {
         Subscription free = freeSubscriptionRow();
         when(subscriptionRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.empty());
@@ -973,7 +994,8 @@ class SubscriptionServiceTest {
                                 free, Instant.now(), Instant.now().plusSeconds(2592000)));
 
         verify(aiCreditService, never()).applyPlanAllotment(any(), anyInt());
-        verify(aiCreditService).resetForNewCycle(WORKSPACE_ID);
+        verify(aiCreditService, never()).refillForBillingPeriod(any(), any());
+        verify(aiCreditService, never()).resetForNewCycle(any());
     }
 
     /**
@@ -1079,6 +1101,83 @@ class SubscriptionServiceTest {
     void testIsFreePlanFalseForUnresolvablePlanId() {
         when(planRepository.findById("nonexistent-plan-id")).thenReturn(Optional.empty());
         assertFalse(subscriptionService.isFreePlan("nonexistent-plan-id"));
+    }
+
+    /**
+     * T-CREDITCLOCK-0918 [vikram · 2026-09-18] scenario 12 (Exhaustiveness) --
+     * {@code creditClockFor} must return exactly one clock for EVERY combination of (no row, FREE,
+     * paid) x every {@code SubscriptionStatus} x comp, asserted against the §1 table VERBATIM (the
+     * expected value below is hand-transcribed from the table, never delegated back to production
+     * code, so a change to {@code creditClockFor} that silently drifts from the ruling fails this
+     * test instead of tautologically agreeing with itself).
+     *   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §1
+     */
+    @Test
+    @DisplayName(
+            "T-CREDITCLOCK-0918 scenario 12: creditClockFor matches the §1 table verbatim for every"
+                    + " (no row, FREE, PRO) x status x comp combination")
+    void creditClockFor_exhaustiveAgainstTheRulingTable() {
+        // No Subscription row at all -> CALENDAR_MONTH.
+        when(subscriptionRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.empty());
+        assertEquals(
+                SubscriptionService.CreditClock.CALENDAR_MONTH,
+                subscriptionService.creditClockFor(WORKSPACE_ID),
+                "no Subscription row must resolve to CALENDAR_MONTH");
+
+        for (PlanCode planCode : PlanCode.values()) {
+            String planId = planCode == PlanCode.FREE ? FREE_PLAN_ID : PRO_PLAN_ID;
+            Plan planRow = planCode == PlanCode.FREE ? freePlan : proPlan;
+            lenient().when(planRepository.findById(planId)).thenReturn(Optional.of(planRow));
+
+            for (SubscriptionStatus status : SubscriptionStatus.values()) {
+                for (boolean comp : new boolean[] {false, true}) {
+                    Subscription sub =
+                            Subscription.builder()
+                                    .id("01HWXYZSUBEXHAUST00000" + planCode + status)
+                                    .workspaceId(WORKSPACE_ID)
+                                    .planId(planId)
+                                    .status(status)
+                                    .comp(comp)
+                                    .currentPeriodStart(Instant.now().minusSeconds(86400))
+                                    .currentPeriodEnd(Instant.now().plusSeconds(2592000))
+                                    .build();
+                    when(subscriptionRepository.findByWorkspaceId(WORKSPACE_ID))
+                            .thenReturn(Optional.of(sub));
+
+                    SubscriptionService.CreditClock expected;
+                    if (comp) {
+                        // Comp/admin grant, any plan, any status -> CALENDAR_MONTH.
+                        expected = SubscriptionService.CreditClock.CALENDAR_MONTH;
+                    } else if (planCode == PlanCode.FREE) {
+                        // Plan FREE, any status -> CALENDAR_MONTH.
+                        expected = SubscriptionService.CreditClock.CALENDAR_MONTH;
+                    } else {
+                        // Paid plan, not comp:
+                        //   ACTIVE / PAST_DUE -> BILLING_PERIOD (held while PAST_DUE, refilled
+                        //     while ACTIVE -- both still ON the billing clock).
+                        //   HALTED / CANCELLED -> CALENDAR_MONTH (as Free).
+                        expected =
+                                switch (status) {
+                                    case ACTIVE, PAST_DUE -> SubscriptionService.CreditClock.BILLING_PERIOD;
+                                    case HALTED, CANCELLED -> SubscriptionService.CreditClock.CALENDAR_MONTH;
+                                };
+                    }
+
+                    assertEquals(
+                            expected,
+                            subscriptionService.creditClockFor(WORKSPACE_ID),
+                            () ->
+                                    "planCode="
+                                            + planCode
+                                            + " status="
+                                            + status
+                                            + " comp="
+                                            + comp
+                                            + " must resolve to "
+                                            + expected);
+                }
+            }
+        }
     }
 
     private Subscription freeSubscriptionRow() {

@@ -28,7 +28,8 @@ class BrandAiCreditRepositoryQueryTest {
     @DisplayName("refundCredits: JPQL clamps the refunded total to monthlyAllotment")
     void refundCreditsJpqlClampsToMonthlyAllotment() throws NoSuchMethodException {
         Method refundCredits =
-                BrandAiCreditRepository.class.getMethod("refundCredits", String.class, int.class);
+                BrandAiCreditRepository.class.getMethod(
+                        "refundCredits", String.class, int.class, java.time.Instant.class);
         Query query = refundCredits.getAnnotation(Query.class);
         assertTrue(query != null, "refundCredits must carry a @Query annotation");
 
@@ -58,7 +59,8 @@ class BrandAiCreditRepositoryQueryTest {
     @DisplayName("syncPlanAllotment: JPQL never touches creditsRemaining or any daily-action column")
     void syncPlanAllotmentJpqlOnlyTouchesPlanAndMonthlyAllotment() throws NoSuchMethodException {
         Method syncPlanAllotment =
-                BrandAiCreditRepository.class.getMethod("syncPlanAllotment", String.class, int.class);
+                BrandAiCreditRepository.class.getMethod(
+                        "syncPlanAllotment", String.class, int.class, java.time.Instant.class);
         Query query = syncPlanAllotment.getAnnotation(Query.class);
         assertTrue(query != null, "syncPlanAllotment must carry a @Query annotation");
 
@@ -73,28 +75,124 @@ class BrandAiCreditRepositoryQueryTest {
                         + " splitting the plan-sync write off from the grant write (F-0885): " + jpql);
     }
 
+    // -----------------------------------------------------------------------------------------
+    // T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- wiki/decisions/2026-09-18-ai-credit-clock.md.
+    // grantAllotmentIncrease is RETIRED (generalized into refillForBillingPeriod below); its old
+    // pinning test is replaced by pins on the four new atomic queries this build adds.
+    // -----------------------------------------------------------------------------------------
+
     @Test
-    @DisplayName("grantAllotmentIncrease: JPQL guards the grant on creditGrantPeriodEnd, not just a service-layer check")
-    void grantAllotmentIncreaseJpqlGuardsOnCreditGrantPeriodEnd() throws NoSuchMethodException {
-        Method grantAllotmentIncrease =
+    @DisplayName("grantAllotmentIncrease is retired -- refillForBillingPeriod replaces it")
+    void grantAllotmentIncreaseNoLongerExists() {
+        boolean stillExists =
+                java.util.Arrays.stream(BrandAiCreditRepository.class.getMethods())
+                        .anyMatch(m -> m.getName().equals("grantAllotmentIncrease"));
+        assertTrue(!stillExists, "grantAllotmentIncrease should be retired per RULING-upgrade-grant.md's successor ruling");
+    }
+
+    @Test
+    @DisplayName(
+            "refillForBillingPeriod: JPQL SETs creditsRemaining from the row's OWN monthlyAllotment"
+                    + " (never a Java-computed value), guards on creditGrantPeriodEnd, and stamps"
+                    + " lastReset")
+    void refillForBillingPeriodJpqlShape() throws NoSuchMethodException {
+        Method method =
                 BrandAiCreditRepository.class.getMethod(
-                        "grantAllotmentIncrease", String.class, int.class, java.time.Instant.class);
-        Query query = grantAllotmentIncrease.getAnnotation(Query.class);
-        assertTrue(query != null, "grantAllotmentIncrease must carry a @Query annotation");
+                        "refillForBillingPeriod",
+                        String.class,
+                        java.time.Instant.class,
+                        java.time.LocalDate.class,
+                        java.time.Instant.class);
+        Query query = method.getAnnotation(Query.class);
+        assertTrue(query != null, "refillForBillingPeriod must carry a @Query annotation");
 
         String jpql = query.value();
         assertTrue(
-                jpql.contains("c.creditsRemaining = :newAllotment"),
-                "must SET creditsRemaining to the full new allotment (the ruling replaces the old"
-                        + " top-up-by-the-increase rule): "
-                        + jpql);
+                jpql.contains("c.creditsRemaining = c.monthlyAllotment"),
+                "must SET creditsRemaining from the row's OWN monthlyAllotment (F-0894): " + jpql);
         assertTrue(
                 jpql.contains("c.creditGrantPeriodEnd = :periodEnd"),
-                "must record the billing-period marker this grant was applied for: " + jpql);
+                "must record the billing-period marker this refill was applied for: " + jpql);
         assertTrue(
-                jpql.contains("c.creditGrantPeriodEnd <> :periodEnd"),
+                jpql.contains("c.lastReset = :today"),
+                "must stamp lastReset so the §3 handover top-up can tell this month's billing"
+                        + " refill apart from an earlier one: "
+                        + jpql);
+        assertTrue(
+                jpql.contains("c.creditGrantPeriodEnd IS NULL OR c.creditGrantPeriodEnd <> :periodEnd"),
                 "the WHERE clause must guard against re-granting for the SAME billing period"
                         + " (F-0883 repeat-grant-on-every-flap): "
                         + jpql);
+    }
+
+    @Test
+    @DisplayName(
+            "topUpOnJoinCalendarClock: JPQL never lowers creditsRemaining and only fires once per"
+                    + " UTC calendar month")
+    void topUpOnJoinCalendarClockJpqlShape() throws NoSuchMethodException {
+        Method method =
+                BrandAiCreditRepository.class.getMethod(
+                        "topUpOnJoinCalendarClock",
+                        String.class,
+                        java.time.LocalDate.class,
+                        java.time.LocalDate.class,
+                        java.time.Instant.class);
+        Query query = method.getAnnotation(Query.class);
+        assertTrue(query != null, "topUpOnJoinCalendarClock must carry a @Query annotation");
+
+        String jpql = query.value();
+        assertTrue(
+                jpql.contains("CASE WHEN c.creditsRemaining < c.monthlyAllotment THEN c.monthlyAllotment"),
+                "must only RAISE creditsRemaining up to monthlyAllotment, never lower it: " + jpql);
+        assertTrue(
+                jpql.contains("ELSE c.creditsRemaining END"),
+                "must leave creditsRemaining alone when it is already >= monthlyAllotment: " + jpql);
+        assertTrue(
+                jpql.contains("c.lastReset < :firstOfMonth"),
+                "must guard on lastReset so this fires at most once per UTC calendar month: " + jpql);
+    }
+
+    @Test
+    @DisplayName("calendarReset: JPQL is an unconditional atomic reset, no full-row save()")
+    void calendarResetJpqlShape() throws NoSuchMethodException {
+        Method method =
+                BrandAiCreditRepository.class.getMethod(
+                        "calendarReset", String.class, java.time.LocalDate.class, java.time.Instant.class);
+        Query query = method.getAnnotation(Query.class);
+        assertTrue(query != null, "calendarReset must carry a @Query annotation");
+
+        String jpql = query.value();
+        assertTrue(jpql.contains("c.creditsRemaining = c.monthlyAllotment"), "must reset to monthlyAllotment: " + jpql);
+        assertTrue(jpql.contains("c.lastReset = :today"), "must stamp lastReset: " + jpql);
+    }
+
+    @Test
+    @DisplayName(
+            "applyEscrowFundedReset: JPQL never writes creditGrantPeriodEnd, lastReset, or"
+                    + " lastResetPeriodEnd -- a funded launch is a funding event on neither clock"
+                    + " (F-0894)")
+    void applyEscrowFundedResetJpqlNeverWritesClockMarkers() throws NoSuchMethodException {
+        Method method =
+                BrandAiCreditRepository.class.getMethod(
+                        "applyEscrowFundedReset",
+                        String.class,
+                        int.class,
+                        java.time.Instant.class,
+                        java.time.Instant.class);
+        Query query = method.getAnnotation(Query.class);
+        assertTrue(query != null, "applyEscrowFundedReset must carry a @Query annotation");
+
+        String jpql = query.value();
+        assertTrue(
+                !jpql.contains("creditGrantPeriodEnd"),
+                "must NEVER write creditGrantPeriodEnd -- a funded launch is on neither clock: " + jpql);
+        assertTrue(
+                !jpql.contains("c.lastReset ="),
+                "must NEVER write lastReset -- a funded launch is on neither clock: " + jpql);
+        assertTrue(
+                !jpql.contains("lastResetPeriodEnd"),
+                "must NEVER write the deprecated lastResetPeriodEnd column: " + jpql);
+        assertTrue(
+                jpql.contains("c.unlimitedUntil = :unlimitedUntil"), "must open the unlimited window: " + jpql);
     }
 }

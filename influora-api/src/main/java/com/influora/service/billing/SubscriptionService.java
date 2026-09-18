@@ -219,6 +219,51 @@ public class SubscriptionService {
     }
 
     /**
+     * T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- which of the two AI-credit clocks a workspace is
+     * on: {@link CreditClock#BILLING_PERIOD} (refilled by a Razorpay-confirmed period, once per
+     * {@code currentPeriodEnd}) or {@link CreditClock#CALENDAR_MONTH} (refilled by {@code
+     * AICreditResetJob} on the 1st). {@code AICreditResetJob} and every refill path in this class
+     * and {@code AICreditService} call this so a workspace can never be on both clocks or on
+     * neither -- see the table in {@code wiki/decisions/2026-09-18-ai-credit-clock.md} §1, which
+     * this method asserts verbatim (see {@code creditClockForExhaustiveTest}).
+     *
+     * <p><b>Deliberately reads the {@link Subscription} row directly -- never derived from {@link
+     * #getActivePlanForWorkspace}.</b> That method maps PAST_DUE to Free (filters {@code status ==
+     * ACTIVE} before resolving the plan), so a clock built on it would put a grace-period Pro brand
+     * on the calendar clock and the monthly job would then reset its credits down to the Free
+     * allotment it just synced -- taking away credits the brand already paid for and is entitled to
+     * keep while PAST_DUE (the grace ruling, {@code wiki/decisions/CMO-PRO-DUNNING-GRACE-0917.md}
+     * §1).
+     */
+    @Transactional(readOnly = true)
+    public CreditClock creditClockFor(String workspaceId) {
+        Subscription sub = getByWorkspaceId(workspaceId).orElse(null);
+        if (sub == null) {
+            return CreditClock.CALENDAR_MONTH;
+        }
+        if (sub.isComp()) {
+            // Comp/admin grant, any plan -- has no charge events, so it follows the same
+            // calendar-month anchor Free rows use rather than refilling once per (possibly
+            // 10-year) comp horizon.
+            return CreditClock.CALENDAR_MONTH;
+        }
+        if (isFreePlan(sub.getPlanId())) {
+            return CreditClock.CALENDAR_MONTH;
+        }
+        // Paid plan, not comp.
+        return switch (sub.getStatus()) {
+            case ACTIVE, PAST_DUE -> CreditClock.BILLING_PERIOD;
+            case HALTED, CANCELLED -> CreditClock.CALENDAR_MONTH;
+        };
+    }
+
+    /** See {@link #creditClockFor(String)}. */
+    public enum CreditClock {
+        BILLING_PERIOD,
+        CALENDAR_MONTH
+    }
+
+    /**
      * The workspace's plan if an ACTIVE subscription exists, else the Free plan. Never returns
      * null and never throws for a workspace with no subscription row — Free is the honest default.
      * A PAST_DUE/HALTED/CANCELLED subscription also falls back to Free: only ACTIVE grants the
@@ -506,6 +551,15 @@ public class SubscriptionService {
         // grant should surface (not silently swallow) a credit-allotment failure so the admin
         // knows the grant didn't fully take effect.
         aiCreditService.applyPlanAllotment(workspaceId, targetPlan.getAiMonthlyAllotment());
+        // T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- "Comp initial fill" (RULING-upgrade-grant.md
+        // via wiki/decisions/2026-09-18-ai-credit-clock.md §2): applyPlanAllotment above is now
+        // sync-only (never touches creditsRemaining), so the comp grant needs its own explicit
+        // fill to the full allotment. resetForNewCycle is exactly that shape -- an unconditional,
+        // atomic SET creditsRemaining = monthlyAllotment + stamp lastReset = today, the same
+        // treatment a brand-new Free workspace gets from ensureInitialized. The NEXT fill after
+        // this one is the ordinary monthly job (comp is always on the calendar clock -- see
+        // creditClockFor).
+        aiCreditService.resetForNewCycle(workspaceId);
         return subscription;
     }
 
@@ -765,8 +819,33 @@ public class SubscriptionService {
     @Transactional
     public void reconcileAiCreditAllotment(String workspaceId) {
         try {
+            // T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- per
+            // wiki/decisions/2026-09-18-ai-credit-clock.md §2. Every call still syncs planAllotment
+            // (never touches creditsRemaining -- AICreditService#applyPlanAllotment is sync-only
+            // now, the old grant-on-increase logic moved to the billing-clock refill primitive
+            // below). What happens to creditsRemaining itself now depends on the workspace's clock:
+            //   - CALENDAR_MONTH: no refill here (the monthly job owns that) -- except the §3
+            //     handover top-up, which is itself guarded in SQL to only ever fire once, the
+            //     first time this method (or the job) sees the workspace after it moved onto the
+            //     calendar clock, and to never lower a balance.
+            //   - BILLING_PERIOD + ACTIVE: refill once for the row's OWN currentPeriodEnd (covers
+            //     the upgrade grant, the charged-webhook renewal, and any other ACTIVE transition
+            //     this method is called from).
+            //   - BILLING_PERIOD + PAST_DUE (or anomalous ACTIVE with no razorpaySubscriptionId):
+            //     nothing further -- the balance is held, per the grace ruling.
+            //   Source: RULING-upgrade-grant.md; wiki/decisions/2026-09-18-ai-credit-clock.md
             Plan currentPlan = getActivePlanForWorkspace(workspaceId);
             aiCreditService.applyPlanAllotment(workspaceId, currentPlan.getAiMonthlyAllotment());
+
+            Subscription sub = getByWorkspaceId(workspaceId).orElse(null);
+            CreditClock clock = creditClockFor(workspaceId);
+            if (clock == CreditClock.CALENDAR_MONTH) {
+                aiCreditService.topUpOnJoinCalendarClock(workspaceId);
+            } else if (sub != null
+                    && sub.getStatus() == SubscriptionStatus.ACTIVE
+                    && sub.getCurrentPeriodEnd() != null) {
+                aiCreditService.refillForBillingPeriod(workspaceId, sub.getCurrentPeriodEnd());
+            }
         } catch (Exception e) {
             log.error(
                     "AI-credit allotment reconciliation FAILED after a subscription webhook update"
@@ -827,11 +906,20 @@ public class SubscriptionService {
         } else {
             log.warn(
                     "applyRenewalSafetyNet: getActivePlanForWorkspace returned null for workspace {}"
-                            + " -- planAllotment sync skipped, resetForNewCycle will re-apply the"
-                            + " stored allotment unchanged",
+                            + " -- planAllotment sync skipped",
                     workspaceId);
         }
-        aiCreditService.resetForNewCycle(workspaceId);
+
+        // T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- this is a per-subscription BILLING renewal
+        // boundary (the safety net for a missed/delayed subscription.charged webhook), never the
+        // calendar month, so it must call the billing refill primitive with the row's OWN newEnd,
+        // and only for a workspace genuinely on the billing clock and ACTIVE -- it no longer calls
+        // the calendar reset (resetForNewCycle) at all; that is AICreditResetJob's job now.
+        //   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §2 "applyRenewalSafetyNet" row
+        if (creditClockFor(workspaceId) == CreditClock.BILLING_PERIOD
+                && subscription.getStatus() == SubscriptionStatus.ACTIVE) {
+            aiCreditService.refillForBillingPeriod(workspaceId, newEnd);
+        }
     }
 
     /**

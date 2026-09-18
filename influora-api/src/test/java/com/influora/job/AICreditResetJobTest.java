@@ -75,44 +75,83 @@ class AICreditResetJobTest {
         job = new AICreditResetJob(workspaceRepository, aiCreditService, subscriptionService);
 
         when(workspaceRepository.findIdsByType(WorkspaceType.BRAND)).thenReturn(List.of(WORKSPACE_ID));
+        // T-CREDITCLOCK-0918 [vikram · 2026-09-18]: subscriptionService is a plain Mockito mock
+        // here (not the real SubscriptionService), so creditClockFor is unstubbed by default and
+        // would return null, not CALENDAR_MONTH -- the job would then skip every workspace. Every
+        // test in this class exercises the CALENDAR_MONTH path (this job's whole reason to exist:
+        // resetting non-live/Free brands); BILLING_PERIOD-skip coverage lives in
+        // AICreditClockScenarioTest against a real SubscriptionService/H2 instead.
+        lenient()
+                .when(subscriptionService.creditClockFor(WORKSPACE_ID))
+                .thenReturn(SubscriptionService.CreditClock.CALENDAR_MONTH);
 
         // Single in-memory row, mutated in place by the real AICreditService — save() is a no-op
         // (the object is already the one findByWorkspaceId hands back) so state survives across
         // the job's repeated resetAllCreditsForNewMonth() calls within one test, exactly like a
         // real UPDATE ... WHERE workspace_id = ? would.
+        //
+        // T-CREDITCLOCK-0918 [vikram · 2026-09-18]: lastReset starts a month in the past (not
+        // "today") -- with applyPlanAllotment now sync-ONLY (the old grant-on-increase side effect
+        // that used to set creditsRemaining directly is retired, replaced by the billing-clock
+        // primitive refillForBillingPeriod, which this CALENDAR_MONTH job never calls), the ONLY
+        // thing that sets creditsRemaining any more is resetForNewCycleIfDue's calendarReset call
+        // -- which itself no-ops if lastReset is already in the current UTC month. A "starts today"
+        // fixture would make resetForNewCycleIfDue no-op on this test class's very FIRST job call
+        // in every test, proving nothing. Real production workspaces are never "already reset this
+        // month" the first time the job is due to run for them either.
         credit =
                 BrandAiCredit.builder()
                         .workspaceId(WORKSPACE_ID)
                         .monthlyAllotment(100) // starts Free, no loyalty bonus
                         .cycleStart(LocalDate.now())
-                        .lastReset(LocalDate.now())
+                        .lastReset(LocalDate.now().minusMonths(1))
                         .build();
-        when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
+        // lenient(): billingPeriodWorkspaceIsSkippedEntirely overrides creditClockFor to
+        // BILLING_PERIOD, which makes the job skip before ever calling findByWorkspaceId.
+        lenient().when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
 
-        // T-S3-F0879-0917 REPAIR ROUND [vikram · 2026-09-18]: F-0885 replaced
-        // AICreditService#applyPlanAllotment's blind full-row save() with two targeted atomic
-        // UPDATEs (syncPlanAllotment / grantAllotmentIncrease) -- real Mockito mocks of those two
-        // methods do nothing to `credit` on their own, which would silently break this test's
-        // "single in-memory row mutated in place" simulation (the whole point of using a real
-        // AICreditService here, per this class's javadoc). These stubs simulate the atomic
-        // queries' real SQL semantics against the SAME `credit` row, same precedent as
-        // AICreditServiceTest#stubAtomicPlanAllotmentWrites. subscriptionService.getByWorkspaceId
-        // is left unstubbed in this job test (Optional.empty() -> periodEnd null), so the grant
-        // guard is always disabled here -- matching AICreditResetJob's real call site, which never
-        // resolves a billing period on its own.
+        // T-CREDITCLOCK-0918 [vikram · 2026-09-18]: real Mockito mocks of
+        // BrandAiCreditRepository's atomic @Modifying queries do nothing to `credit` on their own,
+        // which would silently break this test's "single in-memory row mutated in place"
+        // simulation (the whole point of using a real AICreditService here, per this class's
+        // javadoc). These stubs simulate the atomic queries' real SQL semantics against the SAME
+        // `credit` row, same precedent as AICreditServiceTest#stubAtomicPlanAllotmentWrites.
+        // subscriptionService.getByWorkspaceId/creditClockFor are left unstubbed in this job test
+        // -> Optional.empty() -> CreditClock.CALENDAR_MONTH (see SubscriptionService
+        // #creditClockFor javadoc: "no Subscription row" resolves to the calendar clock) --
+        // matching AICreditResetJob's real per-workspace loop, which now skips a workspace only
+        // when creditClockFor resolves it to BILLING_PERIOD.
         lenient()
-                .when(creditRepository.syncPlanAllotment(eq(WORKSPACE_ID), anyInt()))
+                .when(creditRepository.syncPlanAllotment(eq(WORKSPACE_ID), anyInt(), any()))
                 .thenAnswer(
                         invocation -> {
                             credit.setPlanAllotment(invocation.getArgument(1));
                             return 1;
                         });
         lenient()
-                .when(creditRepository.grantAllotmentIncrease(eq(WORKSPACE_ID), anyInt(), any()))
+                .when(creditRepository.calendarReset(eq(WORKSPACE_ID), any(), any()))
                 .thenAnswer(
                         invocation -> {
-                            credit.setCreditsRemaining(invocation.getArgument(1));
-                            credit.setCreditGrantPeriodEnd(invocation.getArgument(2));
+                            credit.setCreditsRemaining(credit.getMonthlyAllotment());
+                            credit.setLastReset(invocation.getArgument(1));
+                            return 1;
+                        });
+        // Two tests in this class call aiCreditService.applyEscrowFundedReset(...) directly (the
+        // SM-0.2 loyalty-bonus-via-the-job matrix) -- stub the atomic escrow query the same way,
+        // mirroring AICreditServiceTest#stubAtomicWrites.
+        lenient()
+                .when(creditRepository.applyEscrowFundedReset(eq(WORKSPACE_ID), anyInt(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            int loyaltyBonus = invocation.getArgument(1);
+                            Instant now = invocation.getArgument(2);
+                            Instant unlimitedUntil = invocation.getArgument(3);
+                            if (credit.getFirstCampaignAt() == null) {
+                                credit.setLoyaltyBonus(loyaltyBonus);
+                                credit.setFirstCampaignAt(now);
+                            }
+                            credit.setCreditsRemaining(credit.getPlanAllotment() + credit.getLoyaltyBonus());
+                            credit.setUnlimitedUntil(unlimitedUntil);
                             return 1;
                         });
     }
@@ -214,6 +253,26 @@ class AICreditResetJobTest {
                 credit.getCreditsRemaining(),
                 "a duplicate job trigger in the same UTC month must change nothing -- it must not"
                         + " reset the already-spent-down balance back up to 400");
+    }
+
+    @Test
+    @DisplayName(
+            "T-CREDITCLOCK-0918: a BILLING_PERIOD-clock workspace is skipped entirely by the"
+                    + " monthly job -- no sync, no reset (F-0896: the job resetting it too is what"
+                    + " double-refilled a mid-month upgrade)")
+    void billingPeriodWorkspaceIsSkippedEntirely() {
+        when(subscriptionService.creditClockFor(WORKSPACE_ID))
+                .thenReturn(SubscriptionService.CreditClock.BILLING_PERIOD);
+
+        job.resetAllCreditsForNewMonth();
+
+        assertEquals(100, credit.getMonthlyAllotment(), "untouched -- the fixture's own starting value");
+        assertEquals(100, credit.getCreditsRemaining());
+        org.mockito.Mockito.verify(subscriptionService, org.mockito.Mockito.never())
+                .getActivePlanForWorkspace(any());
+        org.mockito.Mockito.verify(creditRepository, org.mockito.Mockito.never())
+                .syncPlanAllotment(any(), anyInt(), any());
+        org.mockito.Mockito.verify(creditRepository, org.mockito.Mockito.never()).calendarReset(any(), any(), any());
     }
 
     @Test

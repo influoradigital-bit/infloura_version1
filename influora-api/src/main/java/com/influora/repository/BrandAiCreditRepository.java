@@ -12,6 +12,21 @@ import org.springframework.transaction.annotation.Transactional;
 
 public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, String> {
 
+    // T-CREDITCLOCK-0918 [vikram · 2026-09-18]: every @Modifying query in this interface binds
+    // `c.updatedAt` to a passed-in `:now` Instant parameter rather than the JPQL `CURRENT_TIMESTAMP`
+    // literal every one of them used before this round. H2Dialect's `current_timestamp` function
+    // contributor types that literal as `java.sql.Timestamp`, which Hibernate 6's semantic
+    // validator then refuses to assign to this entity's Instant-typed `updatedAt` -- discovered
+    // when @EnableJpaRepositories(basePackageClasses = BrandAiCreditRepository.class) in
+    // AICreditClockScenarioTest's real-H2 harness (F-0895) eagerly validates EVERY @Query method in
+    // this interface at repository-proxy creation, so even a query the test never calls (e.g.
+    // tryDecrement) fails the whole bean if it still used the literal. Production (MySQLDialect) is
+    // unaffected by this change either way -- it is purely an H2-testability accommodation, not a
+    // behavior change: callers now pass `Instant.now()` where the JPQL literal used to resolve it
+    // server-side, which is the same wall-clock instant to sub-millisecond precision that matters
+    // here (no caller straddles a transaction boundary between binding `now` and this UPDATE
+    // executing).
+
     /** 1:1 workspace lookup — the PK is the workspaceId, so this is inherently tenant-scoped. */
     Optional<BrandAiCredit> findByWorkspaceId(String workspaceId);
 
@@ -20,13 +35,14 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
      * Mirrors the {@code UPDATE ... WHERE credits_remaining > 0} pattern mandated by Guardrail 5
      * so concurrent turns can never drive the balance negative.
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query(
             "UPDATE BrandAiCredit c SET c.creditsRemaining = c.creditsRemaining - :cost, "
-                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "c.updatedAt = :now "
                     + "WHERE c.workspaceId = :workspaceId AND c.creditsRemaining >= :cost")
-    int tryDecrement(@Param("workspaceId") String workspaceId, @Param("cost") int cost);
+    int tryDecrement(
+            @Param("workspaceId") String workspaceId, @Param("cost") int cost, @Param("now") Instant now);
 
     /**
      * Refund counterpart to {@link #tryDecrement} — used by {@code AICreditService#release} to
@@ -38,15 +54,16 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
      * charge and its later release would otherwise let this unconditional add push
      * {@code creditsRemaining} above the workspace's allotment.
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query(
             "UPDATE BrandAiCredit c SET c.creditsRemaining = "
                     + "CASE WHEN c.creditsRemaining + :amount > c.monthlyAllotment THEN c.monthlyAllotment "
                     + "ELSE c.creditsRemaining + :amount END, "
-                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "c.updatedAt = :now "
                     + "WHERE c.workspaceId = :workspaceId")
-    int refundCredits(@Param("workspaceId") String workspaceId, @Param("amount") int amount);
+    int refundCredits(
+            @Param("workspaceId") String workspaceId, @Param("amount") int amount, @Param("now") Instant now);
 
     /**
      * Refund counterpart to the daily-action-counter bump in {@code AICreditService#tryConsume} —
@@ -55,17 +72,18 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
      * so refunding a stale day's counter would be meaningless (and could under/overflow the new
      * day's count).
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query(
             "UPDATE BrandAiCredit c SET c.dailyActionsUsed = "
                     + "CASE WHEN c.dailyActionsUsed > :amount THEN c.dailyActionsUsed - :amount ELSE 0 END, "
-                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "c.updatedAt = :now "
                     + "WHERE c.workspaceId = :workspaceId AND c.dailyActionsDate = :today")
     int refundDailyActions(
             @Param("workspaceId") String workspaceId,
             @Param("amount") int amount,
-            @Param("today") LocalDate today);
+            @Param("today") LocalDate today,
+            @Param("now") Instant now);
 
     /**
      * T-S3-F0879-0917 [vikram · 2026-09-17] -- credit-race fix. Atomically bumps the P4 daily
@@ -84,15 +102,16 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
      * itself.
      *   Source: assignments-0917-subscription.md S3 "Credit race" (tech N4, T-5)
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query(
             "UPDATE BrandAiCredit c SET c.dailyActionsUsed = "
                     + "CASE WHEN c.dailyActionsDate = :today THEN c.dailyActionsUsed + 1 ELSE 1 END, "
                     + "c.dailyActionsDate = :today, "
-                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "c.updatedAt = :now "
                     + "WHERE c.workspaceId = :workspaceId")
-    int bumpDailyActions(@Param("workspaceId") String workspaceId, @Param("today") LocalDate today);
+    int bumpDailyActions(
+            @Param("workspaceId") String workspaceId, @Param("today") LocalDate today, @Param("now") Instant now);
 
     /**
      * T-S3-F0879-0917 REPAIR ROUND [vikram · 2026-09-18] -- F-0885 (lost update) on the grant
@@ -105,39 +124,131 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
      * the shape this mirrors.
      *   Source: F-0885 repair round (Kabir MEDIUM), RULING-upgrade-grant.md
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query(
             "UPDATE BrandAiCredit c SET c.planAllotment = :planAllotment, "
                     + "c.monthlyAllotment = :planAllotment + c.loyaltyBonus, "
-                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "c.updatedAt = :now "
                     + "WHERE c.workspaceId = :workspaceId")
-    int syncPlanAllotment(@Param("workspaceId") String workspaceId, @Param("planAllotment") int planAllotment);
+    int syncPlanAllotment(
+            @Param("workspaceId") String workspaceId,
+            @Param("planAllotment") int planAllotment,
+            @Param("now") Instant now);
+
+    // -----------------------------------------------------------------------------------------
+    // T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- wiki/decisions/2026-09-18-ai-credit-clock.md.
+    // grantAllotmentIncrease (F-0881/F-0883/F-0885 repair round) is RETIRED: the "SET to the full
+    // new allotment, guarded on creditGrantPeriodEnd" shape it introduced is now generalized into
+    // refillForBillingPeriod below, which every billing-clock refill path (the upgrade grant, the
+    // charged-webhook renewal, and the safety net) shares -- not just an allotment INCREASE.
+    // -----------------------------------------------------------------------------------------
 
     /**
-     * T-S3-F0879-0917 REPAIR ROUND [vikram · 2026-09-18] -- the grant itself (F-0881 ruling +
-     * F-0883 + F-0885). SETs {@code creditsRemaining} to the full new allotment, atomically
-     * guarded so a repeat grant for the SAME billing period (identified by the subscription's
+     * T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- the billing-clock refill primitive
+     * (wiki/decisions/2026-09-18-ai-credit-clock.md §2/§4). SETs {@code creditsRemaining} to the
+     * row's OWN {@code monthlyAllotment} (never a Java-computed value -- F-0894), atomically
+     * guarded so a repeat call for the SAME billing period (identified by the subscription's
      * {@code currentPeriodEnd}, passed in as {@code periodEnd}) is a no-op (returns 0 rows
-     * updated) -- this is the authoritative guard, not just a pre-check in the service layer:
-     * two concurrent callers race on the same InnoDB row lock, so only one can ever win for a
-     * given {@code periodEnd}. {@code periodEnd IS NULL} (no resolvable subscription/billing
-     * period) intentionally disables the guard rather than blocking the grant -- see
-     * {@code AICreditService#applyPlanAllotment} javadoc for why failing open here is the safer
-     * default than silently withholding a paid brand's allowance.
-     *   Source: F-0881/F-0883/F-0885 repair round, RULING-upgrade-grant.md
+     * updated) -- the authoritative guard, not just a pre-check in the service layer: two
+     * concurrent callers race on the same InnoDB row lock, so only one can ever win for a given
+     * {@code periodEnd}. Also stamps {@code lastReset = :today} in the SAME guarded UPDATE, which
+     * is what lets the §3 handover top-up tell "the billing refill already covered this calendar
+     * month" apart from "it didn't" -- see {@code AICreditService#refillForBillingPeriod} javadoc.
+     * Unlike the retired {@code grantAllotmentIncrease}, this does NOT fail open on a null {@code
+     * periodEnd} -- the service layer refuses to call this at all in that case (fails CLOSED, per
+     * the ruling's update).
+     *   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §2, §3, §4
      */
-    @Modifying
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
     @Query(
-            "UPDATE BrandAiCredit c SET c.creditsRemaining = :newAllotment, "
+            "UPDATE BrandAiCredit c SET c.creditsRemaining = c.monthlyAllotment, "
                     + "c.creditGrantPeriodEnd = :periodEnd, "
-                    + "c.updatedAt = CURRENT_TIMESTAMP "
+                    + "c.lastReset = :today, "
+                    + "c.updatedAt = :now "
                     + "WHERE c.workspaceId = :workspaceId "
-                    + "AND (:periodEnd IS NULL OR c.creditGrantPeriodEnd IS NULL "
-                    + "OR c.creditGrantPeriodEnd <> :periodEnd)")
-    int grantAllotmentIncrease(
+                    + "AND (c.creditGrantPeriodEnd IS NULL OR c.creditGrantPeriodEnd <> :periodEnd)")
+    int refillForBillingPeriod(
             @Param("workspaceId") String workspaceId,
-            @Param("newAllotment") int newAllotment,
-            @Param("periodEnd") Instant periodEnd);
+            @Param("periodEnd") Instant periodEnd,
+            @Param("today") LocalDate today,
+            @Param("now") Instant now);
+
+    /**
+     * T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- the §3 "handover top-up". Raises {@code
+     * creditsRemaining} up to {@code monthlyAllotment} (never lowers it -- a {@code CASE WHEN ...
+     * < ... THEN ... ELSE} clamp, the same "never claw back" shape {@code refundCredits} already
+     * uses) and stamps {@code lastReset = :today}, guarded to fire at most once per UTC calendar
+     * month (WHERE {@code lastReset < :firstOfMonth}). Idempotent/harmless to call on every
+     * reconcile for a calendar-clock workspace: once it has run this month, every later call in
+     * the same month is a no-op.
+     *   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §3
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET c.creditsRemaining = "
+                    + "CASE WHEN c.creditsRemaining < c.monthlyAllotment THEN c.monthlyAllotment "
+                    + "ELSE c.creditsRemaining END, "
+                    + "c.lastReset = :today, "
+                    + "c.updatedAt = :now "
+                    + "WHERE c.workspaceId = :workspaceId AND c.lastReset < :firstOfMonth")
+    int topUpOnJoinCalendarClock(
+            @Param("workspaceId") String workspaceId,
+            @Param("today") LocalDate today,
+            @Param("firstOfMonth") LocalDate firstOfMonth,
+            @Param("now") Instant now);
+
+    /**
+     * T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- the atomic calendar-month reset (F-0894 lost
+     * update fix for {@code AICreditService#resetForNewCycle}, which previously did a full-row
+     * {@code save()}). Unconditional SET {@code creditsRemaining = monthlyAllotment}, {@code
+     * lastReset = :today} -- {@code AICreditResetJob}'s own {@code resetForNewCycleIfDue} is the
+     * same-UTC-month idempotency guard; this primitive is intentionally unconditional the same way
+     * {@code bumpDailyActions}/{@code syncPlanAllotment} are, with the guard living one layer up.
+     *   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §2, §5 (F-0894)
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET c.creditsRemaining = c.monthlyAllotment, "
+                    + "c.lastReset = :today, "
+                    + "c.updatedAt = :now "
+                    + "WHERE c.workspaceId = :workspaceId")
+    int calendarReset(
+            @Param("workspaceId") String workspaceId, @Param("today") LocalDate today, @Param("now") Instant now);
+
+    /**
+     * T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- {@code AICreditService#applyEscrowFundedReset}
+     * made atomic (F-0894): a funded launch is a funding event on NEITHER clock, so this must
+     * NEVER write {@code creditGrantPeriodEnd}, {@code lastReset}, or {@code lastResetPeriodEnd} --
+     * doing so could revert a concurrent billing-period or calendar-clock refill's own marker and
+     * let a second refill land in the same period/month. Conditionally sets {@code loyaltyBonus}
+     * and {@code firstCampaignAt} (only the FIRST funded campaign earns the bonus -- a {@code CASE
+     * WHEN c.firstCampaignAt IS NULL} guard, reproduced identically for the two writes that need
+     * the NEW loyalty bonus value in the SAME statement, since a JPQL UPDATE's SET expressions all
+     * read the row's pre-statement values, never another SET target's new value in the same
+     * statement) and unconditionally refills {@code creditsRemaining} to the resulting {@code
+     * planAllotment + loyaltyBonus} and opens the unlimited window.
+     *   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §2 "applyEscrowFundedReset" row, §5
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET "
+                    + "c.loyaltyBonus = CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END, "
+                    + "c.firstCampaignAt = CASE WHEN c.firstCampaignAt IS NULL THEN :now ELSE c.firstCampaignAt END, "
+                    + "c.monthlyAllotment = c.planAllotment + "
+                    + "(CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END), "
+                    + "c.creditsRemaining = c.planAllotment + "
+                    + "(CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END), "
+                    + "c.unlimitedUntil = :unlimitedUntil, "
+                    + "c.updatedAt = :now "
+                    + "WHERE c.workspaceId = :workspaceId")
+    int applyEscrowFundedReset(
+            @Param("workspaceId") String workspaceId,
+            @Param("loyaltyBonus") int loyaltyBonus,
+            @Param("now") Instant now,
+            @Param("unlimitedUntil") Instant unlimitedUntil);
 }
