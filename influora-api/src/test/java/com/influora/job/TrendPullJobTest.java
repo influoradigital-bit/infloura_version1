@@ -582,6 +582,64 @@ class TrendPullJobTest {
         return prefix + "diesel prices are steady across most retail markets this month analysts say";
     }
 
+    // --- T-GOLIVE-0918-R2 repair round, MEDIUM: a bidi-control-character spoof must never be
+    // --- stored, even when the literal word filter alone reads it as safe -----------------------
+
+    @Test
+    @DisplayName("a headline with a Unicode RLO override is never stored, even though the word"
+            + " filter alone reads its literal character sequence as safe")
+    void bidiOverrideHeadlineNeverStored() {
+        // T-GOLIVE-0918-R2 [vikram · 2026-09-18] — regression test for Kabir's round-1-on-31f2351
+        // MEDIUM finding: reviewer probe "diwali sale <U+202E>yadot dellik 5" RENDERS as "...5
+        // killed today" (RLO reverses everything after it) but its literal codepoints never
+        // contain "killed" as a substring, so wordFilterSafe=true and it was stored. Built by
+        // codepoint, not as a literal with the control char pasted in, so it survives source
+        // encoding untouched.
+        String headline = "diwali sale " + '‮' + "yadot dellik 5";
+        assertTrue(
+                com.influora.service.creatorcopilot.TrendHeadlineScreener.isSafeForCreatorCopy(headline),
+                "fixture bug: the word filter alone must read this literal character sequence as"
+                        + " safe, or this test would pass even with the bidi guard reverted");
+        wireSingleSource(newsClient, headline);
+
+        buildJob().pullTrends();
+
+        ArgumentCaptor<List<Trend>> captor = ArgumentCaptor.forClass(List.class);
+        verify(writer).writeAll(captor.capture());
+        assertTrue(
+                captor.getValue().isEmpty(),
+                "a headline containing a bidi override control character must never be stored");
+        // Rejected before the word filter's own gate would even be reached, at the classifier.
+        verify(brandSafetyAiClient, never()).classify(anyString(), anyList());
+    }
+
+    @Test
+    @DisplayName("a headline with a Unicode directional-isolate control character is never stored")
+    void bidiIsolateHeadlineNeverStored() {
+        // Same class of spoof as above but a different code point family (the LRI/RLI/FSI/PDI
+        // isolates rather than the LRO/RLO overrides) — proves the guard is a range check, not
+        // overfit to one reviewer-probe character.
+        String headline = "diwali sale continues " + '⁦' + "today" + '⁩';
+        assertTrue(
+                com.influora.service.creatorcopilot.TrendHeadlineScreener.isSafeForCreatorCopy(headline),
+                "fixture bug: the word filter alone must read this headline as safe, or this test"
+                        + " would pass even with the bidi guard reverted");
+        wireSingleSource(newsClient, headline);
+
+        buildJob().pullTrends();
+
+        ArgumentCaptor<List<Trend>> captor = ArgumentCaptor.forClass(List.class);
+        verify(writer).writeAll(captor.capture());
+        assertTrue(
+                captor.getValue().isEmpty(),
+                "a headline containing a bidi isolate control character must never be stored");
+
+        boolean loggedBidiReject =
+                logAppender.list.stream()
+                        .anyMatch(e -> e.getFormattedMessage().contains("reason=bidi_control_chars"));
+        assertTrue(loggedBidiReject, "expected a log line naming the bidi_control_chars rejection reason");
+    }
+
     private void wireSingleSource(TrendSourceClient configuredClient, String headline) {
         when(tmdbClient.isConfigured()).thenReturn(configuredClient == tmdbClient);
         when(newsClient.isConfigured()).thenReturn(configuredClient == newsClient);

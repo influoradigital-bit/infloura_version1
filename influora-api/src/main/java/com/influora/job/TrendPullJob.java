@@ -69,8 +69,23 @@ import org.springframework.stereotype.Component;
  * behavior as before) so ops CAN set a real value once the workspace-billing decision above is
  * made, instead of that being impossible without editing this file. Setting {@code
  * TREND_INGEST_ENABLED=true} plus the three source keys alone still stores nothing — {@code
- * TREND_INGEST_CLASSIFIER_WORKSPACE_ID} must also be set once that decision lands. See this
- * lane's go-live report for the full env-var list handed to the DEPLOY lane.
+ * TREND_INGEST_CLASSIFIER_WORKSPACE_ID} must also be set once that decision lands. The full
+ * env-var list handed to the DEPLOY lane (all 8 {@code trend-ingest} vars plus the 2 brand-safety
+ * prerequisites this job's classifier call depends on) is
+ * {@code .proof-os/tasks/T-GOLIVE-0918-R2/COPILOT-INGEST-env-vars.md}, and the binding itself is
+ * proven by {@code TrendIngestConfigWiringTest}.
+ *
+ * <p>T-GOLIVE-0918-R2 [vikram · 2026-09-18] — MEDIUM fix (repair round on COPILOT-INGEST, Kabir
+ * round-1-on-31f2351 finding): a Unicode bidirectional-override control character (e.g. {@code
+ * U+202E RIGHT-TO-LEFT OVERRIDE}) can make a headline RENDER in a different order than its actual
+ * character sequence, so the literal text never contains a banned word as a substring even though
+ * a human reader sees one. Reviewer probe {@code "diwali sale <U+202E>yadot dellik 5"} reads as
+ * safe to the deterministic word filter ({@code wordFilterSafe=true}) but renders as
+ * {@code "...5 killed today"}, and was stored. {@link #containsBidiControlChars} now rejects any
+ * headline carrying one of these code points outright, before the word filter even runs (an
+ * override could just as easily hide a banned word from a different literal match, not only
+ * reverse a phrase) — NewsAPI/TMDB/YouTube titles never legitimately contain them. See
+ * #pullTrends and wiki/decisions/2026-09-18-trend-headline-screening.md.
  */
 @Component
 public class TrendPullJob {
@@ -88,6 +103,16 @@ public class TrendPullJob {
     // this job would treat every headline as safe. See #isFlaggedByClassifier.
     private static final int EXPECTED_GARM_CATEGORY_COUNT = 10;
     private static final Set<String> VALID_GARM_RISK_LEVELS = Set.of("floor", "low", "medium", "high");
+
+    // T-GOLIVE-0918-R2 [vikram · 2026-09-18] — MEDIUM fix: Unicode bidirectional-formatting
+    // control characters (RLO/LRO/RLE/LRE/PDF, the LRI/RLI/FSI/PDI isolates, and the LRM/RLM/ALM
+    // marks) let a headline's DISPLAYED order differ from its actual character sequence — a
+    // "Trojan Source" style spoof. Reviewer probe: "diwali sale <U+202E>yadot dellik 5" renders as
+    // "...5 killed today" but its literal codepoints never contain "killed", so the word filter
+    // read it as safe. None of NewsAPI/TMDB/YouTube's legitimate title text needs these code
+    // points, so any occurrence fails the headline closed outright — see #containsBidiControlChars.
+    private static final java.util.regex.Pattern BIDI_CONTROL_CHARS =
+            java.util.regex.Pattern.compile("[؜‎‏‪-‮⁦-⁩]");
 
     // T-GOLIVE-0918 repair round 2 [vikram · 2026-09-18] — LOW fix: repair round 1 checked only
     // the COUNT of garm_flags (10), not which categories they named. Reviewer probe p04 sent 10
@@ -208,6 +233,7 @@ public class TrendPullJob {
             deduped = deduped.subList(0, props.getMaxRowsPerRun());
         }
 
+        int bidiControlRejected = 0;
         int wordFilterRejected = 0;
         int classifierRejected = 0;
         int classifierFailedOrUnconfigured = 0;
@@ -228,6 +254,18 @@ public class TrendPullJob {
             // byte what is stored. Source: wiki/decisions/2026-09-18-trend-headline-screening.md
             // (screen exactly the text that is stored).
             String text = truncate(raw.text(), 500);
+
+            // T-GOLIVE-0918-R2 [vikram · 2026-09-18] — MEDIUM fix: reject a bidi-control-character
+            // spoof BEFORE the word filter even runs — see #containsBidiControlChars and the class
+            // javadoc for the reviewer probe this closes.
+            if (containsBidiControlChars(text)) {
+                log.info(
+                        "TrendPullJob: rejected id={} source={} reason=bidi_control_chars",
+                        id,
+                        raw.source());
+                bidiControlRejected++;
+                continue;
+            }
 
             if (!screener.isSafe().test(text)) {
                 String category = screener.rejectionCategory().apply(text);
@@ -319,13 +357,15 @@ public class TrendPullJob {
 
         log.info(
                 "TrendPullJob: completed run — sourcesOk={} sourcesSkippedNoKey={} fetched={}"
-                        + " deduped={} droppedByCap={} wordFilterRejected={} classifierRejected={}"
-                        + " classifierFailedOrUnconfigured={} themesEmptyDropped={} written={}",
+                        + " deduped={} droppedByCap={} bidiControlRejected={} wordFilterRejected={}"
+                        + " classifierRejected={} classifierFailedOrUnconfigured={}"
+                        + " themesEmptyDropped={} written={}",
                 sourcesOk,
                 sourcesSkippedNoKey,
                 fetched.size(),
                 deduped.size(),
                 droppedByCap,
+                bidiControlRejected,
                 wordFilterRejected,
                 classifierRejected,
                 classifierFailedOrUnconfigured,
@@ -432,6 +472,15 @@ public class TrendPullJob {
             seen.putIfAbsent(key, row);
         }
         return new ArrayList<>(seen.values());
+    }
+
+    /** True if {@code text} carries a Unicode bidirectional-formatting control character (RLO/LRO/
+     * RLE/LRE/PDF, an LRI/RLI/FSI/PDI isolate, or an LRM/RLM/ALM mark) — see the class javadoc and
+     * {@link #BIDI_CONTROL_CHARS} for why any occurrence fails the headline closed outright rather
+     * than being stripped: stripping only fixes how it renders, not that the underlying character
+     * sequence may already be a deliberately reordered, deceptive phrase. */
+    private static boolean containsBidiControlChars(String text) {
+        return text != null && BIDI_CONTROL_CHARS.matcher(text).find();
     }
 
     private static String truncate(String text, int maxLength) {
