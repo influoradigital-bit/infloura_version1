@@ -178,6 +178,10 @@ services:
       # to match application.yml:298's literal ${ADMIN_MFA_SECRET_ENCRYPTION_KEY:...} placeholder so
       # generate-env.sh/compose/application.yml agree on one name, closing the done_when name-agreement
       # clause and the operator-facing footgun of setting the documented name and being ignored.
+      # [REPAIR R6] MIGRATION NOTE for an EXISTING env file: rename
+      # INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY to ADMIN_MFA_SECRET_ENCRYPTION_KEY IN PLACE, keeping
+      # its current value. Do NOT re-run generate-env.sh to "fix" this — it mints a fresh random
+      # key, leaving every admin-MFA secret already encrypted under the old key undecryptable.
       ADMIN_MFA_SECRET_ENCRYPTION_KEY: ${ADMIN_MFA_SECRET_ENCRYPTION_KEY}
       INFLUORA_PII_EMAILPHONEENCRYPTIONKEY: ${INFLUORA_PII_EMAILPHONEENCRYPTIONKEY}
       INFLUORA_PII_BANKENCRYPTIONKEY: ${INFLUORA_PII_BANKENCRYPTIONKEY}
