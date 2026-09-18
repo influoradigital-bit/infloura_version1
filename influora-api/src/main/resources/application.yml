@@ -481,6 +481,15 @@ influora:
     email-phone-encryption-key: ${INFLUORA_PII_EMAILPHONEENCRYPTIONKEY:}
     bank-encryption-key: ${INFLUORA_PII_BANKENCRYPTIONKEY:}
   shopify:
+    # The Shopify app's client id / client secret (Partner dashboard -> App -> Client credentials)
+    # and its webhook signing secret. Blank by default: ShopifyProperties#isConfigured() is then
+    # false, POST /shopify/oauth/authorize answers 503, and GET /integrations/store/status reports
+    # shopifyAvailable=false so the settings page does not offer a connect button that cannot work.
+    # These three had NO binding at all until now, and no compose file forwarded them, so Shopify
+    # connect could not be switched on in any deployed environment.
+    api-key: ${INFLUORA_SHOPIFY_APIKEY:}
+    api-secret: ${INFLUORA_SHOPIFY_APISECRET:}
+    webhook-signing-secret: ${INFLUORA_SHOPIFY_WEBHOOKSIGNINGSECRET:}
     token-encryption-key: ${INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY:}
     # [F-0731] Where Shopify sends the merchant's browser after they approve the install. This MUST
     # be a FRONTEND route, not this API: /shopify/oauth/callback returns a JSON ApiResponse, so a
@@ -489,9 +498,8 @@ influora:
     # serves, rather than being a second hardcoded copy of the domain that drifts (which is exactly
     # how the WooCommerce delivery URL ended up pointing at a host we do not own).
     #
-    # Still gated by F-0729: api-key/api-secret remain unbound, so isConfigured() is false and
-    # /authorize refuses before this value is ever used. Binding it here means the redirect target
-    # is correct on the day those credentials land, instead of being discovered wrong at that point.
+    # Only used once api-key/api-secret above are set; until then isConfigured() is false and
+    # /authorize refuses before this value is ever read.
     redirect-uri: ${INFLUORA_SHOPIFY_REDIRECTURI:${influora.web-base-url}/brand/settings/shopify/callback}
   woocommerce:
     token-encryption-key: ${INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY:}

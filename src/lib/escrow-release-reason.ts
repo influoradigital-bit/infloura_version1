@@ -22,6 +22,9 @@ export type PaymentHeldReason =
   | 'ESCROW_BLOCKED_BY_DISPUTE'
   | 'ESCROW_NOT_FOUND'
   | 'COLLABORATION_NOT_FOUND'
+  | 'MANUAL_RELEASE_REQUIRED'
+  | 'ALREADY_RELEASED'
+  | 'PAYMENT_REFUNDED'
   | 'NOT_APPLICABLE';
 
 const REASONS: Record<PaymentHeldReason, string> = {
@@ -38,10 +41,23 @@ const REASONS: Record<PaymentHeldReason, string> = {
     'The deal behind this deliverable could not be found, so nothing was paid out. Support needs to look at this deal.',
   RELEASE_CONDITION_NOT_MET:
     'The work is approved, but this milestone still has a release condition outstanding, so payment has not gone out yet.',
+  // Deliberately ranked ABOVE the funded case in BrandDeliverableService#describeUnlinkedHold: a
+  // release is refused outright while a dispute is open (EscrowService#assertEscrowNotBlockedByDispute),
+  // so pointing the brand at the Release button here would send them to a call that throws.
   ESCROW_BLOCKED_BY_DISPUTE:
-    'Payment is frozen while this deal is in dispute. The approval is recorded; the payout waits for the dispute to close.',
+    'Payment is frozen while this deal is in dispute — the secured funds stay where they are. The approval is recorded; the payout waits for the dispute to close.',
   INVALID_ESCROW_STATE:
     'The secured funds for this milestone are not in a releasable state, so no payment went out. Check the Payments panel for this deal.',
+  // Approval does not move money on its own: the funds for this deal are secured and waiting,
+  // and the Release action in the Payments panel is what pays them out.
+  // Role-neutral on purpose: any workspace member can approve a deliverable, but releasing
+  // secured funds is Owner/Admin only, so "release them" would send a Manager to a control they
+  // cannot use.
+  MANUAL_RELEASE_REQUIRED:
+    "The work is approved. The secured funds are still held — a workspace Owner or Admin releases them to the creator from this deal's Payments panel.",
+  PAYMENT_REFUNDED:
+    'The work is approved, but secured funds for this deal were refunded to your wallet, so nothing was paid out. Check the Payments panel for this deal.',
+  ALREADY_RELEASED: 'The payment for this deal has already been released to the creator.',
   NOT_APPLICABLE: 'No payment is attempted on this action.',
 };
 
@@ -65,5 +81,39 @@ export function paymentHeldMessage(reason: string | null | undefined): string {
  * notice reads as an action or as a status — a dispute freeze is not a to-do.
  */
 export function isBrandActionable(reason: string | null | undefined): boolean {
-  return reason === 'MILESTONE_NOT_FUNDED' || reason === 'ESCROW_NOT_FOUND';
+  return (
+    reason === 'MILESTONE_NOT_FUNDED' || reason === 'ESCROW_NOT_FOUND' || reason === 'MANUAL_RELEASE_REQUIRED'
+  );
+}
+
+/**
+ * The toast for a deliverable approval, shared by every surface that can approve one, so they
+ * cannot drift apart again.
+ *
+ * Every approval used to come back `NO_MILESTONE` (deliverables are never linked to a milestone),
+ * and each surface showed it as a red "Approved — but payment was NOT released ... needs a contract
+ * with milestones", including on deals with a signed contract and funded milestones. The server
+ * now reports the real state; this renders it with the right weight: an approval that simply
+ * leaves the brand one click from paying is NOT an error, and one where everything is already
+ * paid is plain success.
+ */
+export function approvalOutcomeToast(result: {
+  paymentReleased: boolean;
+  paymentHeldReason?: string | null;
+}): { title: string; description: string; variant?: 'destructive' } {
+  if (result.paymentReleased) {
+    return { title: 'Deliverable approved', description: 'Payment has been released to the creator.' };
+  }
+  const reason = result.paymentHeldReason;
+  if (reason === 'MANUAL_RELEASE_REQUIRED') {
+    return { title: 'Deliverable approved — payment is ready to release', description: paymentHeldMessage(reason) };
+  }
+  if (reason === 'ALREADY_RELEASED') {
+    return { title: 'Deliverable approved', description: paymentHeldMessage(reason) };
+  }
+  return {
+    title: 'Approved — but payment was NOT released',
+    description: paymentHeldMessage(reason),
+    variant: 'destructive',
+  };
 }

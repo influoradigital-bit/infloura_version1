@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/tooltip';
 import { TimelineEvent } from '@/lib/types';
 import { deliverables as deliverablesApi, ApiError } from '@/lib/api';
-import { paymentHeldMessage } from '@/lib/escrow-release-reason';
+import { approvalOutcomeToast } from '@/lib/escrow-release-reason';
 import { toast } from '@/hooks/use-toast';
 import {
   Play, MessageSquare, CheckCircle2, AlertCircle, Upload,
@@ -95,18 +95,7 @@ export function DeliverableReviewPanel({
       // creator was not paid. The approval really did happen, so the sheet still closes; the
       // held case is raised as a destructive toast rather than swallowed.
       const result = await deliverablesApi.approve(deliverableId);
-      if (result.paymentReleased) {
-        toast({
-          title: 'Deliverable approved',
-          description: 'Payment has been released to the creator.',
-        });
-      } else {
-        toast({
-          title: 'Approved — but payment was NOT released',
-          description: paymentHeldMessage(result.paymentHeldReason),
-          variant: 'destructive',
-        });
-      }
+      toast(approvalOutcomeToast(result));
       onApprove?.(event.id, feedback.trim());
       onReviewSuccess?.({ deliverableId, status: 'approved', feedback: feedback.trim() || undefined });
       onOpenChange(false);

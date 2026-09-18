@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,8 +14,40 @@ import { useAuthStore } from '@/lib/store';
 const inputClass =
   'h-11 pl-10 bg-background focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary/40 transition-[color,box-shadow,border-color] duration-150 ease-out';
 
+/**
+ * `?next=` is where a page that needed a session sent the visitor from (today: the invite page,
+ * `/brand/invite?token=...`). It comes from the URL, so it is only honoured when it is a plain
+ * in-app brand path: anything absolute, protocol-relative (`//host`), backslash-smuggled or
+ * outside `/brand/` is dropped and the normal post-login destination is used instead.
+ *
+ * The checks run on the path with its percent-escapes resolved, because a router (or a server,
+ * on a later hard load) resolves them too: `/brand/%2e%2e%2fadmin` starts with `/brand/` and
+ * contains no literal `..`, yet names `/admin`. Only the PATH is decoded — the query string is
+ * left alone, since an invite token may legitimately contain escapes. A value that does not
+ * decode at all is rejected rather than guessed at.
+ * Exported for the unit test that pins those cases.
+ */
+export function safeNextPath(next: string | null): string | null {
+  if (!next) return null;
+  const queryStart = next.indexOf('?');
+  const rawPath = queryStart === -1 ? next : next.slice(0, queryStart);
+  let path: string;
+  try {
+    // Twice: `%252e` survives one pass as `%2e`. Anything still escaped after two is not a path
+    // this app ever generates.
+    path = decodeURIComponent(decodeURIComponent(rawPath));
+  } catch {
+    return null;
+  }
+  if (path.includes('%')) return null;
+  if (!path.startsWith('/brand/')) return null;
+  if (path.includes('\\') || path.includes('//') || path.split('/').includes('..')) return null;
+  return next;
+}
+
 export default function BrandLoginPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { login } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,7 +72,7 @@ export default function BrandLoginPage() {
       // F-0282) already wrote to localStorage.
       login(buildBrandUser({ id: session.userId, email, displayName: getBrandDisplayName() }));
       const done = session.onboardingComplete || getBrandOnboardingComplete();
-      navigate(done ? '/brand/dashboard' : '/brand/onboarding');
+      navigate(safeNextPath(searchParams.get('next')) ?? (done ? '/brand/dashboard' : '/brand/onboarding'));
     } catch (err) {
       if (err instanceof ApiError && err.code === 'EMAIL_NOT_VERIFIED') {
         setNeedsVerification(true);

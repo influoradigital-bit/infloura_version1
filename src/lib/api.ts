@@ -1432,9 +1432,52 @@ export const workspaceMembers = {
           role: 'MANAGER',
           active: true,
         }),
+
+  /**
+   * POST /workspace/members/switch (WorkspaceMemberController.switchWorkspace) — moves THIS
+   * session into another workspace the caller is an active member of. The server mints a fresh
+   * access token scoped to that workspace and remembers the choice, so later refreshes and logins
+   * land there too. The new token replaces the in-memory one here, and the cached workspace
+   * identity in localStorage follows it; callers must still drop their react-query cache, since
+   * every cached response belongs to the workspace being left.
+   */
+  switchWorkspace: async (workspaceId: string): Promise<WorkspaceSummary> => {
+    if (!isLive()) {
+      return mockOr<WorkspaceSummary>({ id: workspaceId, name: 'Tech Brands Co.', slug: 'tech-brands-co', role: 'MANAGER' });
+    }
+    const res = await http.request<{ accessToken: string; expiresIn: number; workspace: WorkspaceSummary }>(
+      'POST',
+      '/workspace/members/switch',
+      { body: { workspaceId } },
+    );
+    http.setToken('brand', res.accessToken);
+    localStorage.setItem('brand_workspace_id', res.workspace.id);
+    localStorage.setItem('brand_company', res.workspace.name);
+    return res.workspace;
+  },
 };
 
+/** WorkspaceMemberDtos.WorkspaceSummary — one workspace the caller belongs to, with their role in it. */
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+
 export const workspaces = {
+  /**
+   * GET /workspaces/mine (WorkspaceController.listMine) — every workspace the caller is an active
+   * member of, oldest first. More than one entry means the workspace switcher has something to
+   * offer; a brand that never accepted an invite gets exactly one.
+   */
+  listMine: () =>
+    isLive()
+      ? http.request<WorkspaceSummary[]>('GET', '/workspaces/mine')
+      : mockOr<WorkspaceSummary[]>([
+          { id: 'ws_1', name: 'Tech Brands Co.', slug: 'tech-brands-co', role: 'OWNER' },
+        ]),
+
   /** GET /workspaces/slug-check?slug= */
   checkSlug: (slug: string) =>
     isLive()
@@ -5155,6 +5198,13 @@ export interface IntegrationStatus {
   provider?: StoreProvider;
   shopDomainOrSiteUrl?: string;
   connectedAt?: string;
+  /**
+   * Whether this deployment has Shopify app credentials configured
+   * (IntegrationDtos.IntegrationStatusResponse.shopifyAvailable). `false` means
+   * POST /shopify/oauth/authorize answers 503 for everyone, so Shopify must not be offered as a
+   * connect option. Optional only so an older API that does not send it still reads as available.
+   */
+  shopifyAvailable?: boolean;
 }
 
 /**

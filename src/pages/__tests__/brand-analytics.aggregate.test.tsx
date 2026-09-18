@@ -81,10 +81,12 @@ describe('F-0419 — brand analytics overview aggregates across every roster cre
   beforeEach(() => {
     vi.clearAllMocks();
     // Two distinct creators come back from the brand's real deals — mirrors the shape
-    // deriveRosterFromDeals reads (counterpartyId/counterpartyName), nothing else.
+    // deriveRosterFromDeals reads. It keys on counterpartyProfileId (the CreatorProfile id every
+    // analytics endpoint expects), NOT counterpartyId (the creator's User id): this fixture used
+    // to carry only the latter, which is not a shape the brand-side API ever returns.
     dealsListMock.mockResolvedValue([
-      { counterpartyId: 'cr_first', counterpartyName: 'First Creator' },
-      { counterpartyId: 'cr_second', counterpartyName: 'Second Creator' },
+      { counterpartyId: 'usr_first', counterpartyProfileId: 'cr_first', counterpartyName: 'First Creator' },
+      { counterpartyId: 'usr_second', counterpartyProfileId: 'cr_second', counterpartyName: 'Second Creator' },
     ]);
     getCreatorMetricsMock.mockImplementation((creatorId: string) => {
       if (creatorId === 'cr_first') return Promise.resolve(emptyMetrics(1000));

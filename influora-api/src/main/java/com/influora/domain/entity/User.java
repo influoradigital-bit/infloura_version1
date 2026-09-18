@@ -68,6 +68,13 @@ public class User {
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
+    // The workspace this brand user last switched into (POST /workspace/members/switch). Login and
+    // refresh prefer it over the oldest membership; null means "never chose" -> oldest-first. It is
+    // a preference, not an authorization: AuthService re-checks it against the user's ACTIVE
+    // memberships every time. See V20260917130000__users_last_active_workspace.sql.
+    @Column(name = "last_active_workspace_id", length = 26)
+    private String lastActiveWorkspaceId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -260,6 +267,15 @@ public class User {
 
     public Instant getLastLoginAt() {
         return lastLoginAt;
+    }
+
+    public String getLastActiveWorkspaceId() {
+        return lastActiveWorkspaceId;
+    }
+
+    public void rememberActiveWorkspace(String workspaceId) {
+        this.lastActiveWorkspaceId = workspaceId;
+        this.updatedAt = Instant.now();
     }
 
     public void markLogin() {

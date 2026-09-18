@@ -26,6 +26,8 @@ import com.influora.web.dto.workspace.WorkspaceMemberDtos.SwitchWorkspaceRespons
 import com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceReadResponse;
 import com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceSummary;
 import com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceUpdateRequest;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -34,6 +36,7 @@ import java.util.Locale;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -90,6 +93,7 @@ public class WorkspaceMemberService {
     private final ObjectMapper objectMapper;
     private final Msg91EmailClient msg91EmailClient;
     private final WorkspaceRepository workspaceRepository;
+    private final String webBaseUrl;
 
     public WorkspaceMemberService(
             WorkspaceMemberRepository workspaceMemberRepository,
@@ -102,7 +106,8 @@ public class WorkspaceMemberService {
             InfluoraEnvironment environment,
             ObjectMapper objectMapper,
             Msg91EmailClient msg91EmailClient,
-            WorkspaceRepository workspaceRepository) {
+            WorkspaceRepository workspaceRepository,
+            @Value("${influora.web-base-url}") String webBaseUrl) {
         this.workspaceMemberRepository = workspaceMemberRepository;
         this.workspaceMemberInviteRepository = workspaceMemberInviteRepository;
         this.brandContext = brandContext;
@@ -114,6 +119,7 @@ public class WorkspaceMemberService {
         this.objectMapper = objectMapper;
         this.msg91EmailClient = msg91EmailClient;
         this.workspaceRepository = workspaceRepository;
+        this.webBaseUrl = webBaseUrl;
     }
 
     /**
@@ -360,7 +366,7 @@ public class WorkspaceMemberService {
      * client-trusted workspaceId accepted anywhere else (TECH-STACK.md rule #2). The refresh token
      * is untouched: it is user-scoped, not workspace-scoped, so no rotation is needed here.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public SwitchWorkspaceResponse switchWorkspace(AuthPrincipal principal, String workspaceId) {
         brandContext.requireBrand(principal);
         if (workspaceId == null || workspaceId.isBlank()) {
@@ -398,6 +404,19 @@ public class WorkspaceMemberService {
                     "This workspace has been suspended. Contact support.",
                     HttpStatus.FORBIDDEN);
         }
+
+        // The token minted below lives 15 minutes. /auth/refresh re-derives the workspace from the
+        // database, so unless the choice is recorded there the very next refresh (or page reload)
+        // puts the caller back in their oldest workspace — see AuthService#preferLastActive.
+        // Not ifPresent(): answering 200 with a token whose choice was never recorded would look
+        // like a working switch and silently revert at the next refresh.
+        User switching =
+                userRepository
+                        .findById(principal.getUserId())
+                        .orElseThrow(
+                                () -> new ApiException("USER_NOT_FOUND", "User not found", HttpStatus.NOT_FOUND));
+        switching.rememberActiveWorkspace(workspaceId);
+        userRepository.save(switching);
 
         String access =
                 jwtService.createAccessToken(
@@ -464,6 +483,7 @@ public class WorkspaceMemberService {
         templateData.put("workspace_name", workspace.getName());
         templateData.put("role", invite.getRole().name());
         templateData.put("invite_token", rawToken);
+        templateData.put("invite_url", inviteUrl(rawToken));
         templateData.put("expires_at", invite.getExpiresAt().toString());
 
         String idempotencyKey = "workspace.member_invited:" + invite.getId() + ":" + JwtService.hashToken(rawToken);
@@ -493,6 +513,17 @@ public class WorkspaceMemberService {
     }
 
     /**
+     * The link the invitee clicks: the SPA's invite-redemption page (src/App.tsx /brand/invite),
+     * which reads {@code ?token=} and calls {@code POST /workspace/members/accept}. Both invite
+     * templates render it as their call-to-action; without it the email named the workspace and the
+     * role but gave the recipient nothing to act on, so no invite could ever be redeemed.
+     */
+    String inviteUrl(String rawToken) {
+        String base = webBaseUrl.endsWith("/") ? webBaseUrl.substring(0, webBaseUrl.length() - 1) : webBaseUrl;
+        return base + "/brand/invite?token=" + URLEncoder.encode(rawToken, StandardCharsets.UTF_8);
+    }
+
+    /**
      * H-15: email-keyed delivery for an invitee with no {@code users} row — bypasses the
      * outbox's {@code user_id} FK entirely by calling {@link Msg91EmailClient} directly (the same
      * pattern {@code BrandEmailOtpService#deliverOtp} already uses to reach an address with no
@@ -515,6 +546,7 @@ public class WorkspaceMemberService {
         templateData.put("workspace_name", workspace.getName());
         templateData.put("role", invite.getRole().name());
         templateData.put("invite_token", rawToken);
+        templateData.put("invite_url", inviteUrl(rawToken));
         templateData.put("expires_at", invite.getExpiresAt().toString());
 
         boolean sent =

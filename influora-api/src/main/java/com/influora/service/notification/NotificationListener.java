@@ -131,6 +131,26 @@ public class NotificationListener {
         this.webBaseUrl = webBaseUrl;
     }
 
+    // In-app notification links are navigated to verbatim by the SPA (brand-notifications.tsx,
+    // the bell popover), so each one has to be a route src/App.tsx actually registers. The brand
+    // app has no per-entity pages for proposals, collaborations, deliverables or shipments: all of
+    // those live inside the deal room (/brand/chat?deal=<collaborationId>[&tab=]), the same target
+    // DashboardService's action items already use. src/__tests__/notification-links-resolve.test.ts
+    // fails the build if a link here stops matching a registered route.
+    private static final String BRAND_WALLET = "/brand/wallet";
+    private static final String BRAND_BILLING = "/brand/settings/billing";
+
+    /** @param tab one of brand-chat's tool panels: contract, deliverables, payments; null for none */
+    private static String brandDealRoom(String collaborationId, String tab) {
+        String link = "/brand/chat?deal=" + collaborationId;
+        return tab == null ? link : link + "&tab=" + tab;
+    }
+
+    /** /brand/contracts reads {@code ?contract=} and opens that contract's detail. */
+    private static String brandContract(String contractId) {
+        return "/brand/contracts?contract=" + contractId;
+    }
+
     /**
      * W3-2 — every "both channels" handler below used to pass a literal {@code null} for the email
      * recipient with the comment "Email address would come from user lookup in real impl", meaning
@@ -312,7 +332,7 @@ public class NotificationListener {
                 event,
                 "New application received",
                 String.format("%s applied to \"%s\"", event.creatorName(), event.campaignTitle()),
-                "/brand/campaigns/" + event.entityId() + "/applications",
+                brandDealRoom(event.entityId(), null),
                 emailOf(event.userId()),
                 "brand.new_application",
                 Map.of("creator_name", event.creatorName(), "campaign_title", event.campaignTitle()));
@@ -327,7 +347,7 @@ public class NotificationListener {
                 String.format(
                         "%s countered with %s for \"%s\"",
                         event.creatorName(), event.counterAmount(), event.campaignTitle()),
-                "/brand/proposals/" + event.entityId(),
+                brandDealRoom(event.entityId(), null),
                 emailOf(event.userId()),
                 "brand.counter_bid",
                 Map.of(
@@ -343,7 +363,7 @@ public class NotificationListener {
                 event,
                 "Proposal accepted!",
                 String.format("%s accepted your proposal for \"%s\"", event.creatorName(), event.campaignTitle()),
-                "/brand/collaborations/" + event.entityId(),
+                brandDealRoom(event.entityId(), "contract"),
                 emailOf(event.userId()),
                 "brand.proposal_accepted",
                 Map.of("creator_name", event.creatorName(), "campaign_title", event.campaignTitle()));
@@ -356,7 +376,7 @@ public class NotificationListener {
                 event,
                 "Contract signed",
                 String.format("%s signed the contract for \"%s\"", event.creatorName(), event.campaignTitle()),
-                "/brand/contracts/" + event.entityId(),
+                brandContract(event.entityId()),
                 // This event already carries the caller-resolved recipient email (ContractService
                 // knows exactly which address to use per-recipient — brand vs creator, two separate
                 // events); no lookup needed or wanted here.
@@ -380,7 +400,7 @@ public class NotificationListener {
                 String.format(
                         "Both parties signed the contract for \"%s\" — secure the funds to begin.",
                         event.campaignTitle()),
-                "/brand/contracts/" + event.entityId(),
+                brandContract(event.entityId()),
                 emailOf(event.userId()),
                 "brand.contract_ready_for_escrow",
                 Map.of("campaign_title", event.campaignTitle()));
@@ -395,7 +415,7 @@ public class NotificationListener {
                 String.format(
                         "%s submitted a %s for \"%s\"",
                         event.creatorName(), event.deliverableType(), event.campaignTitle()),
-                "/brand/deliverables/" + event.entityId(),
+                brandDealRoom(event.collaborationId(), "deliverables"),
                 emailOf(event.userId()),
                 "brand.deliverable_ready",
                 Map.of(
@@ -411,7 +431,7 @@ public class NotificationListener {
                 event,
                 "Product received",
                 String.format("%s confirmed receipt of \"%s\"", event.creatorName(), event.productName()),
-                "/brand/shipments/" + event.entityId(),
+                brandDealRoom(event.entityId(), null),
                 emailOf(event.userId()),
                 "brand.product_received",
                 Map.of("creator_name", event.creatorName(), "product_name", event.productName()));
@@ -424,7 +444,7 @@ public class NotificationListener {
                 event,
                 "New message from " + event.creatorName(),
                 event.creatorName() + " started a conversation with you",
-                "/brand/messages/" + event.entityId(),
+                brandDealRoom(event.entityId(), null),
                 emailOf(event.userId()),
                 "brand.new_conversation",
                 Map.of("creator_name", event.creatorName()));
@@ -533,7 +553,7 @@ public class NotificationListener {
                 event,
                 "Low Wallet Balance",
                 "Your wallet balance is low (" + event.currentBalance() + "). Consider adding funds.",
-                "/brand/wallet/add-funds",
+                BRAND_WALLET,
                 emailOf(event.userId()),
                 "brand.low_balance",
                 Map.of("current_balance", event.currentBalance()));
@@ -554,7 +574,7 @@ public class NotificationListener {
                 "Your subscription was halted",
                 "Payment retries were exhausted and your subscription has been halted. Update your"
                         + " payment method to resume service.",
-                "/brand/billing",
+                BRAND_BILLING,
                 event.recipientEmail(),
                 "billing.subscription_halted",
                 Map.of());
@@ -576,7 +596,7 @@ public class NotificationListener {
                 "Payment failed",
                 "Your subscription payment could not be processed. We'll retry automatically, but you"
                         + " may want to update your payment method.",
-                "/brand/billing",
+                BRAND_BILLING,
                 event.recipientEmail(),
                 "billing.payment_failed",
                 Map.of());
@@ -649,7 +669,7 @@ public class NotificationListener {
                 event,
                 "AI Credits Exhausted",
                 "You've used all your free AI credits. Launch a campaign to unlock unlimited access!",
-                "/brand/meera/credits",
+                BRAND_BILLING,
                 emailOf(event.userId()),
                 "brand.credits_exhausted",
                 Map.of());
@@ -664,7 +684,7 @@ public class NotificationListener {
                 "AI Credits Reset",
                 String.format(
                         "Your AI credits have been reset to %d for the new billing cycle.", event.newAllotment()),
-                "/brand/meera/credits");
+                BRAND_BILLING);
     }
 
     // ========== Creator connections (T-CREATORCONNECT-0902) ==========

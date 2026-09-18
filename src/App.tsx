@@ -2,10 +2,12 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import ErrorBoundary from '@/components/ErrorBoundary';
-import { api, isApiLive, type Role } from '@/lib/api';
+import { api, isApiLive } from '@/lib/api';
 import { Toaster } from '@/components/ui/toaster';
 import { DemoModeBanner } from '@/components/DemoModeBanner';
 import { RouteAnalytics } from '@/components/site/RouteAnalytics';
+import { readAuthToken, useAuthGuardState } from '@/lib/use-auth-guard-state';
+import { BrandSessionBootstrap } from '@/components/brand/brand-session-bootstrap';
 import BrandLoginPage from '@/pages/brand-login';
 import BrandRegisterPage from '@/pages/brand-register';
 import BrandForgotPasswordPage from '@/pages/brand-forgot-password';
@@ -88,61 +90,9 @@ import CreatorAffiliateEarningsPage from '@/pages/creator-affiliate-earnings';
 import CreatorMetaCallbackPage from '@/pages/creator-meta-callback';
 import DevMotionSkillsPage from '@/pages/dev-motion-skills';
 
-// F-0459 — "remember me" (see HttpClient.tokenStorage / setToken in src/lib/api.ts) puts the
-// token in localStorage when checked but sessionStorage when unchecked; api.ts's own private
-// getToken() already reads both, so the guards below do the same rather than checking
-// localStorage alone and bouncing a just-logged-in, unremembered session back to the login form.
-// Exported (in addition to the module-local usages below) solely so
-// F-0459's regression test (src/__tests__/creator-protected-route.test.tsx)
-// can exercise the exact function/component the router uses, rather than a
-// reimplementation that could drift from production behavior.
-export const readAuthToken = (key: string): string | null => localStorage.getItem(key) ?? sessionStorage.getItem(key);
-
-const TOKEN_KEY_BY_ROLE: Record<Role, string> = { brand: 'brand_token', creator: 'creator_token' };
-
-/**
- * F-0551 — access token in memory only (`HttpClient.getToken`/`setToken`, src/lib/api.ts). A
- * fresh page load starts with nothing in memory even for a genuinely still-logged-in visitor —
- * unlike the pre-F-0551 stored token, memory cannot itself prove a session survived a reload —
- * so the guards below can no longer answer synchronously from `Storage` the way F-0459's
- * `readAuthToken` did. This hook is what replaces that synchronous read in LIVE mode:
- *
- *   1. Check memory first (`api.auth.hasToken`) — the fast path for a same-tab navigation
- *      between two protected pages after login, or after an earlier bootstrap this page-load
- *      already resolved. No network call.
- *   2. Only when memory is empty, spend exactly one `POST /auth/refresh` (`api.auth.bootstrap`)
- *      to ask whether the HttpOnly refresh cookie still holds a valid session before concluding
- *      the visitor is logged out. This is the "silent refresh on page load" the ruling calls
- *      for — nothing pre-existing did this; the only other caller of `bootstrap` is the deal
- *      message stream's reactive 401 handler (src/lib/api.ts), which fires mid-session, not on
- *      load.
- *
- * Mock mode is untouched by F-0551 (see `HttpClient.getToken`'s own mode split) and keeps the
- * exact pre-existing synchronous, storage-based check (F-0459's `readAuthToken`) — no network
- * call, no `'checking'` state — so every mock-mode page, and every test that runs under the
- * default (mock) vitest config, keeps its exact prior behavior unchanged.
- */
-function useAuthGuardState(role: Role): 'checking' | 'authenticated' | 'unauthenticated' {
-  const [state, setState] = React.useState<'checking' | 'authenticated' | 'unauthenticated'>(() => {
-    if (!isApiLive()) {
-      return readAuthToken(TOKEN_KEY_BY_ROLE[role]) ? 'authenticated' : 'unauthenticated';
-    }
-    return api.auth.hasToken(role) ? 'authenticated' : 'checking';
-  });
-
-  React.useEffect(() => {
-    if (!isApiLive() || state !== 'checking') return;
-    let cancelled = false;
-    api.auth.bootstrap(role).then((recovered) => {
-      if (!cancelled) setState(recovered ? 'authenticated' : 'unauthenticated');
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [role, state]);
-
-  return state;
-}
+// Session check shared by every route guard below — see src/lib/use-auth-guard-state.ts.
+// Re-exported because F-0459's regression test imports `readAuthToken` from this module.
+export { readAuthToken };
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -270,11 +220,25 @@ export default function App() {
         <Route path="/reset-password" element={<BrandResetPasswordPage />} />
 
         {/* Onboarding Routes */}
-        <Route path="/brand/onboarding" element={<BrandOnboardingPage />} />
+        <Route
+          path="/brand/onboarding"
+          element={
+            <BrandSessionBootstrap>
+              <BrandOnboardingPage />
+            </BrandSessionBootstrap>
+          }
+        />
         {/* [F-0443] Invite redemption. Intentionally OUTSIDE BrandLayoutWrapper: the invitee may
             not belong to any workspace yet, so the brand chrome has nothing to render for them.
             The page handles the signed-out case itself rather than 401-ing. */}
-        <Route path="/brand/invite" element={<BrandAcceptInvitePage />} />
+        <Route
+          path="/brand/invite"
+          element={
+            <BrandSessionBootstrap>
+              <BrandAcceptInvitePage />
+            </BrandSessionBootstrap>
+          }
+        />
 
         {/* Protected Routes with Layout */}
         <Route

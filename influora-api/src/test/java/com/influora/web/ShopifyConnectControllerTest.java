@@ -65,6 +65,10 @@ class ShopifyConnectControllerTest {
         // written for. The F-0732 test blanks these to reach the guard.
         shopifyProperties.setApiKey("test-api-key");
         shopifyProperties.setApiSecret("test-api-secret");
+        // isConfigured() requires the webhook signing secret too: without it every delivery fails
+        // signature verification, which is the same "connected and deaf" outcome F-0730 refuses to
+        // leave behind. A fixture with only the OAuth pair is no longer a configured environment.
+        shopifyProperties.setWebhookSigningSecret("test-webhook-secret");
         controller =
                 new ShopifyConnectController(
                         oAuthService,
@@ -164,11 +168,14 @@ class ShopifyConnectControllerTest {
     // ---------------------------------------------------------------------------------------
     // [F-0732] missing-config-guard.
     //
-    // ShopifyProperties.apiKey/apiSecret default to "" and nothing binds them anywhere — no yaml
-    // placeholder, no compose file, no generate-env.sh entry (F-0729) — so isConfigured() is false
-    // in every environment today. authorize() built the dialog URL regardless, sending the brand
-    // into Shopify's UI with client_id= empty, which Shopify answers with its own error page. The
-    // brand reads that as their store being broken.
+    // ShopifyProperties.apiKey/apiSecret default to "". authorize() built the dialog URL
+    // regardless, sending the brand into Shopify's UI with client_id= empty, which Shopify answers
+    // with its own error page. The brand reads that as their store being broken.
+    //
+    // The credentials now HAVE yaml placeholders and are forwarded by every compose file
+    // (ShopifyPropertiesBindingTest), so this guard is what keeps an environment that simply has
+    // not set them from offering the flow — together with GET /integrations/store/status's
+    // shopifyAvailable flag, which stops the settings page presenting the option at all.
     // ---------------------------------------------------------------------------------------
 
     @Test
@@ -178,6 +185,7 @@ class ShopifyConnectControllerTest {
     void authorize_notConfigured_refusedBeforeMintingState() {
         shopifyProperties.setApiKey("");
         shopifyProperties.setApiSecret("");
+        shopifyProperties.setWebhookSigningSecret("");
 
         ApiException ex =
                 assertThrows(ApiException.class, () -> controller.authorize(BRAND_PRINCIPAL, SHOP));

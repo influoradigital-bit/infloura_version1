@@ -493,6 +493,7 @@ public class CreatorDeliverableService {
                         notifyUserId,
                         campaign.getWorkspaceId(),
                         deliverable.getId(),
+                        deliverable.getCollaborationId(),
                         profile.getDisplayName(),
                         campaign.getTitle(),
                         deliverable.getType().name()));

@@ -181,9 +181,10 @@ public class WalletTopUpService {
     @Transactional
     public WalletTopUp confirmCredited(
             String topUpId, String gatewayRef, Long webhookAmountInPaise, String webhookCurrency) {
+        // Locked: the webhook and WalletTopUpReconciliationJob can race on the same row.
         WalletTopUp topUp =
                 topUpRepository
-                        .findById(topUpId)
+                        .findByIdForUpdate(topUpId)
                         .orElseThrow(
                                 () ->
                                         new ApiException(

@@ -150,6 +150,49 @@ public class RazorpayClient {
     }
 
     /**
+     * What Razorpay itself says about an order's payment, for reconciliation.
+     *
+     * <p>{@link #fetchOrder} returns the raw JSON and nothing typed, so a caller that needs to
+     * know "was this actually paid, and how much" had to parse the payload itself. The wallet
+     * top-up sweep needs exactly that: the ONLY thing that credits a top-up is a signature-verified
+     * {@code payment.captured} webhook, so a delivery that never arrives leaves a captured payment
+     * uncredited with nothing to notice it.
+     *
+     * <p>Fails CLOSED when Razorpay is not configured (local/dev): returns a not-paid state rather
+     * than {@link #fetchOrder}'s {@code "stub_fetched"}, so a sweep can never credit a wallet
+     * without a real answer from the gateway.
+     */
+    public OrderPaymentState fetchOrderPaymentState(String orderId) {
+        if (!isConfigured()) {
+            requireConfiguredOutsideDev("fetch order payment state");
+            return new OrderPaymentState("unconfigured", null, null);
+        }
+        try {
+            Order order = getSdkClient().orders.fetch(orderId);
+            return new OrderPaymentState(
+                    order.get("status"), asPaise(order.get("amount_paid")), order.get("currency"));
+        } catch (RazorpayException e) {
+            log.error(
+                    "Razorpay order payment-state fetch failed: orderId={}, error={}", orderId, e.getMessage());
+            throw new RazorpayIntegrationException("Failed to fetch Razorpay order", e);
+        }
+    }
+
+    private static Long asPaise(Object rawAmount) {
+        return rawAmount instanceof Number number ? number.longValue() : null;
+    }
+
+    /**
+     * Razorpay's own view of one order. {@code status} is Razorpay's order status — {@code "paid"}
+     * once the order is fully paid; {@code amountPaidInPaise} is its {@code amount_paid}.
+     */
+    public record OrderPaymentState(String status, Long amountPaidInPaise, String currency) {
+        public boolean isPaid() {
+            return "paid".equalsIgnoreCase(status) && amountPaidInPaise != null && amountPaidInPaise > 0;
+        }
+    }
+
+    /**
      * Creates a Razorpay Plan (subscriptions billing template) for the given name/amount/period.
      * Returns a stub plan id when Razorpay credentials are not configured (local/dev), matching
      * {@link #createOrder}'s mock-mode convention.

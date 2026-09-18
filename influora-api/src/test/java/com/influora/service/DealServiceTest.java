@@ -2,12 +2,14 @@ package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -449,7 +451,7 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID),
+                        startsWith("deal-accept:" + DEAL_ID + ":"),
                         eq(CREATOR_USER_ID),
                         eq("deal.accept"),
                         any()))
@@ -490,7 +492,7 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID),
+                        startsWith("deal-accept:" + DEAL_ID + ":"),
                         eq(CREATOR_USER_ID),
                         eq("deal.accept"),
                         any()))
@@ -552,7 +554,7 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID),
+                        startsWith("deal-accept:" + DEAL_ID + ":"),
                         eq(CREATOR_USER_ID),
                         eq("deal.accept"),
                         any()))
@@ -817,7 +819,9 @@ class DealServiceTest {
                 senderId,
                 senderType,
                 "Offer on the table",
-                "{\"amount\":25000.00,\"status\":\"pending\"}");
+                // A real offer names its deliverables; accept refuses one that does not
+                // (DELIVERABLES_REQUIRED) — see testAcceptRefusesAnOfferWithNoDeliverables.
+                "{\"amount\":25000.00,\"status\":\"pending\",\"deliverables\":[{\"type\":\"INSTAGRAM_REEL\",\"qty\":1}]}");
     }
 
     @Test
@@ -853,7 +857,7 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                        startsWith("deal-accept:" + DEAL_ID + ":"), eq(WORKSPACE_ID), eq("deal.accept"), any()))
                 .thenAnswer(
                         inv -> {
                             @SuppressWarnings("unchecked")
@@ -1338,6 +1342,97 @@ class DealServiceTest {
         verify(collaborationRepository, never()).save(any(Collaboration.class));
     }
 
+    /**
+     * The fallback key used to be {@code "deal-reject:" + dealId} — permanent, while a CANCELLED
+     * collaboration is revived IN PLACE under the same id when the creator re-applies or the brand
+     * re-invites. The second reject of the revived deal then hit the first reject's COMPLETED row,
+     * took the replay branch above and answered 200 without cancelling anything.
+     */
+    @Test
+    @DisplayName(
+            "reject/accept: the fallback idempotency key changes when the deal is REVIVED, and is"
+                    + " stable for a retry within one life of the deal")
+    void testFallbackIdempotencyKeyIsScopedToTheDealsCurrentLife() throws Exception {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        ArgumentCaptor<String> keys = ArgumentCaptor.forClass(String.class);
+        when(idempotencyService.executeOnce(keys.capture(), anyString(), eq("deal.reject"), any()))
+                .thenReturn(OkResponse.success());
+
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null);
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Not a fit"), null); // a retry
+
+        collaboration.transitionTo(CollaborationStatus.CANCELLED);
+        Thread.sleep(5); // appliedAt has millisecond resolution in the key
+        collaboration.revive(CollaborationStatus.INVITED, collaboration.getSource(), "Come back", "INR");
+        service.reject(brandPrincipal, DEAL_ID, new RejectRequest("Still not a fit"), null);
+
+        java.util.List<String> seen = keys.getAllValues();
+        assertEquals(seen.get(0), seen.get(1), "a retry of the same reject must replay, not re-run");
+        assertNotEquals(seen.get(0), seen.get(2), "a revived deal must not be swallowed by the old reject");
+        assertTrue(seen.get(2).startsWith("deal-reject:" + DEAL_ID + ":"));
+    }
+
+    @Test
+    @DisplayName("reject: a client-supplied Idempotency-Key still wins over the fallback")
+    void testRejectClientIdempotencyKeyWins() {
+        stubBrandWorkspace();
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(invitedDeal()));
+        when(idempotencyService.executeOnce(eq("client-key-1"), anyString(), eq("deal.reject"), any()))
+                .thenReturn(OkResponse.success());
+
+        assertEquals(true, service.reject(brandPrincipal, DEAL_ID, new RejectRequest("No"), "client-key-1").ok());
+    }
+
+    /**
+     * ContractService#materializeDeliverables builds the rows a creator submits against from the
+     * deliverables on the ACCEPTED offer, and nothing else creates them. An amount-only offer (the
+     * old /brand/deals counter dialog; a creator's first counter on their own application, which
+     * has no earlier card to inherit from) used to be acceptable and produced a signed contract
+     * with nothing to deliver — a deal that could never complete, at a status where nobody may
+     * counter any more. Refused at accept, while the deal is still IN_NEGOTIATION and a counter
+     * that lists deliverables can still be sent.
+     */
+    @Test
+    @DisplayName("accept: an offer that lists no deliverables is refused, and the deal stays negotiable")
+    void testAcceptRefusesAnOfferWithNoDeliverables() {
+        stubBrandWorkspace();
+        Collaboration collaboration = invitedDeal();
+        collaboration.updateAgreedRate(new BigDecimal("25000"));
+        collaboration.transitionTo(CollaborationStatus.IN_NEGOTIATION);
+        when(collaborationRepository.findByIdAndWorkspaceId(DEAL_ID, WORKSPACE_ID))
+                .thenReturn(Optional.of(collaboration));
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        DEAL_ID, DealMessageKind.proposal))
+                .thenReturn(
+                        Optional.of(
+                                DealMessage.create(
+                                        "01HMSGAMOUNTONLY000001",
+                                        DEAL_ID,
+                                        DealMessageKind.proposal,
+                                        CREATOR_USER_ID,
+                                        DealSenderType.creator,
+                                        "I can do 25k",
+                                        "{\"amount\":25000.00,\"status\":\"pending\"}")));
+        when(idempotencyService.executeOnce(anyString(), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                .thenAnswer(
+                        inv -> {
+                            @SuppressWarnings("unchecked")
+                            java.util.function.Supplier<DealResponse> action = inv.getArgument(3);
+                            return action.get();
+                        });
+
+        ApiException ex = assertThrows(ApiException.class, () -> service.accept(brandPrincipal, DEAL_ID, null));
+
+        assertEquals("DELIVERABLES_REQUIRED", ex.getCode());
+        assertEquals(409, ex.getStatus().value());
+        assertEquals(CollaborationStatus.IN_NEGOTIATION, collaboration.getStatus());
+        verify(collaborationRepository, never()).save(any(Collaboration.class));
+    }
+
     @Test
     @DisplayName("accept: brand cannot accept a deal outside their workspace — 404")
     void testBrandAcceptRejectsForeignWorkspace() {
@@ -1385,7 +1480,7 @@ class DealServiceTest {
                         DEAL_ID, DealMessageKind.proposal))
                 .thenReturn(Optional.of(proposalMessage(BRAND_USER_ID, DealSenderType.brand)));
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                        startsWith("deal-accept:" + DEAL_ID + ":"), eq(WORKSPACE_ID), eq("deal.accept"), any()))
                 .thenAnswer(
                         inv -> {
                             @SuppressWarnings("unchecked")
@@ -1536,7 +1631,9 @@ class DealServiceTest {
                 senderId,
                 senderType,
                 "Offer on the table",
-                "{\"amount\":25000.00,\"status\":\"pending\"}");
+                // A real offer names its deliverables; accept refuses one that does not
+                // (DELIVERABLES_REQUIRED) — see testAcceptRefusesAnOfferWithNoDeliverables.
+                "{\"amount\":25000.00,\"status\":\"pending\",\"deliverables\":[{\"type\":\"INSTAGRAM_REEL\",\"qty\":1}]}");
     }
 
     @Test
@@ -1570,7 +1667,7 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                        startsWith("deal-accept:" + DEAL_ID + ":"), eq(WORKSPACE_ID), eq("deal.accept"), any()))
                 .thenAnswer(
                         inv -> {
                             @SuppressWarnings("unchecked")
@@ -2122,7 +2219,7 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                        startsWith("deal-accept:" + DEAL_ID + ":"), eq(WORKSPACE_ID), eq("deal.accept"), any()))
                 .thenAnswer(
                         inv -> {
                             @SuppressWarnings("unchecked")
@@ -2268,7 +2365,7 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID),
+                        startsWith("deal-accept:" + DEAL_ID + ":"),
                         eq(CREATOR_USER_ID),
                         eq("deal.accept"),
                         any()))
@@ -2389,7 +2486,7 @@ class DealServiceTest {
                 .thenAnswer(inv -> inv.getArgument(0));
         stubToDealResponseCommonReads(DEAL_ID);
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                        startsWith("deal-accept:" + DEAL_ID + ":"), eq(WORKSPACE_ID), eq("deal.accept"), any()))
                 .thenAnswer(
                         inv -> {
                             @SuppressWarnings("unchecked")

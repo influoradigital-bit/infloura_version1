@@ -52,6 +52,20 @@ const formatCurrency = (amount: number): string => {
   }).format(amount);
 };
 
+// GET /billing/plan `priceInr` and GET /billing/invoices `amount` are PAISE on the wire
+// (plans.price_inr is seeded 499900 for the Rs 4,999 Pro plan; Invoice.amount is stored from
+// Razorpay's amountInPaise), unlike the commission/service invoices above, which are rupees.
+// Exported for the unit test that pins the conversion.
+export const formatPaise = (paise: number): string => {
+  const rupees = paise / 100;
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: Number.isInteger(rupees) ? 0 : 2,
+    maximumFractionDigits: 2,
+  }).format(rupees);
+};
+
 // B44: the live FREE-tier plan response has come back without a usable
 // feeBps, producing "NaN%" from a bare `feeBps / 100`. Guard it here so a
 // missing/non-numeric value shows a neutral "—" instead of NaN.
@@ -374,7 +388,7 @@ export default function BrandBillingSettingsPage() {
               </div>
               <div className="text-right">
                 <p className="text-3xl font-bold">
-                  {currentPlan.priceInr === 0 ? 'Free' : formatCurrency(currentPlan.priceInr)}
+                  {currentPlan.priceInr === 0 ? 'Free' : formatPaise(currentPlan.priceInr)}
                 </p>
                 {currentPlan.priceInr > 0 && (
                   <p className="text-sm text-muted-foreground">per month</p>
@@ -680,7 +694,7 @@ export default function BrandBillingSettingsPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <p className="font-semibold">{formatCurrency(invoice.amount)}</p>
+                        <p className="font-semibold">{formatPaise(invoice.amount)}</p>
                         <Badge
                           variant="secondary"
                           className={cn(

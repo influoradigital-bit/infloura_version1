@@ -47,10 +47,12 @@ import {
 // CR-24 — the one switch over CollaborationStatus. CR-34 — and the one mirror of
 // Collaboration.canAccept(), which this file used to duplicate. See lib/deal-stage.ts.
 import { allowsProposalResponse, mapCollaborationStatusToDealStage } from '@/lib/deal-stage';
+import { describeAcceptError } from '@/lib/deal-accept-error';
 import type { CollaborationStatus, DealTerms } from '@/lib/types';
 import { DealTermsSummary } from '@/components/shared/deal-terms-summary';
 import { useToast } from '@/hooks/use-toast';
-import { paymentHeldMessage } from '@/lib/escrow-release-reason';
+import { approvalOutcomeToast } from '@/lib/escrow-release-reason';
+import { DeliverableViewer } from '@/components/brand/deliverables/DeliverableViewer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -627,41 +629,6 @@ function mapShipmentApiStatusToUiStatus(status: ShipmentApiStatus): ShipmentStat
 }
 
 /**
- * CR-07 — turns an accept rejection into copy the brand can act on.
- *
- * A 409 here is never "try again": the deal has genuinely moved, and retrying fails identically
- * forever. Each code DealService.doAccept can raise gets its own explanation; anything else keeps
- * the server's own message and only falls back to a retry prompt for transient failures.
- */
-function describeAcceptError(err: unknown): { message: string; stale: boolean } {
-  if (err instanceof ApiError && err.status === 409) {
-    switch (err.code) {
-      case 'DEAL_NOT_ACCEPTABLE':
-        return {
-          message:
-            'This deal has already moved past the offer stage — it can no longer be accepted. Refresh to see where it stands now.',
-          stale: true,
-        };
-      case 'CANNOT_ACCEPT_OWN_OFFER':
-        return {
-          message:
-            'You made the last offer, so the creator has to accept it. Send a new proposal if you want to change the terms.',
-          stale: false,
-        };
-      default:
-        return { message: err.message, stale: true };
-    }
-  }
-  if (err instanceof ApiError) {
-    return { message: err.message, stale: false };
-  }
-  return {
-    message: 'Could not accept this proposal. Check your connection and try again.',
-    stale: false,
-  };
-}
-
-/**
  * F-0235 — demo-only stand-in address for the mock-mode shipping flow. Never read in live
  * mode: live mode's `shippingAddress` comes exclusively from the real
  * `GET /deals/:id/shipment` record (see `fetchLiveShipment` below), so no fabricated PII
@@ -805,6 +772,13 @@ export default function BrandChatPage() {
    * leaves the rows the brand is acting on still on screen.
    */
   const [deliverablesActionError, setDeliverablesActionError] = React.useState<string | null>(null);
+  /** The deliverable whose submission (files, caption, notes) is open in DeliverableViewer. */
+  const [viewingDeliverableId, setViewingDeliverableId] = React.useState<string | null>(null);
+  // A viewer left open across a deal switch would show (and offer to approve) the previous
+  // deal's submission over the new deal's room.
+  React.useEffect(() => {
+    setViewingDeliverableId(null);
+  }, [selectedDeal?.id]);
   /**
    * F-0344 — feedback collected for a revision request. The deal-room list card has no
    * feedback field of its own (DealDeliverablesTab is a status list), so the brand is asked
@@ -1294,18 +1268,7 @@ export default function BrandChatPage() {
       // success while no money moved — the exact defect F-0406 fixed in the backend and on the
       // other two surfaces. Branch on it here too.
       const result = await deliverablesApi.approve(id);
-      if (result.paymentReleased) {
-        toast({
-          title: 'Deliverable approved',
-          description: 'Payment has been released to the creator.',
-        });
-      } else {
-        toast({
-          title: 'Approved — but payment was NOT released',
-          description: paymentHeldMessage(result.paymentHeldReason),
-          variant: 'destructive',
-        });
-      }
+      toast(approvalOutcomeToast(result));
       await loadDeliverables(dealId);
     } catch (err) {
       // F-0346 — the server's own message ("deliverable is not awaiting review", etc.) is
@@ -1604,6 +1567,17 @@ export default function BrandChatPage() {
     }
 
     const dealId = selectedDeal.id;
+    // An offer with no deliverables cannot be accepted (DELIVERABLES_REQUIRED): the contract
+    // builds the creator's submission slots from them. Rows with a blank type or a zero
+    // quantity are dropped from the payload below, so catch the all-dropped case here.
+    if (!data.deliverables.some((d) => d.type && d.count > 0)) {
+      toast({
+        title: 'Add at least one deliverable',
+        description: 'List what the creator will deliver, with a quantity of at least 1.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsSubmittingProposal(true);
     try {
       await api.deals.counter(
@@ -2838,7 +2812,23 @@ export default function BrandChatPage() {
                             items={liveDeliverables}
                             onApprove={handleApproveLive}
                             onRequestRevision={handleReviseLive}
+                            onView={setViewingDeliverableId}
                           />
+                          {/* The submission itself — presigned files, caption, notes — plus the
+                              same approve / request-changes / reject actions. Its own actions
+                              refresh the list above when they complete. */}
+                          {viewingDeliverableId && (
+                            <DeliverableViewer
+                              deliverableId={viewingDeliverableId}
+                              open
+                              onOpenChange={(open) => {
+                                if (!open) setViewingDeliverableId(null);
+                              }}
+                              onActionComplete={() => {
+                                if (selectedDeal) void loadDeliverables(selectedDeal.id);
+                              }}
+                            />
+                          )}
                         </div>
                       </div>
                     )

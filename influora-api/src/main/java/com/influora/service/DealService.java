@@ -350,7 +350,7 @@ public class DealService {
                 role == UserType.CREATOR
                         ? principal.getUserId()
                         : requireBrandDealManagerScope(principal);
-        String key = resolveIdempotencyKey(idempotencyKey, "deal-accept:" + dealId);
+        String key = resolveIdempotencyKey(idempotencyKey, lifecycleKey("deal-accept", collaboration));
 
         try {
             return idempotencyService.executeOnce(
@@ -404,12 +404,12 @@ public class DealService {
         // idempotency wrapper below ever gets a chance to recognize the call as a replay — exactly
         // the finding #8 failure mode this change is supposed to close. The real gate lives in
         // doReject, under the row lock, where it belongs.
-        requireOwnedCollaboration(principal, dealId);
+        Collaboration owned = requireOwnedCollaboration(principal, dealId);
         String scopeId =
                 role == UserType.CREATOR
                         ? principal.getUserId()
                         : requireBrandDealManagerScope(principal);
-        String key = resolveIdempotencyKey(idempotencyKey, "deal-reject:" + dealId);
+        String key = resolveIdempotencyKey(idempotencyKey, lifecycleKey("deal-reject", owned));
 
         try {
             return idempotencyService.executeOnce(
@@ -1129,6 +1129,7 @@ public class DealService {
         // a real agreedRate, and this is what makes that assumption true. See
         // requireAgreedRateForCommitment's own javadoc for the full rationale.
         requireAgreedRateForCommitment(collaboration);
+        requireDeliverablesOnTheTable(lastOffer);
 
         // F-0399 — validateProposalAmount only ever checked THIS offer's amount against
         // campaign.budgetMax in isolation, both at creation and (implicitly, since accept
@@ -1819,6 +1820,39 @@ public class DealService {
      * called) or a plain rate negotiation must happen first; a subsequent accept then commits the
      * real, already-known number.
      */
+    /**
+     * An offer can be accepted only if it says WHAT is being delivered.
+     *
+     * <p>{@code ContractService#materializeDeliverables} creates the {@code Deliverable} rows a
+     * creator submits against from the {@code deliverables} on the accepted offer, and it is the
+     * only thing in the codebase that creates them. An offer without any (an amount-only counter;
+     * a creator's first counter on their own application, which has no earlier card to inherit
+     * deliverables from — see {@link #doCounter}) used to be acceptable, and produced a signed,
+     * fundable contract with nothing to deliver: the creator had no slot to submit to, the deal
+     * could never reach COMPLETED, and by then nobody could counter any more ({@code
+     * canCounter()} is false from TERMS_AGREED on).
+     *
+     * <p>Refusing HERE is what keeps it recoverable: the deal is still IN_NEGOTIATION, so either
+     * side can send a counter that lists the deliverables and the other can accept that.
+     * Deliberately not enforced when there is no offer card at all (a legacy priced
+     * collaboration) — that path has no card to read and is not what this closes.
+     */
+    private void requireDeliverablesOnTheTable(Optional<DealMessage> lastOffer) {
+        if (lastOffer.isEmpty()) {
+            return;
+        }
+        Map<String, Object> metadata = parseMetadata(lastOffer.get().getMetadataJson());
+        Object slots = metadata == null ? null : metadata.get("deliverables");
+        if (slots instanceof List<?> list && !list.isEmpty()) {
+            return;
+        }
+        throw new ApiException(
+                "DELIVERABLES_REQUIRED",
+                "This offer does not list any deliverables, so there would be nothing to deliver or"
+                        + " approve. Send a counter offer that lists the deliverables, then accept that.",
+                HttpStatus.CONFLICT);
+    }
+
     private void requireAgreedRateForCommitment(Collaboration collaboration) {
         if (collaboration.getAgreedRate() == null) {
             throw new ApiException(
@@ -2405,6 +2439,26 @@ public class DealService {
                             "Unknown status filter: " + rawFilter,
                             HttpStatus.BAD_REQUEST);
         };
+    }
+
+    /**
+     * The fallback idempotency key for a once-per-deal verb (accept, reject) when the client sends
+     * no {@code Idempotency-Key} header — which neither frontend does for these two.
+     *
+     * <p>It used to be {@code verb + ":" + dealId}. Completed idempotency rows are kept forever,
+     * and a CANCELLED collaboration is REVIVED IN PLACE under the same id when the creator
+     * re-applies or the brand re-invites ({@code CollaborationReviveService}; the table is
+     * UNIQUE(campaign_id, creator_id)). So the second reject of a revived deal hit the first
+     * reject's COMPLETED row, took the replay branch and answered 200 without cancelling anything
+     * — the UI reported success, the deal stayed open, and that caller could never reject (or
+     * accept) it again.
+     *
+     * <p>{@code appliedAt} is the right discriminator: {@link Collaboration#revive} is the only
+     * thing that moves it, so it is stable between a verb and its own retry (the replay this
+     * wrapper exists for still works) and different for every new life of the row.
+     */
+    private static String lifecycleKey(String verb, Collaboration collaboration) {
+        return verb + ":" + collaboration.getId() + ":" + collaboration.getAppliedAt().toEpochMilli();
     }
 
     private static String resolveIdempotencyKey(String header, String fallback) {

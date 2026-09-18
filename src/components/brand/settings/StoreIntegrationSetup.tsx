@@ -70,6 +70,9 @@ export function StoreIntegrationSetup() {
     useStoreIntegration();
 
   const [platform, setPlatform] = React.useState<Platform | null>(null);
+  // Absent (an older API, or status still loading) reads as available, so this can only ever
+  // HIDE the option on an explicit `false` from the server.
+  const shopifyAvailable = status?.shopifyAvailable !== false;
   const [shopDomain, setShopDomain] = React.useState('');
   const [siteUrl, setSiteUrl] = React.useState('');
   const [webhookSecret, setWebhookSecret] = React.useState('');
@@ -189,22 +192,40 @@ export function StoreIntegrationSetup() {
 
       {/* Platform selection */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Card
-          role="button"
-          tabIndex={0}
-          className={cn(
-            'cursor-pointer p-4 transition-colors hover:border-primary',
-            platform === 'shopify' && 'border-primary bg-primary/5',
-          )}
-          onClick={() => setPlatform('shopify')}
-          onKeyDown={(e) => e.key === 'Enter' && setPlatform('shopify')}
-        >
-          <div className="flex flex-col items-center gap-2">
-            <Store className="h-8 w-8 text-primary" />
-            <span className="font-medium">Shopify</span>
-            <span className="text-xs text-muted-foreground">OAuth — one click</span>
-          </div>
-        </Card>
+        {/* Shopify connect needs this deployment's Shopify app credentials. Without them the
+            authorize call answers 503 to everyone, and this tile used to advertise "OAuth — one
+            click" anyway: the brand typed their store, clicked, and got an error they could do
+            nothing about. When the API says Shopify is not available the tile says so and is not
+            a control at all. */}
+        {shopifyAvailable ? (
+          <Card
+            role="button"
+            tabIndex={0}
+            className={cn(
+              'cursor-pointer p-4 transition-colors hover:border-primary',
+              platform === 'shopify' && 'border-primary bg-primary/5',
+            )}
+            onClick={() => setPlatform('shopify')}
+            onKeyDown={(e) => e.key === 'Enter' && setPlatform('shopify')}
+          >
+            <div className="flex flex-col items-center gap-2">
+              <Store className="h-8 w-8 text-primary" />
+              <span className="font-medium">Shopify</span>
+              <span className="text-xs text-muted-foreground">OAuth — one click</span>
+            </div>
+          </Card>
+        ) : (
+          <Card className="p-4 opacity-70" aria-disabled="true">
+            <div className="flex flex-col items-center gap-2 text-center">
+              <Store className="h-8 w-8 text-muted-foreground" />
+              <span className="font-medium">Shopify</span>
+              <span className="text-xs text-muted-foreground">
+                Not available yet — Shopify connect is not switched on for this workspace&apos;s
+                Influora environment. WooCommerce works today.
+              </span>
+            </div>
+          </Card>
+        )}
         <Card
           role="button"
           tabIndex={0}
@@ -231,7 +252,7 @@ export function StoreIntegrationSetup() {
       )}
 
       {/* Shopify setup */}
-      {platform === 'shopify' && (
+      {platform === 'shopify' && shopifyAvailable && (
         <Card className="p-6">
           <h3 className="mb-4 font-semibold">Connect Shopify</h3>
           <div className="space-y-4">

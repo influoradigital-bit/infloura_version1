@@ -1,9 +1,12 @@
 import * as React from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { api, ApiError } from '@/lib/api';
+import { hasBrandToken } from '@/lib/auth-session';
+import { enterWorkspace } from '@/components/brand/workspace-switcher';
 
 /**
  * [F-0443, unreachable-endpoint] Redeem a workspace invite.
@@ -25,18 +28,34 @@ export default function BrandAcceptInvitePage() {
   const navigate = useNavigate();
   const token = params.get('token');
 
+  const queryClient = useQueryClient();
   const [state, setState] = React.useState<'idle' | 'accepting' | 'accepted' | 'failed'>('idle');
   const [error, setError] = React.useState<string | null>(null);
+  // Joining and ENTERING are two server calls. If the second one fails the invite is still
+  // redeemed (retrying accept would only say ALREADY_MEMBER), so that case gets its own message
+  // pointing at the switcher instead of being reported as a failed invite.
+  const [joinedName, setJoinedName] = React.useState<string | null>(null);
+  const [enterFailed, setEnterFailed] = React.useState(false);
 
-  const hasSession =
-    typeof localStorage !== 'undefined' && !!localStorage.getItem('brand_token');
+  // The route restores the session before this renders (BrandSessionBootstrap, src/App.tsx), so
+  // this is the real session, not the storage hint that outlives it across a reload.
+  const hasSession = hasBrandToken();
 
   const accept = React.useCallback(async () => {
     if (!token) return;
     setState('accepting');
     setError(null);
     try {
-      await api.workspaceMembers.acceptInvite(token);
+      const member = await api.workspaceMembers.acceptInvite(token);
+      // Accepting only adds the membership row. This session's token still names the invitee's
+      // OWN workspace (every brand user is created with one), so without this the "Go to
+      // dashboard" button below opened their own empty workspace, not the one they just joined.
+      try {
+        const workspace = await enterWorkspace(queryClient, member.workspaceId);
+        setJoinedName(workspace.name);
+      } catch {
+        setEnterFailed(true);
+      }
       setState('accepted');
     } catch (err) {
       // A revoked, expired or already-redeemed invite all land here. The server's own message is
@@ -87,9 +106,13 @@ export default function BrandAcceptInvitePage() {
         <div className="flex items-start gap-3">
           <CheckCircle2 className="h-5 w-5 mt-0.5" />
           <div>
-            <h1 className="font-semibold">You have joined the workspace</h1>
+            <h1 className="font-semibold">
+              {joinedName ? `You have joined ${joinedName}` : 'You have joined the workspace'}
+            </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              You now have access to this brand&apos;s campaigns and deals.
+              {enterFailed
+                ? 'You are a member now, but we could not switch you into it. Open the account menu at the bottom of the sidebar and choose it under "Switch workspace".'
+                : 'You are now working in this workspace. To go back to your own, use "Switch workspace" in the account menu at the bottom of the sidebar.'}
             </p>
             <Button className="mt-4" onClick={() => navigate('/brand/dashboard')}>
               Go to dashboard

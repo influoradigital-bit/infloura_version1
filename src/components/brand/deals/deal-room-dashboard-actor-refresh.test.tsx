@@ -16,7 +16,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { DealRoomDashboard } from './deal-room-dashboard';
 
 const dealsList = vi.fn();
@@ -53,7 +53,7 @@ const PROPOSED_DEAL = {
   campaignName: 'Summer Launch',
   counterpartyName: 'Aarti Menon',
   counterpartyAvatar: '',
-  status: 'INVITED', // -> DealRoom.status 'proposed'
+  status: 'IN_NEGOTIATION',
   dealValue: 40000,
   deliverablesTotal: 2,
   nextDeadline: null,
@@ -62,12 +62,34 @@ const PROPOSED_DEAL = {
   unreadCount: 0,
 };
 
+// Accept is only legal against the CREATOR's open offer in IN_NEGOTIATION (DealService.doAccept:
+// AGREED_RATE_REQUIRED for a rate-less invite, CANNOT_ACCEPT_OWN_OFFER for the brand's own). This
+// fixture used to be an INVITED deal with an empty timeline — a state in which the real server
+// refuses every accept — so the test drove a button that could never have worked.
+const CREATOR_OFFER = {
+  id: 'msg_offer_1',
+  dealId: 'deal_1',
+  kind: 'proposal',
+  senderId: 'creator_user_1',
+  senderType: 'creator',
+  content: 'I can do this for 40,000',
+  metadata: { amount: 40000, status: 'pending', deliverables: [{ type: 'INSTAGRAM_REEL', quantity: 2 }] },
+  createdAt: '2026-07-20T10:00:00Z',
+  readBy: [],
+};
+
+function DealRoomProbe() {
+  const location = useLocation();
+  return <div>deal room {location.search}</div>;
+}
+
 function renderDashboard() {
   return render(
     <MemoryRouter initialEntries={['/brand/deals']}>
       <Routes>
         <Route path="/brand/deals" element={<DealRoomDashboard />} />
         <Route path="/brand/deals/:id" element={<DealRoomDashboard />} />
+        <Route path="/brand/chat" element={<DealRoomProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -81,7 +103,7 @@ describe('DealRoomDashboard — actor-side refresh (CR-98 / F-0112)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dealsList.mockResolvedValue([PROPOSED_DEAL]);
-    messagesList.mockResolvedValue([]);
+    messagesList.mockResolvedValue([CREATOR_OFFER]);
   });
 
   it('refetches messages (not just deals) after the brand accepts its own proposal', async () => {
@@ -92,7 +114,7 @@ describe('DealRoomDashboard — actor-side refresh (CR-98 / F-0112)', () => {
     messagesList.mockClear();
     dealsList.mockClear();
 
-    await user.click(await screen.findByRole('button', { name: 'Accept Proposal' }));
+    await user.click(await screen.findByRole('button', { name: 'Accept Offer' }));
 
     await waitFor(() => expect(dealsAccept).toHaveBeenCalledWith('deal_1', 'brand'));
     await waitFor(() => expect(dealsList).toHaveBeenCalled());
@@ -118,21 +140,17 @@ describe('DealRoomDashboard — actor-side refresh (CR-98 / F-0112)', () => {
     await waitFor(() => expect(messagesList).toHaveBeenCalledWith('brand', 'deal_1'));
   });
 
-  it('refetches messages after the brand sends a counter offer', async () => {
-    dealsCounter.mockResolvedValue({ ...PROPOSED_DEAL, status: 'IN_NEGOTIATION' });
+  // The amount-only counter dialog is gone from live mode: an offer made here carried no
+  // deliverables, so the contract later created zero Deliverable rows and the deal could never
+  // be delivered or completed. Offers are made in the deal room, whose form collects them.
+  it('sends the brand to the deal room to make an offer, and never posts an amount-only counter', async () => {
     const user = userEvent.setup({ delay: null });
     renderDashboard();
     await selectTheDeal(user);
-    messagesList.mockClear();
-    dealsList.mockClear();
 
-    await user.click(await screen.findByRole('button', { name: 'Counter Offer' }));
-    // The amount field's <label> has no htmlFor/id association — matched by placeholder.
-    await user.type(await screen.findByPlaceholderText('45000'), '35000');
-    await user.click(await screen.findByRole('button', { name: 'Send Counter Offer' }));
+    await user.click(await screen.findByRole('button', { name: 'Counter in deal room' }));
 
-    await waitFor(() => expect(dealsCounter).toHaveBeenCalled());
-    await waitFor(() => expect(dealsList).toHaveBeenCalled());
-    await waitFor(() => expect(messagesList).toHaveBeenCalledWith('brand', 'deal_1'));
+    expect(await screen.findByText('deal room ?deal=deal_1')).toBeInTheDocument();
+    expect(dealsCounter).not.toHaveBeenCalled();
   });
 });

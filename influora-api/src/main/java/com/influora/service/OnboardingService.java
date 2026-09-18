@@ -5,7 +5,9 @@ import com.influora.common.SlugUtils;
 import com.influora.config.R2Properties;
 import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.entity.WorkspaceMember;
 import com.influora.domain.enums.VerificationStatus;
+import com.influora.domain.enums.MemberRole;
 import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.UserRepository;
 import com.influora.repository.WorkspaceRepository;
@@ -55,6 +57,7 @@ public class OnboardingService {
     @Transactional
     public WorkspaceIdResponse saveBrandCompany(AuthPrincipal principal, BrandCompanyRequest req) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
+        requireOwnerOrAdmin(principal, workspace);
         String slug = SlugUtils.slugify(req.companySlug());
         slugService.ensureSlugAvailable(slug, workspace.getId());
 
@@ -106,7 +109,38 @@ public class OnboardingService {
     @Transactional(readOnly = true)
     public OnboardingStatusResponse getBrandOnboardingStatus(AuthPrincipal principal) {
         User user = requireBrandUser(principal);
-        return new OnboardingStatusResponse(user.isOnboardingCompleted(), user.isKycPromptDismissed());
+        return new OnboardingStatusResponse(
+                user.isOnboardingCompleted() || isGuestInCurrentWorkspace(principal),
+                user.isKycPromptDismissed());
+    }
+
+    /**
+     * {@code onboarding_completed} lives on the USER and records whether they finished setting up
+     * the workspace they OWN. It says nothing about a workspace they were invited into: that one
+     * was set up by its owner. Reporting the raw flag there sent an invitee whose own onboarding
+     * was unfinished to the onboarding wizard while their session was scoped to the INVITED
+     * workspace — and the wizard's company step writes to whatever workspace the session names.
+     * A member who is not the OWNER of the current workspace therefore has nothing to onboard in
+     * it. (The write itself is independently refused by {@link #requireOwnerOrAdmin}.)
+     */
+    private boolean isGuestInCurrentWorkspace(AuthPrincipal principal) {
+        Workspace workspace = brandContext.requireBrandWorkspace(principal);
+        WorkspaceMember member = brandContext.requireMember(principal, workspace.getId());
+        return member.getRole() != MemberRole.OWNER;
+    }
+
+    /**
+     * The onboarding company step and the KYC submission both rewrite the WORKSPACE (its name and
+     * slug; its verification status, which gates campaign publishing). They used to check only
+     * that the caller's session named the workspace, so any member — a VIEWER, or an invitee who
+     * had just been switched into it — could rename the brand or knock a VERIFIED workspace back
+     * to PENDING. Same gate {@code WorkspaceService#updateMyWorkspace} applies to the settings
+     * page's edit of the very same fields. A brand-new signup is the OWNER of their own
+     * workspace, so the signup wizard is unaffected.
+     */
+    private void requireOwnerOrAdmin(AuthPrincipal principal, Workspace workspace) {
+        WorkspaceMember member = brandContext.requireMember(principal, workspace.getId());
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN);
     }
 
     /**
@@ -137,6 +171,7 @@ public class OnboardingService {
     @Transactional
     public KycResponse submitBrandKyc(AuthPrincipal principal, KycRequest req) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
+        requireOwnerOrAdmin(principal, workspace);
 
         workspace.applyKyc(
                 req.gstin().toUpperCase(),

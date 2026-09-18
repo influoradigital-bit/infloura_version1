@@ -203,6 +203,7 @@ class DealTrailCoverageTest {
                         BRAND_USER_ID,
                         WORKSPACE_ID,
                         DELIVERABLE_ID,
+                        COLLAB_ID,
                         "Creator",
                         "Summer",
                         DeliverableType.INSTAGRAM_REEL.name()));

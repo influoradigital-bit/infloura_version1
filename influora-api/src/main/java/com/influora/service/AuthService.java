@@ -292,7 +292,7 @@ public class AuthService {
                     "WORKSPACE_NOT_FOUND", "No workspace found for this user", HttpStatus.NOT_FOUND);
         }
 
-        Workspace workspace = firstEnterableWorkspace(memberships);
+        Workspace workspace = firstEnterableWorkspace(preferLastActive(user, memberships));
 
         user.markLogin();
         userRepository.save(user);
@@ -314,6 +314,27 @@ public class AuthService {
      * {@code WorkspaceMemberService.switchWorkspace}, so the client sees one behaviour whichever
      * route it arrives by.
      */
+    /**
+     * Moves the membership for the workspace the user last switched into to the front, so {@link
+     * #firstEnterableWorkspace} tries it first. Without this, login and refresh always stamped the
+     * OLDEST membership — which for anyone who accepted an invite is their own signup workspace —
+     * so a switch into the invited workspace lasted exactly one access-token lifetime before the
+     * next refresh silently undid it.
+     *
+     * <p>Only a preference: it is matched against {@code memberships}, which the caller loaded as
+     * the user's ACTIVE memberships, so a workspace the user was since removed from is ignored, and
+     * a suspended one is still skipped by {@link #firstEnterableWorkspace} as before.
+     */
+    private static List<WorkspaceMember> preferLastActive(User user, List<WorkspaceMember> memberships) {
+        String preferred = user.getLastActiveWorkspaceId();
+        if (preferred == null) {
+            return memberships;
+        }
+        List<WorkspaceMember> ordered = new java.util.ArrayList<>(memberships);
+        ordered.sort(java.util.Comparator.comparing(m -> !preferred.equals(m.getWorkspaceId())));
+        return ordered;
+    }
+
     private Workspace firstEnterableWorkspace(List<WorkspaceMember> memberships) {
         Workspace firstFound = null;
         for (WorkspaceMember m : memberships) {
@@ -574,8 +595,11 @@ public class AuthService {
         if (member != null) {
             workspaceId =
                     firstEnterableWorkspace(
-                                    workspaceMemberRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(
-                                            user.getId()))
+                                    preferLastActive(
+                                            user,
+                                            workspaceMemberRepository
+                                                    .findByUserIdAndActiveTrueOrderByCreatedAtAsc(
+                                                            user.getId())))
                             .getId();
         }
         if (user.getUserType() == UserType.CREATOR) {

@@ -12,7 +12,7 @@
  * the proposal, even though the accept never actually went through.
  *
  * This test drives the flow exactly as a user would: open "View Proposal", click
- * "Accept & Create Contract" inside it, let the API call reject, and assert the dialog
+ * "Accept Offer" inside it, let the API call reject, and assert the dialog
  * (title + error text + a retry-able Accept button) is still on screen afterward. It also
  * proves a SUCCESSFUL accept still closes the dialog, so the fix isn't "never close it".
  *
@@ -59,13 +59,29 @@ const PROPOSED_DEAL = {
   campaignName: 'Summer Launch',
   counterpartyName: 'Aarti Menon',
   counterpartyAvatar: '',
-  status: 'INVITED', // -> DealRoom.status 'proposed'
+  status: 'IN_NEGOTIATION',
   dealValue: 40000,
   deliverablesTotal: 2,
   nextDeadline: null,
   lastMessage: 'Looking forward to it',
   lastMessageAt: '2026-07-20T10:00:00Z',
   unreadCount: 0,
+};
+
+// Accept is only legal against the CREATOR's open offer in IN_NEGOTIATION (DealService.doAccept:
+// AGREED_RATE_REQUIRED for a rate-less invite, CANNOT_ACCEPT_OWN_OFFER for the brand's own). This
+// fixture used to be an INVITED deal with an empty timeline — a state in which the real server
+// refuses every accept — so the test drove a button that could never have worked.
+const CREATOR_OFFER = {
+  id: 'msg_offer_1',
+  dealId: 'deal_1',
+  kind: 'proposal',
+  senderId: 'creator_user_1',
+  senderType: 'creator',
+  content: 'I can do this for 40,000',
+  metadata: { amount: 40000, status: 'pending', deliverables: [{ type: 'INSTAGRAM_REEL', quantity: 2 }] },
+  createdAt: '2026-07-20T10:00:00Z',
+  readBy: [],
 };
 
 function renderDashboard() {
@@ -82,7 +98,7 @@ function renderDashboard() {
 async function selectDealAndOpenProposal(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByText('Aarti Menon'));
   await user.click(await screen.findByRole('button', { name: 'View Proposal' }));
-  // Dialog is open: its own "Accept & Create Contract" button, not the Overview tab's.
+  // Dialog is open: its own "Accept Offer" button, not the Overview tab's.
   await screen.findByRole('heading', { name: /Proposal Details/ });
 }
 
@@ -90,7 +106,7 @@ describe('DealRoomDashboard — failed accept keeps a retry path (F-0440)', () =
   beforeEach(() => {
     vi.clearAllMocks();
     dealsList.mockResolvedValue([PROPOSED_DEAL]);
-    messagesList.mockResolvedValue([]);
+    messagesList.mockResolvedValue([CREATOR_OFFER]);
   });
 
   it('keeps the View Proposal dialog open with the error visible when accept fails', async () => {
@@ -99,7 +115,9 @@ describe('DealRoomDashboard — failed accept keeps a retry path (F-0440)', () =
     renderDashboard();
     await selectDealAndOpenProposal(user);
 
-    await user.click(await screen.findByRole('button', { name: 'Accept & Create Contract' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Accept Offer' }),
+    );
 
     await waitFor(() => expect(dealsAccept).toHaveBeenCalledWith('deal_1', 'brand'));
 
@@ -115,12 +133,12 @@ describe('DealRoomDashboard — failed accept keeps a retry path (F-0440)', () =
     const dialogPanel = dialogHeading.closest('[data-slot="dialog-content"]') as HTMLElement;
     expect(dialogPanel).toBeTruthy();
     expect(
-      await within(dialogPanel).findByText('Could not accept the proposal. Try again.'),
+      await within(dialogPanel).findByText('Could not accept this proposal. Check your connection and try again.'),
     ).toBeInTheDocument();
     // A real retry path: the same Accept button is still there, inside the dialog, and
     // re-clickable.
     expect(
-      within(dialogPanel).getByRole('button', { name: 'Accept & Create Contract' }),
+      within(dialogPanel).getByRole('button', { name: 'Accept Offer' }),
     ).toBeInTheDocument();
   });
 
@@ -130,7 +148,9 @@ describe('DealRoomDashboard — failed accept keeps a retry path (F-0440)', () =
     renderDashboard();
     await selectDealAndOpenProposal(user);
 
-    await user.click(await screen.findByRole('button', { name: 'Accept & Create Contract' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Accept Offer' }),
+    );
 
     await waitFor(() => expect(dealsAccept).toHaveBeenCalledWith('deal_1', 'brand'));
     await waitFor(() =>

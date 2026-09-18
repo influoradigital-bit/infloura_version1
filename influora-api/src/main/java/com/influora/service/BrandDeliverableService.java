@@ -9,14 +9,17 @@ import com.influora.config.R2Properties;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.enums.ApplicationHistoryActorType;
 import com.influora.domain.enums.ApplicationHistoryEventType;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DeliverableStatus;
 import com.influora.domain.enums.MeeraInteractionEventType;
+import com.influora.domain.enums.MilestoneStatus;
 import com.influora.integration.storage.R2StorageService;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.DeliverableRepository;
+import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.meera.MeeraInteractionLogService;
 import com.influora.web.dto.deliverable.BrandDeliverableDtos.DeliverableDetailResponse;
@@ -27,6 +30,7 @@ import java.io.IOException;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationEventPublisherAware;
 import org.springframework.http.HttpStatus;
@@ -72,6 +76,22 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
      * {@link #publishApproved} null-checks before using it.
      */
     private ApplicationEventPublisher eventPublisher;
+
+    /**
+     * Read-only, used solely to tell the brand the truth about a payment that approval did not
+     * release (see {@link #describeUnlinkedHold}). Setter-injected for the same reason as {@link
+     * #eventPublisher}: the constructor is called directly by unit tests that have no use for it,
+     * so it is {@code null} outside a Spring context and every use null-checks.
+     */
+    private PaymentMilestoneRepository milestoneRepository;
+
+    // required = false: narrow Spring slices that @Import this service without the milestone
+    // repository (e.g. BrandDeliverableServiceApprovalRollbackIsolationTest's @DataJpaTest) must
+    // still be able to build it. Absent, describeUnlinkedHold falls back to NO_MILESTONE.
+    @Autowired(required = false)
+    void setMilestoneRepository(PaymentMilestoneRepository milestoneRepository) {
+        this.milestoneRepository = milestoneRepository;
+    }
 
     public BrandDeliverableService(
             BrandContextService brandContext,
@@ -238,8 +258,52 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
                     deliverable.getMilestoneId(),
                     release.heldReason());
         }
-        return new ReviewResponse(
-                DeliverableStatus.APPROVED, release.released(), release.heldReason());
+        String heldReason = release.heldReason();
+        if (!release.released() && "NO_MILESTONE".equals(heldReason)) {
+            heldReason = describeUnlinkedHold(deliverable.getCollaborationId());
+        }
+        return new ReviewResponse(DeliverableStatus.APPROVED, release.released(), heldReason);
+    }
+
+    /**
+     * What "no payment was released" actually means for this deal.
+     *
+     * <p>{@code Deliverable.milestoneId} is never populated — contract generation materializes
+     * deliverables without it, by design (payment is keyed to the collaboration's milestones, see
+     * {@code EscrowService#assertReleaseConditionSatisfied}). So {@code tryReleaseOnApproval}
+     * answers {@code NO_MILESTONE} for EVERY approval, and the brand was told, in a red error,
+     * that the deal "needs a contract with milestones before it can pay out" — on deals with a
+     * signed contract and fully funded milestones. It also left them believing approval pays the
+     * creator, when the only thing that ever releases a milestone today is the Release action in
+     * the Payments panel.
+     *
+     * <p>This does not change when money moves. It only replaces the blanket code with the real
+     * state, so the brand is told what to do next.
+     */
+    private String describeUnlinkedHold(String collaborationId) {
+        if (milestoneRepository == null) {
+            return "NO_MILESTONE";
+        }
+        List<PaymentMilestone> milestones = milestoneRepository.findByCollaborationId(collaborationId);
+        if (milestones.isEmpty()) {
+            return "NO_MILESTONE";
+        }
+        if (milestones.stream().anyMatch(m -> m.getStatus() == MilestoneStatus.FROZEN)) {
+            return "ESCROW_BLOCKED_BY_DISPUTE";
+        }
+        if (milestones.stream().anyMatch(m -> m.getStatus() == MilestoneStatus.FUNDED)) {
+            return "MANUAL_RELEASE_REQUIRED";
+        }
+        if (milestones.stream().anyMatch(m -> m.getStatus() == MilestoneStatus.PENDING)) {
+            return "MILESTONE_NOT_FUNDED";
+        }
+        // Nothing is funded, frozen or still waiting to be funded from here on: every milestone is
+        // settled one way or the other. A refund anywhere means money went BACK to the brand, which
+        // must not be reported as "already released to the creator".
+        if (milestones.stream().anyMatch(m -> m.getStatus() == MilestoneStatus.REFUNDED)) {
+            return "PAYMENT_REFUNDED";
+        }
+        return "ALREADY_RELEASED";
     }
 
     /**

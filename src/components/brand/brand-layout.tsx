@@ -39,6 +39,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { WorkspaceSwitcherMenuItems } from '@/components/brand/workspace-switcher';
 import {
   Sheet,
   SheetContent,
@@ -393,6 +394,7 @@ export function BrandLayout({ children }: BrandLayoutProps) {
                   {accountDisplayEmail || 'No email on file'}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <WorkspaceSwitcherMenuItems currentWorkspaceId={workspaceMe.data?.id} />
                 <DropdownMenuItem onClick={() => handleNavigate('/brand/settings')}>
                   <Settings className="mr-2 h-4 w-4" />
                   Settings

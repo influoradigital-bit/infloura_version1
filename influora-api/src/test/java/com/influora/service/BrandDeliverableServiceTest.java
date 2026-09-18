@@ -218,6 +218,111 @@ class BrandDeliverableServiceTest {
         verify(escrowService).tryReleaseOnApproval(WORKSPACE_ID, null);
     }
 
+    // ── What "no payment was released" really means ──────────────────────────────────────────
+    // Deliverable.milestoneId is never populated (contract generation materializes deliverables
+    // without it, by design), so tryReleaseOnApproval answers NO_MILESTONE for EVERY approval.
+    // The brand was told, as a red error, that the deal "needs a contract with milestones" — on
+    // deals with a signed contract and funded milestones. approve() now reports the real state.
+
+    private ReviewResponse approveWithMilestones(com.influora.domain.entity.PaymentMilestone... milestones) {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        Deliverable deliverable = submittedDeliverable(); // no milestoneId, as in production
+        when(deliverableRepository.findByIdAndWorkspaceId(DELIVERABLE_ID, WORKSPACE_ID))
+                .thenReturn(java.util.Optional.of(deliverable));
+        stubActiveCollaboration();
+        when(escrowService.tryReleaseOnApproval(WORKSPACE_ID, null))
+                .thenReturn(new com.influora.service.EscrowService.ReleaseOutcome(false, "NO_MILESTONE"));
+        com.influora.repository.PaymentMilestoneRepository milestoneRepository =
+                org.mockito.Mockito.mock(com.influora.repository.PaymentMilestoneRepository.class);
+        when(milestoneRepository.findByCollaborationId(deliverable.getCollaborationId()))
+                .thenReturn(java.util.List.of(milestones));
+        service.setMilestoneRepository(milestoneRepository);
+        return service.approve(principal, DELIVERABLE_ID);
+    }
+
+    private static com.influora.domain.entity.PaymentMilestone milestone(String id) {
+        return com.influora.domain.entity.PaymentMilestone.builder()
+                .id(id)
+                .contractId("01HCONTRACT1234567AB")
+                .collaborationId("01HCOLLAB0000000000AB")
+                .amount(java.math.BigDecimal.valueOf(5000))
+                .build();
+    }
+
+    @Test
+    @DisplayName("approve: a FUNDED milestone exists -> the brand is told to release it, not that the deal has no milestones")
+    void testApproveWithFundedMilestoneAsksForManualRelease() {
+        var funded = milestone("01HMILESTONE000000001");
+        funded.markFunded("01HHOLD00000000000001");
+
+        ReviewResponse response = approveWithMilestones(funded);
+
+        assertEquals(DeliverableStatus.APPROVED, response.status());
+        assertEquals(false, response.paymentReleased());
+        assertEquals("MANUAL_RELEASE_REQUIRED", response.paymentHeldReason());
+    }
+
+    @Test
+    @DisplayName("approve: milestones exist but none is funded yet -> MILESTONE_NOT_FUNDED (secure the funds)")
+    void testApproveWithUnfundedMilestones() {
+        assertEquals(
+                "MILESTONE_NOT_FUNDED",
+                approveWithMilestones(milestone("01HMILESTONE000000001")).paymentHeldReason());
+    }
+
+    @Test
+    @DisplayName("approve: everything already paid out -> ALREADY_RELEASED, not an error")
+    void testApproveWhenAlreadyReleased() {
+        var released = milestone("01HMILESTONE000000001");
+        released.markFunded("01HHOLD00000000000001");
+        released.markReleased("01HTXN000000000000001", "release-key-1");
+
+        assertEquals("ALREADY_RELEASED", approveWithMilestones(released).paymentHeldReason());
+    }
+
+    @Test
+    @DisplayName("approve: a frozen (disputed) milestone wins over a funded one")
+    void testApproveWithFrozenMilestone() {
+        var funded = milestone("01HMILESTONE000000001");
+        funded.markFunded("01HHOLD00000000000001");
+        var frozen = milestone("01HMILESTONE000000002");
+        frozen.markFunded("01HHOLD00000000000002");
+        frozen.markFrozen();
+
+        assertEquals("ESCROW_BLOCKED_BY_DISPUTE", approveWithMilestones(funded, frozen).paymentHeldReason());
+    }
+
+    @Test
+    @DisplayName("approve: a refunded milestone is never reported as paid to the creator (QA review)")
+    void testApproveWithRefundedMilestone() {
+        var released = milestone("01HMILESTONE000000001");
+        released.markFunded("01HHOLD00000000000001");
+        released.markReleased("01HTXN000000000000001", "release-key-1");
+        var refunded = milestone("01HMILESTONE000000002");
+        refunded.markFunded("01HHOLD00000000000002");
+        refunded.markRefunded("01HTXN000000000000002", "refund-key-1");
+
+        assertEquals("PAYMENT_REFUNDED", approveWithMilestones(released, refunded).paymentHeldReason());
+    }
+
+    @Test
+    @DisplayName("approve: a refunded milestone next to a still-FUNDED one -> the funded one is what needs action")
+    void testApproveWithRefundedAndFundedMilestones() {
+        var funded = milestone("01HMILESTONE000000001");
+        funded.markFunded("01HHOLD00000000000001");
+        var refunded = milestone("01HMILESTONE000000002");
+        refunded.markFunded("01HHOLD00000000000002");
+        refunded.markRefunded("01HTXN000000000000002", "refund-key-1");
+
+        assertEquals("MANUAL_RELEASE_REQUIRED", approveWithMilestones(funded, refunded).paymentHeldReason());
+    }
+
+    @Test
+    @DisplayName("approve: a deal that genuinely has no milestones still says NO_MILESTONE")
+    void testApproveWithNoMilestonesAtAll() {
+        assertEquals("NO_MILESTONE", approveWithMilestones().paymentHeldReason());
+    }
+
     /**
      * F-0642 — the only prior coverage of a held release asserted on the internal {@code
      * EscrowService.ReleaseOutcome} record (see {@code EscrowServiceReleaseOutcomeTest}), never on

@@ -7,8 +7,10 @@ import com.influora.service.WorkspaceService;
 import com.influora.service.WorkspaceSlugService;
 import com.influora.web.dto.onboarding.OnboardingDtos.SlugCheckResponse;
 import com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceReadResponse;
+import com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceSummary;
 import com.influora.web.dto.workspace.WorkspaceMemberDtos.WorkspaceUpdateRequest;
 import jakarta.validation.Valid;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -54,6 +56,23 @@ public class WorkspaceController {
             @AuthenticationPrincipal AuthPrincipal principal) {
         Workspace workspace = workspaceService.getMyWorkspace(principal);
         return ResponseEntity.ok(ApiResponse.ok(toReadResponse(workspace)));
+    }
+
+    /**
+     * {@code GET /workspaces/mine} — every workspace the caller is an ACTIVE member of, oldest
+     * first, with their role in each. This is the list the workspace switcher needs: {@code POST
+     * /workspace/members/switch} has existed since H-16, but nothing could tell a user WHICH
+     * workspaces they could switch to, so someone who accepted an invite had no way into the
+     * workspace they had just joined. Brand accounts only (enforced in the service).
+     */
+    @GetMapping("/mine")
+    public ResponseEntity<ApiResponse<List<WorkspaceSummary>>> listMine(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        List<WorkspaceSummary> mine =
+                workspaceService.listMyWorkspaces(principal).stream()
+                        .map(w -> new WorkspaceSummary(w.id(), w.name(), w.slug(), w.role()))
+                        .toList();
+        return ResponseEntity.ok(ApiResponse.ok(mine));
     }
 
     /**

@@ -1,5 +1,8 @@
 package com.influora.config;
 
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -22,6 +25,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "influora.shopify")
 public class ShopifyProperties {
 
+    private static final Logger log = LoggerFactory.getLogger(ShopifyProperties.class);
+
     private String apiKey = "";
     private String apiSecret = "";
     private String redirectUri = "";
@@ -30,8 +35,38 @@ public class ShopifyProperties {
     private String apiVersion = "2025-01";
     private String scopes = "read_orders,read_products";
 
+    /**
+     * Whether this deployment can actually RUN the Shopify integration end to end.
+     *
+     * <p>All three credentials are required, not just the OAuth pair. With a blank (or
+     * placeholder) webhook signing secret, {@code ShopifyWebhookSignatureVerifier#verify} fails
+     * closed on every delivery, so a store would connect successfully and then silently receive no
+     * order or redemption events at all — the integration exists only to receive those. Reporting
+     * "configured" on the OAuth pair alone is what made that half-working state reachable, so the
+     * connect button (gated on this via {@code GET /integrations/store/status}) is offered only
+     * when the whole path works.
+     */
     public boolean isConfigured() {
-        return apiKey != null && !apiKey.isBlank() && apiSecret != null && !apiSecret.isBlank();
+        return isPresent(apiKey) && isPresent(apiSecret) && isPresent(webhookSigningSecret);
+    }
+
+    /**
+     * Some credentials set but not all — a half-configured deploy. The feature stays OFF (see
+     * {@link #isConfigured()}); this exists so that is visible in the boot log instead of looking
+     * like the operator's values were ignored.
+     */
+    public boolean isPartiallyConfigured() {
+        boolean any = isPresent(apiKey) || isPresent(apiSecret) || isPresent(webhookSigningSecret);
+        return any && !isConfigured();
+    }
+
+    /**
+     * Blank, unset, or still the placeholder the deploy templates ship. The {@code REPLACE_WITH_}
+     * prefix is the same sentinel {@code ShopifyWebhookSignatureVerifier} refuses to sign with, so
+     * a placeholder must not count as configured here either.
+     */
+    private static boolean isPresent(String value) {
+        return value != null && !value.isBlank() && !value.startsWith("REPLACE_WITH_");
     }
 
     public String getApiKey() {
@@ -88,5 +123,21 @@ public class ShopifyProperties {
 
     public void setScopes(String scopes) {
         this.scopes = scopes;
+    }
+
+    /**
+     * A deploy that set SOME Shopify credentials but not all of them keeps the feature off, which
+     * from the outside looks exactly like the values having been ignored. Say so once at boot.
+     */
+    @PostConstruct
+    void warnIfPartiallyConfigured() {
+        if (isPartiallyConfigured()) {
+            log.warn(
+                    "Shopify integration is DISABLED: set all three of INFLUORA_SHOPIFY_APIKEY,"
+                            + " INFLUORA_SHOPIFY_APISECRET and INFLUORA_SHOPIFY_WEBHOOKSIGNINGSECRET."
+                            + " Without the webhook signing secret every Shopify delivery fails"
+                            + " signature verification, so a connected store would receive no order"
+                            + " events at all.");
+        }
     }
 }

@@ -51,6 +51,8 @@ import {
   type Deal,
   type DealMessage,
 } from '@/lib/api';
+import { allowsProposalResponse } from '@/lib/deal-stage';
+import { describeAcceptError } from '@/lib/deal-accept-error';
 
 interface DealRoom {
   id: string;
@@ -66,6 +68,13 @@ interface DealRoom {
   /** No DTO source on GET /deals — brand-side Deal carries no follower count. Never rendered today, kept for the mock shape. */
   creatorFollowers?: string;
   status: 'negotiating' | 'proposed' | 'accepted' | 'rejected';
+  /**
+   * The backend CollaborationStatus behind `status` (live mode only). The 4-state bucket above is
+   * fine for the list chips, but it cannot answer "what may the brand do right now": INVITED and
+   * APPLIED both read 'proposed' yet carry no rate to accept, and IN_NEGOTIATION reads
+   * 'negotiating' yet is the one state where Accept is actually legal.
+   */
+  rawStatus?: Deal['status'];
   budget: number;
   deliverables: number;
   timeline: string;
@@ -101,6 +110,73 @@ function mapDealStatus(status: Deal['status']): DealRoom['status'] {
   }
 }
 
+/** Mirrors `Collaboration.canReject()` — the pre-contract states a brand may still walk away from. */
+const REJECTABLE_STATUSES: ReadonlyArray<Deal['status']> = [
+  'INVITED',
+  'APPLIED',
+  'SHORTLISTED',
+  'IN_NEGOTIATION',
+  'TERMS_AGREED',
+];
+
+/**
+ * What the brand may actually do with a live deal, derived from the same two facts the server
+ * checks (DealService.doAccept): the collaboration status, and whose offer is on the table.
+ *
+ * This page used to offer Accept exactly when the deal was INVITED / APPLIED / SHORTLISTED — the
+ * states with NO rate, where the server always answers 409 AGREED_RATE_REQUIRED — and to hide it
+ * in IN_NEGOTIATION, the one state where a creator's counter can be accepted. So Accept could
+ * never succeed here. Exported for the unit test that pins the table.
+ */
+export function brandDealActions(
+  rawStatus: Deal['status'] | undefined,
+  messages: ReadonlyArray<Pick<DealMessage, 'kind' | 'senderType' | 'metadata'>>,
+): { canAccept: boolean; canMakeOffer: boolean; canReject: boolean } {
+  const negotiable = allowsProposalResponse(rawStatus);
+  const latestOffer = [...messages].reverse().find((m) => m.kind === 'proposal');
+  const offerIsOpen = !!latestOffer && (latestOffer.metadata?.status ?? 'pending') === 'pending';
+  return {
+    // The brand can only accept the CREATOR's open offer; accepting its own is
+    // CANNOT_ACCEPT_OWN_OFFER, and with no offer at all there is no rate to commit to.
+    canAccept: negotiable && offerIsOpen && latestOffer?.senderType === 'creator',
+    canMakeOffer: negotiable,
+    canReject: !!rawStatus && REJECTABLE_STATUSES.includes(rawStatus),
+  };
+}
+
+/** GET /deals/:id/messages returns the NEWEST page of this size, oldest-first within the page. */
+const MESSAGE_PAGE_SIZE = 50;
+const MAX_OLDER_PAGES_TO_SCAN = 5;
+
+/**
+ * The offer currently on the table, when it is NOT in the newest page of messages.
+ *
+ * `brandDealActions` reads the latest `proposal` message, but the timeline loads 50 messages at a
+ * time: after a long back-and-forth the offer can sit on an older page, and the page would then
+ * wrongly conclude "no offer to accept". Pages backwards (the endpoint's `before` cursor) only in
+ * that case — a full newest page with no proposal in it — and stops at the first one found.
+ * Bounded, and never throws: failing to find it just leaves Accept hidden, which is the safe side.
+ */
+export async function findOfferBeyondFirstPage(
+  dealId: string,
+  newestPage: ReadonlyArray<DealMessage>,
+  fetchPage: (dealId: string, before: string) => Promise<DealMessage[]>,
+): Promise<DealMessage | null> {
+  let page = newestPage;
+  for (let i = 0; i < MAX_OLDER_PAGES_TO_SCAN; i++) {
+    if (page.some((m) => m.kind === 'proposal')) return null; // already visible to the caller
+    if (page.length < MESSAGE_PAGE_SIZE) return null; // that was the whole history
+    try {
+      page = await fetchPage(dealId, page[0].createdAt);
+    } catch {
+      return null;
+    }
+    const offer = [...page].reverse().find((m) => m.kind === 'proposal');
+    if (offer) return offer;
+  }
+  return null;
+}
+
 function formatRelativeTime(date: Date): string {
   if (Number.isNaN(date.getTime())) return '—';
   const minutes = Math.floor((Date.now() - date.getTime()) / 60000);
@@ -130,6 +206,7 @@ function mapDealToRoom(deal: Deal): DealRoom {
     creatorName: deal.counterpartyName,
     creatorAvatar: deal.counterpartyAvatar || '',
     status: mapDealStatus(deal.status),
+    rawStatus: deal.status,
     budget: deal.dealValue,
     deliverables: deal.deliverablesTotal,
     timeline: formatTimeline(deal.nextDeadline),
@@ -257,6 +334,9 @@ export function DealRoomDashboard() {
   // because neither request is ever made from this component.
   const [actionMessage, setActionMessage] = React.useState<string | null>(null);
   const [liveMessages, setLiveMessages] = React.useState<DealMessage[]>([]);
+  // The offer on the table when it sits on an older page than the one loaded — see
+  // findOfferBeyondFirstPage. Null in the overwhelmingly common case.
+  const [olderOffer, setOlderOffer] = React.useState<DealMessage | null>(null);
   const [messagesLoading, setMessagesLoading] = React.useState(false);
   const [messagesError, setMessagesError] = React.useState<string | null>(null);
   const [sendingMessage, setSendingMessage] = React.useState(false);
@@ -291,16 +371,26 @@ export function DealRoomDashboard() {
     if (match) setSelectedDeal(match);
   }, [deepLinkDealId, dealRooms, selectedDeal]);
 
+  const messagesDealRef = React.useRef<string | null>(null);
   const loadMessages = React.useCallback(async (dealId: string) => {
+    messagesDealRef.current = dealId;
+    setOlderOffer(null);
     setMessagesLoading(true);
     setMessagesError(null);
     try {
       const list = await messagesApi.list('brand', dealId);
       setLiveMessages(list);
+      const older = await findOfferBeyondFirstPage(dealId, list, (id, before) =>
+        messagesApi.list('brand', id, before),
+      );
+      // The brand may have clicked another deal while older pages were being fetched; an offer
+      // from the previous deal must never decide this one's Accept button.
+      if (messagesDealRef.current === dealId) setOlderOffer(older);
       // fire-and-forget read receipt; failure here must not surface as a load error
       void messagesApi.markRead('brand', dealId).catch(() => {});
     } catch {
       setLiveMessages([]); // clear stale rows from a previously-selected deal
+      setOlderOffer(null);
       setMessagesError('Could not load messages. Check your connection and retry.');
     } finally {
       setMessagesLoading(false);
@@ -327,6 +417,16 @@ export function DealRoomDashboard() {
     if (!isApiLive() || !selectedDeal) return;
     void dealsApi.get('brand', selectedDeal.id).catch(() => {});
   }, [selectedDeal?.id]);
+
+  // `selectedDeal` is a snapshot taken when the row was clicked. After the brand's own
+  // accept/reject the list is refetched but the snapshot was not, so the detail pane kept the
+  // pre-action status (and would keep offering actions the deal had just moved past).
+  React.useEffect(() => {
+    setSelectedDeal((current) => {
+      if (!current) return current;
+      return liveDeals.find((deal) => deal.id === current.id) ?? current;
+    });
+  }, [liveDeals]);
 
   // CR-97 — this dashboard (the 'Deals' page off the brand sidebar) previously had NO live
   // transport at all: the timeline only changed on manual load or the brand's own action, so a
@@ -437,6 +537,14 @@ export function DealRoomDashboard() {
     setMessageInput('');
   };
 
+  // Live mode only; mock mode keeps its scripted 4-state demo untouched.
+  const liveActions = React.useMemo(
+    // `olderOffer` goes FIRST: anything in the loaded page (including a proposal that arrives
+    // later over the stream) is newer and wins the "latest offer" scan.
+    () => brandDealActions(selectedDeal?.rawStatus, olderOffer ? [olderOffer, ...liveMessages] : liveMessages),
+    [selectedDeal?.rawStatus, liveMessages, olderOffer],
+  );
+
   const handleAcceptProposal = async () => {
     if (!selectedDeal) return;
 
@@ -462,8 +570,10 @@ export function DealRoomDashboard() {
         // leaving the brand with no visible retry path back into the proposal they were
         // reviewing.
         setShowProposalDialog(false);
-      } catch {
-        setActionError('Could not accept the proposal. Try again.');
+      } catch (err) {
+        // A 409 here never clears on retry (the deal moved, or the last offer is the brand's own);
+        // say which, instead of "Try again.".
+        setActionError(describeAcceptError(err).message);
       } finally {
         setActionLoading(false);
       }
@@ -769,6 +879,58 @@ export function DealRoomDashboard() {
                       <p className="text-sm text-stage-approved-fg mb-3">{actionMessage}</p>
                     )}
 
+                    {isApiLive() ? (
+                      <div className="flex gap-3">
+                        {liveActions.canAccept && (
+                          <Button className="flex-1" onClick={handleAcceptProposal} disabled={actionLoading}>
+                            {actionLoading ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <CheckCircle2 className="h-4 w-4 mr-2" />
+                            )}
+                            Accept Offer
+                          </Button>
+                        )}
+                        {liveActions.canMakeOffer && (
+                          // An offer has to carry deliverables: they are what the contract turns into
+                          // the rows the creator submits against. The amount-only dialog that used to
+                          // sit here produced a deal whose contract created no deliverables at all, so
+                          // the creator had nothing to submit and the deal could never complete. The
+                          // deal room's proposal form collects them.
+                          <Button
+                            variant={liveActions.canAccept ? 'outline' : 'default'}
+                            className="flex-1"
+                            onClick={() => navigate(`/brand/chat?deal=${selectedDeal.id}`)}
+                            disabled={actionLoading}
+                          >
+                            <ArrowRight className="h-4 w-4 mr-2" />
+                            {liveActions.canAccept ? 'Counter in deal room' : 'Make an offer in deal room'}
+                          </Button>
+                        )}
+                        {liveActions.canReject && (
+                          <Button
+                            variant="outline"
+                            className="flex-1 text-destructive-foreground hover:text-destructive-foreground"
+                            onClick={() => setShowRejectDialog(true)}
+                            disabled={actionLoading}
+                          >
+                            <XCircle className="h-4 w-4 mr-2" />
+                            Reject
+                          </Button>
+                        )}
+                        {selectedDeal.status === 'accepted' && (
+                          // The contract is generated and signed in the deal room; /brand/contracts only
+                          // lists contracts that already exist, and right after an accept none does.
+                          <Button
+                            className="flex-1"
+                            onClick={() => navigate(`/brand/chat?deal=${selectedDeal.id}&tab=contract`)}
+                          >
+                            <FileText className="h-4 w-4 mr-2" />
+                            Open Contract
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
                     <div className="flex gap-3">
                       {selectedDeal.status === 'proposed' && (
                         <>
@@ -818,6 +980,7 @@ export function DealRoomDashboard() {
                         </Button>
                       )}
                     </div>
+                    )}
                   </TabsContent>
 
                   {/* Messages Tab */}
@@ -1051,7 +1214,23 @@ export function DealRoomDashboard() {
             <Button variant="outline" onClick={() => setShowProposalDialog(false)} disabled={actionLoading}>
               Close
             </Button>
-            {selectedDeal?.status === 'proposed' && (
+            {isApiLive() && liveActions.canReject && (
+              <Button
+                variant="ghost"
+                className="text-destructive-foreground hover:text-destructive-foreground"
+                onClick={() => { setShowProposalDialog(false); setShowRejectDialog(true); }}
+                disabled={actionLoading}
+              >
+                Reject
+              </Button>
+            )}
+            {isApiLive() && liveActions.canAccept && (
+              <Button onClick={handleAcceptProposal} disabled={actionLoading}>
+                {actionLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Accept Offer
+              </Button>
+            )}
+            {!isApiLive() && selectedDeal?.status === 'proposed' && (
               <>
                 <Button
                   variant="ghost"

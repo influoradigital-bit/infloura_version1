@@ -17,6 +17,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import com.influora.common.ApiException;
 import com.influora.config.InfluoraEnvironment;
 import com.influora.domain.entity.Plan;
+import com.influora.domain.entity.EmailOutbox;
 import com.influora.domain.entity.User;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WorkspaceMember;
@@ -32,6 +33,8 @@ import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.security.JwtService;
 import com.influora.service.billing.SubscriptionService;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
@@ -39,6 +42,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.env.MockEnvironment;
@@ -57,6 +61,7 @@ class WorkspaceMemberServiceTest {
     private static final String OWNER_USER_ID = "01HUSER000000000000OW";
     private static final String INVITER_USER_ID = "01HUSER000000000000IN";
     private static final String INVITEE_EMAIL = "invitee@example.com";
+    private static final String WEB_BASE_URL = "https://app.example.com";
 
     @Mock private WorkspaceMemberRepository workspaceMemberRepository;
     @Mock private WorkspaceMemberInviteRepository workspaceMemberInviteRepository;
@@ -94,7 +99,8 @@ class WorkspaceMemberServiceTest {
                         new InfluoraEnvironment(new MockEnvironment()),
                         new ObjectMapper(),
                         msg91EmailClient,
-                        workspaceRepository);
+                        workspaceRepository,
+                        WEB_BASE_URL);
     }
 
     // ===================== inviteMember =====================
@@ -154,7 +160,57 @@ class WorkspaceMemberServiceTest {
         assertEquals(MemberInviteStatus.PENDING, invite.getStatus());
         assertEquals(MemberRole.MANAGER, invite.getRole());
         verify(workspaceMemberInviteRepository, times(1)).save(any(WorkspaceMemberInvite.class));
-        verify(emailOutboxRepository, times(1)).save(any());
+
+        // The email has to carry a link the invitee can act on. It used to carry the workspace
+        // name, the role and the expiry and nothing else, so no invite could ever be redeemed.
+        ArgumentCaptor<EmailOutbox> outbox = ArgumentCaptor.forClass(EmailOutbox.class);
+        verify(emailOutboxRepository, times(1)).save(outbox.capture());
+        assertEquals("brand.workspace_invite", outbox.getValue().getTemplateKey());
+        assertInviteUrlRedeems(outbox.getValue().getTemplateData(), invite);
+    }
+
+    @Test
+    @DisplayName("Invitee with no account yet -> the directly-sent email carries the same redeemable link")
+    void inviteMember_newUser_directEmailCarriesInviteLink() {
+        stubOwnerWorkspace();
+        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan);
+        when(plan.getSeatLimit()).thenReturn(5);
+        when(userRepository.findByEmailIgnoreCase(INVITEE_EMAIL)).thenReturn(Optional.empty());
+        when(workspaceMemberRepository.countByWorkspaceIdAndActiveTrue(WORKSPACE_ID)).thenReturn(1L);
+        when(workspaceMemberInviteRepository.countByWorkspaceIdAndStatusAndExpiresAtAfter(
+                        eq(WORKSPACE_ID), eq(MemberInviteStatus.PENDING), any(Instant.class)))
+                .thenReturn(0L);
+        when(workspaceMemberInviteRepository.findByWorkspaceIdAndEmailIgnoreCaseAndStatus(
+                        WORKSPACE_ID, INVITEE_EMAIL, MemberInviteStatus.PENDING))
+                .thenReturn(Optional.empty());
+        when(workspaceMemberInviteRepository.save(any(WorkspaceMemberInvite.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+        when(workspace.getName()).thenReturn("Acme Co");
+        when(msg91EmailClient.sendTemplateEmail(anyString(), anyString(), anyString())).thenReturn(true);
+
+        WorkspaceMemberInvite invite = service.inviteMember(principal, INVITEE_EMAIL, MemberRole.MANAGER);
+
+        ArgumentCaptor<String> data = ArgumentCaptor.forClass(String.class);
+        verify(msg91EmailClient)
+                .sendTemplateEmail(eq(INVITEE_EMAIL), eq("brand.workspace_invite_new_user"), data.capture());
+        assertInviteUrlRedeems(data.getValue(), invite);
+    }
+
+    /**
+     * The link must point at the SPA's redemption page AND the token inside it must be the one
+     * acceptInvite() will look up — a well-formed URL around the wrong token is still a dead invite.
+     */
+    private static void assertInviteUrlRedeems(String templateDataJson, WorkspaceMemberInvite invite) {
+        String url;
+        try {
+            url = new ObjectMapper().readTree(templateDataJson).path("invite_url").asText();
+        } catch (Exception e) {
+            throw new AssertionError("template data is not JSON: " + templateDataJson, e);
+        }
+        String prefix = WEB_BASE_URL + "/brand/invite?token=";
+        assertTrue(url.startsWith(prefix), "invite_url missing or wrong: '" + url + "'");
+        String tokenInUrl = URLDecoder.decode(url.substring(prefix.length()), StandardCharsets.UTF_8);
+        assertEquals(invite.getInviteTokenHash(), JwtService.hashToken(tokenInUrl));
     }
 
     @Test
@@ -405,5 +461,60 @@ class WorkspaceMemberServiceTest {
 
         assertEquals("WORKSPACE_SUSPENDED", ex.getCode());
         assertEquals(403, ex.getStatus().value());
+    }
+
+    @Test
+    @DisplayName(
+            "switchWorkspace records the choice on the user, so the next /auth/refresh does not put"
+                    + " them back in their oldest workspace")
+    void switchWorkspace_remembersTheChosenWorkspace() {
+        // Minting needs a configured JwtService; the shared fixture's bare one has no keys.
+        JwtService minting = org.mockito.Mockito.mock(JwtService.class);
+        when(minting.createAccessToken(eq(OWNER_USER_ID), any(), any(), eq(WORKSPACE_ID)))
+                .thenReturn("access-for-invited");
+        when(minting.getAccessExpirySeconds()).thenReturn(900L);
+        WorkspaceMemberService switching =
+                new WorkspaceMemberService(
+                        workspaceMemberRepository,
+                        workspaceMemberInviteRepository,
+                        brandContext,
+                        subscriptionService,
+                        userRepository,
+                        emailOutboxRepository,
+                        minting,
+                        new InfluoraEnvironment(new MockEnvironment()),
+                        new ObjectMapper(),
+                        msg91EmailClient,
+                        workspaceRepository,
+                        WEB_BASE_URL);
+        when(principal.getUserId()).thenReturn(OWNER_USER_ID);
+        when(workspaceMemberRepository.findByWorkspaceIdAndUserIdAndActiveTrue(WORKSPACE_ID, OWNER_USER_ID))
+                .thenReturn(Optional.of(WorkspaceMember.owner("01HMEMBER00000000000A", WORKSPACE_ID, OWNER_USER_ID)));
+        when(workspaceRepository.findById(WORKSPACE_ID))
+                .thenReturn(Optional.of(Workspace.newBrand(WORKSPACE_ID, "Acme Co", "acme-co", "RETAIL", "SMALL")));
+        User switcher =
+                User.newBrand(OWNER_USER_ID, "owner@example.com", "hashed-pw", "Ada", "Lovelace", "Ada Lovelace");
+        when(userRepository.findById(OWNER_USER_ID)).thenReturn(Optional.of(switcher));
+
+        var response = switching.switchWorkspace(principal, WORKSPACE_ID);
+
+        assertEquals("access-for-invited", response.accessToken());
+        assertEquals(WORKSPACE_ID, switcher.getLastActiveWorkspaceId());
+        verify(userRepository).save(switcher);
+    }
+
+    @Test
+    @DisplayName("a refused switch (suspended target) must NOT be remembered")
+    void switchWorkspace_refused_isNotRemembered() {
+        when(principal.getUserId()).thenReturn(OWNER_USER_ID);
+        Workspace suspended = Workspace.newBrand(WORKSPACE_ID, "Acme Co", "acme-co", "RETAIL", "SMALL");
+        suspended.suspend("fraud review", "01HADMIN000000000000AA");
+        when(workspaceMemberRepository.findByWorkspaceIdAndUserIdAndActiveTrue(WORKSPACE_ID, OWNER_USER_ID))
+                .thenReturn(Optional.of(WorkspaceMember.owner("01HMEMBER00000000000A", WORKSPACE_ID, OWNER_USER_ID)));
+        when(workspaceRepository.findById(WORKSPACE_ID)).thenReturn(Optional.of(suspended));
+
+        assertThrows(ApiException.class, () -> service.switchWorkspace(principal, WORKSPACE_ID));
+
+        verify(userRepository, never()).save(any());
     }
 }

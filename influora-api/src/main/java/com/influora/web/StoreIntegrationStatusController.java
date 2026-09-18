@@ -2,6 +2,7 @@ package com.influora.web;
 
 import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.config.ShopifyProperties;
 import com.influora.domain.entity.ShopifyIntegration;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.entity.WooCommerceIntegration;
@@ -54,16 +55,19 @@ public class StoreIntegrationStatusController {
     private final ShopifyIntegrationRepository shopifyRepository;
     private final WooCommerceIntegrationRepository wooCommerceRepository;
     private final BrandContextService brandContextService;
+    private final ShopifyProperties shopifyProperties;
 
     private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_INSTANT;
 
     public StoreIntegrationStatusController(
             ShopifyIntegrationRepository shopifyRepository,
             WooCommerceIntegrationRepository wooCommerceRepository,
-            BrandContextService brandContextService) {
+            BrandContextService brandContextService,
+            ShopifyProperties shopifyProperties) {
         this.shopifyRepository = shopifyRepository;
         this.wooCommerceRepository = wooCommerceRepository;
         this.brandContextService = brandContextService;
+        this.shopifyProperties = shopifyProperties;
     }
 
     /**
@@ -86,7 +90,8 @@ public class StoreIntegrationStatusController {
                     true,
                     StoreProvider.SHOPIFY,
                     s.getShopDomain(),
-                    ISO_FORMATTER.format(s.getConnectedAt())));
+                    ISO_FORMATTER.format(s.getConnectedAt()),
+                    shopifyProperties.isConfigured()));
         }
 
         // Check WooCommerce
@@ -98,11 +103,13 @@ public class StoreIntegrationStatusController {
                     true,
                     StoreProvider.WOOCOMMERCE,
                     w.getSiteUrl(),
-                    ISO_FORMATTER.format(w.getConnectedAt())));
+                    ISO_FORMATTER.format(w.getConnectedAt()),
+                    shopifyProperties.isConfigured()));
         }
 
         // No active integration
-        return ApiResponse.ok(new IntegrationStatusResponse(false, null, null, null));
+        return ApiResponse.ok(
+                new IntegrationStatusResponse(false, null, null, null, shopifyProperties.isConfigured()));
     }
 
     /**

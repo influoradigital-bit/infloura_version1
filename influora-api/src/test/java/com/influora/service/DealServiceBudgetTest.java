@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.startsWith;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -198,7 +199,7 @@ class DealServiceBudgetTest {
     /** Runs the supplied {@code doAccept} action synchronously, like every accept test does. */
     private void stubIdempotencyExecutesAction() {
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID), eq(WORKSPACE_ID), eq("deal.accept"), any()))
+                        startsWith("deal-accept:" + DEAL_ID + ":"), eq(WORKSPACE_ID), eq("deal.accept"), any()))
                 .thenAnswer(
                         inv -> {
                             @SuppressWarnings("unchecked")

@@ -1626,4 +1626,126 @@ class AuthServiceTest {
         assertEquals("WORKSPACE_SUSPENDED", ex.getCode());
         assertEquals(403, ex.getStatus().value());
     }
+
+    // ── Last-active workspace (accepted invites) ────────────────────────────────────────────────
+    // Every brand user gets their own workspace + OWNER row at signup, so for anyone who later
+    // accepts an invite the invited workspace is never the OLDEST membership. Login and refresh
+    // used to stamp the oldest one unconditionally, which undid POST /workspace/members/switch at
+    // the very next refresh and made an accepted invite unusable.
+
+    private static final String OWN_WS = "01HWORKSPACEOWN0000000AA";
+    private static final String INVITED_WS = "01HWORKSPACEINVITED000BB";
+
+    private void stubOwnAndInvitedMemberships(User user, Workspace own, Workspace invited) {
+        when(workspaceMemberRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(
+                        java.util.List.of(
+                                WorkspaceMember.owner("01HMEMBER123456789012AA", own.getId(), user.getId()),
+                                WorkspaceMember.owner("01HMEMBER123456789012BB", invited.getId(), user.getId())));
+        org.mockito.Mockito.lenient().when(workspaceRepository.findById(own.getId())).thenReturn(Optional.of(own));
+        org.mockito.Mockito.lenient()
+                .when(workspaceRepository.findById(invited.getId()))
+                .thenReturn(Optional.of(invited));
+    }
+
+    private void stubBrandLoginPlumbing(User user) {
+        when(userRepository.findByEmailIgnoreCase(BRAND_LOGIN.email())).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("Supersecret1", "hashed-pw")).thenReturn(true);
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.BRAND), anyString(), anyString()))
+                .thenAnswer(inv -> "access-for-" + inv.getArgument(3));
+        when(jwtService.createRefreshTokenValue()).thenReturn("refresh-raw");
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    @Test
+    @DisplayName("brandLogin lands in the workspace the user last switched into, not their oldest one")
+    void testBrandLoginPrefersLastActiveWorkspace() {
+        User user = brandLoginUser();
+        user.rememberActiveWorkspace(INVITED_WS);
+        Workspace own = Workspace.newBrand(OWN_WS, "Own Co", "own-co", "RETAIL", "SMALL");
+        Workspace invited = Workspace.newBrand(INVITED_WS, "Invited Co", "invited-co", "RETAIL", "SMALL");
+        stubBrandLoginPlumbing(user);
+        stubOwnAndInvitedMemberships(user, own, invited);
+
+        TokenPair pair = authService.brandLogin(BRAND_LOGIN);
+
+        assertEquals(INVITED_WS, pair.workspace().id());
+        assertEquals("access-for-" + INVITED_WS, pair.accessToken());
+    }
+
+    @Test
+    @DisplayName("brandLogin with no remembered workspace keeps the oldest-first default")
+    void testBrandLoginWithoutPreferenceStaysOldestFirst() {
+        User user = brandLoginUser();
+        Workspace own = Workspace.newBrand(OWN_WS, "Own Co", "own-co", "RETAIL", "SMALL");
+        Workspace invited = Workspace.newBrand(INVITED_WS, "Invited Co", "invited-co", "RETAIL", "SMALL");
+        stubBrandLoginPlumbing(user);
+        stubOwnAndInvitedMemberships(user, own, invited);
+
+        assertEquals(OWN_WS, authService.brandLogin(BRAND_LOGIN).workspace().id());
+    }
+
+    @Test
+    @DisplayName(
+            "a remembered workspace the user is NO LONGER an active member of is ignored — the"
+                    + " preference can never grant access")
+    void testBrandLoginIgnoresRememberedWorkspaceWithoutMembership() {
+        User user = brandLoginUser();
+        user.rememberActiveWorkspace("01HWORKSPACEREMOVED000ZZ");
+        Workspace own = Workspace.newBrand(OWN_WS, "Own Co", "own-co", "RETAIL", "SMALL");
+        Workspace invited = Workspace.newBrand(INVITED_WS, "Invited Co", "invited-co", "RETAIL", "SMALL");
+        stubBrandLoginPlumbing(user);
+        stubOwnAndInvitedMemberships(user, own, invited);
+
+        assertEquals(OWN_WS, authService.brandLogin(BRAND_LOGIN).workspace().id());
+    }
+
+    @Test
+    @DisplayName("a remembered workspace that has since been SUSPENDED falls back to an enterable one")
+    void testBrandLoginSkipsSuspendedRememberedWorkspace() {
+        User user = brandLoginUser();
+        user.rememberActiveWorkspace(INVITED_WS);
+        Workspace own = Workspace.newBrand(OWN_WS, "Own Co", "own-co", "RETAIL", "SMALL");
+        Workspace invited = Workspace.newBrand(INVITED_WS, "Invited Co", "invited-co", "RETAIL", "SMALL");
+        invited.suspend("fraud review", "01HADMIN12345678901234AA");
+        stubBrandLoginPlumbing(user);
+        stubOwnAndInvitedMemberships(user, own, invited);
+
+        assertEquals(OWN_WS, authService.brandLogin(BRAND_LOGIN).workspace().id());
+    }
+
+    @Test
+    @DisplayName(
+            "refresh keeps the user in the workspace they switched into — this is the 15-minute"
+                    + " revert that made accepted invites unusable")
+    void testRefreshPrefersLastActiveWorkspace() {
+        User user = brandLoginUser();
+        user.rememberActiveWorkspace(INVITED_WS);
+        Workspace own = Workspace.newBrand(OWN_WS, "Own Co", "own-co", "RETAIL", "SMALL");
+        Workspace invited = Workspace.newBrand(INVITED_WS, "Invited Co", "invited-co", "RETAIL", "SMALL");
+        String raw = "old-refresh-raw";
+        String hash = JwtService.hashToken(raw);
+        RefreshToken stored =
+                RefreshToken.create(
+                        "01HREFRESHTOKEN123456789A", user.getId(), hash, Instant.now().plusSeconds(3600), true);
+        when(refreshTokenRepository.findByTokenHashAndRevokedFalse(hash)).thenReturn(Optional.of(stored));
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(workspaceMemberRepository.findFirstByUserIdAndActiveTrueOrderByCreatedAtAsc(user.getId()))
+                .thenReturn(
+                        Optional.of(WorkspaceMember.owner("01HMEMBER123456789012AA", own.getId(), user.getId())));
+        stubOwnAndInvitedMemberships(user, own, invited);
+        when(jwtService.createRefreshTokenValue()).thenReturn("new-refresh-raw");
+        when(jwtService.getRefreshExpirySeconds(anyBoolean())).thenReturn(2_592_000L);
+        when(jwtService.createAccessToken(eq(user.getId()), eq(UserType.BRAND), anyString(), anyString()))
+                .thenAnswer(inv -> "access-for-" + inv.getArgument(3));
+        when(jwtService.getAccessExpirySeconds()).thenReturn(900L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        AuthService.RefreshRotation rotation = authService.refresh(raw);
+
+        assertEquals("access-for-" + INVITED_WS, rotation.accessToken());
+    }
 }

@@ -312,15 +312,19 @@ final class EmailTemplateRegistry {
                         "You've been invited to {{workspace_name}}",
                         "Workspace invitation",
                         "You've been invited to join “{{workspace_name}}” as {{role}}. This"
-                                + " invite expires {{expires_at}}."));
+                                + " invite expires {{expires_at}}.",
+                        "Accept invite",
+                        "invite_url"));
         SPECS.put(
                 "brand.workspace_invite_new_user",
                 new Spec(
                         "You've been invited to {{workspace_name}} on Influora",
                         "Workspace invitation",
                         "You've been invited to join “{{workspace_name}}” as {{role}} on"
-                                + " Influora. Create an account to accept — this invite expires"
-                                + " {{expires_at}}."));
+                                + " Influora. Create an account with this email address, then open"
+                                + " this link again to accept — this invite expires {{expires_at}}.",
+                        "Accept invite",
+                        "invite_url"));
 
         // Creator connections (T-CREATORCONNECT-0902) — Meta-sourced creator -> admin -> brand
         SPECS.put(

@@ -576,6 +576,20 @@ export function CreatorDiscovery() {
 
     if (!inviteCreator?.id || !selectedCampaign) return;
 
+    // A PRICED offer must list at least one deliverable: the creator cannot accept one that lists
+    // none (DealService DELIVERABLES_REQUIRED — the contract builds their submission slots from
+    // them). Rows with a blank type or a zero quantity are dropped from the payload below, so
+    // catch the all-dropped case here rather than sending an offer nobody can accept.
+    if (proposalData.budget > 0 && !proposalData.deliverables.some((d) => d.type && d.count > 0)) {
+      toast({
+        title: 'Add at least one deliverable',
+        description: 'List what the creator will deliver, with a quantity of at least 1.',
+        variant: 'destructive',
+      });
+      setProposalStep('proposal');
+      return;
+    }
+
     setIsSubmitting(true);
     let dealParam = '';
     try {

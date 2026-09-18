@@ -96,6 +96,14 @@ class OnboardingServiceKycPromptTest {
     }
 
     private AuthPrincipal mockPrincipal() {
+        // getBrandOnboardingStatus now also asks whether the caller OWNS the current workspace.
+        com.influora.domain.entity.Workspace workspace =
+                com.influora.domain.entity.Workspace.newBrand("workspace-001", "Acme", "acme", "Retail", "SMB");
+        lenient().when(brandContext.requireBrandWorkspace(any())).thenReturn(workspace);
+        lenient()
+                .when(brandContext.requireMember(any(), eq("workspace-001")))
+                .thenReturn(
+                        com.influora.domain.entity.WorkspaceMember.owner("member-001", "workspace-001", "user-001"));
         return new AuthPrincipal("user-001", "brand@example.com", UserType.BRAND, "workspace-001");
     }
 }

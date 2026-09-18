@@ -306,6 +306,20 @@ export function getBrandOnboardingComplete(): boolean {
 }
 
 
+/**
+ * Whether API calls made right now would carry a brand credential.
+ *
+ * LIVE mode answers from the in-memory access token, not from the `brand_token` storage key: that
+ * key only holds `LIVE_SESSION_TOKEN_HINT`, which survives a reload while the real token does not.
+ * Reading the hint said "signed in" on every cold load of a route that sits outside the route
+ * guards (/brand/onboarding, /brand/invite), so their first API call went out with no
+ * Authorization header and came back 401. Those routes now restore the session first
+ * (`BrandSessionBootstrap`, src/App.tsx), after which this reports the recovered session.
+ *
+ * Mock mode keeps the storage check, in either store — an unremembered login puts the token in
+ * sessionStorage (F-0459).
+ */
 export function hasBrandToken(): boolean {
-  return !!localStorage.getItem('brand_token');
+  if (isLiveMode()) return getMemoryAccessToken('brand') !== null;
+  return !!(localStorage.getItem('brand_token') ?? sessionStorage.getItem('brand_token'));
 }

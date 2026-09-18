@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, isApiLive, ApiError, type ContractApiRecord, type ContractMilestone, type Deal } from '@/lib/api';
-import { paymentHeldMessage } from '@/lib/escrow-release-reason';
+import { approvalOutcomeToast } from '@/lib/escrow-release-reason';
 import { useToast } from '@/hooks/use-toast';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -811,18 +811,7 @@ export function ContractsAndDeliverables() {
         const result = await api.deliverables.approve(selectedDeliverable.id);
         // F-0223 — the release can be skipped server-side without throwing, so a successful
         // approve is NOT proof the creator was paid. Say which happened.
-        if (result.paymentReleased) {
-          toast({
-            title: 'Deliverable approved',
-            description: 'Payment has been released to the creator.',
-          });
-        } else {
-          toast({
-            title: 'Approved — but payment was NOT released',
-            description: paymentHeldMessage(result.paymentHeldReason),
-            variant: 'destructive',
-          });
-        }
+        toast(approvalOutcomeToast(result));
       } catch (err) {
         toast({
           title: 'Could not approve deliverable',

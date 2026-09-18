@@ -17,7 +17,14 @@ public final class IntegrationDtos {
      * — see {@code src/lib/api.ts} {@code storeIntegrations.status}).
      */
     public record IntegrationStatusResponse(
-            boolean connected, StoreProvider provider, String shopDomainOrSiteUrl, String connectedAt) {}
+            boolean connected,
+            StoreProvider provider,
+            String shopDomainOrSiteUrl,
+            String connectedAt,
+            // Whether THIS deployment can run the Shopify OAuth flow at all (its app credentials are
+            // configured). False means POST /shopify/oauth/authorize would answer 503 to everyone,
+            // so the settings page must not present Shopify as a one-click option.
+            boolean shopifyAvailable) {}
 
     /**
      * Response for {@code DELETE /integrations/store/disconnect} — revokes the integration (does not

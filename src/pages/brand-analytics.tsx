@@ -175,9 +175,17 @@ async function deriveRosterFromDeals(): Promise<RosterCreator[]> {
   const dealRows = await api.deals.list('brand', 'all');
   const seen = new Map<string, RosterCreator>();
   for (const deal of dealRows) {
-    if (!seen.has(deal.counterpartyId)) {
-      seen.set(deal.counterpartyId, { id: deal.counterpartyId, displayName: deal.counterpartyName });
-    }
+    // `counterpartyProfileId` (a CreatorProfile id), NOT `counterpartyId` (the creator's USER id).
+    // Every analytics endpoint is keyed on the profile id — AnalyticsService routes the caller's
+    // id through MetricsAuthorizationService.resolveAuthorizedCreatorProfileId, which matches
+    // meta_oauth_tokens.creator_profile_id — so a roster built from user ids produced ids that
+    // could never resolve, and each card's link to /brand/analytics/:creatorId carried the wrong
+    // kind of id too. Non-null for every creator counterparty on the brand side (DealDtos sets it
+    // from the creator's profile; it is null only when the viewer is a CREATOR); the guard keeps a
+    // row with no profile id out of the roster rather than minting a link that cannot resolve.
+    const profileId = deal.counterpartyProfileId;
+    if (!profileId || seen.has(profileId)) continue;
+    seen.set(profileId, { id: profileId, displayName: deal.counterpartyName });
   }
   return Array.from(seen.values());
 }

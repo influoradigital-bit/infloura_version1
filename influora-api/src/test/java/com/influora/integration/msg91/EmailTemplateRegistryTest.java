@@ -143,4 +143,28 @@ class EmailTemplateRegistryTest {
         assertEquals("Brands can't see your profile yet", r.subject());
         assertTrue(r.subject().length() <= 40, "subject will truncate in a phone inbox");
     }
+
+    /**
+     * Both workspace-invite templates used to be body-only: they named the workspace, the role and
+     * the expiry, and gave the recipient no link, so an invite could never be redeemed. The link
+     * has to reach BOTH parts of the email — the button in the HTML and the bare URL in plain text.
+     */
+    @Test
+    void workspaceInviteTemplates_renderTheAcceptLink_inBothParts() {
+        String url = "https://app.example.com/brand/invite?token=abc123";
+        for (String key : new String[] {"brand.workspace_invite", "brand.workspace_invite_new_user"}) {
+            EmailTemplateRegistry.Rendered r =
+                    EmailTemplateRegistry.render(
+                            key,
+                            Map.of(
+                                    "workspace_name", "Acme Co",
+                                    "role", "MANAGER",
+                                    "expires_at", "2026-10-01T00:00:00Z",
+                                    "invite_url", url),
+                            null);
+            assertTrue(r.plainText().contains("Accept invite: " + url), key + ": link missing from plain text");
+            assertTrue(r.html().contains("href=\"" + url + "\""), key + ": link missing from the HTML button");
+            assertTrue(r.html().contains("Accept invite"), key + ": button label missing");
+        }
+    }
 }

@@ -363,9 +363,12 @@ export function DealContractTab({
             <div>
               <p className="text-sm font-medium">Secure Payments</p>
               <p className="text-xs text-muted-foreground mt-1">
+                {/* Signing moves no money, and neither does approving a deliverable: the brand
+                    secures the funds, and later releases them, from the Payments panel. This used
+                    to say the amount "is locked" the moment both parties signed, funded or not. */}
                 {isActive
-                  ? `${formatINR(dealValue)} is locked and will release on approved deliverables.`
-                  : `${formatINR(dealValue)} will be locked when both parties have signed.`}
+                  ? `Both parties have signed. Secure ${formatINR(dealValue)} from the Payments panel, then release it to the creator once the work is approved.`
+                  : `Once both parties have signed, you secure ${formatINR(dealValue)} from the Payments panel.`}
               </p>
             </div>
           </CardContent>

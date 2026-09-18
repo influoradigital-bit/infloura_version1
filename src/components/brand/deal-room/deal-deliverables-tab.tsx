@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock, Image as ImageIcon, Pen, Video } from 'lucide-react';
+import { CheckCircle2, Clock, Eye, Image as ImageIcon, Pen, Video } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +21,11 @@ interface DealDeliverablesTabProps {
   items: DealDeliverableItem[];
   onApprove?: (id: string) => void;
   onRequestRevision?: (id: string) => void;
+  /**
+   * Opens the submission itself (files, caption, notes). Brand side only — when it is absent no
+   * View control is rendered, which is what the creator's deal room (it reuses this list) wants.
+   */
+  onView?: (id: string) => void;
 }
 
 export function DealDeliverablesTab({
@@ -30,6 +35,7 @@ export function DealDeliverablesTab({
   items,
   onApprove,
   onRequestRevision,
+  onView,
 }: DealDeliverablesTabProps) {
   const progress = total > 0 ? Math.round((done / total) * 100) : 0;
 
@@ -45,7 +51,7 @@ export function DealDeliverablesTab({
           </div>
           <Progress value={progress} className="h-2" />
           <p className="text-xs text-muted-foreground mt-2">
-            {formatINR(dealValue)} releases from secured funds as each deliverable is approved.
+            Approve the work here, then release {formatINR(dealValue)} to the creator from the Payments panel.
           </p>
         </div>
 
@@ -114,10 +120,28 @@ export function DealDeliverablesTab({
                         )}
                       </div>
                     </div>
-                    {isPending && (
+                    {/* Approving is the brand's sign-off on the work, so the work has to be viewable
+                        first. This row used to offer Approve / Request changes over nothing but a
+                        title and a status: the files, caption and notes were never shown anywhere. */}
+                    {onView && item.status !== 'pending' && !isPending && (
                       <div className="flex gap-2 mt-3">
+                        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => onView(item.id)}>
+                          <Eye className="h-3.5 w-3.5 mr-1" />
+                          View submission
+                        </Button>
+                      </div>
+                    )}
+                    {isPending && (
+                      <div className="flex gap-2 mt-3 flex-wrap">
+                        {onView && (
+                          <Button size="sm" className="h-8 text-xs" onClick={() => onView(item.id)}>
+                            <Eye className="h-3.5 w-3.5 mr-1" />
+                            Review submission
+                          </Button>
+                        )}
                         <Button
                           size="sm"
+                          variant={onView ? 'outline' : 'default'}
                           className="h-8 text-xs"
                           onClick={() => onApprove?.(item.id)}
                         >

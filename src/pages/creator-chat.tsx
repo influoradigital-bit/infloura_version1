@@ -661,6 +661,15 @@ function describeProposalActionError(
           message: 'This invite has no agreed rate yet. Use Counter to propose one, then accept.',
           stale: false,
         };
+      // Same reasoning as AGREED_RATE_REQUIRED: a refresh re-fetches the same offer. The creator's
+      // counter form cannot add deliverables (only the brand's proposal form collects them), so
+      // point at the party who can fix it.
+      case 'DELIVERABLES_REQUIRED':
+        return {
+          message:
+            "This offer doesn't list any deliverables yet, so it can't be accepted. Ask the brand to send a proposal that lists what you'll deliver.",
+          stale: false,
+        };
       default:
         return { message: err.message, stale: true };
     }

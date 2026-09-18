@@ -522,6 +522,12 @@ export default function BrandCreatorProfilePage() {
   // (which may itself be a creatorId, not a username; CreatorController.similar resolves by
   // username only — CreatorDiscoveryService.getSimilar → requireDiscoverableByUsername).
   const [liveUsername, setLiveUsername] = React.useState<string | null>(null);
+  // The canonical CreatorProfile id from the loaded row. The `:id` route param is NOT usable for
+  // the analytics endpoints: CreatorDiscoveryService.resolveDiscoverableProfile accepts a profile
+  // id, a user id OR a username, and links into this page carry a user id in practice (the deal
+  // room's "View Profile" passes Deal.counterpartyId). AnalyticsService keys on the profile id, so
+  // a user id there 403s — indistinguishable from the genuine pre-consent state below.
+  const [liveProfileId, setLiveProfileId] = React.useState<string | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [notFound, setNotFound] = React.useState(false);
   const [reloadToken, setReloadToken] = React.useState(0);
@@ -540,6 +546,7 @@ export default function BrandCreatorProfilePage() {
         } else {
           setLiveCreator(buildLiveCreatorView(row));
           setLiveUsername(row.username || null);
+          setLiveProfileId(row.id || null);
         }
       } catch (e) {
         if (cancelled) return;
@@ -567,12 +574,13 @@ export default function BrandCreatorProfilePage() {
    */
   const [demographicsState, setDemographicsState] = React.useState<DemographicsView>({ status: 'loading' });
   React.useEffect(() => {
-    if (!liveApi || !id) return;
+    // Waits for the profile row: `liveProfileId` is the CreatorProfile id these endpoints need.
+    if (!liveApi || !liveProfileId) return;
     let cancelled = false;
     setDemographicsState({ status: 'loading' });
     (async () => {
       try {
-        const data = await api.analytics.getCreatorDemographics(id);
+        const data = await api.analytics.getCreatorDemographics(liveProfileId);
         if (cancelled) return;
         setDemographicsState(deriveDemographicsView(data));
       } catch (e) {
@@ -591,7 +599,7 @@ export default function BrandCreatorProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [liveApi, id]);
+  }, [liveApi, liveProfileId]);
 
   const audienceDemographics: DemographicsView = liveApi ? demographicsState : mockAudienceDemographics;
 
