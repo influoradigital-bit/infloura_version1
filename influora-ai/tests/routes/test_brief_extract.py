@@ -1798,3 +1798,450 @@ async def test_english_brand_name_in_a_devanagari_script_brief_still_grounds():
     )
     assert response["success"] is True
     assert response["data"]["brand_name"] == "Glow Cosmetics"
+
+
+# ===========================================================================
+# T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI verdict. Every
+# HIGH and MEDIUM he raised on 34808c0, rebuilt from his own probe briefs.
+# Source: Kabir round-1 verdict, B0-AI defects[0..6].
+# ===========================================================================
+
+
+def _probe_input(**overrides: Any) -> dict[str, Any]:
+    """A minimal tool input whose three default summary lines carry no number
+    and no usage/exclusivity term, so a probe isolates the one field under
+    test."""
+    base = dict(
+        VALID_TOOL_INPUT,
+        brand_name="Glow",
+        product=None,
+        deliverables=[{"type": "REEL", "qty": 1}],
+        budget_inr=None,
+        budget_stated=False,
+        deadline=None,
+        usage_channels=[],
+        usage_perpetual=False,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        exclusivity_brands=[],
+        payment_terms=None,
+        summary_lines=[
+            "Glow wants a reel",
+            "Terms are still open",
+            "Reply to confirm interest",
+        ],
+    )
+    base.update(overrides)
+    return base
+
+
+async def _probe(raw: str, tool_input: dict[str, Any], **body: Any):
+    response, _ = await _call(
+        _base_body(raw_text=raw, **body), tool_input, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True, response
+    return response["data"]
+
+
+# --- HIGH #1: an audience count in shorthand never grounds budget_inr -------
+
+
+@pytest.mark.asyncio
+async def test_kabir_follower_shorthand_does_not_ground_an_invented_budget():
+    """Kabir's probe: '50k+ followers, budget to be discussed' with a model
+    budget_inr of 50000 came back {"budget_stated": true, "budget_inr":
+    50000.0}. The 50k counts followers, not rupees."""
+    raw = "Glow: 1 reel for creators with 50k+ followers, budget to be discussed."
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=50000))
+    assert data["budget_inr"] is None
+
+
+@pytest.mark.asyncio
+async def test_kabir_hinglish_lakh_followers_does_not_ground_an_invented_budget():
+    """Kabir's probe: '1.5L followers wali creator chahiye, budget baad mein'
+    kept an invented 150000."""
+    raw = "Glow: 1.5L followers wali creator chahiye, budget baad mein"
+    data = await _probe(
+        raw, _probe_input(budget_stated=True, budget_inr=150000), creator_language="hi-IN"
+    )
+    assert data["budget_inr"] is None
+
+
+@pytest.mark.asyncio
+async def test_follower_count_written_before_the_number_does_not_ground_budget():
+    raw = "Glow: 1 reel. Followers above 50k only. Budget tbd."
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=50000))
+    assert data["budget_inr"] is None
+
+
+@pytest.mark.asyncio
+async def test_shorthand_budget_next_to_a_follower_count_still_grounds():
+    """Control: the audience veto is per number, not per brief — a real
+    shorthand budget in the same brief as a follower count still grounds."""
+    raw = "Glow: budget 50k for 1 reel, creators with 10k+ followers only."
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=50000))
+    assert data["budget_inr"] == 50000.0
+
+
+@pytest.mark.asyncio
+async def test_rupee_symbol_alone_grounds_a_budget():
+    """`\\b₹` could never match, so '₹8000' with no other money word used to
+    ground nothing. The letter-lookaround markers fix that."""
+    raw = "Glow: 1 reel, ₹8000 flat."
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=8000))
+    assert data["budget_inr"] == 8000.0
+
+
+@pytest.mark.asyncio
+async def test_per_reel_price_marker_grounds_a_shorthand_budget():
+    raw = "Glow: 2 reels, 15k per reel."
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=15000))
+    assert data["budget_inr"] == 15000.0
+
+
+# --- HIGH #2: lacs / grand / million / crs / mn in summary lines ------------
+
+
+_KABIR_S_BRIEF = "Glow: 1 reel, budget 8000, 5-day turnaround, 50% advance."
+
+
+@pytest.mark.parametrize(
+    "invented_line",
+    [
+        "Budget 5 lacs",
+        "They can pay 50 grand",
+        "Brand worth 5 million",
+        "Budget 5 mn",
+        "Budget 5 crs",
+        "Budget 5 laakh",
+        "Budget five million",
+    ],
+)
+@pytest.mark.asyncio
+async def test_kabir_invented_money_spellings_in_a_summary_line_are_stripped(invented_line):
+    """Kabir's probe: 'Budget 5 lacs', 'They can pay 50 grand' and 'Brand
+    worth 5 million' all survived for a brief holding only 8000, a 5-day
+    turnaround and a 50% advance — the bare '5'/'50' was in the brief."""
+    tool_input = _probe_input(
+        summary_lines=[
+            "Glow wants a reel",
+            "Budget stated: 8000",
+            invented_line,
+            "Terms are still open",
+        ]
+    )
+    data = await _probe(_KABIR_S_BRIEF, tool_input)
+    assert invented_line not in data["summary_lines"]
+    assert "Budget stated: 8000" in data["summary_lines"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "amount"),
+    [
+        ("Glow: 1 reel, budget 1.5 lacs.", 150000),
+        ("Glow: 1 reel, we can pay 50 grand.", 50000),
+        ("Glow: 1 reel, fee 2 mn.", 2000000),
+        ("Glow: 1 reel, budget 1 cr.", 10000000),
+    ],
+)
+@pytest.mark.asyncio
+async def test_new_money_spellings_ground_the_correct_budget(raw, amount):
+    """Control: the same spellings, stated by the brief in a money context,
+    ground their expanded amount."""
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=amount))
+    assert data["budget_inr"] == float(amount)
+
+
+# --- MEDIUM: the bare digits of a shorthand token ground nothing ------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "unexpanded"),
+    [
+        ("Glow: 1 reel please, budget 15k.", 15),
+        ("Glow: 1 reel please, budget 1.5L hai.", 1.5),
+        ("Glow: 1 reel please, 15k budget.", 15),
+    ],
+)
+@pytest.mark.asyncio
+async def test_kabir_unexpanded_shorthand_digits_do_not_ground_budget(raw, unexpanded):
+    """Kabir's probe: 'budget 15k' with budget_inr=15 kept 15.0 (and 1.5 for
+    'budget 1.5L') — a Rs 15 budget into pricing when the model fails rule 9."""
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=unexpanded))
+    assert data["budget_inr"] is None
+
+
+@pytest.mark.asyncio
+async def test_unexpanded_shorthand_digits_do_not_ground_a_summary_line():
+    raw = "Glow: 1 reel please, budget 15k."
+    tool_input = _probe_input(
+        summary_lines=[
+            "Glow wants a reel",
+            "Budget is 15",
+            "Budget is 15k",
+            "Terms are still open",
+        ]
+    )
+    data = await _probe(raw, tool_input)
+    assert "Budget is 15" not in data["summary_lines"]
+    assert "Budget is 15k" in data["summary_lines"]
+
+
+# --- MEDIUM: non-numeric usage and exclusivity terms are grounded -----------
+
+
+@pytest.mark.asyncio
+async def test_kabir_organic_only_brief_drops_invented_perpetual_paid_ads():
+    """Kabir's probe: usage_perpetual=true and usage_channels=['PAID_ADS']
+    survived for an 'organic only' brief, and so did the line 'Usage forever
+    on paid ads'."""
+    raw = "Glow: 1 reel, budget 8000, organic only."
+    tool_input = _probe_input(
+        usage_perpetual=True,
+        usage_channels=["ORGANIC", "PAID_ADS"],
+        summary_lines=[
+            "Glow wants a reel",
+            "Usage forever on paid ads",
+            "Organic usage only",
+            "Terms are still open",
+        ],
+    )
+    data = await _probe(raw, tool_input)
+    assert data["usage_perpetual"] is False
+    assert data["usage_channels"] == ["ORGANIC"]
+    assert "Usage forever on paid ads" not in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_negated_paid_ads_does_not_ground_paid_ads():
+    raw = "Glow: 1 reel, budget 8000, organic only, no paid ads."
+    data = await _probe(raw, _probe_input(usage_channels=["ORGANIC", "PAID_ADS"]))
+    assert data["usage_channels"] == ["ORGANIC"]
+
+
+@pytest.mark.asyncio
+async def test_stated_perpetual_paid_usage_is_kept():
+    """Control: the terms survive when the brief states them."""
+    raw = "Glow: 1 reel, budget 8000. Perpetual usage rights incl. paid ads and our website."
+    tool_input = _probe_input(
+        usage_perpetual=True,
+        usage_channels=["PAID_ADS", "WEBSITE"],
+        summary_lines=[
+            "Glow wants a reel",
+            "Perpetual usage on paid ads and website",
+            "Terms are still open",
+        ],
+    )
+    data = await _probe(raw, tool_input)
+    assert data["usage_perpetual"] is True
+    assert data["usage_channels"] == ["PAID_ADS", "WEBSITE"]
+    assert "Perpetual usage on paid ads and website" in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_kabir_invented_exclusivity_is_dropped_for_a_brief_with_none():
+    """Kabir's probe: exclusivity_scope='CATEGORY' with exclusivity_brands=
+    ['Nykaa'] survived for a brief with no exclusivity at all."""
+    raw = "Glow: 1 reel, budget 8000, organic only."
+    data = await _probe(
+        raw, _probe_input(exclusivity_scope="CATEGORY", exclusivity_brands=["Nykaa"])
+    )
+    assert data["exclusivity_scope"] is None
+    assert data["exclusivity_brands"] == []
+
+
+@pytest.mark.asyncio
+async def test_negated_exclusivity_does_not_ground_a_category_scope():
+    raw = "Glow: 1 reel, budget 8000, no exclusivity needed."
+    data = await _probe(raw, _probe_input(exclusivity_scope="CATEGORY"))
+    assert data["exclusivity_scope"] is None
+
+
+@pytest.mark.asyncio
+async def test_named_brand_exclusion_grounds_named_brands_scope():
+    """Control: 'No Nykaa posts for 60 days' is a named-brand exclusivity even
+    without the word 'exclusivity'."""
+    raw = "Glow: 1 reel, budget 8000. No Nykaa posts for 60 days."
+    data = await _probe(
+        raw, _probe_input(exclusivity_scope="NAMED_BRANDS", exclusivity_brands=["Nykaa"])
+    )
+    assert data["exclusivity_scope"] == "NAMED_BRANDS"
+    assert data["exclusivity_brands"] == ["Nykaa"]
+
+
+@pytest.mark.asyncio
+async def test_invented_barter_only_is_dropped_for_a_cash_brief():
+    raw = "Glow: 1 reel, budget 8000."
+    data = await _probe(raw, _probe_input(barter_only=True))
+    assert data["barter_only"] is False
+
+
+@pytest.mark.asyncio
+async def test_stated_barter_only_is_kept():
+    raw = "Glow: 1 reel, barter collab, product worth 3000."
+    data = await _probe(raw, _probe_input(barter_only=True))
+    assert data["barter_only"] is True
+
+
+# --- MEDIUM: max_revisions is grounded and cannot vouch for its own line ----
+
+
+@pytest.mark.asyncio
+async def test_kabir_invented_max_revisions_and_its_line_are_dropped():
+    """Kabir's probe: max_revisions=7 was kept and vouched for its own line
+    'Up to 7 revisions' in a brief that never mentions revisions."""
+    raw = "Glow: 1 reel, budget 8000."
+    tool_input = _probe_input(
+        max_revisions=7,
+        summary_lines=[
+            "Glow wants a reel",
+            "Up to 7 revisions",
+            "Terms are still open",
+            "Reply to confirm interest",
+        ],
+    )
+    data = await _probe(raw, tool_input)
+    assert data["max_revisions"] is None
+    assert "Up to 7 revisions" not in data["summary_lines"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "count"),
+    [
+        ("Glow: 1 reel, budget 8000, 2 revisions included.", 2),
+        ("Glow: 1 reel, budget 8000, up to 3 rounds of revisions.", 3),
+        ("Glow: 1 reel, budget 8000, one revision only.", 1),
+        ("Glow: 1 reel, budget 8000. Revisions: 2", 2),
+    ],
+)
+@pytest.mark.asyncio
+async def test_stated_max_revisions_is_kept(raw, count):
+    data = await _probe(raw, _probe_input(max_revisions=count))
+    assert data["max_revisions"] == count
+
+
+# --- MEDIUM: a deliverable count is anchored to its own type ----------------
+
+
+@pytest.mark.asyncio
+async def test_kabir_post_count_does_not_ground_a_reel_count():
+    """Kabir's probe: 'Glow: 5 posts on our page already; need reels' kept an
+    invented [{"type": "REEL", "qty": 5}]."""
+    raw = "Glow: 5 posts on our page already; need reels"
+    data = await _probe(raw, _probe_input(deliverables=[{"type": "REEL", "qty": 5}]))
+    assert data["deliverables"] == [{"type": "REEL", "qty": 1}]
+
+
+@pytest.mark.asyncio
+async def test_post_count_does_not_cross_to_reels_through_a_conjunction():
+    raw = "Glow: 5 posts and reels, budget 8000."
+    data = await _probe(raw, _probe_input(deliverables=[{"type": "REEL", "qty": 5}]))
+    assert data["deliverables"] == [{"type": "REEL", "qty": 1}]
+
+
+@pytest.mark.asyncio
+async def test_each_deliverable_type_keeps_its_own_stated_count():
+    raw = "Glow: 3 Instagram reels and 2 story sets, budget 30k."
+    data = await _probe(
+        raw,
+        _probe_input(
+            deliverables=[{"type": "REEL", "qty": 3}, {"type": "STORY_SET", "qty": 2}]
+        ),
+    )
+    assert data["deliverables"] == [
+        {"type": "REEL", "qty": 3},
+        {"type": "STORY_SET", "qty": 2},
+    ]
+
+
+# --- LOW (cheap): Latin-script Hinglish "mahine" ----------------------------
+
+
+@pytest.mark.asyncio
+async def test_hinglish_mahine_grounds_usage_months():
+    raw = "Glow: 1 reel, budget 8000, usage rights 3 mahine."
+    data = await _probe(raw, _probe_input(usage_months=3), creator_language="hi-IN")
+    assert data["usage_months"] == 3
+
+
+# --- MEDIUM: a max_tokens stop is a known, logged failure -------------------
+
+
+def _truncating_claude(tool_input, *, stop_reason, output_tokens):
+    mock_claude = AsyncMock()
+    mock_claude.complete_with_forced_tool = AsyncMock(
+        return_value=ClaudeToolResult(
+            ok=True,
+            tool_input=tool_input,
+            usage={"input_tokens": 900, "output_tokens": output_tokens},
+            stop_reason=stop_reason,
+        )
+    )
+    return mock_claude
+
+
+async def _call_truncating(tool_input, *, stop_reason, output_tokens):
+    token = _mint_creator_token()
+    request = _make_request(_base_body(), authorization=f"Bearer {token}")
+    recorder = AsyncMock(return_value=0)
+    mock_claude = _truncating_claude(
+        tool_input, stop_reason=stop_reason, output_tokens=output_tokens
+    )
+    with (
+        patch.object(brief_extract_route, "_get_claude", return_value=mock_claude),
+        patch.object(brief_extract_route, "check_creator_spend_gate", AsyncMock(return_value=None)),
+        patch.object(brief_extract_route, "record_creator_spend", recorder),
+    ):
+        response = await brief_extract_route.brief_extract(
+            request, authorization=f"Bearer {token}"
+        )
+    return response, recorder
+
+
+def _truncation_records(caplog):
+    return [r for r in caplog.records if r.getMessage() == "brief_extract_truncated"]
+
+
+@pytest.mark.asyncio
+async def test_kabir_max_tokens_stop_is_detected_logged_and_not_parsed(caplog):
+    """Kabir's probe: a cut-off tool_input at output_tokens == max_tokens was
+    billed and logged only as 'brief_extract_malformed_model_output', with no
+    stop_reason. A max_tokens stop is now its own logged failure — even when
+    the partial input would happen to validate (here: the full valid input)."""
+    caplog.set_level("WARNING", logger=brief_extract_route.logger.name)
+    response, recorder = await _call_truncating(
+        VALID_TOOL_INPUT,
+        stop_reason="max_tokens",
+        output_tokens=brief_extract_route.BRIEF_EXTRACT_MAX_TOKENS,
+    )
+    assert response == {"success": False, "error": {"code": "extraction_failed"}}
+    recorder.assert_awaited_once()  # the provider billed it, so it is recorded
+    records = _truncation_records(caplog)
+    assert len(records) == 1
+    fields = records[0].fields
+    assert fields["stop_reason"] == "max_tokens"
+    assert fields["output_tokens"] == brief_extract_route.BRIEF_EXTRACT_MAX_TOKENS
+    assert fields["billed"] is True
+
+
+@pytest.mark.asyncio
+async def test_output_tokens_at_budget_without_stop_reason_is_treated_as_truncation(caplog):
+    caplog.set_level("WARNING", logger=brief_extract_route.logger.name)
+    response, _ = await _call_truncating(
+        {"brand_name": "Glow", "summary_lines": ["Glow wants"]},
+        stop_reason=None,
+        output_tokens=brief_extract_route.BRIEF_EXTRACT_MAX_TOKENS,
+    )
+    assert response["success"] is False
+    assert len(_truncation_records(caplog)) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_clean_tool_use_stop_is_not_flagged_as_truncation(caplog):
+    """Control: a normal stop still extracts and logs no truncation."""
+    caplog.set_level("WARNING", logger=brief_extract_route.logger.name)
+    response, _ = await _call_truncating(
+        VALID_TOOL_INPUT, stop_reason="tool_use", output_tokens=400
+    )
+    assert response["success"] is True
+    assert _truncation_records(caplog) == []

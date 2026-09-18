@@ -162,9 +162,24 @@ BRIEF_EXTRACT_MAX_TOKENS = _read_max_tokens_env()
 # Source: REPAIR ROUND 2 finding 8; T-PHASEB-LIVE-0918 REPAIR ROUND 2 findings
 # 1-3 (this same table is reused by the deliverable-qty and money-marker
 # anchoring below).
+#
+# T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI HIGH #2: the unit
+# list missed common spellings — "lacs", "grand", "million"/"mn" (and "crs",
+# "laakh", "bn", "mil") — so an invented summary line "Budget 5 lacs" / "They
+# can pay 50 grand" / "Brand worth 5 million" was checked only as its bare "5"
+# or "50" and survived whenever the brief held that digit anywhere. Every
+# spelling below now expands, so the line's EXPANDED value is what gets
+# grounded. `_WORD_END` replaces the old trailing `\b`, which cannot anchor
+# after a Devanagari combining mark (the nukta ending "करोड़").
+# Source: Kabir round-1 verdict, B0-AI defects[1].
+_WORD_END = r"(?![A-Za-zऀ-ॿ])"
+_SHORTHAND_UNIT_RE_TEXT = (
+    r"k|hazaars?|hazars?|l|lacs?|lakhs?|laakhs?|lkh|cr|crs|crores?|"
+    r"thousands?|hundreds?|grand|millions?|mn|mil|billions?|bn|"
+    r"हज़ार|हजार|लाख|करोड़|करोड"
+)
 _SHORTHAND_RE = re.compile(
-    r"(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>k|hazaars?|hazars?|l|lac|lakhs?|cr|crores?|"
-    r"thousands?|hundreds?|हज़ार|हजार|लाख|करोड़|करोड)\b",
+    rf"(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>{_SHORTHAND_UNIT_RE_TEXT}){_WORD_END}",
     re.IGNORECASE,
 )
 _SHORTHAND_MULTIPLIERS: dict[str, float] = {
@@ -175,11 +190,24 @@ _SHORTHAND_MULTIPLIERS: dict[str, float] = {
     "hazars": 1_000,
     "l": 100_000,
     "lac": 100_000,
+    "lacs": 100_000,
     "lakh": 100_000,
     "lakhs": 100_000,
+    "laakh": 100_000,
+    "laakhs": 100_000,
+    "lkh": 100_000,
     "cr": 10_000_000,
+    "crs": 10_000_000,
     "crore": 10_000_000,
     "crores": 10_000_000,
+    "grand": 1_000,
+    "million": 1_000_000,
+    "millions": 1_000_000,
+    "mn": 1_000_000,
+    "mil": 1_000_000,
+    "billion": 1_000_000_000,
+    "billions": 1_000_000_000,
+    "bn": 1_000_000_000,
     "thousand": 1_000,
     "thousands": 1_000,
     "hundred": 100,
@@ -297,7 +325,25 @@ def _amounts_in_inr(text: str) -> set[str]:
     invented usage_months. usage_months and exclusivity_days now have their
     own unit-anchored grounding (`_numbers_with_unit`, below) instead of
     sharing this set. Source: REPAIR ROUND 1 finding 2."""
-    return set(_numbers_in(text or "")) | _shorthand_expansions_in(text)
+    return _plain_numbers_in(text) | _shorthand_expansions_in(text)
+
+
+def _plain_numbers_in(text: str) -> set[str]:
+    """`_numbers_in`, minus the bare digits of every shorthand token ("15" of
+    "15k", "1.5" of "1.5L"), which are checked through their expansion instead.
+
+    T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI MEDIUM (bare
+    shorthand digits): a brief saying "budget 15k" does not state the number
+    15, so it must not let a summary line say "Budget 15" either. A line's
+    own shorthand is still checked, by its expanded value, in
+    `_acceptable_summary_line`. Source: Kabir round-1 verdict, B0-AI defects[2]."""
+    found: set[str] = set()
+    normalized = _normalize_digits(text or "")
+    for match in _NUMBER_RE.finditer(normalized):
+        if _is_shorthand_digits(normalized, match.end()):
+            continue
+        found |= _numbers_in(match.group(0))
+    return found
 
 
 def _shorthand_expansions_in(text: str) -> set[str]:
@@ -361,13 +407,16 @@ def _shorthand_expansions_in(text: str) -> set[str]:
 # `_WORD_END` is a portable replacement: "not immediately followed by another
 # ASCII or Devanagari letter", which works for every unit word above
 # regardless of what character it ends on.
-# Source: REPAIR ROUND 2 finding 4.
-_WORD_END = r"(?![A-Za-zऀ-ॿ])"
+# Source: REPAIR ROUND 2 finding 4. (`_WORD_END` is defined with the shorthand
+# table above, which now uses it too.)
 _DAY_UNIT_RE = re.compile(
     rf"(\d[\d,]*(?:\.\d+)?)\s*-?\s*(?:days?|दिन){_WORD_END}", re.IGNORECASE
 )
 _MONTH_UNIT_RE = re.compile(
-    rf"(\d[\d,]*(?:\.\d+)?)\s*-?\s*(?:months?|mo|महीन[ेा]|माह){_WORD_END}",
+    # "mahine"/"mahina" (Latin-script Hinglish) added T-GOLIVE-0918-R2
+    # [ash · 2026-09-18] — Kabir round-1 B0-AI LOW: "usage rights 3 mahine"
+    # dropped a correct usage_months=3.
+    rf"(\d[\d,]*(?:\.\d+)?)\s*-?\s*(?:months?|mo|mahine|mahina|maheene|महीन[ेा]|माह){_WORD_END}",
     re.IGNORECASE,
 )
 _YEAR_UNIT_RE = re.compile(
@@ -481,40 +530,147 @@ def _grounded_exclusivity_days(text: str) -> set[str]:
 # never be hopped across to reach a marker meant for a different one.
 _MONEY_NUMBER_RE = r"\d(?:,?\d)*(?:\.\d+)?"
 _MONEY_MARKER_WINDOW_WORDS = r"(?:\s+[A-Za-z']+){0,2}?"
-_CURRENCY_MARKER_RE_TEXT = r"₹|rs\.?|inr|rupees?"
-_BUDGET_MARKER_RE_TEXT = rf"{_CURRENCY_MARKER_RE_TEXT}|budget|fee|fees|pay(?:ment)?|paying|price|cost"
-_BARTER_MARKER_RE_TEXT = rf"{_CURRENCY_MARKER_RE_TEXT}|worth|barter|mrp|value"
+# T-GOLIVE-0918-R2 [ash · 2026-09-18] — markers are now bounded by letter
+# lookarounds instead of `\b`: `\b₹` can never match (₹ and the space before
+# it are both non-word characters), so "₹8000" on its own grounded nothing,
+# and Hinglish/Devanagari money words ("budget ... dunge", "बजट", "फीस",
+# "रुपये") were not markers at all. "per reel"/"per post" is a price marker
+# ("15k per reel"). Source: Kabir round-1 verdict, B0-AI defects[0].
+_MARK_START = r"(?<![A-Za-zऀ-ॿ])"
+_CURRENCY_MARKER_RE_TEXT = r"₹|rs\.?|inr|rupees?|rupaye|rupay|रुपये|रुपए|रु\.?"
+_BUDGET_MARKER_RE_TEXT = (
+    rf"{_CURRENCY_MARKER_RE_TEXT}|budgets?|fees?|pay|pays|payment|paying|paid|payout|"
+    r"price|pricing|cost|compensation|remuneration|honorarium|offer|offering|"
+    r"amount|commercials?|dunge|denge|de\s+sakte|milenge|paisa|paise|"
+    r"per\s+(?:reels?|posts?|stor(?:y|ies)|videos?|shorts?|deliverables?|pieces?|integrations?)|"
+    r"बजट|फीस|फ़ीस|भुगतान|पेमेंट"
+)
+_BARTER_MARKER_RE_TEXT = (
+    rf"{_CURRENCY_MARKER_RE_TEXT}|worth|barter|bartered|mrp|value|valued|"
+    r"retail\s+price|कीमत|मूल्य"
+)
+# T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI HIGH #1: a number
+# (plain or shorthand) that COUNTS an audience is never money, however close a
+# money word sits: "creators with 50k+ followers, budget to be discussed" and
+# "1.5L followers wali creator chahiye, budget baad mein" both grounded an
+# invented budget_inr (50000 / 150000). Checked on both sides of the number
+# ("50k+ followers", "followers above 50k"). Source: Kabir round-1 verdict,
+# B0-AI defects[0].
+_AUDIENCE_NOUN_RE_TEXT = (
+    r"followers?|follower\s+count|following|subs|subscribers?|views?|likes?|reach|"
+    r"impressions?|audience|fans?|members?|downloads?|installs?|users?|customers?|"
+    r"comments?|shares?|saves?|plays?|streams?|engagements?|"
+    r"फ़ॉलोअर्स|फॉलोअर्स|फॉलोवर्स|व्यूज़|व्यूज"
+)
+_AUDIENCE_AFTER_RE = re.compile(
+    rf"\s*\+?\s*(?:{_AUDIENCE_NOUN_RE_TEXT}){_WORD_END}", re.IGNORECASE
+)
+_AUDIENCE_BEFORE_RE = re.compile(
+    rf"{_MARK_START}(?:{_AUDIENCE_NOUN_RE_TEXT}){_WORD_END}"
+    rf"{_MONEY_MARKER_WINDOW_WORDS}\s*[:\-]?\s*$",
+    re.IGNORECASE,
+)
+# The bare digits of a shorthand token ("15" in "15k", "1.5" in "1.5L") are
+# not a number the brief states — see `_is_shorthand_digits`.
+_SHORTHAND_UNIT_AFTER_RE = re.compile(
+    rf"\s*(?:{_SHORTHAND_UNIT_RE_TEXT}){_WORD_END}", re.IGNORECASE
+)
+_CONTEXT_LOOKAROUND_CHARS = 80
+
+
+def _is_shorthand_digits(text: str, end: int) -> bool:
+    """True when the number ending at `end` is the digit part of a shorthand
+    token ("15" of "15k", "1.5" of "1.5 lakh").
+
+    T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI MEDIUM: the
+    money-marker regex captured those bare digits as if they were the stated
+    amount, so "budget 15k" kept an UNEXPANDED budget_inr=15 and "budget
+    1.5L" kept 1.5 — a Rs 15 budget reaching Java pricing exactly when the
+    model fails prompt rule 9. The token's value is its EXPANSION, which
+    `_shorthand_expansions_in` supplies; its digits alone ground nothing.
+    Source: Kabir round-1 verdict, B0-AI defects[2]."""
+    return _SHORTHAND_UNIT_AFTER_RE.match(text, end) is not None
+
+
+def _is_audience_count(text: str, start: int, end: int) -> bool:
+    if _AUDIENCE_AFTER_RE.match(text, end) is not None:
+        return True
+    return _AUDIENCE_BEFORE_RE.search(text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]) is not None
+
+
+def _has_money_marker_near(text: str, start: int, end: int, marker_re_text: str) -> bool:
+    """A marker word for this field within two (letters-only) filler words on
+    either side of text[start:end] — "budget is 15k", "15k ka budget",
+    "₹15k", "15,000 per reel", "बजट १५ हज़ार". Letters-only fillers mean a
+    competing number can never be hopped across to reach a marker that
+    belongs to a different number (REPAIR ROUND 2's comma/filler bugs)."""
+    before_re = re.compile(
+        rf"{_MARK_START}(?:{marker_re_text}){_WORD_END}{_MONEY_MARKER_WINDOW_WORDS}\s*[:\-]?\s*$",
+        re.IGNORECASE,
+    )
+    after_re = re.compile(
+        rf"\s*[:\-/]?{_MONEY_MARKER_WINDOW_WORDS}\s*{_MARK_START}(?:{marker_re_text}){_WORD_END}",
+        re.IGNORECASE,
+    )
+    before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
+    if before_re.search(before) is not None:
+        return True
+    return after_re.match(text, end) is not None
 
 
 def _numbers_with_money_marker(text: str, marker_re_text: str) -> set[str]:
     """Every literal number in `text` that sits within two filler words of one
     of the marker words in `marker_re_text`, on either side ("budget is
-    8000", "8000 INR", "worth 50000"). Mirrors `_numbers_with_unit`'s
-    anchoring approach but for money-context keywords rather than a fixed
-    unit word."""
+    8000", "8000 INR", "worth 50000") — except the digits of a shorthand token
+    (grounded by their expansion instead) and a number that counts an
+    audience ("50000 followers")."""
     found: set[str] = set()
     normalized = _normalize_digits(text or "")
-    before_re = re.compile(
-        rf"\b(?:{marker_re_text})\b{_MONEY_MARKER_WINDOW_WORDS}\s*[:\-]?\s*"
-        rf"({_MONEY_NUMBER_RE})",
-        re.IGNORECASE,
-    )
-    after_re = re.compile(
-        rf"({_MONEY_NUMBER_RE})\s*[:\-]?{_MONEY_MARKER_WINDOW_WORDS}\s*\b(?:{marker_re_text})\b",
-        re.IGNORECASE,
-    )
-    for pattern in (before_re, after_re):
-        for match in pattern.finditer(normalized):
-            found |= _numbers_in(match.group(1))
+    for match in re.finditer(rf"(?<![\d.,]){_MONEY_NUMBER_RE}", normalized):
+        start, end = match.span()
+        if _is_shorthand_digits(normalized, end):
+            continue
+        if _is_audience_count(normalized, start, end):
+            continue
+        if _has_money_marker_near(normalized, start, end, marker_re_text):
+            found |= _numbers_in(match.group(0))
     return found
 
 
+def _shorthand_expansions_with_money_marker(text: str, marker_re_text: str) -> set[str]:
+    """`_shorthand_expansions_in`, restricted to shorthand tokens that sit in
+    THIS field's money context and do not count an audience.
+
+    T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI HIGH #1: REPAIR
+    ROUND 2 unioned every shorthand expansion into both money fields on the
+    assumption that a "k"/"L"/"lakh" suffix is always money. It is not: in
+    Indian briefs the same suffix is how follower counts, views and reach are
+    written ("50k+ followers", "1.5L followers wali creator"). A shorthand
+    amount now grounds budget_inr / barter_mrp_inr only under the same
+    marker rule a plain figure must meet. Source: Kabir round-1 verdict,
+    B0-AI defects[0]."""
+    values: set[str] = set()
+    normalized = _normalize_digits(text or "")
+    for match in _SHORTHAND_RE.finditer(normalized):
+        start, end = match.span()
+        if _is_audience_count(normalized, start, end):
+            continue
+        if not _has_money_marker_near(normalized, start, end, marker_re_text):
+            continue
+        values |= _shorthand_expansions_in(match.group(0))
+    return values
+
+
 def _grounded_budget_amounts(text: str) -> set[str]:
-    return _numbers_with_money_marker(text, _BUDGET_MARKER_RE_TEXT) | _shorthand_expansions_in(text)
+    return _numbers_with_money_marker(
+        text, _BUDGET_MARKER_RE_TEXT
+    ) | _shorthand_expansions_with_money_marker(text, _BUDGET_MARKER_RE_TEXT)
 
 
 def _grounded_barter_amounts(text: str) -> set[str]:
-    return _numbers_with_money_marker(text, _BARTER_MARKER_RE_TEXT) | _shorthand_expansions_in(text)
+    return _numbers_with_money_marker(
+        text, _BARTER_MARKER_RE_TEXT
+    ) | _shorthand_expansions_with_money_marker(text, _BARTER_MARKER_RE_TEXT)
 
 
 def _own_numbers(extraction: dict[str, Any]) -> set[str]:
@@ -535,8 +691,10 @@ def _own_numbers(extraction: dict[str, Any]) -> set[str]:
     before it reaches this dict — an ungrounded qty is reset to the default of
     1 there, so by the time it arrives here it is already trustworthy, the
     same reasoning that keeps the four money/count fields above out of this
-    function. max_revisions remains a small count that is not grounded
-    anywhere else."""
+    function. max_revisions is included on the same terms: since
+    T-GOLIVE-0918-R2 it is grounded against a revision count in the brief
+    (`_grounded_revision_counts`) before it gets here, so an invented one is
+    already None and can no longer vouch for its own summary line."""
     candidates: list[Any] = [extraction.get("max_revisions")]
     deliverables = extraction.get("deliverables")
     if isinstance(deliverables, list):
@@ -813,21 +971,64 @@ def _clean_string_list(value: Any, *, max_items: int, max_chars: int) -> list[st
 # `_numbers_with_unit` anchors usage_months/exclusivity_days to their units,
 # rather than to any digit anywhere in the brief. Source: REPAIR ROUND 2
 # finding 1 (Q1/Q2/Q3).
-_DELIVERABLE_NOUN_RE = re.compile(
-    r"(\d[\d,]*(?:\.\d+)?)\s*(?:x\s*)?(?:reels?|stor(?:y|ies)(?:\s+sets?)?|"
-    r"posts?|shorts?|videos?|integrations?|ugc|pieces?)\b",
-    re.IGNORECASE,
+#
+# T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI MEDIUM: the count
+# was anchored to ANY deliverable noun, not to the deliverable's own type, so
+# "Glow: 5 posts on our page already; need reels" kept an invented
+# [{"type": "REEL", "qty": 5}] — the "5" belongs to posts. Each type now has
+# its own noun list, and a count grounds only the type whose noun it sits
+# next to. Filler words between the number and the noun ("3 Instagram reels")
+# may not themselves be deliverable nouns, so "5 posts and reels" cannot
+# lend the posts' count to the reels. OTHER keeps the old any-noun rule: it
+# is the type for a deliverable the enum has no name for.
+# Source: Kabir round-1 verdict, B0-AI defects[6].
+_DELIVERABLE_TYPE_NOUNS: dict[str, str] = {
+    "REEL": r"reels?|रील्?स?",
+    "STATIC_POST": r"(?:static|feed|carousel|image|photo)\s+posts?|posts?|statics?|carousels?|पोस्ट",
+    "STORY_SET": r"stor(?:y|ies)(?:\s+(?:sets?|frames?))?|स्टोरीज?|स्टोरी",
+    "SHORT": r"(?:yt\s+|youtube\s+)?shorts?",
+    "YT_INTEGRATION": r"(?:yt\s+|youtube\s+)?integrations?",
+    "YT_DEDICATED": r"(?:dedicated\s+)?(?:yt\s+|youtube\s+)?videos?",
+    "UGC_ONLY": r"ugc(?:\s+videos?)?",
+}
+_ANY_DELIVERABLE_NOUN = "|".join([*_DELIVERABLE_TYPE_NOUNS.values(), r"pieces?"])
+_DELIVERABLE_TYPE_NOUNS["OTHER"] = _ANY_DELIVERABLE_NOUN
+_DELIVERABLE_FILLER = (
+    rf"(?:(?!(?:{_ANY_DELIVERABLE_NOUN}){_WORD_END})[A-Za-z]+\s+){{0,2}}?"
 )
+_DELIVERABLE_COUNT_RES: dict[str, tuple[re.Pattern[str], re.Pattern[str]]] = {
+    kind: (
+        # "3 reels", "3x reels", "2 Instagram reels", "1 story set"
+        re.compile(
+            rf"(?<![\d.,])(\d+)\s*(?:x\s*)?{_DELIVERABLE_FILLER}(?:{nouns}){_WORD_END}",
+            re.IGNORECASE,
+        ),
+        # "reels x 3", "Reels: 3", "reel - 2"
+        re.compile(
+            rf"{_MARK_START}(?:{nouns})\s*(?:x|×|:|-)\s*(\d+)(?![\d.,]?\d)",
+            re.IGNORECASE,
+        ),
+    )
+    for kind, nouns in _DELIVERABLE_TYPE_NOUNS.items()
+}
 
 
-def _grounded_deliverable_counts(raw_text: str) -> set[str]:
-    return _numbers_with_unit(raw_text, _DELIVERABLE_NOUN_RE)
+def _grounded_deliverable_counts(raw_text: str, kind: str) -> set[str]:
+    """The counts the brief states for deliverables of type `kind`."""
+    patterns = _DELIVERABLE_COUNT_RES.get(kind)
+    if patterns is None:
+        return set()
+    normalized = _normalize_digits(raw_text or "")
+    found: set[str] = set()
+    for pattern in patterns:
+        for match in pattern.finditer(normalized):
+            found |= _numbers_in(match.group(1))
+    return found
 
 
 def _clean_deliverables(value: Any, raw_text: str) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
-    grounded_counts = _grounded_deliverable_counts(raw_text)
     lines: list[dict[str, Any]] = []
     for item in value[:20]:
         if not isinstance(item, dict):
@@ -841,10 +1042,160 @@ def _clean_deliverables(value: Any, raw_text: str) -> list[dict[str, Any]]:
             # line at all.
             continue
         qty = _clean_int(item.get("qty"), minimum=1, maximum=100)
-        if qty is not None and str(qty) not in grounded_counts:
+        if qty is not None and str(qty) not in _grounded_deliverable_counts(raw_text, kind):
             qty = None
         lines.append({"type": kind, "qty": qty if qty is not None else 1})
     return lines
+
+
+# T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI MEDIUM: an invented
+# max_revisions was never checked, and because `_own_numbers` trusted it, it
+# also vouched for its own summary line ("Up to 7 revisions" survived for a
+# brief that never mentions revisions) — the G1 pattern closed for qty in
+# round 1. It is now grounded against a count the brief attaches to a
+# revision noun, in figures or in small number words, before it reaches
+# `_own_numbers`. Source: Kabir round-1 verdict, B0-AI defects[4].
+_REVISION_NOUN_RE_TEXT = (
+    r"(?:free\s+|rounds?\s+of\s+)?"
+    r"(?:revisions?|re-?edits?|edits?|changes?|iterations?|corrections?|"
+    r"re-?shoots?|rounds?\s+of\s+(?:feedback|revisions?|edits?|changes?))"
+)
+_SMALL_NUMBER_WORDS: dict[str, int] = {
+    "no": 0, "zero": 0, "one": 1, "a": 1, "single": 1, "two": 2, "three": 3,
+    "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+_SMALL_NUMBER_WORDS_RE_TEXT = "|".join(_SMALL_NUMBER_WORDS)
+_REVISION_COUNT_BEFORE_RE = re.compile(
+    rf"(?<![\d.,])\b(\d+|{_SMALL_NUMBER_WORDS_RE_TEXT})\s*(?:x\s*)?"
+    rf"(?:[A-Za-z]+\s+)?{_REVISION_NOUN_RE_TEXT}{_WORD_END}",
+    re.IGNORECASE,
+)
+_REVISION_COUNT_AFTER_RE = re.compile(
+    rf"{_MARK_START}(?:revisions?|edits?|changes?|iterations?)"
+    rf"(?:\s+(?:allowed|included|max|maximum))?\s*[:\-]\s*(\d+)(?![\d.,]?\d)",
+    re.IGNORECASE,
+)
+
+
+def _grounded_revision_counts(raw_text: str) -> set[str]:
+    normalized = _normalize_digits(raw_text or "")
+    found: set[str] = set()
+    for match in _REVISION_COUNT_BEFORE_RE.finditer(normalized):
+        token = match.group(1).lower()
+        if token.isdigit():
+            found |= _numbers_in(token)
+        elif token in _SMALL_NUMBER_WORDS:
+            found.add(str(_SMALL_NUMBER_WORDS[token]))
+    for match in _REVISION_COUNT_AFTER_RE.finditer(normalized):
+        found |= _numbers_in(match.group(1))
+    return found
+
+
+# T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI MEDIUM: the
+# NON-numeric usage and exclusivity terms were never grounded. For a brief
+# saying "organic only", an invented usage_perpetual=true with
+# usage_channels=["PAID_ADS"] survived, and an invented
+# exclusivity_scope="CATEGORY" with exclusivity_brands=["Nykaa"] survived for
+# a brief with no exclusivity at all. These fields drive Java's pricing
+# uplifts and risk checks, so each one now needs its own vocabulary in the
+# brief, and a mention that is NEGATED right before it ("no paid ads", "no
+# exclusivity") does not count. Fail-closed direction: a term the brief does
+# not state is simply absent (false / [] / null), which prices at no uplift —
+# the same as a brief that never mentioned it. Source: Kabir round-1 verdict,
+# B0-AI defects[3].
+_TERM_NEGATION_BEFORE_RE = re.compile(
+    r"(?:\b(?:no|not|never|without|except|excluding|don'?t|won'?t|nahi\w*|mat)"
+    r"(?:\s+[A-Za-z']+){0,2}?\s*|\bnon-?)$",
+    re.IGNORECASE,
+)
+_USAGE_CHANNEL_TERMS: dict[str, str] = {
+    "ORGANIC": r"organic\w*|(?:own|your|creator'?s?)\s+(?:page|handle|feed|account|profile|channel)",
+    "PAID_ADS": (
+        r"paid\s+(?:ads?|media|usage|promotions?|amplification|distribution|social|campaigns?)|"
+        r"(?<![#\w])ads?|advert\w*|boost\w*|dark\s+posts?|performance\s+marketing"
+    ),
+    "WHITELISTING": (
+        r"white-?list\w*|allow-?list\w*|partnership\s+ads?|branded\s+content\s+ads?|"
+        r"spark\s+ads?|creator\s+licens\w*"
+    ),
+    "WEBSITE": (
+        r"web\s*site\w*|e-?commerce|landing\s+pages?|product\s+pages?|online\s+store|"
+        r"amazon|flipkart|myntra|marketplace\w*"
+    ),
+    "OFFLINE": (
+        r"offline|print|hoardings?|billboards?|ooh|in-?store|retail\s+(?:display|stores?)|"
+        r"tv|television|standees?|posters?|packaging"
+    ),
+}
+_USAGE_PERPETUAL_TERMS = (
+    r"perpetu\w*|forever|life-?\s*time|unlimited\s+(?:usage|use|period|duration|time|rights)|"
+    r"no\s+expir\w*|without\s+expir\w*|indefinite\w*|all[- ]time|permanent\w*|hamesha|हमेशा"
+)
+_EXCLUSIVITY_TERMS = (
+    r"exclusiv\w*|non-?compete|competitors?|competing\s+brands?|rival\s+brands?|"
+    r"same\s+category|एक्सक्लूसिव"
+)
+_BARTER_TERMS = (
+    r"barter\w*|in\s+exchange|free\s+products?|gift\w*|complimentary|"
+    r"pr\s+(?:package|kit|box)|product\s+(?:only|in\s+return|as\s+payment|seeding)|"
+    r"no\s+(?:cash|fee|monetary|payment|budget)|unpaid|non-?paid|बार्टर"
+)
+
+
+def _brief_states_term(raw_text: str, terms_re_text: str) -> bool:
+    """True when the brief contains one of `terms_re_text` that is not
+    negated by a word directly before it."""
+    normalized = raw_text or ""
+    pattern = re.compile(rf"{_MARK_START}(?:{terms_re_text}){_WORD_END}", re.IGNORECASE)
+    for match in pattern.finditer(normalized):
+        before = normalized[max(0, match.start() - 30) : match.start()]
+        if _TERM_NEGATION_BEFORE_RE.search(before) is None:
+            return True
+    return False
+
+
+def _grounded_usage_channels(channels: list[str], raw_text: str) -> list[str]:
+    return [
+        channel
+        for channel in channels
+        if channel in _USAGE_CHANNEL_TERMS
+        and _brief_states_term(raw_text, _USAGE_CHANNEL_TERMS[channel])
+    ]
+
+
+def _grounded_exclusivity_brands(brands: list[str], raw_text: str) -> list[str]:
+    """A named-exclusivity brand is kept only when the brief names it as a
+    whole word AND either the brief states exclusivity at all or the name
+    sits next to an exclusion trigger ("no Nykaa posts", "Nykaa mat karna")."""
+    text = raw_text or ""
+    has_exclusivity = _brief_states_term(text, _EXCLUSIVITY_TERMS)
+    kept: list[str] = []
+    for brand in brands:
+        match = re.search(rf"\b{re.escape(brand.strip())}\b", text, re.IGNORECASE)
+        if match is None:
+            continue
+        lo = max(0, match.start() - _BRAND_EXCLUSION_WINDOW)
+        hi = min(len(text), match.end() + _BRAND_EXCLUSION_WINDOW)
+        near_trigger = _BRAND_EXCLUSION_TRIGGER_RE.search(
+            text[lo : match.start()]
+        ) or _BRAND_EXCLUSION_TRIGGER_RE.search(text[match.end() : hi])
+        if has_exclusivity or near_trigger:
+            kept.append(brand)
+    return kept
+
+
+def _grounded_exclusivity_scope(
+    scope: str | None, grounded_brands: list[str], raw_text: str
+) -> str | None:
+    """NONE (no uplift) is always acceptable. CATEGORY needs the brief to state
+    exclusivity; NAMED_BRANDS needs that or at least one grounded brand."""
+    if scope is None or scope == "NONE":
+        return scope
+    if _brief_states_term(raw_text, _EXCLUSIVITY_TERMS):
+        return scope
+    if scope == "NAMED_BRANDS" and grounded_brands:
+        return scope
+    return None
 
 
 # REPAIR ROUND 2 [vikram · 2026-09-18] — finding 2 (HIGH): the summary-line
@@ -867,8 +1218,12 @@ def _clean_deliverables(value: Any, raw_text: str) -> list[dict[str, Any]]:
 # unverifiable and the whole line is rejected. Source: REPAIR ROUND 2 finding
 # 2 (S1-S4).
 _MONEY_UNIT_WORD_RE = re.compile(
-    r"\b(?:thousands?|hundreds?|lakhs?|lac|crores?|hazaars?|hazars?|"
-    r"हज़ार|हजार|लाख|करोड़|करोड)\b",
+    # "lacs"/"laakh"/"million"/"billion" added T-GOLIVE-0918-R2 [ash ·
+    # 2026-09-18] (Kabir round-1 B0-AI HIGH #2). "grand" is deliberately NOT
+    # here: as a bare word it is ordinary English ("grand launch"); "50 grand"
+    # is caught by `_SHORTHAND_RE` and checked by its expansion instead.
+    r"\b(?:thousands?|hundreds?|lakhs?|lacs?|laakhs?|crores?|hazaars?|hazars?|"
+    r"millions?|billions?|हज़ार|हजार|लाख|करोड़|करोड)(?![A-Za-zऀ-ॿ])",
     re.IGNORECASE,
 )
 _DIGIT_IMMEDIATELY_BEFORE_RE = re.compile(r"\d[\d,]*(?:\.\d+)?\s*$")
@@ -887,8 +1242,35 @@ def _line_has_unanchored_money_word(line: str) -> bool:
     return False
 
 
+# T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI MEDIUM: a summary
+# line could restate an ungrounded usage/exclusivity TERM ("Usage forever on
+# paid ads" for an organic-only brief) because only its numbers were checked.
+# A line that states one of these terms (un-negated) is kept only when the
+# brief states that term too. ORGANIC is not checked: it is the no-uplift
+# default and its vocabulary ("your page") is ordinary restating language.
+# Source: Kabir round-1 verdict, B0-AI defects[3].
+_SUMMARY_LINE_TERM_CHECKS: tuple[str, ...] = (
+    _USAGE_PERPETUAL_TERMS,
+    _USAGE_CHANNEL_TERMS["PAID_ADS"],
+    _USAGE_CHANNEL_TERMS["WHITELISTING"],
+    _USAGE_CHANNEL_TERMS["WEBSITE"],
+    _USAGE_CHANNEL_TERMS["OFFLINE"],
+    _EXCLUSIVITY_TERMS,
+)
+
+
+def _line_states_ungrounded_term(line: str, raw_text: str) -> bool:
+    return any(
+        _brief_states_term(line, terms) and not _brief_states_term(raw_text, terms)
+        for terms in _SUMMARY_LINE_TERM_CHECKS
+    )
+
+
 def _acceptable_summary_line(
-    line: str, allowed_numbers: set[str], grounded_money: set[str]
+    line: str,
+    allowed_numbers: set[str],
+    grounded_money: set[str],
+    raw_text: str = "",
 ) -> bool:
     """One summary line the creator may actually be shown.
 
@@ -906,7 +1288,9 @@ def _acceptable_summary_line(
         return False
     if _line_has_unanchored_money_word(line):
         return False
-    if not (_numbers_in(line) <= allowed_numbers):
+    if not (_plain_numbers_in(line) <= allowed_numbers):
+        return False
+    if _line_states_ungrounded_term(line, raw_text):
         return False
     line_expansions = _shorthand_expansions_in(line)
     return line_expansions <= grounded_money
@@ -967,6 +1351,12 @@ def parse_and_validate_extraction(
     grounded_days = _grounded_exclusivity_days(raw_text)
 
     deliverables = _clean_deliverables(tool_input.get("deliverables"), raw_text)
+    exclusivity_brands = _grounded_exclusivity_brands(
+        _clean_string_list(
+            tool_input.get("exclusivity_brands"), max_items=20, max_chars=120
+        ),
+        raw_text,
+    )
     budget_stated = bool(tool_input.get("budget_stated"))
     budget_inr = _grounded_amount(
         _clean_number(tool_input.get("budget_inr"), minimum=0, maximum=1_000_000_000),
@@ -988,7 +1378,8 @@ def parse_and_validate_extraction(
         "deliverables": deliverables,
         "budget_inr": budget_inr,
         "budget_stated": budget_stated,
-        "barter_only": bool(tool_input.get("barter_only")),
+        "barter_only": bool(tool_input.get("barter_only"))
+        and _brief_states_term(raw_text, _BARTER_TERMS),
         "barter_mrp_inr": _grounded_amount(
             _clean_number(
                 tool_input.get("barter_mrp_inr"), minimum=0, maximum=1_000_000_000
@@ -1002,22 +1393,29 @@ def parse_and_validate_extraction(
             _clean_int(tool_input.get("usage_months"), minimum=0, maximum=600),
             grounded_months,
         ),
-        "usage_perpetual": bool(tool_input.get("usage_perpetual")),
-        "usage_channels": _clean_enum_list(
-            tool_input.get("usage_channels"), BRIEF_USAGE_CHANNELS
+        # T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI MEDIUM:
+        # the non-numeric usage/exclusivity terms and max_revisions are
+        # grounded against the brief like every numeric field (see
+        # `_brief_states_term`, `_grounded_revision_counts`).
+        "usage_perpetual": bool(tool_input.get("usage_perpetual"))
+        and _brief_states_term(raw_text, _USAGE_PERPETUAL_TERMS),
+        "usage_channels": _grounded_usage_channels(
+            _clean_enum_list(tool_input.get("usage_channels"), BRIEF_USAGE_CHANNELS),
+            raw_text,
         ),
         "exclusivity_days": _grounded_int(
             _clean_int(tool_input.get("exclusivity_days"), minimum=0, maximum=3650),
             grounded_days,
         ),
-        "exclusivity_scope": _clean_enum(
-            tool_input.get("exclusivity_scope"), BRIEF_EXCLUSIVITY_SCOPES
+        "exclusivity_scope": _grounded_exclusivity_scope(
+            _clean_enum(tool_input.get("exclusivity_scope"), BRIEF_EXCLUSIVITY_SCOPES),
+            exclusivity_brands,
+            raw_text,
         ),
-        "exclusivity_brands": _clean_string_list(
-            tool_input.get("exclusivity_brands"), max_items=20, max_chars=120
-        ),
-        "max_revisions": _clean_int(
-            tool_input.get("max_revisions"), minimum=0, maximum=50
+        "exclusivity_brands": exclusivity_brands,
+        "max_revisions": _grounded_int(
+            _clean_int(tool_input.get("max_revisions"), minimum=0, maximum=50),
+            _grounded_revision_counts(raw_text),
         ),
         "payment_terms": _clean_text(tool_input.get("payment_terms"), max_chars=200),
         "off_platform_payment_hint": bool(tool_input.get("off_platform_payment_hint")),
@@ -1040,7 +1438,7 @@ def parse_and_validate_extraction(
         line
         for line in candidate_lines
         if len(line) <= BRIEF_SUMMARY_LINE_MAX_CHARS
-        and _acceptable_summary_line(line, allowed_numbers, grounded_amounts)
+        and _acceptable_summary_line(line, allowed_numbers, grounded_amounts, raw_text)
     ]
     if len(summary_lines) < BRIEF_SUMMARY_LINES_MIN:
         return None
@@ -1154,7 +1552,28 @@ async def brief_extract(request: Request, authorization: str | None = Header(def
         # tests only). This getattr is forward-compatible and logs it the
         # moment that field is added there; until then it logs None. Reported
         # to Arjun rather than editing claude.py out of scope.
+        #
+        # T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI MEDIUM:
+        # the NOTE above is now resolved — `ClaudeToolResult.stop_reason` is
+        # populated by app/providers/claude.py. A forced tool call cut off at
+        # max_tokens can still come back as ok=True with a PARTIAL tool_input,
+        # which then failed validation and was logged only as
+        # "malformed_model_output", indistinguishable from any other bad
+        # answer while still being billed. A "max_tokens" stop is now a known
+        # failure: logged as `brief_extract_truncated` (stop_reason,
+        # output_tokens, max_tokens) and never parsed. If a provider ever
+        # omits stop_reason, output_tokens reaching the budget is treated the
+        # same way. Billing is unchanged — the provider billed the call, so
+        # it is recorded (F-06) — but it is no longer silent.
+        # Source: Kabir round-1 verdict, B0-AI defects[5].
         stop_reason = getattr(result, "stop_reason", None)
+        output_tokens = (result.usage or {}).get("output_tokens")
+        truncated = stop_reason == "max_tokens" or (
+            stop_reason is None
+            and isinstance(output_tokens, int)
+            and not isinstance(output_tokens, bool)
+            and output_tokens >= BRIEF_EXTRACT_MAX_TOKENS
+        )
 
         billed = False
         if result.usage:
@@ -1190,6 +1609,21 @@ async def brief_extract(request: Request, authorization: str | None = Header(def
             # its TTL and count against the next paste this creator makes.
             await release_creator(reservation)
 
+        if truncated:
+            log_event(
+                logger, logging.WARNING, "brief_extract_truncated",
+                workspace_id=creator_profile_id, request_id=request_id,
+                fields={
+                    "error_code": EXTRACTION_FAILED_CODE,
+                    "stop_reason": stop_reason,
+                    "output_tokens": output_tokens,
+                    "max_tokens": BRIEF_EXTRACT_MAX_TOKENS,
+                    "provider_ok": bool(result.ok),
+                    "billed": billed,
+                },
+            )
+            return _error_body(EXTRACTION_FAILED_CODE)
+
         if not result.ok or result.tool_input is None:
             log_event(
                 logger, logging.WARNING, "brief_extract_provider_failed",
@@ -1217,7 +1651,7 @@ async def brief_extract(request: Request, authorization: str | None = Header(def
         log_event(
             logger, logging.WARNING, "brief_extract_malformed_model_output",
             workspace_id=creator_profile_id, request_id=request_id,
-            fields={"error_code": EXTRACTION_FAILED_CODE},
+            fields={"error_code": EXTRACTION_FAILED_CODE, "stop_reason": stop_reason},
         )
         return _error_body(EXTRACTION_FAILED_CODE)
 

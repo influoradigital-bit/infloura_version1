@@ -91,6 +91,15 @@ class ClaudeToolResult:
     tool_input: dict[str, Any] | None = None
     error: str | None = None
     usage: dict[str, Any] | None = None
+    # T-GOLIVE-0918-R2 [ash · 2026-09-18] — the Anthropic `stop_reason` of the
+    # turn ("tool_use", "max_tokens", ...), carried through the same way
+    # `ClaudeStreamEvent.stop_reason` is. A forced tool call cut off at
+    # max_tokens can still arrive as a tool_use block with a PARTIAL input, so
+    # `ok=True` alone cannot tell a complete answer from a truncated one; the
+    # caller needs this to treat a "max_tokens" stop as a known failure.
+    # Additive, defaulted to None, so every existing constructor keeps working.
+    # Source: Kabir round-1 B0-AI verdict (MEDIUM, truncation observability).
+    stop_reason: str | None = None
 
 
 @dataclass
@@ -415,6 +424,11 @@ class ClaudeProvider:
             "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None),
         } if usage else None
 
+        # T-GOLIVE-0918-R2 [ash · 2026-09-18] — see ClaudeToolResult.stop_reason.
+        stop_reason = getattr(response, "stop_reason", None)
+        if not isinstance(stop_reason, str):
+            stop_reason = None
+
         tool_use_block = next(
             (block for block in response.content if getattr(block, "type", None) == "tool_use"),
             None,
@@ -426,7 +440,10 @@ class ClaudeProvider:
             # caller records spend only on `ok`. Carry the usage so the caller
             # can bill what the provider billed.
             return ClaudeToolResult(
-                ok=False, error="no_tool_use_in_response", usage=usage_dict
+                ok=False,
+                error="no_tool_use_in_response",
+                usage=usage_dict,
+                stop_reason=stop_reason,
             )
 
         return ClaudeToolResult(
@@ -434,4 +451,5 @@ class ClaudeProvider:
             # getattr: the content union also holds TextBlock, which has no `input`.
             tool_input=dict(getattr(tool_use_block, "input", None) or {}),
             usage=usage_dict,
+            stop_reason=stop_reason,
         )
