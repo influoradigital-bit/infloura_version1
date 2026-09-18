@@ -705,25 +705,39 @@ public class CreatorNudgeService {
                         // common Latin-script spelling (double vowel) of the same word; and "maut"
                         // (death) closes an outright gap Kabir's probe named ("maut").
                         "aatmahatya", "maut",
-                        // F-0857 repair round 1 — Devanagari coverage. The LOCKED decision (source:
-                        // wiki/decisions/2026-09-18-trend-headline-screening.md) requires "a Hindi
-                        // and Hinglish term set, in Latin script and Devanagari"; 927002a shipped
-                        // Latin script only and deferred Devanagari as "out of this changeset's safe
-                        // scope", which an independent reviewer correctly flagged as not meeting the
-                        // decision as ruled. Terms below are written in the CONSONANT-SKELETON form
-                        // normalizeForMatching actually produces (vowel signs/matras and the virama
-                        // are combining marks — rule 2 — and vanish before matching), exactly as this
-                        // enum's own class-load self-check requires; the mapping from correctly-
-                        // spelled Devanagari to that skeleton was verified mechanically (Node's NFKC
-                        // + NFD + Unicode-property-escape \p{Mn}\p{Mc}\p{Me} stripping, matching this
-                        // file's Java normalization rule-for-rule), not eyeballed:
-                        //   आत्महत्या (aatmahatya, suicide)  -> आतमहतय
-                        "आतमहतय",
+                        // F-0857 repair round 1 — Devanagari coverage: आत्महत्या (aatmahatya,
+                        // suicide), CORRECTLY SPELLED with its matras and virama intact.
+                        //
+                        // T-GOLIVE-0918-R2 (vikram · 2026-09-18) — repair round 2 REWRITES this from
+                        // the stripped consonant-skeleton form ("आतमहतय") 927002a/49a0415 shipped to
+                        // the full, correctly-spelled word. The skeleton technique is what caused the
+                        // COMMUNAL over-block a reviewer found (see isDevanagariCombiningMark's
+                        // javadoc): normalizeForMatching no longer strips Devanagari vowel signs/
+                        // virama/anusvara, so a term written as a stripped skeleton would now FAIL
+                        // its own class-load self-check (it could never equal its own normalized
+                        // form) — every Devanagari term below is therefore the real, correctly-
+                        // spelled word, exactly like Latin terms always were.
+                        "आत्महत्या",
                         // F-0857 repair round 1 (vikram · 2026-09-18) — an independent reviewer's
                         // probe found "Woman found hanging" bypassing; this is routine Indian-news
                         // phrasing for a death/suicide discovery, distinct from the DEATH set's
                         // existing "hanging"-free vocabulary.
-                        "found hanging")),
+                        "found hanging",
+                        // T-GOLIVE-0918-R2 (vikram · 2026-09-18) — repair round 2. Devanagari/Latin
+                        // vocabulary gaps an independent reviewer's probe named outright: मौत (maut,
+                        // death) is the Devanagari spelling used in routine Indian-news phrasing
+                        // ("हादसे में मौत" — died in an accident); खुदकुशी (khudkushi) is a common
+                        // Hindi/Urdu register word for suicide, distinct from आत्महत्या above; the
+                        // Latin spellings "aatmhatya"/"atmhatya" and "khudkushi" are the Hinglish
+                        // counterparts (dropped-vowel "mh" cluster, not covered by the existing
+                        // "aatmahatya"/"atmahatya" entries which keep the vowel). "hanged" is the
+                        // routine Indian-news self-harm/death verb ("Man hanged himself in hostel");
+                        // "body found" is the routine discovery-of-a-death headline pattern ("Body
+                        // found in suitcase") — accepted as a phrase (both words required) for the
+                        // same reason "school shooting" was accepted for a bare-excluded word: the
+                        // combination is far more specific than either word alone. Source:
+                        // wiki/decisions/2026-09-18-trend-headline-screening.md.
+                        "मौत", "खुदकुशी", "aatmhatya", "atmhatya", "khudkushi", "hanged", "body found")),
         CRIME(
                 Set.of(
                         "crime", "criminal", "murder", "murders", "murdered", "rape", "raped", "rapist",
@@ -747,11 +761,16 @@ public class CreatorNudgeService {
                         // "balatkari" (rapist), "qatl" (killing/murder, Urdu-Hindi register common
                         // in Indian crime reporting).
                         "hatyakand", "balatkari", "qatl",
-                        // F-0857 repair round 1 — Devanagari skeleton forms (see the DEATH set's
-                        // comment above for how these were derived and verified):
-                        //   हत्या (hatya, murder/killing)  -> हतय
-                        //   बलात्कार (balatkar, rape)      -> बलतकर
-                        "हतय", "बलतकर",
+                        // F-0857 repair round 1 — Devanagari coverage: हत्या (hatya, murder/
+                        // killing), बलात्कार (balatkar, rape), CORRECTLY SPELLED.
+                        //
+                        // T-GOLIVE-0918-R2 (vikram · 2026-09-18) — repair round 2 REWRITES these
+                        // from the stripped consonant-skeleton forms ("हतय"/"बलतकर") to the full,
+                        // correctly-spelled words — see isDevanagariCombiningMark's javadoc for why
+                        // the skeleton technique was itself the bug (it collapsed दंगा/देगा/देंगे/
+                        // दूंगा/दाग onto one shape) and DEATH's आत्महत्या entry above for the same
+                        // rewrite applied there.
+                        "हत्या", "बलात्कार",
                         // F-0855/2026-09-18 decision — Indian-English news vocabulary Kabir's probe
                         // named outright: an FIR (First Information Report) being lodged is how an
                         // Indian crime story is reported ahead of any arrest or verdict.
@@ -769,7 +788,55 @@ public class CreatorNudgeService {
                         // court "indictment"/"conviction" already covered above; "gunned down" is
                         // routine Indian-news phrasing for a fatal shooting that bare "gunman"/
                         // "gunfire"/"shootout" above do not catch.
-                        "chargesheet", "chargesheeted", "gunned down")),
+                        "chargesheet", "chargesheeted", "gunned down",
+                        // T-GOLIVE-0918-R2 (vikram · 2026-09-18) — repair round 2. Vocabulary gaps
+                        // an independent reviewer's probe named outright against 49a0415.
+                        //
+                        // "gangrape" is listed as its own literal, ONE WORD: Indian outlets
+                        // routinely write it that way ("Gangrape accused held in UP"), not as two
+                        // words, and it is not reachable from "rape" by any generated suffix. Its
+                        // own inflection ("gangraped") IS reachable — "gangrape" ends in a bare "e",
+                        // so matchesTerm's e-dropping rule already generates "gangraped" for free.
+                        //
+                        // "strangle" is the base form of a killing method in the same bucket as the
+                        // existing "stabbed"/"stabbing" pair ("Woman strangled by husband"); it also
+                        // ends in "e", so "strangled"/"strangling"/"strangles" are all generated,
+                        // not listed separately.
+                        //
+                        // "shot at" is a phrase, not the bare, deliberately-excluded "shot" ("the
+                        // shot" as camera framing) — same carve-in technique as "school shooting"
+                        // above for a word whose bare form stays excluded ("Man shot at outside
+                        // mall").
+                        //
+                        // "molester"/"molesters" close an irregular agent-noun gap: the base
+                        // "molest" was never listed (only "molested"/"molesting"/"molestation"
+                        // are), so no suffix rule reaches "molester" ("Molester thrashed by crowd").
+                        //
+                        // "murderous" is an adjective form of "murder" not reachable by any listed
+                        // suffix rule ("Murderous attack on journalist").
+                        //
+                        // "custodial torture" and "set ablaze" are Indian crime-reporting phrases
+                        // named by the probe ("Custodial torture case", "Woman set ablaze by
+                        // stalker") with no safe single-word equivalent to add instead.
+                        "gangrape", "strangle", "shot at", "molester", "molesters", "murderous",
+                        "custodial torture", "set ablaze",
+                        // Devanagari coverage (correctly spelled, per isDevanagariCombiningMark):
+                        // रेप (rep — the English loanword "rape", extremely common in Hindi
+                        // headlines, e.g. "रेप केस"); गैंगरेप (gangrape) is its own literal because
+                        // it is one fused token — रेप alone cannot match inside it (containsTerm
+                        // requires BOTH a token-start and token-end anchor, and गैंग precedes रेप
+                        // within the same token); हत्याकांड (hatyakand, murder case/incident, the
+                        // Devanagari form of the existing Latin "hatyakand"); हत्यारा (hatyara,
+                        // murderer); हत्याओं (hatyaon, murders — plural/oblique of हत्या, its own
+                        // literal for the same reason गैंगरेप is: more letters follow हत्या within
+                        // the same token, so the end anchor never lands on हत्या alone); क़त्ल and
+                        // कत्ल (qatl — both the with-nukta and without-nukta spellings actually seen
+                        // in print, genuinely different code-point sequences since the nukta is a
+                        // real, preserved combining mark).
+                        "रेप", "गैंगरेप", "हत्याकांड", "हत्यारा", "हत्याओं", "क़त्ल", "कत्ल",
+                        // Latin/Hinglish alternate spellings of terms already covered above —
+                        // "balatkaar" (balatkar), "hatyaa" (hatya), "qatal"/"katl" (qatl).
+                        "balatkaar", "hatyaa", "qatal", "katl")),
         COMMUNAL(
                 Set.of(
                         "communal", "sectarian", "riot", "riots", "rioting", "unrest", "curfew",
@@ -799,15 +866,70 @@ public class CreatorNudgeService {
                         // counterpart to the Devanagari skeleton below, named in the same probe
                         // family as "hatya"/"balatkar".
                         "stone pelters", "danga", "dange",
-                        // F-0857 repair round 1 — Devanagari skeleton form (see the DEATH set's
-                        // comment for how these are derived and verified):
-                        //   दंगे (dange, riots) -> दग
-                        // Accepted cost, stated rather than discovered later: at 2 code points this
-                        // skeleton is short enough that an unrelated Devanagari word sharing the
-                        // same consonant skeleton (e.g. "दागी", tainted/accused) would also match —
-                        // same asymmetry this file already accepts for short high-signal terms
-                        // elsewhere (F-0786's own design notes).
-                        "दग")),
+                        // F-0857 repair round 1 — Devanagari coverage: दंगे (dange, riots).
+                        //
+                        // T-GOLIVE-0918-R2 (vikram · 2026-09-18) — repair round 2 REWRITES this from
+                        // the 2-code-point stripped skeleton ("दग") to the full, correctly-spelled
+                        // word, and adds its two remaining base inflections (दंगा singular, दंगों
+                        // oblique plural) as their own literals — Devanagari has no generated-suffix
+                        // mechanism (GENERATED_SUFFIXES is ASCII-only), so each form is listed, same
+                        // discipline as an irregular Latin form like "slain".
+                        //
+                        // THIS IS THE FIX FOR THE MEDIUM AN INDEPENDENT REVIEWER FOUND: the old
+                        // skeleton "दग" is exactly what देगा/देगी/देंगे/दूंगा ("will give") and दाग
+                        // ("spot/stain") ALSO stripped down to, because rule 2 deleted every
+                        // Devanagari vowel sign and anusvara the same way it deletes a Latin
+                        // combining accent. Once normalizeForMatching stops stripping Devanagari's
+                        // own marks (see isDevanagariCombiningMark), दंगा/दंगे/दंगों keep their
+                        // anusवार and देगा/देगी/देंगे/दूंगा/दाग keep theirs (or lack one) — verified
+                        // empirically, code point by code point, that all of these five benign words
+                        // are now genuinely distinct sequences from दंगा/दंगे/दंगों:
+                        //   दंगा  = द ं ग ा   (द, anusvara, ग, ा)
+                        //   दंगे  = द ं ग े   (द, anusvara, ग, े)
+                        //   दंगों = द ं ग ो ं (द, anusvara, ग, ो, anusvara)
+                        //   देगा  = द े ग ा   (द, े — NO anusvara — ग, ा)
+                        //   देगी  = द े ग ी
+                        //   देंगे = द े ं ग े (5 code points — the anusvara sits AFTER े, not
+                        //           directly after द — distinct in both length and sequence from
+                        //           दंगे's 4)
+                        //   दूंगा = द ू ं ग ा (5 code points, ऊ-vowel + anusvara — distinct from
+                        //           दंगा's 4)
+                        //   दाग   = द ा ग     (3 code points — no anusvara, no े at all)
+                        "दंगा", "दंगे", "दंगों",
+                        // T-GOLIVE-0918-R2 — दंगाई (dangai, rioter/agent-noun) is a DIFFERENT,
+                        // longer token from दंगा (an independent vowel letter ई follows, so दंगा
+                        // never reaches this token's end) — an independent reviewer's probe named
+                        // "दंगाई गिरफ्तार" outright. आतंकी (aatanki, terrorist/terrorism-related
+                        // adjective) is the Devanagari counterpart to the already-bare "terrorist"/
+                        // "extremist" (covers "आतंकी हमला", terrorist attack). बम (bam, bomb) and
+                        // धमाका (dhamaka, blast/explosion) are the Devanagari counterparts to the
+                        // already-bare "bomb"/"blast"/"explosion" above, same accepted trade-off
+                        // (covers "बम धमाका" without needing a fixed phrase).
+                        "दंगाई", "आतंकी", "बम", "धमाका",
+                        // Latin/Hinglish counterparts: "dangai" (rioter), "aatankwadi" (terrorist),
+                        // "bam dhamaka" (bomb blast — kept as a phrase rather than a bare "bam",
+                        // since "bam" alone as a 3-letter English token risks colliding with
+                        // creator-content onomatopoeia, e.g. "and BAM, transformation complete").
+                        // Devanagari/English/Hinglish phrase: "hindu muslim clash" targets the
+                        // CONFLICT the same way "communal clash" does — see UnsafeHeadlineTopic's
+                        // own design notes on why COMMUNAL avoids bare identity terms; this is the
+                        // conflict-naming phrase, not identity alone, so it does not violate that
+                        // rule. "mob torch" is the base of "Mob torches bus in Nuh" — ends in no
+                        // silent "e", so plain GENERATED_SUFFIXES covers torches/torched/torching.
+                        // "terrorised"/"terrorized" are adjective forms of "terror" not reachable by
+                        // any listed suffix rule ("Terrorised villagers flee").
+                        "dangai", "aatankwadi", "bam dhamaka", "hindu muslim clash", "mob torch",
+                        "terrorised", "terrorized",
+                        // T-GOLIVE-0918-R2 — "delhiriots" closes the ALL-LOWERCASE/ALL-CAPS joined-
+                        // hashtag gap rule 5's case-transition split cannot see ("#delhiriots",
+                        // "#DELHIRIOTS" — no case transition and no digit exists inside either, so
+                        // there is no boundary signal at all to split on; a general dictionary
+                        // segmenter would be needed for the unbounded case, e.g. any other city
+                        // name, and none is added per this round's no-new-dependency rule). This is
+                        // the one specific compound Kabir's review named; it is listed as its own
+                        // literal, same technique as "gangrape" in CRIME, rather than claimed fixed
+                        // in general.
+                        "delhiriots")),
         LEGAL(
                 Set.of(
                         "lawsuit", "lawsuits", "sue", "sues", "sued", "suing", "litigation",
@@ -824,7 +946,16 @@ public class CreatorNudgeService {
                         // probe found other High Courts' "<City> HC" shorthand and "top court" (a
                         // common headline synonym for the Supreme Court, alongside "apex court"
                         // above) bypassing the same way "Delhi HC" did before F-0855.
-                        "bombay hc", "allahabad hc", "top court"));
+                        "bombay hc", "allahabad hc", "top court",
+                        // T-GOLIVE-0918-R2 (vikram · 2026-09-18) — repair round 2. Indian-news legal
+                        // vocabulary an independent reviewer's probe named outright: "jailed" ("Actor
+                        // jailed for 2 years"); "bail denied" as a phrase, since bare "bail" alone
+                        // covers ordinary non-legal creator content risk poorly (skateboarding
+                        // "bail", a common creator-vlog term for a failed trick) — the phrase is
+                        // specific to the legal outcome ("Bail denied to accused"); "sentenced" and
+                        // "imprisonment" ("Sentenced to life imprisonment") are not reachable from
+                        // any already-listed term or suffix rule.
+                        "jailed", "bail denied", "sentenced", "imprisonment"));
 
         private final Set<String> terms;
 
@@ -940,7 +1071,29 @@ public class CreatorNudgeService {
                     Map.entry(0x0251, (int) 'a'), // ɑ LATIN SMALL LETTER ALPHA, e.g. "rɑpe"
                     Map.entry(0x04BB, (int) 'h'), // һ CYRILLIC SMALL LETTER SHHA, e.g. "ԁеатһ"
                     Map.entry(0x0437, (int) 'e'), // з CYRILLIC SMALL LETTER ZE (looks like '3'->e)
-                    Map.entry(0x0185, (int) 'b')); // ƅ LATIN SMALL LETTER TONE SIX, e.g. "bomƄ"
+                    Map.entry(0x0185, (int) 'b'), // ƅ LATIN SMALL LETTER TONE SIX, e.g. "bomƄ"
+                    // T-GOLIVE-0918-R2 (vikram · 2026-09-18) — an independent reviewer's probe found
+                    // these two bypassing 49a0415. Per the LOCKED ruling (wiki/decisions/2026-09-18-
+                    // trend-headline-screening.md, "confusable folding driven by the Unicode
+                    // confusables data") this table should be generated from the Unicode confusables
+                    // data (UTS #39 confusables.txt), not hand-picked one probe at a time — but no
+                    // confusables-data dependency (e.g. ICU4J) is on this project's classpath (I
+                    // checked `mvn -o dependency:tree` — no icu4j/com.ibm.icu artifact anywhere), and
+                    // hard rule 8 for this round forbids adding one. So these are added to the
+                    // existing curated table instead, same discipline as every entry above. THIS IS
+                    // A STATED DEVIATION FROM THE RULING'S LETTER, NOT A FIX OF IT: the table remains
+                    // finite and hand-curated, and any homoglyph outside it still evades exactly as
+                    // UnsafeHeadlineTopic's own javadoc already discloses. Priya needs to record
+                    // either (a) an amendment accepting the curated-table approach permanently, or
+                    // (b) a follow-up ticket to add a confusables-data dependency.
+                    Map.entry(0x0257, (int) 'd'), // ɗ LATIN SMALL LETTER D WITH HOOK, e.g. "ɗeath"
+                    // Ꮇ (U+13B7, CHEROKEE LETTER LU — visually a Latin capital M) is UPPERCASE per
+                    // Unicode's Cherokee case pairs added in Unicode 8.0; normalizeForMatching lower-
+                    // cases with Character.toLowerCase BEFORE this table is consulted, and on this
+                    // JVM's Unicode data U+13B7 lowercases to U+AB87 (verified empirically, not
+                    // assumed) — so the key here must be the LOWERCASE form, or this entry would
+                    // silently never fire.
+                    Map.entry(0xAB87, (int) 'm')); // ꮇ CHEROKEE SMALL LETTER LU, e.g. "Ꮇurder"
 
     /**
      * '1' and '|' are genuinely ambiguous leetspeak/confusable substitutions for BOTH 'i' and 'l'
@@ -1010,6 +1163,49 @@ public class CreatorNudgeService {
                     0x1160, // HANGUL JUNGSEONG FILLER
                     0x3164, // HANGUL FILLER
                     0xFFA0); // HALFWIDTH HANGUL FILLER
+
+    /**
+     * Inclusive bounds of the core Devanagari Unicode block (T-GOLIVE-0918-R2, vikram ·
+     * 2026-09-18). See {@link #isDevanagariCombiningMark} for why marks in this range are treated
+     * differently from every other combining mark in {@link #normalizeForMatching}.
+     */
+    private static final int DEVANAGARI_BLOCK_START = 0x0900;
+
+    private static final int DEVANAGARI_BLOCK_END = 0x097F;
+
+    /**
+     * Devanagari's OWN combining marks — vowel signs/matras ({@code ा ि ी ु ू े ै ो ौ}), virama
+     * ({@code ्}), anusvara ({@code ं}), candrabindu, visarga and nukta — must NOT vanish the way
+     * every other combining mark does under rule 2 below (T-GOLIVE-0918-R2 repair round 2, vikram
+     * 2026-09-18, fixing a MEDIUM an independent reviewer found in 49a0415).
+     *
+     * <p><b>Why this was wrong before.</b> Rule 2 was written for Latin-script evasion: a combining
+     * diacritic bolted onto "murder" is noise an attacker added, and stripping it is correct. But a
+     * Devanagari vowel sign or anusvara is not noise added on top of a word — it IS the word.
+     * Stripping them collapsed distinct Hindi words onto the same "consonant skeleton": दंगा
+     * (danga, riot), देगा (dega, "will give"), देगी, देंगे and दूंगा (all ordinary future-tense
+     * forms of "to give") and दाग (daag, "spot/stain" — a core skincare word) all reduced to the
+     * same 2-3 character skeleton, so the term meant to catch दंगा also blocked the everyday
+     * words. The reviewer's probe: "यह क्रीम देगी ग्लो", "दिवाली पर ऑफर देंगे ब्रांड", "चेहरे के दाग
+     * हटाएं" were all wrongly rejected as COMMUNAL.
+     *
+     * <p><b>The fix.</b> Keep every Devanagari mark as a real, sequence-distinguishing character
+     * (appended like a letter, never breaking the token — see the call site) instead of deleting
+     * it. Devanagari terms in {@link UnsafeHeadlineTopic} are now written in their CORRECTLY
+     * SPELLED form (matras and virama included), the same way Latin terms are spelled out in full,
+     * rather than as an artificial stripped skeleton — so दंगा/देगा/देंगे/दूंगा/दाग are four
+     * genuinely different code-point sequences and only the one that is actually spelled "दंगा"
+     * (or its own inflections, listed as their own literals below) matches. Verified empirically
+     * against this JVM's Unicode data (all of ं/े/ा/ी/ो/् above are General_Category Mn or Mc, and
+     * every consonant/independent vowel is Lo) before relying on it.
+     */
+    private static boolean isDevanagariCombiningMark(int cp, int type) {
+        return cp >= DEVANAGARI_BLOCK_START
+                && cp <= DEVANAGARI_BLOCK_END
+                && (type == Character.NON_SPACING_MARK
+                        || type == Character.COMBINING_SPACING_MARK
+                        || type == Character.ENCLOSING_MARK);
+    }
 
     /** The suffixes {@link #matchesTerm} generates from every term's compact form (F-0853/F-0855,
      * decision 2026-09-18). Order does not matter; each is tried independently.
@@ -1369,12 +1565,35 @@ public class CreatorNudgeService {
         // or a digit, so a following uppercase letter can be recognised as a camelCase/hashtag
         // boundary. See rule 5 below.
         boolean previousAppendedWasLowerOrDigit = false;
+        // T-GOLIVE-0918-R2 (vikram, 2026-09-18) — tracks whether the character just appended was a
+        // digit, independent of case, so a letter<->digit transition is its own boundary. See rule
+        // 5's digitBoundary below.
+        boolean previousAppendedWasDigit = false;
 
         for (int i = 0; i < folded.length(); ) {
             int cp = folded.codePointAt(i);
             i += Character.charCount(cp);
 
             int type = Character.getType(cp);
+
+            if (isDevanagariCombiningMark(cp, type)) {
+                // Rule 2b (T-GOLIVE-0918-R2, vikram · 2026-09-18) — see
+                // isDevanagariCombiningMark's javadoc for why these do NOT vanish like every other
+                // combining mark: they are appended, like a letter, and never break the token.
+                if (!inToken) {
+                    tokenStart.set(compact.length());
+                    if (spaced.length() > 0) {
+                        spaced.append(' ');
+                    }
+                    inToken = true;
+                }
+                compact.appendCodePoint(cp);
+                spaced.appendCodePoint(cp);
+                previousAppendedWasLowerOrDigit = false;
+                previousAppendedWasDigit = false;
+                continue;
+            }
+
             if (type == Character.FORMAT
                     || type == Character.NON_SPACING_MARK
                     || type == Character.COMBINING_SPACING_MARK
@@ -1394,6 +1613,7 @@ public class CreatorNudgeService {
             int normalizedCp = confusableFold.getOrDefault(lowered, lowered);
 
             if (Character.isLetterOrDigit(normalizedCp)) {
+                boolean isDigitNow = Character.isDigit(normalizedCp);
                 // Rule 5 (F-0855) — hashtag / camelCase / joined-word splitting. A lowercase-or-digit
                 // character immediately followed by an uppercase one is treated as BOTH a token end
                 // (for the run just finished) and a token start (for the one beginning here), even
@@ -1405,8 +1625,17 @@ public class CreatorNudgeService {
                 // ("GANGRAPE") and all-lowercase runs ("delhiriots") carry no case-transition signal
                 // and are NOT split by this rule; that is an accepted, stated gap, not an oversight.
                 boolean camelBoundary = inToken && isUpperBeforeFold && previousAppendedWasLowerOrDigit;
-                if (!inToken || camelBoundary) {
-                    if (camelBoundary) {
+                // T-GOLIVE-0918-R2 (vikram, 2026-09-18) — a letter<->digit transition is ALSO a
+                // boundary, independent of case. Closes the digit-suffixed-hashtag gap an
+                // independent reviewer found in 49a0415 (#DelhiRiots2020, #Riots2024,
+                // #murder2023): the year glued onto the end of the camelCase-split word kept that
+                // run from ever reaching a token END, so "riots"/"murder" never satisfied
+                // containsTerm's end anchor. Source: wiki/decisions/2026-09-18-trend-headline-
+                // screening.md ("hashtags split on case and joined-word boundaries").
+                boolean digitBoundary = inToken && isDigitNow != previousAppendedWasDigit;
+                boolean boundary = camelBoundary || digitBoundary;
+                if (!inToken || boundary) {
+                    if (boundary) {
                         tokenEnd.set(compact.length() - 1);
                     }
                     tokenStart.set(compact.length());
@@ -1418,10 +1647,12 @@ public class CreatorNudgeService {
                 compact.appendCodePoint(normalizedCp);
                 spaced.appendCodePoint(normalizedCp);
                 previousAppendedWasLowerOrDigit = !isUpperBeforeFold;
+                previousAppendedWasDigit = isDigitNow;
             } else if (inToken) {
                 tokenEnd.set(compact.length() - 1);
                 inToken = false;
                 previousAppendedWasLowerOrDigit = false;
+                previousAppendedWasDigit = false;
             }
         }
         if (inToken) {

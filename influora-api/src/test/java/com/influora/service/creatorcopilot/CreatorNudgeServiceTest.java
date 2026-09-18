@@ -2173,6 +2173,213 @@ class CreatorNudgeServiceTest {
     }
 
     // ---------------------------------------------------------------------------------------
+    // T-GOLIVE-0918-R2 (vikram, 2026-09-18) — repair round 2. Kabir's own round-1 review of
+    // 49a0415 named 5 defects (2 MEDIUM vocabulary/hashtag, 1 MEDIUM Devanagari over-block, 1
+    // MEDIUM Devanagari/Hindi vocabulary gap, 1 MEDIUM confusables-table deviation). Every row
+    // below reproduces one named bypass or over-block from that review, table-driven, same
+    // discipline as decisionProbes()/repairRound1Probes() above.
+    // ---------------------------------------------------------------------------------------
+
+    static Stream<Arguments> repairRound2Probes() {
+        return Stream.of(
+                // (b) hashtags with a digit suffix — the camelCase split reaches a token END only
+                // if nothing but a separator follows; a glued-on year kept the run going.
+                arguments(
+                        "R2-b: #DelhiRiots2020 (digit-suffixed hashtag)",
+                        "#DelhiRiots2020",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2-b: #Riots2024 (digit-suffixed hashtag)",
+                        "#Riots2024",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2-b: #murder2023 (digit-suffixed hashtag)",
+                        "#murder2023",
+                        UnsafeHeadlineTopic.CRIME),
+                // (b) all-lowercase/all-caps joined hashtags — closed for the two named compounds
+                // by listing them, not by a general segmenter (see the CRIME/COMMUNAL javadoc).
+                arguments("R2-b: #gangrape (all-lowercase hashtag)", "#gangrape", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-b: #delhiriots (all-lowercase hashtag)",
+                        "#delhiriots",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2-b: #DELHIRIOTS (all-caps hashtag)", "#DELHIRIOTS", UnsafeHeadlineTopic.COMMUNAL),
+                // (c) Indian-English news vocabulary Kabir's round-1 review found bypassing.
+                arguments(
+                        "R2-c: Gangrape accused held in UP",
+                        "Gangrape accused held in UP",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: Minor gangraped, two held",
+                        "Minor gangraped, two held",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: Woman strangled by husband",
+                        "Woman strangled by husband",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: Man shot at outside mall",
+                        "Man shot at outside mall",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: Hindu-Muslim clashes in town",
+                        "Hindu-Muslim clashes in town",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2-c: Mob torches bus in Nuh", "Mob torches bus in Nuh", UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2-c: Man hanged himself in hostel",
+                        "Man hanged himself in hostel",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2-c: Body found in suitcase",
+                        "Body found in suitcase",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2-c: Actor jailed for 2 years",
+                        "Actor jailed for 2 years",
+                        UnsafeHeadlineTopic.LEGAL),
+                arguments(
+                        "R2-c: Bail denied to accused", "Bail denied to accused", UnsafeHeadlineTopic.LEGAL),
+                arguments(
+                        "R2-c: Custodial torture case",
+                        "Custodial torture case",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: Woman set ablaze by stalker",
+                        "Woman set ablaze by stalker",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: Murderous attack on journalist",
+                        "Murderous attack on journalist",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: Molester thrashed by crowd",
+                        "Molester thrashed by crowd",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: Terrorised villagers flee",
+                        "Terrorised villagers flee",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2-c: Sentenced to life imprisonment",
+                        "Sentenced to life imprisonment",
+                        UnsafeHeadlineTopic.LEGAL),
+                // (c) Devanagari vocabulary Kabir's round-1 review found bypassing.
+                arguments(
+                        "R2-c: हादसे में 5 की मौत (accident death)",
+                        "हादसे में 5 की मौत",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments("R2-c: रेप केस (rape case)", "रेप केस", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: नाबालिग से गैंगरेप (minor gangraped)",
+                        "नाबालिग से गैंगरेप",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments("R2-c: हत्याकांड (murder case)", "हत्याकांड", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: हत्यारा गिरफ्तार (murderer arrested)",
+                        "हत्यारा गिरफ्तार",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments("R2-c: हत्याओं (murders, plural)", "हत्याओं", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2-c: आतंकी हमला (terrorist attack)",
+                        "आतंकी हमला",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments("R2-c: बम धमाका (bomb blast)", "बम धमाका", UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2-c: दंगाई गिरफ्तार (rioter arrested)",
+                        "दंगाई गिरफ्तार",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments("R2-c: खुदकुशी (suicide)", "खुदकुशी", UnsafeHeadlineTopic.DEATH),
+                arguments("R2-c: क़त्ल (qatl, with nukta)", "क़त्ल", UnsafeHeadlineTopic.CRIME),
+                arguments("R2-c: कत्ल (qatl, without nukta)", "कत्ल", UnsafeHeadlineTopic.CRIME),
+                // (c) Latin/Hinglish alternate spellings Kabir's round-1 review found bypassing.
+                arguments("R2-c: balatkaar", "balatkaar", UnsafeHeadlineTopic.CRIME),
+                arguments("R2-c: hatyaa", "hatyaa", UnsafeHeadlineTopic.CRIME),
+                arguments("R2-c: aatmhatya", "aatmhatya", UnsafeHeadlineTopic.DEATH),
+                arguments("R2-c: atmhatya", "atmhatya", UnsafeHeadlineTopic.DEATH),
+                arguments("R2-c: khudkushi", "khudkushi", UnsafeHeadlineTopic.DEATH),
+                arguments("R2-c: dangai", "dangai", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("R2-c: aatankwadi", "aatankwadi", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("R2-c: bam dhamaka", "bam dhamaka", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("R2-c: qatal", "qatal", UnsafeHeadlineTopic.CRIME),
+                arguments("R2-c: katl", "katl", UnsafeHeadlineTopic.CRIME),
+                // (d) confusables outside the old curated table, named outright by Kabir's review.
+                arguments(
+                        "R2-d: ɗeath (U+0257 LATIN SMALL LETTER D WITH HOOK -> d)",
+                        "ɗeath toll rises",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2-d: Ꮇurder (U+13B7 CHEROKEE LETTER LU -> m)",
+                        "Ꮇurder suspect held",
+                        UnsafeHeadlineTopic.CRIME),
+                // (a) the दंगा-family term must still block correctly-spelled riot forms — the
+                // over-block fix must not have thrown out the term it was protecting.
+                arguments("R2-a: दंगा (danga/riot, singular)", "दंगा", UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2-a: दंगों (dangon, riots oblique plural)",
+                        "दंगों",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments("R2-a: दंगाई (dangai, rioter)", "दंगाई गिरफ्तार", UnsafeHeadlineTopic.COMMUNAL));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\" -> {2}")
+    @MethodSource("repairRound2Probes")
+    @DisplayName("T-GOLIVE-0918-R2: every Kabir round-1-review probe blocks as its named category")
+    void firstUnsafeTopic_blocksEveryRepairRound2Probe(
+            String defect, String probe, UnsafeHeadlineTopic expectedCategory) {
+        assertEquals(
+                expectedCategory,
+                CreatorNudgeService.firstUnsafeTopic(probe),
+                "probe did not block as " + expectedCategory + " [" + defect + "]: \"" + probe + "\"");
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(probe),
+                "probe must not be quotable in creator copy [" + defect + "]: \"" + probe + "\"");
+    }
+
+    /**
+     * (a) THE over-block fix itself: the दंगा-family term must NOT catch the everyday Hindi
+     * future-tense forms of "to give" (देगा/देगी/देंगे/दूंगा) or दाग ("spot/stain" — a core
+     * skincare word), including in a skincare-context sentence. Plus at least 10 new everyday
+     * creator headlines in Hindi and Hinglish, per this round's done_when.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                // The exact over-block regression, named word by word.
+                "यह क्रीम देगी ग्लो",
+                "दिवाली पर ऑफर देंगे ब्रांड",
+                "यह टिप मदद करेगा और रिजल्ट देगा",
+                "चेहरे के दाग हटाएं",
+                "देगा", "देगी", "देंगे", "दूंगा", "दाग",
+                "दाग-धब्बे हटाने का आसान तरीका",
+                // 10+ new everyday creator headlines in Hindi and Hinglish (done_when).
+                "आज का मेकअप लुक बहुत सुंदर है",
+                "यह साड़ी लुक त्योहार के लिए परफेक्ट है",
+                "स्किनकेयर रूटीन जो ग्लो देगा",
+                "बजट में गोवा ट्रिप कैसे प्लान करें",
+                "फेस्टिवल के लिए बेस्ट हेयरस्टाइल आइडिया",
+                "Aaj ka vlog bahut mazedaar tha",
+                "Yeh outfit ideas Diwali ke liye perfect hain",
+                "Skincare routine jo glow dega",
+                "Budget mein Goa trip kaise plan karein",
+                "Mera naya reel bahut viral ho gaya",
+                "Ghar ka khana banane ka aasan tarika"
+            })
+    @DisplayName(
+            "T-GOLIVE-0918-R2 (a): the दंगा-family term does not over-block देगा/देगी/देंगे/दूंगा/दाग"
+                    + " or everyday Hindi/Hinglish creator headlines")
+    void firstUnsafeTopic_repairRound2DevanagariOverblockFixedAndBenignSetStaysQuotable(String benign) {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(benign),
+                "benign control was classified unsafe: " + benign);
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(benign),
+                "benign control was classified unsafe: " + benign);
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------
 
