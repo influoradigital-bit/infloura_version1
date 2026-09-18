@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import date, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -529,3 +530,217 @@ async def test_reservation_is_released_when_nothing_was_billed():
             gate=AsyncMock(return_value=sentinel),
         )
     releaser.assert_awaited_once_with(sentinel)
+
+
+# ---------------------------------------------------------------------------
+# T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's three fixes
+# (.proof-os/tasks/T-PHASEB-LIVE-0918/ash-answers.md). Each block below is
+# named after the fix it proves red-then-green for.
+# ---------------------------------------------------------------------------
+
+_FUTURE_DEADLINE = (date.today() + timedelta(days=45)).isoformat()
+
+
+# --- Fix 1: extraction's own max_tokens setting ----------------------------
+
+
+@pytest.mark.asyncio
+async def test_brief_extract_uses_its_own_max_tokens_setting():
+    """F1 (ash-answers.md): this call must NOT borrow
+    `creator_copilot_max_tokens` (300, sized for a one-line suggestion) — it
+    must pass `BRIEF_EXTRACT_MAX_TOKENS`, its own env-overridable constant."""
+    _, mock_claude = await _call(_base_body(), VALID_TOOL_INPUT)
+    call = mock_claude.complete_with_forced_tool.await_args
+    assert call.kwargs["max_tokens"] == brief_extract_route.BRIEF_EXTRACT_MAX_TOKENS
+    # Pins that it is genuinely a SEPARATE setting, not the same value by
+    # coincidence: creator_suggestion.py's budget is 300; this route's default
+    # is 1024.
+    assert call.kwargs["max_tokens"] != get_settings().creator_copilot_max_tokens
+
+
+# --- Fix 3: creator_language reaches the model -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_creator_language_is_passed_to_the_model():
+    """Q4 (ash-answers.md): Java already sends creator_language; Python used to
+    only log it. The system prompt the model actually receives must now name
+    the language."""
+    _, mock_claude = await _call(
+        _base_body(creator_language="hi-IN"), VALID_TOOL_INPUT
+    )
+    call = mock_claude.complete_with_forced_tool.await_args
+    system_text = call.kwargs["system_blocks"][0]["text"]
+    assert "hi-IN" in system_text
+
+
+@pytest.mark.asyncio
+async def test_no_creator_language_leaves_the_base_prompt_unchanged():
+    body = _base_body()
+    body.pop("creator_language")
+    _, mock_claude = await _call(body, VALID_TOOL_INPUT)
+    call = mock_claude.complete_with_forced_tool.await_args
+    system_text = call.kwargs["system_blocks"][0]["text"]
+    assert "creator's language" not in system_text
+
+
+# --- Fix 2: Ash's four probe cases must fail on invented numbers/dates/names
+
+
+@pytest.mark.asyncio
+async def test_probe_p1_invented_budget_is_dropped():
+    """Ash's probe P1: model said budget_inr=50000 for a brief that states
+    "15k". The wrong figure must not survive even though 15k's converted
+    value (15000) is exactly what should have been reported."""
+    raw = "Glow Cosmetics: 1 reel please, budget 15k. Usage 3 months paid ads."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=50000,
+        budget_stated=True,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 15,000",
+            "Usage: 3 months paid ads.",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["budget_inr"] is None
+
+
+@pytest.mark.asyncio
+async def test_probe_p3_invented_usage_months_is_dropped():
+    """Ash's probe P3: model said usage_months=12 for a brief stating "3
+    months"."""
+    raw = "Glow Cosmetics: 1 reel please, budget 8000. Usage 3 months paid ads."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        usage_months=12,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 8,000",
+            "Usage: 3 months paid ads.",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["usage_months"] is None
+
+
+@pytest.mark.asyncio
+async def test_probe_p2_past_date_deadline_is_dropped():
+    """Ash's probe P2: for "Post by Diwali" (a relative date with no digits at
+    all) the model invented `2025-10-20`, which is also in the past. Either
+    defect disqualifies it; this pins the past-date half."""
+    bad = dict(VALID_TOOL_INPUT, deadline="2025-10-20")
+    response, _ = await _call(_base_body(), bad, gate=AsyncMock(return_value=None))
+    assert response["success"] is True
+    assert response["data"]["deadline"] is None
+
+
+@pytest.mark.asyncio
+async def test_relative_date_with_no_digits_never_grounds_even_if_future():
+    """The digit-grounding half of P2, independent of the past-date check: a
+    real, future ISO date that the brief's text contains no digits for at all
+    must still be dropped, because the model could only have guessed it."""
+    raw = "Glow Cosmetics: 1 reel please, budget 8000, post it by Diwali."
+    bad = dict(VALID_TOOL_INPUT, deadline=_FUTURE_DEADLINE)
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["deadline"] is None
+
+
+@pytest.mark.asyncio
+async def test_probe_p6_invented_brand_name_is_dropped():
+    """Ash's probe P6: model said "Nykaa" for a Glow Cosmetics brief."""
+    bad = dict(VALID_TOOL_INPUT, brand_name="Nykaa")
+    response, _ = await _call(_base_body(), bad, gate=AsyncMock(return_value=None))
+    assert response["success"] is True
+    assert response["data"]["brand_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_grounded_deadline_and_brand_name_still_survive():
+    """The grounding fix must not reject correct output: RAW_BRIEF literally
+    contains "Glow Cosmetics" and "2026-10-05"."""
+    response, _ = await _call(
+        _base_body(), VALID_TOOL_INPUT, gate=AsyncMock(return_value=None)
+    )
+    assert response["data"]["brand_name"] == "Glow Cosmetics"
+    assert response["data"]["deadline"] == "2026-10-05"
+
+
+# --- Fix 3: Indian shorthand (15k / 1.5L) and Devanagari digits ------------
+
+
+@pytest.mark.asyncio
+async def test_hinglish_shorthand_grounds_a_summary_line():
+    """Ash's fix 3 (ash-answers.md §1/§3): "15k" never appears in the brief as
+    the literal digits "15000", so a summary line correctly restating the
+    converted figure must be grounded against the shorthand-EXPANDED value,
+    not only the brief's literal digits.
+
+    `budget_inr` is forced None here (budget_stated=False) so `_own_numbers`
+    — which never vouches for budget_inr regardless of code version — cannot
+    be the thing making this pass; only the raw-text shorthand grounding in
+    `_amounts_in_inr` can ground "15,000" here."""
+    raw = "Glow Cosmetics: 1 reel please, budget around 15k, exact terms tbd."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=None,
+        budget_stated=False,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget mentioned: 15,000",
+            "Exact terms to be discussed",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw, creator_language="hi-IN"),
+        tool_input,
+        gate=AsyncMock(return_value=None),
+    )
+    assert response["success"] is True
+    assert any("15,000" in line for line in response["data"]["summary_lines"])
+
+
+@pytest.mark.asyncio
+async def test_devanagari_digit_summary_line_is_not_stripped():
+    """Q4 (ash-answers.md): `_numbers_in('फीस ₹१५,००० है')` used to return the
+    untranslated Devanagari digit string, which never equalled an ASCII
+    "15000" written elsewhere, so an ASCII-digit summary line restating a fee
+    the brief stated only in Devanagari digits was wrongly stripped.
+
+    `budget_inr` is forced None (budget_stated=False) for the same isolation
+    reason as the Hinglish-shorthand test above: only the Devanagari-to-ASCII
+    normalisation in `_numbers_in`/`_amounts_in_inr` can ground this line."""
+    raw = "Glow Cosmetics collab. फीस ₹१५,००० है, exact terms tbd. 1 reel chahiye."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=None,
+        budget_stated=False,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget mentioned: 15000",
+            "Exact terms to be discussed",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw, creator_language="hi-IN"),
+        tool_input,
+        gate=AsyncMock(return_value=None),
+    )
+    assert response["success"] is True
+    assert any("15000" in line for line in response["data"]["summary_lines"])

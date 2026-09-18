@@ -51,8 +51,10 @@ guarantee from one.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import uuid
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -104,6 +106,51 @@ EXTRACTION_FAILED_CODE = "extraction_failed"
 # extraction of its first 8000 characters.
 MAX_RAW_TEXT_CHARS = 8000
 
+# T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 1 (ash-answers.md F1):
+# this call used to borrow `creator_copilot_max_tokens` (300, sized for a
+# one-line suggestion in creator_suggestion.py). A full extract_brief answer
+# (22-field schema + 3-5 summary lines) runs close to or over that, so the call
+# was regularly cut off mid-JSON and silently degraded to the rule-based
+# fallback while still being billed in full (see the F-06 billing path below).
+# Extraction gets its own budget, as a module constant here rather than in
+# app/config.py (out of this lane's file scope), overridable so it can be
+# tuned from real `ai_spend`/stop_reason data without a code change.
+# Source: .proof-os/tasks/T-PHASEB-LIVE-0918/ash-answers.md
+BRIEF_EXTRACT_MAX_TOKENS = int(os.getenv("BRIEF_EXTRACT_MAX_TOKENS", "1024"))
+
+# T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 3: Indian briefs write
+# money as shorthand ("15k", "1.5L", "1.5 lakh", "1 crore") that never appears
+# in the brief as the plain rupee figure the model must output. Grounding a
+# structured amount against the brief's LITERAL digits alone would reject a
+# correct 15000 for a "15k" brief, so grounding is checked against this
+# shorthand-expanded set instead (see `_amounts_in_inr`).
+# Source: ash-answers.md §1 ("No Indian money shorthand") and §3.
+_SHORTHAND_RE = re.compile(
+    r"(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>k|l|lac|lakhs?|cr|crores?)\b",
+    re.IGNORECASE,
+)
+_SHORTHAND_MULTIPLIERS: dict[str, float] = {
+    "k": 1_000,
+    "l": 100_000,
+    "lac": 100_000,
+    "lakh": 100_000,
+    "lakhs": 100_000,
+    "cr": 10_000_000,
+    "crore": 10_000_000,
+    "crores": 10_000_000,
+}
+
+# T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 3 (ash-answers.md §4):
+# `_numbers_in` matched only ASCII \d, so a Hindi summary line written with
+# Devanagari digits (e.g. "१५,०००") compared unequal to the brief's own ASCII
+# "15000" and the whole extraction fell back needlessly. Normalise Devanagari
+# 0-9 (U+0966-U+096F) to ASCII before any digit comparison.
+_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
+
+
+def _normalize_digits(text: str) -> str:
+    return (text or "").translate(_DEVANAGARI_DIGITS)
+
 # A number in a summary line that is not in the brief is an invented number, and
 # the creator will price against it. Matches digit groups with optional
 # thousands separators and decimals; the comparison itself is done on the digits
@@ -139,9 +186,12 @@ def _error_body(code: str) -> dict[str, Any]:
 
 def _numbers_in(text: str) -> set[str]:
     """Every number in `text`, reduced to bare digits (separators and a trailing
-    ".0" dropped) so "8,000", "8 000" and "8000.00" all compare equal."""
+    ".0" dropped) so "8,000", "8 000" and "8000.00" all compare equal.
+    Devanagari digits are normalised to ASCII first (see `_normalize_digits`)
+    so a Hindi-script number compares equal to the same value written in
+    figures elsewhere."""
     found: set[str] = set()
-    for match in _NUMBER_RE.finditer(text or ""):
+    for match in _NUMBER_RE.finditer(_normalize_digits(text)):
         digits = re.sub(r"[^\d.]", "", match.group(0))
         if not digits:
             continue
@@ -152,17 +202,43 @@ def _numbers_in(text: str) -> set[str]:
     return found
 
 
+def _amounts_in_inr(text: str) -> set[str]:
+    """`_numbers_in`, plus every Indian money-shorthand amount in `text`
+    expanded to its plain rupee figure: "15k" -> 15000, "1.5L"/"1.5 lakh" ->
+    150000, "1 crore" -> 10000000. This is the grounding set for budget_inr,
+    barter_mrp_inr, usage_months and exclusivity_days (Ash's fix 2 and 3,
+    ash-answers.md G1/§1) — a structured amount is kept only when it, or its
+    plain-figure equivalent, actually appears in the brief; a brief that says
+    "15k" never contains the literal digits "15000", so checking only
+    `_numbers_in` would wrongly reject the correctly-converted figure."""
+    normalized = _normalize_digits(text or "")
+    values = set(_numbers_in(normalized))
+    for match in _SHORTHAND_RE.finditer(normalized):
+        multiplier = _SHORTHAND_MULTIPLIERS.get(match.group("unit").lower())
+        if multiplier is None:
+            continue
+        try:
+            amount = float(match.group("num")) * multiplier
+        except ValueError:
+            continue
+        values |= _numbers_in(f"{amount:.10f}".rstrip("0").rstrip("."))
+    return values
+
+
 def _own_numbers(extraction: dict[str, Any]) -> set[str]:
     """The numbers the extraction itself established, so a summary line may
     restate them even when the brief wrote them in words ("eight thousand")
-    rather than figures."""
-    candidates: list[Any] = [
-        extraction.get("budget_inr"),
-        extraction.get("barter_mrp_inr"),
-        extraction.get("usage_months"),
-        extraction.get("exclusivity_days"),
-        extraction.get("max_revisions"),
-    ]
+    rather than figures.
+
+    Deliberately EXCLUDES budget_inr, barter_mrp_inr, usage_months and
+    exclusivity_days: those four are now grounded against the brief before
+    they ever reach this function (see the grounding checks in
+    `parse_and_validate_extraction`), so they must not ALSO vouch for
+    summary-line numbers on their own — that was Ash's G1 finding
+    (ash-answers.md): an invented field used to let a matching invented
+    summary line survive uncaught. What remains here (deliverable qty,
+    max_revisions) are small counts not covered by that grounding fix."""
+    candidates: list[Any] = [extraction.get("max_revisions")]
     deliverables = extraction.get("deliverables")
     if isinstance(deliverables, list):
         candidates.extend(
@@ -174,6 +250,60 @@ def _own_numbers(extraction: dict[str, Any]) -> set[str]:
             continue
         numbers |= _numbers_in(f"{value:.10f}".rstrip("0").rstrip("."))
     return numbers
+
+
+def _grounded_amount(value: float | None, grounded: set[str]) -> float | None:
+    """Keeps a numeric field only when its value (as a bare-digit string,
+    matching `_numbers_in`'s normalisation) is in `grounded` — the brief's own
+    numbers plus their shorthand expansions. Ash's probe P1: a "15k" brief
+    with an invented budget_inr=50000 must not survive; P3: usage_months=12
+    for a "3 months" brief must not survive."""
+    if value is None:
+        return None
+    as_number = f"{value:.10f}".rstrip("0").rstrip(".")
+    digits = (_numbers_in(as_number) or {"0"}).pop()
+    return value if digits in grounded else None
+
+
+def _grounded_int(value: int | None, grounded: set[str]) -> int | None:
+    if value is None:
+        return None
+    digits = str(abs(int(value))).lstrip("0") or "0"
+    return value if digits in grounded else None
+
+
+def _grounded_deadline(value: str | None, raw_text: str) -> str | None:
+    """Keeps `deadline` only when it is a real, non-past ISO date whose day and
+    year both appear as digits somewhere in the brief. Ash's probe P2: "Post by
+    Diwali" (a relative date, no digits at all) produced an invented deadline
+    that also happened to be in the past — either defect alone is disqualifying
+    here; a relative date with no digits can never pass the digit check even in
+    a year where the model's guess lands in the future."""
+    if value is None:
+        return None
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed < datetime.now(timezone.utc).date():
+        return None
+    digit_runs = set(re.findall(r"\d+", _normalize_digits(raw_text)))
+    day_forms = {str(parsed.day), f"{parsed.day:02d}"}
+    if not (digit_runs & day_forms):
+        return None
+    if str(parsed.year) not in digit_runs:
+        return None
+    return value
+
+
+def _grounded_brand_name(value: str | None, raw_text: str) -> str | None:
+    """Keeps `brand_name` only when it appears (case-insensitively) in the
+    brief. Ash's probe P6: the model named "Nykaa" for a Glowup brief; a name
+    the brief never wrote feeds `DealRiskService`'s blocked-brand/competitor
+    checks, so an invented one can cause a wrong result there."""
+    if value is None:
+        return None
+    return value if value.casefold() in (raw_text or "").casefold() else None
 
 
 def _clean_enum(value: Any, allowed: tuple[str, ...]) -> str | None:
@@ -298,10 +428,18 @@ def parse_and_validate_extraction(
     if not isinstance(tool_input, dict):
         return None
 
+    # T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 2 (ash-answers.md
+    # G1/G2/G3): the brief's own numbers (literal + Indian-shorthand
+    # expansions) are the single grounding set for every structured amount
+    # below, so "budget stated as 15k" grounds an extracted 15000 while an
+    # invented 50000 does not. Source: ash-answers.md §1 and §3.
+    grounded_amounts = _amounts_in_inr(raw_text)
+
     deliverables = _clean_deliverables(tool_input.get("deliverables"))
     budget_stated = bool(tool_input.get("budget_stated"))
-    budget_inr = _clean_number(
-        tool_input.get("budget_inr"), minimum=0, maximum=1_000_000_000
+    budget_inr = _grounded_amount(
+        _clean_number(tool_input.get("budget_inr"), minimum=0, maximum=1_000_000_000),
+        grounded_amounts,
     )
     if not budget_stated:
         # §4.3 / RateQuoteService.statedBudgetOf reads budget_inr only when
@@ -311,26 +449,35 @@ def parse_and_validate_extraction(
         budget_inr = None
 
     extraction: dict[str, Any] = {
-        "brand_name": _clean_text(tool_input.get("brand_name"), max_chars=200),
+        "brand_name": _grounded_brand_name(
+            _clean_text(tool_input.get("brand_name"), max_chars=200), raw_text
+        ),
         "product": _clean_text(tool_input.get("product"), max_chars=200),
         "category": _clean_enum(tool_input.get("category"), BRIEF_CATEGORIES),
         "deliverables": deliverables,
         "budget_inr": budget_inr,
         "budget_stated": budget_stated,
         "barter_only": bool(tool_input.get("barter_only")),
-        "barter_mrp_inr": _clean_number(
-            tool_input.get("barter_mrp_inr"), minimum=0, maximum=1_000_000_000
+        "barter_mrp_inr": _grounded_amount(
+            _clean_number(
+                tool_input.get("barter_mrp_inr"), minimum=0, maximum=1_000_000_000
+            ),
+            grounded_amounts,
         ),
-        "deadline": _clean_text(tool_input.get("deadline"), max_chars=40),
-        "usage_months": _clean_int(
-            tool_input.get("usage_months"), minimum=0, maximum=600
+        "deadline": _grounded_deadline(
+            _clean_text(tool_input.get("deadline"), max_chars=40), raw_text
+        ),
+        "usage_months": _grounded_int(
+            _clean_int(tool_input.get("usage_months"), minimum=0, maximum=600),
+            grounded_amounts,
         ),
         "usage_perpetual": bool(tool_input.get("usage_perpetual")),
         "usage_channels": _clean_enum_list(
             tool_input.get("usage_channels"), BRIEF_USAGE_CHANNELS
         ),
-        "exclusivity_days": _clean_int(
-            tool_input.get("exclusivity_days"), minimum=0, maximum=3650
+        "exclusivity_days": _grounded_int(
+            _clean_int(tool_input.get("exclusivity_days"), minimum=0, maximum=3650),
+            grounded_amounts,
         ),
         "exclusivity_scope": _clean_enum(
             tool_input.get("exclusivity_scope"), BRIEF_EXCLUSIVITY_SCOPES
@@ -353,7 +500,7 @@ def parse_and_validate_extraction(
         "vague_deliverables": bool(tool_input.get("vague_deliverables")),
     }
 
-    allowed_numbers = _numbers_in(raw_text) | _own_numbers(extraction)
+    allowed_numbers = grounded_amounts | _own_numbers(extraction)
     raw_lines = tool_input.get("summary_lines")
     candidate_lines = _clean_string_list(
         raw_lines, max_items=BRIEF_SUMMARY_LINES_MAX, max_chars=1_000
@@ -437,25 +584,40 @@ async def brief_extract(request: Request, authorization: str | None = Header(def
         # fallback "cap" rather than "ai_unavailable" (§14.4.a).
         return _error_body(CAP_ERROR_CODE)
 
+    # T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 3: read once and pass
+    # to the model (previously only logged — see build_system_block's rule 12).
+    creator_language = _clean_text(body.get("creator_language"), max_chars=16)
+
     log_event(
         logger, logging.INFO, "brief_extract_started",
         workspace_id=creator_profile_id, request_id=request_id,
         fields={
             "model": BRIEF_EXTRACT_MODEL,
             "raw_text": shape_of(raw_text),
-            "creator_language": _clean_text(body.get("creator_language"), max_chars=16),
+            "creator_language": creator_language,
+            "max_tokens": BRIEF_EXTRACT_MAX_TOKENS,
         },
     )
 
     try:
         claude = _get_claude()
         result = await claude.complete_with_forced_tool(
-            system_blocks=[build_system_block()],
+            system_blocks=[build_system_block(creator_language)],
             messages=[build_user_message(raw_text)],
             tool_schema=get_brief_extraction_schema(),
-            max_tokens=settings.creator_copilot_max_tokens,
+            max_tokens=BRIEF_EXTRACT_MAX_TOKENS,
             model=BRIEF_EXTRACT_MODEL,
         )
+        # T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 1: log the stop
+        # reason so a max_tokens cutoff is visible instead of looking exactly
+        # like any other extraction_failed. NOTE (scope limit, reported per
+        # hard rule 8): `ClaudeToolResult` does not carry `stop_reason` today —
+        # that dataclass lives in app/providers/claude.py, outside this lane's
+        # file scope (B0 files: brief_extract.py, prompt/brief_extract.py,
+        # tests only). This getattr is forward-compatible and logs it the
+        # moment that field is added there; until then it logs None. Reported
+        # to Arjun rather than editing claude.py out of scope.
+        stop_reason = getattr(result, "stop_reason", None)
 
         billed = False
         if result.usage:
@@ -495,7 +657,11 @@ async def brief_extract(request: Request, authorization: str | None = Header(def
             log_event(
                 logger, logging.WARNING, "brief_extract_provider_failed",
                 workspace_id=creator_profile_id, request_id=request_id,
-                fields={"provider_error": result.error, "error_code": EXTRACTION_FAILED_CODE},
+                fields={
+                    "provider_error": result.error,
+                    "error_code": EXTRACTION_FAILED_CODE,
+                    "stop_reason": stop_reason,
+                },
             )
             return _error_body(EXTRACTION_FAILED_CODE)
 
