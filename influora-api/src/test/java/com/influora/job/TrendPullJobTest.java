@@ -495,6 +495,93 @@ class TrendPullJobTest {
                 "the healthy source's row must still be written despite the other source throwing");
     }
 
+    // --- repair round 3, MEDIUM: truncation must happen BEFORE both screens, not after ---------
+
+    @Test
+    @DisplayName("a headline safe in full but unsafe after the 500-char store truncation must never"
+            + " be stored")
+    void truncationBeforeScreeningCatchesWordSplitByCut() {
+        // T-GOLIVE-0918 repair round 3 [vikram · 2026-09-18] — regression test for the reviewer's
+        // MEDIUM finding: the word filter and classifier used to screen raw.text() in FULL, but
+        // the row actually written was truncate(raw.text(), 500) — never re-screened. This
+        // headline is built so the FULL text is safe (it never contains the standalone token
+        // "dies"; the safe word "diesel" only CONTAINS "dies" as a substring, which the word
+        // filter's token-boundary matching correctly ignores — see CreatorNudgeService#containsTerm),
+        // but truncating it to exactly 500 characters lands the cut in the middle of "diesel",
+        // leaving "...dies" as the LAST four characters of the stored text — now a standalone
+        // token that DOES match the DEATH word list. Reviewer probe: this exact combination gave
+        // stored=1 with the pre-fix code (screen-then-truncate); this test fails on that ordering
+        // and passes on truncate-then-screen.
+        String headline = buildTruncationSplitHeadline();
+        assertTrue(
+                com.influora.service.creatorcopilot.TrendHeadlineScreener.isSafeForCreatorCopy(headline),
+                "fixture bug: the FULL, untruncated headline must itself be safe, or this test would"
+                        + " pass even with the truncate-before-screen fix reverted");
+        wireSingleSource(newsClient, headline);
+
+        buildJob().pullTrends();
+
+        ArgumentCaptor<List<Trend>> captor = ArgumentCaptor.forClass(List.class);
+        verify(writer).writeAll(captor.capture());
+        assertTrue(
+                captor.getValue().isEmpty(),
+                "a headline whose first 500 characters end mid-word on an unsafe token ('...dies')"
+                        + " must never be stored, even though the full untruncated headline is safe");
+        // The word filter must catch it before the classifier is even reached.
+        verify(brandSafetyAiClient, never()).classify(anyString(), anyList());
+    }
+
+    @Test
+    @DisplayName("the classifier is sent, and the row stores, exactly the same 500-char truncated"
+            + " text — never the full raw text")
+    void storedAndClassifiedTextAreIdenticalAndTruncated() {
+        // Complements the test above: proves the stored text is EXACTLY what was screened by the
+        // classifier too, not just the word filter — closing "screen exactly the text that is
+        // stored" for both gates, not one.
+        String overlong = "diwali ".repeat(90) + "sale continues"; // all-safe, > 500 chars
+        assertTrue(overlong.length() > 500, "fixture bug: headline must exceed the 500-char store limit");
+        String expectedStoredText = overlong.substring(0, 500);
+        wireSingleSource(newsClient, overlong);
+
+        buildJob().pullTrends();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ContentItem>> itemsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(brandSafetyAiClient).classify(anyString(), itemsCaptor.capture());
+        assertEquals(
+                expectedStoredText,
+                itemsCaptor.getValue().get(0).caption(),
+                "the classifier must be sent exactly the 500-char truncated text, not the full raw"
+                        + " text");
+
+        ArgumentCaptor<List<Trend>> writeCaptor = ArgumentCaptor.forClass(List.class);
+        verify(writer).writeAll(writeCaptor.capture());
+        assertEquals(1, writeCaptor.getValue().size());
+        assertEquals(
+                expectedStoredText,
+                writeCaptor.getValue().get(0).getTrendText(),
+                "the stored text must be exactly what was screened and classified, truncated to 500"
+                        + " characters");
+    }
+
+    /** Builds a headline whose first 500 characters end in "...dies" (a standalone DEATH-listed
+     * token) purely as an artifact of a 500-char cut landing inside the safe word "diesel", while
+     * the full, untruncated headline never contains "dies" as its own token. Constructed by index,
+     * not by hand-counting characters in a literal, so the property holds regardless of the exact
+     * filler text: {@code prefix} is exactly 496 characters and forced to end in a space (a token
+     * boundary) at index 495, so "diesel" starts a fresh token at index 496, and {@code
+     * text.substring(0, 500)} therefore ends with exactly the first four letters of "diesel". */
+    private static String buildTruncationSplitHeadline() {
+        String filler =
+                "diwali sale continues this festive week with much excitement about big discounts ";
+        StringBuilder sb = new StringBuilder();
+        while (sb.length() < 496) {
+            sb.append(filler);
+        }
+        String prefix = sb.substring(0, 495) + " ";
+        return prefix + "diesel prices are steady across most retail markets this month analysts say";
+    }
+
     private void wireSingleSource(TrendSourceClient configuredClient, String headline) {
         when(tmdbClient.isConfigured()).thenReturn(configuredClient == tmdbClient);
         when(newsClient.isConfigured()).thenReturn(configuredClient == newsClient);

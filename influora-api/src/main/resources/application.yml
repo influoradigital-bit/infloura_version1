@@ -551,12 +551,30 @@ influora:
   # REPLACE_WITH placeholders), same convention as influora.meta.app-id/app-secret above: these are
   # read-only third-party API keys, not signing/encryption secrets, so SecretsStartupValidator does
   # not check them and the app boots fine with all three unset (isConfigured() just goes false).
+  #
+  # T-GOLIVE-0918 repair round 3 [vikram · 2026-09-18] — HIGH fix: max-rows-per-run, region and
+  # classifier-workspace-id were plain Java-side defaults with NO binding here at all, so an
+  # operator could not set them without editing this file. Every property TrendPullJob reads is now
+  # bound to an env var, same convention as the four already below.
+  #
+  # classifier-workspace-id is the one property this lane is NOT authorized to pick a value for
+  # (TrendIngestProperties#classifierWorkspaceId javadoc): BrandSafetyAiClient#classify is a
+  # per-workspace, credit-metered call and there is no platform/system workspace concept anywhere
+  # in this codebase (verified: no SYSTEM_WORKSPACE/PLATFORM_WORKSPACE constant). Binding it to
+  # TREND_INGEST_CLASSIFIER_WORKSPACE_ID (blank default) does not decide who pays — it only makes
+  # the value configurable once Swapnil/Priya rule on it; until then the blank default keeps the
+  # job failing closed exactly as before (see TrendPullJob#pullTrends "classifier_unconfigured").
+  # DEPLOY lane: this env var is NOT yet set anywhere and does not need to be until that ruling
+  # lands — flagging its name now so it is not missed when it does.
   trend-ingest:
     enabled: ${TREND_INGEST_ENABLED:false}
     newsapi-api-key: ${NEWSAPI_KEY:}
     tmdb-api-key: ${TMDB_API_KEY:}
     youtube-api-key: ${YOUTUBE_API_KEY:}
     pull-cron: ${TREND_INGEST_PULL_CRON:0 0 5 * * *}
+    max-rows-per-run: ${TREND_INGEST_MAX_ROWS_PER_RUN:100}
+    region: ${TREND_INGEST_REGION:IN}
+    classifier-workspace-id: ${TREND_INGEST_CLASSIFIER_WORKSPACE_ID:}
   # meera_interaction_log retention purge (MeeraInteractionLogRetentionPurgeJob). HARD, MANDATORY
   # predecessor to any future read/join/analytics consumer of this table (Priya's PARTIAL-2 ruling,
   # wiki/build/partials-resolution-plan.md) and Kabir's L1 fast-follow (wiki/build/phase2-kabir-

@@ -62,6 +62,15 @@ import org.springframework.stereotype.Component;
  * {@link TrendIngestProperties#hasClassifierWorkspaceId()} is configured with a real decision from
  * Swapnil/Priya on who pays, this job fails closed and stores nothing at all — see
  * {@link TrendIngestProperties#getClassifierWorkspaceId()} javadoc.
+ *
+ * <p>T-GOLIVE-0918 repair round 3 [vikram · 2026-09-18] — HIGH fix (wiring only, no business
+ * decision made): {@code influora.trend-ingest.classifier-workspace-id} is now bound to {@code
+ * ${TREND_INGEST_CLASSIFIER_WORKSPACE_ID:}} in application.yml (blank default, same fail-closed
+ * behavior as before) so ops CAN set a real value once the workspace-billing decision above is
+ * made, instead of that being impossible without editing this file. Setting {@code
+ * TREND_INGEST_ENABLED=true} plus the three source keys alone still stores nothing — {@code
+ * TREND_INGEST_CLASSIFIER_WORKSPACE_ID} must also be set once that decision lands. See this
+ * lane's go-live report for the full env-var list handed to the DEPLOY lane.
  */
 @Component
 public class TrendPullJob {
@@ -209,8 +218,19 @@ public class TrendPullJob {
         for (RawTrend raw : deduped) {
             String id = Ulids.newUlid();
 
-            if (!screener.isSafe().test(raw.text())) {
-                String category = screener.rejectionCategory().apply(raw.text());
+            // T-GOLIVE-0918 repair round 3 [vikram · 2026-09-18] — MEDIUM fix: the word filter and
+            // the classifier used to screen raw.text() in full, but the row actually written was
+            // truncate(raw.text(), 500) at the bottom of this loop — never re-screened. A safe
+            // headline cut at char 500 mid-word can produce an unsafe token ("...diesel" ->
+            // "...dies"), which the reviewer proved gets stored (stored=1, isSafeForCreatorCopy=
+            // false on the STORED text). Truncating once, up front, and screening/storing that same
+            // `text` value everywhere below closes the gap: what is screened is always byte-for-
+            // byte what is stored. Source: wiki/decisions/2026-09-18-trend-headline-screening.md
+            // (screen exactly the text that is stored).
+            String text = truncate(raw.text(), 500);
+
+            if (!screener.isSafe().test(text)) {
+                String category = screener.rejectionCategory().apply(text);
                 log.info(
                         "TrendPullJob: rejected id={} source={} reason=word_filter category={}",
                         id,
@@ -232,7 +252,7 @@ public class TrendPullJob {
 
             boolean flagged;
             try {
-                flagged = isFlaggedByClassifier(id, raw.text());
+                flagged = isFlaggedByClassifier(id, text);
             } catch (RuntimeException e) {
                 // T-GOLIVE-0918 repair round 2 [vikram · 2026-09-18] — LOW fix: this used to catch
                 // only BrandSafetyAiException. BrandSafetyAiClient#classify calls
@@ -265,7 +285,7 @@ public class TrendPullJob {
                 continue;
             }
 
-            Set<String> themes = themeMatchService.themesForText(raw.text());
+            Set<String> themes = themeMatchService.themesForText(text);
             if (themes.isEmpty()) {
                 log.info(
                         "TrendPullJob: rejected id={} source={} reason=no_known_theme (F-0823)",
@@ -282,7 +302,7 @@ public class TrendPullJob {
             toWrite.add(
                     Trend.create(
                             id,
-                            truncate(raw.text(), 500),
+                            text,
                             writeJsonArray(List.of(raw.source().toLowerCase(Locale.ROOT))),
                             props.getRegion(),
                             detectedDate,
