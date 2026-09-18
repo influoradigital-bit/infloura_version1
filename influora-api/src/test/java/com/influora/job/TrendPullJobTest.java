@@ -274,7 +274,11 @@ class TrendPullJobTest {
         when(tmdbClient.isConfigured()).thenReturn(configuredClient == tmdbClient);
         when(newsClient.isConfigured()).thenReturn(configuredClient == newsClient);
         when(youtubeClient.isConfigured()).thenReturn(configuredClient == youtubeClient);
-        when(configuredClient.fetch())
-                .thenReturn(List.of(new RawTrend(headline, configuredClient.sourceId(), "")));
+        // sourceId() resolved BEFORE entering the when(...) chain below — calling a second mock
+        // method as an argument expression inside when(...).thenReturn(...) confuses Mockito's
+        // ongoing-stubbing recorder (it reads as an attempt to stub that second call instead),
+        // and throws UnfinishedStubbingException. Verified directly: this was red before the fix.
+        String sourceId = configuredClient.sourceId();
+        when(configuredClient.fetch()).thenReturn(List.of(new RawTrend(headline, sourceId, "")));
     }
 }
