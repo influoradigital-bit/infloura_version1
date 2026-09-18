@@ -1934,6 +1934,121 @@ class CreatorNudgeServiceTest {
     }
 
     // ---------------------------------------------------------------------------------------
+    // F-0853 / F-0855 / F-0856 (decision 2026-09-18) — the deterministic filter, widened
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Every probe string from Kabir's F-0853/F-0855/F-0856 ledger entries (opened 2026-09-17),
+     * one row each, asserting the CATEGORY it must block as — table-driven so a regression fails
+     * by name, per the decision's own done_when.
+     *
+     * <p>F-0856 names four look-alike-character techniques (Hangul filler, small capitals,
+     * dotless i, Armenian look-alikes) without a concrete headline for any of them — the ledger
+     * entry states the technique, not a sample string. Those four rows are constructed here, one
+     * technique per row, spelling an otherwise-ordinary already-listed term so the row proves
+     * exactly the new fold/skip and nothing else; every other row is Kabir's own text, unedited.
+     */
+    static Stream<Arguments> decisionProbes() {
+        return Stream.of(
+                // F-0853 — generated -ing inflection of a MULTI-WORD phrase ("self harm").
+                arguments(
+                        "F-0853: -ing on a phrase (self harm -> self-harming)",
+                        "self-harming teens",
+                        UnsafeHeadlineTopic.DEATH),
+                // F-0855 — generated SINGLE-WORD inflections (previously no suffix rule at all).
+                arguments("F-0855: terrorist+s", "terrorists", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("F-0855: riot+ers", "rioters", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("F-0855: bomb+ed", "bombed", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("F-0855: crime+s", "crimes", UnsafeHeadlineTopic.CRIME),
+                arguments("F-0855: funeral+s", "funerals", UnsafeHeadlineTopic.DEATH),
+                arguments("F-0855: verdict+s", "verdicts", UnsafeHeadlineTopic.LEGAL),
+                // F-0855 — hashtag / camelCase / joined-word splitting.
+                arguments(
+                        "F-0855: hashtag camelCase split (#DelhiRiots -> ...Riots)",
+                        "#DelhiRiots",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "F-0855: hashtag camelCase split (#GangRape -> ...Rape)",
+                        "#GangRape",
+                        UnsafeHeadlineTopic.CRIME),
+                // F-0855 — Indian-English news term set, named outright in the ledger.
+                arguments("F-0855: stone pelting", "stone pelting", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("F-0855: FIR lodged", "FIR lodged", UnsafeHeadlineTopic.CRIME),
+                arguments("F-0855: Delhi HC", "Delhi HC", UnsafeHeadlineTopic.LEGAL),
+                arguments("F-0855: apex court", "apex court", UnsafeHeadlineTopic.LEGAL),
+                arguments("F-0855: succumb+s", "succumbs", UnsafeHeadlineTopic.DEATH),
+                arguments("F-0855: stampede", "stampede", UnsafeHeadlineTopic.DEATH),
+                arguments("F-0855: slain (irregular, listed literally)", "slain", UnsafeHeadlineTopic.DEATH),
+                // F-0856 — Hindi/Hinglish (Latin-script) term set, named outright in the ledger.
+                arguments("F-0856: hatya", "hatya", UnsafeHeadlineTopic.CRIME),
+                arguments("F-0856: balatkar", "balatkar", UnsafeHeadlineTopic.CRIME),
+                arguments("F-0856: atmahatya", "atmahatya", UnsafeHeadlineTopic.DEATH),
+                // F-0856 — digit/symbol confusables, Kabir's own named samples verbatim.
+                arguments("F-0856: murd3r (3->e, Kabir's own sample)", "murd3r", UnsafeHeadlineTopic.CRIME),
+                arguments("F-0856: r@pe (@->a, Kabir's own sample)", "r@pe", UnsafeHeadlineTopic.CRIME),
+                // F-0856 — look-alike-character techniques, constructed (see javadoc above).
+                arguments(
+                        "F-0856: Hangul filler U+3164 inside 'murder'",
+                        "muㅤrder",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "F-0856: small capitals spelling 'rape' (ʀᴀᴘᴇ)",
+                        "ʀᴀᴘᴇ",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "F-0856: dotless i (U+0131) in 'indicted'",
+                        "ındıcted",
+                        UnsafeHeadlineTopic.LEGAL),
+                arguments(
+                        "F-0856: Armenian OH (U+0585) in 'bomb'", "bօmb", UnsafeHeadlineTopic.COMMUNAL));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\" -> {2}")
+    @MethodSource("decisionProbes")
+    @DisplayName("2026-09-18 decision: every F-0853/F-0855/F-0856 probe blocks as its named category")
+    void firstUnsafeTopic_blocksEveryDecisionProbeAsItsCategory(
+            String technique, String probe, UnsafeHeadlineTopic expectedCategory) {
+        assertEquals(
+                expectedCategory,
+                CreatorNudgeService.firstUnsafeTopic(probe),
+                "probe did not block as " + expectedCategory + " [" + technique + "]: \"" + probe + "\"");
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(probe),
+                "probe must not be quotable in creator copy [" + technique + "]: \"" + probe + "\"");
+    }
+
+    /**
+     * The decision doc's own required benign control set (done_when), verbatim. Every generated-
+     * inflection, hashtag-splitting, Hindi-term and confusable-folding mechanism added above must
+     * co-exist with these staying quotable — this is the anti-vacuity counterweight to {@link
+     * #firstUnsafeTopic_blocksEveryDecisionProbeAsItsCategory}: a filter that blocked everything
+     * would pass that suite too.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Tennis courts open",
+                "Flash mobs dance",
+                "Killer ab workout",
+                "issues with skincare",
+                "Diwali fashion haul",
+                "Budget travel in Goa",
+                "Sale ends tonight",
+                "Court shoes styling",
+                "Shooting stars photography",
+                "Bombay Duck recipe"
+            })
+    @DisplayName("2026-09-18 decision: the required benign control set still passes as quotable")
+    void firstUnsafeTopic_decisionBenignControlSetStaysQuotable(String benign) {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(benign),
+                "benign control was classified unsafe: " + benign);
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(benign),
+                "benign control was classified unsafe: " + benign);
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------
 
