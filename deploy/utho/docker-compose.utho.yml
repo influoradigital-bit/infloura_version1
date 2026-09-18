@@ -179,6 +179,13 @@ services:
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      # T-GOLIVE-0918 [meera · 2026-09-18] — was unforwarded (F-0787-class gap: explicit-map
+      # environment: only passes listed keys). application.yml:559 reads
+      # ${TREND_INGEST_PULL_CRON:0 0 5 * * *}; TrendIngestProperties#setPullCron (L108-110)
+      # also guards a blank value back to the same default, so mirroring the default here is
+      # belt-and-suspenders, not load-bearing. Source: application.yml:559,
+      # TrendIngestProperties.java:33-35,104-110.
+      TREND_INGEST_PULL_CRON: ${TREND_INGEST_PULL_CRON:-0 0 5 * * *}
       # ---- Creator AI Co-pilot batch (OFF unless set in .env) ----
       # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
       # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.

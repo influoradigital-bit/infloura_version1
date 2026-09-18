@@ -207,6 +207,13 @@ services:
       NEWSAPI_KEY: ${NEWSAPI_KEY:-}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      # T-GOLIVE-0918 [meera · 2026-09-18] — was unforwarded (F-0787-class gap: explicit-map
+      # environment: only passes listed keys). application.yml:559 reads
+      # ${TREND_INGEST_PULL_CRON:0 0 5 * * *}; TrendIngestProperties#setPullCron (L108-110)
+      # also guards a blank value back to the same default, so mirroring the default here is
+      # belt-and-suspenders, not load-bearing. Source: application.yml:559,
+      # TrendIngestProperties.java:33-35,104-110.
+      TREND_INGEST_PULL_CRON: ${TREND_INGEST_PULL_CRON:-0 0 5 * * *}
       # ---- Creator AI Co-pilot batch (OFF unless set in .env) ---- F-0787: was missing here.
       # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
       # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.
@@ -325,6 +332,12 @@ services:
       TREND_TAG_INGEST_SECRET: ${TREND_TAG_INGEST_SECRET}
       AI_DAILY_SPEND_CEILING_USD: "15.0"
       AI_SPEND_KILL_SWITCH: "false"
+      # T-GOLIVE-0918 [meera · 2026-09-18] — was present in docker-compose.utho.yml (this
+      # service's env is not covered by the utho-compose-keysets-match.sh gate, which only
+      # checks influora-api) but missing here, so this shared box silently ran the code
+      # default (0.75) instead of a value ops could override. Source: influora-ai/app/config.py
+      # L455-457 (_get_float("AI_CREATOR_MONTHLY_CAP_USD", 0.75)).
+      AI_CREATOR_MONTHLY_CAP_USD: "0.75"
       # P1 BLANK TURN fix (2026-07-24, wiki/ai-review/meera-blank-turn-ai-
       # review.md): previously UNSET here, silently inheriting the Python
       # default (384), which sat exactly on create_campaign's tool-JSON
