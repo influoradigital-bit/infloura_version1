@@ -152,7 +152,17 @@ services:
       MEERA_STREAM_SIGNING_SECRET: ${MEERA_STREAM_SIGNING_SECRET}
       INTERNAL_SERVICE_TOKEN_SECRET: ${INTERNAL_SERVICE_TOKEN_SECRET}
       INTERNAL_REQUEST_HMAC_SECRET: ${INTERNAL_REQUEST_HMAC_SECRET}
-      INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET: ${INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET}
+      # T-GOLIVE-0918 [meera · 2026-09-18] — REPAIR ROUND 2 MEDIUM: this key forwarded
+      # INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET (Spring's relaxed-binding alias), which has
+      # NO ${...} placeholder anywhere in application.yml — only BRAND_SAFETY_SERVICE_TOKEN_SECRET
+      # does, at application.yml:279 (influora.brand-safety-service-token.signing-secret). An
+      # unset host var here still creates the container env key with a BLANK value (`docker compose
+      # config` prints "variable is not set, defaulting to a blank string"), and an OS-environment
+      # var deterministically outranks an application.yml placeholder in Spring's property sources
+      # — so this line silently overrode a correctly-set BRAND_SAFETY_SERVICE_TOKEN_SECRET with "".
+      # Fixed to forward the name application.yml actually binds to. Source:
+      # BrandSafetyServiceTokenProperties.java:42-56, application.yml:279.
+      BRAND_SAFETY_SERVICE_TOKEN_SECRET: ${BRAND_SAFETY_SERVICE_TOKEN_SECRET}
       # ---- Keys with no YAML default (doc 06 §2.2) ----
       INFLUORA_JWKS_PRIVATEKEYPEM: ${INFLUORA_JWKS_PRIVATEKEYPEM}
       INFLUORA_JWKS_PUBLICKEYPEM: ${INFLUORA_JWKS_PUBLICKEYPEM}
@@ -197,6 +207,23 @@ services:
       # Gates CreatorCaptionSyncJob + CreatorThemeTaggingJob. While false, a connected creator sees
       # "Usually ready within a day." indefinitely — see influora.creator-copilot in application.yml.
       CREATOR_COPILOT_ENABLED: ${CREATOR_COPILOT_ENABLED:-false}
+      # T-GOLIVE-0918 [meera · 2026-09-18] — REPAIR ROUND 2 MEDIUM: these 7 CreatorCopilotProperties
+      # tunables were named in wiki/processes/go-live-0918.md §2 as "the influora-api environment
+      # keyset from docker-compose.utho.yml", but were never actually in this file — the runbook's
+      # claim was false for these rows. Added so the compose-based deploy path (§READ THIS FIRST §1
+      # — a future-migration target, not today's live mechanism) can actually override them, same as
+      # today's --env-file path already can. Defaults mirror application.yml:541-549 exactly.
+      CREATOR_COPILOT_SCORE_THRESHOLD: ${CREATOR_COPILOT_SCORE_THRESHOLD:-2}
+      CREATOR_COPILOT_DAILY_CAP: ${CREATOR_COPILOT_DAILY_CAP:-1}
+      CREATOR_COPILOT_PROMPT_VERSION: ${CREATOR_COPILOT_PROMPT_VERSION:-creator-copilot-v1}
+      CREATOR_COPILOT_CAPTION_SYNC_MEDIA_LIMIT: ${CREATOR_COPILOT_CAPTION_SYNC_MEDIA_LIMIT:-25}
+      CREATOR_COPILOT_CAPTION_SYNC_MAX_CREATORS_PER_RUN: ${CREATOR_COPILOT_CAPTION_SYNC_MAX_CREATORS_PER_RUN:-0}
+      CREATOR_COPILOT_CAPTION_SYNC_CRON: ${CREATOR_COPILOT_CAPTION_SYNC_CRON:-0 0 2 * * *}
+      CREATOR_COPILOT_THEME_TAG_CRON: ${CREATOR_COPILOT_THEME_TAG_CRON:-0 0 3 * * *}
+      # T-GOLIVE-0918 [meera · 2026-09-18] — REPAIR ROUND 2 MEDIUM: BrandSafetyScoringProperties
+      # flags, same gap as the Creator Co-pilot tunables above. Source: application.yml:522-524.
+      BRAND_SAFETY_SCORING_ENABLED: ${BRAND_SAFETY_SCORING_ENABLED:-false}
+      BRAND_SAFETY_SCORING_MAX_CREATORS_PER_RUN: ${BRAND_SAFETY_SCORING_MAX_CREATORS_PER_RUN:-100}
       # T-MEERA-CREATOR-PHASE-A, Priya gate review defect 4 — rollback flag for the whole Meera
       # for Creators surface (see MeeraCreatorFeatureProperties/application.yml). On by default;
       # flip to "false" to 404 every CREATOR-audience Meera route without a code rollback.
