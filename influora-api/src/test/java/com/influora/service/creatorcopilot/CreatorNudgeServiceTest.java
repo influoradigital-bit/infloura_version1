@@ -2049,6 +2049,130 @@ class CreatorNudgeServiceTest {
     }
 
     // ---------------------------------------------------------------------------------------
+    // F-0857 repair round 1 (vikram, 2026-09-18) — an independent reviewer FAILED commit 927002a
+    // against Kabir's own F-0853/F-0855/F-0856 ledger entries and the LOCKED decision text. Every
+    // row below reproduces one named defect from that review, table-driven, same discipline as
+    // {@link #decisionProbes()} above.
+    // ---------------------------------------------------------------------------------------
+
+    static Stream<Arguments> repairRound1Probes() {
+        return Stream.of(
+                // HIGH-1 — the '@'->'a' fold 927002a added turned '@' from a separator into a
+                // letter, gluing "murder@midnight" into one token and breaking the token-end
+                // anchor. Fixed by trying both readings (CONFUSABLE_FOLD_VARIANTS).
+                arguments("HIGH-1: murder@midnight", "murder@midnight", UnsafeHeadlineTopic.CRIME),
+                arguments("HIGH-1: Riots@Delhi", "Riots@Delhi", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("HIGH-1: suicide@IIT", "suicide@IIT", UnsafeHeadlineTopic.DEATH),
+                // HIGH-2 — '1' is ambiguous between 'i' and 'l' (the LOCKED decision says
+                // "1->i/l"); 927002a only tried 'l'. Fixed the same way as HIGH-1.
+                arguments("HIGH-2: k1lled (1->i)", "k1lled", UnsafeHeadlineTopic.DEATH),
+                arguments("HIGH-2: su1c1de (1->i)", "su1c1de", UnsafeHeadlineTopic.DEATH),
+                // LOW-8 — '|' is the same i/l ambiguity as '1', folded via the same mechanism.
+                arguments("LOW-8: k|lled (|->i)", "k|lled", UnsafeHeadlineTopic.DEATH),
+                arguments("LOW-8: ki||ed (|->l)", "ki||ed", UnsafeHeadlineTopic.DEATH),
+                // MEDIUM-4 — e-dropping inflections for terms ending in a bare "e". The 927002a
+                // code comment claimed "stampedes"/"stampeded"/"stampeding" were already generated;
+                // they were not (plain "+ed"/"+ing" gives "stampedeed"/"stampedeing").
+                arguments("MEDIUM-4: stampede+d", "stampeded", UnsafeHeadlineTopic.DEATH),
+                arguments("MEDIUM-4: stampede, drop-e+ing", "stampeding", UnsafeHeadlineTopic.DEATH),
+                arguments("MEDIUM-4: rape, drop-e+ing", "raping", UnsafeHeadlineTopic.CRIME),
+                arguments("MEDIUM-4: abuse, drop-e+ing", "abusing", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "MEDIUM-4: police, drop-e+ing (phrase)",
+                        "policing crackdown",
+                        UnsafeHeadlineTopic.CRIME),
+                // HIGH-3 — Devanagari coverage, required outright by the LOCKED decision text ("a
+                // Hindi and Hinglish term set, in Latin script and Devanagari"). Correctly-spelled
+                // Devanagari input (with matras/virama) reduces to the same consonant skeleton the
+                // listed terms are written in, via the SAME normalizeForMatching combining-mark
+                // stripping the Latin-script evasions rely on.
+                arguments("HIGH-3: हत्या (hatya, correctly spelled)",
+                        "हत्या", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "HIGH-3: बलात्कार (balatkar, correctly spelled)",
+                        "बलात्कार",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "HIGH-3: आत्महत्या (atmahatya, correctly spelled)",
+                        "आत्महत्या",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "HIGH-3: दंगे (dange/riots, correctly spelled)",
+                        "दंगे",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                // MEDIUM-6 — Indian-English/Hinglish vocabulary an independent reviewer's probe
+                // found bypassing.
+                arguments("MEDIUM-6: aatmahatya", "aatmahatya", UnsafeHeadlineTopic.DEATH),
+                arguments("MEDIUM-6: maut", "maut", UnsafeHeadlineTopic.DEATH),
+                arguments("MEDIUM-6: hatyakand", "hatyakand", UnsafeHeadlineTopic.CRIME),
+                arguments("MEDIUM-6: balatkari", "balatkari", UnsafeHeadlineTopic.CRIME),
+                arguments("MEDIUM-6: qatl", "qatl", UnsafeHeadlineTopic.CRIME),
+                arguments("MEDIUM-6: danga", "danga", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("MEDIUM-6: stone pelters", "stone pelters", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("MEDIUM-6: kidnappers (double consonant)", "Kidnappers", UnsafeHeadlineTopic.CRIME),
+                arguments("MEDIUM-6: scammers (double consonant)", "Scammers", UnsafeHeadlineTopic.CRIME),
+                arguments("MEDIUM-6: fraudster (irregular)", "Fraudster held", UnsafeHeadlineTopic.CRIME),
+                arguments("MEDIUM-6: chargesheet filed", "chargesheet filed", UnsafeHeadlineTopic.CRIME),
+                arguments("MEDIUM-6: gunned down", "Man gunned down in Delhi", UnsafeHeadlineTopic.CRIME),
+                arguments("MEDIUM-6: found hanging", "Woman found hanging", UnsafeHeadlineTopic.DEATH),
+                arguments("MEDIUM-6: Bombay HC", "Bombay HC quashes FIR", UnsafeHeadlineTopic.LEGAL),
+                arguments("MEDIUM-6: Allahabad HC", "Allahabad HC", UnsafeHeadlineTopic.LEGAL),
+                arguments("MEDIUM-6: top court", "top court", UnsafeHeadlineTopic.LEGAL),
+                // LOW-8 — additional confusable folds an independent reviewer's probe found
+                // bypassing, same small-curated-table discipline as the existing entries.
+                arguments("LOW-8: r4pe (4->a)", "r4pe", UnsafeHeadlineTopic.CRIME),
+                arguments("LOW-8: 5uicide (5->s)", "5uicide", UnsafeHeadlineTopic.DEATH),
+                arguments("LOW-8: a$$ault ($->s)", "a$$ault", UnsafeHeadlineTopic.CRIME),
+                arguments("LOW-8: murd€r (euro sign->e)", "murd€r", UnsafeHeadlineTopic.CRIME),
+                arguments("LOW-8: rɑpe (Latin alpha U+0251->a)", "rɑpe", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "LOW-8: ԁеатһ (Cyrillic shha U+04BB->h)",
+                        "ԁеатһ",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "LOW-8: murdЗr (Cyrillic Ze U+0417->e)", "murdЗr", UnsafeHeadlineTopic.CRIME),
+                arguments("LOW-8: bomƄ (LATIN TONE SIX U+0184->b)", "bomƄ", UnsafeHeadlineTopic.COMMUNAL));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\" -> {2}")
+    @MethodSource("repairRound1Probes")
+    @DisplayName("F-0857 repair round 1: every independent-reviewer probe blocks as its named category")
+    void firstUnsafeTopic_blocksEveryRepairRound1Probe(
+            String defect, String probe, UnsafeHeadlineTopic expectedCategory) {
+        assertEquals(
+                expectedCategory,
+                CreatorNudgeService.firstUnsafeTopic(probe),
+                "probe did not block as " + expectedCategory + " [" + defect + "]: \"" + probe + "\"");
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(probe),
+                "probe must not be quotable in creator copy [" + defect + "]: \"" + probe + "\"");
+    }
+
+    /**
+     * LOW-6 — the hashtag/camelCase splitting F-0855 added generates "bomber"/"blaster"/
+     * "blasting"/"arresting" from terms ("bomb", "blast", "arrest") this filter must keep; these
+     * are the same class of accepted false positive as "Killer ab workout" already pinned safe
+     * above, restored via {@code GENERATED_FORM_BLOCKLIST}.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Bomber jacket styling",
+                "Nerf blaster unboxing",
+                "Blasting music workout",
+                "Arresting sunset shots"
+            })
+    @DisplayName("F-0857 repair round 1: generated-suffix false positives stay quotable")
+    void firstUnsafeTopic_repairRound1GeneratedFormExclusionsStayQuotable(String benign) {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(benign),
+                "benign control was classified unsafe: " + benign);
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(benign),
+                "benign control was classified unsafe: " + benign);
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------
 

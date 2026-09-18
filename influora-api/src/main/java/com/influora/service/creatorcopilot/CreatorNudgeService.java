@@ -17,7 +17,10 @@ import com.influora.web.dto.creatorcopilot.CreatorCopilotDtos.SuggestionDto;
 import java.text.Normalizer;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -696,16 +699,31 @@ public class CreatorNudgeService {
                         // it is listed as its own literal.
                         "succumb", "stampede", "slain",
                         // F-0856/2026-09-18 decision — Hinglish (Latin-script) term set, Kabir's
-                        // probe: "atmahatya" = suicide. Devanagari-script coverage is a KNOWN GAP,
-                        // stated rather than silently assumed complete: normalizeForMatching already
-                        // strips Devanagari vowel signs (matras) and the virama as combining marks
-                        // (rule 2), which is required for the Latin-script evasions this filter
-                        // targets, but a literal Devanagari term would have to be written in that
-                        // already-stripped consonant-skeleton form to pass the class-load
-                        // self-check below — getting that transliteration wrong fails class load for
-                        // the WHOLE enum. That risk is out of this changeset's safe scope; it belongs
-                        // to its own ticket, not a guess made here.
-                        "atmahatya")),
+                        // probe: "atmahatya" = suicide.
+                        "atmahatya",
+                        // F-0857 repair round 1 (vikram · 2026-09-18) — "aatmahatya" is the other
+                        // common Latin-script spelling (double vowel) of the same word; and "maut"
+                        // (death) closes an outright gap Kabir's probe named ("maut").
+                        "aatmahatya", "maut",
+                        // F-0857 repair round 1 — Devanagari coverage. The LOCKED decision (source:
+                        // wiki/decisions/2026-09-18-trend-headline-screening.md) requires "a Hindi
+                        // and Hinglish term set, in Latin script and Devanagari"; 927002a shipped
+                        // Latin script only and deferred Devanagari as "out of this changeset's safe
+                        // scope", which an independent reviewer correctly flagged as not meeting the
+                        // decision as ruled. Terms below are written in the CONSONANT-SKELETON form
+                        // normalizeForMatching actually produces (vowel signs/matras and the virama
+                        // are combining marks — rule 2 — and vanish before matching), exactly as this
+                        // enum's own class-load self-check requires; the mapping from correctly-
+                        // spelled Devanagari to that skeleton was verified mechanically (Node's NFKC
+                        // + NFD + Unicode-property-escape \p{Mn}\p{Mc}\p{Me} stripping, matching this
+                        // file's Java normalization rule-for-rule), not eyeballed:
+                        //   आत्महत्या (aatmahatya, suicide)  -> आतमहतय
+                        "आतमहतय",
+                        // F-0857 repair round 1 (vikram · 2026-09-18) — an independent reviewer's
+                        // probe found "Woman found hanging" bypassing; this is routine Indian-news
+                        // phrasing for a death/suicide discovery, distinct from the DEATH set's
+                        // existing "hanging"-free vocabulary.
+                        "found hanging")),
         CRIME(
                 Set.of(
                         "crime", "criminal", "murder", "murders", "murdered", "rape", "raped", "rapist",
@@ -724,10 +742,34 @@ public class CreatorNudgeService {
                         // F-0856/2026-09-18 decision — Hindi/Hinglish (Latin-script) term set,
                         // Kabir's probe: "hatya" (killing/murder), "balatkar" (rape).
                         "hatya", "balatkar",
+                        // F-0857 repair round 1 (vikram · 2026-09-18) — Hinglish inflections/
+                        // compounds Kabir's probe also named: "hatyakand" (murder incident/case),
+                        // "balatkari" (rapist), "qatl" (killing/murder, Urdu-Hindi register common
+                        // in Indian crime reporting).
+                        "hatyakand", "balatkari", "qatl",
+                        // F-0857 repair round 1 — Devanagari skeleton forms (see the DEATH set's
+                        // comment above for how these were derived and verified):
+                        //   हत्या (hatya, murder/killing)  -> हतय
+                        //   बलात्कार (balatkar, rape)      -> बलतकर
+                        "हतय", "बलतकर",
                         // F-0855/2026-09-18 decision — Indian-English news vocabulary Kabir's probe
                         // named outright: an FIR (First Information Report) being lodged is how an
                         // Indian crime story is reported ahead of any arrest or verdict.
-                        "fir lodged")),
+                        "fir lodged",
+                        // F-0857 repair round 1 — an independent reviewer's probe found these
+                        // bypassing. Not reachable via GENERATED_SUFFIXES: "kidnapper"/"scammer"
+                        // double their final consonant (kidnap+er would generate "kidnaper", not
+                        // "kidnapper") and "fraudster" is an irregular agent-noun formation, so all
+                        // three are listed as their own literals rather than chasing consonant-
+                        // doubling as a general rule.
+                        "kidnapper", "kidnappers", "scammer", "scammers", "fraudster", "fraudsters",
+                        // F-0857 repair round 1 — Indian crime-reporting vocabulary an independent
+                        // reviewer's probe found bypassing: a chargesheet is the formal charge
+                        // document Indian police file, distinct from (and reported well before) a
+                        // court "indictment"/"conviction" already covered above; "gunned down" is
+                        // routine Indian-news phrasing for a fatal shooting that bare "gunman"/
+                        // "gunfire"/"shootout" above do not catch.
+                        "chargesheet", "chargesheeted", "gunned down")),
         COMMUNAL(
                 Set.of(
                         "communal", "sectarian", "riot", "riots", "rioting", "unrest", "curfew",
@@ -748,7 +790,24 @@ public class CreatorNudgeService {
                         // named outright: stone-pelting is Indian-news shorthand for crowd violence
                         // during a protest or riot, not a sport or craft term in this product's
                         // niche.
-                        "stone pelting")),
+                        "stone pelting",
+                        // F-0857 repair round 1 (vikram · 2026-09-18) — "stone pelters" (the agent
+                        // noun) is a distinct phrase from "stone pelting" above, not reachable by
+                        // GENERATED_SUFFIXES (which appends to the whole phrase's compact form, not
+                        // to its final word alone); an independent reviewer's probe found it
+                        // bypassing. "danga"/"dange" (riot/riots) is the Hinglish (Latin-script)
+                        // counterpart to the Devanagari skeleton below, named in the same probe
+                        // family as "hatya"/"balatkar".
+                        "stone pelters", "danga", "dange",
+                        // F-0857 repair round 1 — Devanagari skeleton form (see the DEATH set's
+                        // comment for how these are derived and verified):
+                        //   दंगे (dange, riots) -> दग
+                        // Accepted cost, stated rather than discovered later: at 2 code points this
+                        // skeleton is short enough that an unrelated Devanagari word sharing the
+                        // same consonant skeleton (e.g. "दागी", tainted/accused) would also match —
+                        // same asymmetry this file already accepts for short high-signal terms
+                        // elsewhere (F-0786's own design notes).
+                        "दग")),
         LEGAL(
                 Set.of(
                         "lawsuit", "lawsuits", "sue", "sues", "sued", "suing", "litigation",
@@ -760,7 +819,12 @@ public class CreatorNudgeService {
                         // named outright: "Delhi HC" and "apex court" are how Indian outlets refer
                         // to the Delhi High Court and the Supreme Court respectively; neither is
                         // covered by the existing "high court"/"supreme court" phrases.
-                        "delhi hc", "apex court"));
+                        "delhi hc", "apex court",
+                        // F-0857 repair round 1 (vikram · 2026-09-18) — an independent reviewer's
+                        // probe found other High Courts' "<City> HC" shorthand and "top court" (a
+                        // common headline synonym for the Supreme Court, alongside "apex court"
+                        // above) bypassing the same way "Delhi HC" did before F-0855.
+                        "bombay hc", "allahabad hc", "top court"));
 
         private final Set<String> terms;
 
@@ -859,16 +923,78 @@ public class CreatorNudgeService {
                     // Unicode data (its uppercase form is plain 'I'), so Character.toLowerCase leaves
                     // it unchanged — the fold has to happen here, not via case-mapping.
                     Map.entry(0x0131, (int) 'i'),
-                    // Digit and symbol leetspeak substitutions (F-0856, decision 2026-09-18, Kabir's
-                    // own named samples "murd3r" and "r@pe"). '1' is deliberately folded to 'l' (not
-                    // 'i'): the two are genuinely ambiguous in real leetspeak use, and 'l' is the
-                    // asymmetry that actually appears in the recorded samples; a case needing the
-                    // other reading has not been observed and should be added as its own entry rather
-                    // than guessed at here.
+                    // Digit and symbol leetspeak substitutions that are UNAMBIGUOUS — i.e. every
+                    // reported real-world use folds to the same Latin letter, so a single static
+                    // entry is correct and '1'/'|' (see AMBIGUOUS_FOLD_VARIANTS below) are NOT here.
+                    // F-0857 repair round 1 (vikram · 2026-09-18) — '4'->a, '5'->s, '$'->s and the
+                    // four extra homoglyphs below were added after an independent reviewer's probe
+                    // found them bypassing (r4pe, 5uicide, a$$ault, murd€r, rɑpe, ԁеатһ, murdЗr,
+                    // bomƄ). Source: wiki/decisions/2026-09-18-trend-headline-screening.md
+                    // ("confusable folding driven by the Unicode confusables data").
                     Map.entry((int) '0', (int) 'o'),
-                    Map.entry((int) '1', (int) 'l'),
                     Map.entry((int) '3', (int) 'e'),
-                    Map.entry((int) '@', (int) 'a'));
+                    Map.entry((int) '4', (int) 'a'),
+                    Map.entry((int) '5', (int) 's'),
+                    Map.entry((int) '$', (int) 's'),
+                    Map.entry((int) '€', (int) 'e'), // € EURO SIGN, e.g. "murd€r"
+                    Map.entry(0x0251, (int) 'a'), // ɑ LATIN SMALL LETTER ALPHA, e.g. "rɑpe"
+                    Map.entry(0x04BB, (int) 'h'), // һ CYRILLIC SMALL LETTER SHHA, e.g. "ԁеатһ"
+                    Map.entry(0x0437, (int) 'e'), // з CYRILLIC SMALL LETTER ZE (looks like '3'->e)
+                    Map.entry(0x0185, (int) 'b')); // ƅ LATIN SMALL LETTER TONE SIX, e.g. "bomƄ"
+
+    /**
+     * '1' and '|' are genuinely ambiguous leetspeak/confusable substitutions for BOTH 'i' and 'l'
+     * (F-0857 repair round 1, vikram · 2026-09-18 — an independent reviewer's probe showed
+     * "k1lled"/"su1c1de"/"d1ed"/"r1ots" [1-&gt;i needed] alongside "k|lled" [|-&gt;i needed] and
+     * "ki||ed" [|-&gt;l needed] all bypassing the single-reading '1'-&gt;'l' fold that 927002a
+     * shipped). The LOCKED decision text itself says "1→i/l", not "1→l" — there is no single
+     * correct static fold. Rather than guess, {@link #normalizeForMatching(String)} tries BOTH
+     * readings (as separate full normalization passes) and a headline is unsafe if EITHER reading
+     * matches — see {@link #CONFUSABLE_FOLD_VARIANTS}.
+     */
+    private static final Set<Integer> AMBIGUOUS_I_OR_L_CHARS = Set.of((int) '1', (int) '|');
+
+    /**
+     * '@' is a DIFFERENT kind of ambiguity from '1'/'|': folding it to 'a' is a mid-word leetspeak
+     * substitution ("r@pe" -&gt; "rape"), but '@' is ALSO an ordinary separator ("murder@midnight",
+     * "@murder", "#murder@home") where folding it to a letter GLUES the two sides into one token
+     * and breaks the token-start/token-end anchors {@link #matchesTerm} depends on — exactly the
+     * F-0857 repair-round-1 HIGH regression 927002a introduced by adding '@'-&gt;'a' unconditionally
+     * (probe: "murder@midnight" blocked on 927002a^, bypassed on 927002a). There is no single
+     * correct static choice, so — same technique as the '1'/'|' ambiguity above — both readings
+     * ('@' left as a separator, and '@' folded to 'a') are tried as separate normalization passes;
+     * see {@link #CONFUSABLE_FOLD_VARIANTS}.
+     */
+    private static final int AT_SIGN = '@';
+
+    /**
+     * Every confusable-fold reading {@link #firstUnsafeTopic(String)} must try (F-0857 repair round
+     * 1). {@link #CONFUSABLE_FOLD} above holds every UNAMBIGUOUS substitution; this builds the 2 (
+     * '1'/'|' -&gt; i, or -&gt; l) &times; 2 ('@' folded, or left as a separator) = 4 combinations on
+     * top of it. A headline is unsafe if ANY variant's normalization matches — see {@link
+     * #firstUnsafeTopic(String)}. Four full passes over a short trend headline is not a performance
+     * concern; this is not run per-suggestion (the 2026-09-18 decision moves it to ingest-time, one
+     * evaluation per trend).
+     */
+    private static final List<Map<Integer, Integer>> CONFUSABLE_FOLD_VARIANTS =
+            buildConfusableFoldVariants();
+
+    private static List<Map<Integer, Integer>> buildConfusableFoldVariants() {
+        List<Map<Integer, Integer>> variants = new ArrayList<>();
+        for (int ilReading : new int[] {'i', 'l'}) {
+            for (boolean foldAt : new boolean[] {false, true}) {
+                Map<Integer, Integer> variant = new HashMap<>(CONFUSABLE_FOLD);
+                for (int ambiguous : AMBIGUOUS_I_OR_L_CHARS) {
+                    variant.put(ambiguous, ilReading);
+                }
+                if (foldAt) {
+                    variant.put(AT_SIGN, (int) 'a');
+                }
+                variants.add(Collections.unmodifiableMap(variant));
+            }
+        }
+        return Collections.unmodifiableList(variants);
+    }
 
     /**
      * Letters (General_Category=Lo — {@link Character#isLetterOrDigit} says {@code true}) that
@@ -901,7 +1027,25 @@ public class CreatorNudgeService {
      * immediately next to the generator, not folded silently into a term set, so the exclusion
      * stays visible at the exact point that could reintroduce it. Same declaration-order
      * requirement as {@link #GENERATED_SUFFIXES} above. */
-    private static final Set<String> GENERATED_FORM_BLOCKLIST = Set.of("killer", "killers");
+    private static final Set<String> GENERATED_FORM_BLOCKLIST =
+            Set.of(
+                    "killer",
+                    "killers",
+                    // F-0857 repair round 1 (vikram · 2026-09-18) — "bomber"/"blaster"/"blasting"/
+                    // "arresting" are exactly the same class of accepted false positive as
+                    // "killer" above: generated by the ordinary -er/-ing suffix rule from terms
+                    // ("bomb", "blast", "arrest") this filter must keep, but the generated forms
+                    // are ordinary creator/fashion/sports vocabulary ("Bomber jacket styling",
+                    // "Nerf blaster unboxing", "Blasting music workout", "Arresting sunset
+                    // shots") with no plausible unsafe reading. An independent reviewer's probe
+                    // found these newly over-blocked after F-0853/F-0855's suffix generation
+                    // shipped in 927002a.
+                    "bomber",
+                    "bombers",
+                    "blaster",
+                    "blasters",
+                    "blasting",
+                    "arresting");
 
     static {
         // Anti-vacuity guard. Every term must already be in matching-normal form (lowercase,
@@ -969,11 +1113,14 @@ public class CreatorNudgeService {
         if (text == null) {
             return false;
         }
+        // Emptiness (all-invisible / all-format-character text) does not depend on WHICH
+        // confusable-fold variant is used — folding never turns a letter invisible or vice versa —
+        // so the canonical single-variant normalization is enough to decide it.
         NormalizedText normalized = normalizeForMatching(text);
         if (normalized.compact().isEmpty()) {
             return false;
         }
-        return firstUnsafeTopic(normalized) == null;
+        return firstUnsafeTopic(text) == null;
     }
 
     /**
@@ -988,7 +1135,16 @@ public class CreatorNudgeService {
         if (headline == null) {
             return null;
         }
-        return firstUnsafeTopic(normalizeForMatching(headline));
+        // F-0857 repair round 1 (vikram · 2026-09-18) — try every confusable-fold reading
+        // (CONFUSABLE_FOLD_VARIANTS) and block on the first one that matches. See that field's
+        // javadoc for why a single static fold cannot be correct for '1'/'|'/'@'.
+        for (Map<Integer, Integer> foldVariant : CONFUSABLE_FOLD_VARIANTS) {
+            UnsafeHeadlineTopic hit = firstUnsafeTopic(normalizeForMatching(headline, foldVariant));
+            if (hit != null) {
+                return hit;
+            }
+        }
+        return null;
     }
 
     /**
@@ -1094,6 +1250,26 @@ public class CreatorNudgeService {
                 return true;
             }
         }
+        // F-0857 repair round 1 (vikram · 2026-09-18) — e-dropping inflections for a term ending
+        // in a bare "e". GENERATED_SUFFIXES' plain "+ed"/"+ing" gives WRONG spellings for these
+        // ("stampede"+"ed"="stampedeed", "rape"+"ing"="rapeing") that never match anything, which
+        // is exactly what let "stampeded"/"stampeding"/"raping"/"abusing"/"policing" bypass on
+        // 927002a — the code comment there even claimed this rule already existed. The correct
+        // English inflections drop the trailing "e": add just "d" for the past tense ("stampede"
+        // -> "stampeded", "rape" -> "raped") and drop-e-then-"ing" for the gerund ("stampede" ->
+        // "stampeding", "rape" -> "raping", "police" -> "policing"). Deliberately narrow — this is
+        // still a literal suffix rule, not a spelling engine (see this method's class javadoc on
+        // why consonant doubling stays unhandled).
+        if (n >= 2 && compact.charAt(n - 1) == 'e') {
+            String dForm = compact + "d";
+            if (!GENERATED_FORM_BLOCKLIST.contains(dForm) && containsTerm(normalized, dForm)) {
+                return true;
+            }
+            String ingDropEForm = compact.substring(0, n - 1) + "ing";
+            if (!GENERATED_FORM_BLOCKLIST.contains(ingDropEForm) && containsTerm(normalized, ingDropEForm)) {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -1168,7 +1344,18 @@ public class CreatorNudgeService {
      * <p>Iteration is by code point, not by {@code char}, so supplementary-plane input is never
      * split across surrogates.
      */
+    /**
+     * The canonical (single-reading) normalization — used only where the ambiguous-confusable
+     * question does not apply: the class-load term-form self-check (terms are hand-written plain
+     * text, never leetspeak) and the all-invisible-text emptiness check in {@link
+     * #isQuotableInCreatorCopy}. Actual headline matching goes through {@link
+     * #firstUnsafeTopic(String)}, which tries every reading in {@link #CONFUSABLE_FOLD_VARIANTS}.
+     */
     private static NormalizedText normalizeForMatching(String text) {
+        return normalizeForMatching(text, CONFUSABLE_FOLD_VARIANTS.get(0));
+    }
+
+    private static NormalizedText normalizeForMatching(String text, Map<Integer, Integer> confusableFold) {
         String folded =
                 Normalizer.normalize(
                         Normalizer.normalize(text, Normalizer.Form.NFKC), Normalizer.Form.NFD);
@@ -1204,7 +1391,7 @@ public class CreatorNudgeService {
             // the confusable-folded result) that signals a camelCase/hashtag boundary.
             boolean isUpperBeforeFold = Character.isUpperCase(cp);
             int lowered = Character.toLowerCase(cp);
-            int normalizedCp = CONFUSABLE_FOLD.getOrDefault(lowered, lowered);
+            int normalizedCp = confusableFold.getOrDefault(lowered, lowered);
 
             if (Character.isLetterOrDigit(normalizedCp)) {
                 // Rule 5 (F-0855) — hashtag / camelCase / joined-word splitting. A lowercase-or-digit
