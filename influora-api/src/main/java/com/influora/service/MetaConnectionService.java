@@ -44,11 +44,12 @@ public class MetaConnectionService {
 
     /**
      * {@code /me}, not {@code /{ig-user-id}}, so a row whose stored account id is missing still
-     * resolves. Only the two fields the status response shows — the Instagram-Login user node does
-     * not support every field the Facebook-Login one does, and one unsupported field fails the
-     * whole request.
+     * resolves. Only fields the status response shows, all four listed for the Instagram-Login
+     * user node in Meta's get-started reference — that node does not support every field the
+     * Facebook-Login one does, and one unsupported field fails the whole request (F-0950).
      */
-    static final String INSTAGRAM_LOGIN_PROFILE_PATH = "/me?fields=username,followers_count";
+    static final String INSTAGRAM_LOGIN_PROFILE_PATH =
+            "/me?fields=username,followers_count,media_count,profile_picture_url";
 
     private final MetaOAuthTokenRepository tokenRepository;
     private final MetaTokenStorage tokenStorage;
@@ -85,6 +86,8 @@ public class MetaConnectionService {
 
         String handle = null;
         Long followers = null;
+        String profilePictureUrl = null;
+        Long mediaCount = null;
 
         Optional<PlatformStat> cachedInstagram =
                 platformStatRepository.findByCreatorProfileId(profile.getId()).stream()
@@ -115,6 +118,8 @@ public class MetaConnectionService {
                                     MetaAuthPath.INSTAGRAM_LOGIN);
                     liveUsername = igUser != null ? igUser.username() : null;
                     liveFollowers = igUser != null ? igUser.followersCount() : null;
+                    profilePictureUrl = igUser != null ? igUser.profilePictureUrl() : null;
+                    mediaCount = igUser != null ? igUser.mediaCount() : null;
                 } else {
                     FacebookAccountsListResponse.InstagramBusinessAccount igAccount =
                             facebookPageClient.resolveConnectedInstagram(accessToken.get());
@@ -135,14 +140,22 @@ public class MetaConnectionService {
             }
         }
 
-        if (handle == null && profile.getUsername() != null && !profile.getUsername().isBlank()) {
-            handle = formatHandle(profile.getUsername());
-        }
-        if (followers == null && profile.getTotalFollowers() > 0) {
-            followers = profile.getTotalFollowers();
-        }
+        // F-0950 — no fallback to the creator's Influora username or all-platform follower total.
+        // Those used to fill `handle`/`followers` when the live read failed, labelled as the
+        // Instagram account. Harmless while no screen displayed these fields; now that the
+        // Settings card does, a creator whose Instagram is @a but whose Influora page is /b would
+        // be shown "@b" as their connected Instagram. The cached Instagram platform stat above is
+        // a real Instagram value and stays; beyond it, null ("not known yet") is the honest answer.
 
-        return new MetaConnectionStatusResponse(true, handle, followers, connectedAt, grantedScopes);
+        return new MetaConnectionStatusResponse(
+                true,
+                handle,
+                followers,
+                connectedAt,
+                grantedScopes,
+                token.getAuthPath() != null ? token.getAuthPath().name() : null,
+                profilePictureUrl,
+                mediaCount);
     }
 
     @Transactional
@@ -153,7 +166,7 @@ public class MetaConnectionService {
 
     private static MetaConnectionStatusResponse disconnected() {
         return new MetaConnectionStatusResponse(
-                false, null, null, null, Collections.emptyList());
+                false, null, null, null, Collections.emptyList(), null, null, null);
     }
 
     /** The Instagram account id when stored; the creator id otherwise, so throttling still keys per creator. */

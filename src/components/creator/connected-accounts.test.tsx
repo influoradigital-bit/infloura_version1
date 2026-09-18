@@ -50,6 +50,7 @@ const mockedHook = vi.mocked(useMetaConnection);
 function baseResult(overrides: Partial<UseMetaConnectionResult['data']> = {}): UseMetaConnectionResult {
   return {
     data: { connected: true, scopes: [], accountType: 'business', ...overrides },
+    profile: null,
     loading: false,
     error: null,
     refresh: vi.fn(),

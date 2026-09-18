@@ -188,7 +188,13 @@ class MetaConnectionServiceTest {
     }
 
     private static InstagramUserResponse igUser(String username, Long followers) {
-        return new InstagramUserResponse(null, username, null, null, followers, null, null, null, null);
+        return igUser(username, followers, null, null);
+    }
+
+    private static InstagramUserResponse igUser(
+            String username, Long followers, Long mediaCount, String profilePictureUrl) {
+        return new InstagramUserResponse(
+                null, username, null, null, followers, null, mediaCount, profilePictureUrl, null);
     }
 
     @Test
@@ -273,5 +279,79 @@ class MetaConnectionServiceTest {
         assertEquals("@cached_ig", status.handle());
         assertEquals(900L, status.followers());
         verifyNoInteractions(facebookPageClient);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // F-0950 — the status says WHICH account is connected, for the Settings card
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "F-0950: an Instagram-Login status carries the login type, profile picture and post count"
+                    + " the Settings card and Meta's App Review screencast need")
+    void getStatus_instagramLogin_returnsProfileDetails() {
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(instagramLoginToken("17841400000000001")));
+        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
+        when(tokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID)).thenReturn(Optional.of("IGAAtoken"));
+        when(graphApiClient.get(
+                        eq(MetaConnectionService.INSTAGRAM_LOGIN_PROFILE_PATH),
+                        eq("IGAAtoken"),
+                        eq(InstagramUserResponse.class),
+                        any(),
+                        eq(MetaAuthPath.INSTAGRAM_LOGIN)))
+                .thenReturn(igUser("ig_only_creator", 12_345L, 87L, "https://cdn.example/pic.jpg"));
+
+        MetaConnectionStatusResponse status = service.getStatus(testProfile());
+
+        assertEquals("INSTAGRAM_LOGIN", status.authPath());
+        assertEquals("@ig_only_creator", status.handle());
+        assertEquals(12_345L, status.followers());
+        assertEquals(87L, status.mediaCount());
+        assertEquals("https://cdn.example/pic.jpg", status.profilePictureUrl());
+    }
+
+    @Test
+    @DisplayName(
+            "F-0950: the Instagram profile read asks only for fields Meta lists for this node — one"
+                    + " unsupported field fails the whole request")
+    void instagramLoginProfilePath_asksOnlyForDocumentedFields() {
+        assertEquals(
+                "/me?fields=username,followers_count,media_count,profile_picture_url",
+                MetaConnectionService.INSTAGRAM_LOGIN_PROFILE_PATH);
+    }
+
+    @Test
+    @DisplayName("F-0950: a Facebook-Login status reports FACEBOOK_LOGIN")
+    void getStatus_facebookLogin_reportsAuthPath() {
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(activeToken()));
+        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
+        when(tokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID)).thenReturn(Optional.of("EAAtoken"));
+        when(facebookPageClient.resolveConnectedInstagram("EAAtoken"))
+                .thenReturn(new FacebookAccountsListResponse.InstagramBusinessAccount("ig-1", "fb_path", 7L));
+
+        assertEquals("FACEBOOK_LOGIN", service.getStatus(testProfile()).authPath());
+    }
+
+    @Test
+    @DisplayName(
+            "F-0950: when the live read fails and nothing is cached, the handle is unknown — never the"
+                    + " creator's Influora username passed off as their Instagram")
+    void getStatus_liveFailureNoCache_doesNotInventHandleFromInfluoraUsername() {
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(instagramLoginToken("17841400000000001")));
+        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
+        when(tokenStorage.getValidCreatorToken(CREATOR_PROFILE_ID)).thenReturn(Optional.of("IGAAtoken"));
+        when(graphApiClient.get(any(), any(), eq(InstagramUserResponse.class), any(), any()))
+                .thenThrow(new MetaApiException("down"));
+
+        MetaConnectionStatusResponse status = service.getStatus(testProfile());
+
+        assertTrue(status.connected());
+        assertNull(
+                status.handle(),
+                "testProfile's Influora username is 'creator_handle'; it is not their Instagram handle");
+        assertNull(status.followers());
     }
 }

@@ -12,6 +12,7 @@ import com.influora.common.ApiException;
 import com.influora.config.R2Properties;
 import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.CreatorProfile;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.enums.CollaborationStatus;
@@ -342,7 +343,7 @@ class PortfolioServiceTest {
 
         assertEquals("NOT_CONNECTED", ex.getCode());
         assertEquals(HttpStatus.CONFLICT, ex.getStatus());
-        verify(instagramInsightsClient, never()).getProfile(any(), any());
+        verify(instagramInsightsClient, never()).getProfile(any(), any(), any());
     }
 
     @Test
@@ -369,7 +370,7 @@ class PortfolioServiceTest {
 
         assertEquals("TOKEN_EXPIRED", ex.getCode());
         assertEquals(HttpStatus.CONFLICT, ex.getStatus());
-        verify(instagramInsightsClient, never()).getProfile(any(), any());
+        verify(instagramInsightsClient, never()).getProfile(any(), any(), any());
     }
 
     @Test
@@ -395,7 +396,9 @@ class PortfolioServiceTest {
         when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
                 .thenReturn(Optional.of(tokenRow));
         when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.of("plaintext-token"));
-        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token")).thenReturn(igProfile);
+        when(instagramInsightsClient.getProfile(
+                        "17841400000000000", "plaintext-token", MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(igProfile);
         when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "INSTAGRAM"))
                 .thenReturn(Optional.empty());
         when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
@@ -452,7 +455,8 @@ class PortfolioServiceTest {
         when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
                 .thenReturn(Optional.of(tokenRow));
         when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.of("plaintext-token"));
-        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token")).thenReturn(igProfile);
+        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token", MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(igProfile);
         when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "INSTAGRAM"))
                 .thenReturn(Optional.empty());
         when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
@@ -509,7 +513,8 @@ class PortfolioServiceTest {
         when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
                 .thenReturn(Optional.of(tokenRow));
         when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.of("plaintext-token"));
-        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token")).thenReturn(igProfile);
+        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token", MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(igProfile);
         when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "INSTAGRAM"))
                 .thenReturn(Optional.of(legacyUnverified));
         when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
@@ -576,7 +581,8 @@ class PortfolioServiceTest {
         when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
                 .thenReturn(Optional.of(tokenRow));
         when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.of("plaintext-token"));
-        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token")).thenReturn(igProfile);
+        when(instagramInsightsClient.getProfile("17841400000000000", "plaintext-token", MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(igProfile);
         when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "INSTAGRAM"))
                 .thenReturn(Optional.of(previouslyVerified));
         when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
@@ -666,5 +672,47 @@ class PortfolioServiceTest {
         assertEquals(List.of(), service.getVisiblePinnedPosts(profileWithSettings(null)));
         assertEquals(List.of(), service.getVisiblePinnedPosts(profileWithSettings("   ")));
         assertEquals(List.of(), service.getVisiblePinnedPosts(profileWithSettings("{not json")));
+    }
+
+    @Test
+    @DisplayName(
+            "F-0950: an Instagram-Login creator's sync reads graph.instagram.com — the Facebook host"
+                    + " refuses their token with 190, which failed the Profile page's sync button")
+    void syncPlatforms_instagramLogin_routesToInstagramHost() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Real Creator");
+        MetaOAuthToken tokenRow =
+                MetaOAuthToken.builder()
+                        .id("01HTOKEN1234567890ABCDE")
+                        .creatorProfileId(PROFILE_ID)
+                        .igBusinessAccountId("17841400000000000")
+                        .encryptedAccessToken("cipher")
+                        .expiresAt(Instant.now().plusSeconds(3600))
+                        .authPath(MetaAuthPath.INSTAGRAM_LOGIN)
+                        .build();
+        InstagramUserResponse igProfile =
+                new InstagramUserResponse(
+                        "17841400000000000", "ig_only_creator", null, null, 1200L, 80L, 15L, null, null);
+
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(metaOAuthTokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(PROFILE_ID))
+                .thenReturn(Optional.of(tokenRow));
+        when(metaTokenStorage.getValidCreatorToken(PROFILE_ID)).thenReturn(Optional.of("IGAAtoken"));
+        when(instagramInsightsClient.getProfile(
+                        "17841400000000000", "IGAAtoken", MetaAuthPath.INSTAGRAM_LOGIN))
+                .thenReturn(igProfile);
+        when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "INSTAGRAM"))
+                .thenReturn(Optional.empty());
+        when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
+                .thenReturn(List.of(PlatformStat.builder().followers(1200L).build()));
+
+        service.syncPlatforms(principal);
+
+        ArgumentCaptor<PlatformStat> statCaptor = ArgumentCaptor.forClass(PlatformStat.class);
+        verify(platformStatRepository).save(statCaptor.capture());
+        assertEquals("ig_only_creator", statCaptor.getValue().getHandle());
+        assertEquals(1200L, statCaptor.getValue().getFollowers());
+        // The Facebook-routed overload must never be used for this token.
+        verify(instagramInsightsClient, never()).getProfile(any(), any());
     }
 }

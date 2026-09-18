@@ -31,7 +31,25 @@ const SCOPE_LABELS: MetaScopeInfo[] = [
   { scope: 'instagram_basic', label: 'Instagram profile & media' },
   { scope: 'instagram_manage_insights', label: 'Instagram insights & demographics' },
   { scope: 'pages_show_list', label: 'Facebook Pages list' },
+  // F-0950 — the Instagram-login scopes (MetaOAuthService.INSTAGRAM_LOGIN_SCOPES). Without these
+  // a creator who connected with Instagram login saw raw scope ids in the list below.
+  { scope: 'instagram_business_basic', label: 'Instagram profile & media' },
+  { scope: 'instagram_business_manage_insights', label: 'Instagram insights' },
 ];
+
+/** `@creator` → `https://www.instagram.com/creator/`, or `null` for anything that isn't a handle. */
+function instagramProfileUrl(handle: string | null): string | null {
+  if (!handle) return null;
+  const username = handle.replace(/^@/, '');
+  // Instagram usernames are letters, digits, periods and underscores — refuse anything else
+  // rather than building a link out of it.
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(username)) return null;
+  return `https://www.instagram.com/${username}/`;
+}
+
+function formatCount(value: number): string {
+  return value.toLocaleString('en-IN');
+}
 
 /**
  * Connected accounts card for creator settings — Instagram + Facebook Page
@@ -49,7 +67,17 @@ export function ConnectedAccounts() {
   const { toast } = useToast();
   // CR-107 — re-verified against GET /meta/oauth/status on mount and on tab
   // visibility-regain, not just read once from the localStorage mirror.
-  const { data: connectionState, loading: verifying, error: verifyError, refresh } = useMetaConnection();
+  const {
+    data: connectionState,
+    profile,
+    loading: verifying,
+    error: verifyError,
+    refresh,
+  } = useMetaConnection();
+  // A profile picture URL from Meta's CDN is signed and can expire; fall back to the Instagram
+  // mark instead of a broken image. Keyed by URL so a fresh, valid URL is not hidden by an old
+  // failure.
+  const [failedAvatarUrl, setFailedAvatarUrl] = React.useState<string | null>(null);
   const [isConnecting, setIsConnecting] = React.useState(false);
   // CR-102/F-0115 — there was no way for a creator to disconnect their Meta/Instagram
   // account anywhere in the product, even though the backend route and the correctly
@@ -106,6 +134,22 @@ export function ConnectedAccounts() {
   // status check is still in flight — show a neutral verifying state instead and only render
   // the confident Connected/Not-connected UI once the backend call resolves.
   const isVerifyingConnected = verifying && isConnected;
+  // F-0950 — details are only shown once the backend has confirmed the connection; a
+  // localStorage seed alone never carries them.
+  const shownProfile = isConnected && !isVerifyingConnected ? profile : null;
+  const instagramOnly = shownProfile?.authPath === 'INSTAGRAM_LOGIN';
+  const profileUrl = instagramProfileUrl(shownProfile?.handle ?? null);
+  const avatarUrl = shownProfile?.profilePictureUrl ?? null;
+  const showAvatar = !!avatarUrl && avatarUrl !== failedAvatarUrl;
+  const instagramDetails = [
+    shownProfile?.followers != null ? `${formatCount(shownProfile.followers)} followers` : null,
+    shownProfile?.mediaCount != null ? `${formatCount(shownProfile.mediaCount)} posts` : null,
+    shownProfile?.authPath === 'INSTAGRAM_LOGIN'
+      ? 'via Instagram login'
+      : shownProfile?.authPath === 'FACEBOOK_LOGIN'
+        ? 'via Facebook Page'
+        : null,
+  ].filter((part): part is string => part !== null);
 
   return (
     <Card className="mb-6">
@@ -144,20 +188,50 @@ export function ConnectedAccounts() {
           </p>
         )}
         <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400"
-              aria-hidden="true"
-            >
-              <Instagram className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <p className="text-sm font-medium">Instagram</p>
+          <div className="flex min-w-0 items-center gap-3">
+            {showAvatar ? (
+              <img
+                src={avatarUrl!}
+                alt={shownProfile?.handle ? `${shownProfile.handle} profile picture` : 'Instagram profile picture'}
+                className="h-10 w-10 shrink-0 rounded-full object-cover"
+                referrerPolicy="no-referrer"
+                onError={() => setFailedAvatarUrl(avatarUrl)}
+                data-testid="instagram-avatar"
+              />
+            ) : (
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400"
+                aria-hidden="true"
+              >
+                <Instagram className="h-5 w-5 text-white" />
+              </div>
+            )}
+            <div className="min-w-0">
+              {shownProfile?.handle ? (
+                <p className="truncate text-sm font-medium">
+                  {profileUrl ? (
+                    <a
+                      href={profileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:underline"
+                    >
+                      {shownProfile.handle}
+                    </a>
+                  ) : (
+                    shownProfile.handle
+                  )}
+                </p>
+              ) : (
+                <p className="text-sm font-medium">Instagram</p>
+              )}
               <p className="text-xs text-muted-foreground">
                 {isVerifyingConnected
                   ? 'Verifying connection…'
                   : isConnected
-                    ? 'Profile, media & insights connected'
+                    ? instagramDetails.length > 0
+                      ? instagramDetails.join(' · ')
+                      : 'Profile, media & insights connected'
                     : 'Not connected'}
               </p>
             </div>
@@ -201,13 +275,15 @@ export function ConnectedAccounts() {
                     pages_read_engagement after that scope was removed from REQUIRED_SCOPES. */}
                 {isVerifyingConnected
                   ? 'Verifying connection…'
-                  : isConnected
-                    ? 'Page list connected'
-                    : 'Not connected'}
+                  : instagramOnly
+                    ? 'Not needed — you connected with Instagram login'
+                    : isConnected
+                      ? 'Page list connected'
+                      : 'Not connected'}
               </p>
             </div>
           </div>
-          {isVerifyingConnected ? (
+          {instagramOnly ? null : isVerifyingConnected ? (
             <span className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               Verifying…

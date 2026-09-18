@@ -243,7 +243,14 @@ class MetaOAuthControllerTest {
         when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(profile));
         MetaConnectionStatusResponse expected =
                 new MetaConnectionStatusResponse(
-                        true, "@creator_handle", 1_000L, Instant.now(), List.of("instagram_basic"));
+                        true,
+                        "@creator_handle",
+                        1_000L,
+                        Instant.now(),
+                        List.of("instagram_basic"),
+                        "FACEBOOK_LOGIN",
+                        null,
+                        null);
         when(metaConnectionService.getStatus(profile)).thenReturn(expected);
 
         MetaConnectionStatusResponse response = controller.status(CREATOR_PRINCIPAL).data();

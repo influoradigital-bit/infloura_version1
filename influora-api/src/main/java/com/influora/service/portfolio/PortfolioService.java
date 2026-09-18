@@ -393,8 +393,13 @@ public class PortfolioService {
                                                 "Your Instagram connection expired — reconnect to sync",
                                                 HttpStatus.CONFLICT));
 
+        // F-0950 — route by the token's own login type. The two-argument getProfile always goes to
+        // graph.facebook.com, which refuses an Instagram-Login token with 190 "Cannot parse access
+        // token" — so the Profile page's sync button failed for every creator without a Facebook
+        // Page, and their Connected Accounts list there stayed empty until the nightly aggregation.
         InstagramUserResponse igProfile =
-                instagramInsightsClient.getProfile(igBusinessAccountId, accessToken);
+                instagramInsightsClient.getProfile(
+                        igBusinessAccountId, accessToken, tokenRow.getAuthPath());
 
         CreatorMetric metric =
                 CreatorMetric.builder()

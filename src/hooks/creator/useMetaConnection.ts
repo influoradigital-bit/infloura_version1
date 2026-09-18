@@ -28,13 +28,51 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { api, ApiError, type MetaConnectionState, type MetaConnectionStatusResponse } from '@/lib/api';
+import {
+  api,
+  ApiError,
+  type MetaAuthPath,
+  type MetaConnectionState,
+  type MetaConnectionStatusResponse,
+} from '@/lib/api';
+
+/**
+ * F-0950 — WHICH Instagram account is connected, as last verified by `GET /meta/oauth/status`.
+ * Every field is `null` when the backend could not read it; callers render nothing for a null
+ * rather than a placeholder that looks like data. Deliberately NOT persisted to the localStorage
+ * mirror: it is display data, only ever shown after a live verification.
+ */
+export interface MetaConnectedProfile {
+  /** Already `@`-prefixed by the backend, e.g. `@creator`. */
+  handle: string | null;
+  followers: number | null;
+  mediaCount: number | null;
+  profilePictureUrl: string | null;
+  authPath: MetaAuthPath | null;
+}
 
 export interface UseMetaConnectionResult {
   data: MetaConnectionState;
+  /** `null` until a status check confirms a connection, and after a disconnect. */
+  profile: MetaConnectedProfile | null;
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+}
+
+/** F-0950 — the display half of a status response, or `null` when there is no usable connection. */
+export function toConnectedProfile(
+  status: MetaConnectionStatusResponse,
+  usableConnected: boolean,
+): MetaConnectedProfile | null {
+  if (!usableConnected) return null;
+  return {
+    handle: status.handle ?? null,
+    followers: status.followers ?? null,
+    mediaCount: status.mediaCount ?? null,
+    profilePictureUrl: status.profilePictureUrl ?? null,
+    authPath: status.authPath ?? null,
+  };
 }
 
 /**
@@ -71,6 +109,7 @@ export function reconcileMetaConnectionStatus(status: MetaConnectionStatusRespon
 
 export function useMetaConnection(): UseMetaConnectionResult {
   const [data, setData] = useState<MetaConnectionState>(() => api.metaOAuth.getLocalConnectionState());
+  const [profile, setProfile] = useState<MetaConnectedProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,7 +118,9 @@ export function useMetaConnection(): UseMetaConnectionResult {
     setError(null);
     try {
       const status = await api.metaOAuth.status();
-      setData(reconcileMetaConnectionStatus(status));
+      const reconciled = reconcileMetaConnectionStatus(status);
+      setData(reconciled);
+      setProfile(toConnectedProfile(status, reconciled.connected));
     } catch (err) {
       // Leave `data` as the last-known (localStorage-seeded or previously-verified) state —
       // a network hiccup shouldn't yank a connected creator's UI to "disconnected".
@@ -102,7 +143,7 @@ export function useMetaConnection(): UseMetaConnectionResult {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [refresh]);
 
-  return { data, loading, error, refresh };
+  return { data, profile, loading, error, refresh };
 }
 
 export default useMetaConnection;

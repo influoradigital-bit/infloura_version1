@@ -5428,10 +5428,17 @@ export interface MetaConnectionState {
  *  `accountType` here (that's only resolved during the OAuth callback). */
 export interface MetaConnectionStatusResponse {
   connected: boolean;
-  handle?: string;
-  followers?: number;
-  connectedAt?: string;
+  handle?: string | null;
+  followers?: number | null;
+  connectedAt?: string | null;
   grantedScopes: string[];
+  /** F-0950 — which login the creator connected with; `null` while disconnected. Mirrors
+   *  `MetaDtos.MetaConnectionStatusResponse.authPath`. */
+  authPath?: MetaAuthPath | null;
+  /** F-0950 — only fetched for INSTAGRAM_LOGIN; `null` on the Facebook path or if Meta omits it. */
+  profilePictureUrl?: string | null;
+  /** F-0950 — post count; same availability as `profilePictureUrl`. */
+  mediaCount?: number | null;
 }
 
 const META_CONNECTION_KEY = 'meta_connection';
