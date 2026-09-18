@@ -101,10 +101,17 @@ export const MEERA_COMPOSER = {
 }
 
 /** Credit paywall (soft empty state, invitation not apology) */
+// F-0902: the old copy said funding a campaign unlocks Meera, but the escrow-funded credit reset
+// runs only inside Meera's confirm_launch tool, which the model is never offered; publishing from
+// the campaign UI does not call it. Its CTA also opened the funding stage with no payment request
+// (a permanent loader).
+// A plan upgrade is what actually restores credits (SubscriptionService applies the new allotment
+// at once). No fixed date either: Free refreshes on the 1st, Pro on its own billing date.
 export const MEERA_PAYWALL = {
-  title: "Fund your first campaign to unlock me fully",
-  body: "— or I'm back on the 1st.",
-  cta: 'Fund a campaign',
+  title: "You've used this month's Meera credits",
+  body: "Upgrade your plan for more now, or I'm back when your credits refresh.",
+  cta: 'See plans',
+  href: '/brand/settings/billing',
 }
 
 /**

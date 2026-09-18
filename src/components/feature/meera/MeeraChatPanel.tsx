@@ -1094,7 +1094,7 @@ export function MeeraChatPanel({
           mic loop + Web Audio graph don't run in the background. */}
       <div className="shrink-0 border-t border-meera-border bg-meera-surface p-4">
         {showPaywall ? (
-          <CreditPaywall onFund={() => onFunctionCall('request_payment')} />
+          <CreditPaywall />
         ) : live && voiceModeOpen ? (
           <VoiceMode
             open={voiceModeOpen}

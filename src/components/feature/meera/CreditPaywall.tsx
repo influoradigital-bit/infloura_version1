@@ -1,16 +1,21 @@
 import { Sparkles } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { MEERA_PAYWALL } from '@/data/meera-copy'
 import { cn } from '@/lib/utils'
 
 interface CreditPaywallProps {
-  onFund: () => void
   className?: string
 }
 
-/** Soft empty-state wall (PRD §7). An invitation, not an apology. */
-export function CreditPaywall({ onFund, className }: CreditPaywallProps) {
+/**
+ * Soft empty-state wall (PRD §7). An invitation, not an apology.
+ *
+ * F-0902: the CTA is a real link to billing. It used to call the chat's `request_payment` stage
+ * with no payment request, which parked the brand on a "Securing your funds…" loader forever.
+ */
+export function CreditPaywall({ className }: CreditPaywallProps) {
   return (
     <div
       className={cn(
@@ -25,8 +30,8 @@ export function CreditPaywall({ onFund, className }: CreditPaywallProps) {
         <p className="text-sm font-semibold text-meera-text">{MEERA_PAYWALL.title}</p>
         <p className="text-sm text-meera-text-muted">{MEERA_PAYWALL.body}</p>
       </div>
-      <Button onClick={onFund} className="bg-meera-accent text-white hover:bg-meera-accent-hover">
-        {MEERA_PAYWALL.cta}
+      <Button asChild className="bg-meera-accent text-white hover:bg-meera-accent-hover">
+        <Link to={MEERA_PAYWALL.href}>{MEERA_PAYWALL.cta}</Link>
       </Button>
     </div>
   )

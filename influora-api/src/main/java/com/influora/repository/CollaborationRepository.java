@@ -98,6 +98,17 @@ public interface CollaborationRepository extends JpaRepository<Collaboration, St
                     + "(SELECT ca.id FROM Campaign ca WHERE ca.workspaceId = :workspaceId)")
     List<Collaboration> findByWorkspaceId(@Param("workspaceId") String workspaceId);
 
+    /**
+     * Every collaboration between one workspace and one creator (creator USER id), resolved through
+     * {@code campaign.workspace_id} like {@link #findByWorkspaceId}. Used by {@code
+     * MetricsAuthorizationService} to decide whether that creator has agreed to work with the brand.
+     */
+    @Query(
+            "SELECT c FROM Collaboration c WHERE c.creatorId = :creatorId AND c.campaignId IN "
+                    + "(SELECT ca.id FROM Campaign ca WHERE ca.workspaceId = :workspaceId)")
+    List<Collaboration> findByWorkspaceIdAndCreatorId(
+            @Param("workspaceId") String workspaceId, @Param("creatorId") String creatorId);
+
     List<Collaboration> findByCreatorId(String creatorId);
 
     List<Collaboration> findByCreatorIdAndStatus(String creatorId, CollaborationStatus status);
