@@ -12,9 +12,11 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.influora.common.ApiException;
 import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.client.FacebookPageClient;
 import com.influora.integration.meta.client.MetaGraphApiClient;
+import com.influora.integration.meta.dto.InstagramAccountTypeResponse;
 import com.influora.integration.meta.dto.InstagramShortLivedTokenResponse;
 import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.exception.MetaApiException;
@@ -157,5 +159,84 @@ class CreatorMetaOAuthServiceInstagramLoginTest {
         verify(tokenStorage, never())
                 .storeCreatorToken(anyString(), anyString(), any(), any(), any(), any());
         verifyNoInteractions(eventPublisher);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // F-0891 — read account_type before the long-lived exchange
+    // ------------------------------------------------------------------------------------------
+
+    private void stubAccountType(String accountType) {
+        when(graphApiClient.get(
+                        any(), any(), eq(InstagramAccountTypeResponse.class), any(), any()))
+                .thenReturn(new InstagramAccountTypeResponse("17841400000000001", "creator", accountType));
+    }
+
+    private void stubExchangeChain() {
+        when(oAuthService.exchangeInstagramCodeForToken(CODE))
+                .thenReturn(
+                        new InstagramShortLivedTokenResponse(
+                                SHORT_LIVED, IG_USER_ID, List.of("instagram_business_basic")));
+    }
+
+    @Test
+    @DisplayName(
+            "F-0891: a personal account is refused with an instruction the creator can act on,"
+                    + " before the exchange Meta would answer with an opaque code 100")
+    void personalAccountIsRefusedBeforeTheExchange() {
+        stubExchangeChain();
+        stubAccountType("PERSONAL");
+
+        ApiException thrown =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.connect(CREATOR_PROFILE_ID, CODE, MetaAuthPath.INSTAGRAM_LOGIN));
+
+        assertEquals("INSTAGRAM_ACCOUNT_NOT_PROFESSIONAL", thrown.getCode());
+        assertTrue(
+                thrown.getMessage().contains("Business or Creator"),
+                "the creator must be told what to change: " + thrown.getMessage());
+        verify(oAuthService, never()).exchangeInstagramForLongLivedToken(any());
+        verify(tokenStorage, never())
+                .storeCreatorToken(anyString(), anyString(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("F-0891: a business account connects as before")
+    void businessAccountConnects() {
+        stubExchangeChain();
+        stubAccountType("BUSINESS");
+        when(oAuthService.exchangeInstagramForLongLivedToken(SHORT_LIVED))
+                .thenReturn(new MetaTokenResponse(LONG_LIVED, "bearer", 5_184_000L));
+
+        ConnectResult result = service.connect(CREATOR_PROFILE_ID, CODE, MetaAuthPath.INSTAGRAM_LOGIN);
+
+        assertTrue(result.connected());
+    }
+
+    @Test
+    @DisplayName(
+            "F-0891: an account type Meta has not documented is allowed through — the check must not"
+                    + " refuse accounts that work today")
+    void unrecognisedAccountTypeIsAllowed() {
+        stubExchangeChain();
+        stubAccountType("SOME_NEW_TYPE");
+        when(oAuthService.exchangeInstagramForLongLivedToken(SHORT_LIVED))
+                .thenReturn(new MetaTokenResponse(LONG_LIVED, "bearer", 5_184_000L));
+
+        assertTrue(
+                service.connect(CREATOR_PROFILE_ID, CODE, MetaAuthPath.INSTAGRAM_LOGIN).connected());
+    }
+
+    @Test
+    @DisplayName("F-0891: if the account check itself fails, the connect carries on unchanged")
+    void failedAccountCheckDoesNotBlockTheConnect() {
+        stubExchangeChain();
+        when(graphApiClient.get(any(), any(), eq(InstagramAccountTypeResponse.class), any(), any()))
+                .thenThrow(new MetaApiException("probe down"));
+        when(oAuthService.exchangeInstagramForLongLivedToken(SHORT_LIVED))
+                .thenReturn(new MetaTokenResponse(LONG_LIVED, "bearer", 5_184_000L));
+
+        assertTrue(
+                service.connect(CREATOR_PROFILE_ID, CODE, MetaAuthPath.INSTAGRAM_LOGIN).connected());
     }
 }

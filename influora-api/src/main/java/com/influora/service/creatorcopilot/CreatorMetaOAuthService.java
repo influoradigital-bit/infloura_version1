@@ -5,6 +5,8 @@ import com.influora.integration.meta.client.MetaGraphApiClient;
 import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.dto.FacebookAccountsListResponse.InstagramBusinessAccount;
 import com.influora.integration.meta.dto.MetaPermissionsResponse;
+import com.influora.common.ApiException;
+import com.influora.integration.meta.dto.InstagramAccountTypeResponse;
 import com.influora.integration.meta.dto.InstagramShortLivedTokenResponse;
 import com.influora.integration.meta.dto.MetaTokenResponse;
 import com.influora.integration.meta.exception.MetaApiException;
@@ -15,6 +17,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +55,14 @@ public class CreatorMetaOAuthService {
      * every downstream job's validity filter with no error anywhere.
      */
     private static final long DEFAULT_LONG_LIVED_TOKEN_LIFETIME_SECONDS = 60L * 24 * 60 * 60;
+
+    /** Only the three fields Meta's Instagram-Login page documents for this node (F-0891). */
+    private static final String INSTAGRAM_ACCOUNT_TYPE_PATH =
+            "/me?fields=user_id,username,account_type";
+
+    /** The values that mean "not a professional account". Anything else is allowed through. */
+    private static final java.util.Set<String> PERSONAL_ACCOUNT_TYPES =
+            java.util.Set.of("PERSONAL", "CONSUMER", "NONE");
 
     private final MetaOAuthService oAuthService;
     private final MetaTokenStorage tokenStorage;
@@ -198,6 +209,8 @@ public class CreatorMetaOAuthService {
                     "Instagram code exchange returned no access_token — the response shape is not the"
                             + " one this client parses; nothing to exchange for a long-lived token");
         }
+        refuseNonProfessionalAccount(creatorProfileId, shortLived);
+
         MetaTokenResponse longLived =
                 oAuthService.exchangeInstagramForLongLivedToken(shortLived.accessToken());
 
@@ -235,6 +248,63 @@ public class CreatorMetaOAuthService {
             return new ConnectResult(false, grantedScopes, ACCOUNT_TYPE_PERSONAL);
         }
         return new ConnectResult(true, grantedScopes, ACCOUNT_TYPE_BUSINESS);
+    }
+
+    /**
+     * F-0891 — reads {@code account_type} off the short-lived token and refuses a personal account
+     * with an instruction the creator can act on, instead of letting the long-lived exchange answer
+     * {@code 400 code 100 "Unsupported request - method type: get"}, which reaches them as
+     * "something went wrong".
+     *
+     * <p><b>Why this is the suspect.</b> On 2026-09-17, 11 of 12 connects produced a valid
+     * short-lived token with both {@code instagram_business_*} scopes granted and then failed that
+     * exchange; the twelfth succeeded, in the same hour, on the same app id and secret. Nothing
+     * about our configuration varied, so the account did.
+     *
+     * <p><b>Fails open, deliberately.</b> This blocks ONLY on a value it positively recognises as
+     * personal. An unrecognised value, a null, or a failure of the probe itself proceeds to the
+     * exchange exactly as before — Meta does not publish this field's value set, so a strict check
+     * would risk refusing accounts that work today. The value is logged either way, which is what
+     * settles the diagnosis on the next real attempt.
+     */
+    private void refuseNonProfessionalAccount(
+            String creatorProfileId, InstagramShortLivedTokenResponse shortLived) {
+        String accountType;
+        try {
+            InstagramAccountTypeResponse me =
+                    graphApiClient.get(
+                            INSTAGRAM_ACCOUNT_TYPE_PATH,
+                            shortLived.accessToken(),
+                            InstagramAccountTypeResponse.class,
+                            shortLived.userId() != null && !shortLived.userId().isBlank()
+                                    ? shortLived.userId()
+                                    : creatorProfileId,
+                            MetaAuthPath.INSTAGRAM_LOGIN);
+            accountType = me != null ? me.accountType() : null;
+            log.info(
+                    "F-0891 instagram account check for creator {}: accountType={}, usernamePresent={}",
+                    creatorProfileId,
+                    accountType,
+                    me != null && me.username() != null);
+        } catch (MetaApiException e) {
+            // The probe is diagnostic, not a gate: if Meta refuses it, the connect carries on and
+            // fails (or succeeds) exactly as it would have without this method.
+            log.warn(
+                    "F-0891 instagram account check failed for creator {} — continuing to the"
+                            + " long-lived exchange anyway: {}",
+                    creatorProfileId,
+                    e.getMessage());
+            return;
+        }
+
+        if (accountType != null && PERSONAL_ACCOUNT_TYPES.contains(accountType.trim().toUpperCase())) {
+            throw new ApiException(
+                    "INSTAGRAM_ACCOUNT_NOT_PROFESSIONAL",
+                    "This Instagram account is a personal account. In the Instagram app, go to"
+                            + " Settings > Account type and tools and switch to a Business or Creator"
+                            + " account, then connect again.",
+                    HttpStatus.BAD_REQUEST);
+        }
     }
 
     /** {@link FacebookPageClient#resolveConnectedInstagram} is a live Graph API call — a

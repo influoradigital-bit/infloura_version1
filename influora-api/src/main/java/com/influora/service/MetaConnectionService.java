@@ -101,7 +101,7 @@ public class MetaConnectionService {
                 String liveUsername;
                 Long liveFollowers;
                 if (token.getAuthPath() == MetaAuthPath.INSTAGRAM_LOGIN) {
-                    // F-0871 — an Instagram-Login token has no Facebook Page behind it and is only
+                    // F-0890 — an Instagram-Login token has no Facebook Page behind it and is only
                     // accepted by graph.instagram.com. Sending it to graph.facebook.com
                     // /me/accounts (the Facebook branch below) failed every status call with
                     // `190 "Invalid OAuth access token - Cannot parse access token"`, observed on

@@ -171,7 +171,7 @@ class MetaConnectionServiceTest {
     }
 
     // ------------------------------------------------------------------------------------------
-    // F-0871 — an INSTAGRAM_LOGIN token must never be sent to the Facebook Page lookup
+    // F-0890 — an INSTAGRAM_LOGIN token must never be sent to the Facebook Page lookup
     // ------------------------------------------------------------------------------------------
 
     private MetaOAuthToken instagramLoginToken(String igUserId) {
@@ -193,7 +193,7 @@ class MetaConnectionServiceTest {
 
     @Test
     @DisplayName(
-            "F-0871: an Instagram-Login creator status reads graph.instagram.com, never the Facebook"
+            "F-0890: an Instagram-Login creator status reads graph.instagram.com, never the Facebook"
                     + " Page lookup that rejects their token with 190")
     void getStatus_instagramLogin_readsInstagramHostNotFacebookPages() {
         when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
@@ -217,7 +217,7 @@ class MetaConnectionServiceTest {
     }
 
     @Test
-    @DisplayName("F-0871: a Facebook-Login creator status still uses the Page lookup and nothing else")
+    @DisplayName("F-0890: a Facebook-Login creator status still uses the Page lookup and nothing else")
     void getStatus_facebookLogin_unchanged() {
         when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(activeToken()));
@@ -234,7 +234,7 @@ class MetaConnectionServiceTest {
 
     @Test
     @DisplayName(
-            "F-0871: with no stored Instagram id the call still goes out, rate-limited under the"
+            "F-0890: with no stored Instagram id the call still goes out, rate-limited under the"
                     + " creator id rather than a null key")
     void getStatus_instagramLogin_missingIgId_usesCreatorIdAsRateLimitKey() {
         when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_PROFILE_ID))
@@ -253,7 +253,7 @@ class MetaConnectionServiceTest {
 
     @Test
     @DisplayName(
-            "F-0871: an Instagram API failure still reports connected, from cache, instead of failing"
+            "F-0890: an Instagram API failure still reports connected, from cache, instead of failing"
                     + " the status call")
     void getStatus_instagramLogin_apiFailure_fallsBackToCache() {
         PlatformStat igStat = org.mockito.Mockito.mock(PlatformStat.class);
