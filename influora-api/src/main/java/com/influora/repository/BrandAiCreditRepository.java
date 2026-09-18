@@ -158,7 +158,14 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
      * Unlike the retired {@code grantAllotmentIncrease}, this does NOT fail open on a null {@code
      * periodEnd} -- the service layer refuses to call this at all in that case (fails CLOSED, per
      * the ruling's update).
-     *   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §2, §3, §4
+     *
+     * <p><b>Repair round LOW [vikram · 2026-09-18]:</b> the guard used to be {@code
+     * creditGrantPeriodEnd <> :periodEnd}, which is symmetric -- it also re-fires for an OLDER
+     * period than the one already granted (H2 probeD: refill P2, spend, then refill P1 granted a
+     * second full allowance). The marker only ever needs to move FORWARD, so the guard is now
+     * {@code creditGrantPeriodEnd < :periodEnd}: a repeat of the SAME period is still a no-op (not
+     * {@code <}), and an out-of-order older period can never re-grant.
+     *   Source: repair round LOW finding on refillForBillingPeriod's WHERE clause
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
@@ -168,7 +175,7 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
                     + "c.lastReset = :today, "
                     + "c.updatedAt = :now "
                     + "WHERE c.workspaceId = :workspaceId "
-                    + "AND (c.creditGrantPeriodEnd IS NULL OR c.creditGrantPeriodEnd <> :periodEnd)")
+                    + "AND (c.creditGrantPeriodEnd IS NULL OR c.creditGrantPeriodEnd < :periodEnd)")
     int refillForBillingPeriod(
             @Param("workspaceId") String workspaceId,
             @Param("periodEnd") Instant periodEnd,
@@ -220,6 +227,36 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
             @Param("workspaceId") String workspaceId, @Param("today") LocalDate today, @Param("now") Instant now);
 
     /**
+     * Repair round LOW [vikram · 2026-09-18] -- the ruling's §2/§5 requirement that the monthly
+     * reset be "one atomic UPDATE, guarded in SQL on {@code last_reset}", not the previous
+     * Java-read-then-unguarded-{@link #calendarReset}-write pattern in {@code AICreditService
+     * #resetForNewCycleIfDue} (a TOCTOU window between the read and the write -- H2 probeE showed
+     * {@link #calendarReset} itself has no guard at all: called directly with {@code lastReset}
+     * already today, it still updates). {@code AICreditResetJob}'s ShedLock narrows but does not
+     * eliminate the race (a manual re-trigger, or overlap across a redeploy). Guarded so a repeat
+     * call in the SAME UTC calendar month (WHERE {@code lastReset < firstOfMonth}) is a genuine
+     * no-op at the database level, not just skipped by a caller that already decided not to call
+     * it. {@link #calendarReset} itself is left unconditional -- {@code
+     * SubscriptionService#grantAdminPlan}'s comp-grant "fill now regardless of this month's state"
+     * semantics still need it, and guarding it would silently break a same-month plan-change grant
+     * needing an immediate fill; whether a REPEATED comp grant of the SAME plan within a month
+     * should also be capped is a product question this lane does not decide (flagged, not fixed).
+     *   Source: repair round LOW finding on calendarReset / resetForNewCycleIfDue (H2 probeE)
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET c.creditsRemaining = c.monthlyAllotment, "
+                    + "c.lastReset = :today, "
+                    + "c.updatedAt = :now "
+                    + "WHERE c.workspaceId = :workspaceId AND c.lastReset < :firstOfMonth")
+    int calendarResetIfDue(
+            @Param("workspaceId") String workspaceId,
+            @Param("today") LocalDate today,
+            @Param("firstOfMonth") LocalDate firstOfMonth,
+            @Param("now") Instant now);
+
+    /**
      * T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- {@code AICreditService#applyEscrowFundedReset}
      * made atomic (F-0894): a funded launch is a funding event on NEITHER clock, so this must
      * NEVER write {@code creditGrantPeriodEnd}, {@code lastReset}, or {@code lastResetPeriodEnd} --
@@ -251,4 +288,47 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
             @Param("loyaltyBonus") int loyaltyBonus,
             @Param("now") Instant now,
             @Param("unlimitedUntil") Instant unlimitedUntil);
+
+    /**
+     * Repair round HIGH [vikram · 2026-09-18] -- Swapnil's new ruling (2026-09-18, same day as the
+     * clock ruling): a funded launch on a BILLING_PERIOD workspace refills AT MOST ONCE PER
+     * BILLING PERIOD, like an upgrade grant. H2 probeA (repair round) showed the un-guarded {@link
+     * #applyEscrowFundedReset} let a second funded launch in the SAME period bring a spent-down
+     * balance back to the full allowance every time it was called -- unlimited full allowances
+     * within one paid period.
+     *
+     * <p>Guards on {@code escrowFundedPeriodEnd} (a marker SEPARATE from {@code
+     * creditGrantPeriodEnd} -- see that field's javadoc on {@link com.influora.domain.entity.BrandAiCredit}
+     * for why: the clock decision doc's scenario 9 ("a funded launch on Pro -> 450 without
+     * touching {@code credit_grant_period_end}") still holds, and this guard must not suppress (or
+     * be suppressed by) the billing-refill primitive's own once-per-period grant). Uses {@code <}.
+     * not {@code <>}, for the same forward-only reason as {@link #refillForBillingPeriod}. Called
+     * ONLY when the workspace resolves to {@code SubscriptionService.CreditClock#BILLING_PERIOD}
+     * -- a CALENDAR_MONTH workspace has no billing period to gate on and keeps calling the
+     * unconditional {@link #applyEscrowFundedReset} (unchanged, pre-existing "refill on every
+     * funded launch" behavior for Free/comp/ex-Pro workspaces, which this new ruling does not
+     * touch).
+     *   Source: repair round HIGH finding on applyEscrowFundedReset; Swapnil ruling 2026-09-18
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET "
+                    + "c.loyaltyBonus = CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END, "
+                    + "c.firstCampaignAt = CASE WHEN c.firstCampaignAt IS NULL THEN :now ELSE c.firstCampaignAt END, "
+                    + "c.monthlyAllotment = c.planAllotment + "
+                    + "(CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END), "
+                    + "c.creditsRemaining = c.planAllotment + "
+                    + "(CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END), "
+                    + "c.unlimitedUntil = :unlimitedUntil, "
+                    + "c.escrowFundedPeriodEnd = :periodEnd, "
+                    + "c.updatedAt = :now "
+                    + "WHERE c.workspaceId = :workspaceId "
+                    + "AND (c.escrowFundedPeriodEnd IS NULL OR c.escrowFundedPeriodEnd < :periodEnd)")
+    int applyEscrowFundedResetOncePerPeriod(
+            @Param("workspaceId") String workspaceId,
+            @Param("loyaltyBonus") int loyaltyBonus,
+            @Param("now") Instant now,
+            @Param("unlimitedUntil") Instant unlimitedUntil,
+            @Param("periodEnd") Instant periodEnd);
 }

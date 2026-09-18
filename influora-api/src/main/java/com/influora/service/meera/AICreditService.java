@@ -320,17 +320,30 @@ public class AICreditService {
      * see {@link BrandAiCredit} field javadoc for why the two writers were split.
      *   Source: wiki/tech/SUBSCRIPTION-MODEL-REDESIGN-0912.md §6 F-3, §7 SM-0.2
      *
-     * <p><b>T-CREDITCLOCK-0918 [vikram · 2026-09-18] — F-0894 (lost update):</b> a funded launch is
-     * a funding event on NEITHER clock (still refills on every funded launch — that product
-     * question is explicitly not decided by this build, see the decision doc's closing note), so it
-     * must never write {@code creditGrantPeriodEnd} or touch {@code lastReset}/{@code
-     * lastResetPeriodEnd} — doing so could revert a concurrent billing-period or calendar-clock
-     * refill's own marker and allow a second refill in the same period/month. This method no longer
-     * reads-then-full-row-saves a managed entity at all: the plan-allotment sync and the loyalty
-     * fill + credit refill + unlimited-window write are each their own atomic, single-purpose
-     * UPDATE, so nothing here can ever be a stale-read lost update against a concurrent {@code
-     * tryDecrement}.
-     *   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §2 "applyEscrowFundedReset" row, §5
+     * <p><b>T-CREDITCLOCK-0918 [vikram · 2026-09-18] — F-0894 (lost update):</b> this method no
+     * longer reads-then-full-row-saves a managed entity at all: the plan-allotment sync and the
+     * loyalty fill + credit refill + unlimited-window write are each their own atomic,
+     * single-purpose UPDATE, so nothing here can ever be a stale-read lost update against a
+     * concurrent {@code tryDecrement}.
+     *
+     * <p><b>Repair round HIGH [vikram · 2026-09-18] — new Swapnil ruling, same day as the clock
+     * ruling:</b> a funded launch on a BILLING_PERIOD workspace now refills AT MOST ONCE PER
+     * BILLING PERIOD, "like upgrades" — this REVERSES the clock decision doc's earlier "not
+     * decided here, keep refilling on every funded launch" note for a workspace on that clock. A
+     * CALENDAR_MONTH workspace (Free/comp/ex-Pro) has no billing period to gate on and keeps the
+     * pre-existing unconditional refill-on-every-launch behavior, which this ruling does not
+     * touch. See {@link BrandAiCreditRepository#applyEscrowFundedResetOncePerPeriod} for the
+     * guard shape and why it uses its OWN marker rather than {@code creditGrantPeriodEnd}.
+     *
+     * <p><b>Repair round MEDIUM [vikram · 2026-09-18]:</b> the plan-allotment sync used to call
+     * {@code subscriptionService.getActivePlanForWorkspace}, which maps PAST_DUE to Free (H2
+     * probeB: a PAST_DUE Pro brand funding a launch had its held grace balance cut down toward
+     * Free instead of keeping its Pro allotment). Now uses {@link
+     * SubscriptionService#getPlanForCreditSync}, which resolves the BILLING_PERIOD workspace's
+     * OWN paid plan while PAST_DUE instead of falling back to Free — the grace ruling's "balance
+     * held, not reduced" holds for a funded launch too.
+     *   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §2 "applyEscrowFundedReset" row, §5;
+     *   repair round HIGH/MEDIUM findings; Swapnil ruling 2026-09-18
      */
     @Transactional
     public void applyEscrowFundedReset(String workspaceId, Instant unlimitedUntil) {
@@ -347,22 +360,37 @@ public class AICreditService {
         // 50 loyalty bonus). Syncing here makes this method self-contained: it no longer depends
         // on some other caller having synced planAllotment first.
         //   Source: F-0879, assignments-0917-subscription.md S3 item 5
-        Plan activePlan = subscriptionService.getActivePlanForWorkspace(workspaceId);
+        Plan activePlan = subscriptionService.getPlanForCreditSync(workspaceId);
         if (activePlan != null) {
             creditRepository.syncPlanAllotment(workspaceId, activePlan.getAiMonthlyAllotment(), Instant.now());
         } else {
-            // Mirrors AICreditResetJob#syncPlanAllotment's null-plan handling: getActivePlanForWorkspace
-            // is documented to fall back to Free rather than return null in normal operation, so a
+            // Mirrors AICreditResetJob#syncPlanAllotment's null-plan handling: the resolver is
+            // documented to fall back to Free rather than return null in normal operation, so a
             // null here means the resolver itself is in an unexpected state — log it loudly instead
             // of silently refilling to a possibly-stale stored allotment.
             log.warn(
-                    "applyEscrowFundedReset: getActivePlanForWorkspace returned null for workspace {}"
+                    "applyEscrowFundedReset: getPlanForCreditSync returned null for workspace {}"
                             + " -- planAllotment sync skipped, refill will use the stored allotment"
                             + " unchanged",
                     workspaceId);
         }
 
-        creditRepository.applyEscrowFundedReset(workspaceId, LOYALTY_BONUS, Instant.now(), unlimitedUntil);
+        Instant billingPeriodEnd = subscriptionService.getBillingPeriodEndIfOnBillingClock(workspaceId);
+        if (billingPeriodEnd != null) {
+            Instant truncatedPeriodEnd = billingPeriodEnd.truncatedTo(ChronoUnit.SECONDS);
+            int updated =
+                    creditRepository.applyEscrowFundedResetOncePerPeriod(
+                            workspaceId, LOYALTY_BONUS, Instant.now(), unlimitedUntil, truncatedPeriodEnd);
+            if (updated == 0) {
+                log.info(
+                        "applyEscrowFundedReset: skipping repeat funded-launch refill for workspace {}"
+                                + " -- already funded through {} this billing period",
+                        workspaceId,
+                        truncatedPeriodEnd);
+            }
+        } else {
+            creditRepository.applyEscrowFundedReset(workspaceId, LOYALTY_BONUS, Instant.now(), unlimitedUntil);
+        }
     }
 
     /**
@@ -515,19 +543,26 @@ public class AICreditService {
      */
     @Transactional
     public void resetForNewCycleIfDue(String workspaceId) {
-        BrandAiCredit credit = ensureInitialized(workspaceId);
+        // Repair round LOW [vikram . 2026-09-18]: this used to be a Java read of
+        // credit.getLastReset() followed by a SEPARATE, unconditional resetForNewCycle call -- a
+        // TOCTOU window (H2 probeE; the ruling's SS2/SS5 calls for "one atomic UPDATE, guarded in
+        // SQL on last_reset"). Now delegates straight to
+        // BrandAiCreditRepository#calendarResetIfDue, whose own WHERE clause is the ONLY guard --
+        // no read-then-write gap is left for two concurrent callers (an overlapping job run, a
+        // manual re-trigger racing the schedule; AICreditResetJob's ShedLock already narrows this
+        // but should not be the only thing preventing a double reset) to both pass a stale
+        // pre-check.
+        //   Source: repair round LOW finding on calendarReset / resetForNewCycleIfDue (H2 probeE)
+        ensureInitialized(workspaceId);
         LocalDate todayUtc = LocalDate.now(ZoneOffset.UTC);
-        LocalDate lastReset = credit.getLastReset();
-        if (lastReset != null
-                && lastReset.getYear() == todayUtc.getYear()
-                && lastReset.getMonth() == todayUtc.getMonth()) {
+        LocalDate firstOfMonth = todayUtc.withDayOfMonth(1);
+        int updated = creditRepository.calendarResetIfDue(workspaceId, todayUtc, firstOfMonth, Instant.now());
+        if (updated == 0) {
             log.info(
                     "resetForNewCycleIfDue: workspace {} already reset this UTC month ({}) -- no-op",
                     workspaceId,
                     todayUtc);
-            return;
         }
-        resetForNewCycle(workspaceId);
     }
 
     /** Unused-but-available helper for future callers needing a fresh ULID for related rows. */

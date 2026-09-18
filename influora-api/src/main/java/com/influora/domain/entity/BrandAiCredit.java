@@ -83,6 +83,22 @@ public class BrandAiCredit {
     @Column(name = "last_reset_period_end")
     private Instant lastResetPeriodEnd;
 
+    // T-CREDITCLOCK-0918 repair round [vikram · 2026-09-18] -- Swapnil's new ruling (relayed
+    // 2026-09-18, same day as the clock ruling): a funded-launch reset via
+    // AICreditService#applyEscrowFundedReset is now capped at ONE full refill per BILLING PERIOD,
+    // "like upgrades" -- reversing the clock decision doc's earlier "not decided here, keep
+    // refilling on every funded launch" note for BILLING_PERIOD workspaces. This is a SEPARATE
+    // marker from creditGrantPeriodEnd on purpose: the clock decision doc's scenario 9 ("a funded
+    // launch on Pro -> 450 without touching credit_grant_period_end") still holds verbatim, and a
+    // repeat funded launch must not suppress (or be suppressed by) the billing-refill primitive's
+    // own once-per-period grant -- the two guards are independent so a webhook renewal and a
+    // funded launch in the same period each still get exactly their own one grant. NULL for a
+    // CALENDAR_MONTH workspace (Free/comp/ex-Pro), which has no billing period to gate on and
+    // keeps the pre-existing "refill on every funded launch" behavior unchanged.
+    //   Source: repair round HIGH finding on applyEscrowFundedReset; Swapnil ruling 2026-09-18
+    @Column(name = "escrow_funded_period_end")
+    private Instant escrowFundedPeriodEnd;
+
     /** P4: daily action counter for the 500/day hard cap (20-ROHAN-COST-REVIEW.md section 5). */
     @Column(name = "daily_actions_used", nullable = false)
     private int dailyActionsUsed;
@@ -205,6 +221,16 @@ public class BrandAiCredit {
         touch();
     }
 
+    public Instant getEscrowFundedPeriodEnd() {
+        return escrowFundedPeriodEnd;
+    }
+
+    /** Test-fixture / full-row-save convenience -- written by the atomic query in production. */
+    public void setEscrowFundedPeriodEnd(Instant escrowFundedPeriodEnd) {
+        this.escrowFundedPeriodEnd = escrowFundedPeriodEnd;
+        touch();
+    }
+
     public int getDailyActionsUsed() {
         return dailyActionsUsed;
     }
@@ -312,6 +338,12 @@ public class BrandAiCredit {
         /** Test-fixture convenience (F-0884 repair round) -- see field javadoc above. */
         public Builder lastResetPeriodEnd(Instant lastResetPeriodEnd) {
             c.lastResetPeriodEnd = lastResetPeriodEnd;
+            return this;
+        }
+
+        /** Test-fixture convenience (T-CREDITCLOCK-0918 repair round) -- see field javadoc above. */
+        public Builder escrowFundedPeriodEnd(Instant escrowFundedPeriodEnd) {
+            c.escrowFundedPeriodEnd = escrowFundedPeriodEnd;
             return this;
         }
 

@@ -129,6 +129,22 @@ class AICreditServiceTest {
                             credit.setLastReset(invocation.getArgument(1));
                             return 1;
                         });
+        // Repair round LOW [vikram · 2026-09-18]: resetForNewCycleIfDue now delegates to
+        // calendarResetIfDue (atomic, SQL-guarded on lastReset < firstOfMonth), not a Java
+        // pre-check followed by the unconditional calendarReset above.
+        lenient()
+                .when(creditRepository.calendarResetIfDue(eq(WORKSPACE_ID), any(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            LocalDate today = invocation.getArgument(1);
+                            LocalDate firstOfMonth = invocation.getArgument(2);
+                            if (credit.getLastReset() != null && credit.getLastReset().isBefore(firstOfMonth)) {
+                                credit.setCreditsRemaining(credit.getMonthlyAllotment());
+                                credit.setLastReset(today);
+                                return 1;
+                            }
+                            return 0;
+                        });
         // applyEscrowFundedReset: conditionally earns the loyalty bonus (first funded campaign
         // only), refills to planAllotment + loyaltyBonus, opens the unlimited window -- never
         // touches creditGrantPeriodEnd or lastReset (F-0894).
@@ -442,7 +458,7 @@ class AICreditServiceTest {
     void testEscrowFundedResetBumpsLoyaltyAllotment() {
         BrandAiCredit credit = createCredit(20, 100, null, 0);
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
-        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan(PlanCode.FREE, 100));
+        when(subscriptionService.getPlanForCreditSync(WORKSPACE_ID)).thenReturn(plan(PlanCode.FREE, 100));
         stubAtomicWrites(credit);
 
         Instant unlimitedUntil = Instant.now().plusSeconds(86400 * 7); // 7 days
@@ -466,7 +482,7 @@ class AICreditServiceTest {
         // before this ever runs in production) -- simulate that via applyPlanAllotment directly.
         BrandAiCredit credit = createCredit(400, 400, null, 0);
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
-        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan(PlanCode.PRO, 400));
+        when(subscriptionService.getPlanForCreditSync(WORKSPACE_ID)).thenReturn(plan(PlanCode.PRO, 400));
         stubAtomicWrites(credit);
 
         Instant unlimitedUntil = Instant.now().plusSeconds(86400 * 7);
@@ -490,7 +506,7 @@ class AICreditServiceTest {
         LocalDate existingLastReset = LocalDate.of(2026, 9, 1);
         credit.setLastReset(existingLastReset);
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
-        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan(PlanCode.PRO, 400));
+        when(subscriptionService.getPlanForCreditSync(WORKSPACE_ID)).thenReturn(plan(PlanCode.PRO, 400));
         stubAtomicWrites(credit);
 
         creditService.applyEscrowFundedReset(WORKSPACE_ID, Instant.now().plusSeconds(86_400 * 7));
@@ -644,7 +660,7 @@ class AICreditServiceTest {
         // scenario: it is stale at Pro's 400 the moment the campaign gets funded).
         BrandAiCredit credit = createCredit(10, 400, null, 0);
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
-        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan(PlanCode.FREE, 100));
+        when(subscriptionService.getPlanForCreditSync(WORKSPACE_ID)).thenReturn(plan(PlanCode.FREE, 100));
         stubAtomicWrites(credit);
 
         creditService.applyEscrowFundedReset(WORKSPACE_ID, Instant.now().plusSeconds(86_400 * 7));
@@ -663,13 +679,13 @@ class AICreditServiceTest {
     void testEscrowFundedResetSyncsPlanAllotmentBeforeSave() {
         BrandAiCredit credit = createCredit(10, 400, null, 0);
         when(creditRepository.findByWorkspaceId(WORKSPACE_ID)).thenReturn(Optional.of(credit));
-        when(subscriptionService.getActivePlanForWorkspace(WORKSPACE_ID)).thenReturn(plan(PlanCode.FREE, 100));
+        when(subscriptionService.getPlanForCreditSync(WORKSPACE_ID)).thenReturn(plan(PlanCode.FREE, 100));
         stubAtomicWrites(credit);
 
         creditService.applyEscrowFundedReset(WORKSPACE_ID, Instant.now().plusSeconds(86_400 * 7));
 
         InOrder order = inOrder(subscriptionService, creditRepository);
-        order.verify(subscriptionService).getActivePlanForWorkspace(WORKSPACE_ID);
+        order.verify(subscriptionService).getPlanForCreditSync(WORKSPACE_ID);
         order.verify(creditRepository).syncPlanAllotment(eq(WORKSPACE_ID), eq(100), any());
         order.verify(creditRepository).applyEscrowFundedReset(eq(WORKSPACE_ID), anyInt(), any(), any());
     }
@@ -707,7 +723,7 @@ class AICreditServiceTest {
 
         assertEquals(100, credit.getCreditsRemaining());
         assertEquals(LocalDate.now(ZoneOffset.UTC), credit.getLastReset());
-        verify(creditRepository, times(1)).calendarReset(eq(WORKSPACE_ID), any(), any());
+        verify(creditRepository, times(1)).calendarResetIfDue(eq(WORKSPACE_ID), any(), any(), any());
     }
 
     @Test
@@ -734,7 +750,12 @@ class AICreditServiceTest {
                 credit.getCreditsRemaining(),
                 "a duplicate run in the same UTC month must change nothing -- it must not blow the"
                         + " already-spent-down balance back up to the full allotment");
-        verify(creditRepository, times(1)).calendarReset(eq(WORKSPACE_ID), any(), any()); // only the FIRST call fired
+        // Repair round LOW [vikram · 2026-09-18]: the guard now lives INSIDE the atomic
+        // calendarResetIfDue query, not as a Java pre-check that skips calling the repository at
+        // all -- so the repository method IS invoked both times (2), and it is the query's own
+        // WHERE clause (emulated in stubAtomicWrites) that makes the second call return 0 rows /
+        // change nothing, per the assertion above.
+        verify(creditRepository, times(2)).calendarResetIfDue(eq(WORKSPACE_ID), any(), any(), any());
     }
 
     // -----------------------------------------------------------------------------------------

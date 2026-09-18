@@ -118,10 +118,12 @@ class BrandAiCreditRepositoryQueryTest {
                 "must stamp lastReset so the §3 handover top-up can tell this month's billing"
                         + " refill apart from an earlier one: "
                         + jpql);
+        // Repair round LOW [vikram · 2026-09-18]: was `<>` (symmetric -- also re-fires for an
+        // OLDER period than the one already granted, H2 probeD). Now `<`, forward-only.
         assertTrue(
-                jpql.contains("c.creditGrantPeriodEnd IS NULL OR c.creditGrantPeriodEnd <> :periodEnd"),
-                "the WHERE clause must guard against re-granting for the SAME billing period"
-                        + " (F-0883 repeat-grant-on-every-flap): "
+                jpql.contains("c.creditGrantPeriodEnd IS NULL OR c.creditGrantPeriodEnd < :periodEnd"),
+                "the WHERE clause must guard against re-granting for the SAME OR an OLDER billing"
+                        + " period (F-0883 repeat-grant-on-every-flap; repair round LOW probeD): "
                         + jpql);
     }
 

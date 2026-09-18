@@ -264,6 +264,51 @@ public class SubscriptionService {
     }
 
     /**
+     * Repair round MEDIUM [vikram . 2026-09-18] -- unlike {@link #getActivePlanForWorkspace},
+     * which maps PAST_DUE to Free, this resolves the plan a BILLING_PERIOD workspace's credits
+     * should sync to WITHOUT taking the grace-period balance away. H2 probeB (repair round): a
+     * PAST_DUE Pro brand with 350 credits that funds a launch must keep its Pro planAllotment
+     * during grace, not be resynced down toward Free mid-grace (the grace ruling,
+     * wiki/decisions/CMO-PRO-DUNNING-GRACE-0917.md SS1). Used only by {@code
+     * AICreditService#applyEscrowFundedReset} -- every other plan-allotment sync caller in this
+     * class (webhook reconcile, renewal safety net) already resolves the clock separately from
+     * {@link #getActivePlanForWorkspace} and this method changes none of their behavior.
+     *   Source: repair round MEDIUM finding on applyEscrowFundedReset (H2 probeB)
+     */
+    @Transactional(readOnly = true)
+    public Plan getPlanForCreditSync(String workspaceId) {
+        if (creditClockFor(workspaceId) == CreditClock.BILLING_PERIOD) {
+            Subscription sub = getByWorkspaceId(workspaceId).orElse(null);
+            if (sub != null) {
+                return planRepository
+                        .findById(sub.getPlanId())
+                        .filter(Plan::isActive)
+                        .orElseGet(planService::getFreePlan);
+            }
+        }
+        return getActivePlanForWorkspace(workspaceId);
+    }
+
+    /**
+     * Repair round HIGH [vikram . 2026-09-18] -- the workspace's current {@code
+     * Subscription.currentPeriodEnd} if (and only if) it is genuinely on the {@link
+     * CreditClock#BILLING_PERIOD} clock, else {@code null}. Used by {@code
+     * AICreditService#applyEscrowFundedReset} to gate the new "at most once per billing period"
+     * funded-launch refill (Swapnil's ruling, 2026-09-18) -- a {@code null} return means the
+     * workspace has no billing period to gate on (Free/comp/ex-Pro), so that caller falls back to
+     * its pre-existing unconditional refill-on-every-launch behavior for those workspaces, which
+     * this ruling does not touch.
+     *   Source: repair round HIGH finding on applyEscrowFundedReset; Swapnil ruling 2026-09-18
+     */
+    @Transactional(readOnly = true)
+    public Instant getBillingPeriodEndIfOnBillingClock(String workspaceId) {
+        if (creditClockFor(workspaceId) != CreditClock.BILLING_PERIOD) {
+            return null;
+        }
+        return getByWorkspaceId(workspaceId).map(Subscription::getCurrentPeriodEnd).orElse(null);
+    }
+
+    /**
      * The workspace's plan if an ACTIVE subscription exists, else the Free plan. Never returns
      * null and never throws for a workspace with no subscription row — Free is the honest default.
      * A PAST_DUE/HALTED/CANCELLED subscription also falls back to Free: only ACTIVE grants the
@@ -691,7 +736,10 @@ public class SubscriptionService {
                             .lastWebhookEventAt(webhookEventAt)
                             .build();
             subscriptionRepository.save(subscription);
-            reconcileAiCreditAllotment(workspaceId);
+            // Repair round MEDIUM [vikram . 2026-09-18]: pass the RAW payload periodEnd (may be
+            // null), not the defaulted `end` written to the row -- see
+            // reconcileAiCreditAllotment(workspaceId, confirmedPeriodEnd) javadoc (H2 probeC).
+            reconcileAiCreditAllotment(workspaceId, periodEnd);
             return true;
         }
 
@@ -789,7 +837,11 @@ public class SubscriptionService {
         // caller translates the exception to a synchronous 409 for a client-invoked endpoint;
         // this is a webhook-invoked, retry-friendly path, so letting it propagate is correct here.
         subscriptionRepository.saveAndFlush(subscription);
-        reconcileAiCreditAllotment(workspaceId);
+        // Repair round MEDIUM [vikram . 2026-09-18]: pass the RAW payload periodEnd (may be
+        // null when this delivery carries no period, leaving the row's currentPeriodEnd at
+        // whatever stale value it already had -- e.g. an upgrading Free row's calendar anchor).
+        // See reconcileAiCreditAllotment(workspaceId, confirmedPeriodEnd) javadoc (H2 probeC).
+        reconcileAiCreditAllotment(workspaceId, periodEnd);
         return true;
     }
 
@@ -818,6 +870,37 @@ public class SubscriptionService {
      */
     @Transactional
     public void reconcileAiCreditAllotment(String workspaceId) {
+        Instant confirmedPeriodEnd =
+                getByWorkspaceId(workspaceId).map(Subscription::getCurrentPeriodEnd).orElse(null);
+        reconcileAiCreditAllotment(workspaceId, confirmedPeriodEnd);
+    }
+
+    /**
+     * Repair round MEDIUM [vikram · 2026-09-18] -- {@code confirmedPeriodEnd} is the {@code
+     * periodEnd} the CALLER actually knows was delivered by this specific event (a webhook
+     * payload, a renewal), not just "whatever the row happens to hold right now". The single-arg
+     * {@link #reconcileAiCreditAllotment(String)} overload trusts the row's own {@code
+     * currentPeriodEnd} for its non-webhook callers ({@code SubscriptionDunningJob#haltOne},
+     * {@link #finalizeLapsedCancellation}, {@link #expireComp} -- all terminal transitions that
+     * resolve to {@link CreditClock#CALENDAR_MONTH}, where this value is never even read), but
+     * {@link #applySubscriptionWebhookUpdate} calls THIS overload directly with the RAW {@code
+     * periodEnd} from the payload (which can be {@code null}).
+     *
+     * <p>H2 probeC (repair round): an {@code ACTIVE} webhook that upgrades a Free row to Pro but
+     * carries no period (Razorpay's {@code activated} payload without period fields) left the
+     * row's {@code currentPeriodEnd} at its OLD Free-anchor value (unchanged, since {@link
+     * #applySubscriptionWebhookUpdate} only calls {@code renewPeriod} when both period fields are
+     * non-null) -- a non-null, but bogus, value. The single-arg overload's "trust the row" logic
+     * happily refilled against that Free-anchor placeholder as if it were a real billing period,
+     * so the LATER {@code charged} webhook for the actual first real period refilled AGAIN,
+     * granting two full allowances for what is really one first period. Requiring the CALLER's
+     * own {@code confirmedPeriodEnd} to be non-null before refilling closes this: a delivery that
+     * carries no period defers the billing refill to a later period-carrying event (the {@code
+     * charged} webhook) or the renewal safety net, instead of refilling against a stale value.
+     *   Source: repair round MEDIUM finding on reconcileAiCreditAllotment/applySubscriptionWebhookUpdate
+     */
+    @Transactional
+    public void reconcileAiCreditAllotment(String workspaceId, Instant confirmedPeriodEnd) {
         try {
             // T-CREDITCLOCK-0918 [vikram · 2026-09-18] -- per
             // wiki/decisions/2026-09-18-ai-credit-clock.md §2. Every call still syncs planAllotment
@@ -828,11 +911,11 @@ public class SubscriptionService {
             //     handover top-up, which is itself guarded in SQL to only ever fire once, the
             //     first time this method (or the job) sees the workspace after it moved onto the
             //     calendar clock, and to never lower a balance.
-            //   - BILLING_PERIOD + ACTIVE: refill once for the row's OWN currentPeriodEnd (covers
-            //     the upgrade grant, the charged-webhook renewal, and any other ACTIVE transition
-            //     this method is called from).
-            //   - BILLING_PERIOD + PAST_DUE (or anomalous ACTIVE with no razorpaySubscriptionId):
-            //     nothing further -- the balance is held, per the grace ruling.
+            //   - BILLING_PERIOD + ACTIVE + a CONFIRMED period on THIS call: refill once for the
+            //     row's OWN currentPeriodEnd (covers the upgrade grant, the charged-webhook
+            //     renewal, and any other ACTIVE transition this method is called from).
+            //   - BILLING_PERIOD + PAST_DUE, or ACTIVE with no confirmed period on this call:
+            //     nothing further -- the balance is held, per the grace ruling / repair round MEDIUM.
             //   Source: RULING-upgrade-grant.md; wiki/decisions/2026-09-18-ai-credit-clock.md
             Plan currentPlan = getActivePlanForWorkspace(workspaceId);
             aiCreditService.applyPlanAllotment(workspaceId, currentPlan.getAiMonthlyAllotment());
@@ -841,10 +924,18 @@ public class SubscriptionService {
             CreditClock clock = creditClockFor(workspaceId);
             if (clock == CreditClock.CALENDAR_MONTH) {
                 aiCreditService.topUpOnJoinCalendarClock(workspaceId);
-            } else if (sub != null
-                    && sub.getStatus() == SubscriptionStatus.ACTIVE
-                    && sub.getCurrentPeriodEnd() != null) {
-                aiCreditService.refillForBillingPeriod(workspaceId, sub.getCurrentPeriodEnd());
+            } else if (sub != null && sub.getStatus() == SubscriptionStatus.ACTIVE) {
+                if (confirmedPeriodEnd != null) {
+                    aiCreditService.refillForBillingPeriod(workspaceId, sub.getCurrentPeriodEnd());
+                } else {
+                    log.info(
+                            "reconcileAiCreditAllotment: workspace {} is on the billing clock and"
+                                    + " ACTIVE, but this delivery carried no confirmed period"
+                                    + " (row currentPeriodEnd={}) -- billing refill deferred to a"
+                                    + " later period-carrying event or the renewal safety net",
+                            workspaceId,
+                            sub.getCurrentPeriodEnd());
+                }
             }
         } catch (Exception e) {
             log.error(

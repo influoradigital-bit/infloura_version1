@@ -136,6 +136,24 @@ class AICreditResetJobTest {
                             credit.setLastReset(invocation.getArgument(1));
                             return 1;
                         });
+        // Repair round LOW [vikram · 2026-09-18]: resetForNewCycleIfDue now delegates to
+        // calendarResetIfDue (an atomic, SQL-guarded UPDATE), not the Java-then-calendarReset
+        // pattern this stub above still mirrors for resetForNewCycle's own (still unconditional)
+        // callers. Emulates the SAME guard the real @Query's WHERE clause enforces --
+        // c.lastReset < :firstOfMonth -- against this test's single in-memory row.
+        lenient()
+                .when(creditRepository.calendarResetIfDue(eq(WORKSPACE_ID), any(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            LocalDate today = invocation.getArgument(1);
+                            LocalDate firstOfMonth = invocation.getArgument(2);
+                            if (credit.getLastReset() != null && credit.getLastReset().isBefore(firstOfMonth)) {
+                                credit.setCreditsRemaining(credit.getMonthlyAllotment());
+                                credit.setLastReset(today);
+                                return 1;
+                            }
+                            return 0;
+                        });
         // Two tests in this class call aiCreditService.applyEscrowFundedReset(...) directly (the
         // SM-0.2 loyalty-bonus-via-the-job matrix) -- stub the atomic escrow query the same way,
         // mirroring AICreditServiceTest#stubAtomicWrites.
