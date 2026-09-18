@@ -134,6 +134,11 @@ class TrendPullJobTest {
     @Test
     @DisplayName("enabled=false: no source is fetched and nothing is written")
     void disabledSkipsEntireRun() {
+        // Wire a source that WOULD produce a storable row if the run proceeded — otherwise this
+        // test cannot distinguish "the enabled gate stopped the run" from "no source was
+        // configured anyway" and would pass even with the gate removed (falsification check: it
+        // did, before this fixture change — a test that cannot fail proves nothing).
+        wireSingleSource(newsClient, "Diwali fashion haul trending this week");
         props.setEnabled(false);
 
         buildJob().pullTrends();
