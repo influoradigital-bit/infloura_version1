@@ -34,6 +34,38 @@ public class TrendIngestProperties {
      * {@code pull-cron} key in application.yml. Defaults to 05:00 daily. */
     private String pullCron = "0 0 5 * * *";
 
+    // T-GOLIVE-0918 [vikram · 2026-09-18] — L10 trend-pull job knobs. Source:
+    // .proof-os/tasks/T-COPILOT-ON-0910/job-design.md steps 1/13. Added here (not a new class)
+    // because these are tuning knobs on the same feature-flagged batch job, not a second
+    // "connection config vs secret" split — only classifierWorkspaceId below is secret-adjacent
+    // and is documented as such.
+
+    /** Hard cap on rows written in a single run, applied AFTER within-run dedup. Never a priority
+     * sort (no source row carries a priority field) — first-N in fetch order. */
+    private int maxRowsPerRun = 100;
+
+    /** Region tag stamped on every row this run pulls (schema: {@code trends.region}). All three
+     * sources are India-scoped today (TMDB region=IN, NewsAPI country=in, YouTube regionCode=IN). */
+    private String region = "IN";
+
+    /**
+     * Workspace whose AI-credit balance pays for the {@code POST /internal/brand-safety} GARM
+     * classification calls this job makes (wiki/decisions/2026-09-18-trend-headline-screening.md
+     * step 2). Blank by default so the job FAILS CLOSED — with no workspace configured, every
+     * candidate trend is dropped rather than classified, matching the ruling's "fail closed"
+     * requirement rather than guessing a workspace to bill.
+     *
+     * <p><b>Not decided by this lane:</b> {@code BrandSafetyAiClient#classify} is a per-workspace,
+     * credit-metered call (influora-ai debits {@code cost_usd} against exactly the {@code
+     * workspace_id} in the request — {@code app/routes/brand_safety.py}); there is no
+     * platform/system workspace concept anywhere in this codebase (verified: no {@code
+     * SYSTEM_WORKSPACE}/{@code PLATFORM_WORKSPACE} constant exists). Which real workspace's AI
+     * credits should fund platform-wide trend screening — or whether a dedicated
+     * internal/zero-cost workspace should be created for it — is a billing/business decision this
+     * brief does not make, so it is left as an explicit, off-by-default config value rather than
+     * guessed. Escalated to Arjun; see this lane's final report. */
+    private String classifierWorkspaceId = "";
+
     /** True when AT LEAST ONE source key is present — the ingest job can still do useful work with
      * one source, and the n8n workflow this replaces explicitly tolerated a dead source ("on fail
      * continues so one dead source never sinks the run"). An all-three-required gate here would
@@ -107,5 +139,38 @@ public class TrendIngestProperties {
 
     public void setPullCron(String pullCron) {
         this.pullCron = (pullCron == null || pullCron.isBlank()) ? "0 0 5 * * *" : pullCron;
+    }
+
+    public int getMaxRowsPerRun() {
+        return maxRowsPerRun;
+    }
+
+    /** Floors to the default on a non-positive value — same convention as every other int setter
+     * in this codebase's {@code @ConfigurationProperties} classes (e.g. {@code
+     * CreatorCopilotProperties}). */
+    public void setMaxRowsPerRun(int maxRowsPerRun) {
+        this.maxRowsPerRun = maxRowsPerRun <= 0 ? 100 : maxRowsPerRun;
+    }
+
+    public String getRegion() {
+        return region;
+    }
+
+    public void setRegion(String region) {
+        this.region = (region == null || region.isBlank()) ? "IN" : region;
+    }
+
+    public String getClassifierWorkspaceId() {
+        return classifierWorkspaceId;
+    }
+
+    public void setClassifierWorkspaceId(String classifierWorkspaceId) {
+        this.classifierWorkspaceId = classifierWorkspaceId == null ? "" : classifierWorkspaceId;
+    }
+
+    /** Classification is configured only when a workspace to bill is set — checked before every
+     * {@code BrandSafetyAiClient#classify} call so the job never sends a blank workspace id. */
+    public boolean hasClassifierWorkspaceId() {
+        return classifierWorkspaceId != null && !classifierWorkspaceId.isBlank();
     }
 }

@@ -13,8 +13,12 @@ import java.time.LocalDate;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
-/** {@code trends} (V51) — n8n (Dev, T3) writes daily; Spring only reads. Never store raw
- * live-source payloads here, only the merged/tagged/expiring record (schema lock §1a). */
+/** {@code trends} (V51). n8n (Dev, T3) wrote this table daily; as of T-GOLIVE-0918
+ * [vikram · 2026-09-18] {@code com.influora.job.TrendPullJob} is the writer instead (see
+ * wiki/decisions/2026-09-18-trend-headline-screening.md) — n8n's workflow file is kept but
+ * superseded. Never store raw live-source payloads here, only the merged/tagged/expiring record
+ * (schema lock §1a). No column changes accompany this — {@link #create} is a construction path
+ * only, {@code ddl-auto: validate} is unaffected. */
 @Entity
 @Table(name = "trends")
 public class Trend {
@@ -63,6 +67,38 @@ public class Trend {
     private Instant updatedAt;
 
     protected Trend() {}
+
+    /** T-GOLIVE-0918 [vikram · 2026-09-18] — construction path for {@code TrendPullJob}. No
+     * setters are added; a {@code Trend} is immutable once built, matching this entity's existing
+     * read-only-after-construction shape. Source: job-design.md step 12. */
+    public static Trend create(
+            String id,
+            String trendText,
+            String sourceJson,
+            String region,
+            LocalDate detectedDate,
+            Integer peakWindowDays,
+            Instant expiresAt,
+            String themesJson,
+            TrendCampaignType campaignType,
+            TrendThemeSource themeSource,
+            Instant createdAt,
+            Instant updatedAt) {
+        Trend trend = new Trend();
+        trend.id = id;
+        trend.trendText = trendText;
+        trend.sourceJson = sourceJson;
+        trend.region = region;
+        trend.detectedDate = detectedDate;
+        trend.peakWindowDays = peakWindowDays;
+        trend.expiresAt = expiresAt;
+        trend.themesJson = themesJson;
+        trend.campaignType = campaignType;
+        trend.themeSource = themeSource;
+        trend.createdAt = createdAt;
+        trend.updatedAt = updatedAt;
+        return trend;
+    }
 
     public String getId() {
         return id;
