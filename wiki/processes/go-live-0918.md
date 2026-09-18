@@ -53,6 +53,28 @@ post-recreate check, the same F-0762 failure class already fixed for `TREND_INGE
 line numbers. All are fixed below, each marked **[REPAIR R4]** at its fix point — see the bottom
 "REPAIR ROUND 4 — defect-by-defect" section for the full mapping.
 
+**REPAIR ROUND 5 (2026-09-18, this revision):** an independent reviewer failed commit `85a808e` on
+6 more LOW defects and the same 2 done_when clauses this document has failed before: (1) the
+variable-extraction clause missed `DEPLOY_SHA`/`BUILD_DIR`, two more runbook-local shell variables
+never marked as such — the same failure class as `ENV_PATH` in R4; (2) the "generate-env.sh, all
+compose files and `application.yml` agree on every secret name" clause failed again, this time on
+the admin-MFA key (`ADMIN_MFA_SECRET_ENCRYPTION_KEY` in `application.yml:298` vs the relaxed-binding
+alias `INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY` everywhere else) — the same two-names-for-one-property
+*pattern* as brand-safety, rated LOW rather than HIGH because it lacks brand-safety's proven
+boot-failure mechanism (§0.8.5 explains the difference); still a real done_when name-agreement
+failure and a real silent-ignore footgun for an operator who sets the name `application.yml` itself
+documents.
+The other 4 LOW findings: the §3.2 feature-flag check proved a var's NAME existed, not its VALUE,
+and never checked `MEERA_CREATOR_ENABLED`; neither compose gate catches a required key deleted from
+BOTH Utho files at once (documented as a known gap, not fixed — outside this lane's file scope for
+the second gate, allow-list-only for the first); several `TrendPullJob.java`/compose line citations
+had drifted again after R4's own additions shifted lines below them; and the runbook never covered
+the influora-ai→Spring direction (`SPRING_JWKS_URL`/`SPRING_INTERNAL_BASE_URL`), only the
+Spring→influora-ai direction, with the same Docker-DNS-under-`--network-host` trap already fixed
+once for `CREATOR_COPILOT_AI_BASE_URL`. All are fixed below (one documented as a known gap rather
+than silently left unaddressed), each marked **[REPAIR R5]** at its fix point — see the bottom
+"REPAIR ROUND 5 — defect-by-defect" section for the full mapping.
+
 ## READ THIS FIRST — two things that block a same-day go-live as briefed
 
 ### 1. The live box does not run docker-compose for Influora. `/usr/local/App/docker-compose.prod.yml` is Snapsby's file, not Influora's.
@@ -327,10 +349,13 @@ Utho's forwarded keyset (see §0 item 8) — no other Hostinger-specific change 
    `BRAND_SAFETY_SERVICE_TOKEN_SECRET: ${BRAND_SAFETY_SERVICE_TOKEN_SECRET}`, and all 13 missing
    vars above (plus `TREND_INGEST_CLASSIFIER_WORKSPACE_ID`, added to all three compose files this
    round — item 8's own change, see §2) were added to `docker-compose.hostinger.yml` with defaults
-   mirroring Utho's. **Green, this revision:**
+   mirroring Utho's. **Green, this revision — [REPAIR R5] re-run after item 8.5's `ADMIN_MFA_SECRET_ENCRYPTION_KEY`
+   rename: this gate counts compose-forwarded keys that ALSO have a live `application.yml` binding,
+   so renaming a forwarded-but-unbound alias to the name that actually binds adds one to this count
+   without changing either compose file's total forwarded-key count (still 99/100 per item 6):**
    ```
    $ bash .proof-os/gates/compose-forwards-what-the-app-binds.sh
-   PROVED: both deploy compose files forward the same 90 application-bound env vars
+   PROVED: both deploy compose files forward the same 92 application-bound env vars
            to influora-api; nothing Utho passes is dropped on Hostinger.
    ```
    Re-run against a `git archive` of this revision's final commit, not just the working tree. This
@@ -338,6 +363,93 @@ Utho's forwarded keyset (see §0 item 8) — no other Hostinger-specific change 
    to each other, never to Hostinger, and this lane does not own `docker-compose.hostinger.yml`
    beyond what parity with this gate requires) — flagging both gates by name here going forward so
    neither goes red silently again.
+8.5. **[REPAIR R5 — LOW, weaker than brand-safety's HIGH — see why below] The admin-MFA encryption
+   key had the same two-names-for-one-property pattern already fixed for brand-safety in item
+   2/3.5, but NOT the same proven failure mode, and this document does not claim one.**
+   `application.yml:298` writes the inline placeholder `${ADMIN_MFA_SECRET_ENCRYPTION_KEY:default}`
+   for `influora.admin.mfa-secret-encryption-key`
+   (`AdminMfaProperties.java:19-22`, `@ConfigurationProperties(prefix = "influora.admin")`);
+   `generate-env.sh:69` (pre-fix) and all three compose files (`docker-compose.utho.yml:175`,
+   `docker-compose.utho-shared.yml:201`, `docker-compose.hostinger.yml:161`) instead
+   wrote/forwarded `INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY`, the relaxed-binding form of that SAME
+   dotted property. **Why this is LOW, not HIGH like brand-safety:** brand-safety's HIGH had a
+   compose-level `${VAR}` substitution leave the CANONICAL name present-but-BLANK in the container
+   env (shadowing any real value); here the canonical name was simply ABSENT, so Spring's
+   `@ConfigurationProperties` `Binder` still finds the real value through the relaxed alias
+   directly (env sources outrank `application.yml`, so the alias satisfies the whole dotted
+   property before the yaml placeholder is ever evaluated) — most likely already working end to
+   end, exactly as the reviewer's own finding says ("works today only because the generator and
+   compose agree with each other"), not disproven by a boot probe the way brand-safety's HIGH was.
+   **What IS real and checkable:** an operator who sets `ADMIN_MFA_SECRET_ENCRYPTION_KEY` by hand —
+   the only name `application.yml` itself documents — has it silently ignored, since no compose
+   file forwards that literal name at all; confirmed with `bash generate-env.sh /tmp/gen.env` then
+   `docker compose --env-file /tmp/gen.env -f docker-compose.utho.yml config`, which printed `The
+   "ADMIN_MFA_SECRET_ENCRYPTION_KEY" variable is not set. Defaulting to a blank string.` with that
+   name never appearing in the resolved output — proving the NAME mismatch (and the done_when
+   name-agreement clause failure), not a boot failure. **Fixed**: renamed in `generate-env.sh`
+   (both the write at line 69 and its own AES-length self-check loop) and in all three compose
+   files, dropping the alias entirely — no dual-name fallback, same convention as the brand-safety
+   fix. **Green, this revision:** `bash generate-env.sh` exits 0 (no live-syntax issue — the new
+   comment inside the same unquoted heredoc as the brand-safety one was written with no literal
+   `${}` tokens, learning from item 3.5's own root cause); `docker compose config` on all three
+   compose files resolves `ADMIN_MFA_SECRET_ENCRYPTION_KEY` to the generated 32-byte key with no
+   warning on any of them; `bash .proof-os/gates/utho-compose-keysets-match.sh` still exits 0
+   (99/100 keys, unchanged — a rename, not an add/remove, on both Utho files symmetrically).
+8.6. **[REPAIR R5 — LOW] §3.2 step 2's feature-flag check only proved a var NAME was present, not
+   its value, and never checked `MEERA_CREATOR_ENABLED` at all.** `docker exec influora-api env |
+   grep -E 'CREATOR_COPILOT_ENABLED|TREND_INGEST_ENABLED' || FATAL` treated
+   `CREATOR_COPILOT_ENABLED=false` identically to `=true` (grep matches the name, not the value), and
+   its `|| FATAL` branch only fires when **both** names are entirely absent from `env` output — which
+   also misfires on the legitimate case of a release that leaves both flags at their documented
+   default (unset → `false`, `application.yml:542,570`), giving a false alarm on a *correct* deploy
+   while staying silent on the real risk (a flag left at a stale value). `MEERA_CREATOR_ENABLED`
+   (`application.yml:215`, creator Meera's own rollback flag, same F-0762 failure class) was not
+   checked at all. **Fixed**: rewritten to print each flag's actual resolved state by name —
+   `printenv` per var, `"NAME=value"` if set, `"NAME unset (defaults to <X>)"` if not, correctly
+   noting `MEERA_CREATOR_ENABLED`'s default is `true` (the other two default `false`) — so the
+   operator reads three concrete lines and compares them against what THIS release intends; no
+   script can know that intent, release by release, only surface it. `FATAL` is now reserved for
+   what actually blocks verification: the container not running / its env unreadable at all, checked
+   first via a bare `docker exec influora-api true`.
+8.7. **[REPAIR R5 — LOW, known gap, not fixed this round] Neither compose gate catches a required key
+   deleted from BOTH Utho files at once.** `utho-compose-keysets-match.sh` (item 6) only diffs
+   `docker-compose.utho.yml` against `docker-compose.utho-shared.yml` — if a key such as
+   `TREND_INGEST_CLASSIFIER_WORKSPACE_ID` (item 8's own R4 addition) were deleted from both files
+   together, the two sides would still match each other and the gate would print `PASS`.
+   `compose-forwards-what-the-app-binds.sh` (item 8) only diffs Utho against Hostinger, so the same
+   simultaneous deletion would leave Hostinger correctly still not forwarding it (it never did, per
+   its own allow-list note) and the gate would print `PROVED` — reporting the regression as "allowed"
+   rather than catching it. Reproducible: deleting `TREND_INGEST_CLASSIFIER_WORKSPACE_ID` from both
+   `docker-compose.utho.yml` and `docker-compose.utho-shared.yml` leaves both gates green. **Not
+   fixed in this round** — `utho-compose-keysets-match.sh` is owned by this lane allow-list-only (no
+   general-logic changes in scope), and `compose-forwards-what-the-app-binds.sh` is not owned by this
+   lane's file list at all. A real fix needs a third check — every `application.yml` key with no
+   default (or an explicit required-list) present in at least one compose file — which belongs in
+   whichever lane owns that second gate's logic; flagging here rather than silently leaving it
+   undocumented.
+8.8. **[REPAIR R5 — LOW, not verified against the live box] The runbook only documents the
+   Spring→influora-ai direction (`CREATOR_COPILOT_AI_BASE_URL` etc., item above); it never documents
+   the influora-ai→Spring direction.** `influora-ai/app/config.py:235,294` reads
+   `SPRING_JWKS_URL` and `SPRING_INTERNAL_BASE_URL` from `influora-ai.env`, used to verify every
+   `X-Meera-Service-Token` the API mints (`config.py:544-552` fails closed outside dev if
+   `SPRING_JWKS_URL` is unset). Both compose files hardcode Docker-DNS values for these
+   (`docker-compose.utho.yml:368-369`, `docker-compose.utho-shared.yml:384-385`:
+   `http://influora-api:8080/...`) — the exact same class of bug as the `CREATOR_COPILOT_AI_BASE_URL`
+   defect fixed in R2/R3: `influora-api:8080` only resolves inside a shared Compose network, and
+   §READ THIS FIRST §1 already establishes the live box runs both containers hand-launched with
+   `--network host`, not compose. Worse, the recorded live layout
+   (`.proof-os/tasks/T-UTHO-DEPLOY-0907/live-state.txt:36-37,188,195-196`) shows `influora-api`
+   itself running with `SERVER_PORT=8082` on that box, not the `8080` default
+   (`application.yml:70`) these compose values assume — so even a corrected host/IP would still need
+   the right port confirmed on the day, not copied from either compose file. **Live-state's own
+   SEVENTH CAPTURE suggests this was already fixed by hand on the running box**, so a same-env-file
+   redeploy is fine; the risk is a **FRESH box** built by following this runbook's compose values
+   literally, which would leave `SPRING_JWKS_URL` unreachable, every service-token verification
+   failing, and `CreatorNudgeService.callAiSafely`-style fallbacks masking it rather than erroring
+   loudly. §2 now carries a row for both vars (see the Creator Co-pilot table) with this warning and
+   a verification step; **not re-checked against the live box this round** — flagging as `notProven`,
+   consistent with how this lane has always distinguished config-authored-correctly from
+   verified-on-the-box.
 
 ---
 
@@ -484,8 +596,9 @@ Grouped by today's release features, each cited to its file:line origin:
 
 **[REPAIR R4 — HIGH] `TREND_INGEST_ENABLED=true` plus the 3 API keys alone does NOT start filling
 trends — this is a go-live blocker still awaiting a Swapnil/Priya ruling, not a documentation gap.**
-`TrendPullJob.java:241` (`if (!props.hasClassifierWorkspaceId())`) fails every headline closed with
-`reason=classifier_unconfigured` unless `influora.trend-ingest.classifier-workspace-id`
+`TrendPullJob.java:243` (`if (!props.hasClassifierWorkspaceId())`) fails every headline closed with
+`reason=classifier_unconfigured` at its `log.warn` on line 245 unless
+`influora.trend-ingest.classifier-workspace-id`
 (`TREND_INGEST_CLASSIFIER_WORKSPACE_ID` below) is set to a real workspace id — and this lane is NOT
 authorized to pick one (hard rule 8): `BrandSafetyAiClient#classify` bills a specific workspace's AI
 credits per call, and there is no platform/system workspace concept anywhere in this codebase
@@ -510,7 +623,7 @@ which looks like success unless you specifically check for `classifier_unconfigu
 **Creator AI Co-pilot**
 | Var | Secret? | Source |
 |---|---|---|
-| `CREATOR_COPILOT_ENABLED` | no | `application.yml:542` (`${CREATOR_COPILOT_ENABLED:false}` — **defaults OFF, same as `TREND_INGEST_ENABLED` above. [REPAIR R4] must be explicitly set to `true`** in `influora.env` if today's release includes turning the Co-pilot on — `generate-env.sh` never writes this var (it only generates secrets/keys, not feature flags), and neither compose file's `:-false` default will turn it on for you. This is the exact F-0762 failure class recorded in `live-state.txt`'s EIGHTH CAPTURE: on a fresh box or any env rebuilt from `generate-env.sh`, the Co-pilot comes up silently off, and nothing catches it until the 02:00 UTC job's disabled-log-line (§4) or an operator report. **Immediately after §3.2's `docker run` recreates the container**, before waiting for the 02:00 UTC job, run `docker exec influora-api env \| grep -E 'CREATOR_COPILOT_ENABLED\|TREND_INGEST_ENABLED'` and confirm both read `true` if that is what this release intends — do not wait for §4's log-line check to discover a flag was left at its default |
+| `CREATOR_COPILOT_ENABLED` | no | `application.yml:542` (`${CREATOR_COPILOT_ENABLED:false}` — **defaults OFF, same as `TREND_INGEST_ENABLED` above. [REPAIR R4] must be explicitly set to `true`** in `influora.env` if today's release includes turning the Co-pilot on — `generate-env.sh` never writes this var (it only generates secrets/keys, not feature flags), and neither compose file's `:-false` default will turn it on for you. This is the exact F-0762 failure class recorded in `live-state.txt`'s EIGHTH CAPTURE: on a fresh box or any env rebuilt from `generate-env.sh`, the Co-pilot comes up silently off, and nothing catches it until the 02:00 UTC job's disabled-log-line (§4) or an operator report. **Immediately after §3.2's `docker run` recreates the container**, before waiting for the 02:00 UTC job, read §3.2 step 2's per-flag printout (**[REPAIR R5]** rewritten to print each flag's actual value, not just prove its name exists — see §0.8.6) and confirm it matches what this release intends — do not wait for §4's log-line check to discover a flag was left at its default |
 | `CREATOR_COPILOT_SCORE_THRESHOLD` | no | `application.yml:543` (optional, has default) |
 | `CREATOR_COPILOT_DAILY_CAP` | no | `application.yml:544` (optional) |
 | `CREATOR_COPILOT_PROMPT_VERSION` | no | `application.yml:545` (optional) |
@@ -518,7 +631,9 @@ which looks like success unless you specifically check for `classifier_unconfigu
 | `CREATOR_COPILOT_CAPTION_SYNC_MAX_CREATORS_PER_RUN` | no | `application.yml:547` (optional) |
 | `CREATOR_COPILOT_CAPTION_SYNC_CRON` | no | `application.yml:548` (optional) |
 | `CREATOR_COPILOT_THEME_TAG_CRON` | no | `application.yml:549` (optional) |
-| `CREATOR_COPILOT_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, non-loopback** | dev default `http://localhost:8000` at `application.yml:257`, but under the prod profile `application-prod.yml:100` overrides it with **no default** (`base-url: ${CREATOR_COPILOT_AI_BASE_URL}`) — Spring throws `PlaceholderResolutionException` at boot if it is unset at all (`application-prod.yml:55-77` spells this out as deliberate, "*** CRITICAL DEPLOY SEQUENCING ***"). Even if set, `SecretsStartupValidator.validateAiServiceUrls` (`SecretsStartupValidator.java:606-620`, calling `checkNotUnroutableHost` at line 703) rejects a loopback/localhost value outside dev — the check is a literal string match on host `localhost`, `127.0.0.1` or `::1` (`SecretsStartupValidator.java:720`) — and `SecretsStartupValidator.java:282-353` throws `IllegalStateException` (not just a warning) for any non-dev environment. Compose hardcodes `http://influora-ai:8000` in both files (`docker-compose.utho.yml:176`, `docker-compose.utho-shared.yml:204`) — that Docker-DNS name only resolves inside a shared Compose network, which the live box does not have (§READ THIS FIRST §1: both containers run `--network host`, not compose). **[REPAIR R3 — MEDIUM, corrects R2] Do NOT blindly set this to a fresh value on a redeploy.** R2 told the operator to unconditionally set this to `http://150.241.245.242:8000`, but `live-state.txt`'s EIGHTH CAPTURE (2026-09-08) shows Creator Co-pilot is **already enabled and running successfully in prod** (`CreatorCaptionSyncJob: completed run — 1 creators processed, 25 captions inserted, 0 skipped`) — since `application-prod.yml` has no default for this var, the box's `influora.env` must already hold a value that works, and this section overwriting it with an unverified new value risks *breaking* a working integration, not fixing a missing one, for no documented reason. **Before touching this var:** (1) if this is a redeploy of an already-running box, first read the CURRENT value (`ssh ... grep CREATOR_COPILOT_AI_BASE_URL /usr/local/App/influora/influora.env`, or `docker exec influora-api env | grep CREATOR_COPILOT_AI_BASE_URL` while the old container is still up) and leave it alone unless §4 check 4 (the `creator_nudge_log.message_source` query) or an operator report shows it is broken; (2) only if this is a FRESH box with no prior value, or the existing value is confirmed broken, set a concrete one. For that fresh-box case: with both containers on `--network host`, each binds directly to the box's own network interfaces, so `influora-ai`'s port 8000 is reachable from `influora-api` at the box's own routable address, not a Docker-internal name. `live-state.txt:33` confirms uvicorn is bound to `0.0.0.0:8000` (not `127.0.0.1:8000`) and `live-state.txt:129` confirms port 8000 is blocked/filtered from the public internet by the box's firewall already, so `http://150.241.245.242:8000` is both reachable from the box itself and not publicly exposed — but re-verify both facts against the live box before relying on them, since `live-state.txt` is 11 days stale (`docker exec influora-ai ss -tlnp` for the bind, the firewall's current rules for the filter). Never use `http://localhost:8000` or `http://127.0.0.1:8000` — both are rejected outside dev by `checkNotUnroutableHost`. Note `application-prod.yml:74-76`'s own comment claiming this var is "missing" from `docker-compose.utho-shared.yml` is stale — it has been present since before this lane's changes (`docker-compose.utho-shared.yml:204`); that comment lives outside this lane's file scope to correct. |
+| `CREATOR_COPILOT_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, non-loopback** | dev default `http://localhost:8000` at `application.yml:257`, but under the prod profile `application-prod.yml:100` overrides it with **no default** (`base-url: ${CREATOR_COPILOT_AI_BASE_URL}`) — Spring throws `PlaceholderResolutionException` at boot if it is unset at all (`application-prod.yml:55-77` spells this out as deliberate, "*** CRITICAL DEPLOY SEQUENCING ***"). Even if set, `SecretsStartupValidator.validateAiServiceUrls` (`SecretsStartupValidator.java:606-620`, calling `checkNotUnroutableHost` at line 703) rejects a loopback/localhost value outside dev — the check is a literal string match on host `localhost`, `127.0.0.1` or `::1` (`SecretsStartupValidator.java:720`) — and `SecretsStartupValidator.java:282-353` throws `IllegalStateException` (not just a warning) for any non-dev environment. Compose hardcodes `http://influora-ai:8000` in both files (`docker-compose.utho.yml:192`, `docker-compose.utho-shared.yml:220` — **[REPAIR R5] renumbered, drifted from R4's own additions above them**) — that Docker-DNS name only resolves inside a shared Compose network, which the live box does not have (§READ THIS FIRST §1: both containers run `--network host`, not compose). **[REPAIR R3 — MEDIUM, corrects R2] Do NOT blindly set this to a fresh value on a redeploy.** R2 told the operator to unconditionally set this to `http://150.241.245.242:8000`, but `live-state.txt`'s EIGHTH CAPTURE (2026-09-08) shows Creator Co-pilot is **already enabled and running successfully in prod** (`CreatorCaptionSyncJob: completed run — 1 creators processed, 25 captions inserted, 0 skipped`) — since `application-prod.yml` has no default for this var, the box's `influora.env` must already hold a value that works, and this section overwriting it with an unverified new value risks *breaking* a working integration, not fixing a missing one, for no documented reason. **Before touching this var:** (1) if this is a redeploy of an already-running box, first read the CURRENT value (`ssh ... grep CREATOR_COPILOT_AI_BASE_URL /usr/local/App/influora/influora.env`, or `docker exec influora-api env | grep CREATOR_COPILOT_AI_BASE_URL` while the old container is still up) and leave it alone unless §4 check 4 (the `creator_nudge_log.message_source` query) or an operator report shows it is broken; (2) only if this is a FRESH box with no prior value, or the existing value is confirmed broken, set a concrete one. For that fresh-box case: with both containers on `--network host`, each binds directly to the box's own network interfaces, so `influora-ai`'s port 8000 is reachable from `influora-api` at the box's own routable address, not a Docker-internal name. `live-state.txt:33` confirms uvicorn is bound to `0.0.0.0:8000` (not `127.0.0.1:8000`) and `live-state.txt:129` confirms port 8000 is blocked/filtered from the public internet by the box's firewall already, so `http://150.241.245.242:8000` is both reachable from the box itself and not publicly exposed — but re-verify both facts against the live box before relying on them, since `live-state.txt` is 11 days stale (`docker exec influora-ai ss -tlnp` for the bind, the firewall's current rules for the filter). Never use `http://localhost:8000` or `http://127.0.0.1:8000` — both are rejected outside dev by `checkNotUnroutableHost`. Note `application-prod.yml:74-76`'s own comment claiming this var is "missing" from `docker-compose.utho-shared.yml` is stale — it has been present since before this lane's changes (`docker-compose.utho-shared.yml:220`); that comment lives outside this lane's file scope to correct. |
+| `SPRING_JWKS_URL` | no (internal DNS/URL) | **[REPAIR R5 — new row]** `influora-ai/app/config.py:235`; used to verify every `X-Meera-Service-Token` the API mints, fails closed outside dev if unset (`config.py:544-552`). Same Docker-DNS trap as the row above, in the opposite direction: both compose files hardcode `http://influora-api:8080/api/v1/.well-known/jwks.json` (`docker-compose.utho.yml:368`, `docker-compose.utho-shared.yml:384`), which only resolves inside a shared Compose network — the live box runs both containers with `--network host` (§READ THIS FIRST §1), where that Docker-DNS name resolves to nothing. Before using either compose value on the hand-run box, confirm `influora-api`'s **actual bound port** first — `live-state.txt:36-37,188,195-196` recorded it running with `SERVER_PORT=8082`, not the `8080` default (`application.yml:70`) both compose files assume — then point this at the box's own routable address (same pattern as `CREATOR_COPILOT_AI_BASE_URL` above), not `localhost` (unreachable across two separately hand-run containers) and not the compose value verbatim. **Not re-verified against the live box this round (§0.8)** — live-state's SEVENTH CAPTURE suggests the running box already has a working value, so keep it on a same-env-file redeploy; this only bites a FRESH box built from this runbook's compose files literally. |
+| `SPRING_INTERNAL_BASE_URL` | no (internal DNS/URL) | **[REPAIR R5 — new row]** `influora-ai/app/config.py:294`, default `http://localhost:8080/api/v1` if unset — the same unroutable-under-`--network host` default this whole document exists to override for its Spring-side siblings. Same compose Docker-DNS trap and same port caveat as `SPRING_JWKS_URL` above (`docker-compose.utho.yml:369`, `docker-compose.utho-shared.yml:385`) — set to the same host:port as `SPRING_JWKS_URL`'s base, with `/api/v1` appended, once that address is confirmed against the live box. |
 
 **Brand-safety client (Spring → influora-ai)**
 | Var | Secret? | Source |
@@ -654,11 +769,16 @@ is a manual step (3.2), not automatic.
 # 1. Pin the exact commit. NEVER default to `git rev-parse HEAD` — this worktree can be on a
 #    different, unreviewed commit by the time you run this (dirty tree, later local commits,
 #    wrong branch checked out). Paste the SHA Swapnil/Arjun actually approved to ship:
+# [REPAIR R5] `DEPLOY_SHA` is a runbook-local shell variable, set here from the operator's pasted
+# SHA — not a Spring/`application.yml` property, so it has no `${}` placeholder to check for that
+# reason, same as `ENV_PATH`/`BUILD_DIR` below (§0.3.5 explains the general pattern).
 DEPLOY_SHA=<the-approved-sha-swapnil-arjun-confirmed>   # e.g. 5b6ac6c — confirm, don't assume
 # Sanity check it exists and matches what you expect before building anything from it:
 git log -1 --oneline "$DEPLOY_SHA" || { echo "FATAL: $DEPLOY_SHA not found in this repo"; exit 1; }
 
 # 2. Build influora-api from a CLEAN checkout of the approved SHA, not the working tree.
+# [REPAIR R5] `BUILD_DIR` is likewise a runbook-local shell variable (a fresh `mktemp -d`), not a
+# Spring property — no `${}` placeholder applies, same reasoning as `DEPLOY_SHA` just above.
 BUILD_DIR=$(mktemp -d)
 git archive "$DEPLOY_SHA" | tar -x -C "$BUILD_DIR"
 (cd "$BUILD_DIR/influora-api" && mvn -o clean package -DskipTests)
@@ -677,9 +797,27 @@ docker run -d --name influora-api --network host --restart unless-stopped \
 # `false` and generate-env.sh never writes either — verify the recreated container actually has
 # the value THIS RELEASE intends right now, not at 02:00 UTC when the scheduled job's disabled-log
 # line is the first thing to notice a flag left at its default (see §2, F-0762 class).
+# [REPAIR R5 — LOW, was wrong] R4's `env | grep -E '...' || FATAL` only proved a NAME existed, not
+# its VALUE (CREATOR_COPILOT_ENABLED=false satisfied it exactly like =true), and its FATAL branch
+# only fired when BOTH names were entirely absent — which also misfires on the legitimate case of a
+# release that leaves both flags at their documented default (unset -> false), giving a false alarm
+# on a correct deploy while staying silent on the real risk (one flag left at a stale value).
+# MEERA_CREATOR_ENABLED (application.yml:215, creator Meera's own rollback flag, same F-0762 class)
+# was not checked at all. Rewritten to print each flag's ACTUAL resolved state by name so the
+# operator reads three concrete lines and compares them to what THIS release intends -- no script
+# can know that intent, only surface it. FATAL is now reserved for what actually blocks
+# verification: the container not running / its env unreadable at all.
 sleep 3
-docker exec influora-api env | grep -E 'CREATOR_COPILOT_ENABLED|TREND_INGEST_ENABLED' || {
-  echo "FATAL: could not read feature-flag env from the recreated container" >&2; exit 1; }
+docker exec influora-api true 2>/dev/null || {
+  echo "FATAL: influora-api container is not running after recreate — cannot verify its feature-flag env at all" >&2
+  exit 1
+}
+echo "CREATOR_COPILOT_ENABLED: $(docker exec influora-api sh -c 'printenv CREATOR_COPILOT_ENABLED' 2>/dev/null || echo 'unset (defaults false, application.yml:542)')"
+echo "TREND_INGEST_ENABLED: $(docker exec influora-api sh -c 'printenv TREND_INGEST_ENABLED' 2>/dev/null || echo 'unset (defaults false, application.yml:570)')"
+echo "MEERA_CREATOR_ENABLED: $(docker exec influora-api sh -c 'printenv MEERA_CREATOR_ENABLED' 2>/dev/null || echo 'unset (defaults TRUE, application.yml:215 -- creator Meera stays ON unless explicitly set to false)')"
+# ^ read all three lines above and confirm each against what THIS release intends before calling
+# the deploy done — a false-below-the-fold flag is exactly the F-0762 failure class this check exists
+# to surface, and no automated check here can know release-specific intent, only print the fact.
 EOF
 
 # 3. Build and deploy influora-ai from the SAME approved SHA — no separate approval, same commit.
@@ -791,7 +929,7 @@ mysql -u influora_app -p influora -e \
   # if TREND_INGEST_CLASSIFIER_WORKSPACE_ID is unset (the §2 blocker, expected until Swapnil/Priya
   # rule on it), every headline is rejected individually and the run still logs "completed run"
   # with written=0 — grep for the per-headline line to tell this apart from a real empty run:
-  # "TrendPullJob: rejected id=... source=... reason=classifier_unconfigured — no ..." (line 241)
+  # "TrendPullJob: rejected id=... source=... reason=classifier_unconfigured — no ..." (line 245)
   ```
   Same off-schedule-run technique as Creator Co-pilot below applies if same-day confirmation is
   needed before 05:00 UTC — there is no dedicated override cron property for this job in
@@ -905,7 +1043,7 @@ plain boolean gate (`MeeraCreatorFeatureProperties.java:31`, `application.yml:54
 |---|---|---|---|
 | 1 | HIGH | §3.2 scp'd `influora-api/target/influora-api.jar`, which the build never produces | §3.2 step 1 now builds `target/influora-api-0.1.0-SNAPSHOT.jar` (verified via `mvn -o clean package -DskipTests` against `pom.xml:15-16`, exit 0) and scps that name |
 | 2 | HIGH | Rollback couldn't run in order — no previous image tag, no env backup until after §2 already edited it, jar/image overwritten first | §3.2 step 0 now tags `influora-api:pre-0918-<TS>`, backs up the jar and `influora.env`, **before** step 1 touches anything; §5 rewritten to use that tag/backup |
-| 3 | HIGH | Deploy built the jar from the dirty working tree (30+ modified files, untracked code), not the reviewed commit | §3.2 step 1 now builds from `git archive "$DEPLOY_SHA"` into a fresh temp dir |
+| 3 | HIGH | Deploy built the jar from the dirty working tree (30+ modified files, untracked code), not the reviewed commit | §3.2 step 1 now builds from `git archive "$DEPLOY_SHA"` into a fresh temp dir (`DEPLOY_SHA`/`BUILD_DIR` are runbook-local shell variables, not Spring properties — see §3.2 step 1) |
 | 4 | MEDIUM | `AI_CREATOR_MONTHLY_CAP_USD` listed under `influora.env` (API's file); only `influora-ai` reads it, using a separate env file on the live box | §2 header + row rewritten to name `/usr/local/App/influora-ai/influora-ai/influora-ai.env` explicitly |
 | 5 | MEDIUM | `CREATOR_COPILOT_AI_BASE_URL` row didn't mention the prod-profile no-default / `SecretsStartupValidator` fail-closed behavior | Row rewritten citing `application-prod.yml:100`, `SecretsStartupValidator.java:282-353,606-620`, marked REQUIRED/non-loopback |
 | 6 | MEDIUM | `live-state.txt` / `meera-answers.md` are untracked, unverifiable from `git archive` of any commit | New caveat section added; flagged as open item 6 |
@@ -925,7 +1063,7 @@ plain boolean gate (`MeeraCreatorFeatureProperties.java:31`, `application.yml:54
 | 4 | MEDIUM | `influora-ai` redeploy was one sentence ("do the equivalent") with no build source, Dockerfile, run flags, or way to tell if the AI call actually round-tripped — `CreatorNudgeService.callAiSafely` silently falls back to template copy on any transport failure, which looks identical to success from the job's own log line | §3.2 step 3 rewritten with a full `git archive`-from-approved-SHA build, `influora-ai/Dockerfile`-cited run flags, and a HEALTHCHECK-wait loop; §4 check 4 added, querying `creator_nudge_log.message_source` to prove real `AI` rows exist, not just `FALLBACK` |
 | 5 | LOW | No concrete required value given for `TREND_INGEST_ENABLED` (defaults OFF) or for `CREATOR_COPILOT_AI_BASE_URL` under `--network host` (loopback is hard-rejected by `SecretsStartupValidator`) | `TREND_INGEST_ENABLED` row now states the default is OFF and must be explicitly set `true` this release; `CREATOR_COPILOT_AI_BASE_URL` row now recommends `http://150.241.245.242:8000` (the box's own routable address under `--network host`) with a verification step for the bind address and firewall |
 | 6 | LOW | "`status:DOWN` means the DB is unreachable" overstated it — `pom.xml` also pulls in `spring-boot-starter-mail` and `spring-boot-starter-data-redis`, which register their own health indicators into the same aggregate status | §4 check 2 rewritten to name both indicators and say to read the per-component breakdown, not assume DB |
-| 7 | LOW | `DEPLOY_SHA=$(git rev-parse HEAD)` contradicted its own adjacent comment ("don't assume HEAD") | §3.2 step 1 now requires pasting the approved SHA literally, with a `git log -1` sanity check that fails loudly if it does not exist |
+| 7 | LOW | `DEPLOY_SHA=$(git rev-parse HEAD)` (a runbook-local shell variable, not a Spring property) contradicted its own adjacent comment ("don't assume HEAD") | §3.2 step 1 now requires pasting the approved SHA literally, with a `git log -1` sanity check that fails loudly if it does not exist |
 
 ---
 

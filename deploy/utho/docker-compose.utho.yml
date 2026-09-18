@@ -172,7 +172,13 @@ services:
       # ---- Keys with no YAML default (doc 06 §2.2) ----
       INFLUORA_JWKS_PRIVATEKEYPEM: ${INFLUORA_JWKS_PRIVATEKEYPEM}
       INFLUORA_JWKS_PUBLICKEYPEM: ${INFLUORA_JWKS_PUBLICKEYPEM}
-      INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY: ${INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY}
+      # T-GOLIVE-0918-R2 [meera - 2026-09-18] REPAIR R5 LOW (weaker than the brand-safety HIGH above --
+      # relaxed binding likely already made the alias work; see generate-env.sh:69 for the full
+      # analysis). Was INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY (Spring's relaxed-binding alias); renamed
+      # to match application.yml:298's literal ${ADMIN_MFA_SECRET_ENCRYPTION_KEY:...} placeholder so
+      # generate-env.sh/compose/application.yml agree on one name, closing the done_when name-agreement
+      # clause and the operator-facing footgun of setting the documented name and being ignored.
+      ADMIN_MFA_SECRET_ENCRYPTION_KEY: ${ADMIN_MFA_SECRET_ENCRYPTION_KEY}
       INFLUORA_PII_EMAILPHONEENCRYPTIONKEY: ${INFLUORA_PII_EMAILPHONEENCRYPTIONKEY}
       INFLUORA_PII_BANKENCRYPTIONKEY: ${INFLUORA_PII_BANKENCRYPTIONKEY}
       INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY: ${INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY}

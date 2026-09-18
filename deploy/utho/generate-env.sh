@@ -66,7 +66,29 @@ INTERNAL_REQUEST_HMAC_SECRET=$(secret)
 BRAND_SAFETY_SERVICE_TOKEN_SECRET=$(secret)
 INFLUORA_PII_EMAILPHONEENCRYPTIONKEY=$(aes32)
 INFLUORA_PII_BANKENCRYPTIONKEY=$(aes32)
-INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY=$(aes32)
+# T-GOLIVE-0918-R2 [meera - 2026-09-18] -- REPAIR ROUND 5 LOW (weaker than the brand-safety HIGH --
+# see below for why): a second two-names-for-one-property mismatch. application.yml:298 writes an
+# inline placeholder, defaulted, keyed on the literal name ADMIN_MFA_SECRET_ENCRYPTION_KEY, for
+# influora.admin.mfa-secret-encryption-key (AdminMfaProperties, ConfigurationProperties prefix
+# influora.admin); this script and all three compose files (utho.yml:175, utho-shared.yml:201,
+# hostinger.yml:161) instead wrote/forwarded INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY, the
+# relaxed-binding form of that SAME dotted property. UNLIKE brand-safety's HIGH (where a
+# compose-level variable substitution left the canonical name present-but-BLANK, shadowing a real
+# value), here the canonical name was simply ABSENT, so Spring's ConfigurationProperties Binder
+# still finds the value through the relaxed alias directly (env sources outrank application.yml) --
+# this most likely already worked end to end, exactly as the reviewer's own finding notes ("works
+# today only because the generator and compose agree with each other"), not proven broken by a
+# boot-time probe the way brand-safety's HIGH was. The real, checkable risk is operator-facing: an
+# operator who instead sets ADMIN_MFA_SECRET_ENCRYPTION_KEY by hand -- the ONLY name
+# application.yml itself documents -- has it silently ignored, since no compose file forwards that
+# literal name at all, and the done_when clause requiring generate-env.sh/compose/application.yml
+# to agree on every secret NAME fails on this pair regardless of runtime behavior. Renamed here so
+# all four agree on one literal name, same convention as the brand-safety fix, without claiming a
+# boot failure this round did not prove. Note: this is the same unquoted heredoc as the
+# brand-safety comment above (line 31) -- kept dollar-brace-free on purpose, unlike an earlier draft
+# of this very comment which was not and broke the script with an unbound-variable error under
+# set -u (caught and fixed before commit). Source: application.yml:296-298, AdminMfaProperties.java:19-22.
+ADMIN_MFA_SECRET_ENCRYPTION_KEY=$(aes32)
 META_TOKEN_ENCRYPTION_KEY=$(aes32)
 INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY=$(aes32)
 INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY=$(aes32)
@@ -197,4 +219,4 @@ chmod 600 "$ENV_PATH"
 echo "wrote $ENV_PATH"
 echo "still REPLACE_ME: $(grep -c REPLACE_ME "$ENV_PATH")"
 echo "AES keys must each read 32 bytes:"
-for k in INFLUORA_PII_EMAILPHONEENCRYPTIONKEY INFLUORA_PII_BANKENCRYPTIONKEY INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY META_TOKEN_ENCRYPTION_KEY INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY; do v=$(grep "^$k=" "$ENV_PATH" | cut -d= -f2-); n=$(printf %s "$v" | base64 -d 2>/dev/null | wc -c); echo "  $k -> $n bytes"; done
+for k in INFLUORA_PII_EMAILPHONEENCRYPTIONKEY INFLUORA_PII_BANKENCRYPTIONKEY ADMIN_MFA_SECRET_ENCRYPTION_KEY META_TOKEN_ENCRYPTION_KEY INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY; do v=$(grep "^$k=" "$ENV_PATH" | cut -d= -f2-); n=$(printf %s "$v" | base64 -d 2>/dev/null | wc -c); echo "  $k -> $n bytes"; done
