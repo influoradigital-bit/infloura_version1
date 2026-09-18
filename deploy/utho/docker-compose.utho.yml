@@ -162,6 +162,12 @@ services:
       # — so this line silently overrode a correctly-set BRAND_SAFETY_SERVICE_TOKEN_SECRET with "".
       # Fixed to forward the name application.yml actually binds to. Source:
       # BrandSafetyServiceTokenProperties.java:42-56, application.yml:279.
+      # T-GOLIVE-0918 [meera · 2026-09-18] — REPAIR ROUND 3 HIGH: this compose-side fix alone still
+      # left an end-to-end break — deploy/utho/generate-env.sh:55 kept writing the OLD name
+      # (INFLUORA_BRANDSAFETYSERVICETOKEN_SIGNINGSECRET) into any freshly generated env, so this key
+      # resolved blank on that env until generate-env.sh was also renamed this round. No fallback is
+      # forwarded here on purpose — generate-env.sh, this key and application.yml:279 must all agree
+      # on exactly one name, not silently accept two.
       BRAND_SAFETY_SERVICE_TOKEN_SECRET: ${BRAND_SAFETY_SERVICE_TOKEN_SECRET}
       # ---- Keys with no YAML default (doc 06 §2.2) ----
       INFLUORA_JWKS_PRIVATEKEYPEM: ${INFLUORA_JWKS_PRIVATEKEYPEM}
