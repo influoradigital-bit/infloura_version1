@@ -304,11 +304,19 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
      * be suppressed by) the billing-refill primitive's own once-per-period grant). Uses {@code <}.
      * not {@code <>}, for the same forward-only reason as {@link #refillForBillingPeriod}. Called
      * ONLY when the workspace resolves to {@code SubscriptionService.CreditClock#BILLING_PERIOD}
-     * -- a CALENDAR_MONTH workspace has no billing period to gate on and keeps calling the
-     * unconditional {@link #applyEscrowFundedReset} (unchanged, pre-existing "refill on every
-     * funded launch" behavior for Free/comp/ex-Pro workspaces, which this new ruling does not
-     * touch).
-     *   Source: repair round HIGH finding on applyEscrowFundedReset; Swapnil ruling 2026-09-18
+     * -- a CALENDAR_MONTH workspace has no billing period to gate on and instead calls {@link
+     * #applyEscrowFundedResetOncePerCalendarMonth} (round 2: also capped, once per UTC calendar
+     * month -- see that method's javadoc).
+     *
+     * <p><b>T-GOLIVE-0918-R2 CREDITS-2 [vikram · 2026-09-18] -- MEDIUM (round-2 kabir finding):</b>
+     * this statement no longer writes {@code c.unlimitedUntil}. The whole UPDATE (including the
+     * unlimited-window write) used to be gated behind the SAME once-per-period guard, so a second
+     * funded launch in the same billing period silently skipped extending the campaign's unlimited
+     * window too -- the ruling caps the CREDIT refill, not the window. The window write is now the
+     * caller's separate, unconditional {@link #extendUnlimitedWindow} call, decoupling the two
+     * effects.
+     *   Source: repair round HIGH finding on applyEscrowFundedReset; Swapnil ruling 2026-09-18;
+     *   go-live round 2 CREDITS-2 MEDIUM (b)
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Transactional
@@ -320,7 +328,6 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
                     + "(CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END), "
                     + "c.creditsRemaining = c.planAllotment + "
                     + "(CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END), "
-                    + "c.unlimitedUntil = :unlimitedUntil, "
                     + "c.escrowFundedPeriodEnd = :periodEnd, "
                     + "c.updatedAt = :now "
                     + "WHERE c.workspaceId = :workspaceId "
@@ -329,6 +336,71 @@ public interface BrandAiCreditRepository extends JpaRepository<BrandAiCredit, St
             @Param("workspaceId") String workspaceId,
             @Param("loyaltyBonus") int loyaltyBonus,
             @Param("now") Instant now,
-            @Param("unlimitedUntil") Instant unlimitedUntil,
             @Param("periodEnd") Instant periodEnd);
+
+    /**
+     * T-GOLIVE-0918-R2 CREDITS-2 [vikram · 2026-09-18] -- go-live round 2, item (b): the unlimited
+     * (funded-campaign) window is a funding event, not a refill, and must extend on EVERY funded
+     * launch regardless of whether that launch's CREDIT refill was blocked by {@link
+     * #applyEscrowFundedResetOncePerPeriod}'s or {@link #applyEscrowFundedResetOncePerCalendarMonth}'s
+     * once-per-period/month guard. Monotonic ({@code CASE WHEN ... IS NULL OR :unlimitedUntil >
+     * c.unlimitedUntil}) rather than a plain SET so a delayed/duplicate webhook replay carrying an
+     * EARLIER {@code unlimitedUntil} than one already granted (e.g. a longer campaign funded after
+     * a shorter one, then the shorter one's event redelivers) can never shorten the window a brand
+     * is already entitled to.
+     *   Source: repair round HIGH finding on applyEscrowFundedReset (b); Swapnil ruling 2026-09-18
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET c.unlimitedUntil = "
+                    + "CASE WHEN c.unlimitedUntil IS NULL OR :unlimitedUntil > c.unlimitedUntil "
+                    + "THEN :unlimitedUntil ELSE c.unlimitedUntil END, "
+                    + "c.updatedAt = :now "
+                    + "WHERE c.workspaceId = :workspaceId")
+    int extendUnlimitedWindow(
+            @Param("workspaceId") String workspaceId,
+            @Param("unlimitedUntil") Instant unlimitedUntil,
+            @Param("now") Instant now);
+
+    /**
+     * T-GOLIVE-0918-R2 CREDITS-2 [vikram · 2026-09-18] -- go-live round 2, item (c): a
+     * CALENDAR_MONTH workspace (Free/comp/ex-Pro, no billing period to gate on) now also refills
+     * from a funded launch AT MOST ONCE PER UTC CALENDAR MONTH, matching Swapnil's once-per-period
+     * ruling already built for the billing clock in {@link #applyEscrowFundedResetOncePerPeriod}.
+     * Previously this workspace class kept calling the fully-unconditional {@link
+     * #applyEscrowFundedReset} on every funded launch, which a brand OWNER/ADMIN could repeat
+     * indefinitely via a fund-then-refund loop ({@code EscrowService#refund}) -- kabir round-1
+     * MEDIUM.
+     *
+     * <p>Guards on the NEW {@code escrowFundedMonth} column (a {@code LocalDate} keyed to the
+     * first-of-UTC-month), a SEPARATE marker from {@code lastReset}/{@code
+     * topUpOnJoinCalendarClock}'s guard on purpose: this is a funding event, not the ordinary
+     * monthly reset, and must not be coupled to (or suppress) that guard's own semantics. Forward
+     * -only ({@code <}, not {@code <>}), matching {@link #refillForBillingPeriod}'s and {@link
+     * #applyEscrowFundedResetOncePerPeriod}'s forward-only guards. Does NOT write {@code
+     * unlimitedUntil} -- see {@link #extendUnlimitedWindow}, called unconditionally by the caller
+     * for both clocks.
+     *   Source: kabir round-1 MEDIUM (applyEscrowFundedReset calendar branch); Swapnil's
+     *   once-per-period ruling, wiki/decisions/2026-09-18-ai-credit-clock.md
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query(
+            "UPDATE BrandAiCredit c SET "
+                    + "c.loyaltyBonus = CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END, "
+                    + "c.firstCampaignAt = CASE WHEN c.firstCampaignAt IS NULL THEN :now ELSE c.firstCampaignAt END, "
+                    + "c.monthlyAllotment = c.planAllotment + "
+                    + "(CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END), "
+                    + "c.creditsRemaining = c.planAllotment + "
+                    + "(CASE WHEN c.firstCampaignAt IS NULL THEN :loyaltyBonus ELSE c.loyaltyBonus END), "
+                    + "c.escrowFundedMonth = :firstOfMonth, "
+                    + "c.updatedAt = :now "
+                    + "WHERE c.workspaceId = :workspaceId "
+                    + "AND (c.escrowFundedMonth IS NULL OR c.escrowFundedMonth < :firstOfMonth)")
+    int applyEscrowFundedResetOncePerCalendarMonth(
+            @Param("workspaceId") String workspaceId,
+            @Param("loyaltyBonus") int loyaltyBonus,
+            @Param("now") Instant now,
+            @Param("firstOfMonth") LocalDate firstOfMonth);
 }

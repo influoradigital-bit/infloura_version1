@@ -163,6 +163,43 @@ class AICreditServiceTest {
                             credit.setUnlimitedUntil(unlimitedUntil);
                             return 1;
                         });
+        // T-GOLIVE-0918-R2 CREDITS-2 [vikram · 2026-09-18] -- round 2: applyEscrowFundedReset now
+        // calls applyEscrowFundedResetOncePerCalendarMonth for a CALENDAR_MONTH workspace (never
+        // touches unlimitedUntil any more -- that is extendUnlimitedWindow's job below), guarded on
+        // the new escrowFundedMonth marker.
+        lenient()
+                .when(creditRepository.applyEscrowFundedResetOncePerCalendarMonth(eq(WORKSPACE_ID), anyInt(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            int loyaltyBonus = invocation.getArgument(1);
+                            Instant now = invocation.getArgument(2);
+                            LocalDate firstOfMonth = invocation.getArgument(3);
+                            boolean guardBlocks =
+                                    credit.getEscrowFundedMonth() != null
+                                            && !credit.getEscrowFundedMonth().isBefore(firstOfMonth);
+                            if (guardBlocks) {
+                                return 0;
+                            }
+                            if (credit.getFirstCampaignAt() == null) {
+                                credit.setLoyaltyBonus(loyaltyBonus);
+                                credit.setFirstCampaignAt(now);
+                            }
+                            credit.setCreditsRemaining(credit.getPlanAllotment() + credit.getLoyaltyBonus());
+                            credit.setEscrowFundedMonth(firstOfMonth);
+                            return 1;
+                        });
+        // T-GOLIVE-0918-R2 CREDITS-2 [vikram · 2026-09-18] -- round 2 (b): the unlimited window is
+        // now a separate, unconditional, monotonic write -- never shortens an existing window.
+        lenient()
+                .when(creditRepository.extendUnlimitedWindow(eq(WORKSPACE_ID), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            Instant candidate = invocation.getArgument(1);
+                            if (credit.getUnlimitedUntil() == null || candidate.isAfter(credit.getUnlimitedUntil())) {
+                                credit.setUnlimitedUntil(candidate);
+                            }
+                            return 1;
+                        });
     }
 
     /** Stubs {@code idempotencyService.executeOnce(...)} (4-arg, no digest) to just run the supplier. */
@@ -470,7 +507,8 @@ class AICreditServiceTest {
         assertNotNull(credit.getFirstCampaignAt());
         verify(creditRepository, never()).save(any(BrandAiCredit.class));
         verify(creditRepository).syncPlanAllotment(eq(WORKSPACE_ID), eq(100), any());
-        verify(creditRepository).applyEscrowFundedReset(eq(WORKSPACE_ID), eq(50), any(), eq(unlimitedUntil));
+        verify(creditRepository).applyEscrowFundedResetOncePerCalendarMonth(eq(WORKSPACE_ID), eq(50), any(), any());
+        verify(creditRepository).extendUnlimitedWindow(eq(WORKSPACE_ID), eq(unlimitedUntil), any());
     }
 
     @Test
@@ -687,7 +725,7 @@ class AICreditServiceTest {
         InOrder order = inOrder(subscriptionService, creditRepository);
         order.verify(subscriptionService).getPlanForCreditSync(WORKSPACE_ID);
         order.verify(creditRepository).syncPlanAllotment(eq(WORKSPACE_ID), eq(100), any());
-        order.verify(creditRepository).applyEscrowFundedReset(eq(WORKSPACE_ID), anyInt(), any(), any());
+        order.verify(creditRepository).applyEscrowFundedResetOncePerCalendarMonth(eq(WORKSPACE_ID), anyInt(), any(), any());
     }
 
     @Test

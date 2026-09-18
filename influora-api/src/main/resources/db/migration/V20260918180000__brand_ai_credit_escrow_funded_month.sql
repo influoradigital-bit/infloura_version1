@@ -1,0 +1,21 @@
+-- T-GOLIVE-0918-R2 CREDITS-2 [vikram, 2026-09-18] -- go-live round 2 repair on T-CREDITCLOCK-0918,
+-- item (c): kabir round-1 MEDIUM found that a CALENDAR_MONTH workspace (Free/comp/ex-Pro, no
+-- billing period to gate on) still refilled from a funded launch on EVERY launch -- a
+-- fund-then-refund loop (EscrowService#refund is reachable by a brand OWNER/ADMIN) could repeat
+-- this indefinitely. Swapnil's once-per-period ruling caps this at ONE refill per UTC calendar
+-- month, matching the billing-period cap already built for T-CREDITCLOCK-0918 round 1
+-- (escrow_funded_period_end, V20260918170000).
+--
+-- Next free Flyway slot after V20260918170000__brand_ai_credit_escrow_funded_period_end.sql (the
+-- highest migration on disk at commit time).
+--
+-- A SEPARATE column from escrow_funded_period_end on purpose: this one is a DATE keyed to the
+-- first-of-UTC-month (mirroring last_reset/topUpOnJoinCalendarClock's guard shape), not a billing
+-- period end -- see BrandAiCreditRepository#applyEscrowFundedResetOncePerCalendarMonth.
+--
+-- NULL for every existing row: a workspace that already funded a launch under the OLD
+-- unconditional calendar-clock behavior has no prior "month it was funded through" to backfill --
+-- its next funded launch (in whatever UTC month is current then) is correctly treated as the
+-- first one this guard has ever seen for that workspace.
+ALTER TABLE brand_ai_credits
+    ADD COLUMN escrow_funded_month DATE NULL;

@@ -344,6 +344,24 @@ public class AICreditService {
      * held, not reduced" holds for a funded launch too.
      *   Source: wiki/decisions/2026-09-18-ai-credit-clock.md §2 "applyEscrowFundedReset" row, §5;
      *   repair round HIGH/MEDIUM findings; Swapnil ruling 2026-09-18
+     *
+     * <p><b>T-GOLIVE-0918-R2 CREDITS-2 [vikram · 2026-09-18] -- go-live round 2 repair, items (b)
+     * and (c):</b>
+     *
+     * <ul>
+     *   <li><b>(b) MEDIUM:</b> the unlimited window is now extended via the SEPARATE, unconditional
+     *       {@link BrandAiCreditRepository#extendUnlimitedWindow} call, on BOTH branches below — a
+     *       second funded launch in the same billing period (or calendar month) is still a credit
+     *       no-op, but it still extends the campaign's live window, which the ruling caps the
+     *       REFILL on, not the window.
+     *   <li><b>(c) MEDIUM:</b> a CALENDAR_MONTH workspace (Free/comp/ex-Pro) no longer refills
+     *       unconditionally on every funded launch — kabir round-1 found a fund-then-refund loop
+     *       (brand OWNER/ADMIN via {@code EscrowService#refund}) could repeat an unconditional
+     *       refill indefinitely. It now calls {@link
+     *       BrandAiCreditRepository#applyEscrowFundedResetOncePerCalendarMonth}, capped at one
+     *       refill per UTC calendar month, matching Swapnil's once-per-period ruling.
+     * </ul>
+     *   Source: go-live round 2 CREDITS-2 kabir findings (b), (c); Swapnil's once-per-period ruling
      */
     @Transactional
     public void applyEscrowFundedReset(String workspaceId, Instant unlimitedUntil) {
@@ -380,7 +398,7 @@ public class AICreditService {
             Instant truncatedPeriodEnd = billingPeriodEnd.truncatedTo(ChronoUnit.SECONDS);
             int updated =
                     creditRepository.applyEscrowFundedResetOncePerPeriod(
-                            workspaceId, LOYALTY_BONUS, Instant.now(), unlimitedUntil, truncatedPeriodEnd);
+                            workspaceId, LOYALTY_BONUS, Instant.now(), truncatedPeriodEnd);
             if (updated == 0) {
                 log.info(
                         "applyEscrowFundedReset: skipping repeat funded-launch refill for workspace {}"
@@ -389,8 +407,20 @@ public class AICreditService {
                         truncatedPeriodEnd);
             }
         } else {
-            creditRepository.applyEscrowFundedReset(workspaceId, LOYALTY_BONUS, Instant.now(), unlimitedUntil);
+            LocalDate firstOfMonth = LocalDate.now(ZoneOffset.UTC).withDayOfMonth(1);
+            int updated =
+                    creditRepository.applyEscrowFundedResetOncePerCalendarMonth(
+                            workspaceId, LOYALTY_BONUS, Instant.now(), firstOfMonth);
+            if (updated == 0) {
+                log.info(
+                        "applyEscrowFundedReset: skipping repeat funded-launch refill for workspace {}"
+                                + " -- already funded this UTC calendar month",
+                        workspaceId);
+            }
         }
+        // (b): the unlimited window is a funding event, not a refill -- extend it unconditionally
+        // regardless of whether the credit refill above was blocked by either guard.
+        creditRepository.extendUnlimitedWindow(workspaceId, unlimitedUntil, Instant.now());
     }
 
     /**

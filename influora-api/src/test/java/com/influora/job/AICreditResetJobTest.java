@@ -172,6 +172,42 @@ class AICreditResetJobTest {
                             credit.setUnlimitedUntil(unlimitedUntil);
                             return 1;
                         });
+        // T-GOLIVE-0918-R2 CREDITS-2 [vikram · 2026-09-18] -- round 2: this workspace is on the
+        // CALENDAR_MONTH clock in every test in this class (getBillingPeriodEndIfOnBillingClock is
+        // never stubbed, so it defaults to null), so applyEscrowFundedReset's calendar branch now
+        // calls applyEscrowFundedResetOncePerCalendarMonth (never unlimitedUntil -- see
+        // extendUnlimitedWindow below) instead of the old unconditional applyEscrowFundedReset.
+        lenient()
+                .when(creditRepository.applyEscrowFundedResetOncePerCalendarMonth(eq(WORKSPACE_ID), anyInt(), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            int loyaltyBonus = invocation.getArgument(1);
+                            Instant now = invocation.getArgument(2);
+                            LocalDate firstOfMonth = invocation.getArgument(3);
+                            boolean guardBlocks =
+                                    credit.getEscrowFundedMonth() != null
+                                            && !credit.getEscrowFundedMonth().isBefore(firstOfMonth);
+                            if (guardBlocks) {
+                                return 0;
+                            }
+                            if (credit.getFirstCampaignAt() == null) {
+                                credit.setLoyaltyBonus(loyaltyBonus);
+                                credit.setFirstCampaignAt(now);
+                            }
+                            credit.setCreditsRemaining(credit.getPlanAllotment() + credit.getLoyaltyBonus());
+                            credit.setEscrowFundedMonth(firstOfMonth);
+                            return 1;
+                        });
+        lenient()
+                .when(creditRepository.extendUnlimitedWindow(eq(WORKSPACE_ID), any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            Instant candidate = invocation.getArgument(1);
+                            if (credit.getUnlimitedUntil() == null || candidate.isAfter(credit.getUnlimitedUntil())) {
+                                credit.setUnlimitedUntil(candidate);
+                            }
+                            return 1;
+                        });
     }
 
     @AfterEach

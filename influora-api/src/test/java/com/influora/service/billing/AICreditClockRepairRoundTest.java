@@ -212,8 +212,13 @@ class AICreditClockRepairRoundTest {
     }
 
     @Test
-    @DisplayName("HIGH probeA-calendar: a Free (CALENDAR_MONTH) workspace still refills on EVERY funded launch")
-    void probeA_calendarClockWorkspaceUnaffected() {
+    @DisplayName(
+            "MEDIUM probeH (round 2, kabir): a Free (CALENDAR_MONTH) workspace refills from a"
+                    + " funded launch AT MOST ONCE per UTC calendar month, matching Swapnil's"
+                    + " once-per-period ruling -- this REVERSES round 1's 'refills on every launch'"
+                    + " behavior for this workspace class, closing the fund-then-refund loop kabir"
+                    + " found (EscrowService#refund is reachable by a brand OWNER/ADMIN)")
+    void probeH_calendarClockFundedLaunchOncePerCalendarMonth() {
         String ws = newWorkspaceId();
         saveSubscription(ws, freePlan.getId(), SubscriptionStatus.ACTIVE, Instant.now(), Instant.now().plusSeconds(2592000));
         saveCredit(ws, 100, 100, LocalDate.now());
@@ -222,11 +227,21 @@ class AICreditClockRepairRoundTest {
 
         Instant unlimitedUntil = Instant.now().plusSeconds(604800);
         aiCreditService.applyEscrowFundedReset(ws, unlimitedUntil);
-        assertEquals(150, creditsOf(ws), "Free + funded = 150");
+        assertEquals(150, creditsOf(ws), "first funded launch this month: Free(100) + loyalty(50) = 150");
 
         spend(ws, 100);
+        assertEquals(50, creditsOf(ws));
+
         aiCreditService.applyEscrowFundedReset(ws, unlimitedUntil);
-        assertEquals(150, creditsOf(ws), "a CALENDAR_MONTH workspace keeps refilling on every funded launch (unchanged ruling)");
+        assertEquals(
+                50,
+                creditsOf(ws),
+                "a SECOND funded launch in the SAME UTC calendar month must be a no-op, not refill"
+                        + " back to 150");
+
+        // A funded launch in a NEW UTC calendar month refills again -- exercised at the repository
+        // layer directly (BrandAiCreditRepositoryQueryTest / stubAtomicWrites cover the service
+        // seam; this class does not fast-forward the wall clock across a month boundary).
     }
 
     // ------------------------------------------------------------------------------------
@@ -328,5 +343,94 @@ class AICreditClockRepairRoundTest {
 
         aiCreditService.refillForBillingPeriod(ws, p1); // OLDER period -- must be a no-op
         assertEquals(100, creditsOf(ws), "refilling for an OLDER period than the granted one must not re-grant");
+    }
+
+    // ------------------------------------------------------------------------------------
+    // GO-LIVE ROUND 2 [vikram · 2026-09-18] -- T-GOLIVE-0918-R2 lane CREDITS-2, kabir round-1
+    // findings on 27ca63b:
+    //   (a) MEDIUM: a status-only PAST_DUE webhook must not sync a grace-period Pro brand's
+    //       allotment down to Free (wiki/decisions/2026-09-18-ai-credit-clock.md §1: hold the
+    //       balance) -- see probeF below.
+    //   (b) MEDIUM: a second funded launch in the same billing period must still extend the
+    //       per-campaign unlimited window even though it must not refill credits -- see probeG.
+    //   (c) MEDIUM: calendar-month brands must refill from campaign funding at most once per
+    //       calendar month -- see probeH above (added to the existing probeA-calendar test, which
+    //       asserted the OLD, now-reversed, ruling).
+    // ------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "MEDIUM probeF (round 2, kabir p1): a status-only PAST_DUE webhook reconcile must not"
+                    + " sync a grace-period Pro brand's allotment down to Free -- a later 1-credit"
+                    + " refund must add 1, not get clamped down against a wrongly-synced Free"
+                    + " monthlyAllotment")
+    void probeF_statusOnlyPastDueReconcileHoldsProAllotment() {
+        String ws = newWorkspaceId();
+        Instant periodEnd = truncated("2026-10-15T00:00:00Z");
+        saveSubscription(ws, proPlan.getId(), SubscriptionStatus.ACTIVE, truncated("2026-09-15T00:00:00Z"), periodEnd);
+        saveCredit(ws, 400, 200, LocalDate.of(2026, 9, 15));
+
+        // Status-only PAST_DUE transition -- no period change, exactly like a Razorpay status-only
+        // webhook (RazorpayWebhookController carries no period fields for these events).
+        Subscription sub = subscriptionRepository.findByWorkspaceId(ws).orElseThrow();
+        sub.setStatus(SubscriptionStatus.PAST_DUE);
+        subscriptionRepository.save(sub);
+        assertEquals(SubscriptionService.CreditClock.BILLING_PERIOD, subscriptionService.creditClockFor(ws));
+
+        subscriptionService.reconcileAiCreditAllotment(ws, periodEnd);
+
+        BrandAiCredit afterReconcile = creditRepository.findByWorkspaceId(ws).orElseThrow();
+        assertEquals(
+                400,
+                afterReconcile.getPlanAllotment(),
+                "PAST_DUE grace: planAllotment must stay Pro's 400, not resynced to Free's 100");
+        assertEquals(
+                200, afterReconcile.getCreditsRemaining(), "reconcile itself must not touch creditsRemaining while PAST_DUE");
+
+        // The real-world consequence kabir's probe p1 found: a 1-credit refund (e.g.
+        // AICreditService#doRelease refunding a failed Meera turn) clamps its add to
+        // c.monthlyAllotment -- if that got wrongly synced to Free's 100 above, a 1-credit refund
+        // on a 200-balance would be clamped DOWN to 100 instead of becoming 201.
+        creditRepository.refundCredits(ws, 1, Instant.now());
+        assertEquals(
+                201,
+                creditsOf(ws),
+                "a 1-credit refund during PAST_DUE grace must add 1, not clamp the balance down to"
+                        + " Free's allotment");
+    }
+
+    @Test
+    @DisplayName(
+            "MEDIUM probeG (round 2, kabir): a second funded launch in the SAME billing period must"
+                    + " still extend the per-campaign unlimited window, even though credits are NOT"
+                    + " refilled -- the ruling caps the refill, not the window")
+    void probeG_secondFundedLaunchSamePeriodStillExtendsWindow() {
+        String ws = newWorkspaceId();
+        Instant periodEnd = truncated("2026-10-15T00:00:00Z");
+        saveSubscription(ws, proPlan.getId(), SubscriptionStatus.ACTIVE, truncated("2026-09-15T00:00:00Z"), periodEnd);
+        saveCredit(ws, 400, 450, LocalDate.of(2026, 9, 15));
+
+        // Truncated to millis: H2's TIMESTAMP column round-trips at millisecond precision, coarser
+        // than Instant.now()'s full nanosecond precision -- comparing the exact stored value later
+        // needs an in-memory Instant that survives that round-trip unchanged.
+        Instant firstWindow =
+                Instant.now().plusSeconds(86_400 * 7).truncatedTo(ChronoUnit.MILLIS); // a 7-day campaign
+        aiCreditService.applyEscrowFundedReset(ws, firstWindow);
+        spend(ws, 300);
+        assertEquals(150, creditsOf(ws));
+
+        Instant secondWindow =
+                Instant.now().plusSeconds(86_400 * 21).truncatedTo(ChronoUnit.MILLIS); // a longer, 21-day campaign
+        aiCreditService.applyEscrowFundedReset(ws, secondWindow);
+
+        BrandAiCredit after = creditRepository.findByWorkspaceId(ws).orElseThrow();
+        assertEquals(
+                150,
+                after.getCreditsRemaining(),
+                "a second funded launch in the SAME billing period must still be a credit no-op");
+        assertEquals(
+                secondWindow,
+                after.getUnlimitedUntil(),
+                "but the unlimited window must still extend to cover the new campaign's end");
     }
 }

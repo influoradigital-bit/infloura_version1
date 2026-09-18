@@ -99,6 +99,19 @@ public class BrandAiCredit {
     @Column(name = "escrow_funded_period_end")
     private Instant escrowFundedPeriodEnd;
 
+    // T-GOLIVE-0918-R2 CREDITS-2 [vikram · 2026-09-18] -- go-live round 2, item (c): a
+    // CALENDAR_MONTH workspace (Free/comp/ex-Pro, no billing period to gate on) must also refill
+    // from a funded launch AT MOST ONCE PER CALENDAR MONTH, matching Swapnil's once-per-period
+    // ruling -- previously it refilled unconditionally on EVERY funded launch (a fund-then-refund
+    // loop via EscrowService#refund could repeat this indefinitely, kabir round-1 MEDIUM). A
+    // SEPARATE marker from escrowFundedPeriodEnd (Instant, billing-period-scoped) on purpose: this
+    // one is a LocalDate keyed to the first-of-UTC-month, mirroring lastReset/topUpOnJoinCalendarClock's
+    // guard shape, not a billing period end.
+    //   Source: kabir round-1 MEDIUM (applyEscrowFundedReset calendar branch);
+    //   wiki/decisions/2026-09-18-ai-credit-clock.md §3 (once-per-calendar-month precedent)
+    @Column(name = "escrow_funded_month")
+    private LocalDate escrowFundedMonth;
+
     /** P4: daily action counter for the 500/day hard cap (20-ROHAN-COST-REVIEW.md section 5). */
     @Column(name = "daily_actions_used", nullable = false)
     private int dailyActionsUsed;
@@ -231,6 +244,16 @@ public class BrandAiCredit {
         touch();
     }
 
+    public LocalDate getEscrowFundedMonth() {
+        return escrowFundedMonth;
+    }
+
+    /** Test-fixture / full-row-save convenience -- written by the atomic query in production. */
+    public void setEscrowFundedMonth(LocalDate escrowFundedMonth) {
+        this.escrowFundedMonth = escrowFundedMonth;
+        touch();
+    }
+
     public int getDailyActionsUsed() {
         return dailyActionsUsed;
     }
@@ -344,6 +367,12 @@ public class BrandAiCredit {
         /** Test-fixture convenience (T-CREDITCLOCK-0918 repair round) -- see field javadoc above. */
         public Builder escrowFundedPeriodEnd(Instant escrowFundedPeriodEnd) {
             c.escrowFundedPeriodEnd = escrowFundedPeriodEnd;
+            return this;
+        }
+
+        /** Test-fixture convenience (T-GOLIVE-0918-R2 CREDITS-2) -- see field javadoc above. */
+        public Builder escrowFundedMonth(LocalDate escrowFundedMonth) {
+            c.escrowFundedMonth = escrowFundedMonth;
             return this;
         }
 

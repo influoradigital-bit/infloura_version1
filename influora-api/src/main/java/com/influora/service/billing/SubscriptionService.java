@@ -917,7 +917,26 @@ public class SubscriptionService {
             //   - BILLING_PERIOD + PAST_DUE, or ACTIVE with no confirmed period on this call:
             //     nothing further -- the balance is held, per the grace ruling / repair round MEDIUM.
             //   Source: RULING-upgrade-grant.md; wiki/decisions/2026-09-18-ai-credit-clock.md
-            Plan currentPlan = getActivePlanForWorkspace(workspaceId);
+            //
+            // T-GOLIVE-0918-R2 CREDITS-2 [vikram · 2026-09-18] -- go-live round 2 repair, item (a)
+            // MEDIUM (kabir round-1): this plan-sync used to call getActivePlanForWorkspace, which
+            // maps PAST_DUE to Free (status != ACTIVE filter). A status-only PAST_DUE webhook (no
+            // period, applySubscriptionWebhookUpdate still calls this method) therefore synced a
+            // grace-period Pro brand's planAllotment/monthlyAllotment DOWN to Free's 100 -- the
+            // credits themselves were untouched by this call, but a LATER refundCredits (e.g.
+            // AICreditService#doRelease refunding a failed Meera turn) clamps its add to
+            // `c.monthlyAllotment`, so a 200-credit grace balance with monthlyAllotment now wrongly
+            // synced to 100 got a 1-credit refund CLAMPED DOWN to 100 -- silently taking 100 credits
+            // away instead of adding 1. Ruling §1 requires the balance be held, not reduced, while
+            // PAST_DUE. Using getPlanForCreditSync here (same primitive AICreditService
+            // #applyEscrowFundedReset already uses for the identical PAST_DUE-hold requirement)
+            // resolves a BILLING_PERIOD workspace's OWN paid plan while PAST_DUE instead of falling
+            // back to Free; behavior for every OTHER clock/status is unchanged, since
+            // getPlanForCreditSync delegates straight to getActivePlanForWorkspace whenever the
+            // workspace is not on the billing clock.
+            //   Source: kabir round-1 MEDIUM (reconcileAiCreditAllotment/getActivePlanForWorkspace);
+            //   wiki/decisions/CMO-PRO-DUNNING-GRACE-0917.md §1
+            Plan currentPlan = getPlanForCreditSync(workspaceId);
             aiCreditService.applyPlanAllotment(workspaceId, currentPlan.getAiMonthlyAllotment());
 
             Subscription sub = getByWorkspaceId(workspaceId).orElse(null);
