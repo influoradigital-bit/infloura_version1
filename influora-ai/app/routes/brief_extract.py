@@ -116,7 +116,25 @@ MAX_RAW_TEXT_CHARS = 8000
 # app/config.py (out of this lane's file scope), overridable so it can be
 # tuned from real `ai_spend`/stop_reason data without a code change.
 # Source: .proof-os/tasks/T-PHASEB-LIVE-0918/ash-answers.md
-BRIEF_EXTRACT_MAX_TOKENS = int(os.getenv("BRIEF_EXTRACT_MAX_TOKENS", "1024"))
+#
+# T-PHASEB-LIVE-0918 REPAIR ROUND 1 [vikram · 2026-09-18] — finding 9 (LOW):
+# a non-numeric BRIEF_EXTRACT_MAX_TOKENS env value used to crash module import
+# via a bare int(), and 0/negative values were accepted silently (disabling or
+# inverting the budget). Parsed defensively and floored to the documented
+# default instead.
+def _read_max_tokens_env() -> int:
+    default = 1024
+    raw = os.getenv("BRIEF_EXTRACT_MAX_TOKENS")
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+BRIEF_EXTRACT_MAX_TOKENS = _read_max_tokens_env()
 
 # T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 3: Indian briefs write
 # money as shorthand ("15k", "1.5L", "1.5 lakh", "1 crore") that never appears
@@ -125,12 +143,20 @@ BRIEF_EXTRACT_MAX_TOKENS = int(os.getenv("BRIEF_EXTRACT_MAX_TOKENS", "1024"))
 # correct 15000 for a "15k" brief, so grounding is checked against this
 # shorthand-expanded set instead (see `_amounts_in_inr`).
 # Source: ash-answers.md §1 ("No Indian money shorthand") and §3.
+#
+# REPAIR ROUND 1 [vikram · 2026-09-18] — finding 9 (LOW): "hazaar"/"hazar" is a
+# common Hinglish spelling of "thousand" ("15 hazaar" == "15k") and was missing
+# entirely, so a correctly-converted 15000 was dropped as ungrounded.
 _SHORTHAND_RE = re.compile(
-    r"(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>k|l|lac|lakhs?|cr|crores?)\b",
+    r"(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>k|hazaars?|hazars?|l|lac|lakhs?|cr|crores?)\b",
     re.IGNORECASE,
 )
 _SHORTHAND_MULTIPLIERS: dict[str, float] = {
     "k": 1_000,
+    "hazaar": 1_000,
+    "hazaars": 1_000,
+    "hazar": 1_000,
+    "hazars": 1_000,
     "l": 100_000,
     "lac": 100_000,
     "lakh": 100_000,
@@ -152,10 +178,18 @@ def _normalize_digits(text: str) -> str:
     return (text or "").translate(_DEVANAGARI_DIGITS)
 
 # A number in a summary line that is not in the brief is an invented number, and
-# the creator will price against it. Matches digit groups with optional
-# thousands separators and decimals; the comparison itself is done on the digits
-# alone (see `_numbers_in`), so "8,000" in a line matches "8000" in the brief.
-_NUMBER_RE = re.compile(r"\d[\d,  ]*(?:\.\d+)?")
+# the creator will price against it. Matches a digit group with an optional
+# comma thousands-separator and decimals; the comparison itself is done on the
+# digits alone (see `_numbers_in`), so "8,000" in a line matches "8000" in the
+# brief.
+#
+# REPAIR ROUND 1 [vikram · 2026-09-18] — finding 9 (LOW): the previous pattern
+# (`\d[\d,  ]*`) also accepted a bare SPACE inside a number, which glues two
+# unrelated numbers written next to each other into one: "Budget 15000 3
+# reels" was read as the single number "150003", so the correct "15000" never
+# matched anything. Only a comma is accepted as a separator now; a space
+# always ends the current number.
+_NUMBER_RE = re.compile(r"\d[\d,]*(?:\.\d+)?")
 
 _BANNED_WORD_RE = re.compile(
     r"|".join(re.escape(word) for word in CREATOR_BANNED_WORDS), re.IGNORECASE
@@ -205,12 +239,23 @@ def _numbers_in(text: str) -> set[str]:
 def _amounts_in_inr(text: str) -> set[str]:
     """`_numbers_in`, plus every Indian money-shorthand amount in `text`
     expanded to its plain rupee figure: "15k" -> 15000, "1.5L"/"1.5 lakh" ->
-    150000, "1 crore" -> 10000000. This is the grounding set for budget_inr,
-    barter_mrp_inr, usage_months and exclusivity_days (Ash's fix 2 and 3,
+    150000, "1 crore" -> 10000000. This is the grounding set for the two
+    MONEY fields, budget_inr and barter_mrp_inr (Ash's fix 2 and 3,
     ash-answers.md G1/§1) — a structured amount is kept only when it, or its
     plain-figure equivalent, actually appears in the brief; a brief that says
     "15k" never contains the literal digits "15000", so checking only
-    `_numbers_in` would wrongly reject the correctly-converted figure."""
+    `_numbers_in` would wrongly reject the correctly-converted figure.
+
+    REPAIR ROUND 1 [vikram · 2026-09-18] — finding 2 (MEDIUM): this used to
+    also be the grounding set for usage_months and exclusivity_days, which is
+    wrong on two counts: (1) it means ANY number anywhere in the brief grounds
+    ANY field — a "15k" budget wrongly grounded an invented usage_months=15 —
+    and (2) `_numbers_in` on the raw text picks up the bare digits INSIDE a
+    shorthand token too ("15k" contributes the literal number "15", not just
+    the expanded "15000"), which is exactly the "15" that then vouched for the
+    invented usage_months. usage_months and exclusivity_days now have their
+    own unit-anchored grounding (`_numbers_with_unit`, below) instead of
+    sharing this set. Source: REPAIR ROUND 1 finding 2."""
     normalized = _normalize_digits(text or "")
     values = set(_numbers_in(normalized))
     for match in _SHORTHAND_RE.finditer(normalized):
@@ -225,6 +270,31 @@ def _amounts_in_inr(text: str) -> set[str]:
     return values
 
 
+# REPAIR ROUND 1 [vikram · 2026-09-18] — finding 2 (MEDIUM): usage_months and
+# exclusivity_days are counts, not money, and must be grounded against a
+# number that is actually attached to the right UNIT in the brief ("60 days",
+# "3 months") rather than against any digit anywhere. This is what stops "3
+# reels" from grounding an invented exclusivity_days=3, and stops the bare
+# "15" inside a "15k" BUDGET shorthand token from grounding an invented
+# usage_months=15 — neither "3" nor "15" sits next to "day(s)"/"month(s)" in
+# either brief. Source: REPAIR ROUND 1 finding 2.
+_DAY_UNIT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*-?\s*days?\b", re.IGNORECASE)
+_MONTH_UNIT_RE = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*-?\s*(?:months?|mo)\b", re.IGNORECASE
+)
+
+
+def _numbers_with_unit(text: str, unit_re: re.Pattern[str]) -> set[str]:
+    """Every number in `text` that is immediately followed by the unit
+    `unit_re` matches (e.g. "60 days", "3-month"), reduced to bare digits the
+    same way `_numbers_in` does. Devanagari digits are normalised first."""
+    found: set[str] = set()
+    normalized = _normalize_digits(text or "")
+    for match in unit_re.finditer(normalized):
+        found |= _numbers_in(match.group(1))
+    return found
+
+
 def _own_numbers(extraction: dict[str, Any]) -> set[str]:
     """The numbers the extraction itself established, so a summary line may
     restate them even when the brief wrote them in words ("eight thousand")
@@ -236,8 +306,15 @@ def _own_numbers(extraction: dict[str, Any]) -> set[str]:
     `parse_and_validate_extraction`), so they must not ALSO vouch for
     summary-line numbers on their own — that was Ash's G1 finding
     (ash-answers.md): an invented field used to let a matching invented
-    summary line survive uncaught. What remains here (deliverable qty,
-    max_revisions) are small counts not covered by that grounding fix."""
+    summary line survive uncaught.
+
+    Deliverable qty IS included here, but only because `_clean_deliverables`
+    (REPAIR ROUND 1 finding 1, HIGH) now grounds it against the brief itself
+    before it reaches this dict — an ungrounded qty is reset to the default of
+    1 there, so by the time it arrives here it is already trustworthy, the
+    same reasoning that keeps the four money/count fields above out of this
+    function. max_revisions remains a small count that is not grounded
+    anywhere else."""
     candidates: list[Any] = [extraction.get("max_revisions")]
     deliverables = extraction.get("deliverables")
     if isinstance(deliverables, list):
@@ -272,13 +349,70 @@ def _grounded_int(value: int | None, grounded: set[str]) -> int | None:
     return value if digits in grounded else None
 
 
+# REPAIR ROUND 1 [vikram · 2026-09-18] — finding 3 (MEDIUM): the previous
+# `_grounded_deadline` checked only that the day-of-month and the year each
+# appeared as SOME digit run somewhere in the brief, independently of each
+# other and of the month. That let an invented deadline sharing just those two
+# digits with an UNRELATED date (or with unrelated numbers, e.g. a budget
+# shorthand token) pass: "live by 2026-10-05" grounded an invented
+# "2026-12-05" (day and year matched, month never checked); "Glow 2026
+# campaign ... 25k budget" grounded an invented "2026-11-25" (year from "2026",
+# day from the "25" inside "25k", no real date in the brief at all). The fix
+# below requires the model's exact (year, month, day) triple to appear as one
+# date literally written in the brief, in a handful of common formats, rather
+# than checking each component in isolation. Source: REPAIR ROUND 1 finding 3.
+_MONTH_NAMES: dict[str, int] = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9, "oct": 10,
+    "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+# YYYY-MM-DD or YYYY/MM/DD.
+_ISO_DATE_RE = re.compile(r"\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b")
+# DD-MM-YYYY or DD/MM/YYYY (the common Indian day-first written form).
+_DMY_DATE_RE = re.compile(r"\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b")
+# "5 October 2026" / "5th Oct 2026".
+_DAY_MONTH_YEAR_RE = re.compile(
+    r"\b(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})\b"
+)
+# "October 5, 2026" / "Oct 5 2026".
+_MONTH_DAY_YEAR_RE = re.compile(
+    r"\b([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})\b"
+)
+
+
+def _dates_in(text: str) -> set[tuple[int, int, int]]:
+    """Every full (year, month, day) date literally written in `text`, across
+    a handful of common formats. Deliberately requires a YEAR alongside the
+    day and month for every form: a bare day+month with no year, a month name
+    with no digits, or digits with no unambiguous date shape cannot pin the
+    exact date the model's `deadline` is required to match, so none of those
+    are collected here."""
+    found: set[tuple[int, int, int]] = set()
+    normalized = _normalize_digits(text or "")
+    for match in _ISO_DATE_RE.finditer(normalized):
+        found.add((int(match.group(1)), int(match.group(2)), int(match.group(3))))
+    for match in _DMY_DATE_RE.finditer(normalized):
+        found.add((int(match.group(3)), int(match.group(2)), int(match.group(1))))
+    for match in _DAY_MONTH_YEAR_RE.finditer(normalized):
+        month = _MONTH_NAMES.get(match.group(2).lower())
+        if month is not None:
+            found.add((int(match.group(3)), month, int(match.group(1))))
+    for match in _MONTH_DAY_YEAR_RE.finditer(normalized):
+        month = _MONTH_NAMES.get(match.group(1).lower())
+        if month is not None:
+            found.add((int(match.group(3)), month, int(match.group(2))))
+    return found
+
+
 def _grounded_deadline(value: str | None, raw_text: str) -> str | None:
-    """Keeps `deadline` only when it is a real, non-past ISO date whose day and
-    year both appear as digits somewhere in the brief. Ash's probe P2: "Post by
-    Diwali" (a relative date, no digits at all) produced an invented deadline
-    that also happened to be in the past — either defect alone is disqualifying
-    here; a relative date with no digits can never pass the digit check even in
-    a year where the model's guess lands in the future."""
+    """Keeps `deadline` only when it is a real, non-past ISO date AND that
+    exact (year, month, day) is one of the dates literally written in the
+    brief (`_dates_in`). Ash's probe P2: "Post by Diwali" (a relative date, no
+    digits at all) produced an invented deadline that also happened to be in
+    the past — either defect alone is disqualifying here, and a relative date
+    with no digits can never appear in `_dates_in` even in a year where the
+    model's guess lands in the future."""
     if value is None:
         return None
     try:
@@ -287,23 +421,49 @@ def _grounded_deadline(value: str | None, raw_text: str) -> str | None:
         return None
     if parsed < datetime.now(timezone.utc).date():
         return None
-    digit_runs = set(re.findall(r"\d+", _normalize_digits(raw_text)))
-    day_forms = {str(parsed.day), f"{parsed.day:02d}"}
-    if not (digit_runs & day_forms):
-        return None
-    if str(parsed.year) not in digit_runs:
+    if (parsed.year, parsed.month, parsed.day) not in _dates_in(raw_text):
         return None
     return value
 
 
+# REPAIR ROUND 1 [vikram · 2026-09-18] — finding 8 (MEDIUM): a plain substring
+# match let a short candidate match INSIDE an unrelated word ("Co" inside
+# "Cosmetics") and let a brand named only to be EXCLUDED read as the client's
+# own brand ("No Nykaa posts for 60 days" grounded brand_name="Nykaa"). The
+# word-boundary regex fixes the first; the exclusion-context check below
+# catches the common "no/not/excluding/competitor <name>" phrasing for the
+# second. This is a heuristic, not full disambiguation of every mention of a
+# name in a brief — reported as a remaining gap in the round-trip summary.
+# Source: REPAIR ROUND 1 finding 8.
+_BRAND_EXCLUSION_CONTEXT_RE = re.compile(
+    r"\b(?:no|not|never|except|excluding|compet\w*)\b\s+(?:\w+\s+){{0,2}}{name}\b",
+)
+
+
 def _grounded_brand_name(value: str | None, raw_text: str) -> str | None:
-    """Keeps `brand_name` only when it appears (case-insensitively) in the
-    brief. Ash's probe P6: the model named "Nykaa" for a Glowup brief; a name
-    the brief never wrote feeds `DealRiskService`'s blocked-brand/competitor
-    checks, so an invented one can cause a wrong result there."""
+    """Keeps `brand_name` only when it appears as a whole word/phrase
+    (case-insensitively) in the brief, AND is not immediately introduced by an
+    exclusion phrase such as "no <name>" or "excluding <name>" — that phrasing
+    names a brand the creator must AVOID, not the brand who sent this brief.
+    Ash's probe P6: the model named "Nykaa" for a Glow Cosmetics brief; a name
+    the brief never wrote (or wrote only to rule out) feeds `DealRiskService`'s
+    blocked-brand/competitor checks, so an invented or misattributed one can
+    cause a wrong result there."""
     if value is None:
         return None
-    return value if value.casefold() in (raw_text or "").casefold() else None
+    name = value.strip()
+    if not name:
+        return None
+    text = raw_text or ""
+    escaped = re.escape(name)
+    if re.search(rf"\b{escaped}\b", text, re.IGNORECASE) is None:
+        return None
+    exclusion = re.compile(
+        _BRAND_EXCLUSION_CONTEXT_RE.pattern.format(name=escaped), re.IGNORECASE
+    )
+    if exclusion.search(text) is not None:
+        return None
+    return value
 
 
 def _clean_enum(value: Any, allowed: tuple[str, ...]) -> str | None:
@@ -355,6 +515,20 @@ def _clean_text(value: Any, *, max_chars: int) -> str | None:
     return text[:max_chars]
 
 
+# REPAIR ROUND 1 [vikram · 2026-09-18] — finding 9 (LOW): a BCP-47-shaped tag
+# ("hi", "hi-IN", "en-IN"), nothing else. `creator_language` is spliced
+# straight into the system prompt text (`build_system_block`), so it must be
+# an allowlisted shape rather than arbitrary request-supplied text.
+_LANGUAGE_TAG_RE = re.compile(r"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})?$")
+
+
+def _clean_language(value: Any) -> str | None:
+    text = _clean_text(value, max_chars=16)
+    if text is None:
+        return None
+    return text if _LANGUAGE_TAG_RE.fullmatch(text) else None
+
+
 def _clean_string_list(value: Any, *, max_items: int, max_chars: int) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -366,9 +540,20 @@ def _clean_string_list(value: Any, *, max_items: int, max_chars: int) -> list[st
     return cleaned
 
 
-def _clean_deliverables(value: Any) -> list[dict[str, Any]]:
+# REPAIR ROUND 1 [vikram · 2026-09-18] — finding 1 (HIGH): a deliverable
+# count was never checked against the brief at all, and an ungrounded qty then
+# vouched for itself in a summary line via `_own_numbers` — the same G1
+# pattern the T-PHASEB-LIVE-0918 commit closed for the four amount fields, but
+# missed here. Probe: brief "Glow: some reels, budget 8000." with model qty=5
+# -> deliverables kept `qty=5` and the summary line "Glow wants 5 reels"
+# survived, feeding an invented count straight into Java pricing. `qty` is now
+# grounded against the brief's own plain numbers; an ungrounded qty falls back
+# to the conservative default of 1 (the deliverable itself may still be real
+# even when the model's count of it was not). Source: REPAIR ROUND 1 finding 1.
+def _clean_deliverables(value: Any, raw_text: str) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
+    grounded_counts = _numbers_in(raw_text)
     lines: list[dict[str, Any]] = []
     for item in value[:20]:
         if not isinstance(item, dict):
@@ -382,6 +567,8 @@ def _clean_deliverables(value: Any) -> list[dict[str, Any]]:
             # line at all.
             continue
         qty = _clean_int(item.get("qty"), minimum=1, maximum=100)
+        if qty is not None and str(qty) not in grounded_counts:
+            qty = None
         lines.append({"type": kind, "qty": qty if qty is not None else 1})
     return lines
 
@@ -429,13 +616,21 @@ def parse_and_validate_extraction(
         return None
 
     # T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 2 (ash-answers.md
-    # G1/G2/G3): the brief's own numbers (literal + Indian-shorthand
-    # expansions) are the single grounding set for every structured amount
-    # below, so "budget stated as 15k" grounds an extracted 15000 while an
-    # invented 50000 does not. Source: ash-answers.md §1 and §3.
+    # G1/G2/G3), refined by REPAIR ROUND 1 finding 2 (MEDIUM): each structured
+    # amount is grounded against the set that actually matches what kind of
+    # number it is, not one shared set for everything —
+    #   - budget_inr / barter_mrp_inr (money): the brief's literal numbers PLUS
+    #     Indian-shorthand expansions ("15k" -> 15000).
+    #   - usage_months / exclusivity_days (counts): only numbers the brief
+    #     attaches to the matching unit ("3 months", "60 days"), so a "15k"
+    #     BUDGET token's bare "15", or an unrelated "3 reels" count, cannot
+    #     ground these fields the way one shared set previously let them.
+    # Source: ash-answers.md §1 and §3; REPAIR ROUND 1 finding 2.
     grounded_amounts = _amounts_in_inr(raw_text)
+    grounded_months = _numbers_with_unit(raw_text, _MONTH_UNIT_RE)
+    grounded_days = _numbers_with_unit(raw_text, _DAY_UNIT_RE)
 
-    deliverables = _clean_deliverables(tool_input.get("deliverables"))
+    deliverables = _clean_deliverables(tool_input.get("deliverables"), raw_text)
     budget_stated = bool(tool_input.get("budget_stated"))
     budget_inr = _grounded_amount(
         _clean_number(tool_input.get("budget_inr"), minimum=0, maximum=1_000_000_000),
@@ -469,7 +664,7 @@ def parse_and_validate_extraction(
         ),
         "usage_months": _grounded_int(
             _clean_int(tool_input.get("usage_months"), minimum=0, maximum=600),
-            grounded_amounts,
+            grounded_months,
         ),
         "usage_perpetual": bool(tool_input.get("usage_perpetual")),
         "usage_channels": _clean_enum_list(
@@ -477,7 +672,7 @@ def parse_and_validate_extraction(
         ),
         "exclusivity_days": _grounded_int(
             _clean_int(tool_input.get("exclusivity_days"), minimum=0, maximum=3650),
-            grounded_amounts,
+            grounded_days,
         ),
         "exclusivity_scope": _clean_enum(
             tool_input.get("exclusivity_scope"), BRIEF_EXCLUSIVITY_SCOPES
@@ -586,7 +781,13 @@ async def brief_extract(request: Request, authorization: str | None = Header(def
 
     # T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 3: read once and pass
     # to the model (previously only logged — see build_system_block's rule 12).
-    creator_language = _clean_text(body.get("creator_language"), max_chars=16)
+    # REPAIR ROUND 1 [vikram · 2026-09-18] — finding 9 (LOW): this value used
+    # to reach the system prompt through `_clean_text` alone, i.e. any string
+    # up to 16 characters, with no allowlist. Restricted to a BCP-47-shaped tag
+    # (e.g. "hi-IN", "en", "en-IN") so request-supplied text cannot be spliced
+    # into the prompt as anything other than a language tag; anything else is
+    # treated the same as no language supplied at all.
+    creator_language = _clean_language(body.get("creator_language"))
 
     log_event(
         logger, logging.INFO, "brief_extract_started",
