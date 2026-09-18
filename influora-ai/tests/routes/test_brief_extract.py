@@ -1136,3 +1136,665 @@ def test_max_tokens_env_parsing_is_defensive():
         # route.BRIEF_EXTRACT_MAX_TOKENS itself was captured at import time and
         # is intentionally not re-read here; this test only pins the parser.
         assert route is not None
+
+
+# ---------------------------------------------------------------------------
+# REPAIR ROUND 2 [vikram · 2026-09-18] — fixes for the reviewer's findings on
+# commit 1d4660e912302c5c376f305297494729260a6c38
+# (.proof-os/tasks/T-PHASEB-LIVE-0918/), round 2.
+# ---------------------------------------------------------------------------
+
+
+# --- Finding 1 (HIGH): deliverable qty anchored to a deliverable noun ------
+
+
+@pytest.mark.asyncio
+async def test_deliverable_qty_grounded_by_unrelated_date_digit_is_dropped():
+    """Round 2 finding 1 (Q1): qty was grounded against ANY bare number in
+    the brief, including a digit that is only part of an unrelated DATE.
+    "some reels" names no count; the model's qty=5 must not survive just
+    because the brief's deadline happens to end in "...-05"."""
+    raw = "Glow Cosmetics: some reels please, budget 8000, live by 2026-12-05."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        deliverables=[{"type": "REEL", "qty": 5}],
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants some reels",
+            "Budget stated: 8,000",
+            "Exact terms to be discussed",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["deliverables"] == [{"type": "REEL", "qty": 1}]
+
+
+@pytest.mark.asyncio
+async def test_deliverable_qty_grounded_by_shorthand_bare_digit_is_dropped():
+    """Round 2 finding 1 (Q2): "budget 15k" used to ground qty=15 via the
+    bare "15" living inside the shorthand token — the same pattern REPAIR
+    ROUND 1 finding 2 already closed for usage_months, missed here for
+    deliverables."""
+    raw = "Glow Cosmetics: some reels please, budget 15k."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        deliverables=[{"type": "REEL", "qty": 15}],
+        budget_inr=None,
+        budget_stated=False,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants some reels",
+            "Budget mentioned: 15,000",
+            "Exact terms to be discussed",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["deliverables"] == [{"type": "REEL", "qty": 1}]
+
+
+@pytest.mark.asyncio
+async def test_deliverable_qty_grounded_by_unrelated_percentage_is_dropped():
+    """Round 2 finding 1 (Q3): "50% advance" must not ground an invented
+    deliverable qty of 50 for a brief naming no deliverable count at all."""
+    raw = "Glow Cosmetics: some reels please, 8000 budget, 50% advance."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        deliverables=[{"type": "REEL", "qty": 50}],
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants some reels",
+            "Budget stated: 8,000",
+            "50% advance",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["deliverables"] == [{"type": "REEL", "qty": 1}]
+
+
+@pytest.mark.asyncio
+async def test_deliverable_qty_named_next_to_the_noun_is_kept():
+    """The noun-anchoring fix must not reject a correct count stated as
+    "3 reels" right next to the noun it counts."""
+    raw = "Glow Cosmetics: 3 reels please, budget 8000."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        deliverables=[{"type": "REEL", "qty": 3}],
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 3 reels",
+            "Budget stated: 8,000",
+            "Terms otherwise unstated",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), tool_input, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["deliverables"] == [{"type": "REEL", "qty": 3}]
+
+
+# --- Finding 2 (HIGH): summary-line money is expanded before grounding ----
+
+
+@pytest.mark.asyncio
+async def test_summary_line_own_shorthand_not_grounded_is_stripped():
+    """Round 2 finding 2 (S1): the model wrote its OWN shorthand ("50k")
+    rather than expanding it. The bare literal "50" living inside an
+    unrelated "50% advance" in the brief must not vouch for the shorthand's
+    EXPANDED value (50000), which the brief never stated."""
+    raw = "Glow Cosmetics: 1 reel please, budget 8000 INR, 50% advance."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 8,000",
+            "Brand may go up to 50k",
+            "50% advance",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert not any("50k" in line.lower() for line in response["data"]["summary_lines"])
+
+
+@pytest.mark.asyncio
+async def test_summary_line_lakh_word_shorthand_not_grounded_is_stripped():
+    """Round 2 finding 2 (S2): a shorthand-suffixed word amount in a summary
+    line ("5 lakh") must be checked against its EXPANDED value (500000), not
+    against a bare literal "5" the brief happens to contain for an entirely
+    unrelated reason ("5-day turnaround")."""
+    raw = "Glow Cosmetics: 1 reel please, budget is 8000, 5-day turnaround."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget is 5 lakh",
+            "Budget stated: 8,000",
+            "5-day turnaround",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert not any("lakh" in line.lower() for line in response["data"]["summary_lines"])
+
+
+@pytest.mark.asyncio
+async def test_summary_line_spelled_out_amount_is_stripped():
+    """Round 2 finding 2 (S3): an amount spelled out entirely in words
+    ("fifty thousand rupees") carries no digit for the shorthand expansion to
+    anchor to, so it cannot be verified at all and must fail closed."""
+    raw = "Glow Cosmetics: 1 reel please, budget is 8000."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget: fifty thousand rupees",
+            "Budget stated: 8,000",
+            "Terms otherwise unstated",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert not any("fifty" in line.lower() for line in response["data"]["summary_lines"])
+
+
+@pytest.mark.asyncio
+async def test_hinglish_brief_with_both_15k_and_1_5l_tokens():
+    """Done_when gap (round 2 finding 6): a genuinely Hinglish brief
+    containing BOTH "15k" AND "1.5L" in the SAME text — the prior "15k"
+    fixture was English prose flagged hi-IN only by the request body, and no
+    fixture combined both shorthand forms at all. A summary line inventing a
+    THIRD figure (50,000, matching neither token's expansion) must still be
+    dropped even though this brief contains plenty of other numbers."""
+    raw = (
+        "Namaste! Glow Cosmetics yaha se, 1 reel chahiye. Hamara rate card "
+        "1.5L tak jaata hai lekin aapke liye budget 15k rakha hai, jaldi "
+        "chahiye."
+    )
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=None,
+        budget_stated=False,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget mentioned: 15,000",
+            "Invented figure: 50,000",
+            "Exact terms to be discussed",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw, creator_language="hi-IN"),
+        tool_input,
+        gate=AsyncMock(return_value=None),
+    )
+    assert response["success"] is True
+    lines = response["data"]["summary_lines"]
+    assert any("15,000" in line for line in lines)
+    assert not any("50,000" in line for line in lines)
+
+
+# --- Finding 3 (MEDIUM): budget/barter each anchor to their OWN marker ----
+
+
+@pytest.mark.asyncio
+async def test_unrelated_follower_count_does_not_ground_budget():
+    """Round 2 finding 3 (B1): an unrelated "50000 followers" count must not
+    ground an invented budget_inr, even though the brief's actual budget
+    ("15k") is stated correctly elsewhere."""
+    raw = "Glow Cosmetics: 1 reel please, she has 50000 followers, budget 15k."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=50000,
+        budget_stated=True,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 15,000",
+            "Follower count noted",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["budget_inr"] is None
+
+
+@pytest.mark.asyncio
+async def test_barter_products_own_worth_does_not_ground_the_cash_budget():
+    """Round 2 finding 3 (B2): a barter product's own "worth 50000" must not
+    ground the SEPARATE cash budget_inr field — that number describes what
+    the barter product is worth, not what the brand is paying in cash."""
+    raw = "Glow Cosmetics: 1 reel please, barter product worth 50000, plus 15k fee."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=50000,
+        budget_stated=True,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Fee stated: 15,000",
+            "Barter product also offered",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["budget_inr"] is None
+
+
+@pytest.mark.asyncio
+async def test_barter_products_own_worth_grounds_barter_mrp_correctly():
+    """The field-specific fix must not reject a barter_mrp_inr correctly
+    grounded by its own "worth" marker, alongside a correctly-grounded
+    SEPARATE cash budget_inr in the same brief."""
+    raw = "Glow Cosmetics: 1 reel please, barter product worth 50000, plus 15k fee."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=15000,
+        budget_stated=True,
+        barter_mrp_inr=50000,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Fee stated: 15,000",
+            "Barter product worth 50,000 also offered",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), tool_input, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert float(response["data"]["budget_inr"]) == 15000.0
+    assert float(response["data"]["barter_mrp_inr"]) == 50000.0
+
+
+@pytest.mark.asyncio
+async def test_decimal_shorthand_digit_does_not_ground_an_unrelated_integer():
+    """Round 2 finding 3 (B3): "budget 1.5L" used to collapse the literal
+    "1.5" into the concatenated digit string "15" — a completely different
+    number — so an invented budget_inr=15 wrongly read as grounded. "1.5" and
+    "15" must never compare equal; only the shorthand-EXPANDED 150000 may
+    ground here."""
+    raw = "Glow Cosmetics: 1 reel please, budget 1.5L hai, exact terms tbd."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=15,
+        budget_stated=True,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget mentioned: 150000",
+            "Exact terms to be discussed",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["budget_inr"] is None
+
+
+# --- Finding 4 (MEDIUM): duration units are anchored to a FIELD, not just -
+# --- to a unit word ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_payment_terms_months_does_not_ground_usage_months():
+    """Round 2 finding 4 (U1): "payment within 3 months" describes when
+    PAYMENT is due, not how long the brand may use the content. A bare unit
+    match must not ground usage_months without a usage/rights context word
+    nearby."""
+    raw = "Glow Cosmetics: 1 reel please, budget 8000, payment within 3 months."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        usage_months=3,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 8,000",
+            "Payment terms as stated",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["usage_months"] is None
+
+
+@pytest.mark.asyncio
+async def test_payment_terms_days_does_not_ground_exclusivity_days():
+    """Round 2 finding 4 (U2): "payment in 45 days" describes a payment
+    deadline, not an exclusivity period. A bare unit match must not ground
+    exclusivity_days without an exclusivity context word nearby."""
+    raw = "Glow Cosmetics: 1 reel please, budget 8000, payment in 45 days."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        exclusivity_days=45,
+        deadline=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 8,000",
+            "Payment terms as stated",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["exclusivity_days"] is None
+
+
+@pytest.mark.asyncio
+async def test_usage_rights_in_years_converts_and_grounds_usage_months():
+    """Round 2 finding 4 (U3): "usage rights 1 year" is a genuine, correctly-
+    converted answer (usage_months=12) that the ROUND 1 unit-only anchoring
+    could never ground, because "12" never appears next to "year" in the
+    brief — only "1" does. The USAGE context plus a YEAR unit must convert."""
+    raw = "Glow Cosmetics: 1 reel please, budget 8000, usage rights 1 year."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        usage_months=12,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 8,000",
+            "Usage rights: 1 year",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), tool_input, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["usage_months"] == 12
+
+
+@pytest.mark.asyncio
+async def test_exclusivity_in_months_converts_and_grounds_exclusivity_days():
+    """Round 2 finding 4 (U4): "2 months category exclusivity" is a genuine,
+    correctly-converted answer (exclusivity_days=60) that unit-only anchoring
+    could never ground, because "60" never appears next to "month" or "day"
+    in the brief — only "2" does. The EXCLUSIVITY context plus a MONTH unit
+    must convert (2 * 30 = 60)."""
+    raw = "Glow Cosmetics: 1 reel please, budget 8000, 2 months category exclusivity."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        exclusivity_days=60,
+        deadline=None,
+        exclusivity_scope="CATEGORY",
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 8,000",
+            "2 months category exclusivity",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), tool_input, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["exclusivity_days"] == 60
+
+
+@pytest.mark.asyncio
+async def test_devanagari_duration_units_ground_with_context():
+    """Round 2 finding 4 / finding 8: Devanagari duration words (महीने
+    "months", दिन "days") must ground the same way their English equivalents
+    do, in the right USAGE/EXCLUSIVITY context. This also pins the `\\b`-
+    after-a-combining-vowel-sign bug found and fixed while building this
+    anchor: "महीने" ends in the dependent vowel sign "े", which is not a `\\w`
+    character, so a plain trailing `\\b` never matched this word at all."""
+    raw = "Glow Cosmetics: 1 reel please, budget 8000, usage rights 3 महीने ke liye."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        usage_months=3,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 8,000",
+            "Usage rights: 3 months",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw, creator_language="hi-IN"),
+        tool_input,
+        gate=AsyncMock(return_value=None),
+    )
+    assert response["success"] is True
+    assert response["data"]["usage_months"] == 3
+
+
+# --- Finding 5 (MEDIUM): brand exclusion checks both sides, and Hinglish --
+
+
+@pytest.mark.asyncio
+async def test_dont_contraction_exclusion_is_recognised():
+    """Round 2 finding 5 (N1): "Don't post for Nykaa" — the contraction
+    "don't" is not the word "not", so the round 1 trigger list never matched
+    it at all."""
+    raw = "Don't post for Nykaa. Glow Cosmetics wants 1 reel, budget 8000."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        brand_name="Nykaa",
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["brand_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_competitor_list_second_name_with_trailing_exclusion_is_dropped():
+    """Round 2 finding 5 (N2): "Competitors: Nykaa, Mamaearth not allowed" —
+    "Mamaearth" is the SECOND name after a comma, and its own exclusion word
+    ("not allowed") comes AFTER it; a before-only, comma-breaking check could
+    see neither."""
+    raw = "Competitors: Nykaa, Mamaearth not allowed. Glow Cosmetics wants 1 reel, budget 8000."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        brand_name="Mamaearth",
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), bad, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["brand_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_hinglish_negation_after_the_name_is_recognised():
+    """Round 2 finding 5 (N3): "Nykaa ke saath kaam mat karna" (Hinglish for
+    "don't work with Nykaa") negates the name with a Hinglish word ("mat")
+    AFTER it — entirely outside the round 1 English-only, before-only
+    trigger list."""
+    raw = "Nykaa ke saath kaam mat karna. Glow Cosmetics wants 1 reel, budget 8000."
+    bad = dict(
+        VALID_TOOL_INPUT,
+        brand_name="Nykaa",
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw, creator_language="hi-IN"),
+        bad,
+        gate=AsyncMock(return_value=None),
+    )
+    assert response["success"] is True
+    assert response["data"]["brand_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_brand_name_far_from_an_unrelated_trigger_word_still_survives():
+    """The wider before/after exclusion window must not turn into a blanket
+    veto: a trigger word attached to a DIFFERENT, distant brand mention must
+    not exclude the correct brand_name sitting well outside that window."""
+    raw = (
+        "No Nykaa posts allowed anywhere in this campaign for any reason at "
+        "all. Glow Cosmetics wants 1 reel, budget 8000."
+    )
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        brand_name="Glow Cosmetics",
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget stated: 8,000",
+            "Terms otherwise unstated",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw), tool_input, gate=AsyncMock(return_value=None)
+    )
+    assert response["success"] is True
+    assert response["data"]["brand_name"] == "Glow Cosmetics"
+
+
+# --- Finding 8 (LOW): Devanagari money WORDS (हज़ार / लाख) --------------------
+
+
+@pytest.mark.asyncio
+async def test_devanagari_hazaar_word_shorthand_grounds_the_summary_line():
+    """Round 2 finding 8 (B5): a budget stated only in Devanagari shorthand
+    ("बजट १५ हज़ार" = "budget 15 thousand") must ground the same way its Latin-
+    script equivalent ("15 hazaar"/"15k") already does."""
+    raw = "Glow Cosmetics collab. बजट १५ हज़ार है, 1 reel chahiye."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=None,
+        budget_stated=False,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Budget mentioned: 15,000",
+            "Exact terms to be discussed",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw, creator_language="hi-IN"),
+        tool_input,
+        gate=AsyncMock(return_value=None),
+    )
+    assert response["success"] is True
+    assert any("15,000" in line for line in response["data"]["summary_lines"])
+
+
+@pytest.mark.asyncio
+async def test_devanagari_lakh_word_shorthand_grounds_the_correct_amount_only():
+    """Round 2 finding 8 (B6): "१.५ लाख" ("1.5 lakh") must expand to 150000,
+    not to the decimal-collapse artifact "15" — the same bug REPAIR ROUND 2
+    finding 3 fixed for the Latin-script "1.5L" form."""
+    raw = "Glow Cosmetics collab. १.५ लाख budget hai, 1 reel chahiye."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=None,
+        budget_stated=False,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Correct budget note: 150000",
+            "Wrong budget note: 15000 flat",
+            "Exact terms to be discussed",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw, creator_language="hi-IN"),
+        tool_input,
+        gate=AsyncMock(return_value=None),
+    )
+    assert response["success"] is True
+    lines = response["data"]["summary_lines"]
+    assert any("150000" in line for line in lines)
+    assert not any("Wrong budget note" in line for line in lines)
+
+
+@pytest.mark.asyncio
+async def test_english_brand_name_in_a_devanagari_script_brief_still_grounds():
+    """Round 2 finding 8 (N4): an English brand name embedded in an otherwise
+    Devanagari-script brief must still ground — word-boundary matching does
+    not depend on the surrounding text's script."""
+    raw = "नमस्ते, Glow Cosmetics ke saath ek collab hai, फीस १५,००० rupees, 1 reel chahiye."
+    tool_input = dict(
+        VALID_TOOL_INPUT,
+        budget_inr=None,
+        budget_stated=False,
+        deadline=None,
+        exclusivity_days=None,
+        exclusivity_scope=None,
+        summary_lines=[
+            "Glow Cosmetics wants 1 reel",
+            "Fee mentioned: 15,000",
+            "Exact terms to be discussed",
+        ],
+    )
+    response, _ = await _call(
+        _base_body(raw_text=raw, creator_language="hi-IN"),
+        tool_input,
+        gate=AsyncMock(return_value=None),
+    )
+    assert response["success"] is True
+    assert response["data"]["brand_name"] == "Glow Cosmetics"

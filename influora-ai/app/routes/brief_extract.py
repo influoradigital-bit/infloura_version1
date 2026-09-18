@@ -147,8 +147,24 @@ BRIEF_EXTRACT_MAX_TOKENS = _read_max_tokens_env()
 # REPAIR ROUND 1 [vikram · 2026-09-18] — finding 9 (LOW): "hazaar"/"hazar" is a
 # common Hinglish spelling of "thousand" ("15 hazaar" == "15k") and was missing
 # entirely, so a correctly-converted 15000 was dropped as ungrounded.
+#
+# REPAIR ROUND 2 [vikram · 2026-09-18] — finding 8 (LOW): Devanagari money
+# words ("हज़ार"/"हजार", "लाख", "करोड़"/"करोड") were not recognised at all, so a
+# brief that stated its budget only in Devanagari script (e.g. "बजट १५ हज़ार")
+# always came back with budget_stated=true and budget_inr=null — a correct
+# Hindi-script figure was strictly worse off than an ungrounded one. Spelled-
+# out English "thousand"/"hundred" are added for the same reason: they were
+# previously invisible to grounding even though the prompt's rule 9 only
+# teaches the model "k"/"L"/"lakh"/"crore" shorthand, not full English words —
+# `_line_has_unanchored_money_word` (below) relies on these being recognised
+# units so a digit-anchored "15 thousand" is treated the same as "15k" rather
+# than being flagged as an unparseable word amount.
+# Source: REPAIR ROUND 2 finding 8; T-PHASEB-LIVE-0918 REPAIR ROUND 2 findings
+# 1-3 (this same table is reused by the deliverable-qty and money-marker
+# anchoring below).
 _SHORTHAND_RE = re.compile(
-    r"(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>k|hazaars?|hazars?|l|lac|lakhs?|cr|crores?)\b",
+    r"(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>k|hazaars?|hazars?|l|lac|lakhs?|cr|crores?|"
+    r"thousands?|hundreds?|हज़ार|हजार|लाख|करोड़|करोड)\b",
     re.IGNORECASE,
 )
 _SHORTHAND_MULTIPLIERS: dict[str, float] = {
@@ -164,6 +180,15 @@ _SHORTHAND_MULTIPLIERS: dict[str, float] = {
     "cr": 10_000_000,
     "crore": 10_000_000,
     "crores": 10_000_000,
+    "thousand": 1_000,
+    "thousands": 1_000,
+    "hundred": 100,
+    "hundreds": 100,
+    "हज़ार": 1_000,
+    "हजार": 1_000,
+    "लाख": 100_000,
+    "करोड़": 10_000_000,
+    "करोड": 10_000_000,
 }
 
 # T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 3 (ash-answers.md §4):
@@ -223,7 +248,23 @@ def _numbers_in(text: str) -> set[str]:
     ".0" dropped) so "8,000", "8 000" and "8000.00" all compare equal.
     Devanagari digits are normalised to ASCII first (see `_normalize_digits`)
     so a Hindi-script number compares equal to the same value written in
-    figures elsewhere."""
+    figures elsewhere.
+
+    REPAIR ROUND 2 [vikram · 2026-09-18] — finding 3 (MEDIUM): a genuine
+    decimal literal found IN THE TEXT (e.g. the "1.5" inside "1.5L") used to
+    be collapsed by CONCATENATING its digits — "1.5" became "15" — which is
+    not the same number and created a false equivalence: a model-invented
+    budget_inr=15 then read as "grounded" against a brief that only ever said
+    "1.5L" (150000), because both boiled down to the same "15" string. Only a
+    genuinely trailing-zero fraction (the ".00" a Python float repr adds, e.g.
+    formatting 8000.0) means "no fraction at all" and collapses to the whole
+    part; any other fraction keeps the number as a distinct WHOLE.FRAC string
+    instead of being merged into the whole part or dropped — "1.5" and "15"
+    must never compare equal. The Indian-shorthand VALUE a decimal like "1.5"
+    is part of ("1.5L" -> 150000) is still captured correctly by
+    `_amounts_in_inr`'s separate shorthand expansion, which parses the digits
+    as a float rather than concatenating them. Source: REPAIR ROUND 2 finding
+    3 (B3: "budget 1.5L" wrongly grounded an invented budget_inr=15)."""
     found: set[str] = set()
     for match in _NUMBER_RE.finditer(_normalize_digits(text)):
         digits = re.sub(r"[^\d.]", "", match.group(0))
@@ -231,7 +272,7 @@ def _numbers_in(text: str) -> set[str]:
             continue
         if "." in digits:
             whole, _, frac = digits.partition(".")
-            digits = whole if frac.strip("0") == "" else whole + frac
+            digits = whole if frac.strip("0") == "" else f"{whole}.{frac}"
         found.add(digits.lstrip("0") or "0")
     return found
 
@@ -256,8 +297,23 @@ def _amounts_in_inr(text: str) -> set[str]:
     invented usage_months. usage_months and exclusivity_days now have their
     own unit-anchored grounding (`_numbers_with_unit`, below) instead of
     sharing this set. Source: REPAIR ROUND 1 finding 2."""
+    return set(_numbers_in(text or "")) | _shorthand_expansions_in(text)
+
+
+def _shorthand_expansions_in(text: str) -> set[str]:
+    """Only the Indian-shorthand-EXPANDED amounts in `text` ("15k" -> "15000",
+    "1.5L" -> "150000") — deliberately excluding the plain literal numbers
+    `_numbers_in` would also find, so a caller can tell "this is a number
+    written in shorthand, and here is what it expands to" apart from "this
+    number is written out in full". Split out of `_amounts_in_inr` in REPAIR
+    ROUND 2 (finding 2, HIGH) so a summary line's OWN shorthand — the model
+    writing back "50k" instead of expanding it — can be checked against this
+    set specifically, rather than the combined literal+expanded set that a
+    line's own unrelated literal digits would also satisfy by coincidence
+    (e.g. a stray "50" from "50% advance" trivially covering a "50" that the
+    model then suffixed with "k"). Source: REPAIR ROUND 2 finding 2."""
+    values: set[str] = set()
     normalized = _normalize_digits(text or "")
-    values = set(_numbers_in(normalized))
     for match in _SHORTHAND_RE.finditer(normalized):
         multiplier = _SHORTHAND_MULTIPLIERS.get(match.group("unit").lower())
         if multiplier is None:
@@ -278,10 +334,53 @@ def _amounts_in_inr(text: str) -> set[str]:
 # "15" inside a "15k" BUDGET shorthand token from grounding an invented
 # usage_months=15 — neither "3" nor "15" sits next to "day(s)"/"month(s)" in
 # either brief. Source: REPAIR ROUND 1 finding 2.
-_DAY_UNIT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*-?\s*days?\b", re.IGNORECASE)
-_MONTH_UNIT_RE = re.compile(
-    r"(\d[\d,]*(?:\.\d+)?)\s*-?\s*(?:months?|mo)\b", re.IGNORECASE
+#
+# REPAIR ROUND 2 [vikram · 2026-09-18] — finding 4 (MEDIUM): a unit alone is
+# not enough — it is FIELD anchoring, not just unit anchoring, that was
+# missing. "payment within 3 months" and "payment in 45 days" used to ground
+# usage_months=3 and exclusivity_days=45 respectively, purely because SOME
+# duration unit sat next to the number; the number describes when PAYMENT is
+# due, not usage or exclusivity. Conversely a genuine "usage rights 1 year" or
+# "2 months category exclusivity" used to ground NOTHING, because the model's
+# converted answer (12 months / 60 days) never appears as that literal figure
+# next to "year"/"month" in the brief. `_numbers_with_context_unit` now
+# requires a USAGE- or EXCLUSIVITY-context word within a small window of the
+# unit match (not just the unit itself) before a number grounds either field,
+# and converts year/month durations found in the RIGHT context into the
+# field's own unit (year->12 months, month/year->30/365 days) the same way
+# `_amounts_in_inr` converts Indian money shorthand. Devanagari duration words
+# (दिन "day", महीने/महीना/माह "month") are matched directly since
+# `_normalize_digits` only translates digits, not unit words.
+#
+# `\b` after a Devanagari alternative is unsafe when that alternative ends in
+# a dependent vowel sign (a Unicode combining mark, e.g. the "े" ending
+# "महीने") — Python's re does not count those marks as `\w`, so `\b` anchors
+# to the CONSONANT before the mark instead of the true end of the word, and
+# the whole alternative then never matches at all (caught by this lane's own
+# red/green: "usage rights ke liye 3 महीने" matched zero times with `\b`).
+# `_WORD_END` is a portable replacement: "not immediately followed by another
+# ASCII or Devanagari letter", which works for every unit word above
+# regardless of what character it ends on.
+# Source: REPAIR ROUND 2 finding 4.
+_WORD_END = r"(?![A-Za-zऀ-ॿ])"
+_DAY_UNIT_RE = re.compile(
+    rf"(\d[\d,]*(?:\.\d+)?)\s*-?\s*(?:days?|दिन){_WORD_END}", re.IGNORECASE
 )
+_MONTH_UNIT_RE = re.compile(
+    rf"(\d[\d,]*(?:\.\d+)?)\s*-?\s*(?:months?|mo|महीन[ेा]|माह){_WORD_END}",
+    re.IGNORECASE,
+)
+_YEAR_UNIT_RE = re.compile(
+    rf"(\d[\d,]*(?:\.\d+)?)\s*-?\s*(?:years?|yrs?|साल|वर्ष){_WORD_END}",
+    re.IGNORECASE,
+)
+_USAGE_CONTEXT_RE = re.compile(r"usage|use\b|rights?|licen[sc]e", re.IGNORECASE)
+_EXCLUSIVITY_CONTEXT_RE = re.compile(r"exclusiv\w*", re.IGNORECASE)
+# A heuristic window, not full sentence parsing (same caveat as the brand
+# exclusion check below): wide enough to span a short clause ("2 months
+# category exclusivity"), narrow enough that an unrelated context word two
+# sentences away should not cross-ground a different duration mention.
+_DURATION_CONTEXT_WINDOW = 30
 
 
 def _numbers_with_unit(text: str, unit_re: re.Pattern[str]) -> set[str]:
@@ -293,6 +392,129 @@ def _numbers_with_unit(text: str, unit_re: re.Pattern[str]) -> set[str]:
     for match in unit_re.finditer(normalized):
         found |= _numbers_in(match.group(1))
     return found
+
+
+def _numbers_with_context_unit(
+    text: str,
+    unit_re: re.Pattern[str],
+    context_re: re.Pattern[str],
+    *,
+    multiplier: float = 1,
+) -> set[str]:
+    """Like `_numbers_with_unit`, but a match only counts when `context_re`
+    (a USAGE or EXCLUSIVITY context word) also appears within
+    `_DURATION_CONTEXT_WINDOW` characters of it — see REPAIR ROUND 2 finding
+    4 above. `multiplier` converts the unit found into the target field's own
+    unit (e.g. a YEAR match feeding usage_months passes multiplier=12)."""
+    found: set[str] = set()
+    normalized = _normalize_digits(text or "")
+    for match in unit_re.finditer(normalized):
+        lo = max(0, match.start() - _DURATION_CONTEXT_WINDOW)
+        hi = min(len(normalized), match.end() + _DURATION_CONTEXT_WINDOW)
+        if context_re.search(normalized[lo:hi]) is None:
+            continue
+        raw_numbers = _numbers_in(match.group(1))
+        if multiplier == 1:
+            found |= raw_numbers
+            continue
+        for number in raw_numbers:
+            try:
+                converted = float(number) * multiplier
+            except ValueError:
+                continue
+            found |= _numbers_in(f"{converted:.10f}".rstrip("0").rstrip("."))
+    return found
+
+
+def _grounded_usage_months(text: str) -> set[str]:
+    """usage_months grounds against a month figure OR a year figure (x12)
+    stated in a USAGE/rights/licence context — never a bare "N months"
+    wherever it happens to sit (REPAIR ROUND 2 finding 4, U1/U3)."""
+    return _numbers_with_context_unit(
+        text, _MONTH_UNIT_RE, _USAGE_CONTEXT_RE
+    ) | _numbers_with_context_unit(
+        text, _YEAR_UNIT_RE, _USAGE_CONTEXT_RE, multiplier=12
+    )
+
+
+def _grounded_exclusivity_days(text: str) -> set[str]:
+    """exclusivity_days grounds against a day figure, a month figure (x30) or
+    a year figure (x365) stated in an EXCLUSIVITY context (REPAIR ROUND 2
+    finding 4, U2/U4)."""
+    return (
+        _numbers_with_context_unit(text, _DAY_UNIT_RE, _EXCLUSIVITY_CONTEXT_RE)
+        | _numbers_with_context_unit(
+            text, _MONTH_UNIT_RE, _EXCLUSIVITY_CONTEXT_RE, multiplier=30
+        )
+        | _numbers_with_context_unit(
+            text, _YEAR_UNIT_RE, _EXCLUSIVITY_CONTEXT_RE, multiplier=365
+        )
+    )
+
+
+# REPAIR ROUND 2 [vikram · 2026-09-18] — finding 3 (MEDIUM): budget_inr and
+# barter_mrp_inr shared ONE grounding set (`_amounts_in_inr` over the whole
+# brief), so ANY literal number anywhere in the brief — a follower count, an
+# unrelated product's MRP, a percentage — could ground either money field.
+# Each field now also requires its OWN literal number to sit near a marker
+# word for THAT field (budget/fee/pay/price/cost for budget_inr; worth/
+# barter/mrp/value for barter_mrp_inr), or a bare currency marker that could
+# reasonably belong to either. Indian-shorthand amounts ("15k", "1.5L") are
+# still accepted regardless of a nearby marker — a "k"/"lakh"/"crore" suffix
+# is unambiguously a money figure by itself, which is exactly why
+# `_shorthand_expansions_in` is unioned in separately, unrestricted by field.
+# Source: REPAIR ROUND 2 finding 3 (B1: an unrelated "50000 followers" count;
+# B2: a barter product's own "worth 50000" grounding the CASH budget_inr).
+#
+# Two bugs found and fixed WHILE building this anchor (caught by this lane's
+# own red/green, not a named finding): (1) `\d[\d,]*` — the number pattern
+# used everywhere else in this file — greedily swallows a comma that is
+# actually a SENTENCE separator, not a thousands separator, so "50000, 15k
+# fee" let the after-marker pattern capture "50000," as its number while
+# treating "15k" as an ordinary two-word filler and reaching "fee" — grounding
+# the WRONG number for the marker it was never next to. `_MONEY_NUMBER_RE`
+# requires a digit immediately after every comma it consumes, so a comma with
+# nothing but whitespace after it ends the number instead of joining it to
+# whatever comes next. (2) that same "filler word" pattern being `\w+` meant
+# a token that IS itself a number (like "15k") could be silently skipped over
+# as filler; filler words are now letters-only, so a competing number can
+# never be hopped across to reach a marker meant for a different one.
+_MONEY_NUMBER_RE = r"\d(?:,?\d)*(?:\.\d+)?"
+_MONEY_MARKER_WINDOW_WORDS = r"(?:\s+[A-Za-z']+){0,2}?"
+_CURRENCY_MARKER_RE_TEXT = r"₹|rs\.?|inr|rupees?"
+_BUDGET_MARKER_RE_TEXT = rf"{_CURRENCY_MARKER_RE_TEXT}|budget|fee|fees|pay(?:ment)?|paying|price|cost"
+_BARTER_MARKER_RE_TEXT = rf"{_CURRENCY_MARKER_RE_TEXT}|worth|barter|mrp|value"
+
+
+def _numbers_with_money_marker(text: str, marker_re_text: str) -> set[str]:
+    """Every literal number in `text` that sits within two filler words of one
+    of the marker words in `marker_re_text`, on either side ("budget is
+    8000", "8000 INR", "worth 50000"). Mirrors `_numbers_with_unit`'s
+    anchoring approach but for money-context keywords rather than a fixed
+    unit word."""
+    found: set[str] = set()
+    normalized = _normalize_digits(text or "")
+    before_re = re.compile(
+        rf"\b(?:{marker_re_text})\b{_MONEY_MARKER_WINDOW_WORDS}\s*[:\-]?\s*"
+        rf"({_MONEY_NUMBER_RE})",
+        re.IGNORECASE,
+    )
+    after_re = re.compile(
+        rf"({_MONEY_NUMBER_RE})\s*[:\-]?{_MONEY_MARKER_WINDOW_WORDS}\s*\b(?:{marker_re_text})\b",
+        re.IGNORECASE,
+    )
+    for pattern in (before_re, after_re):
+        for match in pattern.finditer(normalized):
+            found |= _numbers_in(match.group(1))
+    return found
+
+
+def _grounded_budget_amounts(text: str) -> set[str]:
+    return _numbers_with_money_marker(text, _BUDGET_MARKER_RE_TEXT) | _shorthand_expansions_in(text)
+
+
+def _grounded_barter_amounts(text: str) -> set[str]:
+    return _numbers_with_money_marker(text, _BARTER_MARKER_RE_TEXT) | _shorthand_expansions_in(text)
 
 
 def _own_numbers(extraction: dict[str, Any]) -> set[str]:
@@ -435,20 +657,47 @@ def _grounded_deadline(value: str | None, raw_text: str) -> str | None:
 # second. This is a heuristic, not full disambiguation of every mention of a
 # name in a brief — reported as a remaining gap in the round-trip summary.
 # Source: REPAIR ROUND 1 finding 8.
-_BRAND_EXCLUSION_CONTEXT_RE = re.compile(
-    r"\b(?:no|not|never|except|excluding|compet\w*)\b\s+(?:\w+\s+){{0,2}}{name}\b",
+#
+# REPAIR ROUND 2 [vikram · 2026-09-18] — finding 5 (MEDIUM): round 1's check
+# only looked BEFORE the name, for a fixed trigger word directly followed by
+# 0-2 filler words then the name — three real phrasings still passed:
+#   - "Don't post for Nykaa": "don't" is a contraction, not the word "not",
+#     so the trigger list never matched it at all.
+#   - "Competitors: Nykaa, Mamaearth not allowed": "Mamaearth" is the SECOND
+#     name after a comma (the filler-word pattern `(?:\w+\s+){0,2}` requires
+#     each filler to be followed by whitespace, which "Nykaa," is not), and
+#     its own exclusion word ("not allowed") comes AFTER it, which a
+#     before-only check can never see.
+#   - "Nykaa ke saath ... kaam mat karna" (Hinglish "don't work with Nykaa"):
+#     the negation ("mat") is a Hinglish word after the name, entirely outside
+#     the English-only trigger list.
+# Rather than one rigid "trigger, then name" template, this now checks a
+# small window of text on BOTH sides of the name for any trigger word,
+# English or Hinglish — which catches a leading "don't"/"competitors" and a
+# trailing "not allowed"/"mat"/"nahi" alike. Source: REPAIR ROUND 2 finding 5
+# (N1/N2/N3).
+_BRAND_EXCLUSION_TRIGGER_RE = re.compile(
+    r"\b(?:no|not|never|except|excluding|compet\w*|don'?t|doesn'?t|avoid\w*|"
+    r"block(?:ed|ing)?\w*|banned?|disallow\w*|mat|nahin?\w*)\b",
+    re.IGNORECASE,
 )
+# A short window (roughly 3-5 words either side): wide enough to span "Don't
+# post for Nykaa" or "Nykaa ... mat karna", narrow enough that an unrelated
+# trigger word attached to a DIFFERENT brand mention earlier in the brief
+# (e.g. "No Nykaa posts ... Glow Cosmetics wants...") does not also exclude
+# this one. A heuristic, not full disambiguation — same caveat as round 1.
+_BRAND_EXCLUSION_WINDOW = 25
 
 
 def _grounded_brand_name(value: str | None, raw_text: str) -> str | None:
     """Keeps `brand_name` only when it appears as a whole word/phrase
-    (case-insensitively) in the brief, AND is not immediately introduced by an
-    exclusion phrase such as "no <name>" or "excluding <name>" — that phrasing
-    names a brand the creator must AVOID, not the brand who sent this brief.
-    Ash's probe P6: the model named "Nykaa" for a Glow Cosmetics brief; a name
-    the brief never wrote (or wrote only to rule out) feeds `DealRiskService`'s
-    blocked-brand/competitor checks, so an invented or misattributed one can
-    cause a wrong result there."""
+    (case-insensitively) in the brief, AND has no exclusion trigger word
+    (English or Hinglish) within a short window on either side of it — that
+    phrasing names a brand the creator must AVOID, not the brand who sent this
+    brief. Ash's probe P6: the model named "Nykaa" for a Glow Cosmetics brief;
+    a name the brief never wrote (or wrote only to rule out) feeds
+    `DealRiskService`'s blocked-brand/competitor checks, so an invented or
+    misattributed one can cause a wrong result there."""
     if value is None:
         return None
     name = value.strip()
@@ -456,12 +705,13 @@ def _grounded_brand_name(value: str | None, raw_text: str) -> str | None:
         return None
     text = raw_text or ""
     escaped = re.escape(name)
-    if re.search(rf"\b{escaped}\b", text, re.IGNORECASE) is None:
+    match = re.search(rf"\b{escaped}\b", text, re.IGNORECASE)
+    if match is None:
         return None
-    exclusion = re.compile(
-        _BRAND_EXCLUSION_CONTEXT_RE.pattern.format(name=escaped), re.IGNORECASE
-    )
-    if exclusion.search(text) is not None:
+    lo = max(0, match.start() - _BRAND_EXCLUSION_WINDOW)
+    hi = min(len(text), match.end() + _BRAND_EXCLUSION_WINDOW)
+    before, after = text[lo : match.start()], text[match.end() : hi]
+    if _BRAND_EXCLUSION_TRIGGER_RE.search(before) or _BRAND_EXCLUSION_TRIGGER_RE.search(after):
         return None
     return value
 
@@ -550,10 +800,34 @@ def _clean_string_list(value: Any, *, max_items: int, max_chars: int) -> list[st
 # grounded against the brief's own plain numbers; an ungrounded qty falls back
 # to the conservative default of 1 (the deliverable itself may still be real
 # even when the model's count of it was not). Source: REPAIR ROUND 1 finding 1.
+#
+# REPAIR ROUND 2 [vikram · 2026-09-18] — finding 1 (HIGH): round 1's fix was
+# only half the job — grounding qty against EVERY bare number in the brief
+# means a date, a percentage or a budget shorthand's own digits can vouch for
+# an unrelated deliverable count. "budget 8000, live by 2026-12-05" grounded
+# an invented qty=5 (the "5" inside "2026-12-05"); "budget 15k" grounded
+# qty=15 (the same bare-"15"-inside-shorthand pattern already fixed for
+# usage_months in REPAIR ROUND 1 finding 2, missed here); "50% advance"
+# grounded qty=50. `qty` is now anchored to a number that sits next to a
+# DELIVERABLE NOUN ("3 reels", "1 story set"), the same way
+# `_numbers_with_unit` anchors usage_months/exclusivity_days to their units,
+# rather than to any digit anywhere in the brief. Source: REPAIR ROUND 2
+# finding 1 (Q1/Q2/Q3).
+_DELIVERABLE_NOUN_RE = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(?:x\s*)?(?:reels?|stor(?:y|ies)(?:\s+sets?)?|"
+    r"posts?|shorts?|videos?|integrations?|ugc|pieces?)\b",
+    re.IGNORECASE,
+)
+
+
+def _grounded_deliverable_counts(raw_text: str) -> set[str]:
+    return _numbers_with_unit(raw_text, _DELIVERABLE_NOUN_RE)
+
+
 def _clean_deliverables(value: Any, raw_text: str) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
-    grounded_counts = _numbers_in(raw_text)
+    grounded_counts = _grounded_deliverable_counts(raw_text)
     lines: list[dict[str, Any]] = []
     for item in value[:20]:
         if not isinstance(item, dict):
@@ -573,20 +847,69 @@ def _clean_deliverables(value: Any, raw_text: str) -> list[dict[str, Any]]:
     return lines
 
 
-def _acceptable_summary_line(line: str, allowed_numbers: set[str]) -> bool:
+# REPAIR ROUND 2 [vikram · 2026-09-18] — finding 2 (HIGH): the summary-line
+# number check compared only LITERAL digits, so the MODEL writing its own
+# invented amount in shorthand or in words sailed through untouched: "Brand
+# may go up to 50k" was checked as the bare number "50" (the "k" is not a
+# digit `_NUMBER_RE` sees), and a stray "50" already in the brief (from "50%
+# advance", an unrelated percentage) was enough to ground it — the line never
+# says 50000, but the creator would read it as one. Likewise "Budget is 5
+# lakh" was checked as bare "5", and "Budget: fifty thousand rupees" contained
+# no digit at all to check. Every summary line's OWN shorthand is now expanded
+# the same way the brief's shorthand is (`_shorthand_expansions_in`) and the
+# EXPANDED value must be grounded against the brief's own money set — not the
+# combined allowed_numbers, which also contains non-money counts (deliverable
+# qty, max_revisions) that a coincidentally-matching money shorthand must not
+# be able to borrow. A number spelled out in WORDS ("fifty thousand") cannot
+# be expanded at all, so — fail closed — any occurrence of a money-unit word
+# ("thousand"/"hundred"/"lakh"/"crore"/"hazaar" and the Devanagari
+# equivalents) that is not itself anchored to a preceding digit is treated as
+# unverifiable and the whole line is rejected. Source: REPAIR ROUND 2 finding
+# 2 (S1-S4).
+_MONEY_UNIT_WORD_RE = re.compile(
+    r"\b(?:thousands?|hundreds?|lakhs?|lac|crores?|hazaars?|hazars?|"
+    r"हज़ार|हजार|लाख|करोड़|करोड)\b",
+    re.IGNORECASE,
+)
+_DIGIT_IMMEDIATELY_BEFORE_RE = re.compile(r"\d[\d,]*(?:\.\d+)?\s*$")
+
+
+def _line_has_unanchored_money_word(line: str) -> bool:
+    """True when `line` contains a money-unit WORD that is not itself
+    immediately preceded by the digit it multiplies — i.e. the amount is
+    spelled out ("fifty thousand") rather than written as a shorthand token
+    ("50 thousand"/"50k") a computer can expand and check."""
+    normalized = _normalize_digits(line)
+    for match in _MONEY_UNIT_WORD_RE.finditer(normalized):
+        prefix = normalized[: match.start()]
+        if _DIGIT_IMMEDIATELY_BEFORE_RE.search(prefix) is None:
+            return True
+    return False
+
+
+def _acceptable_summary_line(
+    line: str, allowed_numbers: set[str], grounded_money: set[str]
+) -> bool:
     """One summary line the creator may actually be shown.
 
     Rejects a line that carries a banned word, addresses the creator with a
-    pet-name, or states a number the brief never contained. The number check is
-    the load-bearing one: the model has been shown no rate, no floor and no
-    quote, so a figure in its output that is not in the brief was invented, and
-    the creator would read it as the brand's offer.
+    pet-name, states a number the brief never contained, or states a money
+    amount — in shorthand, or spelled out in words — whose expanded value the
+    brief never contained. The number checks are the load-bearing ones: the
+    model has been shown no rate, no floor and no quote, so a figure in its
+    output that is not in the brief was invented, and the creator would read
+    it as the brand's offer.
     """
     if _BANNED_WORD_RE.search(line):
         return False
     if _has_forbidden_petname(line):
         return False
-    return _numbers_in(line) <= allowed_numbers
+    if _line_has_unanchored_money_word(line):
+        return False
+    if not (_numbers_in(line) <= allowed_numbers):
+        return False
+    line_expansions = _shorthand_expansions_in(line)
+    return line_expansions <= grounded_money
 
 
 def parse_and_validate_extraction(
@@ -616,25 +939,38 @@ def parse_and_validate_extraction(
         return None
 
     # T-PHASEB-LIVE-0918 [vikram · 2026-09-18] — Ash's fix 2 (ash-answers.md
-    # G1/G2/G3), refined by REPAIR ROUND 1 finding 2 (MEDIUM): each structured
-    # amount is grounded against the set that actually matches what kind of
-    # number it is, not one shared set for everything —
-    #   - budget_inr / barter_mrp_inr (money): the brief's literal numbers PLUS
-    #     Indian-shorthand expansions ("15k" -> 15000).
-    #   - usage_months / exclusivity_days (counts): only numbers the brief
-    #     attaches to the matching unit ("3 months", "60 days"), so a "15k"
-    #     BUDGET token's bare "15", or an unrelated "3 reels" count, cannot
-    #     ground these fields the way one shared set previously let them.
-    # Source: ash-answers.md §1 and §3; REPAIR ROUND 1 finding 2.
+    # G1/G2/G3), refined by REPAIR ROUND 1 finding 2 (MEDIUM) and REPAIR ROUND
+    # 2 findings 3-4 (MEDIUM): each structured amount is grounded against the
+    # set that actually matches what kind of number it is, not one shared set
+    # for everything —
+    #   - budget_inr / barter_mrp_inr (money): each has its OWN marker-
+    #     anchored literal numbers ("budget"/"fee" for the cash figure,
+    #     "worth"/"barter"/"mrp" for the barter product's value) PLUS
+    #     Indian-shorthand expansions ("15k" -> 15000), which need no marker
+    #     since the unit itself is unambiguously money. Sharing one set let an
+    #     unrelated follower count or the OTHER money field's own figure
+    #     ground either one (REPAIR ROUND 2 finding 3).
+    #   - usage_months / exclusivity_days (counts): only a number in a
+    #     USAGE/rights or EXCLUSIVITY context respectively, converting a year
+    #     or month duration into the field's own unit — a bare "N months"
+    #     next to unrelated context (e.g. a payment date) no longer grounds
+    #     either field, and a correct "1 year" usage or "2 months"
+    #     exclusivity now does (REPAIR ROUND 2 finding 4).
+    # `grounded_amounts` (unrestricted by marker) remains the set summary
+    # LINES may restate from — a line may correctly repeat either money field.
+    # Source: ash-answers.md §1 and §3; REPAIR ROUND 1 finding 2; REPAIR ROUND
+    # 2 findings 3-4.
     grounded_amounts = _amounts_in_inr(raw_text)
-    grounded_months = _numbers_with_unit(raw_text, _MONTH_UNIT_RE)
-    grounded_days = _numbers_with_unit(raw_text, _DAY_UNIT_RE)
+    grounded_budget = _grounded_budget_amounts(raw_text)
+    grounded_barter = _grounded_barter_amounts(raw_text)
+    grounded_months = _grounded_usage_months(raw_text)
+    grounded_days = _grounded_exclusivity_days(raw_text)
 
     deliverables = _clean_deliverables(tool_input.get("deliverables"), raw_text)
     budget_stated = bool(tool_input.get("budget_stated"))
     budget_inr = _grounded_amount(
         _clean_number(tool_input.get("budget_inr"), minimum=0, maximum=1_000_000_000),
-        grounded_amounts,
+        grounded_budget,
     )
     if not budget_stated:
         # §4.3 / RateQuoteService.statedBudgetOf reads budget_inr only when
@@ -657,7 +993,7 @@ def parse_and_validate_extraction(
             _clean_number(
                 tool_input.get("barter_mrp_inr"), minimum=0, maximum=1_000_000_000
             ),
-            grounded_amounts,
+            grounded_barter,
         ),
         "deadline": _grounded_deadline(
             _clean_text(tool_input.get("deadline"), max_chars=40), raw_text
@@ -704,7 +1040,7 @@ def parse_and_validate_extraction(
         line
         for line in candidate_lines
         if len(line) <= BRIEF_SUMMARY_LINE_MAX_CHARS
-        and _acceptable_summary_line(line, allowed_numbers)
+        and _acceptable_summary_line(line, allowed_numbers, grounded_amounts)
     ]
     if len(summary_lines) < BRIEF_SUMMARY_LINES_MIN:
         return None
