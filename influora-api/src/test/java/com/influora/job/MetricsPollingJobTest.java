@@ -29,6 +29,7 @@ import com.influora.integration.meta.service.MetaRateLimitTracker;
 import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
+import com.influora.service.creatorcopilot.CreatorMetaConnectedEvent;
 import com.influora.config.MetaApiProperties;
 import com.influora.domain.entity.MediaMetric;
 import com.influora.integration.meta.dto.InstagramInsightsResponse;
@@ -882,6 +883,74 @@ class MetricsPollingJobTest {
         verify(instagramClient, never()).getProfile(anyString(), anyString(), eq(MetaAuthPath.FACEBOOK_LOGIN));
         verify(creatorMetricsRepository, never()).save(any(CreatorMetric.class));
         verify(auditLog).recordToolCall(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    // ---- F-0954: sync on connect ----
+
+    @Test
+    @DisplayName("F-0954 onCreatorConnected: polls exactly that creator once, without running the cron sweep")
+    void testConnectEventPollsThatCreatorOnce() {
+        MetaOAuthToken token = createTestToken(null, CREATOR_ID);
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_ID))
+                .thenReturn(Optional.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN_VALUE));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
+        InstagramUserResponse profile =
+                new InstagramUserResponse("ig_12345", "testuser", "Test User", "Bio", 10000L, 500L, 150L, null, null);
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenReturn(profile);
+
+        pollingJob.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID));
+
+        ArgumentCaptor<CreatorMetric> saved = ArgumentCaptor.forClass(CreatorMetric.class);
+        verify(creatorMetricsRepository, times(1)).save(saved.capture());
+        assertEquals(CREATOR_ID, saved.getValue().getCreatorProfileId());
+        assertEquals(10000L, saved.getValue().getFollowers());
+        // Only this creator: the system-wide sweep query is never run by the event.
+        verify(tokenRepository, never()).findByRevokedFalseAndExpiresAtAfter(any(Instant.class));
+    }
+
+    @Test
+    @DisplayName("F-0954 onCreatorConnected: no live creator token -> no Meta call, no write, no throw")
+    void testConnectEventWithoutTokenDoesNothing() {
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_ID))
+                .thenReturn(Optional.empty());
+
+        pollingJob.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID));
+
+        verify(instagramClient, never()).getProfile(anyString(), anyString(), any());
+        verify(creatorMetricsRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("F-0954 onCreatorConnected: a Meta failure is swallowed (the connect must never see it)")
+    void testConnectEventSwallowsMetaFailure() {
+        MetaOAuthToken token = createTestToken(null, CREATOR_ID);
+        when(tokenRepository.findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(CREATOR_ID))
+                .thenReturn(Optional.of(token));
+        when(tokenStorage.getValidCreatorToken(CREATOR_ID)).thenReturn(Optional.of(TOKEN_VALUE));
+        when(rateLimitTracker.getCurrentUsage(IG_BUSINESS_ACCOUNT_ID)).thenReturn(50);
+        when(instagramClient.getProfile(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, MetaAuthPath.FACEBOOK_LOGIN))
+                .thenThrow(new RuntimeException("unexpected"));
+
+        pollingJob.onCreatorConnected(new CreatorMetaConnectedEvent(CREATOR_ID));
+
+        verify(creatorMetricsRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("F-0954 onCreatorConnected runs async and only AFTER the connect transaction commits")
+    void testConnectListenerIsAsyncAfterCommit() throws NoSuchMethodException {
+        java.lang.reflect.Method m =
+                MetricsPollingJob.class.getMethod("onCreatorConnected", CreatorMetaConnectedEvent.class);
+        org.springframework.transaction.event.TransactionalEventListener listener =
+                m.getAnnotation(org.springframework.transaction.event.TransactionalEventListener.class);
+        // A plain @EventListener on another thread can read before the token row commits and skip.
+        assertTrue(listener != null, "must be a @TransactionalEventListener, not a plain @EventListener");
+        assertEquals(org.springframework.transaction.event.TransactionPhase.AFTER_COMMIT, listener.phase());
+        assertTrue(
+                m.isAnnotationPresent(org.springframework.scheduling.annotation.Async.class),
+                "must be @Async so the connect response never waits on Meta");
     }
 
     private MetaOAuthToken createTestToken(String workspaceId, String creatorProfileId) {

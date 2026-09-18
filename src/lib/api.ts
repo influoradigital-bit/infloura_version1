@@ -4953,6 +4953,8 @@ const mockMetrics: CreatorMetrics = {
   engagementRate: 4.5,
   followerGrowth: 1240,
   avgViewsPerPost: 22400,
+  // Demo value: the newest point of the mock trend below (18400 + 6 * 40).
+  followers: 18640,
   trendData: Array.from({ length: 7 }, (_, i) => {
     const date = new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000);
     return {
@@ -5071,6 +5073,12 @@ export interface ContentPerformanceItem {
   /** Same NON_NULL-omission behavior as `reach` — see its doc comment. */
   impressions: number | null;
   engagementRate: number | null;
+  /** F-0952: sent by ContentPerformanceResponse all along; same NON_NULL omission as `reach`. */
+  likes?: number | null;
+  comments?: number | null;
+  saves?: number | null;
+  shares?: number | null;
+  videoViews?: number | null;
 }
 
 export const contentPerformance = {

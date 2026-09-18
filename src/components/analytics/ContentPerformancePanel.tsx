@@ -30,6 +30,13 @@ function formatCompact(n: number | null | undefined): string {
   return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
 }
 
+const POST_COUNTS = [
+  { key: 'likes', label: 'Likes' },
+  { key: 'comments', label: 'Comments' },
+  { key: 'saves', label: 'Saves' },
+  { key: 'shares', label: 'Shares' },
+] as const satisfies ReadonlyArray<{ key: keyof ContentPerformanceItem; label: string }>;
+
 /**
  * Content-performance panel — Wave B task B5. There is no brand-facing
  * per-post media-metrics endpoint on the backend today (checked
@@ -139,14 +146,24 @@ export function ContentPerformancePanel({
                     </p>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-4 text-sm">
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-4 text-sm">
+                  {/* F-0952: likes/comments/saves/shares were sent by the API and never shown.
+                      A value Meta did not report renders as "—", never as 0. There is no
+                      separate views column: MediaMetricMapper stores Meta's `views` count in
+                      `impressions` and leaves the retired `video_views` null on purpose. */}
+                  {POST_COUNTS.map(({ key, label }) => (
+                    <div key={key} className="text-right">
+                      <p className="font-medium">{formatCompact(item[key])}</p>
+                      <p className="text-xs text-muted-foreground">{label}</p>
+                    </div>
+                  ))}
                   <div className="text-right">
                     <p className="font-medium">{formatCompact(item.reach)}</p>
                     <p className="text-xs text-muted-foreground">Reach</p>
                   </div>
                   <div className="text-right">
                     <p className="font-medium">{formatCompact(item.impressions)}</p>
-                    <p className="text-xs text-muted-foreground">Impressions</p>
+                    <p className="text-xs text-muted-foreground">Views</p>
                   </div>
                   <div className="text-right">
                     <p className="flex items-center justify-end gap-1 font-medium">

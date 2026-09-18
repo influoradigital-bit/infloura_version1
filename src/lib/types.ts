@@ -130,6 +130,8 @@ export interface CreatorMetrics {
   followerGrowth: number;
   avgViewsPerPost: number | null;
   trendData: MetricDataPoint[];
+  /** F-0951: newest synced follower count (0 before the first sync). */
+  followers: number;
 }
 
 /** AnalyticsDtos.CreatorScoresResponse. brandSafety/garm/sentiment are null until that service lands. */

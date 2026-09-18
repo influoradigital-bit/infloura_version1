@@ -53,7 +53,7 @@ class CreatorAnalyticsServiceTest {
         when(creatorContext.requireCreatorProfile(principal)).thenReturn(creatorA);
         CreatorMetricsResponse metrics =
                 new CreatorMetricsResponse(
-                        2000L, 3000L, 90L, new BigDecimal("4.50"), 150L, new BigDecimal("3000"), List.of());
+                        2000L, 3000L, 90L, new BigDecimal("4.50"), 150L, new BigDecimal("3000"), List.of(), 10000L);
         when(analyticsService.getCreatorMetricsForProfile(eq(CREATOR_PROFILE_A), isNull(), isNull()))
                 .thenReturn(metrics);
 

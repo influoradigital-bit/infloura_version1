@@ -32,6 +32,20 @@ import type { AnalyticsDateRange, CreatorMetrics, MetricDataPoint } from '@/lib/
  */
 const AGGREGATE_OPTION = '__aggregate__';
 
+/**
+ * F-0953: the reach and engagements cards show per-post AVERAGES (each creator's latest
+ * avgReachPerPost, and followers x per-post engagement rate). The combined view SUMS those
+ * averages across the roster. Neither is a total, so neither may be labelled one.
+ */
+export function brandMetricTitles(isAggregateView: boolean): { reach: string; engagements: string } {
+  return isAggregateView
+    ? {
+        reach: "Sum of creators' avg. reach per post",
+        engagements: "Sum of creators' avg. engagements per post",
+      }
+    : { reach: 'Avg. reach per post', engagements: 'Avg. engagements per post' };
+}
+
 interface AggregateResult {
   data: CreatorMetrics;
   creatorsIncluded: number;
@@ -69,6 +83,7 @@ async function aggregateMetricsAcrossRoster(
       acc.totalImpressions += m.totalImpressions;
       acc.totalEngagements += m.totalEngagements;
       acc.followerGrowth += m.followerGrowth;
+      acc.followers += m.followers ?? 0;
       if (m.engagementRate != null) {
         acc.engagementRateSum += m.engagementRate;
         acc.engagementRateCount += 1;
@@ -84,6 +99,7 @@ async function aggregateMetricsAcrossRoster(
       totalImpressions: 0,
       totalEngagements: 0,
       followerGrowth: 0,
+      followers: 0,
       engagementRateSum: 0,
       engagementRateCount: 0,
       avgViewsSum: 0,
@@ -131,6 +147,7 @@ async function aggregateMetricsAcrossRoster(
       followerGrowth: totals.followerGrowth,
       avgViewsPerPost: totals.avgViewsCount > 0 ? totals.avgViewsSum / totals.avgViewsCount : null,
       trendData,
+      followers: totals.followers,
     },
     creatorsIncluded: ok.length,
     creatorsFailed,
@@ -359,9 +376,14 @@ export default function BrandAnalyticsPage() {
               ? `Combined performance across ${aggregate?.creatorsIncluded ?? roster.length} creator${roster.length === 1 ? '' : 's'} in your roster`
               : `Showing ${selectedCreator?.displayName ?? 'one creator'} only — not your full roster`}
           </p>
+          {/* F-0953: the date selector drives follower growth and the trend chart only. */}
+          <p className="text-xs text-muted-foreground" data-testid="analytics-window-note">
+            Reach and engagements are averages over each creator&apos;s most recent posts. Follower
+            growth and the trend chart cover the selected dates.
+          </p>
           {isAggregateView && aggregate && aggregate.creatorsFailed > 0 && (
             <p className="text-sm text-destructive-foreground">
-              Couldn't load {aggregate.creatorsFailed} of {roster.length} creators — totals below are partial.
+              Couldn't load {aggregate.creatorsFailed} of {roster.length} creators — the figures below leave them out.
             </p>
           )}
         </div>
@@ -406,7 +428,7 @@ export default function BrandAnalyticsPage() {
       {/* Summary cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <CreatorMetricsCard
-          title="Total Reach"
+          title={brandMetricTitles(isAggregateView).reach}
           value={metrics?.totalReach ?? 0}
           format="compact"
           icon={Eye}
@@ -420,7 +442,7 @@ export default function BrandAnalyticsPage() {
           loading={metricsLoading}
         />
         <CreatorMetricsCard
-          title="Total Engagements"
+          title={brandMetricTitles(isAggregateView).engagements}
           value={metrics?.totalEngagements ?? 0}
           format="compact"
           icon={TrendingUp}

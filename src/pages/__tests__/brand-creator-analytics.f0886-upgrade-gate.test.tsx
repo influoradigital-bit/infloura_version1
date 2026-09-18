@@ -52,7 +52,9 @@ vi.mock('@/hooks/brand/useBrandBillingAccess', () => ({
 }));
 
 vi.mock('@/components/analytics/CreatorMetricsCard', () => ({
-  CreatorMetricsCard: ({ title }: { title: string }) => <div data-testid={`metric-${title}`} />,
+  CreatorMetricsCard: ({ title, value }: { title: string; value?: number }) => (
+    <div data-testid={`metric-${title}`}>{String(value ?? '')}</div>
+  ),
 }));
 vi.mock('@/components/analytics/MetricsTrendChart', () => ({
   MetricsTrendChart: () => <div data-testid="trend-chart" />,
@@ -68,6 +70,12 @@ vi.mock('@/components/analytics/QualityScoreDisplay', () => ({
 }));
 vi.mock('@/components/analytics/BrandSafetyBadge', () => ({
   BrandSafetyBadge: () => <div data-testid="brand-safety" />,
+}));
+vi.mock('@/hooks/analytics/useCreatorDemographics', () => ({
+  useCreatorDemographics: () => ({ data: null, loading: false, error: null, refresh: vi.fn() }),
+}));
+vi.mock('@/components/analytics/AudienceDemographicsPanel', () => ({
+  AudienceDemographicsPanel: () => <div data-testid="demographics-panel" />,
 }));
 vi.mock('@/components/analytics/ContentPerformancePanel', () => ({
   ContentPerformancePanel: () => <div data-testid="content-performance" />,
@@ -89,9 +97,44 @@ describe('BrandCreatorAnalyticsPage — F-0886 analytics upgrade gate', () => {
     mockCanManageBilling = true;
   });
 
+  it('F-0951: a brand sees the creator follower count from the metrics response', () => {
+    mockMetrics = {
+      data: {
+        totalReach: 2000,
+        totalImpressions: 3000,
+        totalEngagements: 90,
+        engagementRate: 4.5,
+        followerGrowth: 150,
+        avgViewsPerPost: 3000,
+        trendData: [],
+        followers: 42000,
+      },
+      loading: false,
+      error: null,
+      upgradeRequired: false,
+      refresh: vi.fn(),
+    };
+    renderPage();
+    expect(screen.getByTestId('metric-Followers').textContent).toBe('42000');
+    // F-0953: the per-post averages are labelled as such, and the duplicate views card is gone.
+    expect(screen.getByTestId('metric-Avg. reach per post').textContent).toBe('2000');
+    expect(screen.getByTestId('metric-Avg. views per post').textContent).toBe('3000');
+    // Exactly one views card (the old duplicate read the same field), and no "Total" card.
+    const titles = screen
+      .getAllByTestId(/^metric-/)
+      .map((el) => el.getAttribute('data-testid')!.replace('metric-', ''));
+    // Exact card set: avgViewsPerPost is filled from the same column as totalImpressions, so
+    // no extra card may show it again under any label.
+    expect(titles).toEqual(['Followers', 'Avg. reach per post', 'Avg. views per post', 'Follower Growth']);
+    expect(titles.some((t) => /^Total /i.test(t))).toBe(false);
+    // F-0953: the real demographics panel replaces the false "not built yet" placeholder.
+    expect(screen.getByTestId('demographics-panel')).toBeInTheDocument();
+    expect(screen.queryByText(/coming soon|hasn't been built|not built yet/i)).not.toBeInTheDocument();
+  });
+
   it('renders the metric tiles as normal when the load succeeds', () => {
     renderPage();
-    expect(screen.getByTestId('metric-Total Reach')).toBeInTheDocument();
+    expect(screen.getByTestId('metric-Avg. reach per post')).toBeInTheDocument();
     expect(screen.getByTestId('trend-chart')).toBeInTheDocument();
     expect(screen.queryByTestId('upgrade-gate')).not.toBeInTheDocument();
   });
@@ -107,7 +150,7 @@ describe('BrandCreatorAnalyticsPage — F-0886 analytics upgrade gate', () => {
     renderPage();
 
     expect(screen.getByTestId('upgrade-gate')).toBeInTheDocument();
-    expect(screen.queryByTestId('metric-Total Reach')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('metric-Avg. reach per post')).not.toBeInTheDocument();
     expect(screen.queryByTestId('trend-chart')).not.toBeInTheDocument();
   });
 
@@ -117,7 +160,7 @@ describe('BrandCreatorAnalyticsPage — F-0886 analytics upgrade gate', () => {
 
     expect(screen.getByText(/Some data couldn't be loaded: Network error/)).toBeInTheDocument();
     expect(screen.queryByTestId('upgrade-gate')).not.toBeInTheDocument();
-    expect(screen.getByTestId('metric-Total Reach')).toBeInTheDocument();
+    expect(screen.getByTestId('metric-Avg. reach per post')).toBeInTheDocument();
   });
 
   it('the gate is role-aware: a MANAGER/MEMBER/VIEWER sees why they cannot upgrade', () => {

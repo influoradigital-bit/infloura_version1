@@ -143,7 +143,8 @@ export function AudienceDemographicsPanel({
               <Users className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
               <EmptyTitle>No demographics snapshot yet</EmptyTitle>
               <EmptyDescription>
-                Demographics will appear after the first weekly audience sync.
+                Demographics will appear after the first weekly audience sync. Instagram only
+                shares audience data for accounts with 100 or more followers.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>

@@ -170,6 +170,21 @@ public class AnalyticsService {
                                                     nz(m.getAvgReachPerPost()),
                                                     m.getAvgEngagementRate()))
                             .toList();
+
+            // F-0953: when the caller picks a window, growth is measured INSIDE it (newest minus
+            // oldest same-platform snapshot in the range). The lookback figure above spans only the
+            // last LATEST_METRICS_LOOKBACK rows (~5 days at the 6-hour cadence) whatever the dates
+            // were, while every page labels this card as growth over the chosen window. Fewer than
+            // two snapshots in the window is "no measured change" (0), not a borrowed older figure.
+            String platform = latest.isEmpty() ? null : latest.get(0).getPlatform();
+            List<CreatorMetric> inWindow =
+                    range.stream()
+                            .filter(m -> platform == null || platform.equals(m.getPlatform()))
+                            .toList();
+            followerGrowth =
+                    inWindow.size() > 1
+                            ? inWindow.get(inWindow.size() - 1).getFollowers() - inWindow.get(0).getFollowers()
+                            : 0;
         }
 
         return new CreatorMetricsResponse(
@@ -179,7 +194,8 @@ public class AnalyticsService {
                 engagementRate,
                 followerGrowth,
                 avgViewsPerPost,
-                trendData);
+                trendData,
+                totalFollowers);
     }
 
     /**

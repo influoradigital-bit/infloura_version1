@@ -95,17 +95,20 @@ describe('F-0419 — brand analytics overview aggregates across every roster cre
     });
   });
 
-  it('shows the SUM of every creator\'s Total Reach by default, not just the first creator\'s', async () => {
+  it('shows the SUM of every creator\'s avg. reach per post by default, not just the first creator\'s', async () => {
     renderPage();
 
     await waitFor(() => {
       expect(getCreatorMetricsMock).toHaveBeenCalledTimes(2);
     });
 
-    // The old behaviour rendered "Total Reach:1000" (cr_first alone). The fix must render the
-    // real combined total, 1000 + 2000 = 3000.
+    // The old behaviour rendered cr_first's 1000 alone. The fix must render the combined
+    // figure, 1000 + 2000 = 3000. F-0953: it is labelled as combined per-post averages, not a
+    // "Total Reach", because each creator's figure is an average reach per post.
     await waitFor(() => {
-      expect(screen.getByTestId('metric-card-Total Reach').textContent).toBe('Total Reach:3000');
+      expect(
+        screen.getByTestId("metric-card-Sum of creators' avg. reach per post").textContent,
+      ).toBe("Sum of creators' avg. reach per post:3000");
     });
 
     // Both creators were actually queried — not just the first one picked and presented as
@@ -118,10 +121,19 @@ describe('F-0419 — brand analytics overview aggregates across every roster cre
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByTestId('metric-card-Total Reach').textContent).toBe('Total Reach:3000');
+      expect(
+        screen.getByTestId("metric-card-Sum of creators' avg. reach per post").textContent,
+      ).toBe("Sum of creators' avg. reach per post:3000");
     });
 
     expect(screen.getByTestId('analytics-scope-subtitle').textContent).toMatch(/combined/i);
+    // F-0953: every figure on this page is a per-post average (summed across creators here);
+    // none may be presented as a total.
+    const titles = screen
+      .getAllByTestId(/^metric-card-/)
+      .map((el) => el.getAttribute('data-testid')!.replace('metric-card-', ''));
+    expect(titles.some((t) => /^Total /i.test(t))).toBe(false);
+    expect(titles).toContain("Sum of creators' avg. engagements per post");
     expect(screen.getByTestId('analytics-scope-subtitle').textContent).toMatch(/2/);
   });
 });

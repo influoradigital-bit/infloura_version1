@@ -14,10 +14,12 @@ import { FakeFollowerIndicator } from '@/components/analytics/FakeFollowerIndica
 import { QualityScoreDisplay } from '@/components/analytics/QualityScoreDisplay';
 import { BrandSafetyBadge } from '@/components/analytics/BrandSafetyBadge';
 import { ContentPerformancePanel } from '@/components/analytics/ContentPerformancePanel';
+import { AudienceDemographicsPanel } from '@/components/analytics/AudienceDemographicsPanel';
 
 import { useCreatorMetrics } from '@/hooks/analytics/useCreatorMetrics';
 import { useCreatorScores } from '@/hooks/analytics/useCreatorScores';
 import { useContentPerformance } from '@/hooks/analytics/useContentPerformance';
+import { useCreatorDemographics } from '@/hooks/analytics/useCreatorDemographics';
 import { useBrandBillingAccess } from '@/hooks/brand/useBrandBillingAccess';
 import { UpgradeGate } from '@/components/brand/billing/UpgradeGate';
 import { isApiLive } from '@/lib/api';
@@ -30,10 +32,9 @@ import type { AnalyticsDateRange } from '@/lib/types';
  * spec's Next.js dynamic route (/dashboard/analytics/[creatorId]) to this
  * repo's React Router convention (:creatorId param, src/pages file).
  *
- * No audience-demographics panel — the spec's section 1.3 layout includes
- * one, but there is no /demographics backend endpoint (no AudienceDemographics
- * entity exists yet, per AnalyticsController's javadoc). Omitted rather than
- * faked; see the "coming soon" note below the quality/authenticity row.
+ * Audience demographics: the real AudienceDemographicsPanel, fed by GET
+ * /analytics/creators/{id}/demographics (AudienceDemographicsJob fills it weekly). F-0953
+ * replaced a "coming soon — not built yet" placeholder that had become false.
  *
  * BrandSafetyBadge is mounted below (Brand Surface Audit PARTIAL #5,
  * wiki/reports/brand-feature-audit.md item 5) — the earlier comment here
@@ -78,6 +79,11 @@ export default function BrandCreatorAnalyticsPage() {
     error: contentError,
     notImplemented: contentNotImplemented,
   } = useContentPerformance(creatorId);
+  const {
+    data: demographics,
+    loading: demographicsLoading,
+    error: demographicsError,
+  } = useCreatorDemographics(creatorId);
 
   // F-0441: never surface the demo fixture while the app is in live mode — a brand on a real
   // backend must never see a fabricated creator identity (name/verified badge/location).
@@ -139,22 +145,24 @@ export default function BrandCreatorAnalyticsPage() {
           {/* Metric tiles */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <CreatorMetricsCard
-              title="Total Reach"
+              title="Followers"
+              value={metrics?.followers ?? 0}
+              format="compact"
+              icon={Users}
+              loading={metricsLoading}
+            />
+            {/* F-0953: these are per-post AVERAGES from the latest sync, not totals. The old
+                "Avg. Views Per Post" card read the same field as impressions, so it is gone. */}
+            <CreatorMetricsCard
+              title="Avg. reach per post"
               value={metrics?.totalReach ?? 0}
               format="compact"
               icon={Eye}
               loading={metricsLoading}
             />
             <CreatorMetricsCard
-              title="Total Impressions"
+              title="Avg. views per post"
               value={metrics?.totalImpressions ?? 0}
-              format="compact"
-              icon={Users}
-              loading={metricsLoading}
-            />
-            <CreatorMetricsCard
-              title="Avg. Views Per Post"
-              value={metrics?.avgViewsPerPost ?? 0}
               format="compact"
               icon={TrendingUp}
               loading={metricsLoading}
@@ -218,14 +226,13 @@ export default function BrandCreatorAnalyticsPage() {
         notImplemented={contentNotImplemented}
       />
 
-      {/* Audience demographics — no backend data source yet */}
-      <div className="rounded-lg border border-dashed border-border p-6 text-center">
-        <p className="text-sm font-medium text-muted-foreground">Audience demographics</p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Coming soon — age, gender, and location breakdowns require a demographics data pipeline
-          that hasn't been built yet.
-        </p>
-      </div>
+      {/* F-0953: this said "Coming soon — … hasn't been built yet", but GET
+          /analytics/creators/{id}/demographics exists and AudienceDemographicsJob fills it weekly. */}
+      <AudienceDemographicsPanel
+        data={demographics}
+        loading={demographicsLoading}
+        error={demographicsError}
+      />
     </div>
   );
 }

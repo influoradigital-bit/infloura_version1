@@ -76,6 +76,12 @@ vi.mock('@/components/analytics/QualityScoreDisplay', () => ({
 vi.mock('@/components/analytics/BrandSafetyBadge', () => ({
   BrandSafetyBadge: () => <div data-testid="brand-safety" />,
 }));
+vi.mock('@/hooks/analytics/useCreatorDemographics', () => ({
+  useCreatorDemographics: () => ({ data: null, loading: false, error: null, refresh: vi.fn() }),
+}));
+vi.mock('@/components/analytics/AudienceDemographicsPanel', () => ({
+  AudienceDemographicsPanel: () => <div data-testid="demographics-panel" />,
+}));
 vi.mock('@/components/analytics/ContentPerformancePanel', () => ({
   ContentPerformancePanel: () => <div data-testid="content-performance" />,
 }));

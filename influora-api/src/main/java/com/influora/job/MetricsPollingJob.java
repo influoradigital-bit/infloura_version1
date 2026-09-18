@@ -19,6 +19,7 @@ import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
+import com.influora.service.creatorcopilot.CreatorMetaConnectedEvent;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -31,8 +32,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Polls Instagram metrics for every creator with a valid (non-revoked, non-expired) Meta token and
@@ -172,6 +176,48 @@ public class MetricsPollingJob {
                 null,
                 null,
                 Map.of("creatorsPolled", polled, "creatorsFailed", failed, "totalTokens", connectedTokens.size()));
+    }
+
+    /**
+     * F-0954 — polls ONE creator as soon as their Meta connect commits, so /creator/analytics
+     * is not empty ("No metrics yet") for up to 6 hours while Settings already shows their
+     * follower count. The 6-hourly cron stays the guarantee; this is only a head start.
+     *
+     * <p>{@code AFTER_COMMIT}: {@code CreatorMetaOAuthService.connect} is {@code @Transactional},
+     * so a plain {@code @EventListener} on another thread can run before the token row is
+     * committed, find nothing, and skip. {@code @Async}: the connect response never waits on a
+     * Graph round trip. It reuses {@link #pollOne}, so rate limiting, auth path and error
+     * handling are exactly the cron's. <b>Never throws</b> — a failure here must not surface
+     * anywhere; the creator simply waits for the next cron run, as before.
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onCreatorConnected(CreatorMetaConnectedEvent event) {
+        String creatorProfileId = event.creatorProfileId();
+        try {
+            Optional<MetaOAuthToken> token =
+                    tokenRepository
+                            .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
+                            .filter(t -> t.getExpiresAt() == null || t.getExpiresAt().isAfter(Instant.now()));
+            if (token.isEmpty()) {
+                log.info(
+                        "MetricsPollingJob: connect-triggered poll for creator {} found no live token;"
+                                + " leaving it to the scheduled run",
+                        creatorProfileId);
+                return;
+            }
+            boolean written = pollOne(creatorProfileId, token.get().getIgBusinessAccountId());
+            log.info(
+                    "MetricsPollingJob: connect-triggered poll for creator {} — metric row written: {}",
+                    creatorProfileId,
+                    written);
+        } catch (Exception e) {
+            // Deliberately swallowed — see the javadoc. The cron is the guarantee.
+            log.warn(
+                    "MetricsPollingJob: connect-triggered poll failed for creator {}: {}",
+                    creatorProfileId,
+                    e.getMessage());
+        }
     }
 
     /** @return true if a metric row was successfully written for this creator. */

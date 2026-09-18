@@ -89,7 +89,10 @@ public final class AnalyticsDtos {
             BigDecimal engagementRate,
             long followerGrowth,
             BigDecimal avgViewsPerPost,
-            List<MetricDataPoint> trendData) {}
+            List<MetricDataPoint> trendData,
+            // F-0951: the newest synced follower count (0 when nothing has synced yet). It was
+            // computed in AnalyticsService and then dropped, so no page could show it.
+            long followers) {}
 
     /**
      * Brand-facing creator scores (spec's {@code CreatorScores}), mapped from the latest {@code

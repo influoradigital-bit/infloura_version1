@@ -43,7 +43,7 @@ class CreatorAnalyticsControllerTest {
     void testGetMyMetrics() {
         CreatorMetricsResponse metrics =
                 new CreatorMetricsResponse(
-                        2000L, 3000L, 90L, new BigDecimal("4.50"), 150L, new BigDecimal("3000"), List.of());
+                        2000L, 3000L, 90L, new BigDecimal("4.50"), 150L, new BigDecimal("3000"), List.of(), 10000L);
         when(creatorAnalyticsService.getMyMetrics(principal, null, null)).thenReturn(metrics);
 
         ResponseEntity<ApiResponse<CreatorMetricsResponse>> response =

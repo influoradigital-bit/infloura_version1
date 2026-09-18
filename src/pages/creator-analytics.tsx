@@ -130,8 +130,12 @@ export default function CreatorAnalyticsPage() {
       <div className="container mx-auto max-w-6xl px-4 py-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold">Analytics</h1>
-          <p className="text-muted-foreground">
-            Track your reach, engagement, and audience growth over the last {rangeDays} days.
+          {/* F-0953: only follower growth and the trend chart follow the dates below. Followers
+              and the reach/views/engagement figures are your latest sync, averaged over your
+              most recent posts (MetricsPollingJob reads the last 25), whatever dates are picked. */}
+          <p className="text-muted-foreground" data-testid="analytics-scope-note">
+            Followers, reach, views and engagement are from your latest sync, averaged over your
+            most recent posts. Follower growth and the trend chart cover the dates you pick.
           </p>
           {!isApiLive() && (
             <p className="mt-2 text-xs text-muted-foreground">
@@ -206,22 +210,24 @@ export default function CreatorAnalyticsPage() {
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <CreatorMetricsCard
-                title="Total Reach"
+                title="Followers"
+                value={metrics?.followers ?? 0}
+                format="compact"
+                icon={Users}
+                loading={metricsLoading}
+              />
+              {/* F-0953: these are per-post AVERAGES from the latest sync, not totals. The old
+                  "Avg. Views Per Post" card read the same field as impressions, so it is gone. */}
+              <CreatorMetricsCard
+                title="Avg. reach per post"
                 value={metrics?.totalReach ?? 0}
                 format="compact"
                 icon={Eye}
                 loading={metricsLoading}
               />
               <CreatorMetricsCard
-                title="Total Impressions"
+                title="Avg. views per post"
                 value={metrics?.totalImpressions ?? 0}
-                format="compact"
-                icon={Users}
-                loading={metricsLoading}
-              />
-              <CreatorMetricsCard
-                title="Avg. Views Per Post"
-                value={metrics?.avgViewsPerPost ?? 0}
                 format="compact"
                 icon={TrendingUp}
                 loading={metricsLoading}
