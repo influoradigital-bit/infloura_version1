@@ -1874,6 +1874,24 @@ async def test_follower_count_written_before_the_number_does_not_ground_budget()
     assert data["budget_inr"] is None
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Glow: 1 reel. Eligibility for paid collab: 50k+ followers.",
+        "Glow: 1 reel, paid collab: 50k followers minimum, budget tbd.",
+        "Glow: paid collab: 1.5L followers chahiye, budget baad mein",
+    ],
+)
+@pytest.mark.asyncio
+async def test_audience_count_right_after_a_money_word_does_not_ground_budget(raw):
+    """The marker rule alone is not enough when a money word ("paid collab")
+    sits right before the follower count — the audience veto is what drops
+    these. Kabir's HIGH #1 class, with the marker adjacent."""
+    amount = 150000 if "1.5L" in raw else 50000
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=amount))
+    assert data["budget_inr"] is None
+
+
 @pytest.mark.asyncio
 async def test_shorthand_budget_next_to_a_follower_count_still_grounds():
     """Control: the audience veto is per number, not per brief — a real
