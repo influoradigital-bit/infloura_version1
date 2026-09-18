@@ -750,6 +750,14 @@ public class CreatorNudgeService {
                         // "हादसे में 5 लोगों की मौतें", "कोविड से मौतों का आंकड़ा" and "आत्महत्याओं"
                         // bypassing 72cabea. Source: wiki/decisions/2026-09-18-trend-headline-screening.md.
                         "मौतें", "मौतों", "आत्महत्याओं",
+                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix.
+                        // "मौते" is an informal/colloquial plural spelling of मौत (deaths) distinct
+                        // from the standard "मौतें" above — an independent reviewer's probe found
+                        // "हादसे में 3 की मौते" bypassing. "आत्महत्याएं" is the direct-plural
+                        // counterpart of the already-listed oblique plural "आत्महत्याओं" (same
+                        // direct-vs-oblique pattern as हत्याएं/हत्याओं in the CRIME set) — the
+                        // same probe found "आत्महत्याएं बढ़ीं" bypassing.
+                        "मौते", "आत्महत्याएं",
                         // T-GOLIVE-0918-R2 repair round 2 — MEDIUM vocabulary gap: फांसी (phansi,
                         // hanging/execution by hanging) is routine Indian-news self-harm/death
                         // phrasing distinct from the DEATH set's existing "hanged"/"found hanging"
@@ -757,6 +765,13 @@ public class CreatorNudgeService {
                         // लगाकर जान दी" — took their own life by hanging). "fansi" is its Hinglish
                         // (Latin-script) counterpart.
                         "फांसी", "fansi",
+                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix: "phansi"
+                        // (double-h transliteration, distinct from the single-h "fansi" already
+                        // listed — both spellings are attested) and "khudkhushi" (double-h
+                        // transliteration, distinct from the already-listed single-h "khudkushi").
+                        // An independent reviewer's probe found "phansi laga li" and "khudkhushi kar
+                        // li" bypassing.
+                        "phansi", "khudkhushi",
                         // T-GOLIVE-0918-R2 repair round 2 — MEDIUM: "unalive"/"unalived" is
                         // algorithm-evasion slang for "kill"/"killed"/"suicide" (an independent
                         // reviewer's probe: "unalived himself"), in wide use on video platforms
@@ -852,25 +867,63 @@ public class CreatorNudgeService {
                         // "opened fire" (routine Indian-news phrasing for a shooting, "Gunman opened
                         // fire outside mall"). "shot dead" needs no separate entry — it already
                         // matches via the bare "dead" term above.
+                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix. "shot
+                        // at by" alone regressed the plain-news form of the same story: "Man shot at
+                        // outside mall" was BLOCKED at 72cabea (bare "shot at") and BYPASSED once
+                        // round 2 narrowed it to require "by <attacker>" — an independent reviewer's
+                        // probe found this. "man shot at"/"woman shot at" (victim-noun immediately
+                        // before "shot at") restores that Indian-news form specifically, without
+                        // reintroducing the camera-usage over-block the narrowing was fixing:
+                        // "Reel shot at Marine Drive", "Shot at golden hour on iPhone 15" and "This
+                        // whole vlog was shot at home" have no "man"/"woman" immediately before
+                        // "shot at", so none of them gain a new match.
+                        "man shot at", "woman shot at",
                         "gangrape", "strangle", "shot at by", "opened fire", "molester", "molesters",
                         "murderous", "custodial torture", "set ablaze",
                         // Devanagari coverage (correctly spelled, per isDevanagariCombiningMark):
-                        // रेप (rep — the English loanword "rape", extremely common in Hindi
-                        // headlines, e.g. "रेप केस"); गैंगरेप (gangrape) is its own literal because
-                        // it is one fused token — रेप alone cannot match inside it (containsTerm
-                        // requires BOTH a token-start and token-end anchor, and गैंग precedes रेप
-                        // within the same token); हत्याकांड (hatyakand, murder case/incident, the
-                        // Devanagari form of the existing Latin "hatyakand"); हत्यारा (hatyara,
-                        // murderer); हत्याओं (hatyaon, murders — plural/oblique of हत्या, its own
-                        // literal for the same reason गैंगरेप is: more letters follow हत्या within
-                        // the same token, so the end anchor never lands on हत्या alone); क़त्ल and
-                        // कत्ल (qatl — both the with-nukta and without-nukta spellings actually seen
-                        // in print, genuinely different code-point sequences since the nukta is a
-                        // real, preserved combining mark).
-                        "रेप", "गैंगरेप", "हत्याकांड", "हत्यारा", "हत्याओं", "क़त्ल", "कत्ल",
+                        // गैंगरेप (gangrape) is its own literal because it is one fused token —
+                        // रेप alone cannot match inside it (containsTerm requires BOTH a token-start
+                        // and token-end anchor, and गैंग precedes रेप within the same token);
+                        // हत्याकांड (hatyakand, murder case/incident, the Devanagari form of the
+                        // existing Latin "hatyakand"); हत्यारा (hatyara, murderer); हत्याओं
+                        // (hatyaon, murders — plural/oblique of हत्या, its own literal for the same
+                        // reason गैंगरेप is: more letters follow हत्या within the same token, so the
+                        // end anchor never lands on हत्या alone); कत्ल (qatl).
+                        //
+                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3. "क़त्ल" (with
+                        // nukta) is REMOVED from this list: normalizeForMatching now folds the nukta
+                        // away (see DEVANAGARI_NUKTA's javadoc), so a nukta-bearing spelling could
+                        // never equal its own normalized form and would fail the class-load
+                        // self-check — the remaining nukta-free "कत्ल" below now matches both
+                        // spellings of input on its own, the same way it already matched "क़त्ल"
+                        // before this round (both folded onto the same normalized form once
+                        // DEVANAGARI_NUKTA landed). "कातिल" (qatil/katil, "murderer", Urdu-Hindi
+                        // register, nukta-free) is added — an independent reviewer's probe named
+                        // "क़ातिल" as still bypassing round 1 "with no test, not even one recording
+                        // that it is deliberately excluded"; this closes that gap outright instead.
+                        //
+                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix. Bare
+                        // "रेप" is the ordinary Hindi loanword for "rape" but is IDENTICALLY spelled
+                        // to the ordinary Hindi loanword for a gym "rep" (repetition) — an
+                        // independent reviewer's probe found "आखिरी रेप तक पुश करो" and "बस एक रेप
+                        // और, हार मत मानो" (both gym-workout captions) wrongly OVERBLOCKED [CRIME],
+                        // a round-1 finding never closed. Same discipline as excluding bare
+                        // "killer"/"shot"/"mob": the qualified phrase "रेप केस" (rape case) below
+                        // keeps the one probe that actually needs bare रेप ("रेप केस") blocking,
+                        // without the bare word's gym-context false positives. "गैंगरेप" is
+                        // unaffected — it is its own fused token, not reachable via रेप.
+                        "रेप केस",
+                        "गैंगरेप", "हत्याकांड", "हत्यारा", "हत्याओं", "कत्ल", "कातिल",
                         // Latin/Hinglish alternate spellings of terms already covered above —
                         // "balatkaar" (balatkar), "hatyaa" (hatya), "qatal"/"katl" (qatl).
                         "balatkaar", "hatyaa", "qatal", "katl",
+                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix: Latin/
+                        // Hinglish counterparts of Devanagari terms already listed above that had no
+                        // Latin spelling at all — "hatyara"/"hatyare" (हत्यारा/हत्यारे, murderer,
+                        // singular/plural) and "golibari" (गोलीबारी, gunfire). An independent
+                        // reviewer's probe found "hatyara pakda gaya", "hatyare giraftar" and
+                        // "golibari mein 2 ghayal" bypassing.
+                        "hatyara", "hatyare", "golibari",
                         // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — HIGH regression fix.
                         // बलात्कारी (balatkari, rapist) and हत्यारे/हत्यारों (murderers, direct and
                         // oblique plural of हत्यारा) are DIFFERENT token sequences from their base
@@ -902,8 +955,37 @@ public class CreatorNudgeService {
                         // छेड़छाड़", "chhedchhad ka aaropi", "गोलीबारी में 2 घायल", "मर्डर केस में बड़ा
                         // खुलासा", "बच्चे का अपहरण", "bachche ka apharan". Source: wiki/decisions/
                         // 2026-09-18-trend-headline-screening.md.
-                        "दुष्कर्म", "dushkarm", "छेड़छाड़", "chhedchhad", "गोलीबारी", "मर्डर", "अपहरण",
+                        "दुष्कर्म", "dushkarm", "गोलीबारी", "मर्डर", "अपहरण",
                         "apharan", "apaharan",
+                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix. Bare
+                        // "छेड़छाड़"/"chhedchhad" are REMOVED (nukta-free spelling below is also
+                        // gone from the bare form for the same reason): the word means both
+                        // "molestation/eve-teasing" (crime) and plain "tampering" (no crime at all),
+                        // and Hindi uses the IDENTICAL grammatical construction for both senses —
+                        // "छात्रा से छेड़छाड़" (molestation of a student) and "प्रकृति से छेड़छाड़ मत
+                        // करो" (don't tamper with nature) both use "<subject> से छेड़छाड़". An
+                        // independent reviewer's probe found "स्किन के साथ छेड़छाड़ मत करो" and
+                        // "प्रकृति से छेड़छाड़ मत करो" wrongly OVERBLOCKED [CRIME]; both were
+                        // QUOTABLE before "छेड़छाड़" was added. There is no phrase-only fix that
+                        // keeps blocking a bare crime headline AND stops blocking a bare tamper
+                        // sentence — the two are lexically identical — so the qualified phrases
+                        // below (which only ever occur in the crime sense) replace the bare word.
+                        // ACCEPTED GAP, stated rather than hidden: a bare crime headline with no
+                        // case/accused/complaint word (e.g. bare "छात्रा से छेड़छाड़" with nothing
+                        // else) no longer blocks on its own. This is a product trade-off, not an
+                        // engineering one — same class of call as the confusables-table deviation
+                        // recorded near CONFUSABLE_FOLD — and needs the same kind of ruling; flagged
+                        // for Priya rather than decided here.
+                        "छेडछाड का आरोपी", "छेडछाड की शिकायत", "chhedchhad ka aaropi",
+                        "chhedchhad ki shikayat",
+                        // T-GOLIVE-0918-R3 repair round 3 — MEDIUM vocabulary gap: दुष्कर्मी
+                        // (dushkarmi, "rapist" — the agent-noun of the already-listed दुष्कर्म) and
+                        // its oblique plural दुष्कर्मियों are DIFFERENT tokens from दुष्कर्म for the
+                        // same reason हत्यारे/हत्यारों are different from हत्यारा (a trailing vowel
+                        // sign extends the token past दुष्कर्म's own end anchor). An independent
+                        // reviewer's probe found "दुष्कर्मी गिरफ्तार" and "दुष्कर्मियों को सजा"
+                        // bypassing, plus the Latin/Hinglish counterpart "dushkarmi giraftar".
+                        "दुष्कर्मी", "दुष्कर्मियों", "dushkarmi",
                         // T-GOLIVE-0918-R2 repair round 2 — MEDIUM vocabulary gap: जिंदा जलाया (zinda
                         // jalaya, "burned alive") is Indian crime-reporting phrasing in the same
                         // bucket as the already-listed "set ablaze" ("महिला को जिंदा जलाया"). "maar
@@ -911,7 +993,31 @@ public class CreatorNudgeService {
                         // "shot"/gunfire) are routine Hindi-crime-reporting Latin-script phrases; an
                         // independent reviewer's probe found "maar diya gaya" (round-1 LOW defect,
                         // never closed), "maar daala gaya" and "goli maar di" all bypassing.
-                        "जिंदा जलाया", "maar diya", "maar daala", "goli maar")),
+                        "जिंदा जलाया",
+                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 HIGH fix. Bare
+                        // "maar diya"/"maar daala"/"goli maar" are REMOVED: an independent
+                        // reviewer's probe found all three over-blocking common Hinglish creator
+                        // content that has nothing to do with crime — cricket commentary ("Chhakka
+                        // maar diya Kohli ne!", "Sixer maar diya last ball pe!"), a Bollywood song
+                        // title ("Maar Daala song dance cover", from Devdas; "Goli maar bheje mein
+                        // dance cover", from Satya), and Hinglish compliment/meme slang ("Tune toh
+                        // maar daala yaar, kya look hai", "Maar diya jaaye ya chhod diya jaaye
+                        // meme"). This is the same class of accepted cost as excluding bare
+                        // "killer"/"shot"/"attack"/"clash"/"mob"/"court" (see this enum's own class
+                        // javadoc): the bare phrase's false-positive rate in this product's actual
+                        // niche is too high. The genuine crime-reporting register uses a PASSIVE
+                        // construction these active/casual phrasings do not ("<victim> ko/ne maar
+                        // diya/daala GAYA", "goli maar(i) DI/GAYI") — narrower phrases below keep
+                        // that register blocked without touching any of the benign forms above (none
+                        // of them end in "gaya"/"di"/"gayi" after the maar phrase).
+                        "maar diya gaya", "maar daala gaya", "maar dala gaya", "goli maar di",
+                        "goli maari gayi",
+                        // Devanagari counterparts of the same passive construction — an independent
+                        // reviewer's probe named "युवक को मार डाला" and "गोली मार दी" outright.
+                        // "को मार डाला" requires the dative marker को immediately before मार डाला,
+                        // which the Devanagari spelling of the same song title ("मार डाला" alone,
+                        // with no को) does not carry.
+                        "को मार डाला", "गोली मार दी")),
         COMMUNAL(
                 Set.of(
                         "communal", "sectarian", "riot", "riots", "rioting", "unrest", "curfew",
@@ -1188,7 +1294,16 @@ public class CreatorNudgeService {
                     // found them bypassing (r4pe, 5uicide, a$$ault, murd€r, rɑpe, ԁеатһ, murdЗr,
                     // bomƄ). Source: wiki/decisions/2026-09-18-trend-headline-screening.md
                     // ("confusable folding driven by the Unicode confusables data").
-                    Map.entry((int) '0', (int) 'o'),
+                    //
+                    // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3. '0' is REMOVED from
+                    // this unconditional table: an independent reviewer's probe "5ucc0mbs" needs
+                    // '0'->'u' to reach "succumbs", but the existing static '0'->'o' fold gives
+                    // "succombs", which matches nothing. Unlike '4'/'5'/'$' above, '0' is genuinely
+                    // two-way ambiguous in real leetspeak (both "s0cial"->o and "5ucc0mbs"->u are
+                    // attested), so it moves to the same ambiguous-reading technique as '1'/'|' —
+                    // see ZERO_READINGS and buildConfusableFoldVariants below — rather than staying a
+                    // single static entry that can only ever be right for one reading. See
+                    // AMBIGUOUS_O_OR_U_CHARS and buildConfusableFoldVariants below.
                     Map.entry((int) '3', (int) 'e'),
                     Map.entry((int) '4', (int) 'a'),
                     Map.entry((int) '5', (int) 's'),
@@ -1227,9 +1342,87 @@ public class CreatorNudgeService {
                     // for 'i', never 'l'. '+' and '7' both visually resemble 't' (a crossbar over a
                     // vertical stroke) and are likewise unambiguous ("dea+h toll", "dea7h toll").
                     // Source: wiki/decisions/2026-09-18-trend-headline-screening.md.
+                    //
+                    // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 HIGH fix. '!' and '+'
+                    // stay in this table (the LETTER they fold to when they DO fold is still
+                    // unambiguous), but whether to fold them AT ALL is now context-dependent — see
+                    // PUNCTUATION_LETTER_LOOKALIKES and the flanking check in normalizeForMatching.
+                    // '7' does not get that treatment: an independent reviewer's probe found no
+                    // decorative/separator use of a bare digit '7' the way "Murder!"/"**Murder**"
+                    // use '!'/'*', so it stays unconditional.
                     Map.entry((int) '!', (int) 'i'),
                     Map.entry((int) '+', (int) 't'),
                     Map.entry((int) '7', (int) 't'));
+
+    /**
+     * T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 HIGH fix. {@code '!'}, {@code '+'} and
+     * {@link #ASTERISK} are a FOURTH kind of ambiguity, distinct from all three above: each has an
+     * unambiguous letter reading (from {@link #CONFUSABLE_FOLD} / {@link #ASTERISK}'s vowel
+     * variants), but each is ALSO an ordinary piece of punctuation/decoration with no letter reading
+     * at all — exclamation-mark emphasis ("Murder!", "Riots!! Delhi on edge"), markdown-style
+     * emphasis ("**Murder** in Pune", "*Rape* case shocks city") and, for {@code '+'}, an ordinary
+     * separator (a title joiner like "Rio+ Carnival").
+     *
+     * <p>An independent reviewer's probe found the OLD unconditional fold ('!'/'+' always folded,
+     * asterisk always one of 5 vowels, in every one of {@link #CONFUSABLE_FOLD_VARIANTS}'s 25
+     * variants shipped by repair round 2) was a HIGH regression: with no variant left where these
+     * three stay separators, folding one to a letter GLUES it into the surrounding token exactly the
+     * way an unconditionally-folded {@code '@'} would (see {@link #AT_SIGN}'s javadoc) — "Murder!"
+     * became "murderi", whose token never ends at "murder", so {@code matchesTerm}'s end anchor never
+     * fires. "Stampede!", "BREAKING: Suicide!", "10 killed!", "Riots!! Delhi on edge", "Riots* in
+     * Delhi", "**Murder** in Pune" and "*Rape* case shocks city" all bypassed the same way.
+     *
+     * <p><b>Why this is NOT solved the way {@code '@'}/{@code '1'}/{@code '|'} are solved</b> (a
+     * variant where the character folds, and a variant where it does not, unioned by "any variant
+     * matches"). That technique only ADDS matches as more variants are tried — it can fix a bypass by
+     * adding a folding variant, but it can never fix an OVER-block, because the non-folding variant
+     * does not un-match what the folding variant already matched. Round 1's own LOW defect (never
+     * closed) already showed the cost on {@code '+'}: "Rio+ Carnival looks" was OVERBLOCK [COMMUNAL]
+     * because the unconditional '+'->'t' fold turned "rio+" into "riot" regardless of what came
+     * after the '+' — trying a separator-reading variant ALONGSIDE the folding one would not have
+     * stopped the folding variant from still matching.
+     *
+     * <p><b>The actual fix: make folding CONTEXT-SENSITIVE, decided once per character, not a second
+     * per-variant dimension.</b> {@link #normalizeForMatching(String, Map)} only consults the fold
+     * table for one of these three characters when it sits BETWEEN two letter-or-digit characters
+     * (checked on the raw, pre-fold neighbours) — i.e. genuinely mid-word, the only place real
+     * leetspeak substitution ("dea+h", "k!lled", "m*rder") is ever attested. Flanked by anything
+     * else — start/end of string, whitespace, another punctuation mark, a second asterisk — the
+     * character is left exactly as-is, which is not a letter, so it falls through to the same
+     * token-ending branch every other separator does. This is a strictly BETTER fix than "add a
+     * separator variant": it removes the bypass (an unflanked '!'/'*' now always ends the token) AND
+     * the "Rio+ Carnival" over-block (an unflanked '+' is never even offered to the fold table) in
+     * one change, with no growth in {@link #CONFUSABLE_FOLD_VARIANTS}'s size. "m*rder"/"r*pe"/
+     * "s*icide"/"k!lled"/"su!c!de"/"dea+h toll" are all still mid-word and still fold exactly as
+     * before.
+     */
+    // NOTE: uses the '*' literal rather than the ASTERISK constant below to avoid a forward
+    // reference — ASTERISK is declared later in the file (grouped with its own javadoc) but both
+    // name the same code point.
+    private static final Set<Integer> PUNCTUATION_LETTER_LOOKALIKES =
+            Set.of((int) '!', (int) '+', (int) '*');
+
+    /**
+     * True when the raw (pre-lowercase, pre-fold) code point immediately after a {@link
+     * #PUNCTUATION_LETTER_LOOKALIKES} character is itself a plain letter or digit — i.e. that side
+     * is "mid-word". <b>Deliberately does NOT also treat another lookalike as a letter-ish
+     * neighbour</b> (e.g. the second '!' in "Riots!!"): doing so would make a doubled punctuation
+     * mark used as pure emphasis/separator ("Riots!! Delhi on edge", "**Murder**") look "mid-word" on
+     * account of the OTHER punctuation mark sitting next to it, reintroducing exactly the bypass this
+     * method exists to close. Combined with the caller's {@code inToken} check for the flank BEFORE
+     * the character, both sides must be an ordinary letter/digit for a fold to be offered at all.
+     */
+    private static boolean isWordFlank(int neighbour) {
+        return Character.isLetterOrDigit(neighbour);
+    }
+
+    /**
+     * T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 fix for the still-open "R1U BYPASS
+     * 5ucc0mbs" item. {@code '0'} is genuinely ambiguous between {@code 'o'} and {@code 'u'} (see
+     * the removed {@code CONFUSABLE_FOLD} entry's javadoc) — same technique as {@link
+     * #AMBIGUOUS_I_OR_L_CHARS}: both readings are tried as separate normalization passes.
+     */
+    private static final Set<Integer> AMBIGUOUS_O_OR_U_CHARS = Set.of((int) '0');
 
     /**
      * '1' and '|' are genuinely ambiguous leetspeak/confusable substitutions for BOTH 'i' and 'l'
@@ -1273,9 +1466,10 @@ public class CreatorNudgeService {
     private static final char[] VOWEL_READINGS = {'a', 'e', 'i', 'o', 'u'};
 
     /**
-     * Digits that {@link #CONFUSABLE_FOLD} folds onto a Latin letter for leetspeak matching
-     * ('0'/'1'/'3'/'4'/'5'/'7' -&gt; o/i or l/e/a/s/t). T-GOLIVE-0918-R2 repair round 2 (vikram ·
-     * 2026-09-18) — MEDIUM fix: rule 5's {@code digitBoundary} in {@link #normalizeForMatching}
+     * Digits that {@link #CONFUSABLE_FOLD} (plus, for '0', the per-variant {@link
+     * #AMBIGUOUS_O_OR_U_CHARS} reading) folds onto a Latin letter for leetspeak matching
+     * ('0'/'1'/'3'/'4'/'5'/'7' -&gt; o-or-u/i-or-l/e/a/s/t). T-GOLIVE-0918-R2 repair round 2 (vikram
+     * · 2026-09-18) — MEDIUM fix: rule 5's {@code digitBoundary} in {@link #normalizeForMatching}
      * checks {@code Character.isDigit} on the character AFTER this fold has already run, so a digit
      * that folds to a letter never registers as a digit and no hashtag/digit-suffix boundary is
      * ever created — an independent reviewer's probe found "#Riots1984", "#BombayBlasts1993",
@@ -1290,11 +1484,14 @@ public class CreatorNudgeService {
     /**
      * Every confusable-fold reading {@link #firstUnsafeTopic(String)} must try. {@link
      * #CONFUSABLE_FOLD} above holds every UNAMBIGUOUS substitution; this builds the 2 ('1'/'|' -&gt;
-     * i, or -&gt; l) &times; 2 ('@' folded, or left as a separator) &times; 5 ('*' -&gt; each vowel)
-     * = 20 combinations on top of it (F-0857 repair round 1 shipped the first two dimensions;
-     * T-GOLIVE-0918-R2 repair round 2 added the third), plus 5 more digit-literal variants (one per
-     * '*' vowel reading, T-GOLIVE-0918-R2 repair round 2) where {@link #LETTER_FOLDED_DIGITS} are
-     * left unfolded so digit-boundary detection can see them — 25 variants total. A headline is
+     * i, or -&gt; l) &times; 2 ('0' -&gt; o, or -&gt; u, T-GOLIVE-0918-R3) &times; 2 ('@' folded, or
+     * left as a separator) &times; 5 ('*' -&gt; each vowel, applied only when {@link #isWordFlank}
+     * says '*' is mid-word — see {@link #PUNCTUATION_LETTER_LOOKALIKES}) = 40 combinations on top of
+     * it (F-0857 repair round 1 shipped the first and third dimensions; T-GOLIVE-0918-R2 repair
+     * round 2 added the fourth; T-GOLIVE-0918-R3 repair round 3 added the second AND made the
+     * fourth — plus, independently of any dimension here, '!' and '+' — context-sensitive), plus 5
+     * more digit-literal variants (one per '*' vowel reading) where {@link #LETTER_FOLDED_DIGITS}
+     * are left unfolded so digit-boundary detection can see them — 45 variants total. A headline is
      * unsafe if ANY variant's normalization matches — see {@link #firstUnsafeTopic(String)}. This
      * many passes over a short trend headline is not a performance concern; this is not run
      * per-suggestion (the 2026-09-18 decision moves it to ingest-time, one evaluation per trend).
@@ -1305,17 +1502,24 @@ public class CreatorNudgeService {
     private static List<Map<Integer, Integer>> buildConfusableFoldVariants() {
         List<Map<Integer, Integer>> variants = new ArrayList<>();
         for (int ilReading : new int[] {'i', 'l'}) {
-            for (boolean foldAt : new boolean[] {false, true}) {
-                for (char vowel : VOWEL_READINGS) {
-                    Map<Integer, Integer> variant = new HashMap<>(CONFUSABLE_FOLD);
-                    for (int ambiguous : AMBIGUOUS_I_OR_L_CHARS) {
-                        variant.put(ambiguous, ilReading);
+            // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3: the '0'->o/u ambiguous
+            // reading, same technique as ilReading above. See AMBIGUOUS_O_OR_U_CHARS's javadoc.
+            for (int zeroReading : new int[] {'o', 'u'}) {
+                for (boolean foldAt : new boolean[] {false, true}) {
+                    for (char vowel : VOWEL_READINGS) {
+                        Map<Integer, Integer> variant = new HashMap<>(CONFUSABLE_FOLD);
+                        for (int ambiguous : AMBIGUOUS_I_OR_L_CHARS) {
+                            variant.put(ambiguous, ilReading);
+                        }
+                        for (int zero : AMBIGUOUS_O_OR_U_CHARS) {
+                            variant.put(zero, zeroReading);
+                        }
+                        if (foldAt) {
+                            variant.put(AT_SIGN, (int) 'a');
+                        }
+                        variant.put(ASTERISK, (int) vowel);
+                        variants.add(Collections.unmodifiableMap(variant));
                     }
-                    if (foldAt) {
-                        variant.put(AT_SIGN, (int) 'a');
-                    }
-                    variant.put(ASTERISK, (int) vowel);
-                    variants.add(Collections.unmodifiableMap(variant));
                 }
             }
         }
@@ -1353,6 +1557,44 @@ public class CreatorNudgeService {
     private static final int DEVANAGARI_BLOCK_START = 0x0900;
 
     private static final int DEVANAGARI_BLOCK_END = 0x097F;
+
+    /**
+     * T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix. The nukta (़, a dot placed
+     * under a consonant to represent a sound Devanagari's base consonants do not cover, e.g. क़/ख़/
+     * ग़/ज़/ड़/ढ़/फ़) is DROPPED during normalization rather than kept like every other Devanagari
+     * mark in {@link #isDevanagariCombiningMark}. An independent reviewer's probe found the SAME word
+     * bypassing depending only on whether its writer included the nukta: "ख़ुदकुशी कर ली" (nukta)
+     * bypassed while "खुदकुशी" (no nukta, already listed) blocked; "महिला को ज़िंदा जलाया" (nukta on
+     * ज) bypassed the already-listed "जिंदा जलाया"; "छेडछाड का आरोपी" (no nukta at all) bypassed the
+     * listed "छेड़छाड़"-based terms. Both spellings are the same word in ordinary Hindi typing —
+     * nukta placement is inconsistent across keyboards, fonts and writers, not a meaningful spelling
+     * distinction this filter should treat as two different words. NFD (already applied above)
+     * canonically decomposes the precomposed nukta letters (U+0958-095F) into base-consonant +
+     * U+093C, so dropping U+093C here folds BOTH the precomposed and the decomposed spelling onto
+     * the plain base consonant uniformly. Every Devanagari term in {@link UnsafeHeadlineTopic} that
+     * would otherwise need a nukta is therefore written WITHOUT it (nukta-bearing spellings would
+     * fail the class-load self-check below, since they could never equal their own normalized form).
+     */
+    private static final int DEVANAGARI_NUKTA = 0x093C;
+
+    /**
+     * T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix. Chandrabindu (ँ, marking
+     * nasalization on a vowel) folds onto anusvara (ं, U+0902) — a DIFFERENT mark by Unicode's own
+     * accounting (not a canonical equivalence NFD would already merge), but the same nasal sound in
+     * the vast majority of everyday Hindi words, and writers use the two interchangeably in casual
+     * typing. An independent reviewer's probe found "फाँसी लगाकर जान दी" (chandrabindu) bypassing the
+     * already-listed anusvara spelling "फांसी", and "हत्याएँ बढ़ीं" (chandrabindu) bypassing the
+     * already-listed anusvara spelling "हत्याएं" — same word, same meaning, different mark under the
+     * same vowel. Folded the same direction as {@link #CONFUSABLE_FOLD} folds a homoglyph onto the
+     * plain letter it is being mistaken for: onto the MORE COMMON spelling already in the term list,
+     * not the other way around, so no Devanagari term needs to change. Kept to this one pair rather
+     * than a general "nasalization-insensitive" scheme — it is the one confusion an independent
+     * reviewer's probe named outright, same discipline as {@link #CONFUSABLE_FOLD}'s own small,
+     * curated, probe-driven scope.
+     */
+    private static final int DEVANAGARI_CHANDRABINDU = 0x0901;
+
+    private static final int DEVANAGARI_ANUSVARA = 0x0902;
 
     /**
      * Devanagari's OWN combining marks — vowel signs/matras ({@code ा ि ी ु ू े ै ो ौ}), virama
@@ -1758,6 +2000,16 @@ public class CreatorNudgeService {
             int type = Character.getType(cp);
 
             if (isDevanagariCombiningMark(cp, type)) {
+                // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix. The nukta
+                // (U+093C) is dropped here, NOT appended like every other Devanagari mark below —
+                // see DEVANAGARI_NUKTA's javadoc for why nukta-bearing and nukta-free spellings of
+                // the same word must fold onto one form.
+                if (cp == DEVANAGARI_NUKTA) {
+                    continue;
+                }
+                // T-GOLIVE-0918-R3 — chandrabindu (ँ, U+0901) folds onto anusvara (ं, U+0902) —
+                // see DEVANAGARI_CHANDRABINDU's javadoc. Every other Devanagari mark is unaffected.
+                int foldedMark = cp == DEVANAGARI_CHANDRABINDU ? DEVANAGARI_ANUSVARA : cp;
                 // Rule 2b (T-GOLIVE-0918-R2, vikram · 2026-09-18) — see
                 // isDevanagariCombiningMark's javadoc for why these do NOT vanish like every other
                 // combining mark: they are appended, like a letter, and never break the token.
@@ -1768,8 +2020,8 @@ public class CreatorNudgeService {
                     }
                     inToken = true;
                 }
-                compact.appendCodePoint(cp);
-                spaced.appendCodePoint(cp);
+                compact.appendCodePoint(foldedMark);
+                spaced.appendCodePoint(foldedMark);
                 previousAppendedWasLowerOrDigit = false;
                 previousAppendedWasDigit = false;
                 continue;
@@ -1791,7 +2043,18 @@ public class CreatorNudgeService {
             // the confusable-folded result) that signals a camelCase/hashtag boundary.
             boolean isUpperBeforeFold = Character.isUpperCase(cp);
             int lowered = Character.toLowerCase(cp);
-            int normalizedCp = confusableFold.getOrDefault(lowered, lowered);
+            int normalizedCp;
+            // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 HIGH fix. See
+            // PUNCTUATION_LETTER_LOOKALIKES's javadoc: '!'/'+'/'*' only consult the fold table when
+            // BOTH neighbours are ordinary letters/digits (genuinely mid-word); otherwise they are
+            // left as the punctuation they are, which falls into the token-ending branch below like
+            // any other separator.
+            if (PUNCTUATION_LETTER_LOOKALIKES.contains(lowered)
+                    && !(inToken && i < folded.length() && isWordFlank(folded.codePointAt(i)))) {
+                normalizedCp = lowered;
+            } else {
+                normalizedCp = confusableFold.getOrDefault(lowered, lowered);
+            }
 
             if (Character.isLetterOrDigit(normalizedCp)) {
                 boolean isDigitNow = Character.isDigit(normalizedCp);

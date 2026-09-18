@@ -2460,10 +2460,14 @@ class CreatorNudgeServiceTest {
                         "R2fix-MED-vocab: dushkarm ka aaropi giraftar",
                         "dushkarm ka aaropi giraftar",
                         UnsafeHeadlineTopic.CRIME),
-                arguments(
-                        "R2fix-MED-vocab: छात्रा से छेड़छाड़",
-                        "छात्रा से छेड़छाड़",
-                        UnsafeHeadlineTopic.CRIME),
+                // T-GOLIVE-0918-R3 (vikram, 2026-09-18) — repair round 3: the bare "छात्रा से
+                // छेड़छाड़" row above is REMOVED, not merely re-pointed. Round 3 found bare
+                // "छेड़छाड़"/"chhedchhad" over-blocking benign tamper-sense sentences that use the
+                // IDENTICAL "<subject> से छेड़छाड़" construction ("प्रकृति से छेड़छाड़ मत करो") —
+                // see CreatorNudgeService's CRIME-set javadoc for why no phrase-only fix can keep
+                // blocking one and not the other. This is now a documented, TESTED accepted gap
+                // (see firstUnsafeTopic_repairRound3AcceptedGapsAndBenignSetStaysQuotable below),
+                // not a silently dropped assertion. The qualified forms below still block.
                 arguments(
                         "R2fix-MED-vocab: chhedchhad ka aaropi",
                         "chhedchhad ka aaropi",
@@ -2596,6 +2600,263 @@ class CreatorNudgeServiceTest {
         assertTrue(
                 CreatorNudgeService.isQuotableInCreatorCopy(benign),
                 "benign control was classified unsafe: " + benign);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // T-GOLIVE-0918-R3 repair round 3 (vikram, 2026-09-18) — an independent reviewer FAILED
+    // commit 857e954 (repairRound2FixProbes()'s own commit) with two HIGHs, four MEDIUMs and two
+    // LOWs. Every row below reproduces one named bypass/over-block from that review, table-driven,
+    // same discipline as repairRound1Probes()/repairRound2Probes()/repairRound2FixProbes() above.
+    // ---------------------------------------------------------------------------------------
+
+    static Stream<Arguments> repairRound3Probes() {
+        return Stream.of(
+                // HIGH-1 — '!'/'*' folded to a letter in EVERY variant 857e954 shipped, so nothing
+                // ever ended the token on "Murder!"-style punctuation. Fixed by making the fold
+                // context-sensitive (isWordFlank) instead of adding a separator variant — see
+                // PUNCTUATION_LETTER_LOOKALIKES's javadoc for why a variant-only fix could not also
+                // have fixed the LOW-1 "Rio+ Carnival" over-block below.
+                arguments("R3-HIGH1: Murder! (bang at word end)", "Murder!", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-HIGH1: Actor found dead! (bang at word end)",
+                        "Actor found dead!",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R3-HIGH1: Stampede! (bang at word end)", "Stampede!", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R3-HIGH1: BREAKING: Suicide! (bang at word end)",
+                        "BREAKING: Suicide!",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R3-HIGH1: 10 killed! (bang at word end)", "10 killed!", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R3-HIGH1: Riots!! Delhi on edge (doubled bang)",
+                        "Riots!! Delhi on edge",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R3-HIGH1: Riots* in Delhi (asterisk at word end)",
+                        "Riots* in Delhi",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R3-HIGH1: **Murder** in Pune (markdown bold)",
+                        "**Murder** in Pune",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-HIGH1: *Rape* case shocks city (markdown italic)",
+                        "*Rape* case shocks city",
+                        UnsafeHeadlineTopic.CRIME),
+                // HIGH-2 — the passive Hinglish/Devanagari crime-reporting register, closing the
+                // round-1 LOW that was never closed AND covering the spelling variants an
+                // independent reviewer's probe found. See CRIME's own javadoc for why the bare
+                // active/casual forms are excluded instead (benign controls below).
+                arguments(
+                        "R3-HIGH2: maar dala gaya (single-a spelling)",
+                        "maar dala gaya",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments("R3-HIGH2: goli maari gayi", "goli maari gayi", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-HIGH2: युवक को मार डाला (Devanagari passive)",
+                        "युवक को मार डाला",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-HIGH2: गोली मार दी (Devanagari passive)",
+                        "गोली मार दी",
+                        UnsafeHeadlineTopic.CRIME),
+                // MEDIUM — nukta/chandrabindu spelling-insensitivity (DEVANAGARI_NUKTA/
+                // DEVANAGARI_CHANDRABINDU) closes the "same word, different mark" half; missing
+                // inflections (Devanagari has no suffix generator) are their own literals below.
+                arguments(
+                        "R3-MED-spelling: फाँसी लगाकर जान दी (chandrabindu)",
+                        "फाँसी लगाकर जान दी",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R3-MED-spelling: ख़ुदकुशी कर ली (nukta)",
+                        "ख़ुदकुशी कर ली",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R3-MED-spelling: महिला को ज़िंदा जलाया (nukta)",
+                        "महिला को ज़िंदा जलाया",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-spelling: हत्याएँ बढ़ीं (chandrabindu plural)",
+                        "हत्याएँ बढ़ीं",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-spelling: छेडछाड का आरोपी (no nukta at all)",
+                        "छेडछाड का आरोपी",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-spelling: हादसे में 3 की मौते (informal plural)",
+                        "हादसे में 3 की मौते",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R3-MED-inflect: दुष्कर्मी गिरफ्तार",
+                        "दुष्कर्मी गिरफ्तार",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-inflect: दुष्कर्मियों को सजा",
+                        "दुष्कर्मियों को सजा",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-inflect: आत्महत्याएं बढ़ीं", "आत्महत्याएं बढ़ीं", UnsafeHeadlineTopic.DEATH),
+                arguments("R3-MED-latin: phansi laga li", "phansi laga li", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R3-MED-latin: golibari mein 2 ghayal",
+                        "golibari mein 2 ghayal",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-latin: hatyara pakda gaya",
+                        "hatyara pakda gaya",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-latin: hatyare giraftar", "hatyare giraftar", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-latin: dushkarmi giraftar",
+                        "dushkarmi giraftar",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-latin: khudkhushi kar li", "khudkhushi kar li", UnsafeHeadlineTopic.DEATH),
+                // MEDIUM — "shot at by" narrowing (857e954) regressed the plain "shot at" news form.
+                arguments(
+                        "R3-MED-shot: Man shot at outside mall",
+                        "Man shot at outside mall",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-shot: Woman shot at outside market",
+                        "Woman shot at outside market",
+                        UnsafeHeadlineTopic.CRIME),
+                // MEDIUM — क़ातिल (qatil, murderer) was named in round 1 with no term and no test.
+                arguments("R3-MED-qatil: क़ातिल (with nukta)", "क़ातिल", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R3-MED-qatil: कातिल गिरफ्तार (no nukta)",
+                        "कातिल गिरफ्तार",
+                        UnsafeHeadlineTopic.CRIME),
+                // LOW (still open per the round-3 review's failed clause 1) — '0' is genuinely
+                // ambiguous between 'o' and 'u'; the old single '0'->'o' fold gave "succombs",
+                // which matches nothing.
+                arguments("R3-LOW-zero: 5ucc0mbs (0->u)", "5ucc0mbs", UnsafeHeadlineTopic.DEATH));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\" -> {2}")
+    @MethodSource("repairRound3Probes")
+    @DisplayName(
+            "T-GOLIVE-0918-R3: every independent-reviewer probe against 857e954 blocks as its named"
+                    + " category")
+    void firstUnsafeTopic_blocksEveryRepairRound3Probe(
+            String defect, String probe, UnsafeHeadlineTopic expectedCategory) {
+        assertEquals(
+                expectedCategory,
+                CreatorNudgeService.firstUnsafeTopic(probe),
+                "probe did not block as " + expectedCategory + " [" + defect + "]: \"" + probe + "\"");
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(probe),
+                "probe must not be quotable in creator copy [" + defect + "]: \"" + probe + "\"");
+    }
+
+    /**
+     * Benign controls for every round-3 over-block fix, plus at least 10 new everyday creator
+     * headlines in Hindi/Hinglish (done_when) — cricket commentary, a Bollywood song title, meme/
+     * compliment slang, tamper-sense छेड़छाड़, gym "reps", and the punctuation-adjacent case the
+     * HIGH-1 fix itself must not regress.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                // HIGH-2 — the bare active/casual maar-diya/daala/goli-maar forms this round
+                // deliberately excludes (see CRIME's own class javadoc).
+                "Chhakka maar diya Kohli ne!",
+                "Sixer maar diya last ball pe!",
+                "Maar Daala song dance cover",
+                "Goli maar bheje mein dance cover",
+                "Tune toh maar daala yaar, kya look hai",
+                "Maar diya jaaye ya chhod diya jaaye meme",
+                // MEDIUM (छेड़छाड़) — the tamper sense, lexically identical to the crime sense.
+                "स्किन के साथ छेड़छाड़ मत करो",
+                "प्रकृति से छेड़छाड़ मत करो",
+                // MEDIUM (रेप) — the gym "reps" sense, identically spelled to the crime sense.
+                "आखिरी रेप तक पुश करो",
+                "बस एक रेप और, हार मत मानो",
+                // LOW-1 — '+' unconditionally folding to 't' turned "rio+" into "riot" regardless
+                // of what followed the '+'; fixed by the same context-sensitive fold as HIGH-1.
+                "Rio+ Carnival looks",
+                // HIGH-1 regression guard — the context-sensitive fold must not reintroduce any
+                // ALREADY-accepted false positive merely because punctuation now sits next to it.
+                "Killer ab workout!",
+                "Bomber jacket styling!",
+                "This whole vlog was shot at home!",
+                // 10+ new everyday creator headlines in Hindi/Hinglish (done_when), covering
+                // cricket, dance/song covers and vlog content the round-3 review found no coverage
+                // for at all.
+                "Kohli ne aaj zabardast shatak banaya",
+                "Aaj ka dance cover bahut viral ho gaya",
+                "Weekend vlog mein Goa ki trip dikhayi",
+                "Mera skincare routine dekho, glow guaranteed hai",
+                "Is Diwali outfit ideas try karo",
+                "आज मैच में छक्कों की बारिश हुई",
+                "यह गाना रील के लिए परफेक्ट है",
+                "सुबह की चाय के साथ छोटी सी बातचीत",
+                "नई रेसिपी ट्राई की आज किचन में",
+                "फेस्टिव सीजन के लिए मेकअप टिप्स"
+            })
+    @DisplayName(
+            "T-GOLIVE-0918-R3: benign Hinglish/Devanagari creator content stays quotable after the"
+                    + " punctuation, maar-diya, छेड़छाड़ and रेप fixes")
+    void firstUnsafeTopic_repairRound3BenignSetStaysQuotable(String benign) {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(benign),
+                "benign control was classified unsafe: " + benign);
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(benign),
+                "benign control was classified unsafe: " + benign);
+    }
+
+    /**
+     * T-GOLIVE-0918-R3 (vikram, 2026-09-18) — DOCUMENTED, TESTED accepted GAP (a headline that
+     * stays quotable although it names a real crime): a bare crime headline with no case/accused/
+     * complaint qualifier no longer blocks, because Hindi uses the IDENTICAL "&lt;subject&gt; से
+     * छेड़छाड़" construction for both the crime sense and the harmless "tamper with" sense (see
+     * the benign set above — "प्रकृति से छेड़छाड़ मत करो" uses the same words). This is the SAME
+     * class of call as the accepted-false-positive list in {@code UnsafeHeadlineTopic}'s own class
+     * javadoc ("killing", "sue", "plea") but in the opposite direction (a false NEGATIVE accepted
+     * for a false POSITIVE's sake) — flagged for a Priya ruling rather than decided unilaterally
+     * (see the CRIME enum's own comment at the छेड़छाड़ removal).
+     */
+    @Test
+    @DisplayName(
+            "T-GOLIVE-0918-R3: documented accepted gap — bare छेड़छाड़ without a case/accused"
+                    + " qualifier stays quotable (a stated product trade-off, not a bug)")
+    void firstUnsafeTopic_repairRound3AcceptedGapStaysQuotable() {
+        String acceptedGap = "छात्रा से छेड़छाड़";
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(acceptedGap),
+                "expected accepted-gap string to be quotable (if this now fails, the gap has been"
+                        + " independently closed — update this test's comment, do not just delete the"
+                        + " row): "
+                        + acceptedGap);
+    }
+
+    /**
+     * T-GOLIVE-0918-R3 (vikram, 2026-09-18) — DOCUMENTED, TESTED accepted OVER-BLOCK (the opposite
+     * of the gap above: a benign headline that stays blocked). The round-2 digit-boundary fix that
+     * correctly isolates "#Riots2024" also isolates "Sue" from "4Style" in "#Sue4Style" — landing
+     * on the SAME already-accepted "sue" (given name) false positive round 1's own report already
+     * documented for "Sue's makeup tutorial" ({@code UnsafeHeadlineTopic}'s own class javadoc lists
+     * bare "sue" as an accepted false positive), not a new class of bug. Fixing it would mean not
+     * splitting "#Riots2024" into "riots"+"2024" either, which would reopen the round-2 MEDIUM this
+     * digit boundary exists to close — so this is accepted, not attempted here.
+     */
+    @Test
+    @DisplayName(
+            "T-GOLIVE-0918-R3: documented accepted over-block — #Sue4Style stays blocked (same"
+                    + " accepted \"sue\" false positive as round 1, not a new bug)")
+    void firstUnsafeTopic_repairRound3AcceptedOverblockStaysBlocked() {
+        String acceptedOverblock = "#Sue4Style";
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(acceptedOverblock),
+                "expected accepted-over-block string to stay blocked (if this now fails, either the"
+                        + " digit-boundary rule or the bare \"sue\" accepted false positive has changed"
+                        + " — update this test's comment, do not just delete the row): "
+                        + acceptedOverblock);
     }
 
     // ---------------------------------------------------------------------------------------
