@@ -68,6 +68,18 @@ public class TrendPullJob {
 
     private static final Logger log = LoggerFactory.getLogger(TrendPullJob.class);
 
+    // T-GOLIVE-0918 repair round 1 [vikram · 2026-09-18] — MEDIUM #2: the classifier result was
+    // trusted structurally (a null risk was silently skipped, not rejected; an empty garm_flags
+    // list fell through the for-loop as "nothing flagged"). A GarmFlag with risk=null was proven
+    // to get stored (reviewer probe: nullRisk stored=1), and so was an empty garm_flags list
+    // (emptyFlags stored=1). Source of the 10-category/4-risk-level contract:
+    // influora-ai/app/tools/schemas.py::GARM_CATEGORIES / GARM_RISK_LEVELS — influora-ai's own
+    // _validate_model_result enforces this shape server-side today, but a DTO/contract drift (a
+    // renamed field under @JsonIgnoreProperties(ignoreUnknown=true)) would null every risk and
+    // this job would treat every headline as safe. See #isFlaggedByClassifier.
+    private static final int EXPECTED_GARM_CATEGORY_COUNT = 10;
+    private static final Set<String> VALID_GARM_RISK_LEVELS = Set.of("floor", "low", "medium", "high");
+
     /** job-design.md step 12 verified typicals (HYPE 3, SEASONAL 21, PRIDE 1, EDUCATIONAL 30).
      * Only EDUCATIONAL is reachable today — see class javadoc "descoped" note. */
     private static final Map<TrendCampaignType, Integer> PEAK_WINDOW_DAYS =
@@ -281,7 +293,18 @@ public class TrendPullJob {
     }
 
     /** True if the classifier flags {@code text} above the {@code "floor"} risk level in ANY GARM
-     * category — see class javadoc for why this is a blanket rule rather than a named subset. */
+     * category — see class javadoc for why this is a blanket rule rather than a named subset.
+     *
+     * <p>T-GOLIVE-0918 repair round 1 [vikram · 2026-09-18] — MEDIUM #2 fix: a malformed result is
+     * now rejected with the SAME fail-closed treatment as a transport error (thrown
+     * {@link BrandSafetyAiException}, caught by the caller and counted as
+     * {@code classifierFailedOrUnconfigured}), rather than silently read as "safe". Rejects when:
+     * (a) {@code content_id} doesn't match the id this job sent — a mismatched/reordered result
+     * must never be attributed to the wrong headline; (b) {@code garm_flags} is missing or its
+     * size isn't exactly {@link #EXPECTED_GARM_CATEGORY_COUNT} — catches both a dropped category
+     * and the empty-list case that used to pass the for-loop vacuously; (c) any flag's
+     * {@code risk} is null or outside the 4 known levels — catches a renamed/blanked field under
+     * lenient Jackson binding instead of treating a null risk as "not risky". */
     private boolean isFlaggedByClassifier(String id, String text) {
         List<ClassifiedItem> results =
                 brandSafetyAiClient.classify(
@@ -291,15 +314,36 @@ public class TrendPullJob {
             throw new BrandSafetyAiException("empty classification result for " + id);
         }
         ClassifiedItem item = results.get(0);
-        if (item.garmFlags() == null) {
-            throw new BrandSafetyAiException("classification result for " + id + " carried no garm_flags");
+        if (!id.equals(item.contentId())) {
+            throw new BrandSafetyAiException(
+                    "classification result content_id mismatch for "
+                            + id
+                            + ": got '"
+                            + item.contentId()
+                            + "'");
         }
-        for (GarmFlag flag : item.garmFlags()) {
-            if (flag.risk() != null && !"floor".equalsIgnoreCase(flag.risk())) {
-                return true;
+        List<GarmFlag> flags = item.garmFlags();
+        if (flags == null || flags.size() != EXPECTED_GARM_CATEGORY_COUNT) {
+            throw new BrandSafetyAiException(
+                    "classification result for "
+                            + id
+                            + " carried "
+                            + (flags == null ? "no" : flags.size())
+                            + " garm_flags, expected "
+                            + EXPECTED_GARM_CATEGORY_COUNT);
+        }
+        boolean flagged = false;
+        for (GarmFlag flag : flags) {
+            String risk = flag.risk() == null ? null : flag.risk().toLowerCase(Locale.ROOT);
+            if (risk == null || !VALID_GARM_RISK_LEVELS.contains(risk)) {
+                throw new BrandSafetyAiException(
+                        "classification result for " + id + " carried an invalid risk level: " + flag.risk());
+            }
+            if (!"floor".equals(risk)) {
+                flagged = true;
             }
         }
-        return false;
+        return flagged;
     }
 
     /** Within-run dedup only (cross-run natural-key uniqueness is a known, documented gap — see
