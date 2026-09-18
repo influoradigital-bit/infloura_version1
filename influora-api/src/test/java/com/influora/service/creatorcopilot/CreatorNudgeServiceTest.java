@@ -2218,10 +2218,10 @@ class CreatorNudgeServiceTest {
                         "R2-c: Woman strangled by husband",
                         "Woman strangled by husband",
                         UnsafeHeadlineTopic.CRIME),
-                arguments(
-                        "R2-c: Man shot at outside mall",
-                        "Man shot at outside mall",
-                        UnsafeHeadlineTopic.CRIME),
+                // T-GOLIVE-0918-R2 repair round 2 (vikram, 2026-09-18): bare "shot at" (this
+                // entry's original probe) over-blocked ordinary creator filming language and was
+                // replaced with the narrower "shot at by"/"opened fire" — see
+                // repairRound2FixProbes() for the corrected probe and the new benign controls.
                 arguments(
                         "R2-c: Hindu-Muslim clashes in town",
                         "Hindu-Muslim clashes in town",
@@ -2371,6 +2371,225 @@ class CreatorNudgeServiceTest {
             "T-GOLIVE-0918-R2 (a): the दंगा-family term does not over-block देगा/देगी/देंगे/दूंगा/दाग"
                     + " or everyday Hindi/Hinglish creator headlines")
     void firstUnsafeTopic_repairRound2DevanagariOverblockFixedAndBenignSetStaysQuotable(String benign) {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(benign),
+                "benign control was classified unsafe: " + benign);
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(benign),
+                "benign control was classified unsafe: " + benign);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // T-GOLIVE-0918-R2 repair round 2 (vikram, 2026-09-18) — an independent reviewer FAILED
+    // commit 72cabea (repairRound2Probes()'s own commit) with a HIGH regression, four MEDIUMs and
+    // two LOWs. Every row below reproduces one named bypass/over-block from that review,
+    // table-driven, same discipline as repairRound1Probes()/repairRound2Probes() above.
+    // ---------------------------------------------------------------------------------------
+
+    static Stream<Arguments> repairRound2FixProbes() {
+        return Stream.of(
+                // HIGH — Devanagari inflection regression. बलात्कारी was BLOCKED at 49a0415 (via the
+                // since-replaced consonant-skeleton technique) and silently BYPASSED once the
+                // skeleton was rewritten to correctly-spelled words in 72cabea, because Devanagari
+                // has no suffix generator and no inflected form was listed.
+                arguments("R2fix-HIGH: बलात्कारी (rapist)", "बलात्कारी", UnsafeHeadlineTopic.CRIME),
+                // Category is DEATH, not CRIME: this headline also contains DEATH's फांसी
+                // (hanging), and firstUnsafeTopic returns the FIRST matching category in
+                // UnsafeHeadlineTopic.values() order (DEATH, CRIME, COMMUNAL, LEGAL) — see that
+                // method's javadoc ("which one wins is a logging detail only; any match at all
+                // suppresses the text"). What this probe actually proves is बलात्कारी को फांसी
+                // (containing the regressed बलात्कारी term) is BLOCKED at all, same as the bare
+                // बलात्कारी probe above.
+                arguments(
+                        "R2fix-HIGH: बलात्कारी को फांसी", "बलात्कारी को फांसी", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-HIGH: बलात्कारियों को सजा",
+                        "बलात्कारियों को सजा",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-HIGH: हत्यारे पकड़े गए", "हत्यारे पकड़े गए", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-HIGH: हत्यारों को सजा", "हत्यारों को सजा", UnsafeHeadlineTopic.CRIME),
+                arguments("R2fix-HIGH: हत्याएं बढ़ीं", "हत्याएं बढ़ीं", UnsafeHeadlineTopic.CRIME),
+                arguments("R2fix-HIGH: दंगाइयों", "दंगाइयों", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("R2fix-HIGH: आत्महत्याओं", "आत्महत्याओं", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-HIGH: हादसे में 5 लोगों की मौतें",
+                        "हादसे में 5 लोगों की मौतें",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-HIGH: कोविड से मौतों का आंकड़ा",
+                        "कोविड से मौतों का आंकड़ा",
+                        UnsafeHeadlineTopic.DEATH),
+                // MEDIUM (digitBoundary) — rule 5's digit boundary was checked AFTER the confusable
+                // fold, so a digit that folds to a letter (0/3/4/5) never registered as a digit and
+                // no boundary was ever created for it.
+                arguments("R2fix-MED-digit: #Riots1984", "#Riots1984", UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-MED-digit: #BombayBlasts1993",
+                        "#BombayBlasts1993",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-MED-digit: #Murder4Justice",
+                        "#Murder4Justice",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments("R2fix-MED-digit: #Riots05", "#Riots05", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("R2fix-MED-digit: #murder1", "#murder1", UnsafeHeadlineTopic.CRIME),
+                arguments("R2fix-MED-digit: #rape0", "#rape0", UnsafeHeadlineTopic.CRIME),
+                arguments("R2fix-MED-digit: #Blast4", "#Blast4", UnsafeHeadlineTopic.COMMUNAL),
+                arguments("R2fix-MED-digit: #Stampede05", "#Stampede05", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-MED-digit: #दिल्लीदंगा (all-Devanagari joined hashtag)",
+                        "#दिल्लीदंगा",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                // MEDIUM (shot at) — the narrower replacement terms must still block.
+                arguments(
+                        "R2fix-MED-shot: Man shot at by gunman outside mall",
+                        "Man shot at by gunman outside mall",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-shot: Gunman opened fire outside mall",
+                        "Gunman opened fire outside mall",
+                        UnsafeHeadlineTopic.CRIME),
+                // MEDIUM (बम/धमाका) — the narrower replacement phrase must still block.
+                arguments("R2fix-MED-bam: बम ब्लास्ट (bomb blast)", "बम ब्लास्ट", UnsafeHeadlineTopic.COMMUNAL),
+                // MEDIUM (Hindi/Hinglish vocabulary gaps) — an independent reviewer's probe named
+                // these outright as still bypassing 72cabea.
+                arguments("R2fix-MED-vocab: युवती से दुष्कर्म", "युवती से दुष्कर्म", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: dushkarm ka aaropi giraftar",
+                        "dushkarm ka aaropi giraftar",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: छात्रा से छेड़छाड़",
+                        "छात्रा से छेड़छाड़",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: chhedchhad ka aaropi",
+                        "chhedchhad ka aaropi",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: गोलीबारी में 2 घायल",
+                        "गोलीबारी में 2 घायल",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: फांसी लगाकर जान दी",
+                        "फांसी लगाकर जान दी",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-MED-vocab: fansi laga ke jaan de di",
+                        "fansi laga ke jaan de di",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-MED-vocab: मर्डर केस में बड़ा खुलासा",
+                        "मर्डर केस में बड़ा खुलासा",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: आतंकवादी हमला", "आतंकवादी हमला", UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-MED-vocab: आतंकवाद पर बड़ा फैसला",
+                        "आतंकवाद पर बड़ा फैसला",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-MED-vocab: सांप्रदायिक हिंसा भड़की",
+                        "सांप्रदायिक हिंसा भड़की",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-MED-vocab: sampradayik hinsa",
+                        "sampradayik hinsa",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-MED-vocab: मॉब लिंचिंग का मामला",
+                        "मॉब लिंचिंग का मामला",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-MED-vocab: पथराव के बाद तनाव",
+                        "पथराव के बाद तनाव",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-MED-vocab: बच्चे का अपहरण", "बच्चे का अपहरण", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: bachche ka apharan",
+                        "bachche ka apharan",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: महिला को जिंदा जलाया",
+                        "महिला को जिंदा जलाया",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: maar daala gaya", "maar daala gaya", UnsafeHeadlineTopic.CRIME),
+                arguments("R2fix-MED-vocab: goli maar di", "goli maar di", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED-vocab: aatanki hamla", "aatanki hamla", UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-MED-vocab: atankwadi hamla",
+                        "atankwadi hamla",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                // LOW — round-1's own LOW defect listed these as BYPASS and they were never closed.
+                arguments(
+                        "R2fix-LOW: m*rder in Delhi (asterisk->u)",
+                        "m*rder in Delhi",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-LOW: r*pe case (asterisk->a)", "r*pe case", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-LOW: s*icide note (asterisk->u)",
+                        "s*icide note",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments("R2fix-LOW: k!lled (!->i)", "k!lled", UnsafeHeadlineTopic.DEATH),
+                arguments("R2fix-LOW: su!c!de (!->i)", "su!c!de", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-LOW: unalived himself (evasion slang)",
+                        "unalived himself",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments("R2fix-LOW: dea7h toll (7->t)", "dea7h toll", UnsafeHeadlineTopic.DEATH),
+                arguments("R2fix-LOW: dea+h toll (+->t)", "dea+h toll", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-LOW: maar diya gaya (round-1 LOW, never closed)",
+                        "maar diya gaya",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-LOW: ѕуісіде (all-Cyrillic homoglyph, missing д->d fold)",
+                        "ѕуісіде",
+                        UnsafeHeadlineTopic.DEATH));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\" -> {2}")
+    @MethodSource("repairRound2FixProbes")
+    @DisplayName(
+            "T-GOLIVE-0918-R2 repair round 2: every independent-reviewer probe against 72cabea blocks"
+                    + " as its named category")
+    void firstUnsafeTopic_blocksEveryRepairRound2FixProbe(
+            String defect, String probe, UnsafeHeadlineTopic expectedCategory) {
+        assertEquals(
+                expectedCategory,
+                CreatorNudgeService.firstUnsafeTopic(probe),
+                "probe did not block as " + expectedCategory + " [" + defect + "]: \"" + probe + "\"");
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(probe),
+                "probe must not be quotable in creator copy [" + defect + "]: \"" + probe + "\"");
+    }
+
+    /**
+     * MEDIUM over-block fixes: the narrower "shot at by"/"opened fire" terms must not catch
+     * ordinary creator filming language, and बम/धमाका must not catch festival/sale content, now
+     * that both are phrase-only. All six were QUOTABLE at 49a0415 and OVER-BLOCKED once 72cabea
+     * added the too-broad bare/phrase terms this round replaces.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Reel shot at Marine Drive",
+                "Shot at golden hour on iPhone 15",
+                "This whole vlog was shot at home",
+                "बम बम भोले महाशिवरात्रि स्पेशल",
+                "दिवाली धमाका सेल शुरू",
+                "धमाका ऑफर सिर्फ आज"
+            })
+    @DisplayName(
+            "T-GOLIVE-0918-R2 repair round 2: the narrowed shot-at/बम-धमाका terms do not over-block"
+                    + " camera and festival/sale content")
+    void firstUnsafeTopic_repairRound2NarrowedTermsStayQuotable(String benign) {
         assertNull(
                 CreatorNudgeService.firstUnsafeTopic(benign),
                 "benign control was classified unsafe: " + benign);

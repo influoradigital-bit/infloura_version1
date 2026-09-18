@@ -737,7 +737,33 @@ public class CreatorNudgeService {
                         // same reason "school shooting" was accepted for a bare-excluded word: the
                         // combination is far more specific than either word alone. Source:
                         // wiki/decisions/2026-09-18-trend-headline-screening.md.
-                        "मौत", "खुदकुशी", "aatmhatya", "atmhatya", "khudkushi", "hanged", "body found")),
+                        "मौत", "खुदकुशी", "aatmhatya", "atmhatya", "khudkushi", "hanged", "body found",
+                        // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — HIGH regression fix.
+                        // Devanagari has no suffix generator (GENERATED_SUFFIXES is ASCII-only), so
+                        // every grammatical inflection of a Devanagari term has to be its own literal,
+                        // same discipline as हत्यारा/हत्याओं above. मौतें (direct plural of मौत) and
+                        // मौतों (oblique plural) are DIFFERENT token sequences from मौत's bare form —
+                        // the trailing vowel sign/anusvara extends the token past मौत's own end anchor
+                        // now that isDevanagariCombiningMark keeps marks instead of stripping them —
+                        // so मौत alone cannot match inside either. आत्महत्याओं is the same fix applied
+                        // to आत्महत्या's plural ("suicides"). An independent reviewer's probe found
+                        // "हादसे में 5 लोगों की मौतें", "कोविड से मौतों का आंकड़ा" and "आत्महत्याओं"
+                        // bypassing 72cabea. Source: wiki/decisions/2026-09-18-trend-headline-screening.md.
+                        "मौतें", "मौतों", "आत्महत्याओं",
+                        // T-GOLIVE-0918-R2 repair round 2 — MEDIUM vocabulary gap: फांसी (phansi,
+                        // hanging/execution by hanging) is routine Indian-news self-harm/death
+                        // phrasing distinct from the DEATH set's existing "hanged"/"found hanging"
+                        // entries (those are English; this is the Devanagari word itself, e.g. "फांसी
+                        // लगाकर जान दी" — took their own life by hanging). "fansi" is its Hinglish
+                        // (Latin-script) counterpart.
+                        "फांसी", "fansi",
+                        // T-GOLIVE-0918-R2 repair round 2 — MEDIUM: "unalive"/"unalived" is
+                        // algorithm-evasion slang for "kill"/"killed"/"suicide" (an independent
+                        // reviewer's probe: "unalived himself"), in wide use on video platforms
+                        // specifically because it dodges literal death/suicide vocabulary — exactly
+                        // the class of term this filter exists to catch. Ends in a bare "e", so
+                        // matchesTerm's e-drop rule already generates "unalived"/"unaliving" for free.
+                        "unalive")),
         CRIME(
                 Set.of(
                         "crime", "criminal", "murder", "murders", "murdered", "rape", "raped", "rapist",
@@ -803,11 +829,6 @@ public class CreatorNudgeService {
                         // ends in "e", so "strangled"/"strangling"/"strangles" are all generated,
                         // not listed separately.
                         //
-                        // "shot at" is a phrase, not the bare, deliberately-excluded "shot" ("the
-                        // shot" as camera framing) — same carve-in technique as "school shooting"
-                        // above for a word whose bare form stays excluded ("Man shot at outside
-                        // mall").
-                        //
                         // "molester"/"molesters" close an irregular agent-noun gap: the base
                         // "molest" was never listed (only "molested"/"molesting"/"molestation"
                         // are), so no suffix rule reaches "molester" ("Molester thrashed by crowd").
@@ -818,8 +839,21 @@ public class CreatorNudgeService {
                         // "custodial torture" and "set ablaze" are Indian crime-reporting phrases
                         // named by the probe ("Custodial torture case", "Woman set ablaze by
                         // stalker") with no safe single-word equivalent to add instead.
-                        "gangrape", "strangle", "shot at", "molester", "molesters", "murderous",
-                        "custodial torture", "set ablaze",
+                        //
+                        // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — MEDIUM fix: bare
+                        // "shot at" (added above, this same ticket) over-blocked ordinary creator
+                        // filming language — "Reel shot at Marine Drive", "Shot at golden hour on
+                        // iPhone 15" and "This whole vlog was shot at home" are all camera-usage
+                        // "shot at <place/time>", not gunfire, and were QUOTABLE before this term was
+                        // added. An independent reviewer's probe found the over-block. Per this
+                        // class's own javadoc excluding bare "shot"/"shooting" for exactly this
+                        // reason, "shot at" is replaced with the narrower "shot at by" (gunfire
+                        // followed by its attacker, "Man shot at by gunman outside mall") and
+                        // "opened fire" (routine Indian-news phrasing for a shooting, "Gunman opened
+                        // fire outside mall"). "shot dead" needs no separate entry — it already
+                        // matches via the bare "dead" term above.
+                        "gangrape", "strangle", "shot at by", "opened fire", "molester", "molesters",
+                        "murderous", "custodial torture", "set ablaze",
                         // Devanagari coverage (correctly spelled, per isDevanagariCombiningMark):
                         // रेप (rep — the English loanword "rape", extremely common in Hindi
                         // headlines, e.g. "रेप केस"); गैंगरेप (gangrape) is its own literal because
@@ -836,7 +870,48 @@ public class CreatorNudgeService {
                         "रेप", "गैंगरेप", "हत्याकांड", "हत्यारा", "हत्याओं", "क़त्ल", "कत्ल",
                         // Latin/Hinglish alternate spellings of terms already covered above —
                         // "balatkaar" (balatkar), "hatyaa" (hatya), "qatal"/"katl" (qatl).
-                        "balatkaar", "hatyaa", "qatal", "katl")),
+                        "balatkaar", "hatyaa", "qatal", "katl",
+                        // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — HIGH regression fix.
+                        // बलात्कारी (balatkari, rapist) and हत्यारे/हत्यारों (murderers, direct and
+                        // oblique plural of हत्यारा) are DIFFERENT token sequences from their base
+                        // words बलात्कार/हत्यारा — a trailing vowel sign (ी/े/ों) extends the token
+                        // past the base word's own end anchor now that isDevanagariCombiningMark
+                        // keeps marks instead of stripping them, so the base term cannot match inside
+                        // the inflected one. हत्याएं is the direct-plural counterpart of the already-
+                        // listed हत्याओं (oblique plural), same word family, different suffix. An
+                        // independent reviewer's probe found "बलात्कारी", "बलात्कारियों को सजा",
+                        // "हत्यारे पकड़े गए", "हत्यारों को सजा" and "हत्याएं बढ़ीं" bypassing 72cabea —
+                        // बलात्कारी was BLOCKED at 49a0415 (via the since-replaced consonant-skeleton
+                        // technique) and silently regressed when the skeleton was rewritten. Devanagari
+                        // has no suffix generator (GENERATED_SUFFIXES is ASCII-only), so each
+                        // inflection is its own literal, same discipline as हत्यारा/हत्याओं already
+                        // above.
+                        "बलात्कारी", "बलात्कारियों", "हत्यारे", "हत्यारों", "हत्याएं",
+                        // T-GOLIVE-0918-R2 repair round 2 — MEDIUM vocabulary gap: दुष्कर्म (dushkarm)
+                        // is the standard Hindi-press euphemism for rape, distinct from the already-
+                        // listed बलात्कार; छेड़छाड़ (chhedchhad) is the standard Hindi-press word for
+                        // molestation/eve-teasing, distinct from the already-listed मोलेस्टेशन-class
+                        // English terms; गोलीबारी (golibari, gunfire/firing) is the Devanagari
+                        // counterpart of the already-bare "gunfire"/"gunman"/"shootout"; मर्डर is the
+                        // Devanagari transliteration of "murder" routinely used in Hindi entertainment/
+                        // crime tabloid headlines; अपहरण (apaharan, abduction/kidnapping) is the
+                        // Devanagari counterpart of the already-listed "abduction"/"abducted". The
+                        // Latin/Hinglish counterparts are "dushkarm" and "apharan"/"apaharan" (both
+                        // spellings seen in print). An independent reviewer's probe named all of these
+                        // outright: "युवती से दुष्कर्म", "dushkarm ka aaropi giraftar", "छात्रा से
+                        // छेड़छाड़", "chhedchhad ka aaropi", "गोलीबारी में 2 घायल", "मर्डर केस में बड़ा
+                        // खुलासा", "बच्चे का अपहरण", "bachche ka apharan". Source: wiki/decisions/
+                        // 2026-09-18-trend-headline-screening.md.
+                        "दुष्कर्म", "dushkarm", "छेड़छाड़", "chhedchhad", "गोलीबारी", "मर्डर", "अपहरण",
+                        "apharan", "apaharan",
+                        // T-GOLIVE-0918-R2 repair round 2 — MEDIUM vocabulary gap: जिंदा जलाया (zinda
+                        // jalaya, "burned alive") is Indian crime-reporting phrasing in the same
+                        // bucket as the already-listed "set ablaze" ("महिला को जिंदा जलाया"). "maar
+                        // diya"/"maar daala" (Hinglish "beaten/killed") and "goli maar" (Hinglish
+                        // "shot"/gunfire) are routine Hindi-crime-reporting Latin-script phrases; an
+                        // independent reviewer's probe found "maar diya gaya" (round-1 LOW defect,
+                        // never closed), "maar daala gaya" and "goli maar di" all bypassing.
+                        "जिंदा जलाया", "maar diya", "maar daala", "goli maar")),
         COMMUNAL(
                 Set.of(
                         "communal", "sectarian", "riot", "riots", "rioting", "unrest", "curfew",
@@ -901,11 +976,21 @@ public class CreatorNudgeService {
                         // never reaches this token's end) — an independent reviewer's probe named
                         // "दंगाई गिरफ्तार" outright. आतंकी (aatanki, terrorist/terrorism-related
                         // adjective) is the Devanagari counterpart to the already-bare "terrorist"/
-                        // "extremist" (covers "आतंकी हमला", terrorist attack). बम (bam, bomb) and
-                        // धमाका (dhamaka, blast/explosion) are the Devanagari counterparts to the
-                        // already-bare "bomb"/"blast"/"explosion" above, same accepted trade-off
-                        // (covers "बम धमाका" without needing a fixed phrase).
-                        "दंगाई", "आतंकी", "बम", "धमाका",
+                        // "extremist" (covers "आतंकी हमला", terrorist attack).
+                        //
+                        // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — MEDIUM fix: बम (bam,
+                        // bomb) and धमाका (dhamaka, blast/explosion) were ORIGINALLY listed bare here
+                        // (same round, same commit) and over-blocked festival/sale content — "बम बम
+                        // भोले महाशिवरात्रि स्पेशल" (the Shiva chant "Bam Bam Bhole"), "दिवाली धमाका
+                        // सेल शुरू" and "धमाका ऑफर सिर्फ आज" (Diwali/sale "dhamaka" is ordinary Indian
+                        // retail marketing copy) were all QUOTABLE before these bare terms were added.
+                        // An independent reviewer's probe found the over-block. The Latin side of this
+                        // set already avoided the same mistake — "bam dhamaka" was kept as a phrase
+                        // below specifically because bare "bam" risks colliding with onomatopoeia —
+                        // and that same phrase discipline now applies to the Devanagari side too: बम
+                        // and धमाका are bare no longer, only the phrases "बम धमाका" and "बम ब्लास्ट"
+                        // (bomb blast) are listed, matching the reviewer's suggested fix.
+                        "दंगाई", "आतंकी", "बम धमाका", "बम ब्लास्ट",
                         // Latin/Hinglish counterparts: "dangai" (rioter), "aatankwadi" (terrorist),
                         // "bam dhamaka" (bomb blast — kept as a phrase rather than a bare "bam",
                         // since "bam" alone as a 3-letter English token risks colliding with
@@ -929,7 +1014,35 @@ public class CreatorNudgeService {
                         // the one specific compound Kabir's review named; it is listed as its own
                         // literal, same technique as "gangrape" in CRIME, rather than claimed fixed
                         // in general.
-                        "delhiriots")),
+                        "delhiriots",
+                        // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — HIGH regression fix.
+                        // दंगाइयों (dangaiyon, rioters, oblique plural of दंगाई) is a DIFFERENT token
+                        // sequence from दंगाई's bare form for the same reason हत्यारे/हत्यारों are
+                        // (see the CRIME set's matching note) — an independent reviewer's probe found
+                        // "दंगाइयों" bypassing 72cabea.
+                        "दंगाइयों",
+                        // T-GOLIVE-0918-R2 repair round 2 — MEDIUM vocabulary gap: आतंकवादी
+                        // (aatankwadi, "terrorist", the noun) and आतंकवाद (aatankwad, "terrorism") are
+                        // DIFFERENT tokens from the already-listed आतंकी (a shorter, adjectival form)
+                        // — an independent reviewer's probe found "आतंकवादी हमला" and "आतंकवाद पर बड़ा
+                        // फैसला" bypassing. सांप्रदायिक (sampradayik, "communal/sectarian") is the
+                        // Devanagari counterpart of the already-bare English "communal"/"sectarian"
+                        // ("सांप्रदायिक हिंसा भड़की"). लिंचिंग (linching) is the Devanagari
+                        // transliteration of the already-listed English "lynching" ("मॉब लिंचिंग का
+                        // मामला"). पथराव (pathrav, "stone-pelting") is the Devanagari counterpart of
+                        // the already-listed English phrase "stone pelting" ("पथराव के बाद तनाव"). The
+                        // Latin/Hinglish counterparts are "atankwadi" (single-a spelling, distinct from
+                        // the already-listed double-a "aatankwadi") and "aatanki" ("aatanki hamla",
+                        // "atankwadi hamla"); "sampradayik" ("sampradayik hinsa").
+                        "आतंकवादी", "आतंकवाद", "सांप्रदायिक", "लिंचिंग", "पथराव", "atankwadi", "aatanki",
+                        "sampradayik",
+                        // T-GOLIVE-0918-R2 repair round 2 — MEDIUM digit/case-boundary fix: an
+                        // all-Devanagari joined hashtag carries no case-transition signal for rule 5
+                        // to split on (Devanagari has no upper/lower case) and, being all-letters,
+                        // gives digitBoundary nothing to fire on either — the same accepted gap as
+                        // "delhiriots" above, closed the same way, for the one compound an independent
+                        // reviewer's probe named outright: "#दिल्लीदंगा".
+                        "दिल्लीदंगा")),
         LEGAL(
                 Set.of(
                         "lawsuit", "lawsuits", "sue", "sues", "sued", "suing", "litigation",
@@ -989,7 +1102,13 @@ public class CreatorNudgeService {
                     Map.entry((int) 'о', (int) 'o'), // U+043E
                     Map.entry((int) 'р', (int) 'p'), // U+0440
                     Map.entry((int) 'с', (int) 'c'), // U+0441
-                    Map.entry((int) 'у', (int) 'y'), // U+0443
+                    // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — corrected from 'y' to
+                    // 'u'. An independent reviewer's probe used U+0443 to substitute Latin 'u' in an
+                    // all-Cyrillic spelling of "suicide" ("ѕуісіде"); folding it to 'y' instead
+                    // produced "syicide", which matches nothing. There is no other user of this fold
+                    // in the test suite, so the correction is not a behaviour-preserving no-op — it
+                    // is a fix of a wrong prior mapping.
+                    Map.entry((int) 'у', (int) 'u'), // U+0443
                     Map.entry((int) 'х', (int) 'x'), // U+0445
                     Map.entry((int) 'і', (int) 'i'), // U+0456
                     Map.entry((int) 'ј', (int) 'j'), // U+0458
@@ -1000,6 +1119,13 @@ public class CreatorNudgeService {
                     Map.entry((int) 'н', (int) 'h'), // U+043D
                     Map.entry((int) 'в', (int) 'b'), // U+0432
                     Map.entry((int) 'ԁ', (int) 'd'), // U+0501
+                    // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — MEDIUM: U+0434 CYRILLIC
+                    // SMALL LETTER DE is the ORDINARY Cyrillic "d" (not the komi-de U+0501 above) and
+                    // is visually close enough to Latin 'd' in many fonts to be used the same way —
+                    // an independent reviewer's probe found the all-Cyrillic homoglyph spelling
+                    // "ѕуісіде" bypassing 72cabea purely because this one entry was missing from an
+                    // otherwise-complete fold.
+                    Map.entry((int) 'д', (int) 'd'), // U+0434
                     // Greek
                     Map.entry((int) 'α', (int) 'a'), // U+03B1
                     Map.entry((int) 'β', (int) 'b'), // U+03B2
@@ -1093,7 +1219,17 @@ public class CreatorNudgeService {
                     // JVM's Unicode data U+13B7 lowercases to U+AB87 (verified empirically, not
                     // assumed) — so the key here must be the LOWERCASE form, or this entry would
                     // silently never fire.
-                    Map.entry(0xAB87, (int) 'm')); // ꮇ CHEROKEE SMALL LETTER LU, e.g. "Ꮇurder"
+                    Map.entry(0xAB87, (int) 'm'), // ꮇ CHEROKEE SMALL LETTER LU, e.g. "Ꮇurder"
+                    // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — MEDIUM/LOW: round-1's
+                    // own LOW defect listed these as BYPASS and they were never closed. '!' visually
+                    // resembles a dotless 'i' (no descender, same vertical stroke) and is unambiguous
+                    // in practice — every reported real-world use ("k!lled", "su!c!de") substitutes
+                    // for 'i', never 'l'. '+' and '7' both visually resemble 't' (a crossbar over a
+                    // vertical stroke) and are likewise unambiguous ("dea+h toll", "dea7h toll").
+                    // Source: wiki/decisions/2026-09-18-trend-headline-screening.md.
+                    Map.entry((int) '!', (int) 'i'),
+                    Map.entry((int) '+', (int) 't'),
+                    Map.entry((int) '7', (int) 't'));
 
     /**
      * '1' and '|' are genuinely ambiguous leetspeak/confusable substitutions for BOTH 'i' and 'l'
@@ -1121,13 +1257,47 @@ public class CreatorNudgeService {
     private static final int AT_SIGN = '@';
 
     /**
-     * Every confusable-fold reading {@link #firstUnsafeTopic(String)} must try (F-0857 repair round
-     * 1). {@link #CONFUSABLE_FOLD} above holds every UNAMBIGUOUS substitution; this builds the 2 (
-     * '1'/'|' -&gt; i, or -&gt; l) &times; 2 ('@' folded, or left as a separator) = 4 combinations on
-     * top of it. A headline is unsafe if ANY variant's normalization matches — see {@link
-     * #firstUnsafeTopic(String)}. Four full passes over a short trend headline is not a performance
-     * concern; this is not run per-suggestion (the 2026-09-18 decision moves it to ingest-time, one
-     * evaluation per trend).
+     * '*' is a THIRD kind of ambiguity (T-GOLIVE-0918-R2 repair round 2, vikram · 2026-09-18) —
+     * round-1's own LOW defect listed "m*rder in Delhi", "r*pe case" and "s*icide note" as BYPASS
+     * and they were never closed. Unlike '1'/'|' (each genuinely two-way ambiguous between two
+     * specific letters) or the digit/symbol leetspeak substitutions above (each visually resembles
+     * exactly one letter), '*' carries NO shape hint at all for which letter it redacts — it is a
+     * generic censor/redaction mark, and every reported real-world use of it this way masks a
+     * vowel. There is no single correct static choice, so — same technique as '1'/'|' and '@' above
+     * — all five vowel readings are tried as separate normalization passes; see {@link
+     * #CONFUSABLE_FOLD_VARIANTS}. Restricting the wildcard to vowels (rather than all 26 letters)
+     * keeps the combinatorial cost small and matches the actual observed evasion pattern.
+     */
+    private static final int ASTERISK = '*';
+
+    private static final char[] VOWEL_READINGS = {'a', 'e', 'i', 'o', 'u'};
+
+    /**
+     * Digits that {@link #CONFUSABLE_FOLD} folds onto a Latin letter for leetspeak matching
+     * ('0'/'1'/'3'/'4'/'5'/'7' -&gt; o/i or l/e/a/s/t). T-GOLIVE-0918-R2 repair round 2 (vikram ·
+     * 2026-09-18) — MEDIUM fix: rule 5's {@code digitBoundary} in {@link #normalizeForMatching}
+     * checks {@code Character.isDigit} on the character AFTER this fold has already run, so a digit
+     * that folds to a letter never registers as a digit and no hashtag/digit-suffix boundary is
+     * ever created — an independent reviewer's probe found "#Riots1984", "#BombayBlasts1993",
+     * "#Murder4Justice", "#Riots05", "#murder1", "#rape0", "#Blast4" and "#Stampede05" all bypassing
+     * 72cabea for exactly this reason (only digits 2/6/8/9, which this table never touches, created
+     * a boundary). The fix is a dedicated variant, built below, where none of these digits fold —
+     * they stay digits, so the boundary check sees them — while every other letter/homoglyph fold
+     * still applies normally.
+     */
+    private static final int[] LETTER_FOLDED_DIGITS = {'0', '1', '3', '4', '5', '7'};
+
+    /**
+     * Every confusable-fold reading {@link #firstUnsafeTopic(String)} must try. {@link
+     * #CONFUSABLE_FOLD} above holds every UNAMBIGUOUS substitution; this builds the 2 ('1'/'|' -&gt;
+     * i, or -&gt; l) &times; 2 ('@' folded, or left as a separator) &times; 5 ('*' -&gt; each vowel)
+     * = 20 combinations on top of it (F-0857 repair round 1 shipped the first two dimensions;
+     * T-GOLIVE-0918-R2 repair round 2 added the third), plus 5 more digit-literal variants (one per
+     * '*' vowel reading, T-GOLIVE-0918-R2 repair round 2) where {@link #LETTER_FOLDED_DIGITS} are
+     * left unfolded so digit-boundary detection can see them — 25 variants total. A headline is
+     * unsafe if ANY variant's normalization matches — see {@link #firstUnsafeTopic(String)}. This
+     * many passes over a short trend headline is not a performance concern; this is not run
+     * per-suggestion (the 2026-09-18 decision moves it to ingest-time, one evaluation per trend).
      */
     private static final List<Map<Integer, Integer>> CONFUSABLE_FOLD_VARIANTS =
             buildConfusableFoldVariants();
@@ -1136,15 +1306,26 @@ public class CreatorNudgeService {
         List<Map<Integer, Integer>> variants = new ArrayList<>();
         for (int ilReading : new int[] {'i', 'l'}) {
             for (boolean foldAt : new boolean[] {false, true}) {
-                Map<Integer, Integer> variant = new HashMap<>(CONFUSABLE_FOLD);
-                for (int ambiguous : AMBIGUOUS_I_OR_L_CHARS) {
-                    variant.put(ambiguous, ilReading);
+                for (char vowel : VOWEL_READINGS) {
+                    Map<Integer, Integer> variant = new HashMap<>(CONFUSABLE_FOLD);
+                    for (int ambiguous : AMBIGUOUS_I_OR_L_CHARS) {
+                        variant.put(ambiguous, ilReading);
+                    }
+                    if (foldAt) {
+                        variant.put(AT_SIGN, (int) 'a');
+                    }
+                    variant.put(ASTERISK, (int) vowel);
+                    variants.add(Collections.unmodifiableMap(variant));
                 }
-                if (foldAt) {
-                    variant.put(AT_SIGN, (int) 'a');
-                }
-                variants.add(Collections.unmodifiableMap(variant));
             }
+        }
+        for (char vowel : VOWEL_READINGS) {
+            Map<Integer, Integer> digitLiteral = new HashMap<>(CONFUSABLE_FOLD);
+            for (int digitKey : LETTER_FOLDED_DIGITS) {
+                digitLiteral.remove(digitKey);
+            }
+            digitLiteral.put(ASTERISK, (int) vowel);
+            variants.add(Collections.unmodifiableMap(digitLiteral));
         }
         return Collections.unmodifiableList(variants);
     }
