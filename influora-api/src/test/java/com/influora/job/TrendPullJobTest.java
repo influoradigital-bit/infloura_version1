@@ -107,11 +107,20 @@ class TrendPullJobTest {
     }
 
     /** Pulls the {@code content_id} TrendPullJob actually sent, so a stubbed classifier response
-     * can echo it back — the job's ULIDs are generated fresh per call and can't be hardcoded. */
+     * can echo it back — the job's ULIDs are generated fresh per call and can't be hardcoded.
+     *
+     * <p>Falls back to a placeholder on an empty items list rather than throwing: re-stubbing an
+     * already-{@code thenAnswer}-stubbed mock method (e.g. {@code
+     * when(brandSafetyAiClient.classify(anyString(), anyList())).thenThrow(...)} inside a test
+     * body, overriding this class's default stub from {@code setUp}) makes Mockito invoke the
+     * PREVIOUS stub once, during the {@code when(...)} call itself, with the matchers'
+     * empty-collection defaults as the "arguments" — a real invocation this answer must survive,
+     * not one whose result is ever used. Verified directly: this threw IndexOutOfBoundsException
+     * before this guard, on every test that re-stubs {@code classify}. */
     @SuppressWarnings("unchecked")
     private static String requestedId(org.mockito.invocation.InvocationOnMock inv) {
         List<ContentItem> items = (List<ContentItem>) inv.getArgument(1);
-        return items.get(0).contentId();
+        return items.isEmpty() ? "unused-restub-probe" : items.get(0).contentId();
     }
 
     /** The 10 fixed GARM categories (influora-ai/app/tools/schemas.py::GARM_CATEGORIES) — a real
