@@ -16,7 +16,8 @@ public final class PublicCreatorDtos {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record VerifiedMetrics(
-            @JsonProperty("followers") long followers,
+            // F-0964: null (omitted) when no Meta-synced row exists yet — never a declared total.
+            @JsonProperty("followers") Long followers,
             @JsonProperty("reach_30d") Long reach30d,
             @JsonProperty("engagement_rate") java.math.BigDecimal engagementRate,
             @JsonProperty("verified_at") Instant verifiedAt) {}

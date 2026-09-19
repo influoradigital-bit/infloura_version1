@@ -72,10 +72,15 @@ public class PublicCreatorService {
             throw new ApiException("CREATOR_NOT_FOUND", "Creator not found", HttpStatus.NOT_FOUND);
         }
 
+        // F-0964: "verified metrics" come only from the newest Meta-synced row. The old read took
+        // the newest row of ANY source, so a creator-declared (CREATOR_REPORTED) count was shown
+        // publicly as verified. The query filters by source, so declared rows cannot crowd it out.
         Optional<CreatorMetric> latest =
                 creatorMetricsRepository
-                        .findByCreatorProfileIdOrderByTimeDesc(profile.getId(), PageRequest.of(0, 1))
+                        .findByCreatorProfileIdAndDataSourceOrderByTimeDesc(
+                                profile.getId(), CreatorMetric.DATA_SOURCE_META_API, PageRequest.of(0, 1))
                         .stream()
+                        .filter(CreatorMetric::isPlatformVerified)
                         .findFirst();
 
         // A snapshot's own poll/fetch time stands in for "verified on" — CreatorProfile carries no
@@ -87,7 +92,10 @@ public class PublicCreatorService {
                                 m ->
                                         new VerifiedMetrics(
                                                 m.getFollowers(), m.getAvgReachPerPost(), m.getAvgEngagementRate(), m.getFetchedAt()))
-                        .orElseGet(() -> new VerifiedMetrics(profile.getTotalFollowers(), null, profile.getEngagementRate(), null));
+                        // No Meta row yet: omit every figure. CreatorProfile's totals are summed across
+                        // platforms INCLUDING creator-declared ones (PlatformStatsAggregationJob), so
+                        // they cannot stand in for verified numbers.
+                        .orElseGet(() -> new VerifiedMetrics(null, null, null, null));
 
         long completedDeals =
                 collaborationRepository.findByCreatorIdAndStatus(profile.getUserId(), CollaborationStatus.COMPLETED).size();

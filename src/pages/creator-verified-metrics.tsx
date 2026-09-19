@@ -94,7 +94,10 @@ export default function CreatorVerifiedMetricsPage() {
         <CardHeader className="space-y-2">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold">{data.display_name}</h1>
-            <BadgeCheck className="h-5 w-5 text-primary" aria-label="Meta-verified metrics" />
+            {/* F-0964: only claim verification when a Meta-synced snapshot exists. */}
+            {data.verified_metrics.verified_at ? (
+              <BadgeCheck className="h-5 w-5 text-primary" aria-label="Meta-verified metrics" />
+            ) : null}
           </div>
           <p className="text-sm text-muted-foreground">
             @{data.username}
@@ -112,10 +115,17 @@ export default function CreatorVerifiedMetricsPage() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div>
-            <p className="mb-3 text-sm font-semibold">Verified Metrics</p>
+            {/* F-0964: only say "verified" when a Meta-synced snapshot exists. */}
+            <p className="mb-3 text-sm font-semibold">
+              {data.verified_metrics.verified_at ? 'Verified Metrics' : 'Metrics'}
+            </p>
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <p className="text-xl font-bold">{data.verified_metrics.followers.toLocaleString('en-IN')}</p>
+                <p className="text-xl font-bold">
+                  {data.verified_metrics.followers != null
+                    ? data.verified_metrics.followers.toLocaleString('en-IN')
+                    : <span className="text-sm font-normal text-muted-foreground">{NOT_AVAILABLE_YET}</span>}
+                </p>
                 <p className="text-xs text-muted-foreground">Followers</p>
               </div>
               <div>
@@ -148,7 +158,10 @@ export default function CreatorVerifiedMetricsPage() {
           </div>
 
           <div className="space-y-1 border-t border-border pt-4 text-center text-xs text-muted-foreground">
-            <p>Snapshot from {formatDate(data.snapshot_date)}</p>
+            {data.verified_metrics.verified_at ? (
+              // The snapshot's own fetch time; snapshot_date is only the request time.
+              <p>Snapshot from {formatDate(data.verified_metrics.verified_at)}</p>
+            ) : null}
             <p>No rates shown. Contact the creator directly for pricing.</p>
           </div>
         </CardContent>

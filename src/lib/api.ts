@@ -6753,15 +6753,17 @@ export const creatorAgentPrefs = {
 
 /**
  * T-MEERA-CREATOR-PHASE-A (fix round 1, item 3) — Java's `VerifiedMetrics` record
- * (PublicCreatorDtos.java) is `@JsonInclude(NON_NULL)` with `long followers` (never null) but
- * `Long reach30d`, `BigDecimal engagementRate`, and `Instant verifiedAt` all nullable — a
- * Meta-connected creator with no `CreatorMetric` row yet (metrics polling hasn't run)
- * produces a payload that OMITS those three keys entirely. Declaring them required here let
+ * (PublicCreatorDtos.java) is `@JsonInclude(NON_NULL)` with `Long followers`, `Long reach30d`,
+ * `BigDecimal engagementRate` and `Instant verifiedAt` all nullable — a Meta-connected creator
+ * with no META_API `CreatorMetric` row yet (metrics polling hasn't run) produces a payload that
+ * OMITS all four keys (F-0964: followers used to fall back to a total that includes declared
+ * platforms). Declaring them required here let
  * `creator-verified-metrics.tsx` call `.toLocaleString()` on `undefined` and crash a public,
  * indexable page — `npx tsc --noEmit` cannot catch a Java-vs-TS nullability mismatch.
  */
 export interface PublicVerifiedMetrics {
-  followers: number;
+  /** F-0964: omitted until a Meta-synced snapshot exists (never a self-declared total). */
+  followers: number | null;
   reach_30d: number | null;
   engagement_rate: number | null;
   verified_at: string | null;

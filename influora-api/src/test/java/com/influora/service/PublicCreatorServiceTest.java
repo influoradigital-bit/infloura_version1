@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
+import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.repository.CollaborationRepository;
@@ -88,10 +89,13 @@ class PublicCreatorServiceTest {
         when(profile.getCity()).thenReturn("Pune");
         when(profile.getCategoriesJson()).thenReturn(null);
         when(profile.getUserId()).thenReturn(USER_ID);
-        when(profile.getTotalFollowers()).thenReturn(12_400L);
-        when(profile.getEngagementRate()).thenReturn(null);
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
-                        org.mockito.ArgumentMatchers.eq(PROFILE_ID), org.mockito.ArgumentMatchers.any()))
+        // Non-null profile totals, so a fallback that reads them would show up in the response.
+        org.mockito.Mockito.lenient().when(profile.getTotalFollowers()).thenReturn(12_400L);
+        org.mockito.Mockito.lenient().when(profile.getEngagementRate()).thenReturn(new java.math.BigDecimal("4.2"));
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(
+                        org.mockito.ArgumentMatchers.eq(PROFILE_ID),
+                        org.mockito.ArgumentMatchers.eq(CreatorMetric.DATA_SOURCE_META_API),
+                        org.mockito.ArgumentMatchers.any()))
                 .thenReturn(List.of());
         when(collaborationRepository.findByCreatorIdAndStatus(
                         USER_ID, com.influora.domain.enums.CollaborationStatus.COMPLETED))
@@ -100,6 +104,47 @@ class PublicCreatorServiceTest {
         VerifiedProfileResponse response = service.getVerifiedMetrics(USERNAME);
 
         assertEquals(USERNAME, response.username());
+        // F-0964: no Meta row yet -> nothing is presented as verified: all four figures omitted,
+        // including verified_at (a timestamp here would print "Verified on <date>" on the page).
+        assertEquals(
+                new com.influora.web.dto.creator.PublicCreatorDtos.VerifiedMetrics(null, null, null, null),
+                response.verifiedMetrics());
+        org.mockito.Mockito.verify(profile, org.mockito.Mockito.never()).getTotalFollowers();
+        org.mockito.Mockito.verify(profile, org.mockito.Mockito.never()).getEngagementRate();
+    }
+
+    @Test
+    @DisplayName("F-0964 a newer creator-declared row is never shown as verified metrics")
+    void declaredRowIsNotShownAsVerified() {
+        stubDiscoverableAndConnected();
+        when(profile.isSuspended()).thenReturn(false);
+        when(profile.getUsername()).thenReturn(USERNAME);
+        when(profile.getUserId()).thenReturn(USER_ID);
+        CreatorMetric declared =
+                CreatorMetric.builder().id("01HPUBLICDECLARED00001").creatorProfileId(PROFILE_ID)
+                        .platform("YOUTUBE").dataSource(CreatorMetric.DATA_SOURCE_CREATOR_REPORTED)
+                        .followers(900_000).time(Instant.parse("2026-09-10T00:00:00Z")).build();
+        CreatorMetric synced =
+                CreatorMetric.builder().id("01HPUBLICMETASYNC0001").creatorProfileId(PROFILE_ID)
+                        .platform("INSTAGRAM").dataSource(CreatorMetric.DATA_SOURCE_META_API)
+                        .followers(12_400).fetchedAt(Instant.parse("2026-09-09T00:00:00Z"))
+                        .time(Instant.parse("2026-09-09T00:00:00Z")).build();
+        // Hand back BOTH so the in-memory guard is exercised, not just the query.
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(
+                        org.mockito.ArgumentMatchers.eq(PROFILE_ID),
+                        org.mockito.ArgumentMatchers.eq(CreatorMetric.DATA_SOURCE_META_API),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenReturn(List.of(declared, synced));
+        when(collaborationRepository.findByCreatorIdAndStatus(
+                        USER_ID, com.influora.domain.enums.CollaborationStatus.COMPLETED))
+                .thenReturn(List.of());
+
+        VerifiedProfileResponse response = service.getVerifiedMetrics(USERNAME);
+
+        assertEquals(12_400L, response.verifiedMetrics().followers());
+        assertEquals(Instant.parse("2026-09-09T00:00:00Z"), response.verifiedMetrics().verifiedAt());
+        org.mockito.Mockito.verify(creatorMetricsRepository, org.mockito.Mockito.never())
+                .findByCreatorProfileIdOrderByTimeDesc(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
