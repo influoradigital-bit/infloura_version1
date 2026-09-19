@@ -39,6 +39,13 @@ public interface CreatorMetricsRepository extends JpaRepository<CreatorMetric, S
     /** Most recent metric row for a creator across all platforms it has been polled on. */
     List<CreatorMetric> findByCreatorProfileIdOrderByTimeDesc(String creatorProfileId, Pageable pageable);
 
+    /**
+     * F-0961 — newest rows of ONE data source. Filtering in the query (not after a LIMIT) means a
+     * burst of newer CREATOR_REPORTED rows can never push every Meta-synced row out of the page.
+     */
+    List<CreatorMetric> findByCreatorProfileIdAndDataSourceOrderByTimeDesc(
+            String creatorProfileId, String dataSource, Pageable pageable);
+
     /** Time-range query for a single creator/platform (trend charts). */
     List<CreatorMetric> findByCreatorProfileIdAndPlatformAndTimeBetweenOrderByTimeAsc(
             String creatorProfileId, String platform, Instant from, Instant to);

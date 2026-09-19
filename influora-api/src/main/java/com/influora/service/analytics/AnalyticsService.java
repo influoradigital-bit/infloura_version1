@@ -107,9 +107,21 @@ public class AnalyticsService {
 
     private CreatorMetricsResponse buildMetricsResponse(
             String authorizedCreatorId, Instant startDate, Instant endDate) {
+        // F-0961: analytics figures come only from Meta-synced rows. PortfolioService also writes
+        // CREATOR_REPORTED rows (a creator declaring another platform's follower count, unverified),
+        // and the newest row of ANY source used to become the headline follower count shown to
+        // brands. Declared numbers are shown, labelled as such, on the portfolio page instead.
+        // The query selects Meta rows, so declared rows cannot crowd them out of the lookback;
+        // the in-memory filter stays as a second guard on the same rule.
         List<CreatorMetric> latest =
-                creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
-                        authorizedCreatorId, PageRequest.of(0, LATEST_METRICS_LOOKBACK));
+                creatorMetricsRepository
+                        .findByCreatorProfileIdAndDataSourceOrderByTimeDesc(
+                                authorizedCreatorId,
+                                CreatorMetric.DATA_SOURCE_META_API,
+                                PageRequest.of(0, LATEST_METRICS_LOOKBACK))
+                        .stream()
+                        .filter(CreatorMetric::isPlatformVerified)
+                        .toList();
 
         long totalReach = 0;
         long totalImpressions = 0;
@@ -157,8 +169,12 @@ public class AnalyticsService {
         List<MetricDataPoint> trendData = List.of();
         if (startDate != null && endDate != null) {
             List<CreatorMetric> range =
-                    creatorMetricsRepository.findByCreatorProfileIdAndTimeBetweenOrderByTimeAsc(
-                            authorizedCreatorId, startDate, endDate);
+                    creatorMetricsRepository
+                            .findByCreatorProfileIdAndTimeBetweenOrderByTimeAsc(
+                                    authorizedCreatorId, startDate, endDate)
+                            .stream()
+                            .filter(CreatorMetric::isPlatformVerified) // F-0961
+                            .toList();
             trendData =
                     range.stream()
                             .map(
