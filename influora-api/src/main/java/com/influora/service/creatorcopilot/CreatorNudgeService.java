@@ -1867,6 +1867,59 @@ public class CreatorNudgeService {
                     "blasting",
                     "arresting");
 
+    /**
+     * T-GOLIVE-0918-R3 [vikram · 2026-09-19] — a digit-literal reading, used ONLY to decide
+     * whether a "dead" occurrence's allow-listed compound (see {@link #DEAD_COMPOUND_ALLOWLIST})
+     * truly ends at a token boundary.
+     *
+     * <p>Reusing whichever leetspeak-folded {@link #CONFUSABLE_FOLD_VARIANTS} entry happens to be
+     * under test for the PRIMARY unsafe-term match is wrong here: {@link #CONFUSABLE_FOLD}'s
+     * default '3'-&gt;'e' fold (kept so an evasion attempt like "d3ad" still matches "dead") also
+     * erases rule 5's digit&lt;-&gt;letter token boundary wherever it applies elsewhere in the same
+     * headline. "#DeadPool3 review" is exactly this: under a '3'-&gt;'e' variant, "Pool" and the
+     * folded digit merge into one token with no boundary between "Pool" and where "3" used to be,
+     * so requiring {@code DEAD_COMPOUND_ALLOWLIST}'s "deadpool" to end at a token boundary under
+     * THAT SAME variant would wrongly refuse to allow-list a headline that, letter for letter, is
+     * a benign hashtag. Nobody evades detection of a BENIGN word, so the allow-list has no reason
+     * to try every leetspeak reading the way unsafe-term matching does — it always uses the one
+     * reading where digits stay digits and the trailing-digit boundary stays visible, independent
+     * of whichever variant the caller is currently testing. Built the same way as the
+     * "digit-literal" variants inside {@link #buildConfusableFoldVariants} (start from {@link
+     * #CONFUSABLE_FOLD}, remove every {@link #LETTER_FOLDED_DIGITS} key) — computed once here
+     * rather than picked out of that list so this class does not depend on that list's internal
+     * ordering. Must stay declared ABOVE the anti-vacuity {@code static} guard below, same
+     * requirement as {@link #GENERATED_SUFFIXES}/{@link #GENERATED_FORM_BLOCKLIST}.
+     */
+    private static final Map<Integer, Integer> DEAD_ALLOWLIST_BOUNDARY_FOLD = buildDeadAllowlistBoundaryFold();
+
+    private static Map<Integer, Integer> buildDeadAllowlistBoundaryFold() {
+        Map<Integer, Integer> fold = new HashMap<>(CONFUSABLE_FOLD);
+        for (int digitKey : LETTER_FOLDED_DIGITS) {
+            fold.remove(digitKey);
+        }
+        return Collections.unmodifiableMap(fold);
+    }
+
+    /**
+     * T-GOLIVE-0918-R3 [vikram · 2026-09-19] — precise allow-list for the DEATH term "dead" only,
+     * per Amendment 2026-09-19 to wiki/decisions/2026-09-18-trend-headline-screening.md
+     * ("Over-blocking is not accepted... dead skin, dead ends, deadlift, dead hang, dead bug and
+     * Deadpool" must stay quotable, with the same severity as a bypass). Every entry is a compact
+     * form that STARTS WITH "dead", so {@link #isAllowlistedDeadOccurrence} can only ever rescue an
+     * actual "dead" occurrence at the position it is checked against — it cannot widen any other
+     * DEATH/CRIME/COMMUNAL/LEGAL term, and it cannot rescue a "dead" occurring elsewhere in the same
+     * headline (checked per-occurrence, not per-headline; see {@link #containsTerm}). "Man found
+     * dead in Delhi", "3 dead in Mumbai building collapse", "Dead body recovered from lake", "death
+     * toll rises" and "#DeadInDelhi" all still match "dead"/"death" at a position none of these
+     * compounds cover, so they keep blocking. Same declaration-order requirement as {@link
+     * #GENERATED_SUFFIXES}/{@link #GENERATED_FORM_BLOCKLIST} above — must stay declared ABOVE the
+     * anti-vacuity {@code static} guard below, which reaches this via {@code containsTerm}.
+     */
+    private static final Set<String> DEAD_COMPOUND_ALLOWLIST =
+            Set.of(
+                    "deadskin", "deadends", "deadhang", "deadbug", "deadlift", "deadpool",
+                    "deadcute", "deadsea", "deadline");
+
     static {
         // Anti-vacuity guard. Every term must already be in matching-normal form (lowercase,
         // single-spaced, letters/digits only), because matching is done against a normalized
@@ -1955,11 +2008,17 @@ public class CreatorNudgeService {
         if (headline == null) {
             return null;
         }
+        // T-GOLIVE-0918-R3 [vikram · 2026-09-19] — computed ONCE per headline, independent of
+        // which leetspeak-folded variant is under test below. See DEAD_ALLOWLIST_BOUNDARY_FOLD's
+        // javadoc for why the "dead" allow-list needs its own digit-literal reading rather than
+        // reusing whichever variant found the "dead" match.
+        NormalizedText deadAllowlistReference = normalizeForMatching(headline, DEAD_ALLOWLIST_BOUNDARY_FOLD);
         // F-0857 repair round 1 (vikram · 2026-09-18) — try every confusable-fold reading
         // (CONFUSABLE_FOLD_VARIANTS) and block on the first one that matches. See that field's
         // javadoc for why a single static fold cannot be correct for '1'/'|'/'@'.
         for (Map<Integer, Integer> foldVariant : CONFUSABLE_FOLD_VARIANTS) {
-            UnsafeHeadlineTopic hit = firstUnsafeTopic(normalizeForMatching(headline, foldVariant));
+            UnsafeHeadlineTopic hit =
+                    firstUnsafeTopic(normalizeForMatching(headline, foldVariant), deadAllowlistReference);
             if (hit != null) {
                 return hit;
             }
@@ -2004,13 +2063,14 @@ public class CreatorNudgeService {
      * <p>{@code values()} order (DEATH, CRIME, COMMUNAL, LEGAL) is the reported-category order;
      * which one wins is a logging detail only — any match at all suppresses the text.
      */
-    private static UnsafeHeadlineTopic firstUnsafeTopic(NormalizedText normalized) {
+    private static UnsafeHeadlineTopic firstUnsafeTopic(
+            NormalizedText normalized, NormalizedText deadAllowlistReference) {
         if (normalized.compact().isEmpty()) {
             return null;
         }
         for (UnsafeHeadlineTopic topic : UnsafeHeadlineTopic.values()) {
             for (String term : topic.terms()) {
-                if (matchesTerm(normalized, term)) {
+                if (matchesTerm(normalized, term, deadAllowlistReference)) {
                     return topic;
                 }
             }
@@ -2052,21 +2112,24 @@ public class CreatorNudgeService {
      * gap, not a silent one: a form that needs it must be listed explicitly, same as any irregular
      * form ({@code slain}, not generated from {@code slay}).
      */
-    private static boolean matchesTerm(NormalizedText normalized, String term) {
+    private static boolean matchesTerm(
+            NormalizedText normalized, String term, NormalizedText deadAllowlistReference) {
         String compact = compactTerm(term);
-        if (containsTerm(normalized, compact)) {
+        if (containsTerm(normalized, compact, deadAllowlistReference)) {
             return true;
         }
         for (String suffix : GENERATED_SUFFIXES) {
             String candidate = compact + suffix;
-            if (!GENERATED_FORM_BLOCKLIST.contains(candidate) && containsTerm(normalized, candidate)) {
+            if (!GENERATED_FORM_BLOCKLIST.contains(candidate)
+                    && containsTerm(normalized, candidate, deadAllowlistReference)) {
                 return true;
             }
         }
         int n = compact.length();
         if (n >= 2 && compact.charAt(n - 1) == 'y' && "aeiou".indexOf(compact.charAt(n - 2)) < 0) {
             String iesForm = compact.substring(0, n - 1) + "ies";
-            if (!GENERATED_FORM_BLOCKLIST.contains(iesForm) && containsTerm(normalized, iesForm)) {
+            if (!GENERATED_FORM_BLOCKLIST.contains(iesForm)
+                    && containsTerm(normalized, iesForm, deadAllowlistReference)) {
                 return true;
             }
         }
@@ -2082,11 +2145,13 @@ public class CreatorNudgeService {
         // why consonant doubling stays unhandled).
         if (n >= 2 && compact.charAt(n - 1) == 'e') {
             String dForm = compact + "d";
-            if (!GENERATED_FORM_BLOCKLIST.contains(dForm) && containsTerm(normalized, dForm)) {
+            if (!GENERATED_FORM_BLOCKLIST.contains(dForm)
+                    && containsTerm(normalized, dForm, deadAllowlistReference)) {
                 return true;
             }
             String ingDropEForm = compact.substring(0, n - 1) + "ing";
-            if (!GENERATED_FORM_BLOCKLIST.contains(ingDropEForm) && containsTerm(normalized, ingDropEForm)) {
+            if (!GENERATED_FORM_BLOCKLIST.contains(ingDropEForm)
+                    && containsTerm(normalized, ingDropEForm, deadAllowlistReference)) {
                 return true;
             }
         }
@@ -2097,7 +2162,19 @@ public class CreatorNudgeService {
         return term.indexOf(' ') < 0 ? term : term.replace(" ", "");
     }
 
+    /**
+     * Class-load self-check overload only (every term must match itself — see the {@code static}
+     * guard below). Uses {@code normalized} as its own dead-allowlist reference, which is correct
+     * there: a term string is hand-written plain text, never containing a digit adjacent to
+     * "dead", so there is no digit-fold boundary discrepancy to correct for (see the 3-arg
+     * overload's javadoc).
+     */
     private static boolean containsTerm(NormalizedText normalized, String compactTerm) {
+        return containsTerm(normalized, compactTerm, normalized);
+    }
+
+    private static boolean containsTerm(
+            NormalizedText normalized, String compactTerm, NormalizedText deadAllowlistReference) {
         String compact = normalized.compact();
         int from = 0;
         while (true) {
@@ -2107,10 +2184,47 @@ public class CreatorNudgeService {
             }
             int end = start + compactTerm.length() - 1;
             if (normalized.tokenStart().get(start) && normalized.tokenEnd().get(end)) {
-                return true;
+                // T-GOLIVE-0918-R3 [vikram · 2026-09-19] — Amendment 2026-09-19: bare "dead" must
+                // not block everyday fitness/skincare/brand vocabulary (dead skin, dead ends,
+                // deadlift, dead hang, dead bug, Deadpool). Suppress ONLY this occurrence, ONLY
+                // when the term being tested is the exact literal "dead" (never a generated form
+                // like "deads"/"deaded" — compactTerm.equals guards that), and ONLY when
+                // DEAD_COMPOUND_ALLOWLIST actually covers this specific position — a bare "dead"
+                // with nothing matching after it still falls through to `return true` below, so
+                // "Man found dead in Delhi"/"3 dead in Mumbai building collapse"/"Dead body
+                // recovered from lake"/"#DeadInDelhi" are unaffected. Source: wiki/decisions/
+                // 2026-09-18-trend-headline-screening.md (Amendment 2026-09-19).
+                if (!(compactTerm.equals("dead")
+                        && isAllowlistedDeadOccurrence(deadAllowlistReference, start))) {
+                    return true;
+                }
             }
             from = start + 1;
         }
+    }
+
+    /**
+     * T-GOLIVE-0918-R3 [vikram · 2026-09-19] — true when the "dead" occurrence starting at {@code
+     * start} is really the start of one of {@link #DEAD_COMPOUND_ALLOWLIST}'s benign compounds,
+     * decided against {@code reference} (see {@link #DEAD_ALLOWLIST_BOUNDARY_FOLD}'s javadoc for
+     * why this is a dedicated digit-literal reading rather than whichever variant found the "dead"
+     * match). Checked with the SAME token-start/token-end anchoring {@link #containsTerm} uses for
+     * every ordinary term, so a hashtag/camelCase/digit split — "#RomanDeadLift" -> Roman|Dead|Lift,
+     * "#DeadLift2024" -> Dead|Lift|2024, "#DeadPool3" -> Dead|Pool|3 — rescues the compound exactly
+     * as it would match it as an ordinary multi-word phrase term. Source: wiki/decisions/
+     * 2026-09-18-trend-headline-screening.md (Amendment 2026-09-19).
+     */
+    private static boolean isAllowlistedDeadOccurrence(NormalizedText reference, int start) {
+        String compact = reference.compact();
+        for (String allow : DEAD_COMPOUND_ALLOWLIST) {
+            int end = start + allow.length() - 1;
+            if (compact.regionMatches(start, allow, 0, allow.length())
+                    && reference.tokenStart().get(start)
+                    && reference.tokenEnd().get(end)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -3265,6 +3265,79 @@ class CreatorNudgeServiceTest {
     }
 
     // ---------------------------------------------------------------------------------------
+    // T-GOLIVE-0918-R3 (vikram, 2026-09-19) — go-live round 3, lane COPILOT-FILTER (internal
+    // round 6). An independent reviewer's HIGH finding: the DEATH term "dead", together with the
+    // camelCase/hashtag split, blocked everyday fitness and skincare creator vocabulary (dead
+    // skin, dead ends, deadlift, dead hang, dead bug, Deadpool). Fixed with a precise allow-list
+    // of benign compounds (CreatorNudgeService.DEAD_COMPOUND_ALLOWLIST), not by removing "dead" —
+    // a genuine death headline naming "dead" bare (no compound) still blocks. Source:
+    // wiki/decisions/2026-09-18-trend-headline-screening.md (Amendment 2026-09-19).
+    // ---------------------------------------------------------------------------------------
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "Dead skin removal scrub",
+                "Dead skin cells ko hatayein",
+                "Dead ends hair care routine",
+                "Dead hang challenge 60 seconds",
+                "Dead bug exercise for core",
+                "#DeadLift",
+                "#RomanDeadLift",
+                "#DeadLift2024 PR",
+                "#DeadPool3 review",
+                "Deadpool and Wolverine reaction",
+                "Dead cute outfit ideas",
+                "Dead Sea mud mask",
+                "deadline tips for creators"
+            })
+    @DisplayName(
+            "T-GOLIVE-0918-R3: everyday fitness/skincare/brand 'dead' compounds stay quotable"
+                    + " (Amendment 2026-09-19)")
+    void firstUnsafeTopic_deadCompoundAllowlistStaysQuotable(String benign) {
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(benign),
+                "expected benign 'dead' compound to be quotable: " + benign);
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(benign),
+                "expected no category to match benign 'dead' compound: " + benign);
+    }
+
+    static Stream<Arguments> deadAllowlistDoesNotOverReachProbes() {
+        return Stream.of(
+                arguments("bare 'dead', no compound", "Man found dead in Delhi", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "bare 'dead', no compound (count)",
+                        "3 dead in Mumbai building collapse",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "'dead' followed by 'body', not an allow-listed compound",
+                        "Dead body recovered from lake",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments("'death', unaffected by the 'dead' allow-list", "death toll rises", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "hashtag 'dead' with no allow-listed compound after it",
+                        "#DeadInDelhi",
+                        UnsafeHeadlineTopic.DEATH));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\" -> {2}")
+    @MethodSource("deadAllowlistDoesNotOverReachProbes")
+    @DisplayName(
+            "T-GOLIVE-0918-R3: the 'dead' allow-list does not widen into a real death headline —"
+                    + " these must STILL block")
+    void firstUnsafeTopic_deadAllowlistDoesNotOverReach(
+            String defect, String probe, UnsafeHeadlineTopic expectedCategory) {
+        assertEquals(
+                expectedCategory,
+                CreatorNudgeService.firstUnsafeTopic(probe),
+                "probe did not block as " + expectedCategory + " [" + defect + "]: \"" + probe + "\"");
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(probe),
+                "probe must not be quotable in creator copy [" + defect + "]: \"" + probe + "\"");
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------
 
