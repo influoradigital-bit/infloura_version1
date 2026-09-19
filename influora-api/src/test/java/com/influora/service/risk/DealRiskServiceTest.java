@@ -19,6 +19,7 @@ import com.influora.repository.DeliverableRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.CreatorAgentPreferencesService;
+import com.influora.service.FollowerTotals;
 import com.influora.service.rates.RateQuoteService;
 import com.influora.service.risk.RiskContext.ActiveDeal;
 import com.influora.service.risk.rules.BarterRule;
@@ -969,7 +970,8 @@ class DealRiskServiceTest {
     private static CreatorProfile profileWithFollowers(long followers) {
         CreatorProfile profile =
                 CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Priya Shah");
-        profile.applyAggregatedStats(followers, new BigDecimal("3.20"));
+        profile.applyFollowerTotals(
+                new FollowerTotals(followers, new BigDecimal("3.20"), FollowerTotals.VERIFIED));
         return profile;
     }
 

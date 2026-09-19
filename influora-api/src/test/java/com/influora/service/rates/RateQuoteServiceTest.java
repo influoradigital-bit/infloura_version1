@@ -25,6 +25,7 @@ import com.influora.repository.DealOfferHistoryRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.CreatorAgentPreferencesService;
+import com.influora.service.FollowerTotals;
 import com.influora.service.scoring.QualityScoreService;
 import com.influora.service.scoring.QualityScoreService.QualityScoreResult;
 import com.influora.service.scoring.RateEstimationService;
@@ -211,7 +212,8 @@ class RateQuoteServiceTest {
     private CreatorProfile nanoBeautyCreator() {
         CreatorProfile created = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Priya Shah");
         created.applyAdminProfileEdit("Priya Shah", "[\"BEAUTY\"]");
-        created.applyAggregatedStats(3_000L, new BigDecimal("2.4"));
+        created.applyFollowerTotals(
+                new FollowerTotals(3_000L, new BigDecimal("2.4"), FollowerTotals.VERIFIED));
         return created;
     }
 
@@ -877,7 +879,8 @@ class RateQuoteServiceTest {
     @Test
     @DisplayName("7 - a MID creator between the floor and the total is told to COUNTER_AT_FLOOR")
     void moveCounterAtFloorForMid() {
-        profile.applyAggregatedStats(60_000L, new BigDecimal("2.4"));
+        profile.applyFollowerTotals(
+                new FollowerTotals(60_000L, new BigDecimal("2.4"), FollowerTotals.VERIFIED));
         stubDefaults(60_000L, new BigDecimal("2.4"));
 
         PackageQuote quote = quoteWithBudget(new BigDecimal("50000"));
@@ -895,7 +898,8 @@ class RateQuoteServiceTest {
     @Test
     @DisplayName("7 - MEGA is handled as above MID and never reaches CreatorTier.valueOf")
     void moveCounterAtFloorForMegaWithoutThrowing() {
-        profile.applyAggregatedStats(1_500_000L, new BigDecimal("2.4"));
+        profile.applyFollowerTotals(
+                new FollowerTotals(1_500_000L, new BigDecimal("2.4"), FollowerTotals.VERIFIED));
         stubDefaults(1_500_000L, new BigDecimal("2.4"));
 
         PackageQuote quote = quoteWithBudget(new BigDecimal("1000000"));

@@ -37,6 +37,7 @@ import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.CreatorAgentPreferencesService;
+import com.influora.service.FollowerTotals;
 import com.influora.service.rates.RateAddOns;
 import com.influora.service.rates.RateQuoteService;
 import com.influora.service.rates.RateTierProperties;
@@ -458,7 +459,8 @@ class InfoBarrierRuntimeTest {
 
             CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Barrier Creator");
             profile.applyAdminProfileEdit("Barrier Creator", "[\"BEAUTY\"]");
-            profile.applyAggregatedStats(3_000L, new BigDecimal("2.4"));
+            profile.applyFollowerTotals(
+                    new FollowerTotals(3_000L, new BigDecimal("2.4"), FollowerTotals.VERIFIED));
 
             when(quoteCollaborationRepository.findByCreatorId(USER_ID)).thenReturn(List.of());
             when(quoteCollaborationRepository.findRateBandCandidates("BEAUTY")).thenReturn(List.of());

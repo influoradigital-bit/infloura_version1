@@ -20,6 +20,7 @@ import com.influora.domain.enums.CreatorTier;
 import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.service.CreatorAgentPreferencesService;
+import com.influora.service.FollowerTotals;
 import com.influora.service.scoring.CreatorTiers;
 import com.influora.service.scoring.QualityScoreService;
 import com.influora.service.scoring.QualityScoreService.QualityScoreResult;
@@ -95,7 +96,10 @@ class GetMyMetricsExecutorTest {
             "no metric row but a self-reported follower count: data_source is SELF_REPORTED and"
                     + " connected stays false -- the number is labelled, never passed off as verified")
     void testSelfReportedFollowersAreLabelled() {
-        profile.applyAggregatedStats(25_000L, new BigDecimal("2.1"));
+        // Executor only reads getTotalFollowers()/getEngagementRate() on this path, not
+        // followersSource, so the label just needs to be non-VERIFIED for a self-reported number.
+        profile.applyFollowerTotals(
+                new FollowerTotals(25_000L, new BigDecimal("2.1"), FollowerTotals.IMPORTED));
         when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
                         eq(CREATOR_PROFILE_ID), any(Pageable.class)))
                 .thenReturn(List.of());
@@ -178,7 +182,7 @@ class GetMyMetricsExecutorTest {
             "a 1M-follower creator's tier is MEGA -- which is NOT a CreatorTier constant, so the"
                     + " executor must never round-trip it through CreatorTier.valueOf")
     void testMegaTierIsAStringAndNotACreatorTierConstant() {
-        profile.applyAggregatedStats(1_500_000L, null);
+        profile.applyFollowerTotals(new FollowerTotals(1_500_000L, null, FollowerTotals.IMPORTED));
         when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
                         eq(CREATOR_PROFILE_ID), any(Pageable.class)))
                 .thenReturn(List.of());
