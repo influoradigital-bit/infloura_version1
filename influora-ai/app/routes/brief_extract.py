@@ -611,9 +611,9 @@ _MARK_START = r"(?<![A-Za-zऀ-ॿ])"
 _CURRENCY_MARKER_RE_TEXT = r"₹|rs\.?|inr|rupees?|rupaye|rupay|रुपये|रुपए|रु\.?"
 _OPTIONAL_CURRENCY = rf"(?:\s*(?:{_CURRENCY_MARKER_RE_TEXT}))?"
 # T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — HIGH: the budget markers
-# are split into the currency signs and the FEE words, so a brief that itself
-# says its budget is unstated can ground budget_inr on a fee word only (see
-# `_brief_says_budget_unstated`). "total"/"overall"/"all-in"/"lump sum" are fee
+# are split into the currency signs and the FEE words; since T-GOLIVE-0918-R2
+# CLASSIFY only a fee word (or a deliverable tie) grounds budget_inr (see
+# `_grounded_budget_amounts`). "total"/"overall"/"all-in"/"lump sum" are fee
 # words too (LOW: "25k total" dropped a genuine budget). Source: B0-AI
 # repair-round-2 verdict on 3d88d58, defects 1 and 6.
 _BUDGET_FEE_MARKER_RE_TEXT = (
@@ -630,9 +630,11 @@ _BUDGET_FEE_MARKER_RE_TEXT = (
     r"compensation|remuneration|honorarium|offers?|offered|offering|"
     r"amount|commercials?|dunge|denge|de\s+sakte|milenge|paisa|paise|"
     r"per\s+(?:reels?|posts?|stor(?:y|ies)|videos?|shorts?|deliverables?|pieces?|integrations?)|"
-    r"बजट|फीस|फ़ीस|भुगतान|पेमेंट"
+    # T-GOLIVE-0918-R2 CLASSIFY [ash · 2026-09-19] — "एक रील के ₹5000 देंगे".
+    # ("fixed"/"flat" count only AFTER an amount, see `_BUDGET_TIE_AFTER_RE`:
+    # "Get flat ₹150 off" is a discount.) Source: independent reviewer on 694d643.
+    r"बजट|फीस|फ़ीस|भुगतान|पेमेंट|देंगे|देंगी|दे\s+सकते"
 )
-_BUDGET_MARKER_RE_TEXT = rf"{_CURRENCY_MARKER_RE_TEXT}|{_BUDGET_FEE_MARKER_RE_TEXT}"
 _BARTER_MARKER_RE_TEXT = (
     rf"{_CURRENCY_MARKER_RE_TEXT}|worth|barter|bartered|mrp|value|valued|"
     r"retail\s+price|price|priced|pricing|costs?|कीमत|मूल्य"
@@ -704,7 +706,7 @@ def _has_money_marker_near(text: str, start: int, end: int, marker_re_text: str)
     belongs to a different number (REPAIR ROUND 2's comma/filler bugs)."""
     # T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — a currency sign may
     # sit between a fee word and its amount ("Budget ₹5,000", "₹5000 fee"), so
-    # a fee-words-only marker set (see `_brief_says_budget_unstated`) still
+    # a fee-words-only marker set (see `_grounded_budget_amounts`) still
     # reaches it. Source: B0-AI repair-round-2 verdict on 3d88d58, defect 1.
     before_re = re.compile(
         rf"{_MARK_START}(?:{marker_re_text}){_WORD_END}{_MONEY_MARKER_WINDOW_WORDS}"
@@ -752,7 +754,10 @@ _NON_FEE_BEFORE_RE = re.compile(
     # "sells for ₹1299", "selling price ₹1299", "M.R.P. ₹1299" all grounded
     # budget_inr. Source: independent reviewer, rate-request finding.
     r"retail(?:s|ing)?(?:\s+(?:price|at|for))?|selling\s+(?:price|at|for)|"
-    r"(?:sells?|sold|listed)\s+(?:at|for))"
+    r"(?:sells?|sold|listed)\s+(?:at|for)|offer\s+price|"
+    # T-GOLIVE-0918-R2 CLASSIFY [ash · 2026-09-19] — the Hindi product-price
+    # words ("सीरम की कीमत ₹1299"). Source: independent reviewer on 694d643.
+    r"कीमत|दाम|मूल्य)"
     r"\s*[:\-]?\s*(?:₹|rs\.?|inr)?\s*$",
     re.IGNORECASE,
 )
@@ -993,97 +998,129 @@ def _shorthand_expansions_with_money_marker(
 
 
 def _grounded_budget_amounts(text: str) -> set[str]:
-    # T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — HIGH: when the brief
-    # says its budget is not set, a currency sign alone no longer makes an
-    # amount the fee. "Serum ₹699 launch. 1 reel. Budget to be discussed."
-    # grounded budget_inr 699.0 and kept the line "Brand offers ₹699"; "naya
-    # kurta ₹1,299 ka ... budget baad me", "हमारा तेल ₹450 का है ... बजट बाद
-    # में", "tees are ₹599 ... lmk ur charges" did the same. The price of the
-    # brand's product is written with the same ₹ as a fee, so in such a brief
-    # only an amount next to a FEE word ("budget ₹5,000", "₹5000 fee", "per
-    # reel") grounds budget_inr, and — because summary-line "fee" money is
-    # checked against this set — a fee-worded line. A currency-only amount
-    # still grounds barter_mrp_inr (it is the product's value) and still
-    # grounds budget_inr in a brief that does not say the budget is unstated
-    # ("Glow: 1 reel, ₹8000 flat."). Source: B0-AI repair-round-2 verdict on
-    # 3d88d58, defect 1.
-    markers = (
-        _BUDGET_FEE_MARKER_RE_TEXT
-        if _brief_says_budget_unstated(text)
-        else _BUDGET_MARKER_RE_TEXT
-    )
-    return _numbers_with_money_marker(
-        text, markers, veto_non_fee=True
-    ) | _shorthand_expansions_with_money_marker(text, markers, veto_non_fee=True)
+    """The amounts in `text` classified as the BUDGET — the only figures
+    budget_inr (and a fee-worded summary line) may carry.
+
+    T-GOLIVE-0918-R2 CLASSIFY [ash · 2026-09-19] — design ruling (Priya, CTO)
+    after the independent reviewer failed 694d643. Each money amount is
+    classified by its OWN neighbourhood, never by what the rest of the brief
+    says:
+
+      1. PRODUCT: next to a product-price marker (MRP, price, costs, worth,
+         retail, sells/sold/listed at/for, offer price, कीमत, दाम —
+         `_is_non_fee_amount`) — never the budget. A figure written directly
+         after a product noun ("Serum ₹999", "सीरम ₹1299") is a product
+         price too, unless a fee word claims it.
+      2. BUDGET: tied in the same clause to a fee word (budget, fee, pay,
+         fixed, flat, total, per reel, बजट, देंगे — `_BUDGET_FEE_MARKER_RE_TEXT`)
+         or to a deliverable ("for 1 reel", "1 reel = ₹6000", "1 reel
+         ₹6000", "एक रील के लिए ₹5000").
+      3. Neither — a figure with only a currency sign — is not the budget.
+
+    The whole-brief "is this a rate request" detector (694d643) is gone: it
+    missed "Kitna loge?" / "Quote karo" / "आप कितना लेंगे?", so the product
+    price became the budget, and it fired on "Send rate card if higher" /
+    "shipping charges are on us", rejecting a stated "Rs 8000 for 1 reel".
+    A currency sign alone no longer grounds budget_inr in ANY brief, so no
+    phrasing of a rate request can make a product price the budget, and no
+    phrasing elsewhere in the brief can veto a fee tied to its deliverable.
+    When unsure, the amount is not the budget: a missing budget is safe, a
+    wrong one misleads the creator. Source: independent reviewer on 694d643,
+    HIGH-1, HIGH-2, MEDIUM-3."""
+    found: set[str] = set()
+    normalized = _normalize_digits(text or "")
+    for match in _MONEY_NUMBER_SCAN_RE.finditer(normalized):
+        start, end = match.span()
+        if _is_shorthand_digits(normalized, end) or _is_glued_to_a_word(normalized, start):
+            continue
+        if _is_audience_count(normalized, start, end):
+            continue
+        if _is_phone_number(normalized, start, end) or _is_year(normalized, start, end):
+            continue
+        if _is_not_an_amount(normalized, start, end):
+            continue
+        if _is_budget_amount(normalized, start, end):
+            found |= _numbers_in(match.group(0))
+    for match in _SHORTHAND_RE.finditer(normalized):
+        start, end = match.span()
+        if _is_glued_to_a_word(normalized, start) or _is_audience_count(normalized, start, end):
+            continue
+        if _is_budget_amount(normalized, start, end):
+            found |= _shorthand_expansions_in(match.group(0))
+    return found
 
 
-# What says "the budget is not set": a budget/fee/rate word followed in the
-# same clause by TBD / to be discussed / will share / later / baad / बाद /
-# negotiable / not fixed, a question about it ("rates?", "budget?"), or the
-# creator being asked for theirs ("lmk ur charges", "your rates", "apka
-# budget"). Words between the subject and the cue may not cross a comma or a
-# sentence end, so "Budget ₹8000, payment later" is not a match.
-_BUDGET_SUBJECT_RE_TEXT = (
-    r"budgets?|fees?|rates?|charges?|commercials?|compensation|remuneration|pricing|"
-    r"paisa|paise|amount|बजट|फीस|फ़ीस|शुल्क|रेट"
+# The deliverable nouns a fee can be tied to ("₹6000 for 1 reel").
+_TIE_DELIVERABLE_NOUN_RE_TEXT = (
+    r"reels?|posts?|stor(?:y|ies)|videos?|shorts?|deliverables?|pieces?|integrations?|"
+    r"carousels?|statics?|ugc|रील्?स?|पोस्ट|स्टोरीज?|स्टोरी|वीडियो"
 )
-_BUDGET_UNSTATED_CUE_RE_TEXT = (
-    r"tbd|tba|tbc|to\s+be\s+(?:discussed|decided|confirmed|shared|finali[sz]ed|fixed|negotiated)|"
-    r"will\s+(?:share|discuss|decide|confirm|let\s+you\s+know|tell|update|revert)|"
-    r"later|baad|बाद|discuss(?:ed)?|"
-    r"not\s+(?:fixed|decided|final\w*|set|confirmed|yet)|abhi\s+(?:nahi|nahin|fix\s+nahi)|"
-    r"call\s+pe|on\s+(?:a\s+)?call|batayenge|bata\s+denge|बताएंगे|बताएँगे"
+_TIE_COUNT_RE_TEXT = r"(?:\d+|a|an|one|ek|एक|single|the|each|every|1st|first)"
+# Amount THEN deliverable: "₹6000 for 1 reel", "10,000/- for 1 reel", "₹5000/reel",
+# "10k for 2 reels", "₹5000 for 1 Instagram reel".
+# "Rs 7500 fixed" / "₹8000 flat" also tie the amount as the fee.
+_BUDGET_TIE_AFTER_RE = re.compile(
+    r"\s*(?:/-)?\s*(?:(?:for|per|each|/|ke\s+liye|के\s+लिए|x)\s*"
+    rf"(?:{_TIE_COUNT_RE_TEXT}\s+)?(?:[A-Za-z]+\s+)?"
+    rf"{_MARK_START}(?:{_TIE_DELIVERABLE_NOUN_RE_TEXT})|fixed|flat){_WORD_END}",
+    re.IGNORECASE,
 )
-_RATE_NOUN_RE_TEXT = (
-    r"rates?|rate\s*-?\s*cards?|ratecards?|charges?|fees?|commercials?|quotes?|quotation|"
-    r"रेट|रेट\s*कार्ड|चार्ज(?:ेस|ेज़|ेज)?|फीस|फ़ीस|शुल्क"
+# Deliverable THEN amount: "1 reel = ₹6000", "1 reel ₹6000", "1 reel for ₹6000",
+# "1 reel: ₹6000", "1 reel ke 5000", "एक रील के लिए ₹5000".
+_BUDGET_TIE_BEFORE_RE = re.compile(
+    rf"{_MARK_START}(?:{_TIE_DELIVERABLE_NOUN_RE_TEXT}){_WORD_END}\s*"
+    r"(?:(?:=|:|-|–|@|for|ke(?:\s+liye)?|के(?:\s+लिए)?|ka|का|की)\s*)?"
+    rf"{_OPTIONAL_CURRENCY}\s*$",
+    re.IGNORECASE,
 )
-# A request word BEFORE the rate noun ("DM rates", "share your charges").
-_RATE_REQUEST_VERB_RE_TEXT = (
-    r"dm|pm|inbox|share|send|drop|mention|tell|provide|quote|lmk|"
-    r"let\s+(?:us|me)\s+know|what(?:['’]s|s|\s+is|\s+are|\s+would\s+be|\s+will\s+be)|"
-    r"how\s+much|need|want|request(?:ing)?|kindly|pls|plz|please|"
-    r"शेयर|भेजें|भेजिए|भेजिये|बताइए|बताइये|बताएं|बताएँ|बताओ"
+# "<Product> ₹1299": the word written directly before the amount (a currency
+# sign may sit between). Punctuation in between ("1 reel = ₹6000", "Collab:
+# ₹6000") means no word is attached.
+_WORD_BEFORE_AMOUNT_RE = re.compile(
+    rf"{_MARK_START}(?P<word>[A-Za-zऀ-ॣॲ-ॿ]+)\s*(?:{_CURRENCY_MARKER_RE_TEXT})?\s*$",
+    re.IGNORECASE,
 )
-# A request word AFTER the rate noun (Hinglish/Hindi word order: "rate batao",
-# "charges kya hain", "रेट बताइए").
-_RATE_REQUEST_AFTER_RE_TEXT = (
-    r"bata(?:o|do|dijiye|iye|iyega|ye|yen|en|ein|ein)?|bhej(?:o|do|iye|ein|en|dijiye)?|"
-    r"share\s+(?:karo|kariye|karein|karen|kijiye|do)|kya|kitna|kitne|kitni|"
-    r"pls|plz|please|"
-    r"बताइए|बताइये|बताएं|बताएँ|बताओ|बताये|बताएं|भेजें|भेजिए|भेजिये|भेजो|क्या|कितना|कितनी|कितने|"
-    r"शेयर"
+# Words that sit before a fee and name no product.
+_NON_PRODUCT_WORDS = frozenset(
+    {
+        "for", "of", "is", "are", "was", "be", "will", "hai", "hain", "h", "just", "only",
+        "about", "around", "approx", "approximately", "upto", "up", "to", "till", "max",
+        "maximum", "min", "minimum", "and", "plus", "the", "a", "an", "ke", "ka", "ki",
+        "liye", "lie", "me", "mein", "give", "giving", "you", "u", "we", "can", "rate",
+        "rates", "rs", "inr", "rupee", "rupees", "rupaye", "rupay", "at", "@",
+        "है", "हैं", "के", "का", "की", "लिए", "में", "और", "रु", "रुपये", "रुपए",
+    }
 )
-_BUDGET_UNSTATED_RE = re.compile(
-    rf"{_MARK_START}(?:{_BUDGET_SUBJECT_RE_TEXT}){_WORD_END}"
-    rf"(?:\s*[:\-]\s*|\s+)(?:[^\s.!?;।,:]+\s+){{0,3}}?"
-    rf"{_MARK_START}(?:{_BUDGET_UNSTATED_CUE_RE_TEXT}){_WORD_END}"
-    rf"|{_MARK_START}(?:{_BUDGET_SUBJECT_RE_TEXT}){_WORD_END}\s*\?"
-    r"|(?<![A-Za-z])(?:your|ur|yr|apke|aapke|apka|aapka|apna|apni|aapki|apki|tumhare|tumhara)"
-    r"\s+(?:charges?|rates?|rate\s*-?\s*cards?|commercials?|quote|fees?|pricing|price|budget)"
-    r"(?![A-Za-z])"
-    # T-GOLIVE-0918-R2 RATE-REQUEST [ash · 2026-09-19] — HIGH: a brief that
-    # ASKS for the creator's rate says its budget is unstated, however it asks.
-    # Rather than listing phrasings, a rate noun is paired with a request word
-    # in the same clause, either order, over at most three filler words that
-    # hold no digit or ₹ (so "Rate ₹5000 pls" is a stated rate, not a
-    # request): "DM rates", "Pls share ratecard", "Kindly share rates",
-    # "charges kya hain", "rate bhejo", "रेट बताइए", "फीस बताएं"; a Devanagari
-    # possessive + rate noun ("अपना चार्ज"); and "Rate card?". This only
-    # narrows budget markers to fee words, so "Budget 15k ... DM rates" still
-    # grounds 15000. Source: independent reviewer, rate-request finding.
-    rf"|{_MARK_START}(?:{_RATE_REQUEST_VERB_RE_TEXT}){_WORD_END}"
-    rf"(?:\s+[^\s\d₹.!?;।,:]+){{0,3}}?\s+{_MARK_START}(?:{_RATE_NOUN_RE_TEXT}){_WORD_END}"
-    rf"|{_MARK_START}(?:{_RATE_NOUN_RE_TEXT}){_WORD_END}"
-    rf"(?:\s+[^\s\d₹.!?;।,:]+){{0,3}}?\s+{_MARK_START}(?:{_RATE_REQUEST_AFTER_RE_TEXT}){_WORD_END}"
-    rf"|{_MARK_START}(?:अपना|अपनी|अपने|आपका|आपकी|आपके)\s+(?:{_RATE_NOUN_RE_TEXT}){_WORD_END}"
-    rf"|{_MARK_START}(?:{_RATE_NOUN_RE_TEXT}){_WORD_END}\s*\?",
+_FEE_OR_DELIVERABLE_WORD_RE = re.compile(
+    rf"(?:{_BUDGET_FEE_MARKER_RE_TEXT}|{_TIE_DELIVERABLE_NOUN_RE_TEXT})",
     re.IGNORECASE,
 )
 
 
-def _brief_says_budget_unstated(text: str) -> bool:
-    return _BUDGET_UNSTATED_RE.search(_normalize_digits(text or "")) is not None
+def _is_after_a_product_noun(text: str, start: int) -> bool:
+    before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
+    match = _WORD_BEFORE_AMOUNT_RE.search(before)
+    if match is None:
+        return False
+    word = match.group("word")
+    if word.lower() in _NON_PRODUCT_WORDS:
+        return False
+    return _FEE_OR_DELIVERABLE_WORD_RE.fullmatch(word) is None
+
+
+def _is_budget_amount(text: str, start: int, end: int) -> bool:
+    """Rule 1-3 of `_grounded_budget_amounts` for the amount text[start:end]."""
+    if _is_non_fee_amount(text, start, end):
+        return False
+    if _has_money_marker_near(text, start, end, _BUDGET_FEE_MARKER_RE_TEXT):
+        return True
+    if _is_after_a_product_noun(text, start):
+        return False
+    before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
+    return (
+        _BUDGET_TIE_AFTER_RE.match(text, end) is not None
+        or _BUDGET_TIE_BEFORE_RE.search(before) is not None
+    )
 
 
 def _grounded_barter_amounts(text: str) -> set[str]:

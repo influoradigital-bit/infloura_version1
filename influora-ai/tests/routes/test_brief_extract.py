@@ -2930,26 +2930,6 @@ async def test_rr3_a_stated_fee_still_grounds(raw, line, amount):
     assert line in data["summary_lines"]
 
 
-def test_rr3_budget_unstated_detector_unit():
-    from app.routes.brief_extract import _brief_says_budget_unstated as unstated
-
-    for raw in (
-        "Budget to be discussed.",
-        "budget baad me batayenge",
-        "बजट बाद में।",
-        "lmk ur charges",
-        "rates? ",
-        "Fee TBD",
-        "Budget: will share",
-        "paisa baad me baat karte",
-        "फीस बाद में।",
-        "What are your rates?",
-    ):
-        assert unstated(raw) is True, raw
-    for raw in ("Glow: 1 reel, ₹8000 flat.", "Budget ₹8000, payment after posting.", "Budget 10k"):
-        assert unstated(raw) is False, raw
-
-
 # --- MEDIUM: a word-unit money figure next to a deliverable noun ------------
 
 
@@ -3248,35 +3228,160 @@ async def test_rate_request_controls_a_stated_budget_still_grounds(raw, amount):
     assert data["budget_inr"] == amount
 
 
-def test_rate_request_detector_unit():
-    from app.routes.brief_extract import _brief_says_budget_unstated as unstated
+def test_budget_classifier_unit():
+    """The per-amount classifier (T-GOLIVE-0918-R2 CLASSIFY) on the controls
+    the removed whole-brief detector used to be tested with."""
+    from app.routes.brief_extract import _grounded_budget_amounts as budget
 
-    for raw in (
-        "DM rates for 1 reel",
-        "Pls share ratecard",
-        "Rate card?",
-        "share your charges",
-        "what's your fee",
-        "quote your price",
-        "commercials?",
-        "apna rate batao",
-        "charges kya hain",
-        "rate bhejo",
-        "रेट बताइए",
-        "अपना चार्ज बताएं",
-        "Send your quote",
-        "Kindly share rates and availability",
-        "Let us know your rates",
-        "rate kya hai?",
-        "फीस बताएं",
-    ):
-        assert unstated(raw) is True, raw
-    for raw in (
-        "Glow: 1 reel, ₹8000 flat.",
-        "Budget ₹8000, payment after posting.",
-        "Budget 10k",
-        "Glow serum MRP 1299. 1 reel.",
-        "We share the product with you. Rs 5000 for 1 reel.",
-        "Rate: ₹5000 per reel",
-    ):
-        assert unstated(raw) is False, raw
+    assert budget("Glow: 1 reel, ₹8000 flat.") == {"8000"}
+    assert budget("Budget ₹8000, payment after posting.") == {"8000"}
+    assert budget("Budget 10k") == {"10000"}
+    assert budget("Glow serum MRP 1299. 1 reel.") == set()
+    assert budget("We share the product with you. Rs 5000 for 1 reel.") == {"5000"}
+    assert budget("Rate: ₹5000 per reel") == {"5000"}
+    # A currency sign alone is neither PRODUCT nor BUDGET: not the budget.
+    assert budget("Glow: 1 reel. ₹8000.") == set()
+    # A figure right after a product noun is the product's price, even with
+    # a deliverable nearby; a fee word still claims its own amount.
+    assert budget("Serum ₹999 for 1 reel") == set()
+    assert budget("Serum budget ₹5000 for 1 reel") == {"5000"}
+    # "flat" before an amount is a discount, after it a fee.
+    assert budget("Get flat ₹150 off. 1 reel.") == set()
+
+
+# ===========================================================================
+# T-GOLIVE-0918-R2 CLASSIFY [ash · 2026-09-19] — the independent reviewer
+# FAILED 694d643: its whole-brief "rate request" detector (HIGH-1) missed
+# rate requests, so the product price became budget_inr, and (HIGH-2, a
+# regression that commit caused; MEDIUM-3) fired on briefs that DO state a
+# budget, dropping it. Per Priya's ruling each amount is now classified by
+# its own neighbourhood (`_grounded_budget_amounts`). The HIGH-1/HIGH-2/
+# MEDIUM-3 cases below FAIL on 694d643; the rest of the reviewer's probe
+# (`test_kprobe2.py` FALSE/TRUE lists) is kept as regression cover.
+# ===========================================================================
+
+
+# HIGH-1: a rate request that names only the product price.
+_REVIEWER_HIGH1 = [
+    ("Serum Rs.1299. 1 reel. Kitna loge?", 1299),
+    ("Serum Rs.1299. 1 reel. aap kitna charge karte ho?", 1299),
+    ("Serum Rs.1299. 1 reel. What would you charge", 1299),
+    ("Serum Rs.1299. 1 reel. Quote karo", 1299),
+    ("सीरम की कीमत ₹1299 है। एक रील। आप कितना लेंगे?", 1299),
+    ("Serum ₹999. 1 reel. Your best price for this?", 999),
+    ("Serum ₹999. 1 reel. Budget kya hoga aapka?", 999),
+    ("Serum ₹999. 1 reel. kitne mein karoge?", 999),
+]
+
+
+@pytest.mark.parametrize(("raw", "invented"), _REVIEWER_HIGH1)
+@pytest.mark.asyncio
+async def test_reviewer_high1_rate_request_product_price_is_not_the_budget(raw, invented):
+    data = await _probe(
+        raw,
+        _rr3_input(
+            budget_stated=True,
+            budget_inr=invented,
+            summary_lines=_rr3_lines(f"Budget ₹{invented}"),
+        ),
+    )
+    assert data["budget_inr"] is None
+    assert f"Budget ₹{invented}" not in data["summary_lines"]
+
+
+# HIGH-2 (regression caused by 694d643) and MEDIUM-3: a stated budget next to
+# a rate/charges word elsewhere in the brief.
+_REVIEWER_HIGH2_MEDIUM3 = [
+    ("Rs 8000 for 1 reel. Serum MRP 1299. Send rate card if higher.", 8000),
+    ("1 reel, Rs 7500 fixed. Please share charges for extra story", 7500),
+    ("₹6000 for 1 reel. Please note shipping charges are on us", 6000),
+    ("1 reel = ₹6000. Kindly share rates for stories also", 6000),
+    ("₹6000 for 1 reel. Is this ok? Else send your quote", 6000),
+]
+
+
+@pytest.mark.parametrize(("raw", "amount"), _REVIEWER_HIGH2_MEDIUM3)
+@pytest.mark.asyncio
+async def test_reviewer_high2_medium3_stated_budget_survives_a_rate_word(raw, amount):
+    data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=amount))
+    assert data["budget_inr"] == amount
+
+
+@pytest.mark.asyncio
+async def test_budget_with_a_product_mrp_keeps_the_expanded_budget():
+    raw = "Budget 15k for 1 reel, product MRP 1299"
+    data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=15000))
+    assert data["budget_inr"] == 15000
+    for wrong in (15, 1299):
+        data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=wrong))
+        assert data["budget_inr"] is None, wrong
+
+
+# The reviewer's other probe cases, which 694d643 already got right.
+_REVIEWER_OTHER_NONE = [
+    ("Hi! Our kurta is Rs 999 only. 1 reel chahiye. Aapke charges?", 999),
+    ("hey dear 😊 new lipstick ₹1.2k launch, need 1 reel + 2 stories. ur rates??", 1200),
+    ("Serum 1,299/- ka hai. 1 reel. Charges btao", 1299),
+    ("Serum 1,299/- ka hai. 1 reel. rate card bhejo pls", 1299),
+    ("Serum Rs.1299. 1 reel. What do you charge?", 1299),
+    ("Serum Rs.1299. 1 reel. How much do you charge for a reel?", 1299),
+    ("Serum Rs.1299. 1 reel. Please send your commercials.", 1299),
+    ("Serum Rs.1299. 1 reel. Share your pricing", 1299),
+    ("Serum Rs.1299. 1 reel. Waiting for your quote!", 1299),
+    ("Serum Rs.1299. 1 reel. Expected fee?", 1299),
+    ("Serum Rs.1299. 1 reel. Send us your rates, thanks", 1299),
+    ("Serum Rs.1299. 1 reel. apni fees batao", 1299),
+    ("Serum Rs.1299. 1 reel. Rates pls", 1299),
+    ("सीरम ₹1299 का है। एक रील। अपने रेट भेजिए", 1299),
+    ("सीरम ₹1299 का है। एक रील। चार्जेस क्या हैं?", 1299),
+    ("सीरम ₹१२९९ का है। एक रील। रेट कार्ड भेजें", 1299),
+    ("Tee priced ₹599, 1 reel. Your charges pls", 599),
+    ("Serum sold at Rs 999 on Nykaa. 1 reel. DM rates", 999),
+    ("Serum available at ₹999. 1 reel. DM rates", 999),
+    ("Serum for just ₹999! 1 reel. DM rates", 999),
+    ("Serum @ ₹999. 1 reel. DM rates", 999),
+    ("Serum ₹999/-. 1 reel. We have 50k followers. DM rates", 50000),
+    ("Serum pack of 2 at ₹1,999. 1 reel. Rate?", 1999),
+    ("Serum ₹999. 1 reel. Rate batao", 999),
+    ("Serum ₹999. 1 reel. Rate?", 999),
+    ("Serum ₹999. 1 reel. Rates??", 999),
+    ("Serum ₹999. 1 reel. Rates? 🙏", 999),
+    ("Serum ₹999. 1 reel. Let me know your quote", 999),
+    ("Serum ₹999. 1 reel. Need your rate card", 999),
+    ("Serum ₹999. 1 reel. Can you share your rate card?", 999),
+    ("Serum ₹999. 1 reel. Interested? Send rate card.", 999),
+    ("Serum ₹999. 1 reel. Please revert with your charges", 999),
+    ("Serum ₹999. 1 reel. Reply with your rates", 999),
+    ("Serum MRP ₹999, offer price ₹799. 1 reel. DM rates", 799),
+    ("Serum ₹999. 1 reel. rate kitna hai", 999),
+]
+_REVIEWER_OTHER_BUDGET = [
+    ("₹8,000 for 1 reel + 2 stories. Please share your availability", 8000),
+    ("We can pay 8k for 1 reel. Product ₹1299. DM rates if more", 8000),
+    ("₹1.2k per story, 3 stories. Serum ₹999.", 1200),
+    ("Offering 10,000/- for 1 reel. Kindly share your rate card if higher", 10000),
+    ("1 reel ke 5000 denge. rate zyada ho to batao", 5000),
+    ("एक रील के लिए ₹5000 बजट है, अपना रेट बताएं", 5000),
+    ("एक रील के ₹5000 देंगे। सीरम ₹1299 का है।", 5000),
+    ("Collab: 1 reel, ₹6000 all-in. Need quote for usage rights separately", 6000),
+    ("Hey! 1 reel for ₹6000. Need your address to ship serum", 6000),
+    ("₹6000 for 1 reel. Need content by Friday, pls confirm", 6000),
+    ("Rs 6000 for a reel. What's your UPI?", 6000),
+    ("We pay ₹4000 per reel. Glow serum retail ₹999", 4000),
+    ("Budget: Rs 20,000 total. Serum sells for ₹1299.", 20000),
+    ("₹10k for 2 reels. Serum ₹1,299 MRP.", 10000),
+]
+
+
+@pytest.mark.parametrize(("raw", "invented"), _REVIEWER_OTHER_NONE)
+@pytest.mark.asyncio
+async def test_reviewer_probe_no_budget_stated(raw, invented):
+    data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=invented))
+    assert data["budget_inr"] is None
+
+
+@pytest.mark.parametrize(("raw", "amount"), _REVIEWER_OTHER_BUDGET)
+@pytest.mark.asyncio
+async def test_reviewer_probe_stated_budget_kept(raw, amount):
+    data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=amount))
+    assert data["budget_inr"] == amount
