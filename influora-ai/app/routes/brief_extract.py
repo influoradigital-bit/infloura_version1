@@ -738,7 +738,7 @@ _NON_FEE_AFTER_RE = re.compile(
     r"[\s)\]]*(?:[:\-/]\s*)?(?:(?:for|free|flat|of|on|the|a|an|as)\s+){0,2}?"
     r"(?:off|discount\w*|cashback|shipping|delivery\s+charges?|in\s+exchange|"
     r"in\s+return|to\s+(?:another|other|a\s+different|some\s+other)|"
-    r"last\s+(?:month|year|time|campaign)|earlier|previously|mrp|worth|retail)"
+    r"last\s+(?:month|year|time|campaign)|earlier|previously|m\.?\s?r\.?\s?p\.?|worth|retail)"
     r"(?![A-Za-z])",
     re.IGNORECASE,
 )
@@ -746,7 +746,13 @@ _NON_FEE_BEFORE_RE = re.compile(
     r"(?<![A-Za-z])(?:min(?:imum)?\.?\s+order(?:\s+(?:value|of|above))?|"
     r"orders?\s+(?:above|over|of|worth)|discount\s+of|save|cashback\s+of|"
     r"last\s+(?:month|year|time|campaign)(?:\s+[A-Za-z']+){0,3}?|"
-    r"previously(?:\s+[A-Za-z']+){0,2}?|mrp|worth|retail\s+price|priced\s+at)"
+    r"previously(?:\s+[A-Za-z']+){0,2}?|m\.?\s?r\.?\s?p\.?|worth|priced\s+at|"
+    # T-GOLIVE-0918-R2 RATE-REQUEST [ash · 2026-09-19] — HIGH: a price attached
+    # to a product word is never the fee: "retails at ₹1299", "retail ₹1299",
+    # "sells for ₹1299", "selling price ₹1299", "M.R.P. ₹1299" all grounded
+    # budget_inr. Source: independent reviewer, rate-request finding.
+    r"retail(?:s|ing)?(?:\s+(?:price|at|for))?|selling\s+(?:price|at|for)|"
+    r"(?:sells?|sold|listed)\s+(?:at|for))"
     r"\s*[:\-]?\s*(?:₹|rs\.?|inr)?\s*$",
     re.IGNORECASE,
 )
@@ -1028,13 +1034,50 @@ _BUDGET_UNSTATED_CUE_RE_TEXT = (
     r"not\s+(?:fixed|decided|final\w*|set|confirmed|yet)|abhi\s+(?:nahi|nahin|fix\s+nahi)|"
     r"call\s+pe|on\s+(?:a\s+)?call|batayenge|bata\s+denge|बताएंगे|बताएँगे"
 )
+_RATE_NOUN_RE_TEXT = (
+    r"rates?|rate\s*-?\s*cards?|ratecards?|charges?|fees?|commercials?|quotes?|quotation|"
+    r"रेट|रेट\s*कार्ड|चार्ज(?:ेस|ेज़|ेज)?|फीस|फ़ीस|शुल्क"
+)
+# A request word BEFORE the rate noun ("DM rates", "share your charges").
+_RATE_REQUEST_VERB_RE_TEXT = (
+    r"dm|pm|inbox|share|send|drop|mention|tell|provide|quote|lmk|"
+    r"let\s+(?:us|me)\s+know|what(?:['’]s|s|\s+is|\s+are|\s+would\s+be|\s+will\s+be)|"
+    r"how\s+much|need|want|request(?:ing)?|kindly|pls|plz|please|"
+    r"शेयर|भेजें|भेजिए|भेजिये|बताइए|बताइये|बताएं|बताएँ|बताओ"
+)
+# A request word AFTER the rate noun (Hinglish/Hindi word order: "rate batao",
+# "charges kya hain", "रेट बताइए").
+_RATE_REQUEST_AFTER_RE_TEXT = (
+    r"bata(?:o|do|dijiye|iye|iyega|ye|yen|en|ein|ein)?|bhej(?:o|do|iye|ein|en|dijiye)?|"
+    r"share\s+(?:karo|kariye|karein|karen|kijiye|do)|kya|kitna|kitne|kitni|"
+    r"pls|plz|please|"
+    r"बताइए|बताइये|बताएं|बताएँ|बताओ|बताये|बताएं|भेजें|भेजिए|भेजिये|भेजो|क्या|कितना|कितनी|कितने|"
+    r"शेयर"
+)
 _BUDGET_UNSTATED_RE = re.compile(
     rf"{_MARK_START}(?:{_BUDGET_SUBJECT_RE_TEXT}){_WORD_END}"
     rf"(?:\s*[:\-]\s*|\s+)(?:[^\s.!?;।,:]+\s+){{0,3}}?"
     rf"{_MARK_START}(?:{_BUDGET_UNSTATED_CUE_RE_TEXT}){_WORD_END}"
     rf"|{_MARK_START}(?:{_BUDGET_SUBJECT_RE_TEXT}){_WORD_END}\s*\?"
     r"|(?<![A-Za-z])(?:your|ur|yr|apke|aapke|apka|aapka|apna|apni|aapki|apki|tumhare|tumhara)"
-    r"\s+(?:charges?|rates?|commercials?|quote|fees?|pricing|price|budget)(?![A-Za-z])",
+    r"\s+(?:charges?|rates?|rate\s*-?\s*cards?|commercials?|quote|fees?|pricing|price|budget)"
+    r"(?![A-Za-z])"
+    # T-GOLIVE-0918-R2 RATE-REQUEST [ash · 2026-09-19] — HIGH: a brief that
+    # ASKS for the creator's rate says its budget is unstated, however it asks.
+    # Rather than listing phrasings, a rate noun is paired with a request word
+    # in the same clause, either order, over at most three filler words that
+    # hold no digit or ₹ (so "Rate ₹5000 pls" is a stated rate, not a
+    # request): "DM rates", "Pls share ratecard", "Kindly share rates",
+    # "charges kya hain", "rate bhejo", "रेट बताइए", "फीस बताएं"; a Devanagari
+    # possessive + rate noun ("अपना चार्ज"); and "Rate card?". This only
+    # narrows budget markers to fee words, so "Budget 15k ... DM rates" still
+    # grounds 15000. Source: independent reviewer, rate-request finding.
+    rf"|{_MARK_START}(?:{_RATE_REQUEST_VERB_RE_TEXT}){_WORD_END}"
+    rf"(?:\s+[^\s\d₹.!?;।,:]+){{0,3}}?\s+{_MARK_START}(?:{_RATE_NOUN_RE_TEXT}){_WORD_END}"
+    rf"|{_MARK_START}(?:{_RATE_NOUN_RE_TEXT}){_WORD_END}"
+    rf"(?:\s+[^\s\d₹.!?;।,:]+){{0,3}}?\s+{_MARK_START}(?:{_RATE_REQUEST_AFTER_RE_TEXT}){_WORD_END}"
+    rf"|{_MARK_START}(?:अपना|अपनी|अपने|आपका|आपकी|आपके)\s+(?:{_RATE_NOUN_RE_TEXT}){_WORD_END}"
+    rf"|{_MARK_START}(?:{_RATE_NOUN_RE_TEXT}){_WORD_END}\s*\?",
     re.IGNORECASE,
 )
 

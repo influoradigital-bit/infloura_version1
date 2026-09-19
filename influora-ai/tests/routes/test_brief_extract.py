@@ -3158,3 +3158,125 @@ async def test_rr3_a_platform_is_not_the_subject_of_a_line():
     )
     assert data["brand_name"] is None
     assert "Instagram wants a reel" not in data["summary_lines"]
+
+
+# ===========================================================================
+# T-GOLIVE-0918-R2 RATE-REQUEST [ash · 2026-09-19] — HIGH (independent
+# reviewer, `_grounded_budget_amounts`): a brief that ASKS for the creator's
+# rate and states no budget still let a product price ground budget_inr,
+# because the "budget is unstated" detector missed most ways of asking for a
+# rate ("DM rates", "Pls share ratecard", "Rate card?", "charges kya hain",
+# "rate bhejo", "रेट बताइए", "अपना चार्ज बताएं"), and a price attached to a
+# product word ("retails at ₹1299", "sells for ₹1299") was not vetoed.
+# Every reviewer probe below is a test.
+# ===========================================================================
+
+
+@pytest.mark.parametrize(
+    ("raw", "invented_line"),
+    [
+        ("Glow serum MRP 1299. DM rates for 1 reel", "Budget ₹1,299"),
+        ("Glow serum ₹1299. Pls share ratecard for 1 reel", "Budget ₹1,299"),
+        ("Glow serum ₹1299, 1 reel. Rate card?", "Budget ₹1,299"),
+        ("Glow serum ₹1299. 1 reel, share your charges", "Fee ₹1,299"),
+        ("Glow serum ₹1299. 1 reel - what's your fee", "Fee ₹1,299"),
+        ("Glow serum ₹1299. 1 reel, quote your price", "Brand pays ₹1,299"),
+        ("Glow serum ₹1299. 1 reel. commercials?", "Budget ₹1,299"),
+        ("Glow serum ₹1299 ka hai. 1 reel, apna rate batao", "Budget ₹1,299"),
+        ("Glow serum ₹1299 ka hai. 1 reel, charges kya hain", "Budget ₹1,299"),
+        ("Glow serum ₹1299 ka hai. 1 reel, rate bhejo", "Budget ₹1,299"),
+        ("Glow सीरम ₹1299 का है। एक रील, रेट बताइए", "बजट ₹1,299"),
+        ("Glow सीरम ₹1299 का है। एक रील चाहिए, अपना चार्ज बताएं", "बजट ₹1,299"),
+        ("Glow serum ₹1299. 1 reel. Send your quote", "Budget ₹1,299"),
+        ("Glow serum ₹1299. 1 reel. Kindly share rates and availability", "Budget ₹1,299"),
+        ("Glow serum ₹1299. 1 reel. Your rate for this?", "Budget ₹1,299"),
+        ("Glow serum ₹1299. 1 reel. Let us know your rates", "Budget ₹1,299"),
+        ("Glow serum ₹1299. 1 reel. rate kya hai?", "Budget ₹1,299"),
+        ("Glow सीरम ₹1299 का है। एक रील, फीस बताएं", "बजट ₹1,299"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rate_request_product_price_never_grounds_budget(raw, invented_line):
+    """A brief that asks for the creator's rate and states no budget: the
+    product price (1299) is not the budget, and a summary line restating it
+    as the fee is stripped."""
+    data = await _probe(
+        raw,
+        _rr3_input(
+            budget_stated=True,
+            budget_inr=1299,
+            summary_lines=_rr3_lines(invented_line),
+        ),
+    )
+    assert data["budget_inr"] is None
+    assert invented_line not in data["summary_lines"]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "Glow serum MRP ₹1299. 1 reel.",
+        "Glow serum retails at ₹1299. 1 reel.",
+        "Glow serum, retail ₹1299. 1 reel.",
+        "Glow serum sells for ₹1299. 1 reel.",
+        "Glow serum costs ₹1299. 1 reel.",
+        "Glow serum worth ₹1299. 1 reel.",
+        "Glow serum (price ₹1299). 1 reel.",
+        "Glow serum M.R.P. ₹1299. 1 reel.",
+        "Glow serum ₹1299 MRP. 1 reel.",
+    ],
+)
+@pytest.mark.asyncio
+async def test_price_attached_to_a_product_word_is_never_a_budget(raw):
+    data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=1299))
+    assert data["budget_inr"] is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "amount"),
+    [
+        ("Budget 15k for 1 reel, product MRP 1299", 15000),
+        ("Glow serum MRP 1299. Budget 15k for 1 reel. DM rates if higher", 15000),
+        ("Glow serum MRP ₹1299. We pay ₹8000 for 1 reel, share your rate card", 8000),
+        ("Glow serum ₹1299 ka hai. 1 reel ka budget 10k, apna rate batao", 10000),
+        ("Glow: 1 reel, ₹8000 flat.", 8000),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rate_request_controls_a_stated_budget_still_grounds(raw, amount):
+    data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=amount))
+    assert data["budget_inr"] == amount
+
+
+def test_rate_request_detector_unit():
+    from app.routes.brief_extract import _brief_says_budget_unstated as unstated
+
+    for raw in (
+        "DM rates for 1 reel",
+        "Pls share ratecard",
+        "Rate card?",
+        "share your charges",
+        "what's your fee",
+        "quote your price",
+        "commercials?",
+        "apna rate batao",
+        "charges kya hain",
+        "rate bhejo",
+        "रेट बताइए",
+        "अपना चार्ज बताएं",
+        "Send your quote",
+        "Kindly share rates and availability",
+        "Let us know your rates",
+        "rate kya hai?",
+        "फीस बताएं",
+    ):
+        assert unstated(raw) is True, raw
+    for raw in (
+        "Glow: 1 reel, ₹8000 flat.",
+        "Budget ₹8000, payment after posting.",
+        "Budget 10k",
+        "Glow serum MRP 1299. 1 reel.",
+        "We share the product with you. Rs 5000 for 1 reel.",
+        "Rate: ₹5000 per reel",
+    ):
+        assert unstated(raw) is False, raw
