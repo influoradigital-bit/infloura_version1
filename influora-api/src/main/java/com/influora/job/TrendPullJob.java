@@ -29,6 +29,7 @@ import java.util.Set;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -153,6 +154,12 @@ public class TrendPullJob {
     private final TrendIngestProperties props;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    // EV-001 [vikram · 2026-09-19] — this class declares TWO constructors (this one and the
+    // package-private test seam below), so Spring cannot pick one implicitly and falls back to a
+    // no-arg constructor that does not exist ("No default constructor found") — the whole API
+    // failed to boot in every profile. @Autowired names the production constructor explicitly.
+    // Guarded by TrendPullJobWiringTest.
+    @Autowired
     public TrendPullJob(
             List<TrendSourceClient> sourceClients,
             BrandSafetyAiClient brandSafetyAiClient,
