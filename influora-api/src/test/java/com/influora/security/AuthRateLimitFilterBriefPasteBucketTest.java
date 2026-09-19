@@ -24,9 +24,10 @@ import org.springframework.mock.web.MockHttpServletResponse;
  *
  * <p>Two properties here are not decoration. It is USER-keyed, because an IP key on a creator route is
  * wrong in both directions: creators behind one mobile carrier NAT would starve each other, and a
- * single creator could reset her own window by changing network. And it matches the POST only, because
- * reading a brief she has already paid for costs nothing and throttling that would merely stop her
- * opening what she has.
+ * single creator could reset her own window by changing network. And it matches the POST only: the GET
+ * route has its own, separate bucket now (Kavya U-1 re-review, H2 — a stale-NEW brief re-analyses on
+ * read, which is a real AI call) at a more generous limit, tested in
+ * {@code AuthRateLimitFilterCreatorBriefGetBucketTest}, not this stricter one.
  */
 class AuthRateLimitFilterBriefPasteBucketTest {
 
@@ -63,6 +64,12 @@ class AuthRateLimitFilterBriefPasteBucketTest {
         setField("meeraTurnLimit", 20);
         setField("meeraVoiceLimit", 20);
         setField("creatorBriefPasteLimit", 2);
+        // Kavya U-1 re-review, H2 — GET /creator/briefs/{id} now has its OWN bucket
+        // (creator-brief-get) rather than falling through unthrottled. Set generously here so this
+        // file's few incidental GETs (proving they are NOT in the PASTE bucket) are not themselves
+        // throttled by the get bucket's own, separately-tested limit -- see
+        // AuthRateLimitFilterCreatorBriefGetBucketTest for that bucket's own behaviour.
+        setField("creatorBriefGetLimit", 20);
         setField("windowSeconds", 60L);
     }
 
@@ -119,7 +126,10 @@ class AuthRateLimitFilterBriefPasteBucketTest {
         statusOf("POST", "/creator/briefs", CREATOR_TOKEN);
         assertEquals(429, statusOf("POST", "/creator/briefs", CREATOR_TOKEN));
 
-        // Reading costs nothing — she has already paid for these extractions.
+        // The list route has no bucket at all (a plain snapshot query), the single-brief GET has
+        // its OWN bucket now (creator-brief-get, set generously above and tested on its own in
+        // AuthRateLimitFilterCreatorBriefGetBucketTest), and dismiss is a plain status write with
+        // no bucket -- none of the three share the exhausted PASTE bucket above.
         assertEquals(200, statusOf("GET", "/creator/briefs", CREATOR_TOKEN));
         assertEquals(200, statusOf("GET", "/creator/briefs/01HBRIEF1234", CREATOR_TOKEN));
         assertEquals(200, statusOf("POST", "/creator/briefs/01HBRIEF1234/dismiss", CREATOR_TOKEN));

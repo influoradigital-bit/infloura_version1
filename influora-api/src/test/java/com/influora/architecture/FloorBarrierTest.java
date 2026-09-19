@@ -153,8 +153,12 @@ class FloorBarrierTest {
      * <ul>
      *   <li>{@code PackageQuote} / {@code QuoteLine} / {@code EstimateMyRateResult} — the quote
      *       itself, served only by {@code CreatorMeeraToolController} ({@code estimate_my_rate}).
-     *   <li>{@code GetBriefResult}, {@code CampaignFit}, {@code RankOpenCampaignsResult} — creator
-     *       tool results with no route at all yet (Waves 4 and B7).
+     *   <li>{@code GetBriefResult} — the creator reading her own brief through Meera, quote and floor
+     *       included; served only by {@code CreatorMeeraToolController} ({@code get_brief}). Its
+     *       route was added without touching this set, and that is correct: the type was already
+     *       declared here, and the route sits on an already-permitted controller.
+     *   <li>{@code CampaignFit}, {@code RankOpenCampaignsResult} — creator tool results with no
+     *       route at all yet (B7).
      *   <li>{@code CreatorAgentDtos.PreferencesResponse} / {@code UpdatePreferencesRequest} — the
      *       creator reading and writing her OWN floor rows ({@code reel_floor}, {@code
      *       story_set_floor}, {@code post_floor}). {@code CreatorAgentController} resolves the
@@ -211,7 +215,11 @@ class FloorBarrierTest {
      * <ul>
      *   <li>{@code CreatorMeeraToolController} — {@code handleRead} runs {@code
      *       requireCreatorPrincipal} for every route, so a BRAND-audience on-behalf token is
-     *       refused with {@code AUDIENCE_PRINCIPAL_MISMATCH}.
+     *       refused with {@code AUDIENCE_PRINCIPAL_MISMATCH}. Earned by {@code
+     *       CreatorMeeraToolControllerTest#testBrandPrincipalIsRefusedOnEveryRoute}, which invokes
+     *       every {@code @PostMapping} handler by reflection with a BRAND context and pins the route
+     *       set; the refusal is the controller's own code, not a stub. Two routes serve a
+     *       floor-bearing type through this permit: {@code estimate_my_rate} and {@code get_brief}.
      *   <li>{@code CreatorAgentController} — every route resolves the acting creator from {@code
      *       principal.getUserId()}, never a path or body id (class javadoc, and {@code
      *       CreatorAgentPreferencesService#requireCreatorProfile}). She reads her own floor.

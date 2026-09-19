@@ -138,8 +138,14 @@ public class CreatorBriefController {
     }
 
     /**
-     * {@code GET /creator/briefs/{id}} — one brief, rebuilt from its frozen snapshot rather than
-     * re-analysed, so reopening it shows the same numbers she decided against.
+     * {@code GET /creator/briefs/{id}} — one brief, normally rebuilt from its frozen snapshot.
+     *
+     * <p><b>Not always a pure read.</b> A brief still {@code NEW} past its analysis budget is
+     * re-analysed here (F1 HIGH fix, {@link CreatorBriefService#get}) — a real, blocking AI call.
+     * Kavya U-1 re-review H2: rate-limited by the {@code creator-brief-get} bucket (20 per window,
+     * USER-keyed, {@code AuthRateLimitFilter}) for exactly that reason — the per-creator monthly
+     * brief allowance still bounds total AI spend, but nothing else bounded how many of those ~30s
+     * calls could be in flight from one creator hammering this route on a single stale brief.
      */
     @GetMapping("/{briefId}")
     public ResponseEntity<ApiResponse<BriefAnalysisResponse>> get(

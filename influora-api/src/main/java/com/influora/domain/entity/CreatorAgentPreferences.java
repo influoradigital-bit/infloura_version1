@@ -43,8 +43,17 @@ public class CreatorAgentPreferences {
      * {@link #consentVersion} against this constant (not just null-checking {@link
      * #consentAcceptedAt}), so a version bump forces every creator back behind {@code 403
      * CONSENT_REQUIRED} until they re-consent, even one who already accepted an older notice.
+     *
+     * <p><b>v1 -&gt; v2 (R-U2, RULINGS-U-0917.md L122-131; Kabir C3, KABIR-CONSENT-0917.md L56-58).</b>
+     * The v1 notice covered only the creator's own platform data; it never mentioned that a PASTED
+     * brief is read by an outside AI, kept, and can hold other people's names, emails, phone
+     * numbers, addresses or bank/UPI details. A creator who consented under v1 was never told any
+     * of that, so grandfathering her in would be silent, not deliberate. Phase A is not deployed
+     * yet (S-2 is still owed), so today only test and staging accounts re-consent — this is the
+     * cheapest possible time to force it. Bumped in the same commit as the new consent paragraph
+     * ({@code ConsentScreen.tsx}) and its mock ({@code api.ts}).
      */
-    public static final String CURRENT_CONSENT_VERSION = "v1";
+    public static final String CURRENT_CONSENT_VERSION = "v2";
 
     public static final String DEFAULT_WORKING_HOURS_TIMEZONE = "Asia/Kolkata";
     public static final String DEFAULT_FLOOR_CURRENCY = "INR";

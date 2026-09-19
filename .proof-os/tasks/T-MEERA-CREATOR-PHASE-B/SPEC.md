@@ -883,6 +883,97 @@ interface RiskRule { Optional<RiskFlag> apply(RiskContext ctx); }
 
 ### 5.2 The rules and their codes
 
+<!-- AMEND-0917 / VIKRAM 2026-09-17 (K-2b, KABIR-CONSENT-0917.md "Last call - K-2"; Priya,
+     RULINGS-U-0917.md round 4 section 4): the OFF_PLATFORM_PAYMENT and HIDE_DISCLOSURE "Fires
+     when" cells below no longer give a verbatim regex. Kabir's real-Java-21 measurement found the
+     original patterns false-flagged on ordinary text (a brand name ending in "no" plus a hashtag;
+     "don't disclose the launch date"; "payment after delivery" read as a route, not a timing,
+     word) and missed routine evasions (a non-breaking space or a zero-width character inside the
+     trigger word; Hinglish and Devanagari phrasing). The two cells now state intent in words; the
+     actual pattern's contract is RiskFlagCorpusTest (influora-api/src/test/java/com/influora/
+     service/risk/rules/RiskFlagCorpusTest.java), which asserts against a corpus that includes 56
+     rows Nisha wrote blind, without seeing either pattern. -->
+
+<!-- AMEND-0917-R5 / VIKRAM 2026-09-17 (K-2b round 5, RULINGS-U-0917.md round 5 "Ruling 1"): the
+     OFF_PLATFORM_PAYMENT cell's payment-method half is narrowed again. Priya, reading
+     `creator-wallet.tsx` L1068/L1131 ("Add a UPI ID or bank account to withdraw funds"): a bare
+     method name is Influora's own payout vocabulary, so on its own it is a structural
+     false-positive source, not corpus noise (measured on OPP-N-02, OPP-N-09 and Kabir's own
+     KAB-OP-N-03, every one an on-platform payout instruction). It now counts only together with a
+     request to send or pay money TO the creator ("bhej"/"send"/"pay"/"transfer" and similar,
+     English or Devanagari); route phrases are unaffected and still count alone. Constraint,
+     load-bearing: no exclusion list keyed on "Influora", "payout" or "withdraw" — that would let
+     brand text switch the check off. See `OffPlatformPaymentRule.WALLET_NAME` / `.SEND_REQUEST` /
+     `.ROUTE_PHRASES`'s javadoc. -->
+
+<!-- AMEND-0917-KB5 / VIKRAM 2026-09-17 (KB5-1, KABIR-CONSENT-0917.md "Last call - K-2b round 5"):
+     "TOGETHER WITH" in the OFF_PLATFORM_PAYMENT cell meant anywhere in up to 8,000 characters,
+     which re-admitted a payout-instruction false positive through an unrelated "send" in a
+     different sentence -- measured non-dismissible on two ordinary on-platform briefs ("Please
+     send the draft for approval by Friday. Your fee is released to the UPI ID saved in your
+     Influora payout settings."; "Send us the raw files on Drive. Make sure your bank account or
+     UPI is added in Influora for withdrawal."). The wallet name and the request word must now be
+     within 6 tokens of each other. Two false flags remain by design and are not corpus rows:
+     "Influora will pay you via UPI once the reel is approved." and "You'll get paid to the UPI ID
+     in your Influora wallet after approval." -- only the sentence's subject differs from a real
+     off-platform ask, and no exclusion keyed on "Influora" is permitted (Constraint A). Left to
+     the live 50-brief sample's `basis` split. See `OffPlatformPaymentRule.PAIRING_WINDOW`'s
+     javadoc. -->
+
+<!-- AMEND-0918 / VIKRAM 2026-09-18 (F-0769, K-2c, RULINGS-U-0917.md round 6 "Ruling 1"): the
+     6-token window in AMEND-0917-KB5 still counted straight through a sentence end, so short,
+     ordinary on-platform briefs such as "Send the draft by Monday. UPI payouts go through
+     Influora as usual." still paired a wallet name in one sentence with an unrelated "send" in
+     the next and raised a non-dismissible flag against an honest brand (measured non-dismissible
+     on six such briefs, English, Hinglish and Devanagari alike). The pairing now counts only
+     within one sentence. A sentence ends at a run of `.` `!` `?` `…` `।` `॥` `|` followed by
+     whitespace or end of text, at a blank line, or at a line break that starts a list item
+     (the `|` pipe added in AMEND-0918-R7, round 7 Ruling 4 -- a brand or agency sometimes types
+     an ASCII pipe in place of a danda, and the un-cut pipe let an unrelated wallet name and
+     request word either side of it pair up). A
+     single `.` is NOT an end when the next non-space character on the same line is a digit or a
+     currency symbol ("Rs. 5,000", "No. 12", "रु. 5000"), or when the word immediately before it is
+     on a short, reviewed abbreviation list ("rs", "amt", "e.g" and similar -- see
+     `OffPlatformPaymentRule.SENTENCE_DOT_ABBREVIATIONS`'s javadoc for the full list and how it may
+     grow). A line break on its own is NOT an end -- plain-text and PDF pastes routinely hard-wrap a
+     real ask mid-sentence, and cutting at every line break lost two real off-platform asks
+     measured against this corpus. Route phrases are unaffected (Constraint B): they still fire on
+     the whole text regardless of sentence boundaries. The price: a real off-platform ask written
+     as two sentences ("Share your UPI. We'll send it tonight.") stops flagging -- the same class of
+     evasion as putting a seventh word in between, which the window already concedes; the regex
+     half is a tripwire, not a control against a motivated brand. See
+     `OffPlatformPaymentRule.sentences`, `.SENTENCE_TERMINATOR`, `.SENTENCE_BLANK_LINE`,
+     `.SENTENCE_LIST_ITEM_LINE` and `.isProtectedDot`'s javadoc. -->
+
+<!-- AMEND-0918-FALLBACK / VIKRAM 2026-09-18 (F-0772 / F-0773, K-2c, RULINGS-U-0917.md round 6
+     "New: F-0772"): on the FALLBACK path (`BriefFallbackExtractor`, used when AI extraction is
+     skipped), `off_platform_payment_hint` and `disclosure_hidden_hint` are now always `false` and
+     never derived from the extractor's own patterns -- those patterns predated and bypassed
+     AMEND-0917, AMEND-0917-R5, AMEND-0917-KB5 and AMEND-0918 entirely (a bare "upi" flagged an
+     on-platform payout instruction; the hide-disclosure pattern flagged an ordinary "#ad"
+     caption). Nothing the old patterns caught is lost: `evaluateExtraction` passes the same raw
+     text to the rules regardless of extractor, so both flags still fire from the text itself,
+     honestly labelled `basis=BRIEF_TEXT` rather than a regex hit disguised as `STATED`. See
+     `BriefFallbackExtractor.extract`'s javadoc and `BriefFallbackExtractorRealRiskRulesTest`. -->
+
+<!-- AMEND-0918-R7 / VIKRAM 2026-09-18 (K-2c.2, RULINGS-U-0917.md round 7): two independent fixes.
+     (1) R7-A / F-0778 (HIGH, priya): HIDE_DISCLOSURE fired on ASCI-compliance instructions -- a
+     brand or agency telling the creator to KEEP, add or place the disclosure label, worse than the
+     round-4 TECNO case because it accused the most compliant brands ("Please do not post without
+     the paid partnership label."). Four independent changes clear 12 measured trigger lines with
+     0 corpus false flags and 0 ratchet rows lost: `without` is pruned from the negator list
+     entirely (its natural use in a brief is this compliance form, not a hide ask -- the accepted
+     cost is that the text half no longer catches "Post it without the #ad tag." on its own); a bare
+     `no` no longer fires when preceded by "with"; a label occurrence followed by a placement
+     instruction ("...at the end", "...in the comments", "...only", "...in place of...") does not
+     fire; and the Hinglish/Devanagari short forms' conditional-compliance shape ("...nahi likha toh
+     ...", "...नहीं लगाया तो...") does not fire. See `HideDisclosureRule.HIDE_TEXT`'s javadoc for the
+     full falsify map and residuals. (2) Round 7 Ruling 1 (F-0776): B3's bare `ad` alternative, dead
+     in grammatical English ("as an ad" never matched), is widened to `an?` rather than pruned, so
+     "Don't disclose this as an ad." now flags. Round 7 Ruling 3 (Nisha's yes/no,
+     NISHA-COMPLIANCE-ROWS-0918.md): the Hinglish `na` short form ("ad na likhna") is pruned --
+     brands do not send it as a direct negator that way -- while the other six short forms stay. -->
+
 Severity scales with deal value: `value = extraction.budget_inr` or `collaboration.agreedRate` or `quote.total_value`. Thresholds: small < 10,000; mid 10,000 to 25,000; large > 25,000.
 
 | Code | Severity | Fires when | `detail` and `action` |
@@ -892,17 +983,21 @@ Severity scales with deal value: `value = extraction.budget_inr` or `collaborati
 | `USAGE_LONG` | INFO ≤ 6 months, WARN > 12 months | `usage_months` set | "Usage window {n} months." Action: price REPOST or PAID_ADS |
 | `EXCLUDED_CATEGORY` | CRITICAL | `extraction.category` or `endBrandCategory` in `prefs.excluded_categories` | Action: polite decline draft |
 | `BLOCKED_BRAND` | CRITICAL | brand name (case-insensitive, trimmed) in `prefs.blocked_brands` | Action: decline |
-| `OFF_PLATFORM_PAYMENT` | WARN (shadow mode: logged, never blocks) | `off_platform_payment_hint` or text matches `\b(upi|gpay|phonepe|paytm|bank transfer|neft|imps|pay(ment)? after)\b` | "Paying outside Secure Payments loses dispute cover." Action: steer-back draft; the creator has the report button; write an `OFF_PLATFORM_HINT` audit row with brand id only, never the creator's name or the message text |
+| `OFF_PLATFORM_PAYMENT` | WARN (shadow mode: logged, never blocks) | `off_platform_payment_hint`, or a route outside the platform on its own (English, Hinglish or Devanagari — "pay you directly", "outside/off the platform", "platform ke bahar"), or a payment method's name (UPI, GPay, PhonePe, Paytm, bank transfer, NEFT, IMPS, RTGS, Google Pay) WITHIN 6 TOKENS OF a request to send or pay money to the creator (English or Devanagari — "bhej"/"send"/"pay"/"transfer") IN THE SAME SENTENCE — not merely both present anywhere in the brief (AMEND-0917-KB5), and not paired across a sentence end (AMEND-0918). A method's name alone is not a signal (AMEND-0917-R5) — it is Influora's own payout vocabulary. Timing words ("payment after delivery") and payout-configuration wording ("add your UPI ID in your Influora payout settings") are NOT signals — see `OffPlatformPaymentRule.WALLET_NAME` / `.SEND_REQUEST` / `.ROUTE_PHRASES` / `.PAIRING_WINDOW`'s javadoc (AMEND-0917, AMEND-0917-R5, AMEND-0917-KB5, AMEND-0918) | "Paying outside Secure Payments loses dispute cover." Action: steer-back draft; the creator has the report button; write an `OFF_PLATFORM_HINT` audit row with brand id only, never the creator's name or the message text |
 | `COMPETITOR_CONFLICT` | WARN | an active collaboration (CONTRACTED, IN_PROGRESS, REVIEW_PENDING, REVISION_REQUESTED, COMPLETED within its exclusivity window) has `exclusivityScope == NAMED_BRANDS` containing this brand, or `CATEGORY` matching this category, and `appliedAt + exclusivityDays > now` | "Conflicts with {brand} until {date}." Action: propose a start date after the window |
 | `EXCLUSIVITY_LONG` | INFO at 30 days; WARN at ≥ 60 days or CATEGORY scope with ≥ 1 deal in that category in 90 days | `exclusivity_days` set | "{n} days exclusivity ≈ {lost income} at your usual rate." Action: price EXCLUSIVITY add-on |
 | `VAGUE_DELIVERABLES` | WARN | `vague_deliverables`, or no deliverables with qty, or text matches `a few|some posts|until (we're|we are) happy|unlimited revisions` | Action: ask the brand for the count; after 48 hours of no answer the assumption quote (Phase C job) |
-| `HIDE_DISCLOSURE` | WARN, not dismissible | `disclosure_hidden_hint` or text matches `(no|don'?t|without)\s+(#ad|#collab|#sponsored|disclos|paid partnership)` | "Breaks ASCI guidelines." Action: refuse to draft that; explain in one line |
+| `HIDE_DISCLOSURE` | WARN, not dismissible | `disclosure_hidden_hint`, or text asks to omit or hide the paid-partnership/ad label (English, Hinglish or Devanagari). Confidentiality or embargo words ("don't disclose the fee") are NOT a signal — see `HideDisclosureRule.HIDE_TEXT`'s javadoc (AMEND-0917). Instructions to keep, add or place the label ("do not post without the paid partnership label", "don't put #ad at the end") are NOT a signal (AMEND-0918-R7) | "Breaks ASCI guidelines." Action: refuse to draft that; explain in one line |
 | `BARTER` | WARN | `barter_only` or (budget absent and `barter_mrp_inr` present) | "Product worth {mrp}, about {40% mrp} real value; cash gap {gap}." Keyed on followers and engagement, so it fires for unconnected creators. Action: option draft "1 reel plus 1 story on product; 3 reels is {quote}" |
 | `REGULATED_CATEGORY` | WARN, not dismissible | `regulated_category` in FINANCE, HEALTH, RMG, CRYPTO, ALCOHOL, TOBACCO, or `claims` non-empty | Codes in `data.sub_code`: `SEBI_DISCLOSURE`, `ASCI_HEALTH`, `RMG_DISCLAIMER`, `CRYPTO_DISCLAIMER`, `CLAIMS_SUBSTANTIATION`. Action: ask the brand for evidence in-thread |
 | `CALENDAR_OVERLOAD` | INFO | the deadline week already holds ≥ `prefs.weekly_sponsored_limit` deliverables (count IN_PROGRESS and CONTRACTED collaborations with `endDate` in that ISO week) | Action: propose a later date |
 | `PARTNERSHIP_ADS_REQUEST` | WARN | only in `evaluateDeal`: status ≥ CONTRACTED and the last brand message matches `partnership ad|boost|promote (this|the) (post|reel)|whitelist` and `usageChannels` lacks PAID_ADS and WHITELISTING | "Do not approve the partnership-ads request until the paid-ads add-on is paid." |
 
+AMEND-0918-FALLBACK. On the FALLBACK path (`BriefFallbackExtractor`), `off_platform_payment_hint` and `disclosure_hidden_hint` are always `false`; `OFF_PLATFORM_PAYMENT` and `HIDE_DISCLOSURE` fire from the text checks in this table alone on that path, labelled `basis=BRIEF_TEXT` (F-0772 / F-0773).
+
 Every flag: `title` ≤ 60 chars, `detail` one sentence with rendered numbers, `action` one sentence, `data` rendered strings only. `dismissible = false` for `HIDE_DISCLOSURE`, `OFF_PLATFORM_PAYMENT`, `REGULATED_CATEGORY`.
+
+**AMEND-0917.** `OFF_PLATFORM_PAYMENT` and `HIDE_DISCLOSURE` text is matched after `RiskText.norm`, which does NFC normalisation, non-ASCII-space mapping, zero-width-character stripping, apostrophe folding and lower-casing, in that order. Devanagari alternatives in both patterns never use `\b` — on the JDK this build targets, a plain word boundary does not fire next to Devanagari text under the default (non-`UNICODE_CHARACTER_CLASS`) regex flags, so they are bounded with letter-and-mark lookarounds instead.
 
 ### 5.3 Deal risk endpoint
 

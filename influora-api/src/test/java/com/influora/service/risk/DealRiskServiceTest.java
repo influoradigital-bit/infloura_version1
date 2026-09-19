@@ -262,10 +262,14 @@ class DealRiskServiceTest {
     // ==================================================================
 
     @Test
-    @DisplayName("OFF_PLATFORM_PAYMENT fires on a UPI mention and is not dismissible")
+    @DisplayName("OFF_PLATFORM_PAYMENT fires on a UPI mention paired with a pay request, and is not dismissible")
     void offPlatformPayment_fires() {
+        // K-2b round 5, Ruling 1: a wallet name alone (e.g. "settle this over UPI") is Influora's
+        // own payout vocabulary and no longer a signal by itself — see
+        // OffPlatformPaymentRule.WALLET_NAME/.SEND_REQUEST's javadoc. This fixture now pairs the
+        // wallet name with an explicit pay request, which is the actual signal.
         Ctx ctx = ctx();
-        ctx.text = "We can settle this over UPI once the reel is live.";
+        ctx.text = "Please pay us via UPI once the reel is live.";
 
         RiskFlag flag = requireFlag(ctx, OffPlatformPaymentRule.CODE);
 
@@ -280,6 +284,15 @@ class DealRiskServiceTest {
     void offPlatformPayment_doesNotFire() {
         Ctx ctx = ctx();
         ctx.text = "Share the impressions and reach numbers after 48 hours.";
+
+        assertSilent(ctx, OffPlatformPaymentRule.CODE);
+    }
+
+    @Test
+    @DisplayName("OFF_PLATFORM_PAYMENT stays quiet on a bare wallet name with no pay request (K-2b round 5, Ruling 1)")
+    void offPlatformPayment_bareWalletNameDoesNotFire() {
+        Ctx ctx = ctx();
+        ctx.text = "We can settle this over UPI once the reel is live.";
 
         assertSilent(ctx, OffPlatformPaymentRule.CODE);
     }

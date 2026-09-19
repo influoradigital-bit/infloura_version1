@@ -400,11 +400,21 @@ async def test_missing_consent_key_fails_closed():
     mock_claude.assert_not_called()
 
 
-def test_consent_accepted_reads_bool_or_timestamp_only():
+def test_consent_accepted_reads_the_version_aware_boolean_only():
+    """K-4 (Kabir, KABIR-CONSENT-0917.md, LOW -- last call Priya):
+    `consent_accepted_at` alone used to count as consent whatever the DPDP
+    notice version it was recorded against, which becomes a bypass the day a
+    v1-consented creator's `consent_accepted_at` survives a v2 re-consent
+    bump into a context payload. The ONLY accepted signal is Spring's
+    version-aware `consent_accepted: true`."""
     assert chat_route.consent_accepted({"consent_accepted": True})
-    assert chat_route.consent_accepted({"consent_accepted_at": "2026-09-03T14:30:00Z"})
     assert not chat_route.consent_accepted({"consent_accepted": "true"})  # a string is not consent
     assert not chat_route.consent_accepted({"consent_accepted": False})
+    # A non-empty consent_accepted_at, alone or alongside an explicit false, is refused.
+    assert not chat_route.consent_accepted({"consent_accepted_at": "2026-09-03T14:30:00Z"})
+    assert not chat_route.consent_accepted(
+        {"consent_accepted": False, "consent_accepted_at": "2026-09-03T14:30:00Z"}
+    )
     assert not chat_route.consent_accepted({"consent_accepted_at": None})
     assert not chat_route.consent_accepted({"consent_accepted_at": "  "})
     assert not chat_route.consent_accepted({})

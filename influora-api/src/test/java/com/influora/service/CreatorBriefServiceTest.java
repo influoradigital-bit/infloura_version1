@@ -19,6 +19,7 @@ import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.common.ApiException;
+import com.influora.config.CreatorSuggestionAiProperties;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorBrief;
@@ -53,6 +54,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -160,7 +162,8 @@ class CreatorBriefServiceTest {
                         campaignRepository,
                         dealMessageRepository,
                         creatorProfileRepository,
-                        new ObjectMapper());
+                        new ObjectMapper(),
+                        new CreatorSuggestionAiProperties());
 
         profile = mock(CreatorProfile.class);
         lenient().when(profile.getId()).thenReturn(CREATOR_PROFILE_ID);
@@ -174,7 +177,7 @@ class CreatorBriefServiceTest {
                 .when(creatorProfileRepository.findById(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(profile));
         lenient()
-                .when(dealRiskService.evaluateExtraction(any(), any(), any(), any()))
+                .when(dealRiskService.evaluateExtraction(any(), any(), any(), any(), any()))
                 .thenReturn(List.of(riskFlag()));
         lenient().when(rateQuoteService.quoteForExtraction(any(), any(), any())).thenReturn(quote());
 
@@ -214,6 +217,11 @@ class CreatorBriefServiceTest {
         // The profile id, never the user id — the Python route equality-checks it against the token.
         verify(briefAiClient).extract(eq(CREATOR_PROFILE_ID), any(), any());
         verify(briefAiClient, never()).extract(eq(CREATOR_USER_ID), any(), any());
+        // K-2 HIGH fix (Kabir, KABIR-CONSENT-0917.md; Priya RULINGS-U-0917.md round 3 §1): the
+        // fifth argument to evaluateExtraction must be the creator's OWN stored raw text, not
+        // null and not some other string -- this is the argument the regex halves of
+        // OFF_PLATFORM_PAYMENT/HIDE_DISCLOSURE/USAGE_PERPETUAL/VAGUE_DELIVERABLES read.
+        verify(dealRiskService).evaluateExtraction(any(), any(), any(), any(), eq(RAW_BRIEF));
     }
 
     @Test
@@ -428,7 +436,8 @@ class CreatorBriefServiceTest {
                         COLLABORATION_ID, CREATOR_PROFILE_ID, BriefSource.PLATFORM))
                 .thenReturn(Optional.empty());
         Collaboration collaboration = platformCollaboration();
-        when(collaborationRepository.findById(COLLABORATION_ID))
+        // Ownership-scoped on the creator's users.id -- see ensurePlatformBrief_anotherCreatorsDeal.
+        when(collaborationRepository.findByIdAndCreatorId(COLLABORATION_ID, CREATOR_USER_ID))
                 .thenReturn(Optional.of(collaboration));
         // Built BEFORE the when(...) call: platformCampaign() stubs a mock of its own, and doing
         // that inside the argument list of thenReturn() is what Mockito reports as
@@ -447,6 +456,13 @@ class CreatorBriefServiceTest {
         assertTrue(
                 result.getRawText().contains("45 days exclusivity"),
                 "the structured deal terms are in the text");
+
+        // K-2 HIGH fix: the platform path's composed text -- the SAME text stored on the row --
+        // must reach evaluateExtraction, not null.
+        ArgumentCaptor<String> textCaptor = ArgumentCaptor.forClass(String.class);
+        verify(dealRiskService)
+                .evaluateExtraction(any(), any(), any(), any(), textCaptor.capture());
+        assertEquals(result.getRawText(), textCaptor.getValue());
     }
 
     @Test
@@ -455,7 +471,8 @@ class CreatorBriefServiceTest {
         when(briefRepository.findFirstByCollaborationIdAndCreatorProfileIdAndSource(
                         COLLABORATION_ID, CREATOR_PROFILE_ID, BriefSource.PLATFORM))
                 .thenReturn(Optional.empty());
-        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.empty());
+        when(collaborationRepository.findByIdAndCreatorId(COLLABORATION_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.empty());
 
         ApiException e =
                 assertThrows(
@@ -463,6 +480,48 @@ class CreatorBriefServiceTest {
                         () -> service.ensurePlatformBrief(CREATOR_PROFILE_ID, COLLABORATION_ID));
         assertEquals("DEAL_NOT_FOUND", e.getCode());
         verify(briefRepository, never()).save(any());
+    }
+
+    /**
+     * The hole this method shipped with while it had no caller, closed in the change that gave it
+     * one ({@code GetBriefExecutor}). The collaboration EXISTS -- {@code findById} would hand it over
+     * -- but it is another creator's. Stubbing both finders is the point: reverting the lookup to
+     * {@code findById(collaborationId)} turns this red, because the unscoped finder finds the deal and
+     * the brief is built from it.
+     */
+    @Test
+    @DisplayName(
+            "ensurePlatformBrief on ANOTHER creator's deal is 404 DEAL_NOT_FOUND: nothing is saved, no"
+                    + " AI call is made, and no text is lifted from her deal")
+    void ensurePlatformBrief_anotherCreatorsDeal() {
+        when(briefRepository.findFirstByCollaborationIdAndCreatorProfileIdAndSource(
+                        COLLABORATION_ID, CREATOR_PROFILE_ID, BriefSource.PLATFORM))
+                .thenReturn(Optional.empty());
+        Collaboration someoneElses =
+                Collaboration.propose(
+                        COLLABORATION_ID,
+                        CAMPAIGN_ID,
+                        "01HOTHERCREATORUSER12345",
+                        new BigDecimal("50000"),
+                        "INR",
+                        "Private offer to a different creator");
+        lenient()
+                .when(collaborationRepository.findById(COLLABORATION_ID))
+                .thenReturn(Optional.of(someoneElses));
+        when(collaborationRepository.findByIdAndCreatorId(COLLABORATION_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.empty());
+
+        ApiException e =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.ensurePlatformBrief(CREATOR_PROFILE_ID, COLLABORATION_ID));
+
+        assertEquals("DEAL_NOT_FOUND", e.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, e.getStatus());
+        verify(briefRepository, never()).save(any());
+        verify(briefAiClient, never()).extract(any(), any(), any());
+        verify(dealMessageRepository, never())
+                .findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(any(), any());
     }
 
     // ------------------------------------------------------------------
@@ -485,7 +544,7 @@ class CreatorBriefServiceTest {
         assertEquals(1, response.flags().size());
         assertNotNull(response.quote());
         verify(rateQuoteService, never()).quoteForExtraction(any(), any(), any());
-        verify(dealRiskService, never()).evaluateExtraction(any(), any(), any(), any());
+        verify(dealRiskService, never()).evaluateExtraction(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -497,6 +556,117 @@ class CreatorBriefServiceTest {
         ApiException e =
                 assertThrows(ApiException.class, () -> service.get(CREATOR_USER_ID, BRIEF_ID));
         assertEquals("BRIEF_NOT_FOUND", e.getCode());
+    }
+
+    /**
+     * Priya ruling RULINGS-U-0917.md Addition C. {@code get} used to be safely
+     * {@code @Transactional(readOnly = true)} because it never reached {@link
+     * CreatorBriefService#analyse}. {@link #readOrReanalyse} changed that: a stale NEW brief now
+     * makes the same blocking AI round trip {@code paste}/{@code ensurePlatformBrief} keep out of a
+     * transaction, for the exact reason {@code GetBriefExecutor}'s own javadoc documents (a pinned
+     * pooled connection, plus a REPEATABLE READ snapshot that could never see the row {@code
+     * saveAnalysis} commits afterwards). {@code GetBriefExecutor} already guards itself the same
+     * way ({@code GetBriefExecutorTest#executeIsNotTransactional}); its new callee needs its own
+     * guard rather than relying on the caller's.
+     */
+    @Test
+    @DisplayName(
+            "get holds no transaction — Addition C: it can now reach the blocking AI call via"
+                    + " readOrReanalyse, exactly the trap GetBriefExecutor's javadoc describes")
+    void get_isNotTransactional() throws Exception {
+        assertNull(
+                CreatorBriefService.class
+                        .getMethod("get", String.class, String.class)
+                        .getAnnotation(Transactional.class),
+                "get must not be transactional -- a stale NEW brief re-analyses inside it, which"
+                        + " makes the same blocking AI round trip paste/ensurePlatformBrief keep"
+                        + " out of a transaction");
+    }
+
+    // ------------------------------------------------------------------
+    // get on a NEW brief — F1 HIGH (Kavya, last-call review of Wave U item U-1)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "get on a NEW brief still inside the analysis budget refuses BRIEF_STILL_READING —"
+                    + " never returns it untouched as a clean read")
+    void get_youngNewBriefRefusesRatherThanReadingUntouched() {
+        CreatorBrief stuck = CreatorBrief.paste(BRIEF_ID, CREATOR_PROFILE_ID, RAW_BRIEF);
+        when(briefRepository.findByIdAndCreatorProfileId(BRIEF_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(stuck));
+
+        ApiException e =
+                assertThrows(ApiException.class, () -> service.get(CREATOR_USER_ID, BRIEF_ID));
+
+        assertEquals(CreatorBriefService.BRIEF_STILL_READING_CODE, e.getCode());
+        assertEquals(HttpStatus.CONFLICT, e.getStatus());
+        verify(briefAiClient, never()).extract(any(), any(), any());
+        verify(briefRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "get on a NEW brief PAST the analysis budget re-analyses it instead of reading it"
+                    + " untouched — the first attempt is presumed dead, not in flight")
+    void get_staleNewBriefIsReanalysedNotReadUntouched() {
+        CreatorBrief stuck = CreatorBrief.paste(BRIEF_ID, CREATOR_PROFILE_ID, RAW_BRIEF);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                stuck, "createdAt", java.time.Instant.now().minusSeconds(31));
+        when(briefRepository.findByIdAndCreatorProfileId(BRIEF_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(stuck));
+        when(briefAiClient.extract(any(), any(), any())).thenReturn(BriefResult.of(aiExtraction()));
+
+        BriefAnalysisResponse response = service.get(CREATOR_USER_ID, BRIEF_ID);
+
+        assertEquals(BriefStatus.ANALYZED.name(), response.status());
+        assertEquals("Glow Cosmetics", response.extraction().brandName());
+        assertEquals(CreatorBrief.EXTRACTION_SOURCE_AI, response.extractionSource());
+        verify(briefAiClient, org.mockito.Mockito.times(1)).extract(eq(CREATOR_PROFILE_ID), any(), any());
+        verify(briefRepository).save(stuck);
+        // K-2 HIGH fix, third caller path: the STALE re-analyse branch must also feed the real
+        // raw text into evaluateExtraction, not null.
+        verify(dealRiskService).evaluateExtraction(any(), any(), any(), any(), eq(RAW_BRIEF));
+    }
+
+    @Test
+    @DisplayName(
+            "get's budget tracks the CONFIGURED AI timeouts, not a hardcoded number — tightening"
+                    + " them tightens the still-reading window")
+    void get_budgetDerivesFromConfiguredAiTimeouts() {
+        CreatorSuggestionAiProperties tightProps = new CreatorSuggestionAiProperties();
+        tightProps.setConnectTimeoutSeconds(1);
+        tightProps.setRequestTimeoutSeconds(1);
+        CreatorBriefService tightService =
+                new CreatorBriefService(
+                        briefRepository,
+                        new CreatorBriefWriter(briefRepository),
+                        preferencesService,
+                        briefAiClient,
+                        fallbackExtractor,
+                        dealRiskService,
+                        rateQuoteService,
+                        collaborationRepository,
+                        campaignRepository,
+                        dealMessageRepository,
+                        creatorProfileRepository,
+                        new ObjectMapper(),
+                        tightProps);
+        // 1s connect + 1s request + 10s slack = 12s tightened budget. 15s old is past it, but
+        // still well inside the DEFAULT 30s budget -- proving the ceiling actually moved.
+        CreatorBrief stuck = CreatorBrief.paste(BRIEF_ID, CREATOR_PROFILE_ID, RAW_BRIEF);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                stuck, "createdAt", java.time.Instant.now().minusSeconds(15));
+        when(briefRepository.findByIdAndCreatorProfileId(BRIEF_ID, CREATOR_PROFILE_ID))
+                .thenReturn(Optional.of(stuck));
+        when(briefAiClient.extract(any(), any(), any())).thenReturn(BriefResult.of(aiExtraction()));
+
+        BriefAnalysisResponse response = tightService.get(CREATOR_USER_ID, BRIEF_ID);
+
+        assertEquals(
+                BriefStatus.ANALYZED.name(),
+                response.status(),
+                "a brief older than the TIGHTENED budget must be re-analysed, not refused forever");
     }
 
     @Test

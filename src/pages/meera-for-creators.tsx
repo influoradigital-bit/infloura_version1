@@ -26,6 +26,20 @@ import { JsonLd, getBreadcrumbListSchema, getWebPageSchema } from '@/lib/seo/sch
  * later phases are specs. The storyboard was truth-checked by the CTO against
  * the phase specs (2026-09-05); keep the five cards in sync with the demo
  * script if either changes.
+ *
+ * U-4 (2026-09-17) — CLAIMS REMOVED BECAUSE THE PRODUCT DOES NOT DO THEM YET. Put each one back
+ * only when the named work has shipped, and word it as what was built:
+ *   1. Card "Paste a brief…": "Meera drafts the reply; you send it."
+ *   2. <Seo> description: "…and drafts the reply."
+ *   3. Hero: "…and drafts the reply. The send button is always yours."
+ *   4. "Three promises" → "Brands will know. Every reply is labelled: drafted with Meera,
+ *      approved by you." (the list is now two promises)
+ *   5. JSON-LD description: "approval-gated replies" (same claim, in structured data)
+ *   Claims 1, 2, 3 and 5 (Meera drafts a reply, you approve and send it) need Wave D: D-1
+ *   `DraftReplyExecutor`, D-2 `CreatorMeeraDraftController`, D-4 `DraftCard` and the approve flow
+ *   (board Wave 5, B0-46..50). Claim 4 (the brand sees the label) additionally needs D-3, the
+ *   brand-visible metadata split, and D-5, the brand-chat Meera label (board Wave 6, B0-51..59).
+ *   Source: .proof-os/tasks/T-MEERA-CREATOR-PHASE-B/ASSIGN-PENDING-0917.md and PENDING-0912.md P-02.
  */
 
 const MeeraDemoPlayer = lazy(() =>
@@ -41,7 +55,7 @@ const CARDS = [
   {
     icon: FileText,
     title: 'Paste a brief, get a straight answer',
-    body: 'What is on offer, what is wrong with it, and what to ask for. Meera drafts the reply; you send it.',
+    body: 'What is on offer, what is wrong with it, and what to ask for.',
   },
   {
     icon: Wallet,
@@ -56,7 +70,7 @@ const CARDS = [
   {
     icon: Search,
     title: 'Find new brands',
-    body: 'Meera brings the list, you write two lines in your own words, and you read every pitch before it goes.',
+    body: 'Meera brings a list of brands that fit you, and says why each one fits.',
   },
 ] as const;
 
@@ -74,14 +88,14 @@ export default function MeeraForCreatorsPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Meera for Creators"
-        description="Your own PR manager, on your side. Paste a brand brief and Meera reads it, tells you the rate, and drafts the reply. Coming soon on Influora."
+        description="Your own PR manager, on your side. Paste a brand brief and Meera reads it and suggests a rate. Coming soon on Influora."
         canonical="/meera-for-creators"
       />
       <JsonLd
         data={getWebPageSchema({
           name: 'Meera for Creators',
           description:
-            'A scripted preview of Meera, the creator-side AI PR manager coming to Influora: brief reading, rate guidance, approval-gated replies, money tracking, weekly notes, and brand discovery.',
+            'A scripted preview of Meera, the creator-side AI PR manager coming to Influora: brief reading, rate guidance, money tracking, weekly notes, and brand discovery.',
           url: '/meera-for-creators',
         })}
       />
@@ -106,8 +120,7 @@ export default function MeeraForCreatorsPage() {
                 Your own PR manager. On your side.
               </h1>
               <p className="mt-4 text-lg text-muted-foreground">
-                Paste a brand brief. Meera reads it, tells you what to charge, and drafts the reply.
-                The send button is always yours.
+                Paste a brand brief. Meera reads it and suggests what to charge.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button
@@ -172,7 +185,7 @@ export default function MeeraForCreatorsPage() {
             <FadeUp>
               <h2 className="text-center text-3xl font-bold tracking-tight">What Meera will do for you</h2>
               <p className="mx-auto mt-3 max-w-2xl text-center text-muted-foreground">
-                Five jobs, all with your approval. Meera never sends anything on her own.
+                Five jobs. Meera advises; you decide.
               </p>
             </FadeUp>
             <StaggerContainer className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -228,16 +241,15 @@ export default function MeeraForCreatorsPage() {
         <section className="border-t border-border/60 py-20">
           <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-2">
             <FadeUp>
-              <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Three promises</h2>
+              <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Two promises</h2>
               <ul className="mt-6 grid gap-4 text-left sm:grid-cols-2 lg:grid-cols-1">
                 <li className="rounded-xl border border-border/60 bg-background p-4 text-sm">
-                  <span className="font-semibold">You decide.</span> Every message goes out only after
-                  you approve it.
+                  <span className="font-semibold">You decide.</span> Meera tells you what she thinks.
+                  What you say to a brand is up to you.
                 </li>
-                <li className="rounded-xl border border-border/60 bg-background p-4 text-sm">
-                  <span className="font-semibold">Brands will know.</span> Every reply is labelled:
-                  drafted with Meera, approved by you.
-                </li>
+                {/* U-4: "Brands will know. Every reply is labelled: drafted with Meera, approved by
+                    you." removed — no reply is drafted and no brand-facing label exists. Needs
+                    Wave D (D-1, D-2, D-4 drafts; D-3, D-5 the label). See the file header. */}
                 <li className="rounded-xl border border-border/60 bg-background p-4 text-sm">
                   <span className="font-semibold">Your floor is yours.</span> A brand never sees it, and
                   Meera never says yes below it.

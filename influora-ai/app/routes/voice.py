@@ -122,9 +122,10 @@ class VoicePrefs:
     # fetch. True means "refuse this call with 403 CONSENT_REQUIRED before
     # any Sarvam/Gemini call". FAIL CLOSED for a creator: no context (fetch
     # failed, empty body), a missing key, a null or a non-bool all set it --
-    # only a positive `consent_accepted: true` / non-empty
-    # `consent_accepted_at` clears it. Always False for BRAND (no consent
-    # screen exists for brands; the brand routes are unchanged).
+    # only the version-aware `consent_accepted: true` clears it (K-4:
+    # `consent_accepted_at` alone no longer counts -- see
+    # app/auth/consent.py's module docstring). Always False for BRAND (no
+    # consent screen exists for brands; the brand routes are unchanged).
     consent_required: bool = False
 
 

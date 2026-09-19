@@ -13,7 +13,7 @@ import java.util.Set;
  * in the claim — it never validates the claim's entries against a registry — so a scope naming a
  * tool with no route is inert: nothing can call it, and it 404s if anything tries. That is why
  * {@link #SCOPE_LEVEL_0} ships all eight level-0 names from SPEC.md &sect;3.3 verbatim while only
- * four of them are wired. Minting the full ceiling now means a later wave adds a route and an
+ * five of them are wired. Minting the full ceiling now means a later wave adds a route and an
  * executor without also having to re-mint tokens or migrate a claim shape.
  *
  * <p><b>[D-02] Minting the ceiling is free only while no route exists. Read this before you add
@@ -144,10 +144,10 @@ public final class CreatorToolScopes {
      * The tools that have a route AND an executor today, in SPEC.md &sect;3.1 catalogue order.
      *
      * <p>Wave 3 added {@code estimate_my_rate} and {@code check_deal_risks} alongside
-     * {@code RateQuoteService} and {@code DealRiskService}. Still to come: {@code get_brief} with
-     * Wave 4's {@code CreatorBriefService}, {@code draft_reply} with the draft surface, then
-     * {@code send_routine_reply} (B1/B5) and {@code rank_open_campaigns} /
-     * {@code draft_application} (B7).
+     * {@code RateQuoteService} and {@code DealRiskService}; {@code get_brief} followed with
+     * {@code GetBriefExecutor} over {@code CreatorBriefService}, in the same change as its route.
+     * Still to come: {@code draft_reply} with the draft surface, then {@code send_routine_reply}
+     * (B1/B5) and {@code rank_open_campaigns} / {@code draft_application} (B7).
      *
      * <p><b>This list and {@code CreatorMeeraToolController}'s {@code @PostMapping} set are one
      * change, never two.</b> A name here with no route costs the creator a turn and a narrated
@@ -165,7 +165,12 @@ public final class CreatorToolScopes {
      * read at runtime and cannot go stale that way.
      */
     private static final List<String> WIRED_TOOL_NAMES =
-            List.of("get_my_deals", "estimate_my_rate", "get_my_metrics", "check_deal_risks");
+            List.of(
+                    "get_my_deals",
+                    "get_brief",
+                    "estimate_my_rate",
+                    "get_my_metrics",
+                    "check_deal_risks");
 
     private CreatorToolScopes() {}
 

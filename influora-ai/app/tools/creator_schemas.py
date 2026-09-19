@@ -72,6 +72,26 @@ CREATOR_TOOL_TO_SPRING_PATH: dict[str, str] = {
 # silently retryable.
 CREATOR_IDEMPOTENT_REQUIRED_TOOLS: tuple[str, ...] = ()
 
+# Creator tools whose forward must NOT be retried on a transport failure, but
+# do NOT need an Idempotency-Key -- deliberately a SEPARATE set from
+# CREATOR_IDEMPOTENT_REQUIRED_TOOLS above, which conflates "no retry" with
+# "needs a dedupe key" for money/state tools. get_brief is a plain read for
+# every other purpose, but F1 HIGH (Kavya, Wave U last-call review; Priya
+# ruling RULINGS-U-0917.md Addition B) found that retrying it is not safe:
+# on a deal's FIRST read, CreatorBriefService.ensurePlatformBrief commits a
+# raw NEW row and then makes a blocking AI call
+# (CreatorBriefService.analysisBudget(), 30s by default). A retried request
+# during that window used to land on the SAME just-committed NEW row and get
+# back an untouched "clean" brief with no extraction, no flags and no quote --
+# Spring's own fix (BRIEF_STILL_READING / re-analysis on read) closes the
+# WRONG-ANSWER half of that, but retrying here still wastes a second full
+# timeout wait for no benefit, and removing the retry is what actually
+# prevents a creator ever seeing the wrong answer rather than merely a slower
+# right one. So: no retry, ever, whatever Spring returns. See
+# `get_brief_read` in app/config.py's ProviderTimeouts for the matching
+# longer timeout this same fix needs.
+CREATOR_NO_RETRY_TOOLS: tuple[str, ...] = (GET_BRIEF,)
+
 # `QuoteDeliverableType` (§4.1) — a PRICING vocabulary, deliberately distinct
 # from the persisted `com.influora.domain.enums.DeliverableType` platform names.
 # The Spring executor parses case-insensitively and maps the platform names
@@ -186,15 +206,33 @@ CREATOR_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "description": (
             "Read one brief — a brief the creator pasted, or the brief behind a platform deal — "
             "with its extraction, its risk flags and its quote. Call it before you summarise a "
-            "brief, discuss its terms, or draft any reply about it. Pass one of brief_id or "
-            "deal_id; the server rejects the call when both are missing. Read-only."
+            "brief, discuss its terms, or draft any reply about it. Pass exactly one of "
+            "brief_id or deal_id: a deal's brief_id comes from an earlier get_my_deals result; "
+            "a pasted brief's id can also arrive in the creator's own message, since she may "
+            "open a chat about a brief she just pasted and it names the id for you. Passing "
+            "both ids is refused, and passing neither is refused. Read-only. "
+            "Two different error codes are possible and they are NOT the same thing. "
+            "error=BRIEF_STILL_READING means the first analysis is likely still running: tell the "
+            "creator so in one short sentence and do NOT call get_brief again this turn — wait "
+            "for her next message before trying again. error=BRIEF_ANALYSIS_UNAVAILABLE means the "
+            "brief could not be read (it was dismissed before analysis finished, or its stored "
+            "record is unreadable) and will NOT heal on retry: do NOT call get_brief again this "
+            "turn either, but tell the creator it could not be read and suggest she paste it "
+            "again. Never treat that second case as a clean brief — do not summarise terms it "
+            "never returned or call the deal safe. When the result comes back with "
+            "extraction_source=FALLBACK, tell the creator the summary was read by rule-based "
+            "extraction, not by you, and that it may miss things a full reading would catch — "
+            "never present a FALLBACK summary as your own reading of the brief."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "brief_id": {
                     "type": "string",
-                    "description": "Id of a pasted brief, from an earlier tool result.",
+                    "description": (
+                        "Id of a pasted brief. Comes from an earlier tool result, or from a "
+                        "brief id the creator herself gave in this chat."
+                    ),
                 },
                 "deal_id": {
                     "type": "string",

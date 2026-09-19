@@ -147,6 +147,8 @@ function renderRoom(dealId = 'deal_1') {
 describe('CreatorChatPage — deal risk flags (§8.6)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // U-3: dismissals live in sessionStorage — one test's dismissal must not hide another's flag.
+    window.sessionStorage.clear();
     messagesStream.mockImplementation(() => ({ close: vi.fn() }));
     dealsList.mockResolvedValue([makeDeal('deal_1')]);
     dealsGet.mockResolvedValue(makeDeal('deal_1'));
@@ -286,5 +288,44 @@ describe('CreatorChatPage — deal risk flags (§8.6)', () => {
 
     expect((await screen.findAllByText('Holi Haircare Reels')).length).toBeGreaterThan(0);
     expect(screen.queryByText('They want your content forever')).not.toBeInTheDocument();
+  });
+
+  it('U-3: dismisses a dismissible flag for the session; a non-dismissible flag has no control', async () => {
+    dealsRisks.mockResolvedValue({
+      ...CRITICAL_RISKS,
+      flags: [
+        ...CRITICAL_RISKS.flags,
+        {
+          code: 'EXCLUSIVITY_LONG',
+          severity: 'WARN',
+          title: 'Exclusivity runs 90 days',
+          detail: 'No other haircare brand for three months.',
+          action: 'Ask for 30 days.',
+          data: {},
+          dismissible: true,
+        },
+      ],
+    } satisfies DealRisksResponse);
+
+    renderRoom();
+    const user = userEvent.setup({ delay: null });
+
+    const dismiss = await screen.findByRole('button', { name: 'Dismiss Exclusivity runs 90 days' });
+    // The page supplies the handler, yet the non-dismissible flag still gets no control.
+    expect(
+      screen.queryByRole('button', { name: /Dismiss They want your content forever/ }),
+    ).not.toBeInTheDocument();
+
+    await user.click(dismiss);
+
+    expect(screen.queryByText('Exclusivity runs 90 days')).not.toBeInTheDocument();
+    expect(screen.getByText('They want your content forever')).toBeInTheDocument();
+    expect(screen.getByTestId('deal-risk-hidden-note')).toHaveTextContent(
+      '1 flag hidden for this session.',
+    );
+    // Scoped to this deal, in the tab's session store.
+    expect(window.sessionStorage.getItem('influora.riskFlagDismissals.v1')).toBe(
+      JSON.stringify({ 'DEAL:deal_1': ['EXCLUSIVITY_LONG'] }),
+    );
   });
 });

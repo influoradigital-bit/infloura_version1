@@ -100,21 +100,6 @@ public class BriefFallbackExtractor {
     private static final Pattern BARTER =
             Pattern.compile("\\bbarter\\b|\\bin\\s+exchange\\s+for\\s+(?:the\\s+)?product|\\bproduct\\s+only\\b|\\bfree\\s+product\\b", Pattern.CASE_INSENSITIVE);
 
-    private static final Pattern OFF_PLATFORM =
-            Pattern.compile("\\bupi\\b|\\bgpay\\b|\\bphonepe\\b|\\bpaytm\\b|\\bbank\\s+transfer\\b|\\bneft\\b|\\bimps\\b|\\bpay\\s+you\\s+directly\\b|\\boutside\\s+the\\s+platform\\b", Pattern.CASE_INSENSITIVE);
-
-    /**
-     * Hidden-disclosure detection is NEGATIVE-form only. "#ad" on its own is a brief asking FOR
-     * disclosure, which is the opposite signal, so the pattern requires a negation or an explicit
-     * "organic-looking" instruction beside it.
-     */
-    private static final Pattern DISCLOSURE_HIDDEN =
-            Pattern.compile(
-                    "(?:no|without|avoid|skip|don'?t\\s+(?:use|add|put))\\s*(?:the\\s*)?(?:#\\s*ad\\b|ad\\s*tag|paid\\s+partnership|disclosure|sponsored\\s+tag)"
-                            + "|(?:keep|make)\\s+it\\s+(?:look(?:ing)?\\s+)?organic"
-                            + "|\\bdon'?t\\s+(?:mention|disclose|tag)\\s+(?:us|the\\s+brand|that\\s+it'?s\\s+paid)",
-                    Pattern.CASE_INSENSITIVE);
-
     private static final Pattern PAYMENT_TERMS =
             Pattern.compile("([0-9]{1,3})\\s*%\\s*(?:advance|upfront|on\\s+signing)|\\bnet\\s*([0-9]{1,3})\\b", Pattern.CASE_INSENSITIVE);
 
@@ -173,8 +158,22 @@ public class BriefFallbackExtractor {
                         List.of(),
                         firstInt(REVISIONS, text, 0, 50),
                         paymentTermsIn(text),
-                        OFF_PLATFORM.matcher(lower).find(),
-                        DISCLOSURE_HIDDEN.matcher(lower).find(),
+                        // F-0773 / K-2c (Priya, RULINGS-U-0917.md round 6, "New: F-0772"). FALLBACK used to
+                        // set both risk hints from its own patterns here, which predated and bypassed
+                        // rounds 4, 5 and 6's fixes to OffPlatformPaymentRule and HideDisclosureRule
+                        // entirely — a bare "upi" set this hint even on an ordinary payout-configuration
+                        // sentence ("Add your UPI ID in your Influora payout settings"), and the rules' own
+                        // text checks already run on this same raw text (CreatorBriefService.analyse passes
+                        // it as RiskContext.text regardless of which extractor produced this
+                        // BriefExtraction). Both hints are now always false on this path: nothing the ruled
+                        // patterns catch is lost, because the rules re-derive the same signal from the text
+                        // directly and label it honestly basis=BRIEF_TEXT rather than a regex hit disguised
+                        // as STATED. The vocabulary that used to live in the two patterns removed here is
+                        // deleted, not merged, per the ruling — keeping a second, unreviewed copy of
+                        // "off-platform payment" or "hidden disclosure" wording is exactly the drift both
+                        // rounds 4 and 5 had to fix once already.
+                        false, // off_platform_payment_hint
+                        false, // disclosure_hidden_hint
                         List.of(), // claims — a claim is a judgement about meaning, not a pattern
                         null, // regulated_category
                         deliverables.isEmpty(),
@@ -227,12 +226,9 @@ public class BriefFallbackExtractor {
         } else if (lines.size() < MAX_SUMMARY_LINES && e.exclusivityScope() != null) {
             lines.add("Mentions exclusivity without a clear duration");
         }
-        if (lines.size() < MAX_SUMMARY_LINES && e.offPlatformPaymentHint()) {
-            lines.add("Mentions paying you outside a platform");
-        }
-        if (lines.size() < MAX_SUMMARY_LINES && e.disclosureHiddenHint()) {
-            lines.add("Asks you not to disclose the partnership");
-        }
+        // F-0773 / K-2c (round 6): the two summary lines that used to read off_platform_payment_hint
+        // and disclosure_hidden_hint are dropped along with the hints themselves — both are always
+        // false on this path now, so the lines would never have rendered anyway.
 
         List<String> capped = lines.subList(0, Math.min(lines.size(), MAX_SUMMARY_LINES));
         return new BriefExtraction(

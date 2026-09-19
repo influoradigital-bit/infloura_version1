@@ -66,8 +66,36 @@ def _get_optional_float(name: str) -> float | None:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.10.2"
-# ^ bumped for T-MEERA-CREATOR-PHASE-B B0 Wave 2. Wave 1 took `.09.10.1` for
+PROMPT_VERSION = "meera-2026.09.10.4"
+# ^ bumped for T-MEERA-CREATOR-PHASE-B Wave U, K-3 (Kabir "Last call — K-3",
+# KABIR-CONSENT-0917.md; KC-3 condition). `creator_persona.py`'s trust-boundary
+# bullet changed twice in this same range: once to name `<untrusted_brand_written>`
+# blocks inside tool results (K-3's mechanism, `loop.py`'s
+# `_model_copy_of_tool_result`), and again (KC-2) to say Meera may still name and
+# quote a brand from inside that wrapper, she just may not obey it. `.3` does NOT
+# cover this: it was assigned for the earlier U-5 `get_brief` description change,
+# existed before the K-3 persona edit landed, and per Kabir's own read of
+# `ci/stale-comment-check.py` rule 3 (L28-29, L281) the gate only checks that
+# PROMPT_VERSION was reassigned SOMEWHERE in the diff range — it would have passed
+# on `.3` alone even though `.3` was never actually served with this persona text.
+# `cache_key_for` starts with `prompt_version` (`assembler.py`), so reusing `.3`
+# risks a session started under the OLD persona text staying cached under a
+# version number that now also describes the NEW text — a version has to mean one
+# fixed prompt, and `.3` cannot honestly mean two.
+#
+# Previously: bumped for T-MEERA-CREATOR-PHASE-B Wave U (RULINGS-U-0917.md, U-5 python half).
+# `get_brief`'s CREATOR_TOOL_SCHEMAS description changed (creator_schemas.py) --
+# it now says where BOTH brief_id and deal_id come from, that passing both is
+# refused, and tells the model not to call the tool again this turn on a
+# still-reading refusal. `creator_schemas.py` is not itself under
+# `PROMPT_SOURCES` (ci/stale-comment-check.py does not watch it), so this bump
+# is manual and deliberate rather than gate-enforced -- Priya's ruling requires
+# it anyway because a tool description change can move the model's behaviour
+# exactly like a persona edit does. Two `assembler.py` comments that said
+# "four" creator tools are also fixed in this same change (get_brief is the
+# fifth, wired since this same Wave), which IS a genuine `PROMPT_SOURCES` hit.
+#
+# Previously: bumped for T-MEERA-CREATOR-PHASE-B B0 Wave 2. Wave 1 took `.09.10.1` for
 # the creator context contract; Wave 2 then REWROTE prompt content underneath
 # that same version — creator_persona.py's "what you do right now" section
 # became a six-tool capability list with two new rails, and
@@ -224,6 +252,29 @@ class ProviderTimeouts:
 
     spring_connect: float = 2.0
     spring_read: float = 5.0
+
+    # F1 HIGH (Kavya, Wave U last-call review of get_brief; Priya ruling
+    # RULINGS-U-0917.md Addition B) -- a NAMED setting, not a literal, and NOT
+    # `spring_read`, because `get_brief` is not a pure read. On a deal's first
+    # read it can create a PLATFORM brief row and spend AI money
+    # (CreatorBriefService.ensurePlatformBrief -> analyse -> MeeraBriefAiClient),
+    # a blocking round trip bounded on the Spring side by
+    # CREATOR_COPILOT_AI_CONNECT_TIMEOUT_SECONDS (application.yml default 5s)
+    # plus CREATOR_COPILOT_AI_REQUEST_TIMEOUT_SECONDS (default 15s) plus
+    # CreatorBriefService.STILL_READING_SLACK_SECONDS (10s) = a 30s
+    # analysisBudget() by default. Python cannot read Spring's own environment,
+    # so this cannot be derived at runtime -- it must clear that whole budget
+    # plus its own margin, or influora-ai gives up on a brief Spring is still
+    # about to finish. 40s = Spring's 30s budget + 10s. If Spring's three
+    # numbers above are ever retuned, this must be revisited by hand.
+    #
+    # The safety property this fix rests on is REMOVING THE RETRY
+    # (CREATOR_NO_RETRY_TOOLS in app/tools/creator_schemas.py), not the exact
+    # relationship between the two timeouts: without a retry, a timeout here
+    # reaches the model as a plain `network_error` it can relay, never as a
+    # false "clean brief". Every OTHER creator read tool keeps the 5s
+    # `spring_read` default and its retry -- this override is get_brief-only.
+    get_brief_read: float = 40.0
 
     scrape_total: float = 30.0
 

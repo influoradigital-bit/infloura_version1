@@ -438,7 +438,17 @@ export interface GetMyDealsPayload {
   completed_count: number;
 }
 
-/** `CreatorToolDtos.GetBriefResult` (§3.5) — `get_brief` tool result. */
+/**
+ * `CreatorToolDtos.GetBriefResult` (§3.5) — `get_brief` tool result. `@JsonInclude(NON_NULL)`
+ * (`CreatorToolDtos.java` ~129-138): a field the backend has nothing for is OMITTED, not sent as
+ * null (F6, KAVYA-FE-RECHECK-0917.md).
+ *   - `extraction`/`flags` are guaranteed present on a successful read — `GetBriefExecutor`
+ *     refuses with 409 otherwise (RULINGS-U-0917.md Addition A) — so both stay required.
+ *   - `quote` is NOT guaranteed: `CreatorBriefService`'s `readJson(brief.getQuoteJson(),
+ *     PackageQuote.class)` yields null, and the key is omitted, for an unset/unreadable quote
+ *     column. A real, successfully-read brief can have no stored price.
+ *   - `extraction_source` is omitted on a row with no recorded extraction source.
+ */
 export interface GetBriefPayload {
   brief_id: string;
   source: 'PASTED' | 'PLATFORM';
@@ -447,8 +457,8 @@ export interface GetBriefPayload {
   deal_id?: string;
   extraction: BriefExtraction;
   flags: RiskFlag[];
-  quote: PackageQuote;
-  extraction_source: 'AI' | 'FALLBACK';
+  quote?: PackageQuote;
+  extraction_source?: 'AI' | 'FALLBACK';
 }
 
 /** `CreatorToolDtos.EstimateMyRateResult` (§3.5) — `estimate_my_rate` tool result. */
@@ -510,10 +520,59 @@ export function isGetMyDealsPayload(data: unknown): data is GetMyDealsPayload {
   return Array.isArray(d.deals);
 }
 
+const GET_BRIEF_STATUSES = new Set(['NEW', 'ANALYZED', 'DRAFTED', 'SECURED', 'DISMISSED']);
+const BRIEF_SOURCES = new Set(['PASTED', 'PLATFORM']);
+const EXTRACTION_SOURCES = new Set(['AI', 'FALLBACK']);
+
+/**
+ * The original version of this guard only checked `brief_id` and `extraction`, which let a
+ * payload with no `flags`/`quote`/`status`/`extraction_source` through as "valid" — a `get_brief`
+ * card built on that admitted object rendered nonsense straight from the missing fields (a quote
+ * card reading "Not available yet · undefined revisions · Based on ."). Every field the card
+ * actually reads is checked here, so a malformed payload renders nothing instead.
+ *
+ * F6 fix round 2 (KAVYA-FE-RECHECK-0917.md) — the FIRST fix over-corrected: requiring `quote`
+ * and `extraction_source` rejected a real, successful, price-less brief outright (the same F6
+ * failure, from the opposite direction — see `GetBriefPayload`'s own doc comment for why neither
+ * is guaranteed). Both are optional here: ABSENT passes, but a PRESENT value that is not the
+ * right shape (a `quote` that is not an object, or an `extraction_source` that is not one of the
+ * two known values) still fails the guard rather than being coerced or ignored.
+ */
 export function isGetBriefPayload(data: unknown): data is GetBriefPayload {
   if (!data || typeof data !== 'object') return false;
   const d = data as Partial<GetBriefPayload>;
-  return typeof d.brief_id === 'string' && !!d.extraction && typeof d.extraction === 'object';
+  const quoteOk =
+    d.quote === undefined ||
+    (typeof d.quote === 'object' && d.quote !== null && !Array.isArray(d.quote));
+  const extractionSourceOk =
+    d.extraction_source === undefined ||
+    (typeof d.extraction_source === 'string' && EXTRACTION_SOURCES.has(d.extraction_source));
+  return (
+    typeof d.brief_id === 'string' &&
+    typeof d.status === 'string' &&
+    GET_BRIEF_STATUSES.has(d.status) &&
+    typeof d.source === 'string' &&
+    BRIEF_SOURCES.has(d.source) &&
+    !!d.extraction &&
+    typeof d.extraction === 'object' &&
+    Array.isArray(d.flags) &&
+    quoteOk &&
+    extractionSourceOk
+  );
+}
+
+/**
+ * Defence in depth ONLY (KAVYA-FE-RECHECK-0917.md) — `GetBriefExecutor` now refuses a NEW or
+ * incomplete brief with a 409 before this ever reaches the client (RULINGS-U-0917.md Addition A),
+ * so a bare `{ brief_id, status: 'NEW' }` stub with no `extraction`/`flags` at all should never
+ * actually arrive here; `isGetBriefPayload` correctly rejects it since those two stay required.
+ * If one ever did anyway (a stale build, a future regression), the renderer falls back to this
+ * check so it still reads as "still reading this brief" instead of silently rendering nothing.
+ */
+export function isNewBriefStub(data: unknown): data is { brief_id: string; status: 'NEW' } {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as { brief_id?: unknown; status?: unknown };
+  return typeof d.brief_id === 'string' && d.status === 'NEW';
 }
 
 export function isEstimateMyRatePayload(data: unknown): data is EstimateMyRatePayload {

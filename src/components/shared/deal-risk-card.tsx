@@ -106,10 +106,17 @@ export interface DealRiskCardProps {
    */
   flags?: RiskFlag[];
   /**
-   * Supplied only by surfaces that can actually persist a dismissal. Even when it is supplied,
-   * a flag with `dismissible: false` renders no control.
+   * U-3: every screen that renders this card supplies it, through `useRiskFlagDismissals`
+   * (`src/hooks/`), which hides the flag for the browser session only — no endpoint stores a
+   * per-flag dismissal. That is why `hiddenCount` / `onRestoreHidden` below exist: the card says
+   * the flags are hidden "for this session" and offers them back, instead of implying they are
+   * gone for good. Even when it is supplied, a flag with `dismissible: false` renders no control.
    */
   onDismiss?: (flag: RiskFlag) => void;
+  /** U-3: flags from this evaluation the creator has hidden this session. */
+  hiddenCount?: number;
+  /** U-3: un-hide them. The "Show" control renders only when this and `hiddenCount > 0` are set. */
+  onRestoreHidden?: () => void;
   /** Rendered above the rows. Pass `null` to render the rows bare (the deal page does). */
   heading?: React.ReactNode;
   className?: string;
@@ -119,14 +126,26 @@ export interface DealRiskCardProps {
  * Renders nothing at all when there are no flags — an empty "no risks found" panel would be a
  * claim the backend has not made (a 403, an unimplemented rule and a genuinely clean deal all
  * reach here as "no flags"). Callers that want a clean-deal message render it themselves.
+ *
+ * The one exception is a list the creator emptied herself: when every flag is hidden, the card
+ * still renders the "hidden for this session" line, so the flags stay one click away.
  */
-export function DealRiskCard({ flags, onDismiss, heading, className }: DealRiskCardProps) {
+export function DealRiskCard({
+  flags,
+  onDismiss,
+  hiddenCount = 0,
+  onRestoreHidden,
+  heading,
+  className,
+}: DealRiskCardProps) {
   const sorted = React.useMemo(() => {
     if (!flags || flags.length === 0) return [];
     return [...flags].sort((a, b) => rankOf(a.severity) - rankOf(b.severity));
   }, [flags]);
 
-  if (sorted.length === 0) return null;
+  const showHiddenNote = hiddenCount > 0 && !!onRestoreHidden;
+
+  if (sorted.length === 0 && !showHiddenNote) return null;
 
   return (
     <div className={cn('space-y-2', className)} data-testid="deal-risk-card">
@@ -189,6 +208,24 @@ export function DealRiskCard({ flags, onDismiss, heading, className }: DealRiskC
           </div>
         );
       })}
+      {showHiddenNote ? (
+        <p
+          data-testid="deal-risk-hidden-note"
+          className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground"
+        >
+          <span>
+            {hiddenCount} {hiddenCount === 1 ? 'flag' : 'flags'} hidden for this session.
+          </span>
+          <button
+            type="button"
+            aria-label="Show hidden flags"
+            onClick={onRestoreHidden}
+            className="rounded font-medium text-foreground underline underline-offset-2 hover:no-underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            Show
+          </button>
+        </p>
+      ) : null}
     </div>
   );
 }

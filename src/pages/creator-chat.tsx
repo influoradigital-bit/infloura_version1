@@ -78,6 +78,7 @@ import { ReceiptConfirmation, type ReceiptData } from '@/components/creator/deal
 import { ShipmentCard, type ShipmentStatus } from '@/components/shared/shipment-card';
 import { DealTermsSummary } from '@/components/shared/deal-terms-summary';
 import { DealRiskCard } from '@/components/shared/deal-risk-card';
+import { useRiskFlagDismissals } from '@/hooks/useRiskFlagDismissals';
 import { MapPin } from 'lucide-react';
 // CR-34 — `CollaborationStatus` is no longer imported here: the only value-level use was the
 // local canAccept() mirror, which now lives in lib/deal-stage.ts. It survives in prose below.
@@ -1003,6 +1004,19 @@ export default function CreatorChatPage() {
    * never on a null that the wire cannot produce.
    */
   const selectedDealRiskFlags = selectedDeal ? (dealRisks[selectedDeal.id] ?? []) : [];
+
+  /**
+   * U-3 — session dismissal for the open deal's flags, shared by BOTH render sites below (the
+   * brand proposal card and the counter card) and keyed `DEAL:{id}`, the same scope Meera's
+   * `check_deal_risks` card uses for this deal. Non-dismissible flags are never filtered and get no
+   * control — `useRiskFlagDismissals` and `DealRiskCard` both read `flag.dismissible`.
+   */
+  const selectedDealRisks = useRiskFlagDismissals(
+    selectedDeal ? `DEAL:${selectedDeal.id}` : undefined,
+    selectedDealRiskFlags,
+  );
+  const showSelectedDealRisks =
+    selectedDealRisks.visibleFlags.length > 0 || selectedDealRisks.hiddenCount > 0;
 
   // Mark the thread read once opened (mirrors creator-deals.tsx openDeal flow).
   React.useEffect(() => {
@@ -2599,13 +2613,20 @@ export default function CreatorChatPage() {
                             THIS deal, after the terms summary. Gated on `pending` for the same
                             reason the terms block above is: the flags describe the offer
                             currently on the table, so a settled card must not carry them. Its own
-                            gate is `length > 0` rather than presence, so a deal with no flags —
-                            or one whose read was refused with the expected 403 — renders no
-                            heading at all rather than an empty panel implying "all clear". */}
-                        {event.metadata?.status === 'pending' && selectedDealRiskFlags.length > 0 && (
+                            gate is "something to show" rather than presence, so a deal with no
+                            flags — or one whose read was refused with the expected 403 — renders
+                            no heading at all rather than an empty panel implying "all clear".
+                            U-3: "something to show" includes flags the creator hid this session,
+                            so the card's "hidden for this session · Show" line stays reachable. */}
+                        {event.metadata?.status === 'pending' && showSelectedDealRisks && (
                           <div className="mt-3 pt-3 border-t border-stage-outreach-border space-y-2">
                             <p className="text-xs text-muted-foreground mb-1">What to watch</p>
-                            <DealRiskCard flags={selectedDealRiskFlags} />
+                            <DealRiskCard
+                              flags={selectedDealRisks.visibleFlags}
+                              onDismiss={selectedDealRisks.dismiss}
+                              hiddenCount={selectedDealRisks.hiddenCount}
+                              onRestoreHidden={selectedDealRisks.restore}
+                            />
                           </div>
                         )}
 
@@ -2819,10 +2840,15 @@ export default function CreatorChatPage() {
                             `UsageLongRule` and `UsagePerpetualRule` all describe terms a counter
                             on amount alone leaves untouched, so they are still what the creator
                             would be agreeing to. */}
-                        {event.metadata?.status === 'pending' && selectedDealRiskFlags.length > 0 && (
+                        {event.metadata?.status === 'pending' && showSelectedDealRisks && (
                           <div className="mt-3 pt-3 border-t border-stage-negotiating-border space-y-2">
                             <p className="text-xs text-muted-foreground mb-1">What to watch</p>
-                            <DealRiskCard flags={selectedDealRiskFlags} />
+                            <DealRiskCard
+                              flags={selectedDealRisks.visibleFlags}
+                              onDismiss={selectedDealRisks.dismiss}
+                              hiddenCount={selectedDealRisks.hiddenCount}
+                              onRestoreHidden={selectedDealRisks.restore}
+                            />
                           </div>
                         )}
 

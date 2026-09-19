@@ -130,9 +130,31 @@ export interface MeeraCopilotChatProps {
   /** Bubbles a CONSENT_REQUIRED failure up so the caller can re-show the consent screen
    *  (e.g. consent was revoked/expired mid-session). */
   onConsentRequired: () => void;
+  /**
+   * U-5 (RULINGS-U-0917.md R-U1) — a message to FILL the composer with, never to send. Priya's
+   * ruling changed SPEC §8.5's "Open in Meera" from auto-send to prefill-only: an automatic send
+   * needs a send-once guard that survives an async connect, StrictMode's double effect and a
+   * consent screen in between, and prefill has none of those failure modes.
+   *
+   * `token` must change on every request, even when `text` repeats (e.g. the creator clicks "Ask
+   * Meera about this brief" twice), so a genuinely new request is never ignored just because its
+   * text matches the last one. It is compared against the last APPLIED token, not the last SEEN
+   * one, so an unrelated re-render of the caller never re-fires it. If the creator already typed
+   * something, that text stays and the message is appended — never overwritten. A second request
+   * that resolves before the first one's own effect ran (a fast double-click) still carries a
+   * DIFFERENT token, so token equality alone would append twice; the composer text itself is also
+   * checked (see the effect below) so the prompt is never appended back-to-back with itself.
+   */
+  prefillMessage?: { text: string; token: number } | null;
 }
 
-export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequired }: MeeraCopilotChatProps) {
+export function MeeraCopilotChat({
+  firstName,
+  language,
+  onClose,
+  onConsentRequired,
+  prefillMessage,
+}: MeeraCopilotChatProps) {
   const [live] = React.useState(() => isApiLive());
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
@@ -223,6 +245,28 @@ export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequir
   const handleRetryConnect = React.useCallback(() => {
     connectToMeera({ current: false });
   }, [connectToMeera]);
+
+  // U-5 — fill the composer, never send. The TOKEN guard below stops an unrelated re-render of
+  // the caller (new `prefillMessage` object, same token) from re-firing; it does NOT by itself
+  // stop two DIFFERENT tokens carrying the same text from both appending (a fast double-click on
+  // "Ask Meera" resolves as two distinct requests) — the effect's own text-suffix check (PRIYA-
+  // LASTCALL-U3-U5-0917.md, U-5 LOW (c)) is what makes a back-to-back repeat of the same prompt a
+  // no-op instead of appending it twice.
+  const appliedPrefillTokenRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (!prefillMessage || prefillMessage.token === appliedPrefillTokenRef.current) return;
+    appliedPrefillTokenRef.current = prefillMessage.token;
+    setDraft((prev) => {
+      // PRIYA-LASTCALL-U3-U5-0917.md, U-5 LOW (c) — the page's own consent re-probe is async, so
+      // a fast double-click on "Ask Meera" produces two DISTINCT tokens (each request increments
+      // the counter) before the first click's own effect has run, and both carry the same
+      // prompt text. Token equality alone (the check above) does not catch that, since the two
+      // tokens are genuinely different. Skip re-appending when the composer already ends with
+      // this exact text, rather than doubling it up.
+      if (prev.endsWith(prefillMessage.text)) return prev;
+      return prev.trim() ? `${prev} ${prefillMessage.text}` : prefillMessage.text;
+    });
+  }, [prefillMessage]);
 
   React.useEffect(() => {
     const el = scrollRef.current;
@@ -322,9 +366,9 @@ export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequir
              * leaking onto a creator stream), and a spinner for it would promise a card that can
              * never arrive. Never thrown on — a stray tool name must not take the chat down.
              *
-             * A KNOWN name whose card has not been built yet (`get_brief` is B0-44, `draft_reply`
-             * is B0-49) deliberately DOES get its spinner, which then resolves to nothing. The
-             * gate here is `isCreatorToolName` and nothing narrower on purpose: a second,
+             * A KNOWN name whose card has not been built yet (`draft_reply`, B0-49 — `get_brief`,
+             * B0-44, is wired up as of U-4) deliberately DOES get its spinner, which then resolves
+             * to nothing. The gate here is `isCreatorToolName` and nothing narrower on purpose: a second,
              * hand-maintained "names that have a card" list would silently stop rendering a card
              * the day someone added one to the renderer's switch and forgot this file — the exact
              * failure mode this ticket exists to fix.
@@ -576,6 +620,7 @@ export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequir
             className="h-9 w-9 shrink-0"
             onClick={handleSend}
             disabled={connecting || sending || !draft.trim()}
+            aria-label="Send message"
           >
             <Send className="h-4 w-4" />
           </Button>

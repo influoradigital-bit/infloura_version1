@@ -13,8 +13,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
-import type { PackageQuote } from '@/lib/api';
-import type { DealSummary, MetricsResult } from '@/lib/meera-api';
+import type { BriefExtraction, PackageQuote } from '@/lib/api';
+import type { DealSummary, GetBriefPayload, MetricsResult } from '@/lib/meera-api';
 import {
   BENCHMARK_PROVENANCE,
   CreatorToolResultRenderer,
@@ -39,6 +39,32 @@ function quote(overrides: Partial<PackageQuote> = {}): PackageQuote {
     provenance: 'your last 4 priced deals',
     provenance_sample_size: 4,
     withheld: false,
+    ...overrides,
+  };
+}
+
+function extraction(overrides: Partial<BriefExtraction> = {}): BriefExtraction {
+  return {
+    budget_stated: false,
+    barter_only: false,
+    usage_perpetual: false,
+    off_platform_payment_hint: false,
+    disclosure_hidden_hint: false,
+    vague_deliverables: false,
+    ...overrides,
+  };
+}
+
+/** A well-formed `get_brief` payload — every field `isGetBriefPayload` requires present. */
+function getBriefPayload(overrides: Partial<GetBriefPayload> = {}): GetBriefPayload {
+  return {
+    brief_id: 'b1',
+    source: 'PASTED',
+    status: 'ANALYZED',
+    extraction: extraction(),
+    flags: [],
+    quote: quote(),
+    extraction_source: 'AI',
     ...overrides,
   };
 }
@@ -286,12 +312,84 @@ describe('CreatorToolResultRenderer', () => {
     expect(risks.getByTestId('deal-risk-card')).toBeInTheDocument();
   });
 
-  it('renders nothing for the two B0 tools whose cards land in later waves', () => {
-    const brief = render(
-      <CreatorToolResultRenderer toolName="get_brief" status="ok" data={{ brief_id: 'b1', extraction: {} }} />,
+  it('U-3: the check_deal_risks card supplies dismiss for dismissible flags only, scoped to its target', async () => {
+    window.sessionStorage.clear();
+    const user = userEvent.setup();
+    render(
+      <CreatorToolResultRenderer
+        toolName="check_deal_risks"
+        status="ok"
+        data={{
+          flags: [
+            { code: 'OFF_PLATFORM_PAYMENT', severity: 'CRITICAL', title: 'Pay outside Influora', detail: 'd', action: 'a', data: {}, dismissible: false },
+            { code: 'USAGE_LONG', severity: 'WARN', title: 'Usage runs a year', detail: 'd', action: 'a', data: {}, dismissible: true },
+          ],
+          highest_severity: 'CRITICAL',
+          target: 'DEAL',
+          target_id: 'd9',
+        }}
+      />,
     );
-    expect(brief.container).toBeEmptyDOMElement();
 
+    expect(screen.queryByRole('button', { name: /Dismiss Pay outside Influora/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Dismiss Usage runs a year' }));
+
+    expect(screen.queryByText('Usage runs a year')).not.toBeInTheDocument();
+    expect(screen.getByText('Pay outside Influora')).toBeInTheDocument();
+    expect(window.sessionStorage.getItem('influora.riskFlagDismissals.v1')).toBe(
+      JSON.stringify({ 'DEAL:d9': ['USAGE_LONG'] }),
+    );
+    window.sessionStorage.clear();
+  });
+
+  it('U-3: never hides a non-dismissible flag, even when its code is already in the session store', () => {
+    // A rule that became non-dismissible after a creator hid it, or a hand-edited store: the
+    // flag's own `dismissible: false` wins over anything stored.
+    window.sessionStorage.setItem(
+      'influora.riskFlagDismissals.v1',
+      JSON.stringify({ 'BRIEF:b7': ['REGULATED_CATEGORY'] }),
+    );
+    render(
+      <CreatorToolResultRenderer
+        toolName="check_deal_risks"
+        status="ok"
+        data={{
+          flags: [
+            { code: 'REGULATED_CATEGORY', severity: 'CRITICAL', title: 'Regulated category', detail: 'd', action: 'a', data: {}, dismissible: false },
+          ],
+          highest_severity: 'CRITICAL',
+          target: 'BRIEF',
+          target_id: 'b7',
+        }}
+      />,
+    );
+    expect(screen.getByText('Regulated category')).toBeInTheDocument();
+    expect(screen.queryByTestId('deal-risk-hidden-note')).not.toBeInTheDocument();
+    window.sessionStorage.clear();
+  });
+
+  it('U-3 UF3-2 (PRIYA-LASTCALL-U3-U5-0917.md item 4): no target/target_id means no scope, and no dismiss button — never one shared bucket', () => {
+    // Every check_deal_risks payload elsewhere in this file carries a target/target_id. This is
+    // the one case that omits both, which is what a malformed or partial tool result looks like —
+    // the card must still render the flags, just with no dismiss control, rather than falling
+    // into one shared "UNSCOPED" bucket that would hide a flag on an UNRELATED deal/brief.
+    render(
+      <CreatorToolResultRenderer
+        toolName="check_deal_risks"
+        status="ok"
+        data={{
+          flags: [
+            { code: 'EXCLUSIVITY_LONG', severity: 'WARN', title: 'Exclusivity runs long', detail: 'd', action: 'a', data: {}, dismissible: true },
+          ],
+          highest_severity: 'WARN',
+        }}
+      />,
+    );
+    expect(screen.getByText('Exclusivity runs long')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Dismiss / })).not.toBeInTheDocument();
+  });
+
+  it('renders nothing for draft_reply, the one B0 tool whose card lands in a later wave', () => {
     const draft = render(
       <CreatorToolResultRenderer toolName="draft_reply" status="ok" data={{ draft_id: 'x', kind: 'REPLY' }} />,
     );
@@ -313,5 +411,153 @@ describe('CreatorToolResultRenderer', () => {
     expect(error).toHaveTextContent('Rate service is down.');
     expect(error).toHaveClass('bg-destructive');
     expect(error).toHaveClass('text-destructive-foreground');
+  });
+});
+
+describe('CreatorToolResultRenderer — get_brief (U-4)', () => {
+  it('renders the full BriefCard — summary chips, risk flags and the quote — for an analyzed brief', () => {
+    render(
+      <CreatorToolResultRenderer
+        toolName="get_brief"
+        status="ok"
+        data={getBriefPayload({
+          status: 'ANALYZED',
+          extraction: extraction({ budget_inr: 5000, deliverables: [{ type: 'REEL', qty: 1 }] }),
+          flags: [
+            { code: 'USAGE_PERPETUAL', severity: 'CRITICAL', title: 'Usage runs forever', detail: 'd', action: 'a', data: {}, dismissible: false },
+          ],
+        })}
+      />,
+    );
+    expect(screen.getByTestId('brief-card')).toBeInTheDocument();
+    expect(screen.getByText('₹5,000')).toBeInTheDocument();
+    expect(screen.getByTestId('deal-risk-card')).toBeInTheDocument();
+    expect(screen.getByText('Usage runs forever')).toBeInTheDocument();
+    expect(screen.getByTestId('package-quote-card')).toBeInTheDocument();
+  });
+
+  it('says the summary was read without AI when extraction_source is FALLBACK', () => {
+    render(
+      <CreatorToolResultRenderer
+        toolName="get_brief"
+        status="ok"
+        data={getBriefPayload({ status: 'ANALYZED', extraction_source: 'FALLBACK' })}
+      />,
+    );
+    expect(screen.getByTestId('brief-degraded-label')).toHaveTextContent(
+      'This summary is rule-based, not read by Meera.',
+    );
+  });
+
+  it('renders a plain "still reading" state for a NEW brief, never a clean card with zero flags', () => {
+    render(
+      <CreatorToolResultRenderer
+        toolName="get_brief"
+        status="ok"
+        data={getBriefPayload({ status: 'NEW', flags: [], quote: quote({ withheld: true }) })}
+      />,
+    );
+    expect(screen.getByTestId('get-brief-still-reading')).toBeInTheDocument();
+    // Not the full card in any of its parts — a NEW brief has nothing analyzed yet, so none of
+    // BriefCard's pieces (which would otherwise read as "checked, and clean") may appear.
+    expect(screen.queryByTestId('brief-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('deal-risk-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('package-quote-card')).not.toBeInTheDocument();
+    expect(screen.queryByText(/no risk/i)).not.toBeInTheDocument();
+  });
+
+  it('rejects a malformed payload instead of rendering the old "undefined revisions" garbage', () => {
+    // The prior guard only checked brief_id + extraction. This shape would have passed it, and a
+    // card built on it read "Not available yet · undefined revisions · Based on .".
+    const { container } = render(
+      <CreatorToolResultRenderer
+        toolName="get_brief"
+        status="ok"
+        data={{ brief_id: 'b1', extraction: {} }}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText(/undefined revision/)).not.toBeInTheDocument();
+  });
+
+  it('rejects a payload with a non-array flags field', () => {
+    const raw = getBriefPayload();
+    const { container } = render(
+      <CreatorToolResultRenderer
+        toolName="get_brief"
+        status="ok"
+        data={{ ...raw, flags: undefined }}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('rejects a payload with an unrecognised status', () => {
+    const raw = getBriefPayload();
+    const { container } = render(
+      <CreatorToolResultRenderer
+        toolName="get_brief"
+        status="ok"
+        data={{ ...raw, status: 'BOGUS' }}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('CreatorToolResultRenderer — get_brief F6 round 2 (KAVYA-FE-RECHECK-0917.md)', () => {
+  it('renders a real pasted brief the way Java actually serialises it — deal_id, quote and extraction_source all OMITTED, not null', () => {
+    // Object literal with the three keys left out entirely (not set to undefined) — this is what
+    // `JSON.parse` produces for an `@JsonInclude(NON_NULL)` field the backend has nothing for.
+    const full = getBriefPayload({ status: 'ANALYZED' });
+    const { deal_id: _deal_id, quote: _quote, extraction_source: _extraction_source, ...pastedNoPrice } = full;
+    expect('deal_id' in pastedNoPrice).toBe(false);
+    expect('quote' in pastedNoPrice).toBe(false);
+    expect('extraction_source' in pastedNoPrice).toBe(false);
+
+    render(<CreatorToolResultRenderer toolName="get_brief" status="ok" data={pastedNoPrice} />);
+
+    // The card still renders — an absent quote/extraction_source is not a malformed payload.
+    expect(screen.getByTestId('brief-card')).toBeInTheDocument();
+    // Honest "no price" state, reusing BriefCard's own existing fallback — never "undefined", and
+    // never a quote card with nothing in it.
+    expect(screen.getByTestId('brief-no-quote')).toHaveTextContent('No price suggestion for this brief.');
+    expect(screen.queryByTestId('package-quote-card')).not.toBeInTheDocument();
+    // Absent extraction_source is treated as unknown, not as FALLBACK — no degraded label either.
+    expect(screen.queryByTestId('brief-degraded-label')).not.toBeInTheDocument();
+  });
+
+  it('a bare NEW stub with no extraction/flags/quote at all still reaches "still reading" (defence in depth)', () => {
+    // What Addition A's 409 is supposed to make impossible — kept as a guard against a stale
+    // build or a future regression reintroducing it.
+    render(
+      <CreatorToolResultRenderer toolName="get_brief" status="ok" data={{ brief_id: 'brief_stub', status: 'NEW' }} />,
+    );
+    expect(screen.getByTestId('get-brief-still-reading')).toBeInTheDocument();
+    expect(screen.queryByTestId('brief-card')).not.toBeInTheDocument();
+  });
+
+  it('still rejects a PRESENT but malformed quote (not an object)', () => {
+    const raw = getBriefPayload();
+    const { container } = render(
+      <CreatorToolResultRenderer toolName="get_brief" status="ok" data={{ ...raw, quote: 'nope' }} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('still rejects a PRESENT but malformed quote (an array, not the PackageQuote object)', () => {
+    const raw = getBriefPayload();
+    const { container } = render(
+      <CreatorToolResultRenderer toolName="get_brief" status="ok" data={{ ...raw, quote: [] }} />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('still rejects a PRESENT but unrecognised extraction_source', () => {
+    const raw = getBriefPayload();
+    const { container } = render(
+      <CreatorToolResultRenderer toolName="get_brief" status="ok" data={{ ...raw, extraction_source: 'BOGUS' }} />,
+    );
+    expect(container).toBeEmptyDOMElement();
   });
 });

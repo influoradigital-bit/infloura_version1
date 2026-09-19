@@ -94,6 +94,18 @@ describe('DealRiskCard', () => {
     expect(screen.getAllByTestId('deal-risk-row')).toHaveLength(2);
   });
 
+  it('U-3: says how many flags are hidden for this session and offers them back', () => {
+    const onRestoreHidden = vi.fn();
+    // Every flag hidden: the card must still render, or the creator could never get them back.
+    render(<DealRiskCard flags={[]} hiddenCount={2} onRestoreHidden={onRestoreHidden} />);
+
+    expect(screen.getByTestId('deal-risk-hidden-note')).toHaveTextContent(
+      '2 flags hidden for this session.',
+    );
+    screen.getByRole('button', { name: 'Show hidden flags' }).click();
+    expect(onRestoreHidden).toHaveBeenCalledTimes(1);
+  });
+
   it('renders nothing — and does not throw — when flags is absent or empty', () => {
     // `flags` arrives `undefined`, never `null`: CheckDealRisksResult is @JsonInclude(NON_NULL),
     // so an absent list is an absent KEY. A `.map()` here would throw at runtime and `tsc` would

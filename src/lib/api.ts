@@ -6639,7 +6639,16 @@ const MOCK_CREATOR_AGENT_PREFS: CreatorAgentPreferences = {
   represented: false,
   agency_name: null,
   consent_accepted: false,
-  consent_version: 'v1',
+  // U-6 (RULINGS-U-0917.md R-U2) — Vikram bumps CreatorAgentPreferences.CURRENT_CONSENT_VERSION
+  // v1 → v2 on the backend in the same commit as the new paste-consent paragraph
+  // (ConsentScreen.tsx); this mock follows so mock mode matches.
+  //
+  // PRIYA-LASTCALL-U1R-U6-0917.md (UF6-1) — a v3 bump landed here briefly for U-7's Case B
+  // switch and was reverted: the backend is still v2, and shipping v3 on the frontend alone
+  // split the two. The v2 -> v3 edit is saved as
+  // .proof-os/tasks/T-MEERA-CREATOR-PHASE-B/U7-caseB-v3.patch, re-applied only in the U-7
+  // change itself, together with Vikram's backend bump, never one without the other.
+  consent_version: 'v2',
   rate_card_shareable: false,
   rate_card: null,
   negotiation_holdout: false,
@@ -6867,15 +6876,32 @@ export interface PackageQuote {
  */
 export interface BriefAnalysisResponse {
   brief_id: string;
+  /**
+   * U-2: added — `BriefDtos.BriefAnalysisResponse.source`. Null-guarded on the Java side
+   * (`brief.getSource() == null ? null : ...name()`), so optional here.
+   */
+  source?: 'PASTED' | 'PLATFORM';
   status: 'NEW' | 'ANALYZED' | 'DRAFTED' | 'SECURED' | 'DISMISSED';
-  extraction: BriefExtraction;
-  flags: RiskFlag[];
-  quote: PackageQuote;
-  extraction_source: 'AI' | 'FALLBACK';
+  /** U-2: added — `deal_id`, the collaboration a PLATFORM brief was built from. Omitted otherwise. */
+  deal_id?: string;
+  /**
+   * U-2: corrected from required to optional, together with `flags`, `quote` and
+   * `extraction_source`. The paste route always fills them, but this type is also `GET
+   * /creator/briefs/:id`'s, and `CreatorBriefService.toResponse` rebuilds from a stored snapshot
+   * that "yields nulls rather than a 500" when it cannot be parsed — so on that route each of the
+   * four can arrive as an ABSENT KEY (`@JsonInclude(NON_NULL)`). Required types let a `.map()`
+   * on `flags` compile against a payload that does not carry it.
+   */
+  extraction?: BriefExtraction;
+  flags?: RiskFlag[];
+  quote?: PackageQuote;
+  extraction_source?: 'AI' | 'FALLBACK';
   /** Omitted (NON_NULL) when the extractor produced no summary lines. */
   summary_lines?: string[];
   /** Omitted (NON_NULL) outside a degraded analysis (AMEND-0904, §14.4.a). */
   degraded_reason?: 'cap' | 'ai_unavailable';
+  /** U-2: added — `created_at`, null-guarded on the Java side. */
+  created_at?: string;
 }
 
 /**
@@ -7007,6 +7033,63 @@ export interface CampaignFit {
   already_applied: boolean;
   below_floor: boolean;
 }
+
+/**
+ * U-2 (SPEC.md §8.1, §8.5) — `CreatorBriefController`'s four routes. The three secure-link methods
+ * §8.1 lists are NOT here: the controller's own javadoc defers those routes to Phase B1, so a
+ * client method for them would call a 404.
+ *
+ * Every method passes `{ role: 'creator' }` explicitly — `HttpClient.request` defaults `role` to
+ * `'brand'`, which would send the brand token to a creator-only route.
+ *
+ * Mock mode never invents an analysis. `paste` and `get` reject with `NOT_AVAILABLE` (the
+ * `campaignTemplates` idiom) rather than resolving a made-up brief that a demo would render as a
+ * real reading of the creator's text.
+ */
+export const creatorBriefs = {
+  /** POST /creator/briefs — 201, body `{ text }` (`PasteBriefRequest`, `@NotBlank @Size(max = 8000)`). */
+  paste: (text: string): Promise<BriefAnalysisResponse> =>
+    isLive()
+      ? http.request<BriefAnalysisResponse>('POST', '/creator/briefs', {
+          role: 'creator',
+          body: { text },
+        })
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Brief analysis is not available in mock mode')),
+
+  /** GET /creator/briefs?limit=20 — newest first. */
+  list: (limit = 20): Promise<BriefListItem[]> =>
+    isLive()
+      ? http.request<BriefListItem[]>('GET', '/creator/briefs', {
+          role: 'creator',
+          query: { limit },
+        })
+      : mockOr<BriefListItem[]>([]),
+
+  /**
+   * GET /creator/briefs/:id — U-1 fix (RULINGS-U-0917.md §0, "Vikram's F1 fix"): no longer a
+   * plain rebuild from the stored snapshot. A brief still being read now refuses with 409
+   * `BRIEF_STILL_READING` instead of returning an empty NEW snapshot as if it were a clean read,
+   * and a brief whose first reading died gets re-analysed on this call (one blocking AI call,
+   * no retry). Only an already-ANALYZED brief is still a plain, no-AI-call rebuild. This method's
+   * own error handling is unchanged here — how the frontend should react to the 409 is Kavya's
+   * call, once she reports what it does today.
+   */
+  get: (id: string): Promise<BriefAnalysisResponse> =>
+    isLive()
+      ? http.request<BriefAnalysisResponse>('GET', `/creator/briefs/${encodeURIComponent(id)}`, {
+          role: 'creator',
+        })
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Brief analysis is not available in mock mode')),
+
+  /** POST /creator/briefs/:id/dismiss — 204, idempotent. */
+  dismiss: (id: string): Promise<void> =>
+    isLive()
+      ? http.request<void>('POST', `/creator/briefs/${encodeURIComponent(id)}/dismiss`, {
+          role: 'creator',
+        })
+      : mockOr(undefined),
+
+};
 
 // ---------------------------------------------------------------------------
 // Public verified-metrics (A9, SPEC.md §2.8) — no auth required
@@ -7262,6 +7345,7 @@ export const api = {
   trendspark,
   creatorCopilot,
   creatorAgentPrefs,
+  creatorBriefs,
   publicCreators,
   clientErrors,
   festivalEnquiry,

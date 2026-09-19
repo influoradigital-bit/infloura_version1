@@ -262,13 +262,43 @@ public class DealRiskService {
      * quote it wants used verbatim should build a {@link RiskContext} and call
      * {@link #evaluate(RiskContext, String)}, which is the real entry point this and the two
      * loaders above all funnel into.
+     *
+     * <p><b>K-2 HIGH fix (Kabir, KABIR-CONSENT-0917.md Q5; Priya RULINGS-U-0917.md round 3
+     * &sect;1).</b> {@code text} used to be hardcoded {@code null} here, which meant the regex
+     * halves of {@code OFF_PLATFORM_PAYMENT}, {@code HIDE_DISCLOSURE}, {@code USAGE_PERPETUAL} and
+     * {@code VAGUE_DELIVERABLES} — {@code RiskText.matches} is false for a null/blank text — could
+     * only ever fire off the extractor's OWN boolean hint. A brand whose text said "pay by UPI
+     * after posting, skip the #ad" but whose extraction hint came back false (a targeted prompt, or
+     * simply a miss) produced a creator-facing card with neither non-dismissible flag, on the one
+     * path every successful AI extraction takes. {@link #evaluateBrief} already passes {@code
+     * brief.getRawText()} for exactly this reason (see its own javadoc); this method now does too,
+     * fed by its one caller, {@code CreatorBriefService.analyse}, which already holds the same
+     * {@code CreatorBrief} entity {@code evaluateBrief} reads it from later.
+     *
+     * <p><b>{@code lastBrandMessage} stays {@code null} — do not feed it a real value.</b> {@link
+     * RiskContext}'s own javadoc says it is non-null ONLY on the {@code evaluateDeal} path, which
+     * is how {@code PARTNERSHIP_ADS_REQUEST} enforces "only in evaluateDeal" without a separate
+     * flag. Threading a real value through here would let that rule fire on a pasted or
+     * platform-read brief, which K-2 does not ask for and would need its own review.
+     *
+     * <p><b>No re-evaluation of already-frozen rows.</b> {@code risk_flags_json} is a snapshot,
+     * written once by {@link CreatorBriefWriter#saveAnalysis} and never recomputed on read (see the
+     * class javadoc on {@link CreatorBriefService}). This fix only changes what a FUTURE analysis
+     * computes; a brief analysed before this fix landed keeps whatever the null-text bug produced.
+     * Priya's ruling: no backfill path, no quiet recompute-on-read — only a designed migration with
+     * its own review, should stored flags ever need correcting. The residual is bounded because no
+     * real (non-test) {@code creator_briefs} row can exist yet: the table's migration
+     * (V20260910100100) has not reached a remote branch this clone can see, and Phase A is not
+     * deployed. The first deploy that carries this fix must delete any {@code creator_briefs} row
+     * created before it, rather than trust its flags (owner: meera, at that deploy).
      */
     @Transactional(readOnly = true)
     public List<RiskFlag> evaluateExtraction(
             CreatorProfile profile,
             PreferencesResponse prefs,
             BriefExtraction extraction,
-            Collaboration collaborationOrNull) {
+            Collaboration collaborationOrNull,
+            String text) {
         Campaign campaign =
                 collaborationOrNull == null
                         ? null
@@ -284,7 +314,7 @@ public class DealRiskService {
                         quoteFor(profile, prefs, safeExtraction, List.of()),
                         brandNameOf(safeExtraction, null, campaign, workspaceOf(campaign)),
                         campaign == null ? null : campaign.getWorkspaceId(),
-                        null,
+                        text,
                         null,
                         localeFor(prefs),
                         Instant.now(),

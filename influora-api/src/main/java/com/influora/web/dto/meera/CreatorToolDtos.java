@@ -126,6 +126,24 @@ public final class CreatorToolDtos {
             @JsonProperty("target") String target,
             @JsonProperty("target_id") String targetId) {}
 
+    /**
+     * T-MEERA-CREATOR-PHASE-B &sect;3.6 — {@code get_brief}'s result.
+     *
+     * <p><b>No {@code degraded_reason} field, deliberately (Priya last-call UF-3,
+     * PRIYA-LASTCALL-U1-K4-0917.md).</b> Kavya's original ask was for one, and it cannot be met
+     * honestly without new storage. The reason a paste-time AI extraction was skipped ({@code cap}
+     * vs {@code ai_unavailable}, {@code CreatorBriefService.analyse}) is never persisted — the
+     * migration keeps only {@code extraction_source} ({@code V20260910100100__creator_briefs.sql}),
+     * not the reason behind it — and on a deal's first read {@code ensurePlatformBrief} discards
+     * its own {@code BriefAnalysisResponse} before {@code get} re-reads the row from its stored
+     * snapshot. A field populated only on the rare call that happens to re-analyse would give the
+     * SAME brief a different reason on back-to-back reads depending on which one you asked, which
+     * is a worse signal than none at all. {@link #extractionSource} is the honest degraded marker
+     * this result carries: when it reads {@code FALLBACK}, the {@code get_brief} tool description
+     * tells the model to say the summary was read by rules, not by it. Persisting a real {@code
+     * degraded_reason} next to {@code extraction_source} is a follow-up (ticket against B0-52), not
+     * a B0 condition.
+     */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record GetBriefResult(
             @JsonProperty("brief_id") String briefId,

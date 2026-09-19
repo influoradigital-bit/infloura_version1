@@ -1,15 +1,28 @@
 import * as React from 'react';
-import { cn } from '@/lib/utils';
+import { cn, formatINR } from '@/lib/utils';
 import { DealRiskCard } from '@/components/shared/deal-risk-card';
-import type { AddOnLine, PackageQuote, QuoteDeliverableType, QuoteLine } from '@/lib/api';
-import type { DealTerms } from '@/lib/types';
+import { useRiskFlagDismissals } from '@/hooks/useRiskFlagDismissals';
+import type {
+  AddOnLine,
+  BriefAnalysisResponse,
+  BriefExtraction,
+  PackageQuote,
+  QuoteDeliverableType,
+  QuoteLine,
+  RiskFlag,
+} from '@/lib/api';
+import type { DealTerms, UsageChannel } from '@/lib/types';
 import {
   isCheckDealRisksPayload,
   isCreatorToolName,
   isEstimateMyRatePayload,
+  isGetBriefPayload,
   isGetMyDealsPayload,
   isGetMyMetricsPayload,
+  isNewBriefStub,
+  type CheckDealRisksPayload,
   type DealSummary,
+  type GetBriefPayload,
   type MetricsResult,
 } from '@/lib/meera-api';
 
@@ -18,13 +31,15 @@ import {
  * results, plus the switch that picks a card for a tool name.
  *
  * ## Which cards exist here
- * Phase B0 ships six creator tools (§14.5.a). Four of them can be rendered with what B0 has
- * actually built, and those four cards are here: `MyDealsCard` (`get_my_deals`), `MetricsCard`
- * (`get_my_metrics`), `PackageQuoteCard` (`estimate_my_rate`) and `DealRiskCard`
+ * Phase B0 ships six creator tools (§14.5.a). Five of them can be rendered with what B0 has
+ * actually built, and those five cards are here: `MyDealsCard` (`get_my_deals`), `MetricsCard`
+ * (`get_my_metrics`), `PackageQuoteCard` (`estimate_my_rate`), `DealRiskCard`
  * (`check_deal_risks`, imported from `components/shared/` because the deal pages use it too,
- * §8.6). `BriefCard` (`get_brief`) lands with the paste surface in B0-44 and `DraftCard`
- * (`draft_reply`) with the approval flow in B0-49; until then those two tool names render
- * nothing rather than a placeholder that claims a feature exists.
+ * §8.6), and `BriefCard` (`get_brief`, wired up as of U-4 via `GetBriefToolCard` below).
+ * `BriefCard` itself exists as of U-2 and is also rendered directly by the paste surface
+ * (`components/creator/copilot/PasteBriefCard.tsx`). `DraftCard` (`draft_reply`) still lands with
+ * the approval flow in Wave D — until then that one tool name renders nothing rather than a
+ * placeholder that claims a feature exists.
  *
  * ## Styling
  * Creator tokens only — `border-border`, `bg-card`, `bg-muted` — never the brand `meera-*`
@@ -443,6 +458,296 @@ export function PackageQuoteCard({ quote, onPrefillCounter, className }: Package
 }
 
 // ---------------------------------------------------------------------------
+// BriefCard — the paste surface (U-2, §8.4, §8.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * U-2 (AMEND-0904, §14.4.a) — the sentence that says a summary was NOT read by the model.
+ *
+ * `BriefDtos.BriefAnalysisResponse`'s javadoc is explicit that `cap` and `ai_unavailable` "must
+ * reach the creator as different sentences", and that a FALLBACK with no reason is "how a
+ * degraded reading gets rendered as a real one". So all three shapes get a label, and only an
+ * AI extraction with no reason gets none. `BriefFallbackExtractor` leaves every field it cannot
+ * find with confidence empty, hence the second sentence.
+ */
+export function degradedLabelFor(
+  extractionSource: BriefAnalysisResponse['extraction_source'],
+  degradedReason: BriefAnalysisResponse['degraded_reason'],
+): string | undefined {
+  if (degradedReason === 'cap') {
+    return "Meera's monthly limit is reached, so this summary is rule-based. Check it against the brief.";
+  }
+  if (degradedReason === 'ai_unavailable') {
+    return "Meera couldn't be reached just now, so this summary is rule-based. Check it against the brief.";
+  }
+  if (extractionSource === 'FALLBACK') {
+    return 'This summary is rule-based, not read by Meera. Check it against the brief.';
+  }
+  return undefined;
+}
+
+const USAGE_CHANNEL_LABELS: Record<UsageChannel, string> = {
+  ORGANIC: 'organic',
+  PAID_ADS: 'paid ads',
+  WHITELISTING: 'whitelisting',
+  WEBSITE: 'website',
+  OFFLINE: 'offline',
+};
+
+/** Absent on the wire means the extractor did not find it — not that the brief ruled it out. */
+const NOT_FOUND = 'Not found';
+
+interface ExtractionChip {
+  label: string;
+  value?: string;
+}
+
+/**
+ * §8.4's five chips. Every optional field is checked for presence (`!== undefined`, or a length
+ * check on an array) — never `=== null`, which a NON_NULL-omitted key never satisfies.
+ */
+function extractionChips(extraction: BriefExtraction): ExtractionChip[] {
+  const deliverables = extraction.deliverables ?? [];
+  const channels = extraction.usage_channels ?? [];
+  const exclusivityBrands = extraction.exclusivity_brands ?? [];
+
+  let budget: string | undefined;
+  if (extraction.budget_inr !== undefined) {
+    budget = formatINR(extraction.budget_inr);
+  } else if (extraction.barter_only) {
+    budget =
+      extraction.barter_mrp_inr !== undefined
+        ? `Barter only (product worth ${formatINR(extraction.barter_mrp_inr)})`
+        : 'Barter only';
+  }
+
+  let usage: string | undefined;
+  if (extraction.usage_perpetual) {
+    usage = 'Forever';
+  } else if (extraction.usage_months !== undefined) {
+    usage = `${extraction.usage_months} month${extraction.usage_months === 1 ? '' : 's'}`;
+  }
+  if (usage && channels.length > 0) {
+    usage += ` · ${channels.map((c) => USAGE_CHANNEL_LABELS[c] ?? c).join(', ')}`;
+  }
+
+  let exclusivity: string | undefined;
+  if (extraction.exclusivity_days !== undefined) {
+    exclusivity = `${extraction.exclusivity_days} day${extraction.exclusivity_days === 1 ? '' : 's'}`;
+    if (exclusivityBrands.length > 0) {
+      exclusivity += ` · ${exclusivityBrands.join(', ')}`;
+    } else if (extraction.exclusivity_scope === 'CATEGORY') {
+      exclusivity += ' · whole category';
+    }
+  }
+
+  return [
+    {
+      label: 'Deliverables',
+      value:
+        deliverables.length > 0
+          ? deliverables.map((d) => `${d.qty} × ${deliverableLabel(d.type)}`).join(', ')
+          : undefined,
+    },
+    { label: 'Budget', value: budget },
+    { label: 'Deadline', value: extraction.deadline },
+    { label: 'Usage', value: usage },
+    { label: 'Exclusivity', value: exclusivity },
+  ];
+}
+
+export interface BriefCardProps {
+  summaryLines?: string[];
+  extraction?: BriefExtraction;
+  flags?: RiskFlag[];
+  quote?: PackageQuote;
+  extractionSource?: BriefAnalysisResponse['extraction_source'];
+  degradedReason?: BriefAnalysisResponse['degraded_reason'];
+  /**
+   * U-3: dismissal scope for the risk flags, `BRIEF:{brief_id}`. Without one the flags render
+   * with no dismiss control, rather than sharing one bucket across unrelated briefs.
+   */
+  riskScope?: string;
+  onPrefillCounter?: (args: { amount: number; dealTerms?: DealTerms }) => void;
+  className?: string;
+}
+
+/**
+ * §8.4 — summary lines, extraction chips, then the shared `DealRiskCard` and `PackageQuoteCard`.
+ * Every part is optional because `GET /creator/briefs/:id` can omit any of them (see
+ * `BriefAnalysisResponse`); a missing part renders its own absence, never a crash.
+ */
+export function BriefCard({
+  summaryLines,
+  extraction,
+  flags,
+  quote,
+  extractionSource,
+  degradedReason,
+  riskScope,
+  onPrefillCounter,
+  className,
+}: BriefCardProps) {
+  const lines = summaryLines ?? [];
+  const degradedLabel = degradedLabelFor(extractionSource, degradedReason);
+  const risks = useRiskFlagDismissals(riskScope, flags);
+
+  return (
+    <div data-testid="brief-card" className={cn('space-y-3', className)}>
+      <CardShell testId="brief-summary-card" title="What the brief says">
+        {degradedLabel ? (
+          <p
+            data-testid="brief-degraded-label"
+            role="status"
+            className="rounded-lg border border-stage-negotiating-border bg-stage-negotiating px-3 py-2 text-sm text-stage-negotiating-fg"
+          >
+            {degradedLabel}
+          </p>
+        ) : null}
+
+        {lines.length > 0 ? (
+          <ul className="list-disc space-y-1 pl-5 text-sm">
+            {lines.map((line, index) => (
+              <li key={`${index}-${line}`} data-testid="brief-summary-line" className="break-words">
+                {line}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {extraction ? (
+          <ul className="flex flex-wrap gap-2" aria-label="Terms found in the brief">
+            {extractionChips(extraction).map((chip) => (
+              <li
+                key={chip.label}
+                data-testid="brief-chip"
+                className="rounded-md border border-border bg-muted px-2 py-1 text-xs"
+              >
+                <span className="text-muted-foreground">{chip.label}: </span>
+                {chip.value ? (
+                  <span className="font-medium break-words">{chip.value}</span>
+                ) : (
+                  <span className="text-muted-foreground">{NOT_FOUND}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No terms could be read from this brief.</p>
+        )}
+      </CardShell>
+
+      <DealRiskCard
+        flags={risks.visibleFlags}
+        onDismiss={risks.dismiss}
+        hiddenCount={risks.hiddenCount}
+        onRestoreHidden={risks.restore}
+        heading={<p className="text-sm font-semibold">What to watch</p>}
+      />
+
+      {quote ? (
+        <PackageQuoteCard quote={quote} onPrefillCounter={onPrefillCounter} />
+      ) : (
+        <p data-testid="brief-no-quote" className="text-sm text-muted-foreground">
+          No price suggestion for this brief.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DealRisksToolCard — check_deal_risks, with session dismissal (U-3)
+// ---------------------------------------------------------------------------
+
+function DealRisksToolCard({
+  payload,
+  className,
+}: {
+  payload: CheckDealRisksPayload;
+  className?: string;
+}) {
+  // The guard only proves `flags` is an array, so the scope parts are checked here. A payload
+  // without a usable target gets no dismiss control rather than a shared, wrong bucket.
+  const scope =
+    typeof payload.target === 'string' && typeof payload.target_id === 'string' && payload.target_id
+      ? `${payload.target}:${payload.target_id}`
+      : undefined;
+  const risks = useRiskFlagDismissals(scope, payload.flags);
+
+  return (
+    <DealRiskCard
+      className={className}
+      flags={risks.visibleFlags}
+      onDismiss={risks.dismiss}
+      hiddenCount={risks.hiddenCount}
+      onRestoreHidden={risks.restore}
+      heading={<p className="text-sm font-semibold">What to watch on this deal</p>}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// GetBriefToolCard — get_brief (U-4)
+// ---------------------------------------------------------------------------
+
+/**
+ * `get_brief` reuses `BriefCard` wholesale — the same summary/chips, the shared `DealRiskCard`
+ * dismissal wiring and `PackageQuoteCard` that `check_deal_risks`/`estimate_my_rate` already use —
+ * rather than a second copy of any of it. Two things are deliberately NOT done here:
+ *   1. No `degraded_reason` is read or passed through. `GetBriefPayload` (`meera-api.ts`) has no
+ *      such field; `BriefCard`'s `degradedLabelFor` still labels a `FALLBACK` extraction on its
+ *      own ("This summary is rule-based, not read by Meera"), which is all this tool result can
+ *      honestly say. Whether the backend DTO ever grows a `degraded_reason` for this tool is
+ *      Vikram's call, not this renderer's.
+ *   2. `GetBriefPayload` carries no `summary_lines` — only `PASTED`/`PLATFORM` briefs read through
+ *      `BriefAnalysisResponse` have those. `BriefCard` already treats an absent `summaryLines` as
+ *      "nothing to list" rather than an error.
+ */
+/** The plain "not analyzed yet" state — factored out so both a real NEW `GetBriefPayload` and the
+ *  defence-in-depth stub fallback (a payload that fails the full guard but still looks like a NEW
+ *  brief) render the exact same honest message, never a clean-looking card. */
+function StillReadingBriefCard({ className }: { className?: string }) {
+  return (
+    <CardShell testId="get-brief-card" className={className} title="This brief">
+      <p data-testid="get-brief-still-reading" className="text-sm text-muted-foreground">
+        Still reading this brief. Check back in a moment.
+      </p>
+    </CardShell>
+  );
+}
+
+function GetBriefToolCard({
+  payload,
+  className,
+  onPrefillCounter,
+}: {
+  payload: GetBriefPayload;
+  className?: string;
+  onPrefillCounter?: (args: { amount: number; dealTerms?: DealTerms }) => void;
+}) {
+  // A brand-new brief has not been analyzed yet: `flags`/`quote` on the wire are placeholders
+  // (an empty flags array, a withheld/zeroed quote), never a real "no risks found" verdict. A
+  // BriefCard built on those placeholders would read as a clean deal — CR-plausible-looking but
+  // false. Say plainly that Meera has not read it yet instead.
+  if (payload.status === 'NEW') {
+    return <StillReadingBriefCard className={className} />;
+  }
+
+  return (
+    <BriefCard
+      className={className}
+      extraction={payload.extraction}
+      flags={payload.flags}
+      quote={payload.quote}
+      extractionSource={payload.extraction_source}
+      riskScope={`BRIEF:${payload.brief_id}`}
+      onPrefillCounter={onPrefillCounter}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // The switch
 // ---------------------------------------------------------------------------
 
@@ -461,9 +766,9 @@ export interface CreatorToolResultRendererProps {
  * Renders one tool result, or nothing.
  *
  * "Nothing" is the deliberate outcome for three cases: a tool name outside `CREATOR_TOOL_NAMES`
- * (§8.3 — unknown names are ignored with a dev-only warn), a B0 tool whose card has not been
- * built yet (`get_brief`, `draft_reply`), and a payload that fails its type guard. A malformed
- * payload must never take the chat down with it.
+ * (§8.3 — unknown names are ignored with a dev-only warn), the one B0 tool whose card has not been
+ * built yet (`draft_reply`, landing with the approval flow in Wave D), and a payload that fails
+ * its type guard. A malformed payload must never take the chat down with it.
  */
 export function CreatorToolResultRenderer({
   toolName,
@@ -523,15 +828,24 @@ export function CreatorToolResultRenderer({
 
     case 'check_deal_risks':
       return isCheckDealRisksPayload(data) ? (
-        <DealRiskCard
-          className={className}
-          flags={data.flags}
-          heading={<p className="text-sm font-semibold">What to watch on this deal</p>}
-        />
+        <DealRisksToolCard className={className} payload={data} />
       ) : null;
 
-    // B0-44 (`BriefCard`) and B0-49 (`DraftCard`) — deliberately unrendered until those land.
     case 'get_brief':
+      if (isGetBriefPayload(data)) {
+        return (
+          <GetBriefToolCard
+            className={className}
+            payload={data}
+            onPrefillCounter={onPrefillCounter}
+          />
+        );
+      }
+      // Defence in depth (KAVYA-FE-RECHECK-0917.md) — see `isNewBriefStub`'s own doc comment.
+      // Should be unreachable: the backend refuses a NEW/incomplete brief with 409 before this.
+      return isNewBriefStub(data) ? <StillReadingBriefCard className={className} /> : null;
+
+    // B0-49 (`DraftCard`) — deliberately unrendered until it lands with Wave D's approval flow.
     case 'draft_reply':
       return null;
 

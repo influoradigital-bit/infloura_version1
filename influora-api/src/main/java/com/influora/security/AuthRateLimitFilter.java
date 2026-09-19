@@ -144,6 +144,22 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private static final Pattern CREATOR_TOOL = Pattern.compile("^/internal/meera/creator/[^/]+$");
 
     /**
+     * Kavya U-1 re-review, H2 — {@code GET /creator/briefs/{id}} can now trigger a stale-NEW
+     * re-analysis ({@code CreatorBriefService#readOrReanalyse}, F1 HIGH fix), a ~30s blocking AI
+     * call, whenever the brief is NEW and past {@code analysisBudget()}. Before that fix this route
+     * was a pure snapshot read and correctly unthrottled (see the {@code creator-brief-paste}
+     * comment below, which explains the exact-path carve-out this pattern now narrows). The monthly
+     * brief allowance (SPEC.md &sect;7.5) still bounds total AI spend, but nothing bounded REQUEST
+     * VOLUME: a creator (or a buggy client polling/retrying) hammering GET on one stale brief could
+     * pin request threads on back-to-back ~30s calls until the allowance ran out, which is a
+     * thread-pool/latency problem even though the dollar cost stays capped.
+     *
+     * <p>Matches the {@code {id}} path only, not the collection ({@code GET /creator/briefs}, the
+     * cheap list query) and not the paste ({@code POST /creator/briefs}, already its own bucket).
+     */
+    private static final Pattern CREATOR_BRIEF_GET = Pattern.compile("^/creator/briefs/[^/]+$");
+
+    /**
      * Mirrors {@code InternalServiceTokenFilter#INTERNAL_PREFIX} — the paths behind the
      * service-mesh gate. Used only to decide whether the {@code X-RateLimit-*} headers may be
      * written; see {@link #doFilterInternal}.
@@ -322,6 +338,25 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private int creatorBriefPasteLimit;
 
     /**
+     * Kavya U-1 re-review, H2 — requests per window, <b>per creator</b>, for
+     * {@code GET /creator/briefs/{id}}.
+     *
+     * <p>20, not 10 like {@code creator-brief-paste}: a GET is only OCCASIONALLY an AI call (a
+     * stale-NEW brief being re-analysed), not on every request like a paste, so it does not need as
+     * tight a ceiling — a creator legitimately opening several of her own briefs from a list in one
+     * minute must not be throttled. It is also not left at the generic {@code sensitive} default
+     * (5): 20 is chosen to sit well under the "hammer one stale brief" abuse shape (Kavya's example:
+     * 10 refreshes x 25 stale briefs = 250 attempts/window) while still being restrictive enough that
+     * a spam loop against ONE brief id burns at most 20 ~30s AI calls per window per creator, not an
+     * unbounded number gated only by the monthly allowance.
+     *
+     * <p>USER-keyed (see {@link #isUserKeyedBucket}), for the same reason as
+     * {@code creator-brief-paste}: the AI-spend identity to bound is the creator's, not her network's.
+     */
+    @Value("${influora.meera.creator-brief-get-rate-limit-per-window:20}")
+    private int creatorBriefGetLimit;
+
+    /**
      * [SEC: Kabir Wave 2, finding 1] How many ES256 verifications ONE source address is allowed to
      * <b>fail</b> per {@link #windowSeconds} before this filter stops verifying for that address
      * entirely and keys the bucket by IP instead. See {@link #extractOnBehalfSubject} for why a
@@ -485,6 +520,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             if (PUBLIC_CREATOR_VERIFIED.matcher(path).matches()) {
                 return "public-creator-verified";
             }
+            // Kavya U-1 re-review, H2 — see CREATOR_BRIEF_GET's javadoc. Checked AFTER
+            // PUBLIC_CREATOR_VERIFIED (no overlap, order is not load-bearing) and BEFORE the
+            // early `return null` that left this route unthrottled.
+            if (CREATOR_BRIEF_GET.matcher(path).matches()) {
+                return "creator-brief-get";
+            }
             return null;
         }
 
@@ -580,9 +621,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             return "creator-tool";
         }
         // SPEC.md 3.8 — POST /creator/briefs ONLY. The exact-equality check, rather than a prefix,
-        // keeps GET /creator/briefs/{id} and the dismiss route out of a bucket that exists to bound
-        // AI spend: reading a brief the creator already paid for costs nothing, and throttling it
-        // would only stop her opening what she has.
+        // keeps the dismiss route (POST /creator/briefs/{id}/dismiss, a plain status write, no AI
+        // call) out of the paste bucket. It also keeps GET /creator/briefs/{id} out of THIS bucket
+        // specifically -- not because the GET is unthrottled (see CREATOR_BRIEF_GET above, added by
+        // Kavya U-1 re-review H2: a stale-NEW brief re-analyses on read and is a real ~30s AI call),
+        // but because it is a DIFFERENT cost shape (occasional, not guaranteed on every call) that
+        // gets its own, more generous limit rather than sharing this stricter one.
         if ("POST".equalsIgnoreCase(request.getMethod()) && path.equals("/creator/briefs")) {
             return "creator-brief-paste";
         }
@@ -656,6 +700,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "meera-voice" -> meeraVoiceLimit;
             case "creator-tool" -> creatorToolLimit;
             case "creator-brief-paste" -> creatorBriefPasteLimit;
+            case "creator-brief-get" -> creatorBriefGetLimit;
             default -> sensitiveLimit;
         };
     }
@@ -716,7 +761,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                     // not her network's. Reachable from the ordinary `Authorization` header (unlike
                     // "creator-tool" above, which sits on /internal/** where that header carries the
                     // SERVICE token), so it needs no special case beyond this entry.
-                    "creator-brief-paste" ->
+                    "creator-brief-paste",
+                    // Kavya U-1 re-review, H2 — same reasoning as creator-brief-paste immediately
+                    // above: the AI-spend identity to bound is the creator's.
+                    "creator-brief-get" ->
                     true;
             default -> false;
         };

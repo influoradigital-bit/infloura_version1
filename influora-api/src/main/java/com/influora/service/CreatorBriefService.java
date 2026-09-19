@@ -2,6 +2,7 @@ package com.influora.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.influora.common.ApiException;
+import com.influora.config.CreatorSuggestionAiProperties;
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorBrief;
@@ -27,6 +28,8 @@ import com.influora.web.dto.brief.BriefDtos.BriefListItem;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.meera.CreatorToolDtos.PackageQuote;
 import com.influora.web.dto.meera.CreatorToolDtos.RiskFlag;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -92,6 +95,31 @@ public class CreatorBriefService {
 
     public static final int MAX_LIST_LIMIT = 100;
 
+    /**
+     * F1 HIGH (Kavya, last-call review of Wave U item U-1) — the code {@link #get} refuses with
+     * when a brief is NEW and still inside {@link #analysisBudget()}. Not a generic "not ready"
+     * code: the message is worded for the model to relay, because the first analysis attempt
+     * (this thread's own, or another request's) is plausibly still in flight.
+     */
+    public static final String BRIEF_STILL_READING_CODE = "BRIEF_STILL_READING";
+
+    /**
+     * Slack added on top of the configured AI-client timeouts before a NEW brief is treated as
+     * abandoned rather than in-flight. The timeouts alone are the provider's own ceiling
+     * ({@link MeeraBriefAiClient} enforces them exactly); this adds room for scheduling jitter
+     * between the raw-text commit and the AI call actually starting, so a brief is not declared
+     * dead at the exact instant the provider would still have delivered it.
+     *
+     * <p>Priya ruling RULINGS-U-0917.md Addition B: with the default 5s connect + 15s request
+     * (application.yml {@code influora.creator-copilot-ai}), this makes {@link #analysisBudget()}
+     * 30s. influora-ai's {@code get_brief} read timeout (a separate, named Python setting —
+     * {@code app/config.py}'s {@code ProviderTimeouts.get_brief_read}) must clear that whole 30s
+     * plus its own margin; it is 40s by default for exactly that reason. Tightening this constant
+     * or the two application.yml timeouts without also revisiting influora-ai's setting can leave
+     * the Python side timing out BEFORE Spring's own budget expires.
+     */
+    static final long STILL_READING_SLACK_SECONDS = 10;
+
     private final CreatorBriefRepository briefRepository;
 
     /**
@@ -111,6 +139,14 @@ public class CreatorBriefService {
     private final CreatorProfileRepository creatorProfileRepository;
     private final ObjectMapper objectMapper;
 
+    /**
+     * F1 HIGH fix — the same connect/request timeouts {@link MeeraBriefAiClient} enforces on the
+     * AI round trip, reused (not duplicated) so {@link #analysisBudget()} tracks them if they are
+     * ever tuned down during an incident. See that class's javadoc for why this bean, not a new
+     * properties class, is reused a third time.
+     */
+    private final CreatorSuggestionAiProperties aiProperties;
+
     public CreatorBriefService(
             CreatorBriefRepository briefRepository,
             CreatorBriefWriter briefWriter,
@@ -123,7 +159,8 @@ public class CreatorBriefService {
             CampaignRepository campaignRepository,
             DealMessageRepository dealMessageRepository,
             CreatorProfileRepository creatorProfileRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            CreatorSuggestionAiProperties aiProperties) {
         this.briefRepository = briefRepository;
         this.briefWriter = briefWriter;
         this.preferencesService = preferencesService;
@@ -136,6 +173,7 @@ public class CreatorBriefService {
         this.dealMessageRepository = dealMessageRepository;
         this.creatorProfileRepository = creatorProfileRepository;
         this.objectMapper = objectMapper;
+        this.aiProperties = aiProperties;
     }
 
     /**
@@ -198,15 +236,21 @@ public class CreatorBriefService {
             return existing.get();
         }
 
+        // OWNERSHIP-SCOPED, and resolved before anything is read off the deal. This used to be
+        // findById(collaborationId) alone: any creator could name another creator's deal id and get
+        // back a brief built from that deal's campaign text, offer message and agreed rate, stored
+        // under her own profile. It was unreachable while this method had no caller; the get_brief
+        // tool is its first. Collaboration.creatorId is a users.id, hence profile.getUserId(). A
+        // foreign id is DEAL_NOT_FOUND, the same as one that does not exist, so it cannot be probed.
+        CreatorProfile profile = requireProfileById(creatorProfileId);
         Collaboration collaboration =
                 collaborationRepository
-                        .findById(collaborationId)
+                        .findByIdAndCreatorId(collaborationId, profile.getUserId())
                         .orElseThrow(
                                 () ->
                                         new ApiException(
                                                 "DEAL_NOT_FOUND", "Deal not found", HttpStatus.NOT_FOUND));
         PreferencesResponse prefs = preferencesService.getByProfileId(creatorProfileId);
-        CreatorProfile profile = requireProfileById(creatorProfileId);
 
         Campaign campaign =
                 collaboration.getCampaignId() == null
@@ -221,12 +265,112 @@ public class CreatorBriefService {
         return brief;
     }
 
-    /** SPEC.md &sect;3.8 — one brief the creator already has, re-read from its frozen snapshot. */
-    @Transactional(readOnly = true)
+    /**
+     * SPEC.md &sect;3.8 — one brief the creator already has, re-read from its frozen snapshot.
+     *
+     * <p><b>Not {@code @Transactional} — F1 HIGH fix (Kavya, last-call review of Wave U item
+     * U-1).</b> This used to be {@code @Transactional(readOnly = true)}, which was safe only
+     * because it never called {@link #analyse}. It now can (see {@link #readOrReanalyse}), and
+     * {@code analyse}'s first statement is the same blocking AI round trip {@link #paste} and
+     * {@link #ensurePlatformBrief} keep out of a transaction for exactly this reason: an outer
+     * transaction here would pin a pooled JDBC connection for the round trip, and under MySQL's
+     * REPEATABLE READ its snapshot — taken at THIS method's own read below — would still be unable
+     * to see the row {@link CreatorBriefWriter#saveAnalysis} commits afterwards on a fresh
+     * connection. The plain repository read in {@link #requireOwnedBrief} still runs inside Spring
+     * Data's own short transaction, same as every non-transactional method in this class.
+     */
     public BriefAnalysisResponse get(String creatorUserId, String briefId) {
         CreatorProfile profile = preferencesService.requireCreatorProfile(creatorUserId);
         CreatorBrief brief = requireOwnedBrief(profile.getId(), briefId);
-        return toResponse(brief, null);
+        return readOrReanalyse(brief, profile);
+    }
+
+    /**
+     * F1 HIGH (Kavya, last-call review of Wave U item U-1) — a brief stuck in {@link
+     * BriefStatus#NEW} is NOT a successful read. Before this fix, {@link #ensurePlatformBrief}'s
+     * idempotent early-return and this method both handed back a raw, unanalysed row — no
+     * extraction, no flags, no quote — as a plain SUCCESS whenever the FIRST analysis attempt
+     * committed the raw text (see {@link CreatorBriefWriter#saveRawPaste}/{@code saveRawPlatform})
+     * and then died before {@link #analyse} reached {@link CreatorBriefWriter#saveAnalysis} — an AI
+     * round trip up to {@code connectTimeoutSeconds + requestTimeoutSeconds} away
+     * (application.yml {@code influora.creator-copilot-ai}, 5+15s by default). influora-ai's own
+     * Spring-read timeout used to be shorter than that, so its retry of the exact same logical read
+     * would land on this method mid-flight and get back the untouched NEW row as if it were clean —
+     * a creator could be told a deal brief was fine when it was never actually read.
+     *
+     * <p>Two cases, split on {@link #isWithinAnalysisBudget}:
+     *
+     * <ul>
+     *   <li><b>NEW and young</b> — the first attempt (this thread's own {@link #paste} or {@link
+     *       #ensurePlatformBrief} call, or another request's) is plausibly still running. Refuse
+     *       with {@link #BRIEF_STILL_READING_CODE} (409) rather than claim a clean read.
+     *   <li><b>NEW and stale</b> — the budget has passed, so the first attempt is not "still
+     *       running" by any honest accounting; it died (a throw between the raw-text commit and
+     *       {@code saveAnalysis}, or a process restart mid-call). Re-run {@link #analyse} now and
+     *       return whatever it produces — AI extraction if the provider answers, a labelled
+     *       fallback if it does not, but never another silent NEW.
+     * </ul>
+     *
+     * <p><b>Residuals Priya accepted for B0 (RULINGS-U-0917.md &sect;0), left open by design and
+     * not closed here:</b>
+     *
+     * <ol>
+     *   <li>Two stale reads at the same moment can both observe "stale" and both run {@link
+     *       #analyse} — double AI spend, last {@code saveAnalysis} write wins. Bounded by the
+     *       creator's own monthly brief allowance (SPEC.md &sect;7.5).
+     *   <li>Two concurrent FIRST reads of a deal (both missing the {@link #ensurePlatformBrief}
+     *       {@code findFirst} lookup before either has saved) can create two PLATFORM rows for the
+     *       same collaboration — nothing in the schema forbids it ({@code CreatorBriefRepository}'s
+     *       finder takes no ordering, and the migration has only a PK and one non-unique index).
+     *       The second row heals once analysed; this is not a wrong-success path, only a duplicate.
+     *   <li>A brief whose analysis throws on every attempt pays one AI call per read until the
+     *       creator's monthly cap switches her to the deterministic fallback extractor. Same bound
+     *       as residual 1.
+     *   <li>{@code GET /creator/briefs/{id}} (this method) now inherits both the re-analysis and
+     *       the 409 — nothing under {@code src/} calls it today, so this is dormant, not live.
+     * </ol>
+     *
+     * <p>Closing residuals 1 and 3 needs no migration — {@code updated_at} already exists and is
+     * mapped ({@link CreatorBrief#getUpdatedAt()}) — a conditional
+     * {@code UPDATE ... WHERE status='NEW' AND updated_at < :cutoff} would claim the row before
+     * re-analysing it. Recommended follow-up, not a condition of this fix; not implemented here.
+     */
+    private BriefAnalysisResponse readOrReanalyse(CreatorBrief brief, CreatorProfile profile) {
+        if (brief.getStatus() != BriefStatus.NEW) {
+            return toResponse(brief, null);
+        }
+        if (isWithinAnalysisBudget(brief)) {
+            throw new ApiException(
+                    BRIEF_STILL_READING_CODE,
+                    "Still reading this brief — wait for the creator's next message before trying"
+                            + " again",
+                    HttpStatus.CONFLICT);
+        }
+        PreferencesResponse prefs = preferencesService.getByProfileId(profile.getId());
+        return analyse(brief, profile, prefs);
+    }
+
+    /**
+     * The full latency budget of one analysis attempt, read from the SAME configured timeouts
+     * {@link MeeraBriefAiClient} enforces on the AI call (not a second, independent number), plus
+     * {@link #STILL_READING_SLACK_SECONDS} of scheduling slack. If those timeouts are tightened
+     * during an incident, this ceiling tightens with them automatically.
+     */
+    private Duration analysisBudget() {
+        return Duration.ofSeconds(
+                aiProperties.getConnectTimeoutSeconds()
+                        + aiProperties.getRequestTimeoutSeconds()
+                        + STILL_READING_SLACK_SECONDS);
+    }
+
+    /**
+     * A brief with no {@code createdAt} (should not happen — the column is {@code nullable =
+     * false}) is treated as stale rather than young: refusing to ever re-analyse it would wedge the
+     * row forever, which is worse than one extra AI call.
+     */
+    private boolean isWithinAnalysisBudget(CreatorBrief brief) {
+        Instant createdAt = brief.getCreatedAt();
+        return createdAt != null && Instant.now().isBefore(createdAt.plus(analysisBudget()));
     }
 
     /** SPEC.md &sect;3.8 — "my recent briefs", newest first. */
@@ -318,7 +462,8 @@ public class CreatorBriefService {
                         : collaborationRepository.findById(brief.getCollaborationId()).orElse(null);
 
         List<RiskFlag> flags =
-                dealRiskService.evaluateExtraction(profile, prefs, extraction, collaboration);
+                dealRiskService.evaluateExtraction(
+                        profile, prefs, extraction, collaboration, brief.getRawText());
         PackageQuote quote = rateQuoteService.quoteForExtraction(profile, prefs, extraction);
 
         briefWriter.saveAnalysis(
