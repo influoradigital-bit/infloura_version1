@@ -66,6 +66,23 @@ and the output check is the backstop.
 - **F-0781:** each pull logs which sources ran, which were skipped (missing key), and how many
   headlines each check rejected.
 
+## Amendment 2026-09-19 (Priya): accepted word-filter gaps and confusables
+
+After two review rounds, Kabir still found 6 unsafe headlines the deterministic filter lets through:
+"Man shot at outside mall", "Body found in suitcase", "maar diya gaya", "goli maar di", "क़ातिल",
+"छात्रा से छेड़छाड़". **Accepted for launch.** Every headline also goes through the GARM
+classification at ingest, and failing that check or being unable to check means the headline is
+not stored. So a word-list miss is caught at the second check, not shown to a creator. The tests
+list these 6 as known word-filter gaps, and each new term set must shrink that list.
+
+**Over-blocking is not accepted.** Everyday creator vocabulary must stay quotable. That includes
+fitness and skincare terms such as dead skin, dead ends, deadlift, dead hang, dead bug and
+Deadpool. It carries the same severity as a bypass, because a filter that blocks a fitness
+creator's own vocabulary makes the Co-pilot useless for that niche.
+
+**Confusables:** the curated fold table is accepted in place of the full Unicode confusables data
+if it covers every homoglyph probe used in review. No new dependency is added for this.
+
 ## done_when for the build
 
 - The deterministic filter blocks every string in Kabir's F-0853/F-0855/F-0856 probe lists.
