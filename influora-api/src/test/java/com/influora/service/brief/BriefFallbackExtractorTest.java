@@ -103,14 +103,14 @@ class BriefFallbackExtractorTest {
 
     @Test
     @DisplayName(
-            "F-0773 / K-2c (RULINGS-U-0917.md round 6, \"New: F-0772\"): off_platform_payment_hint is"
+            "F-1773 / K-2c (RULINGS-U-0917.md round 6, \"New: F-1772\"): off_platform_payment_hint is"
                     + " always false on FALLBACK -- the rules' own text check runs on the same raw text"
                     + " instead, see BriefFallbackExtractorRealRiskRulesTest for the end-to-end proof")
     void offPlatformPaymentHintIsAlwaysFalse() {
         assertFalse(extractor.extract("We'll send it on UPI directly").offPlatformPaymentHint());
         // Round 5 Ruling 1 measured this exact text ("Bank transfer within 7 days") as an on-platform
         // payment-terms sentence, not an off-platform ask; the extractor's own pattern used to pin it
-        // as a positive hint anyway (F-0773's symptom). It must stay false, same as everything else.
+        // as a positive hint anyway (F-1773's symptom). It must stay false, same as everything else.
         assertFalse(extractor.extract("Bank transfer within 7 days").offPlatformPaymentHint());
         assertFalse(
                 extractor.extract("Payment through the platform, 50% advance").offPlatformPaymentHint());
@@ -122,7 +122,7 @@ class BriefFallbackExtractorTest {
 
     @Test
     @DisplayName(
-            "F-0773 / K-2c: disclosure_hidden_hint is always false on FALLBACK -- the rules' own text"
+            "F-1773 / K-2c: disclosure_hidden_hint is always false on FALLBACK -- the rules' own text"
                     + " check runs on the same raw text instead")
     void disclosureHiddenHintIsAlwaysFalse() {
         assertFalse(extractor.extract("Please don't use #ad on this one").disclosureHiddenHint());
@@ -130,7 +130,7 @@ class BriefFallbackExtractorTest {
         assertFalse(extractor.extract("Keep it looking organic").disclosureHiddenHint());
         assertFalse(
                 extractor.extract("Please add #ad and the paid partnership tag").disclosureHiddenHint());
-        // F-0773's own symptom: an ordinary ad caption the extractor's old pattern used to flag.
+        // F-1773's own symptom: an ordinary ad caption the extractor's old pattern used to flag.
         assertFalse(extractor.extract("Caption: Loving my new TECNO #ad").disclosureHiddenHint());
     }
 

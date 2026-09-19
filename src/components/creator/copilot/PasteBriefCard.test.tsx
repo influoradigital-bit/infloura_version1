@@ -235,7 +235,7 @@ describe('PasteBriefCard', () => {
     expect(dismissButtons).toHaveLength(1);
   });
 
-  // T3 (F-0779, PRIYA-LASTCALL-U2-0918.md item 6) — the risk scope really is `BRIEF:{brief_id}`,
+  // T3 (F-1779, PRIYA-LASTCALL-U2-0918.md item 6) — the risk scope really is `BRIEF:{brief_id}`,
   // not merely a truthy string. Dismissing a flag here must also hide it on the SAME brief's
   // `get_brief` tool card in Meera's chat (`CreatorToolResultRenderer`, which keys its own
   // `BriefCard` off `riskScope={`BRIEF:${payload.brief_id}`}` — CreatorToolResultRenderer.tsx
@@ -303,7 +303,7 @@ describe('PasteBriefCard', () => {
     expect(screen.getByText('Only the first 8,000 characters were kept.')).toBeInTheDocument();
   });
 
-  // T2 (F-0779, item 3b) — no `maxLength` attribute on the textarea. `fireEvent.change` above does
+  // T2 (F-1779, item 3b) — no `maxLength` attribute on the textarea. `fireEvent.change` above does
   // not exercise the browser's own truncation (jsdom does not implement it), so that test alone
   // cannot catch a regression that added `maxLength`: in a real browser the paste would then be cut
   // BEFORE `onChange` ever saw the rest, `truncated` would never become true, and the "Only the
@@ -335,7 +335,7 @@ describe('PasteBriefCard', () => {
     );
   });
 
-  // T1 (F-0779, item 2c) — consent UNKNOWN (`needsConsent` false, the default): the paste IS sent,
+  // T1 (F-1779, item 2c) — consent UNKNOWN (`needsConsent` false, the default): the paste IS sent,
   // and a server refusal of `CONSENT_REQUIRED` is what asks for consent, not a client-side guess.
   // Without this test, replacing the whole branch with `if (false)` (so the refusal falls through
   // to the generic error path instead) is invisible — the test above only ever covers the

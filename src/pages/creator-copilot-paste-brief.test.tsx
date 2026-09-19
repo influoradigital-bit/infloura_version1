@@ -222,7 +222,7 @@ describe('CreatorCopilotPage — PasteBriefCard mount (U-2)', () => {
     expect(screen.queryByText(/Meera needs your consent/)).not.toBeInTheDocument();
   });
 
-  // T1 (F-0779, PRIYA-LASTCALL-U2-0918.md item 2c) — consent already known TRUE at the page level:
+  // T1 (F-1779, PRIYA-LASTCALL-U2-0918.md item 2c) — consent already known TRUE at the page level:
   // the card sends the paste, and the SERVER's own CONSENT_REQUIRED refusal (not the client-side
   // short-circuit covered above) is what opens the consent screen, through
   // `onConsentRequired={requestConsentForPaste}` on `PasteBriefCard`.
@@ -241,7 +241,7 @@ describe('CreatorCopilotPage — PasteBriefCard mount (U-2)', () => {
     expect(await screen.findByText('Talk to Meera', { selector: 'h2' })).toBeInTheDocument();
   });
 
-  // T4 (F-0779, item 7b) — `FEATURE_DISABLED` returned by the paste call itself (the flag was
+  // T4 (F-1779, item 7b) — `FEATURE_DISABLED` returned by the paste call itself (the flag was
   // turned off after the page's own mount probe already said it was on), not by the mount probe
   // covered by the "does not mount it in the calm FEATURE_DISABLED state" test above.
   // `onFeatureDisabled={() => setFeatureDisabled(true)}` on `PasteBriefCard` is what this covers —

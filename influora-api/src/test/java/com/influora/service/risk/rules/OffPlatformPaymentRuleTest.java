@@ -8,7 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * F-0776 (kabir, {@code KABIR-K2C-CHECK-0918.md} clause 2's gap): six pieces of {@link
+ * F-1776 (kabir, {@code KABIR-K2C-CHECK-0918.md} clause 2's gap): six pieces of {@link
  * OffPlatformPaymentRule}'s sentence-boundary rule that {@code RiskFlagCorpusTest}'s existing
  * rows do not depend on, so each could be deleted from the rule with the whole suite -- corpus
  * included -- staying green. Round 6's own rows only exercise {@code .} and {@code ।} (danda) as
@@ -35,7 +35,7 @@ class OffPlatformPaymentRuleTest {
     }
 
     @Test
-    @DisplayName("F-0776: '?', '!', '…' and '॥' (double danda) each alone still stop pairing across a sentence end")
+    @DisplayName("F-1776: '?', '!', '…' and '॥' (double danda) each alone still stop pairing across a sentence end")
     void eachExtraTerminatorCharacterStopsPairing() {
         List<String> failures = new ArrayList<>();
 
@@ -63,7 +63,7 @@ class OffPlatformPaymentRuleTest {
     }
 
     @Test
-    @DisplayName("F-0776: U+2029 (paragraph separator) alone still stops pairing, the same as a blank line")
+    @DisplayName("F-1776: U+2029 (paragraph separator) alone still stops pairing, the same as a blank line")
     void paragraphSeparatorAloneStopsPairing() {
         String text = "Please send the draft by Friday" + "\u2029" + "UPI payout goes through Influora";
         assertThat(matches(text))
@@ -72,7 +72,7 @@ class OffPlatformPaymentRuleTest {
     }
 
     @Test
-    @DisplayName("F-0776: a single dot immediately before a currency symbol (not a digit) is still a protected, non-cutting dot")
+    @DisplayName("F-1776: a single dot immediately before a currency symbol (not a digit) is still a protected, non-cutting dot")
     void dotBeforeCurrencySymbolAloneIsProtected() {
         // Deliberately different from the corpus's AB-rupee-sym ("We'll send ₹. 5000 to your
         // GPay."), where the character right after the dot is the digit "5" -- that exercises

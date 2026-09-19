@@ -54,8 +54,8 @@ public final class HideDisclosureRule implements RiskRule {
      *   <li>Hinglish short form: {@code (ad|sponsored|paid partnership) (mat|nahi)
      *       (likh|daal|laga|dikha|mention)...} — Latin script, so a plain {@code \b} is correct
      *       here (Kabir's probe: {@code \bad\s+mat\b} against "ad mat likhna" fires under Java's
-     *       default flags). F-0769 / K-2c (round 6, Ruling 3c): the {@code #ad} alternative was
-     *       pruned from this branch. F-0776 / K-2c.2 (round 7, Ruling 3; Nisha's yes/no,
+     *       default flags). F-1769 / K-2c (round 6, Ruling 3c): the {@code #ad} alternative was
+     *       pruned from this branch. F-1776 / K-2c.2 (round 7, Ruling 3; Nisha's yes/no,
      *       {@code NISHA-COMPLIANCE-ROWS-0918.md} "Short-form check"): the {@code na} alternative
      *       was pruned too — Nisha's own natural-sentence attempt at a guard row for it
      *       ({@code NISHA-GUARD-HD-F-na}) only ever used "na" as a trailing soft-request tag on a
@@ -75,10 +75,10 @@ public final class HideDisclosureRule implements RiskRule {
      *       {@code \b(...)\b} group would compile, read correctly in review, and never match.
      * </ol>
      *
-     * <p><b>F-0776 / K-2c.2 (round 7, Ruling 1): B3's {@code ad} widened to {@code an?}.</b> The
+     * <p><b>F-1776 / K-2c.2 (round 7, Ruling 1): B3's {@code ad} widened to {@code an?}.</b> The
      * bare {@code ad} alternative in the don't-disclose branch only ever matched the ungrammatical
      * "as ad" / "as a ad" — {@code (?:a\s+)?} never admitted "an", so no row could depend on it
-     * naturally, and F-0776's done_when forces either a widen or a prune here. Widened, not pruned:
+     * naturally, and F-1776's done_when forces either a widen or a prune here. Widened, not pruned:
      * the words before it ("don't disclose this/it as") already say this is a hide ask, an article
      * cannot add a false flag (measured: 0 corpus false flags, 0 ratchet rows lost), and pruning
      * would leave the natural English form "Don't disclose this as an ad." uncaught on the one path
@@ -88,7 +88,7 @@ public final class HideDisclosureRule implements RiskRule {
      * {@code \b} falls between {@code ad} and {@code -}; the sentence is contrived and does not
      * justify an extra lookahead that would itself need a guard row.
      *
-     * <p><b>R7-A / F-0778 (round 7, HIGH): ASCI-compliance instructions no longer fire.</b> Measured
+     * <p><b>R7-A / F-1778 (round 7, HIGH): ASCI-compliance instructions no longer fire.</b> Measured
      * (Priya, {@code PriyaR7Probe} in {@code scratchpad/pk3r3/r7/}): 13 of 15 lines in which a brand
      * or agency tells the creator to KEEP, add or place the disclosure label raised this
      * non-dismissible flag — worse than the round-4 TECNO case, because it accuses the most
@@ -108,7 +108,7 @@ public final class HideDisclosureRule implements RiskRule {
      *       known miss (same {@code source = "f0776"}, text unchanged). Nothing in this commit
      *       replaces that catch: on the AI path the model's own {@code disclosure_hidden_hint} is
      *       what would still flag such a brief; on FALLBACK it is an accepted, documented miss (the
-     *       same class of trade as F-0777).
+     *       same class of trade as F-1777).
      *   <li>{@code no} &rarr; {@code (?<!with\s)no}. Clears "Content with no #ad label will be
      *       rejected." without touching any other {@code no} row.
      *   <li>A negative lookahead right after B1's label group,
@@ -132,7 +132,7 @@ public final class HideDisclosureRule implements RiskRule {
      * lookbehind that clears the compliance line also shields this evasion); a hide ask rephrased as
      * a placement instruction escapes; see also the B3 {@code an?} residual above.
      *
-     * <p>F-0776 (kabir, {@code KABIR-K2C-CHECK-0918.md} clause 5) alternative-deletion guards live in
+     * <p>F-1776 (kabir, {@code KABIR-K2C-CHECK-0918.md} clause 5) alternative-deletion guards live in
      * {@code RiskFlagCorpusTest}'s {@code VIK-GUARD2-HD-F-*} rows: {@code put}, {@code #collab},
      * {@code ad\s*tag}, {@code sponsored\s+tag}, B2's {@code this\s+is}, B3's {@code it}. B3's
      * {@code ad} is guarded by the widened-{@code an?} row above; {@code without} is pruned under

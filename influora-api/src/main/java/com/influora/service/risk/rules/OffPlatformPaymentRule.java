@@ -153,13 +153,13 @@ public final class OffPlatformPaymentRule implements RiskRule {
     private static final String WALLET_TOKEN = String.valueOf((char) 0xE000);
 
     /**
-     * F-0769 / K-2c (Priya, {@code RULINGS-U-0917.md} round 6, Ruling 1). A run of sentence-ending
+     * F-1769 / K-2c (Priya, {@code RULINGS-U-0917.md} round 6, Ruling 1). A run of sentence-ending
      * punctuation, followed by whitespace or end of text: {@code . ! ? …} (U+2026, horizontal
      * ellipsis), {@code ।} (U+0964, danda) and {@code ॥} (U+0965, double danda). See {@link
      * #isProtectedDot} for the one exception, which applies only to a run that is exactly one
      * {@code .}.
      *
-     * <p><b>F-0776 / K-2c.2 (round 7, Ruling 4): a pipe added.</b> A brand or agency sometimes
+     * <p><b>F-1776 / K-2c.2 (round 7, Ruling 4): a pipe added.</b> A brand or agency sometimes
      * types an ASCII pipe in place of a danda (no Devanagari keyboard, or a chat-app autocorrect
      * artifact), and the un-cut pipe let an unrelated wallet name and request word either side of
      * it pair up -- measured non-dismissible on three ordinary on-platform briefs, English,
@@ -174,11 +174,11 @@ public final class OffPlatformPaymentRule implements RiskRule {
      */
     static final Pattern SENTENCE_TERMINATOR = Pattern.compile("[.!?\u2026\u0964\u0965|]+(?=\\s|$)");
 
-    /** F-0769: a blank line — two line breaks with only spaces/tabs between them — or U+2029 (paragraph separator). */
+    /** F-1769: a blank line — two line breaks with only spaces/tabs between them — or U+2029 (paragraph separator). */
     static final Pattern SENTENCE_BLANK_LINE = Pattern.compile("\\r?\\n[ \\t]*\\r?\\n|\u2029");
 
     /**
-     * F-0769: a line break followed by optional spaces/tabs, then a list marker, then a space. The
+     * F-1769: a line break followed by optional spaces/tabs, then a list marker, then a space. The
      * markers are {@code - * • · ▪ ➤}, or one or two digits followed by {@code .} or {@code )}. A
      * line break on its own (not before a list marker, and not part of a blank line) is deliberately
      * NOT a cut — see {@link #sentences}'s class-level note on hard-wrapped text.
@@ -187,7 +187,7 @@ public final class OffPlatformPaymentRule implements RiskRule {
             Pattern.compile("\\r?\\n(?=[ \\t]*(?:[-*\u2022\u00b7\u25aa\u27a4]|\\p{Nd}{1,2}[.)])\\s)");
 
     /**
-     * F-0769: words that may sit before a single {@code .} without ending the sentence (see {@link
+     * F-1769: words that may sit before a single {@code .} without ending the sentence (see {@link
      * #isProtectedDot}) — {@code Rs. 5,000}, {@code No. 12}, {@code approx. 3 days}, {@code a/c
      * no.}, {@code amt.}, {@code e.g.} and the Devanagari {@code रु.} (rupee).
      *
@@ -213,7 +213,7 @@ public final class OffPlatformPaymentRule implements RiskRule {
      * <p>KB5-1: the wallet-name match and the send/pay-word match must be within {@link
      * #PAIRING_WINDOW} tokens of each other, not merely both present anywhere in the text.
      *
-     * <p><b>F-0769 / K-2c (round 6, Ruling 1): the pairing only counts inside one sentence.</b> The
+     * <p><b>F-1769 / K-2c (round 6, Ruling 1): the pairing only counts inside one sentence.</b> The
      * un-windowed proximity check above still counted straight through a sentence end, so short,
      * ordinary on-platform briefs such as "Send the draft by Monday. UPI payouts go through
      * Influora as usual." still paired a wallet name in one sentence with an unrelated "send" in
@@ -262,7 +262,7 @@ public final class OffPlatformPaymentRule implements RiskRule {
     }
 
     /**
-     * F-0769: splits an already-{@link RiskText#norm}-normalised text into sentences, so {@link
+     * F-1769: splits an already-{@link RiskText#norm}-normalised text into sentences, so {@link
      * #matches} can pair a wallet name and a request word only within one of them. A line break on
      * its own is deliberately not a cut — plain-text and PDF pastes routinely hard-wrap a real ask
      * mid-sentence ("…we can send the fee straight to your\nUPI, faster that way…"), and cutting at
@@ -296,7 +296,7 @@ public final class OffPlatformPaymentRule implements RiskRule {
     }
 
     /**
-     * F-0769: true when the terminator run at {@code [start, end)} is a single {@code .} that does
+     * F-1769: true when the terminator run at {@code [start, end)} is a single {@code .} that does
      * NOT end the sentence, because either the next non-space character on the same line is a digit
      * ({@code \p{Nd}}, which includes Devanagari digits) or a currency symbol ({@code \p{Sc}},
      * which includes ₹) — "Rs. 5,000", "No. 12", "approx. 3 days", "रु. 5000" — or the word
@@ -328,7 +328,7 @@ public final class OffPlatformPaymentRule implements RiskRule {
 
     /**
      * The token-window pairing check {@link #matches} used to run once over the whole normalised
-     * text (K-2b round 5, KB5-1); F-0769 now runs it once per sentence from {@link #sentences}.
+     * text (K-2b round 5, KB5-1); F-1769 now runs it once per sentence from {@link #sentences}.
      * Every {@link #WALLET_NAME} match is first replaced by a single {@link #WALLET_TOKEN}, so a
      * multi-word wallet phrase occupies one token position; the sentence is then split on
      * whitespace and each remaining token is tested against {@link #SEND_REQUEST} on its own —

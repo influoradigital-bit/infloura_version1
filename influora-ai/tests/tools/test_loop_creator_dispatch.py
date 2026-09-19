@@ -189,7 +189,7 @@ async def test_creator_tool_result_data_passes_through_unchanged():
 
     R3 (Priya "Last call -- K-3 re-check" 0918): compared against a pre-run `copy.deepcopy`,
     not against `payload` itself -- `results[0].tool_result_data == payload` used to compare
-    the SAME object to itself (F-0770's pattern), which cannot see an in-place mutation of
+    the SAME object to itself (F-1770's pattern), which cannot see an in-place mutation of
     that object. This payload has no "deals" key, so `_model_copy_of_tool_result` takes
     get_my_deals's no-`deals` branch -- the one branch B15 (unknown top-level keys popped
     from Spring's object, in place) reaches, and only THIS test exercises it. Falsify: B15
@@ -669,7 +669,7 @@ async def test_k3_get_brief_brand_written_fields_wrapped_for_the_model_only():
     # raises immediately, and `_get_brief_payload`'s two-element `flags` (S18) makes a
     # reversal observable in the wrapped text's order too, belt and braces.
     payload = _freeze(_get_brief_payload())
-    # F-0770: a snapshot taken BEFORE the run, so the browser-copy assertion below compares
+    # F-1770: a snapshot taken BEFORE the run, so the browser-copy assertion below compares
     # against Spring's ORIGINAL payload rather than against `payload` itself -- `payload` is
     # the same object `tool_result_data` carries, so `== payload` alone compares an object to
     # itself and cannot see it being mutated in place (Priya's mutants B1/B4/B5/B6b).
@@ -724,7 +724,7 @@ async def test_k3_get_brief_brand_written_fields_wrapped_for_the_model_only():
     assert o < flagA_idx < flagB_idx < flagC_idx < c, "flags[] order changed -- in-place reordering not caught"
 
     # The BROWSER's copy is the untouched original -- literal "<", not escaped,
-    # and not additionally wrapped. Compared against the pre-run snapshot (F-0770), not
+    # and not additionally wrapped. Compared against the pre-run snapshot (F-1770), not
     # just against `payload`, so an in-place mutation of Spring's object is caught.
     tool_results = [e for e in events if e.type == "tool_result" and e.tool_status == "ok"]
     assert len(tool_results) == 1
@@ -791,7 +791,7 @@ async def test_k3_check_deal_risks_flags_wrapped_for_the_model_only():
     }
     # K-3 round 5: frozen (see `_freeze` above the K-3 section) -- any in-place mutator raises.
     payload = _freeze(payload)
-    # F-0770: see the get_brief test above -- a pre-run snapshot, not `payload` itself.
+    # F-1770: see the get_brief test above -- a pre-run snapshot, not `payload` itself.
     snapshot = copy.deepcopy(payload)
     claude = _FakeClaude(_turn_calling(CHECK_DEAL_RISKS, {"deal_id": FIXED_DEAL_ID}))
     spring = _RecordingSpring(data=payload)
@@ -866,7 +866,7 @@ async def test_k3_get_my_deals_brand_name_and_campaign_title_wrapped_per_deal():
     }
     # K-3 round 5: frozen (see `_freeze` above the K-3 section) -- any in-place mutator raises.
     payload = _freeze(payload)
-    # F-0770: see the get_brief test above -- a pre-run snapshot, not `payload` itself.
+    # F-1770: see the get_brief test above -- a pre-run snapshot, not `payload` itself.
     snapshot = copy.deepcopy(payload)
     claude = _FakeClaude(_turn_calling(GET_MY_DEALS))
     spring = _RecordingSpring(data=payload)
@@ -989,7 +989,7 @@ async def test_k3_get_my_deals_duplicate_or_missing_deal_id_does_not_drop_brand_
     }
     # K-3 round 5: frozen (see `_freeze` above the K-3 section) -- any in-place mutator raises.
     payload = _freeze(payload)
-    # F-0770: see the get_brief test above -- a pre-run snapshot, not `payload` itself.
+    # F-1770: see the get_brief test above -- a pre-run snapshot, not `payload` itself.
     snapshot = copy.deepcopy(payload)
     claude = _FakeClaude(_turn_calling(GET_MY_DEALS))
     spring = _RecordingSpring(data=payload)
@@ -1004,7 +1004,7 @@ async def test_k3_get_my_deals_duplicate_or_missing_deal_id_does_not_drop_brand_
         assert o < idx < c, f"{brand_name!r} must survive INSIDE the wrapper"
 
     # The browser's copy is still the untouched original -- three distinct deals, none merged --
-    # checked against the pre-run snapshot (F-0770), not just against `payload`.
+    # checked against the pre-run snapshot (F-1770), not just against `payload`.
     tool_results = [e for e in events if e.type == "tool_result" and e.tool_status == "ok"]
     # R4 (Priya "Last call -- K-3 re-check" 0918): plain json.dumps, no sort_keys -- a
     # deepcopy preserves insertion order, so this is now a byte comparison. sort_keys=True
@@ -1159,9 +1159,9 @@ async def test_k3_get_my_deals_all_trusted_deal_clean_payload_reaches_browser_un
 
 
 # ============================================================================
-# F-0771 R1/R2 (Priya "Last call — K-3 re-check" 0918): every depth-probe from her recheck,
+# F-1771 R1/R2 (Priya "Last call — K-3 re-check" 0918): every depth-probe from her recheck,
 # as real tests -- not the scratch script (`scratchpad/probe_f0771.py`) the first fix was
-# only ever proven against. Each takes a pre-run `copy.deepcopy` snapshot (same F-0770
+# only ever proven against. Each takes a pre-run `copy.deepcopy` snapshot (same F-1770
 # discipline as the fixtures above), so the browser-copy assertion cannot compare an object
 # to itself, and each asserts its probe string lands strictly INSIDE the wrapper.
 #
@@ -1545,7 +1545,7 @@ async def test_f0771_depth_probe_lands_inside_the_wrapper(
     """Every depth-probe row from Priya's K-3 re-check
     (PRIYA-LASTCALL-K3-RECHECK-0918.md §1a), through `run_tool_loop` for real -- not the
     scratch script the first fix was only ever proven against. Two checks per case, both
-    against a PRE-RUN `copy.deepcopy` (F-0770 discipline):
+    against a PRE-RUN `copy.deepcopy` (F-1770 discipline):
 
     1. the probe string lands strictly INSIDE the wrapper -- proves the classification,
        not merely that SOMETHING got wrapped;
