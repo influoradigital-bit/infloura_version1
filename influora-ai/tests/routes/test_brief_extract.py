@@ -2851,3 +2851,310 @@ async def test_rr2_hinglish_product_only_grounds_barter():
     raw = "Glow: 1 reel. Sirf product milega, paisa nahi."
     data = await _probe(raw, _probe_input(barter_only=True))
     assert data["barter_only"] is True
+
+
+# ===========================================================================
+# T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — the reviewer FAILED
+# 3d88d58. Every defect in that verdict, rebuilt from the reviewer's own probe
+# briefs (probe4/p5.py t1-t5 and q1-q7, probe3.py h1-h8).
+# Source: T-GOLIVE-0918-R2 B0-AI repair-round-2 verdict on 3d88d58.
+# ===========================================================================
+
+
+def _rr3_lines(*extra: str) -> list[str]:
+    """Three filler lines with a generic subject, so a probe brief that does
+    not name Glow keeps them and only the line under test can be stripped."""
+    return ["Brand wants a reel", "Terms are still open", "Reply to confirm interest", *extra]
+
+
+def _rr3_input(**overrides: Any) -> dict[str, Any]:
+    overrides.setdefault("summary_lines", _rr3_lines())
+    return _probe_input(**overrides)
+
+
+# --- HIGH: a product price grounds a budget the brief says is unstated -------
+
+
+@pytest.mark.parametrize(
+    ("raw", "invented_line", "invented"),
+    [
+        ("Our tees are ₹599 😍 1 reel? lmk ur charges", "Budget ₹599", 599),
+        ("Serum ₹699 launch. 1 reel. Budget to be discussed.", "Brand offers ₹699", 699),
+        ("naya kurta ₹1,299 ka. 1 reel. budget baad me batayenge", "Budget ₹1,299", 1299),
+        ("हमारा तेल ₹450 का है। एक रील चाहिए। बजट बाद में।", "बजट ₹450", 450),
+        ("New launch: Vitamin C serum ₹699. 1 reel please. Budget to be discussed.", "Budget ₹699", 699),
+        ("Hamare face wash ka rate ₹249 hai. Ek reel bana do, paisa baad me baat karte", "Brand pays ₹249", 249),
+        ("हमारी क्रीम ₹350 में मिलती है। एक रील चाहिए, फीस बाद में।", "Fee ₹350", 350),
+        ("Get flat ₹150 on app download. 1 reel. Fee TBD", "Fee ₹150", 150),
+        ("Combo pack at just Rs 499! pls make 1 reel. rates? ", "You get Rs 499", 499),
+        ("Starting from ₹1,999. 2 reels needed. Budget: will share", "Budget ₹1,999", 1999),
+        ("hey!! our tees are ₹599 😍 1 reel? lmk ur charges", "Payment ₹599", 599),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr3_currency_only_amount_never_grounds_a_budget_the_brief_calls_unstated(
+    raw, invented_line, invented
+):
+    """Reviewer's p5.py t1-t4 / probe3.py h1-h7: at 3d88d58 each came back
+    {budget_inr: <product price>, line_kept: true} although the brief itself
+    says the budget is to be discussed / baad me / बाद में / lmk ur charges."""
+    data = await _probe(
+        raw,
+        _rr3_input(
+            budget_stated=True,
+            budget_inr=invented,
+            summary_lines=_rr3_lines(invented_line),
+        ),
+    )
+    assert data["budget_inr"] is None
+    assert invented_line not in data["summary_lines"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "line", "amount"),
+    [
+        ("Glow: 1 reel, ₹8000 flat.", "Fee ₹8000", 8000),
+        ("Serum ₹699. 1 reel. Budget ₹5,000, rest to be discussed.", "Budget ₹5,000", 5000),
+        ("Serum ₹699. 1 reel. Budget to be discussed, around ₹5000 fee", "Fee ₹5000", 5000),
+        ("Glow 2 reels @ ₹5000 each. Budget negotiable", "₹5000 per reel", 5000),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr3_a_stated_fee_still_grounds(raw, line, amount):
+    """Controls: probe3 h8 (a currency-only fee with no 'unstated' phrase), and
+    a fee-worded amount next to an 'unstated' phrase, still ground."""
+    data = await _probe(
+        raw, _rr3_input(budget_stated=True, budget_inr=amount, summary_lines=_rr3_lines(line))
+    )
+    assert data["budget_inr"] == amount
+    assert line in data["summary_lines"]
+
+
+def test_rr3_budget_unstated_detector_unit():
+    from app.routes.brief_extract import _brief_says_budget_unstated as unstated
+
+    for raw in (
+        "Budget to be discussed.",
+        "budget baad me batayenge",
+        "बजट बाद में।",
+        "lmk ur charges",
+        "rates? ",
+        "Fee TBD",
+        "Budget: will share",
+        "paisa baad me baat karte",
+        "फीस बाद में।",
+        "What are your rates?",
+    ):
+        assert unstated(raw) is True, raw
+    for raw in ("Glow: 1 reel, ₹8000 flat.", "Budget ₹8000, payment after posting.", "Budget 10k"):
+        assert unstated(raw) is False, raw
+
+
+# --- MEDIUM: a word-unit money figure next to a deliverable noun ------------
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "bhai 2 reels chahiye, 5 hazaar per reel",
+        "2 reels needed, 5 thousand per reel",
+        "दो रील चाहिए, 5 हज़ार प्रति रील",
+        "2 reels, 5 rupees per reel extra for boosting",
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr3_money_per_deliverable_is_not_a_count(raw):
+    """Reviewer's p5.py q1/q2: model qty 5 came back [{REEL, qty 5}]."""
+    data = await _probe(raw, _rr3_input(deliverables=[{"type": "REEL", "qty": 5}]))
+    assert data["deliverables"] == [{"type": "REEL", "qty": 1}]
+
+
+@pytest.mark.asyncio
+async def test_rr3_the_real_count_beside_a_per_reel_price_still_grounds():
+    raw = "bhai 2 reels chahiye, 5 hazaar per reel"
+    data = await _probe(raw, _rr3_input(deliverables=[{"type": "REEL", "qty": 2}]))
+    assert data["deliverables"] == [{"type": "REEL", "qty": 2}]
+
+
+# --- MEDIUM: summary lines paraphrasing an invented term --------------------
+
+
+@pytest.mark.parametrize(
+    "invented_line",
+    [
+        "Brand owns the content forever",
+        "You can't work with other skincare brands",
+        "Paid in full upfront",
+        "Payment after the reel goes live",
+        "No other beauty brands for a while",
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr3_line_paraphrasing_an_unstated_term_is_stripped(invented_line):
+    """Reviewer's probe on '1 reel, 10k': each line was KEPT at 3d88d58."""
+    data = await _probe("Glow: 1 reel, 10k", _rr3_input(summary_lines=_rr3_lines(invented_line)))
+    assert invented_line not in data["summary_lines"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "line"),
+    [
+        ("Glow: 1 reel, 10k. Usage rights forever.", "Brand owns the content forever"),
+        (
+            "Glow: 1 reel, 10k. No other skincare brands for 30 days.",
+            "You can't work with other skincare brands",
+        ),
+        ("Glow: 1 reel, 10k, 100% advance.", "Paid in full upfront"),
+        ("Glow: 1 reel, 10k, payment after posting.", "Payment after the reel goes live"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr3_line_restating_a_stated_term_is_kept(raw, line):
+    data = await _probe(raw, _rr3_input(summary_lines=_rr3_lines(line)))
+    assert line in data["summary_lines"]
+
+
+# --- MEDIUM: an invented non-numeric payment term ---------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "terms"),
+    [
+        ("Glow: 1 reel, budget TBD", "Full advance before shoot"),
+        ("Glow: 1 reel, budget TBD", "Paid on delivery"),
+        ("Glow: 1 reel, budget 10k, payment after posting", "Full advance before shoot"),
+        ("Glow: 1 reel, budget TBD", "Via UPI"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr3_invented_payment_terms_are_dropped(raw, terms):
+    """Reviewer: '1 reel, budget TBD' with payment_terms 'Full advance before
+    shoot' kept the term at 3d88d58."""
+    data = await _probe(raw, _rr3_input(payment_terms=terms))
+    assert data["payment_terms"] is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "terms"),
+    [
+        ("Glow: 1 reel, budget 10k, full advance before shoot", "Full advance before shoot"),
+        ("Glow: 1 reel, budget 10k, payment after posting", "Payment after posting"),
+        ("Glow: 1 reel, 10k, 50% advance", "50% advance"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr3_stated_payment_terms_are_kept(raw, terms):
+    data = await _probe(raw, _rr3_input(payment_terms=terms))
+    assert data["payment_terms"] == terms
+
+
+# --- MEDIUM: day counts, percentages, counts, fundraises, vouchers ----------
+
+
+@pytest.mark.parametrize(
+    ("raw", "invented"),
+    [
+        ("Glow: 1 reel, payment within 7 days", 7),
+        ("Glow: 1 reel. Pay 50% advance", 50),
+        ("Glow: 1 reel, payment net 30", 30),
+        ("Glow: 1 reel, payment 2 hafte me hogi", 2),
+        ("Glow: एक रील, भुगतान 45 दिन में", 45),
+        ("Glow here. Pay attention: 3 reels", 3),
+        ("Glow: we raised Rs 20 lakh seed last year. 1 reel, budget tbd", 2_000_000),
+        ("Glow: 1 reel, Rs 1000 Amazon voucher for the creator", 1000),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr3_non_amounts_next_to_a_payment_word_do_not_ground_budget(raw, invented):
+    """Reviewer: each grounded budget_inr at 3d88d58 (7.0, 50.0, 30.0, 2.0,
+    45.0, 3.0, 2000000.0, 1000.0)."""
+    data = await _probe(
+        raw,
+        _rr3_input(
+            budget_stated=True,
+            budget_inr=invented,
+            summary_lines=_rr3_lines(f"Budget {invented}"),
+        ),
+    )
+    assert data["budget_inr"] is None
+    assert f"Budget {invented}" not in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_rr3_a_fee_beside_a_payment_window_still_grounds():
+    raw = "Glow: 1 reel, payment ₹8000 within 7 days"
+    data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=8000))
+    assert data["budget_inr"] == 8000
+
+
+# --- LOW: Devanagari / Hinglish coverage, launch dates ----------------------
+
+
+@pytest.mark.asyncio
+async def test_rr3_devanagari_tak_frames_a_deadline():
+    when = date.today() + timedelta(days=90)
+    raw = f"Glow: एक रील। {when:%d/%m/%Y} तक पोस्ट करें"
+    data = await _probe(raw, _rr3_input(deadline=when.isoformat()))
+    assert data["deadline"] == when.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_rr3_a_launch_date_is_not_a_posting_deadline():
+    when = date.today() + timedelta(days=90)
+    raw = f"Glow: 1 reel. Product launches on {when.day} {when:%b} {when.year}."
+    data = await _probe(raw, _rr3_input(deadline=when.isoformat()))
+    assert data["deadline"] is None
+
+
+@pytest.mark.asyncio
+async def test_rr3_devanagari_ad_usage_grounds_paid_ads():
+    raw = "Glow: एक रील। विज्ञापन में इस्तेमाल करेंगे"
+    data = await _probe(raw, _rr3_input(usage_channels=["PAID_ADS"]))
+    assert data["usage_channels"] == ["PAID_ADS"]
+
+
+@pytest.mark.asyncio
+async def test_rr3_hinglish_exclusivity_grounds_its_days():
+    raw = "Glow: 1 reel. 45 din tak koi aur hair oil brand ke saath kaam mat karna"
+    data = await _probe(raw, _rr3_input(exclusivity_days=45, exclusivity_scope="CATEGORY"))
+    assert data["exclusivity_days"] == 45
+    assert data["exclusivity_scope"] == "CATEGORY"
+
+
+@pytest.mark.asyncio
+async def test_rr3_hinglish_revision_count_grounds():
+    raw = "Glow: 1 reel. do baar changes kar sakte hain"
+    data = await _probe(raw, _rr3_input(max_revisions=2))
+    assert data["max_revisions"] == 2
+
+
+@pytest.mark.asyncio
+async def test_rr3_shorthand_total_grounds_budget():
+    raw = "Glow: 1 reel, 25k total"
+    data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=25000))
+    assert data["budget_inr"] == 25000
+
+
+# --- LOW: hashtags and platforms are not the brand --------------------------
+
+
+@pytest.mark.asyncio
+async def test_rr3_a_hashtag_does_not_ground_brand_name_or_its_line():
+    raw = "1 reel #glowup budget 10k"
+    data = await _probe(
+        raw,
+        _rr3_input(brand_name="Glowup", summary_lines=["Glowup wants 1 reel", *_rr3_lines()]),
+    )
+    assert data["brand_name"] is None
+    assert "Glowup wants 1 reel" not in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_rr3_a_platform_is_not_the_subject_of_a_line():
+    raw = "Found you on Instagram! 1 reel, budget 10k"
+    data = await _probe(
+        raw,
+        _rr3_input(brand_name="Instagram", summary_lines=_rr3_lines("Instagram wants a reel")),
+    )
+    assert data["brand_name"] is None
+    assert "Instagram wants a reel" not in data["summary_lines"]

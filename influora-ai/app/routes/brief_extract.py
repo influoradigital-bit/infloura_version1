@@ -609,8 +609,16 @@ _MONEY_MARKER_WINDOW_WORDS = r"(?:\s+[A-Za-z']+){0,2}?"
 # ("15k per reel"). Source: Kabir round-1 verdict, B0-AI defects[0].
 _MARK_START = r"(?<![A-Za-zऀ-ॿ])"
 _CURRENCY_MARKER_RE_TEXT = r"₹|rs\.?|inr|rupees?|rupaye|rupay|रुपये|रुपए|रु\.?"
-_BUDGET_MARKER_RE_TEXT = (
-    rf"{_CURRENCY_MARKER_RE_TEXT}|budgets?|fees?|pay|pays|payment|paying|paid|payout|"
+_OPTIONAL_CURRENCY = rf"(?:\s*(?:{_CURRENCY_MARKER_RE_TEXT}))?"
+# T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — HIGH: the budget markers
+# are split into the currency signs and the FEE words, so a brief that itself
+# says its budget is unstated can ground budget_inr on a fee word only (see
+# `_brief_says_budget_unstated`). "total"/"overall"/"all-in"/"lump sum" are fee
+# words too (LOW: "25k total" dropped a genuine budget). Source: B0-AI
+# repair-round-2 verdict on 3d88d58, defects 1 and 6.
+_BUDGET_FEE_MARKER_RE_TEXT = (
+    r"budgets?|fees?|pay|pays|payment|paying|paid|payout|total|overall|all-?in|each|apiece|"
+    r"lump\s*sum|lumpsum|"
     # T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: a bare
     # "price"/"pricing"/"cost" is how a brief states its PRODUCT's price
     # ("Promote our new serum (price ₹999). Budget TBD." grounded 999), so
@@ -624,6 +632,7 @@ _BUDGET_MARKER_RE_TEXT = (
     r"per\s+(?:reels?|posts?|stor(?:y|ies)|videos?|shorts?|deliverables?|pieces?|integrations?)|"
     r"बजट|फीस|फ़ीस|भुगतान|पेमेंट"
 )
+_BUDGET_MARKER_RE_TEXT = rf"{_CURRENCY_MARKER_RE_TEXT}|{_BUDGET_FEE_MARKER_RE_TEXT}"
 _BARTER_MARKER_RE_TEXT = (
     rf"{_CURRENCY_MARKER_RE_TEXT}|worth|barter|bartered|mrp|value|valued|"
     r"retail\s+price|price|priced|pricing|costs?|कीमत|मूल्य"
@@ -693,12 +702,18 @@ def _has_money_marker_near(text: str, start: int, end: int, marker_re_text: str)
     "₹15k", "15,000 per reel", "बजट १५ हज़ार". Letters-only fillers mean a
     competing number can never be hopped across to reach a marker that
     belongs to a different number (REPAIR ROUND 2's comma/filler bugs)."""
+    # T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — a currency sign may
+    # sit between a fee word and its amount ("Budget ₹5,000", "₹5000 fee"), so
+    # a fee-words-only marker set (see `_brief_says_budget_unstated`) still
+    # reaches it. Source: B0-AI repair-round-2 verdict on 3d88d58, defect 1.
     before_re = re.compile(
-        rf"{_MARK_START}(?:{marker_re_text}){_WORD_END}{_MONEY_MARKER_WINDOW_WORDS}\s*[:\-]?\s*$",
+        rf"{_MARK_START}(?:{marker_re_text}){_WORD_END}{_MONEY_MARKER_WINDOW_WORDS}"
+        rf"\s*[:\-]?{_OPTIONAL_CURRENCY}\s*$",
         re.IGNORECASE,
     )
     after_re = re.compile(
-        rf"\s*[:\-/]?{_MONEY_MARKER_WINDOW_WORDS}\s*{_MARK_START}(?:{marker_re_text}){_WORD_END}",
+        rf"{_OPTIONAL_CURRENCY}\s*[:\-/]?{_MONEY_MARKER_WINDOW_WORDS}\s*{_MARK_START}"
+        rf"(?:{marker_re_text}){_WORD_END}",
         re.IGNORECASE,
     )
     before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
@@ -822,12 +837,72 @@ def _is_year(text: str, start: int, end: int) -> bool:
 
 
 def _is_non_fee_amount(text: str, start: int, end: int) -> bool:
+    if _is_not_an_amount(text, start, end):
+        return True
     if _NON_FEE_AFTER_RE.match(text, end) is not None:
         return True
     if _is_product_price_or_refund(text, start, end):
         return True
+    if _is_fundraise_or_voucher(text, start, end):
+        return True
     before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
     return _NON_FEE_BEFORE_RE.search(before) is not None
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — MEDIUM: a day count, a
+# percentage or a deliverable count that sits next to a payment word is not an
+# amount, yet each grounded budget_inr: "payment within 7 days" gave 7.0, "Pay
+# 50% advance" 50.0, "payment net 30" 30.0, "payment 2 hafte me hogi" 2.0,
+# "भुगतान 45 दिन में" 45.0, "Pay attention: 3 reels" 3.0. A number is not an
+# amount when a time unit or "%" follows it, "net" precedes it, or a
+# deliverable noun follows it — unless a currency sign touches it ("₹30 per
+# day" stays money). Applied to every money field and to summary-line money
+# (through `_is_non_fee_amount`, which `_money_role_in_line` reads), so the
+# line "Payment within 7 days" restating the brief is still kept.
+# Source: B0-AI repair-round-2 verdict on 3d88d58, defect 5.
+_NOT_AN_AMOUNT_AFTER_RE = re.compile(
+    r"\s*-?\s*(?:%|percent|per\s*cent|pc|days?|din|दिन|weeks?|wks?|hafte|hafta|haftey|"
+    r"हफ्ते|हफ़्ते|हफ्ता|months?|mahine|mahina|महीने|महीना|years?|yrs?|saal|साल|hrs?|hours?|"
+    r"ghante|घंटे|mins?|minutes?|secs?|seconds?)(?![A-Za-zऀ-ॿ])",
+    re.IGNORECASE,
+)
+_NET_BEFORE_RE = re.compile(r"(?<![A-Za-z])net\s*-?\s*$", re.IGNORECASE)
+
+
+def _is_not_an_amount(text: str, start: int, end: int) -> bool:
+    before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
+    if _CURRENCY_TOUCHING_BEFORE_RE.search(before) or _CURRENCY_TOUCHING_AFTER_RE.match(text, end):
+        return False
+    if _NOT_AN_AMOUNT_AFTER_RE.match(text, end) is not None:
+        return True
+    if _NET_BEFORE_RE.search(before) is not None:
+        return True
+    return _COUNT_NOUN_AFTER_RE.match(text, end) is not None
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — MEDIUM: "raised Rs 20
+# lakh seed" grounded budget_inr 2000000.0 and "Rs 1000 Amazon voucher"
+# grounded 1000.0. Money the brand raised, earned or is worth, and a voucher,
+# gift card or prize, is not a cash fee for this creator. Budget only; the
+# clause must hold the word within a few words of the amount.
+# Source: B0-AI repair-round-2 verdict on 3d88d58, defect 5.
+_FUNDRAISE_RE = re.compile(
+    r"(?<![A-Za-z])(?:raised?|raising|funding|funded|seed|series\s+[a-e]|valuation|"
+    r"revenue|turnover|gmv|arr|mrr|investment|invested|investors?)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+_VOUCHER_AFTER_RE = re.compile(
+    r"(?:\s+[A-Za-z']+){0,2}?\s*(?:vouchers?|gift\s*cards?|gift\s+vouchers?|coupons?|"
+    r"store\s+credits?|wallet\s+credits?|prizes?|giveaways?)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+
+
+def _is_fundraise_or_voucher(text: str, start: int, end: int) -> bool:
+    if _VOUCHER_AFTER_RE.match(text, end) is not None:
+        return True
+    lo, hi = _clause_bounds(text, start, end, 25)
+    return _FUNDRAISE_RE.search(text, lo, hi) is not None
 
 
 # T-GOLIVE-0918-R2 REPAIR ROUND 1 [ash · 2026-09-18] — MEDIUM (same probe):
@@ -872,6 +947,8 @@ def _numbers_with_money_marker(
             continue
         if _is_phone_number(normalized, start, end) or _is_year(normalized, start, end):
             continue
+        if _is_not_an_amount(normalized, start, end):
+            continue
         if veto_non_fee and _is_non_fee_amount(normalized, start, end):
             continue
         if _has_money_marker_near(normalized, start, end, marker_re_text):
@@ -910,11 +987,60 @@ def _shorthand_expansions_with_money_marker(
 
 
 def _grounded_budget_amounts(text: str) -> set[str]:
-    return _numbers_with_money_marker(
-        text, _BUDGET_MARKER_RE_TEXT, veto_non_fee=True
-    ) | _shorthand_expansions_with_money_marker(
-        text, _BUDGET_MARKER_RE_TEXT, veto_non_fee=True
+    # T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — HIGH: when the brief
+    # says its budget is not set, a currency sign alone no longer makes an
+    # amount the fee. "Serum ₹699 launch. 1 reel. Budget to be discussed."
+    # grounded budget_inr 699.0 and kept the line "Brand offers ₹699"; "naya
+    # kurta ₹1,299 ka ... budget baad me", "हमारा तेल ₹450 का है ... बजट बाद
+    # में", "tees are ₹599 ... lmk ur charges" did the same. The price of the
+    # brand's product is written with the same ₹ as a fee, so in such a brief
+    # only an amount next to a FEE word ("budget ₹5,000", "₹5000 fee", "per
+    # reel") grounds budget_inr, and — because summary-line "fee" money is
+    # checked against this set — a fee-worded line. A currency-only amount
+    # still grounds barter_mrp_inr (it is the product's value) and still
+    # grounds budget_inr in a brief that does not say the budget is unstated
+    # ("Glow: 1 reel, ₹8000 flat."). Source: B0-AI repair-round-2 verdict on
+    # 3d88d58, defect 1.
+    markers = (
+        _BUDGET_FEE_MARKER_RE_TEXT
+        if _brief_says_budget_unstated(text)
+        else _BUDGET_MARKER_RE_TEXT
     )
+    return _numbers_with_money_marker(
+        text, markers, veto_non_fee=True
+    ) | _shorthand_expansions_with_money_marker(text, markers, veto_non_fee=True)
+
+
+# What says "the budget is not set": a budget/fee/rate word followed in the
+# same clause by TBD / to be discussed / will share / later / baad / बाद /
+# negotiable / not fixed, a question about it ("rates?", "budget?"), or the
+# creator being asked for theirs ("lmk ur charges", "your rates", "apka
+# budget"). Words between the subject and the cue may not cross a comma or a
+# sentence end, so "Budget ₹8000, payment later" is not a match.
+_BUDGET_SUBJECT_RE_TEXT = (
+    r"budgets?|fees?|rates?|charges?|commercials?|compensation|remuneration|pricing|"
+    r"paisa|paise|amount|बजट|फीस|फ़ीस|शुल्क|रेट"
+)
+_BUDGET_UNSTATED_CUE_RE_TEXT = (
+    r"tbd|tba|tbc|to\s+be\s+(?:discussed|decided|confirmed|shared|finali[sz]ed|fixed|negotiated)|"
+    r"will\s+(?:share|discuss|decide|confirm|let\s+you\s+know|tell|update|revert)|"
+    r"later|baad|बाद|discuss(?:ed)?|"
+    r"not\s+(?:fixed|decided|final\w*|set|confirmed|yet)|abhi\s+(?:nahi|nahin|fix\s+nahi)|"
+    r"call\s+pe|on\s+(?:a\s+)?call|batayenge|bata\s+denge|बताएंगे|बताएँगे"
+)
+_BUDGET_UNSTATED_RE = re.compile(
+    rf"{_MARK_START}(?:{_BUDGET_SUBJECT_RE_TEXT}){_WORD_END}"
+    rf"(?:\s*[:\-]\s*|\s+)(?:[^\s.!?;।,:]+\s+){{0,3}}?"
+    rf"{_MARK_START}(?:{_BUDGET_UNSTATED_CUE_RE_TEXT}){_WORD_END}"
+    rf"|{_MARK_START}(?:{_BUDGET_SUBJECT_RE_TEXT}){_WORD_END}\s*\?"
+    r"|(?<![A-Za-z])(?:your|ur|yr|apke|aapke|apka|aapka|apna|apni|aapki|apki|tumhare|tumhara)"
+    r"\s+(?:charges?|rates?|commercials?|quote|fees?|pricing|price|budget)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+
+
+def _brief_says_budget_unstated(text: str) -> bool:
+    return _BUDGET_UNSTATED_RE.search(_normalize_digits(text or "")) is not None
 
 
 def _grounded_barter_amounts(text: str) -> set[str]:
@@ -1132,11 +1258,18 @@ def _grounded_deadline(value: str | None, raw_text: str) -> str | None:
 _DEADLINE_CUE_RE = re.compile(
     r"(?<![A-Za-z])(?:by|before|till|until|upto|up\s+to|deadline|due|live|go-?live|"
     r"timeline|post(?:ed|ing)?|publish\w*|submi\w*|deliver\w*|drafts?|latest|tak|pehle|"
-    r"launch\w*|schedul\w*|last\s+date|no\s+later\s+than|on\s+or\s+before)(?![A-Za-z])",
+    # T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — LOW: "launch\w*"
+    # removed — "launches on 1 Nov 2026" is the product's launch, not when
+    # the creator must post, and grounded an invented deadline. The Devanagari
+    # "तक" / "से पहले" after a date is now a cue ("20/12/2026 तक पोस्ट करें"
+    # left deadline null). Source: B0-AI repair-round-2 verdict on 3d88d58,
+    # defect 6.
+    r"schedul\w*|last\s+date|no\s+later\s+than|on\s+or\s+before)(?![A-Za-z])",
     re.IGNORECASE,
 )
 _DEADLINE_CUE_AFTER_RE = re.compile(
-    r"\s*(?:,\s*)?(?:deadline|tak|se\s+pehle|ke\s+pehle|last\s+date)(?![A-Za-z])",
+    r"\s*(?:,\s*)?(?:deadline|tak|se\s+pehle|ke\s+pehle|last\s+date|तक|से\s+पहले|के\s+पहले)"
+    r"(?![A-Za-zऀ-ॿ])",
     re.IGNORECASE,
 )
 _NON_DEADLINE_CUE_RE = re.compile(
@@ -1264,7 +1397,12 @@ def _grounded_brand_name(value: str | None, raw_text: str) -> str | None:
         return None
     text = raw_text or ""
     escaped = re.escape(name)
-    match = re.search(rf"\b{escaped}\b", text, re.IGNORECASE)
+    # T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — LOW: a hashtag is
+    # not a name the brief gives itself: "1 reel #glowup budget 10k" kept
+    # brand_name "Glowup". A match directly after "#" does not count (an
+    # "@handle" still does). Source: B0-AI repair-round-2 verdict on 3d88d58,
+    # defect 7.
+    match = re.search(rf"(?<![#\w]){escaped}\b", text, re.IGNORECASE)
     if match is None:
         return None
     lo = max(0, match.start() - _BRAND_EXCLUSION_WINDOW)
@@ -1400,8 +1538,24 @@ _DELIVERABLE_TYPE_NOUNS: dict[str, str] = {
 }
 _ANY_DELIVERABLE_NOUN = "|".join([*_DELIVERABLE_TYPE_NOUNS.values(), r"pieces?"])
 _DELIVERABLE_TYPE_NOUNS["OTHER"] = _ANY_DELIVERABLE_NOUN
+# A number directly followed by a deliverable noun counts deliverables; it is
+# not an amount (see `_is_not_an_amount`).
+_COUNT_NOUN_AFTER_RE = re.compile(
+    rf"\s*(?:x\s*)?(?:{_ANY_DELIVERABLE_NOUN}){_WORD_END}", re.IGNORECASE
+)
+# T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — MEDIUM: a money figure
+# written with a word unit next to the deliverable noun grounded an invented
+# qty: "bhai 2 reels chahiye, 5 hazaar per reel" and "2 reels needed, 5
+# thousand per reel" with model qty 5 kept [{REEL, qty 5}] — the unit and
+# "per" were read as filler words. A count is never followed by a money unit
+# or a currency word, and "per"/"each"/"prati"/"har" are never filler (a
+# figure per deliverable is a rate, not a count). Source: B0-AI repair-round-2
+# verdict on 3d88d58, defect 2.
 _DELIVERABLE_FILLER = (
-    rf"(?:(?!(?:{_ANY_DELIVERABLE_NOUN}){_WORD_END})[A-Za-z]+\s+){{0,2}}?"
+    rf"(?:(?!(?:{_ANY_DELIVERABLE_NOUN}|per|each|prati|har|a){_WORD_END})[A-Za-z]+\s+){{0,2}}?"
+)
+_MONEY_UNIT_AFTER_COUNT_RE_TEXT = (
+    rf"\s*(?:{_SHORTHAND_UNIT_RE_TEXT}|{_CURRENCY_MARKER_RE_TEXT}|/-){_WORD_END}"
 )
 # T-GOLIVE-0918-R2 REPAIR ROUND 1 [ash · 2026-09-18] — LOW: "teen reels" (a
 # Hinglish number word) grounded nothing, so a correct qty=3 fell back to 1;
@@ -1427,13 +1581,14 @@ _DELIVERABLE_COUNT_RES: dict[str, tuple[re.Pattern[str], re.Pattern[str]]] = {
         # "3 reels", "3x reels", "2 Instagram reels", "1 story set", "teen reels"
         re.compile(
             rf"(?<![\d.,])(?<![A-Za-zऀ-ॿ])(\d+|{_COUNT_WORDS_RE_TEXT})(?![A-Za-zऀ-ॿ])"
-            rf"(?!{_TIME_UNIT_AFTER_RE_TEXT})\s*(?:x\s*)?{_DELIVERABLE_FILLER}(?:{nouns}){_WORD_END}",
+            rf"(?!{_TIME_UNIT_AFTER_RE_TEXT})(?!{_MONEY_UNIT_AFTER_COUNT_RE_TEXT})"
+            rf"\s*(?:x\s*)?{_DELIVERABLE_FILLER}(?:{nouns}){_WORD_END}",
             re.IGNORECASE,
         ),
         # "reels x 3", "Reels: 3", "reel - 2" — but not "Reels: 3 min"
         re.compile(
             rf"{_MARK_START}(?:{nouns})\s*(?:x|×|:|-)\s*(\d+)(?![\d.,]?\d)"
-            rf"(?!{_TIME_UNIT_AFTER_RE_TEXT})",
+            rf"(?!{_TIME_UNIT_AFTER_RE_TEXT})(?!{_MONEY_UNIT_AFTER_COUNT_RE_TEXT})",
             re.IGNORECASE,
         ),
     )
@@ -1576,7 +1731,29 @@ def _grounded_revision_counts(raw_text: str) -> set[str]:
             found |= _revision_token_value(match.group(1))
     for match in _REVISION_COUNT_AFTER_RE.finditer(normalized):
         found |= _numbers_in(match.group(1))
+    for match in _REVISION_TIMES_RE.finditer(normalized):
+        token = match.group(1).lower()
+        found |= {str(_HINGLISH_TIMES_WORDS[token])} if token in _HINGLISH_TIMES_WORDS else (
+            _revision_token_value(token)
+        )
     return found
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — LOW: "do baar changes
+# kar sakte hain" ("changes can be made twice") dropped a genuine
+# max_revisions=2. "<n> baar/times/rounds" directly before a change/edit/
+# revision noun is a revision count; "do" means 2 only here, where it cannot
+# be the English verb. Source: B0-AI repair-round-2 verdict on 3d88d58, defect 6.
+_HINGLISH_TIMES_WORDS: dict[str, int] = {
+    "ek": 1, "do": 2, "teen": 3, "tin": 3, "char": 4, "chaar": 4, "paanch": 5, "panch": 5,
+    "एक": 1, "दो": 2, "तीन": 3, "चार": 4, "पांच": 5, "पाँच": 5,
+}
+_REVISION_TIMES_RE = re.compile(
+    rf"{_MARK_START}(\d+|{'|'.join(_HINGLISH_TIMES_WORDS)}|{_SMALL_NUMBER_WORDS_RE_TEXT})"
+    r"\s+(?:baar|bar|times?|rounds?|बार)\s+(?:(?:ke|ka|of|tak)\s+)?"
+    r"(?:changes?|edits?|revisions?|corrections?|badlav|बदलाव)(?![A-Za-zऀ-ॿ])",
+    re.IGNORECASE,
+)
 
 
 # T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI MEDIUM: the
@@ -1653,7 +1830,11 @@ _USAGE_CHANNEL_TERMS: dict[str, _Term] = {
     "PAID_ADS": _Term(
         r"paid\s+(?:ads?|media|usage|promotions?|amplification|distribution|social|campaigns?)|"
         r"(?<![#\w])ads(?!\s+agenc)|(?:run|running|as\s+an?|in|for|boost(?:ed)?\s+as\s+an?)\s+ad|"
-        r"advertis(?:e|es|ed|ing|ement|ements)(?!\s+agenc)|dark\s+posts?|performance\s+marketing",
+        r"advertis(?:e|es|ed|ing|ement|ements)(?!\s+agenc)|dark\s+posts?|performance\s+marketing|"
+        # "विज्ञापन" (advertisement) added T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash ·
+        # 2026-09-18] — LOW: "विज्ञापन में इस्तेमाल करेंगे" dropped PAID_ADS.
+        # Source: B0-AI repair-round-2 verdict on 3d88d58, defect 6.
+        r"विज्ञापन(?!\s+एजेंसी)",
         r"boost\w*",
         _USAGE_CONTEXT_TERMS,
     ),
@@ -1757,14 +1938,35 @@ def _exclusivity_spans(raw_text: str) -> list[tuple[int, int]]:
         clause = _clause_window(normalized, match.start(), match.end(), _DURATION_CONTEXT_WINDOW)
         if _EXCLUSIVE_CONTEXT_RE.search(clause) and not _EXCLUSIVE_PROMO_RE.search(clause):
             spans.append(match.span())
-    for match in _COMPETITOR_WEAK_RE.finditer(normalized):
-        before = normalized[max(0, match.start() - 12) : match.start()]
-        if re.search(r"(?<![A-Za-z])than\s*$", before, re.IGNORECASE):
-            continue
-        clause = _clause_window(normalized, match.start(), match.end(), _DURATION_CONTEXT_WINDOW)
-        if _RESTRICTION_RE.search(clause) and _RESTRICTED_ACTIVITY_RE.search(clause):
-            spans.append(match.span())
+    for pattern in (_COMPETITOR_WEAK_RE, _OTHER_BRANDS_RE):
+        for match in pattern.finditer(normalized):
+            before = normalized[max(0, match.start() - 12) : match.start()]
+            if re.search(r"(?<![A-Za-z])than\s*$", before, re.IGNORECASE):
+                continue
+            clause = _clause_window(
+                normalized, match.start(), match.end(), _DURATION_CONTEXT_WINDOW
+            )
+            if _RESTRICTION_RE.search(clause) and _RESTRICTED_ACTIVITY_RE.search(clause):
+                spans.append(match.span())
     return spans
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — MEDIUM + LOW: a
+# restriction on "other/competing/any other ... brands" is how an exclusivity
+# is usually written, in English and Hinglish, without the word
+# "exclusivity": "No other skincare brands for 30 days", "45 din tak koi aur
+# hair oil brand ke saath kaam mat karna" (which dropped a genuine 45 days).
+# Next to a restriction and an activity word in the same clause it now states
+# exclusivity — in the brief, and in a summary line, so the invented line
+# "You can't work with other skincare brands" for a brief with no exclusivity
+# is stripped by `_line_states_ungrounded_term`. Source: B0-AI repair-round-2
+# verdict on 3d88d58, defects 3 and 6.
+_OTHER_BRANDS_RE = re.compile(
+    r"(?<![A-Za-z])(?:other|competing|rival|similar|any\s+other|another|koi\s+aur|koi\s+dusr\w*|"
+    r"dusr\w*|doosr\w*|aur\s+koi)\s+(?:[A-Za-zऀ-ॿ]+\s+){0,3}?"
+    r"(?:brands?|companies|company|labels?|ब्रांड)(?![A-Za-zऀ-ॿ])",
+    re.IGNORECASE,
+)
 
 
 def _brief_states_exclusivity(raw_text: str) -> bool:
@@ -1920,10 +2122,121 @@ _SUMMARY_LINE_TERM_CHECKS: tuple[Any, ...] = (
 def _line_states_ungrounded_term(line: str, raw_text: str) -> bool:
     if _brief_states_exclusivity(line) and not _brief_states_exclusivity(raw_text):
         return True
-    return any(
+    if any(
         _brief_states_term(line, terms) and not _brief_states_term(raw_text, terms)
         for terms in _SUMMARY_LINE_TERM_CHECKS
+    ):
+        return True
+    if _line_states_ungrounded_rights(line, raw_text):
+        return True
+    return _PAYMENT_WORD_RE.search(_normalize_digits(line)) is not None and bool(
+        _ungrounded_payment_families(line, raw_text)
     )
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — MEDIUM: a summary line
+# could paraphrase an invented rights term without the brief's trigger words:
+# "Brand owns the content forever" survived on "1 reel, 10k" because "forever"
+# is a WEAK perpetual word (it needs a usage word beside it in a BRIEF, so an
+# everyday "forever grateful" does not count). A line is model-written and
+# about the deal, so there the perpetual words count alone, and so do the
+# ownership words; the brief must state a perpetual term for the first
+# (or contain that very word, e.g. a "permanent hair colour" product) and
+# some rights/usage/licence/ownership term for the second.
+# Source: B0-AI repair-round-2 verdict on 3d88d58, defect 3.
+_LINE_PERPETUAL_RE = re.compile(
+    rf"{_MARK_START}(?:forever|life-?\s*time|perpetu\w*|permanent\w*|indefinite\w*|all[- ]time|"
+    rf"hamesha|हमेशा|no\s+expir\w*|without\s+expir\w*|never\s+expir\w*){_WORD_END}",
+    re.IGNORECASE,
+)
+_LINE_OWNERSHIP_RE = re.compile(
+    rf"{_MARK_START}(?:owns?|owned|ownership|buy-?outs?|all\s+rights|full\s+rights|"
+    rf"rights\s+transfer\w*|transfer\s+of\s+rights){_WORD_END}",
+    re.IGNORECASE,
+)
+_BRIEF_RIGHTS_RE = re.compile(
+    rf"{_MARK_START}(?:owns?|owned|ownership|buy-?outs?|rights?|licen[sc]\w*|usage|"
+    rf"perpetu\w*|istemaal|इस्तेमाल){_WORD_END}",
+    re.IGNORECASE,
+)
+
+
+def _line_states_ungrounded_rights(line: str, raw_text: str) -> bool:
+    normalized_line = _normalize_digits(line)
+    normalized_raw = _normalize_digits(raw_text or "")
+    for match in _LINE_PERPETUAL_RE.finditer(normalized_line):
+        if _term_is_negated(normalized_line, match.start(), match.end()):
+            continue
+        if _brief_states_term(raw_text, _USAGE_PERPETUAL_TERMS):
+            continue
+        word = re.escape(match.group(0))
+        if re.search(rf"{_MARK_START}{word}{_WORD_END}", normalized_raw, re.IGNORECASE):
+            continue
+        return True
+    if _LINE_OWNERSHIP_RE.search(normalized_line) and not _BRIEF_RIGHTS_RE.search(normalized_raw):
+        return True
+    return False
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — MEDIUM (two defects):
+# payment timing, method and split were never grounded unless they carried a
+# number. The line "Paid in full upfront" survived on "1 reel, 10k", and the
+# field payment_terms "Full advance before shoot" survived on "1 reel, budget
+# TBD" ("100% advance" / "Net 60" were only dropped for their numbers). Each
+# payment term belongs to a family — advance, after-delivery, in-full, method,
+# split — and every family a line or payment_terms states must be one the
+# brief states too. A line is checked only when it talks about payment (a pay
+# / fee / money word), so "Share the draft in advance" is not a payment term;
+# payment_terms is checked always, and must state at least one family.
+# Source: B0-AI repair-round-2 verdict on 3d88d58, defects 3 and 4.
+_PAYMENT_FAMILY_RES: dict[str, re.Pattern[str]] = {
+    name: re.compile(rf"{_MARK_START}(?:{pattern}){_WORD_END}", re.IGNORECASE)
+    for name, pattern in {
+        "ADVANCE": (
+            r"up-?front|advance|in\s+advance|pre-?pa(?:id|y|yment)|on\s+signing|"
+            r"before\s+(?:the\s+)?(?:shoot\w*|post\w*|going\s+live|delivery|work|content)|"
+            r"pehle|agrim|अग्रिम|एडवांस"
+        ),
+        "AFTER": (
+            r"after\s+(?:the\s+)?(?:[A-Za-z]+\s+){0,2}?(?:post\w*|delivery|delivered|live|"
+            r"publish\w*|approv\w*|completion|complete\w*|invoice\w*|campaign|shoot\w*|content)|"
+            r"on\s+(?:delivery|completion|approval|posting|publishing|going\s+live)|"
+            r"post-?(?:delivery|posting|campaign)|net\s*-?\s*\d+|within\s+\d+\s*[A-Za-z]+|"
+            r"in\s+\d+\s*(?:days?|weeks?|din|hafte)|once\s+(?:the\s+)?(?:[A-Za-z]+\s+){0,2}?"
+            r"(?:live|posted|published|approved|delivered)|baad|बाद"
+        ),
+        "FULL": (
+            r"in\s+full|full\s+(?:payment|amount|fee|advance|pay)|100\s*%|poora|pura|पूरा|"
+            r"complete\s+payment|entire\s+(?:amount|fee|payment)"
+        ),
+        "METHOD": (
+            r"upi|bank\s+transfer|neft|imps|rtgs|g-?pay|google\s+pay|phone-?pe|paytm|"
+            r"cheque|cash|wire\s+transfer|paypal|crypto"
+        ),
+        "SPLIT": (
+            r"instal+ments?|milestones?|tranches?|in\s+parts|split\s+payment|payment\s+split|"
+            r"half|\d+\s*%|आधा"
+        ),
+    }.items()
+}
+_PAYMENT_WORD_RE = re.compile(
+    rf"{_MARK_START}(?:pay\w*|paid|fees?|money|paisa|paise|amount|remuneration|compensation|"
+    rf"settle\w*|invoice\w*|भुगतान|पेमेंट){_WORD_END}",
+    re.IGNORECASE,
+)
+
+
+def _payment_families_in(text: str) -> set[str]:
+    normalized = _normalize_digits(text or "")
+    return {name for name, pattern in _PAYMENT_FAMILY_RES.items() if pattern.search(normalized)}
+
+
+def _ungrounded_payment_families(text: str, raw_text: str) -> set[str]:
+    return _payment_families_in(text) - _payment_families_in(raw_text)
+
+
+def _payment_terms_are_grounded(value: str, raw_text: str) -> bool:
+    return bool(_payment_families_in(value)) and not _ungrounded_payment_families(value, raw_text)
 
 
 # T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — HIGH: a summary line
@@ -1949,7 +2262,6 @@ _FEE_WORD_RE_TEXT = (
     r"per\s+(?:reels?|posts?|stor(?:y|ies)|videos?|shorts?|deliverables?|pieces?|integrations?)|"
     r"बजट|फीस|फ़ीस|भुगतान|पेमेंट"
 )
-_OPTIONAL_CURRENCY = rf"(?:\s*(?:{_CURRENCY_MARKER_RE_TEXT}))?"
 _FEE_WORD_BEFORE_RE = re.compile(
     rf"{_MARK_START}(?:{_FEE_WORD_RE_TEXT}){_WORD_END}{_MONEY_MARKER_WINDOW_WORDS}"
     rf"\s*[:\-]?{_OPTIONAL_CURRENCY}\s*[(]?\s*$",
@@ -2052,7 +2364,13 @@ def _line_names_an_ungrounded_brand(
     words = [w.lower().strip(".'") for w in name.split()]
     if all(w in _GENERIC_SUBJECT_WORDS for w in words):
         return False
-    return re.search(rf"(?<!\w){re.escape(name)}(?!\w)", raw_text or "", re.IGNORECASE) is None
+    # T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — LOW: "Instagram
+    # wants a reel" and "Glowup wants 1 reel" were kept because the name is in
+    # the brief — as the platform it came through, or as a hashtag. Neither is
+    # a sender. Source: B0-AI repair-round-2 verdict on 3d88d58, defect 7.
+    if name.lower() in _PLATFORM_NAMES:
+        return True
+    return re.search(rf"(?<![#\w]){re.escape(name)}(?!\w)", raw_text or "", re.IGNORECASE) is None
 
 
 # T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: a line could
@@ -2320,6 +2638,14 @@ def parse_and_validate_extraction(
         value = extraction[field]
         if value is not None and not _free_text_is_grounded(value, grounding):
             extraction[field] = None
+    # T-GOLIVE-0918-R2 REPAIR ROUND 3 [ash · 2026-09-18] — MEDIUM: payment_terms
+    # without a number ("Full advance before shoot" for "budget TBD") passed;
+    # its payment families must now be ones the brief states. Source: B0-AI
+    # repair-round-2 verdict on 3d88d58, defect 4.
+    if extraction["payment_terms"] is not None and not _payment_terms_are_grounded(
+        extraction["payment_terms"], raw_text
+    ):
+        extraction["payment_terms"] = None
     extraction["claims"] = [
         claim for claim in extraction["claims"] if _free_text_is_grounded(claim, grounding)
     ]
