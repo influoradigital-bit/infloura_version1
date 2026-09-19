@@ -3241,9 +3241,9 @@ def test_budget_classifier_unit():
     assert budget("Rate: ₹5000 per reel") == {"5000"}
     # A currency sign alone is neither PRODUCT nor BUDGET: not the budget.
     assert budget("Glow: 1 reel. ₹8000.") == set()
-    # A figure right after a product noun is the product's price, even with
-    # a deliverable nearby; a fee word still claims its own amount.
-    assert budget("Serum ₹999 for 1 reel") == set()
+    # A deliverable or fee tie beats a bare preceding product noun (Priya's
+    # ruling, T-GOLIVE-0918-R2 CLASSIFY-R2); a fee word claims its own amount.
+    assert budget("Serum ₹999 for 1 reel") == {"999"}
     assert budget("Serum budget ₹5000 for 1 reel") == {"5000"}
     # "flat" before an amount is a discount, after it a fee.
     assert budget("Get flat ₹150 off. 1 reel.") == set()
@@ -3385,3 +3385,132 @@ async def test_reviewer_probe_no_budget_stated(raw, invented):
 async def test_reviewer_probe_stated_budget_kept(raw, amount):
     data = await _probe(raw, _rr3_input(budget_stated=True, budget_inr=amount))
     assert data["budget_inr"] == amount
+
+
+# ===========================================================================
+# T-GOLIVE-0918-R2 CLASSIFY-R2 [ash · 2026-09-19] — the independent reviewer
+# FAILED 373acba: `_is_after_a_product_noun` ran BEFORE the deliverable/fee
+# tie, so a brand or product name before the fee ("Glow ₹5000 for 1 reel",
+# "Serum ₹5000/reel", "Boat ₹8000 fixed") dropped a genuine budget (HIGH);
+# a leading "fixed" and "प्रति रील" did not tie (MEDIUM). Priya's ruling: a
+# deliverable or fee tie in the same clause beats a bare preceding product
+# noun. Every case of the reviewer's probe (83; 12 missed on 373acba) runs
+# here through `parse_and_validate_extraction`: (brief, model's budget_inr,
+# expected budget_inr).
+# ===========================================================================
+
+_CLASSIFY_R2_LINES = ["Brand wants a reel", "Product is a serum", "Terms to be discussed"]
+N = None
+_REVIEWER_CLASSIFY_R2_CASES = [
+    # ruling example: deliverable/fee binding beats a bare preceding product noun
+    ("Glow ₹5000 for 1 reel", 5000, 5000),
+    ("Glow ₹5000 for 1 reel. Serum MRP ₹999", 5000, 5000),
+    ("Glow Rs 5000 per reel", 5000, 5000),
+    ("Mamaearth ₹6000 for 2 reels", 6000, 6000),
+    ("Nykaa 10k for 1 reel + 2 stories", 10000, 10000),
+    ("Boat ₹8000 fixed, 1 reel", 8000, 8000),
+    ("Serum ₹5000/reel", 5000, 5000),
+    ("Lakme 1 reel ₹4000", 4000, 4000),
+    ("hi dear, Plum 7.5k for one reel pls confirm", 7500, 7500),
+    ("सीरम ₹5000 एक रील के लिए", 5000, 5000),
+    ("Glow ₹5000 for 1 Instagram reel", 5000, 5000),
+    ("Glow: ₹5000 for 1 reel", 5000, 5000),
+    # product prices: never
+    ("Serum MRP ₹999. 1 reel. Kitna loge?", 999, N),
+    ("Serum price ₹1,299/-. 1 reel. rates?", 1299, N),
+    ("Serum costs Rs 999. DM rates", 999, N),
+    ("Our tee is worth ₹1499, barter collab", 1499, N),
+    ("Retail ₹२४९९, 1 reel chahiye, charges batao", 2499, N),
+    ("Lipstick sells at ₹1.2k. 1 reel. What do you charge?", 1200, N),
+    ("Listed at 1,299/- on Amazon. 1 reel. Quote?", 1299, N),
+    ("Offer price ₹799. 1 reel. Rate?", 799, N),
+    ("सीरम का दाम ₹१२९९ है। एक रील। रेट बताइए", 1299, N),
+    ("सीरम की कीमत ₹1299, एक रील, आपका चार्ज?", 1299, N),
+    ("New lipstick Rs 999! 1 reel. DM ur rates", 999, N),
+    ("Serum ₹१२९९. 1 reel. rates?", 1299, N),
+    ("Serum 1,299/- only. 1 reel. Kitna loge?", 1299, N),
+    ("Serum is priced at ₹999 for 1 reel viewers", 999, N),
+    ("Serum MRP ₹999 per reel viewer", 999, N),
+    ("Serum MRP ₹999 for 1 reel", 999, N),
+    ("Serum ki price ₹999 hai, 1 reel ke liye rate?", 999, N),
+    ("Serum worth ₹999 for 1 reel + 1 story, barter", 999, N),
+    # discount
+    ("Flat ₹150 off with code GLOW. 1 reel. rates?", 150, N),
+    ("Get flat ₹150 off for followers. Budget ₹6000 for 1 reel", 6000, 6000),
+    ("Get flat ₹150 off for followers. Budget ₹6000 for 1 reel", 150, N),
+    ("₹150 off on first order, pay ₹5000 for 1 reel", 5000, 5000),
+    ("₹150 off on first order, pay ₹5000 for 1 reel", 150, N),
+    ("Flat ₹150 off for 1 reel viewers", 150, N),
+    # follower counts
+    ("Need creators with 50k followers. Budget 10k for 1 reel", 10000, 10000),
+    ("Need creators with 50k followers. Budget 10k for 1 reel", 50000, N),
+    ("50,000+ followers chahiye, rate batao", 50000, N),
+    ("१ लाख फॉलोअर्स वाले creator चाहिए, बजट बाद में", 100000, N),
+    ("Budget for 10k followers creators", 10000, N),
+    # budget alongside product price
+    ("Serum MRP ₹1299. We pay ₹7000 for 1 reel", 7000, 7000),
+    ("Serum MRP ₹1299. We pay ₹7000 for 1 reel", 1299, N),
+    ("Budget 1.5L for 3 reels, product worth 2k", 150000, 150000),
+    ("Budget 1.5L for 3 reels, product worth 2k", 2000, N),
+    ("Budget: 2 lakh total. Product price 3,499", 200000, 200000),
+    ("Budget: 2 lakh total. Product price 3,499", 3499, N),
+    ("Budget 1 crore campaign", 10000000, 10000000),
+    ("Budget 5 grand for a reel", 5000, 5000),
+    ("fee 1.2 million", 1200000, 1200000),
+    ("budget ₹1.2k per story", 1200, 1200),
+    ("Budget 2 lac", 200000, 200000),
+    ("बजट ₹१५०००, एक रील", 15000, 15000),
+    ("बजट १५ हज़ार है", 15000, 15000),
+    ("एक रील के लिए ₹5000 देंगे", 5000, 5000),
+    ("एक रील के लिए ₹५०००", 5000, 5000),
+    ("1 reel = ₹6000", 6000, 6000),
+    ("1 reel = Rs 6,000/-", 6000, 6000),
+    ("1 reel ke 5k denge bhai", 5000, 5000),
+    ("Hi! 2 reels, 4000 each", 4000, 4000),
+    ("fixed 7500 for the reel", 7500, 7500),
+    ("Paying 12k for 1 reel + story", 12000, 12000),
+    ("Our budget is Rs.8,500 for this collab", 8500, 8500),
+    ("we pay 8k", 8000, 8000),
+    ("Fee: INR 20,000", 20000, 20000),
+    ("fees 25k all inclusive", 25000, 25000),
+    ("hey!! 😍 we wanna collab, ₹3k for 1 reel, ok??", 3000, 3000),
+    ("Rs 999 for a story", 999, 999),
+    ("₹1.2k per story, 3 stories", 1200, 1200),
+    ("1,299/- per reel", 1299, 1299),
+    ("Rs 999 per reel? We can do that", 999, 999),
+    ("Can offer Rs 4,500 for a reel", 4500, 4500),
+    ("₹४५०० प्रति रील", 4500, 4500),
+    ("Glow serum launch. ₹5000 for 1 reel.", 5000, 5000),
+    ("Glow serum ₹5000 for 1 reel", 5000, 5000),
+    # model invents / wrong expansion
+    ("1 reel. Rate?", 5000, N),
+    ("Serum ₹999. 1 reel", 9990, N),
+    ("Budget 15k for 1 reel", 15, N),
+    ("Budget 15k for 1 reel", 150000, N),
+    ("Budget 1.5L", 1.5, N),
+    # neither
+    ("Rs 999 hai product. 1 reel karo", 999, N),
+    ("₹5000. Let me know.", 5000, N),
+    ("Serum ₹999. 1 reel", 999, N),
+]
+
+
+@pytest.mark.parametrize(("brief", "proposal", "expected"), _REVIEWER_CLASSIFY_R2_CASES)
+def test_reviewer_classify_r2_probe(brief, proposal, expected):
+    from app.routes.brief_extract import parse_and_validate_extraction
+
+    tool_input = {
+        "brand_name": None,
+        "deliverables": [{"type": "REEL", "qty": 1}],
+        "budget_inr": None if proposal is None else float(proposal),
+        "budget_stated": proposal is not None,
+        "barter_only": False,
+        "summary_lines": list(_CLASSIFY_R2_LINES),
+    }
+    result = parse_and_validate_extraction(tool_input, brief)
+    assert result is not None, brief
+    assert result.get("budget_inr") == (None if expected is None else float(expected)), brief
+
+
+def test_reviewer_classify_r2_probe_has_every_case():
+    assert len(_REVIEWER_CLASSIFY_R2_CASES) == 83

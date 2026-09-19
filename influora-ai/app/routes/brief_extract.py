@@ -1058,11 +1058,16 @@ _TIE_DELIVERABLE_NOUN_RE_TEXT = (
 _TIE_COUNT_RE_TEXT = r"(?:\d+|a|an|one|ek|एक|single|the|each|every|1st|first)"
 # Amount THEN deliverable: "₹6000 for 1 reel", "10,000/- for 1 reel", "₹5000/reel",
 # "10k for 2 reels", "₹5000 for 1 Instagram reel".
-# "Rs 7500 fixed" / "₹8000 flat" also tie the amount as the fee.
+# "Rs 7500 fixed" / "₹8000 flat" also tie the amount as the fee; "प्रति रील" is
+# "per reel".
 _BUDGET_TIE_AFTER_RE = re.compile(
-    r"\s*(?:/-)?\s*(?:(?:for|per|each|/|ke\s+liye|के\s+लिए|x)\s*"
+    r"\s*(?:/-)?\s*(?:(?:for|per|each|/|ke\s+liye|के\s+लिए|प्रति|x)\s*"
     rf"(?:{_TIE_COUNT_RE_TEXT}\s+)?(?:[A-Za-z]+\s+)?"
-    rf"{_MARK_START}(?:{_TIE_DELIVERABLE_NOUN_RE_TEXT})|fixed|flat){_WORD_END}",
+    rf"{_MARK_START}(?:{_TIE_DELIVERABLE_NOUN_RE_TEXT})|fixed|flat|"
+    # "₹5000 एक रील के लिए" / "5k 1 reel ke liye": the Hindi postposition
+    # follows the deliverable.
+    rf"(?:{_TIE_COUNT_RE_TEXT}\s+)?{_MARK_START}(?:{_TIE_DELIVERABLE_NOUN_RE_TEXT})"
+    rf"\s+(?:ke\s+liye|के\s+लिए)){_WORD_END}",
     re.IGNORECASE,
 )
 # Deliverable THEN amount: "1 reel = ₹6000", "1 reel ₹6000", "1 reel for ₹6000",
@@ -1073,49 +1078,21 @@ _BUDGET_TIE_BEFORE_RE = re.compile(
     rf"{_OPTIONAL_CURRENCY}\s*$",
     re.IGNORECASE,
 )
-# "<Product> ₹1299": the word written directly before the amount (a currency
-# sign may sit between). Punctuation in between ("1 reel = ₹6000", "Collab:
-# ₹6000") means no word is attached.
-_WORD_BEFORE_AMOUNT_RE = re.compile(
-    rf"{_MARK_START}(?P<word>[A-Za-zऀ-ॣॲ-ॿ]+)\s*(?:{_CURRENCY_MARKER_RE_TEXT})?\s*$",
-    re.IGNORECASE,
-)
-# Words that sit before a fee and name no product.
-_NON_PRODUCT_WORDS = frozenset(
-    {
-        "for", "of", "is", "are", "was", "be", "will", "hai", "hain", "h", "just", "only",
-        "about", "around", "approx", "approximately", "upto", "up", "to", "till", "max",
-        "maximum", "min", "minimum", "and", "plus", "the", "a", "an", "ke", "ka", "ki",
-        "liye", "lie", "me", "mein", "give", "giving", "you", "u", "we", "can", "rate",
-        "rates", "rs", "inr", "rupee", "rupees", "rupaye", "rupay", "at", "@",
-        "है", "हैं", "के", "का", "की", "लिए", "में", "और", "रु", "रुपये", "रुपए",
-    }
-)
-_FEE_OR_DELIVERABLE_WORD_RE = re.compile(
-    rf"(?:{_BUDGET_FEE_MARKER_RE_TEXT}|{_TIE_DELIVERABLE_NOUN_RE_TEXT})",
-    re.IGNORECASE,
-)
-
-
-def _is_after_a_product_noun(text: str, start: int) -> bool:
-    before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
-    match = _WORD_BEFORE_AMOUNT_RE.search(before)
-    if match is None:
-        return False
-    word = match.group("word")
-    if word.lower() in _NON_PRODUCT_WORDS:
-        return False
-    return _FEE_OR_DELIVERABLE_WORD_RE.fullmatch(word) is None
-
-
 def _is_budget_amount(text: str, start: int, end: int) -> bool:
     """Rule 1-3 of `_grounded_budget_amounts` for the amount text[start:end]."""
     if _is_non_fee_amount(text, start, end):
         return False
     if _has_money_marker_near(text, start, end, _BUDGET_FEE_MARKER_RE_TEXT):
         return True
-    if _is_after_a_product_noun(text, start):
-        return False
+    # T-GOLIVE-0918-R2 CLASSIFY-R2 [ash · 2026-09-19] — HIGH: the "<Product>
+    # ₹1299" check that ran here beat the deliverable/fee tie, so a brand or
+    # product name before the fee ("Glow ₹5000 for 1 reel", "Serum ₹5000/reel",
+    # "Boat ₹8000 fixed") dropped a genuine budget. Priya's ruling: a
+    # deliverable or fee tie in the same clause beats a bare preceding product
+    # noun. The check is removed; product prices stay out through their own
+    # markers (MRP, price, costs, worth, दाम, कीमत — `_is_non_fee_amount`) and
+    # because an untied amount never grounds a budget. Source: independent
+    # reviewer on 373acba (18 product-price probes, none protected by it).
     before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
     return (
         _BUDGET_TIE_AFTER_RE.match(text, end) is not None
