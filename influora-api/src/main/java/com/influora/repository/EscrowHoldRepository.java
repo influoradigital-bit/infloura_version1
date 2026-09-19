@@ -107,6 +107,30 @@ public interface EscrowHoldRepository extends JpaRepository<EscrowHold, String> 
 
     List<EscrowHold> findByCampaignIdIn(List<String> campaignIds);
 
+    /**
+     * [FIX: EV-176, EV-178] Every ACTIVE campaign-level (pool) hold of a campaign — {@code
+     * milestone_id IS NULL}, status in {@code statuses} (callers pass {@code [PENDING, FUNDED]}) —
+     * read with a PESSIMISTIC_WRITE lock ({@code SELECT ... FOR UPDATE}). {@code
+     * EscrowService#initiateFund} calls it while holding the campaign row lock to refuse a second
+     * pool fund sent with a fresh Idempotency-Key.
+     *
+     * <p>It must be a locking read. Under MySQL REPEATABLE READ a plain SELECT is answered from the
+     * read view the transaction opened at its first plain read, before it waited on the campaign
+     * lock, so it would not see the hold a concurrent attempt committed while it waited (EV-178, the
+     * gap in F-0873's plain-read version of this query). A locking read reads the latest committed
+     * row versions instead. Milestone holds are not in scope: a milestone is deduplicated by its own
+     * row lock and state ({@code PaymentMilestoneRepository#findByIdAndWorkspaceIdForUpdate}).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            "SELECT e FROM EscrowHold e WHERE e.campaignId = :campaignId "
+                    + "AND e.milestoneId IS NULL "
+                    + "AND e.status IN :statuses "
+                    + "ORDER BY e.createdAt ASC")
+    List<EscrowHold> findActiveCampaignLevelHoldsForUpdate(
+            @Param("campaignId") String campaignId,
+            @Param("statuses") Collection<EscrowStatus> statuses);
+
     List<EscrowHold> findByMilestoneId(String milestoneId);
 
     /**

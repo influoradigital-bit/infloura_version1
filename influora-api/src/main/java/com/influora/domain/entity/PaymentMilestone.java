@@ -138,7 +138,23 @@ public class PaymentMilestone {
         return updatedAt;
     }
 
+    /**
+     * PENDING -> FUNDED, binding the hold that secured this milestone's money.
+     *
+     * <p>[FIX: EV-002] Refuses unless this milestone is still {@code PENDING} with no hold bound.
+     * It used to overwrite {@code escrowHoldId} unconditionally, so a second funding of the same
+     * milestone silently re-pointed it at the new hold and left the first, already-debited hold
+     * attached to nothing. {@code EscrowService} checks this before any ledger post and answers
+     * 409; this is the entity-level backstop in case a future caller skips that check.
+     *
+     * @throws IllegalStateException if the milestone is not PENDING or already has a hold
+     */
     public void markFunded(String escrowHoldId) {
+        if (this.status != MilestoneStatus.PENDING || this.escrowHoldId != null) {
+            throw new IllegalStateException(
+                    "Milestone " + id + " cannot be funded from status " + status
+                            + (this.escrowHoldId != null ? " (a hold is already bound)" : ""));
+        }
         this.escrowHoldId = escrowHoldId;
         this.status = MilestoneStatus.FUNDED;
         touch();

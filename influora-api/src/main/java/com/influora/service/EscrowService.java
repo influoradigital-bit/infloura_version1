@@ -46,6 +46,7 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
@@ -80,6 +81,19 @@ public class EscrowService {
 
     private static final Set<DisputeStatus> ACTIVE_DISPUTE_STATUSES =
             EnumSet.of(DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW);
+
+    /**
+     * F-0873 — a hold is "ACTIVE" (money currently secured or being secured, blocks a duplicate
+     * funding attempt for the same scope) exactly when it is {@code PENDING} or {@code FUNDED}. A
+     * {@code RELEASED} or {@code REFUNDED} hold is a real past hold and must NOT block a fresh
+     * attempt; there is no {@code FAILED}/{@code CANCELLED} {@link EscrowStatus} value in this
+     * schema today because a failed {@link #initiateFund} call never persists a row at all (the
+     * whole method is {@code @Transactional} and a thrown exception — insufficient balance, a
+     * gating error — rolls the INSERT back), so "retry after a failed attempt" is already satisfied
+     * by there being no row to find.
+     */
+    private static final Set<EscrowStatus> ACTIVE_HOLD_STATUSES =
+            EnumSet.of(EscrowStatus.PENDING, EscrowStatus.FUNDED);
 
     private final EscrowHoldRepository escrowHoldRepository;
     private final PaymentMilestoneRepository milestoneRepository;
@@ -237,10 +251,26 @@ public class EscrowService {
         // [FIX: escrow-frozen-hold-fix-spec, Fix 2] this now also returns the milestone so its
         // (non-null) collaborationId can be bound onto the hold below — see the comment at the
         // hold-building block for why.
+        // [FIX: EV-176] A blank milestoneId is campaign-level funding. Normalised to null so the
+        // hold is written with milestone_id NULL and the campaign-level active-hold check below
+        // (milestone_id IS NULL) finds it; a "" value would have escaped that check entirely.
+        if (milestoneId != null && milestoneId.isBlank()) {
+            milestoneId = null;
+        }
         PaymentMilestone milestoneForCollaborationBinding = null;
-        if (milestoneId != null && !milestoneId.isBlank()) {
-            milestoneForCollaborationBinding = assertContractActiveForMilestone(milestoneId, workspaceId);
-        } else if (milestoneRepository.existsByCampaignIdAndStatus(campaignId, MilestoneStatus.PENDING)) {
+        if (milestoneId != null) {
+            milestoneForCollaborationBinding =
+                    assertContractActiveForMilestone(milestoneId, workspaceId, campaignId);
+        } else {
+            // [FIX: EV-176, EV-177] Campaign-level funding: lock the campaign row FIRST, and only
+            // after proving it belongs to this workspace. The row lock is what serialises two
+            // campaign-level attempts for the same campaign (see the active-hold check after the
+            // key replay), and it is keyed off a campaign the server has resolved and scoped, not
+            // off whatever the body says: another workspace's campaign id is a 404 here.
+            lockOwnedCampaign(campaignId, workspaceId);
+        }
+        if (milestoneForCollaborationBinding == null
+                && milestoneRepository.existsByCampaignIdAndStatus(campaignId, MilestoneStatus.PENDING)) {
             // [F-0227] Campaign-level pool funding binds no collaboration — see the hold-building
             // block below. That is harmless before any contract exists, and destructive after: the
             // money leaves the wallet, no milestone is marked funded, onEscrowFunded never fires,
@@ -271,6 +301,53 @@ public class EscrowService {
             }
             return new EscrowFundResponse(
                     hold.getId(), hold.getAmount(), hold.getCurrency(), null, hold.getStatus());
+        }
+
+        if (milestoneForCollaborationBinding != null) {
+            // [FIX: EV-002, double funding] The key replay above only catches a retry that reuses
+            // the EXACT same Idempotency-Key. The frontend keeps that key in a per-mount ref, so a
+            // reload, a second tab, or a click after a lost response sends a FRESH key for the same
+            // milestone — which used to create a second hold, debit the brand wallet a second time
+            // and overwrite milestone.escrowHoldId (orphaning the first hold). The milestone row was
+            // loaded under a PESSIMISTIC_WRITE lock in assertContractActiveForMilestone (its first
+            // load in this transaction, so the state read here is the latest committed row, never a
+            // stale snapshot or a cached entity), so a concurrent second attempt blocks there until
+            // this one commits and then sees FUNDED. Checked after the key replay so a same-key
+            // retry keeps replaying. The milestone scope needs no campaign lock: the milestone row
+            // lock is the narrower serialisation point, and its campaign was already derived from
+            // the collaboration and matched against the body (EV-002-d / EV-177).
+            assertMilestoneFundable(milestoneForCollaborationBinding);
+        } else {
+            // [FIX: EV-176, EV-178; supersedes F-0873's plain-read dedupe] Campaign-level ("Secure
+            // Funds") pool funding had no server-side guard: a reload or second tab with a fresh key
+            // created a second pool hold and debited the wallet again. We now hold the campaign row
+            // lock (lockOwnedCampaign above), and this read is itself a LOCKING read (SELECT ... FOR
+            // UPDATE). That matters under MySQL REPEATABLE READ: a plain SELECT here would be served
+            // from the read view this transaction created at its first plain read (the membership
+            // lookup, the key replay), i.e. from before we waited on the campaign lock, and would
+            // miss the pool hold a concurrent attempt committed while we waited. A locking read
+            // always reads the latest committed row versions, so the second attempt sees the first
+            // one's hold. Every campaign-level hold is inserted only here, under that campaign's
+            // lock, so nothing can commit a new one between this read and our own insert.
+            //
+            // A second campaign-level fund with a new key REPLAYS the existing active hold (the
+            // F-0873 contract: same success shape as a key replay, no new error code). That is kept
+            // deliberately because it returns before the wallet is read or any ledger movement is
+            // posted, so it cannot debit twice; the response carries the EXISTING hold's amount and
+            // status, so the brand is shown what is actually secured, not the amount it re-sent.
+            // A RELEASED or REFUNDED pool hold is not active and does not block a new pool fund:
+            // once no pool money is secured, securing it again is a legitimate new deposit.
+            List<EscrowHold> activePoolHolds =
+                    escrowHoldRepository.findActiveCampaignLevelHoldsForUpdate(campaignId, ACTIVE_HOLD_STATUSES);
+            if (!activePoolHolds.isEmpty()) {
+                EscrowHold activeHold = activePoolHolds.get(0);
+                return new EscrowFundResponse(
+                        activeHold.getId(),
+                        activeHold.getAmount(),
+                        activeHold.getCurrency(),
+                        null,
+                        activeHold.getStatus());
+            }
         }
 
         Wallet wallet = walletService.requireWorkspaceWallet(workspaceId);
@@ -373,6 +450,27 @@ public class EscrowService {
     }
 
     /**
+     * [FIX: EV-176, EV-177] Takes the PESSIMISTIC_WRITE row lock on the campaign for campaign-level
+     * funding and proves it belongs to {@code workspaceId}; another workspace's campaign is a 404,
+     * exactly like {@code CampaignService#loadOwnedForUpdate}. Lock order on this path is campaign,
+     * then the campaign's escrow_holds rows, then the wallets (in {@link #applyFunding}); the only
+     * other campaign-row locker, {@code CampaignService#update}, also goes campaign then wallets,
+     * and no path takes a milestone, collaboration, hold or wallet lock and then the campaign row,
+     * so the orders cannot cross.
+     */
+    private Campaign lockOwnedCampaign(String campaignId, String workspaceId) {
+        Campaign campaign =
+                campaignRepository
+                        .findByIdForUpdate(campaignId)
+                        .orElseThrow(
+                                () -> new ApiException("CAMPAIGN_NOT_FOUND", "Campaign not found", HttpStatus.NOT_FOUND));
+        if (!Objects.equals(campaign.getWorkspaceId(), workspaceId)) {
+            throw new ApiException("CAMPAIGN_NOT_FOUND", "Campaign not found", HttpStatus.NOT_FOUND);
+        }
+        return campaign;
+    }
+
+    /**
      * [BE-2: Vikram, contract-flow-architecture-2026-07-23 §6.5] The actual enforcement point for
      * "escrow cannot be funded before the contract is ACTIVE". {@code Contract.status} only
      * advances to {@code ACTIVE} once BOTH {@code brandSignedAt} and {@code creatorSignedAt} are
@@ -384,11 +482,21 @@ public class EscrowService {
      * @return the resolved {@link PaymentMilestone} — reused by the caller ({@link #initiateFund})
      *     to bind {@code collaborationId} onto the new hold (Fix 2 of the escrow-frozen-hold-fix
      *     spec) instead of issuing a second, redundant lookup.
+     *     <p>[FIX: EV-002] The milestone is loaded with a PESSIMISTIC_WRITE lock, and this is its
+     *     FIRST load in the {@link #initiateFund} transaction. Both matter: a locking read returns
+     *     the latest committed row (not the transaction's REPEATABLE READ snapshot), and loading it
+     *     locked up front means no earlier plain read has already put a possibly stale instance in
+     *     the persistence context (a later locking query would hand back that cached instance
+     *     unchanged). Two concurrent fund attempts for one milestone therefore serialise here, and
+     *     the second one sees the first one's FUNDED state in {@link #assertMilestoneFundable}.
+     *     Lock order is milestone, then collaboration; no path holds the collaboration lock and
+     *     then updates an existing milestone row (ContractService only inserts new milestones).
      */
-    private PaymentMilestone assertContractActiveForMilestone(String milestoneId, String workspaceId) {
+    private PaymentMilestone assertContractActiveForMilestone(
+            String milestoneId, String workspaceId, String campaignId) {
         PaymentMilestone milestone =
                 milestoneRepository
-                        .findByIdAndWorkspaceId(milestoneId, workspaceId)
+                        .findByIdAndWorkspaceIdForUpdate(milestoneId, workspaceId)
                         .orElseThrow(
                                 () ->
                                         new ApiException(
@@ -430,7 +538,39 @@ public class EscrowService {
                     HttpStatus.CONFLICT);
         }
 
+        // [FIX: EV-002-d] The hold's campaign_id used to be copied from the request body with no
+        // check that the milestone belongs to that campaign at all. PaymentMilestone has no
+        // campaign column; its collaboration is the source of truth. A mismatched body value is
+        // refused instead of being written onto the hold.
+        if (!Objects.equals(collaboration.getCampaignId(), campaignId)) {
+            throw new ApiException(
+                    "MILESTONE_CAMPAIGN_MISMATCH",
+                    "This milestone does not belong to the campaign in the request",
+                    HttpStatus.CONFLICT);
+        }
+
         return milestone;
+    }
+
+    /**
+     * [FIX: EV-002] A milestone can be funded exactly once: only while it is {@code PENDING} and
+     * has no {@code escrowHoldId}. Any later attempt, whatever Idempotency-Key it carries, is
+     * refused with 409 {@code MILESTONE_ALREADY_FUNDED} before the wallet balance is read or any
+     * ledger movement is posted. Covers FUNDED and FROZEN (money already secured) and RELEASED and
+     * REFUNDED (already paid out or returned), none of which may be secured a second time.
+     */
+    private static void assertMilestoneFundable(PaymentMilestone milestone) {
+        if (milestone.getStatus() == MilestoneStatus.PENDING && milestone.getEscrowHoldId() == null) {
+            return;
+        }
+        String message =
+                switch (milestone.getStatus()) {
+                    case RELEASED -> "This milestone has already been paid out to the creator";
+                    case REFUNDED -> "This milestone's secured funds were already returned to your wallet";
+                    case FROZEN -> "This milestone's funds are already secured and are on hold for review";
+                    default -> "Funds for this milestone are already secured";
+                };
+        throw new ApiException("MILESTONE_ALREADY_FUNDED", message, HttpStatus.CONFLICT);
     }
 
     /**
@@ -478,6 +618,19 @@ public class EscrowService {
         // short-circuit return the wrong movement's rows. Same "<feature>:<id>" convention as
         // release/refund below.
         String ledgerIdempotencyKey = "escrow-fund:" + hold.getId();
+
+        // [FIX: EV-002, defence in depth] Resolve and check the milestone BEFORE the ledger post,
+        // so a milestone that is already funded (or paid out / returned) can never cause a second
+        // wallet debit through this shared funding step — including the legacy confirmFunded
+        // webhook path, which does not go through initiateFund's guard.
+        PaymentMilestone milestoneToFund = null;
+        if (hold.getMilestoneId() != null) {
+            milestoneToFund = milestoneRepository.findById(hold.getMilestoneId()).orElse(null);
+            if (milestoneToFund != null) {
+                assertMilestoneFundable(milestoneToFund);
+            }
+        }
+
         var outcome =
                 escrowBackend.fund(
                         new EscrowBackend.FundCommand(
@@ -492,14 +645,9 @@ public class EscrowService {
         hold.markFunded(outcome.fundTxnId());
         escrowHoldRepository.save(hold);
 
-        if (hold.getMilestoneId() != null) {
-            milestoneRepository
-                    .findById(hold.getMilestoneId())
-                    .ifPresent(
-                            milestone -> {
-                                milestone.markFunded(hold.getId());
-                                milestoneRepository.save(milestone);
-                            });
+        if (milestoneToFund != null) {
+            milestoneToFund.markFunded(hold.getId());
+            milestoneRepository.save(milestoneToFund);
         }
 
         // W2-1 — escrow is funded; work can begin. Not gated on a Meera/AI credit-reset hook (a
