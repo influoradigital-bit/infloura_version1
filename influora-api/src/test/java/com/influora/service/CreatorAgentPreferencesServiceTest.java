@@ -23,7 +23,12 @@ import com.influora.service.scoring.RateEstimationService.RateEstimation;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePreferencesRequest;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -169,6 +174,9 @@ class CreatorAgentPreferencesServiceTest {
                         List.of(1, 2, 3),
                         5,
                         false,
+                        null,
+                        // Phase B (§3.10) — rate_card_shareable null means "leave the card alone".
+                        null,
                         null);
 
         PreferencesResponse response = service.updatePreferences(USER_ID, req);
@@ -197,7 +205,7 @@ class CreatorAgentPreferencesServiceTest {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
                         null, null, null, "NOTACODE", List.of(), List.of(), 0, "hi-IN", null, null, null, null,
-                        List.of(), null, false, null);
+                        List.of(), null, false, null, null, null);
         ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
         assertEquals("INVALID_CURRENCY", ex.getCode());
     }
@@ -209,7 +217,7 @@ class CreatorAgentPreferencesServiceTest {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
                         null, null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null,
-                        "Not/A_Zone", List.of(), null, false, null);
+                        "Not/A_Zone", List.of(), null, false, null, null, null);
         ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
         assertEquals("INVALID_TIMEZONE", ex.getCode());
     }
@@ -220,7 +228,7 @@ class CreatorAgentPreferencesServiceTest {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
                         null, null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null, null,
-                        List.of(), null, true, "  ");
+                        List.of(), null, true, "  ", null, null);
 
         ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
         assertEquals("AGENCY_NAME_REQUIRED", ex.getCode());
@@ -238,7 +246,7 @@ class CreatorAgentPreferencesServiceTest {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
                         null, null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null, null,
-                        List.of(), null, true, "Agency Co");
+                        List.of(), null, true, "Agency Co", null, null);
 
         PreferencesResponse response = service.updatePreferences(USER_ID, req);
         assertEquals("Agency Co", response.agencyName());
@@ -251,7 +259,7 @@ class CreatorAgentPreferencesServiceTest {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
                         null, null, null, null, List.of(), List.of(), 5, "hi-IN", null, null, null, null,
-                        List.of(), null, false, null);
+                        List.of(), null, false, null, null, null);
         ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
         assertEquals("INVALID_APPROVAL_LEVEL", ex.getCode());
     }
@@ -262,7 +270,7 @@ class CreatorAgentPreferencesServiceTest {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
                         new BigDecimal("-1"), null, null, null, List.of(), List.of(), 0, "hi-IN", null, null, null,
-                        null, List.of(), null, false, null);
+                        null, List.of(), null, false, null, null, null);
         ApiException ex = assertThrows(ApiException.class, () -> service.updatePreferences(USER_ID, req));
         assertEquals("INVALID_FLOOR", ex.getCode());
     }
@@ -413,5 +421,114 @@ class CreatorAgentPreferencesServiceTest {
 
         assertNull(existing.getConsentAcceptedAt());
         verify(preferencesRepository).save(existing);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // QA Wave 1, Finding 1 -- SPEC.md 2.9 (B6) holdout assignment.
+    //
+    // `assignHoldout` shipped with ZERO call sites: the mutator existed, every mutator-level
+    // assertion passed, and `negotiation_holdout` was nonetheless false for 100 percent of
+    // creators. A missing CALL is invisible to a mocked repository, which is why both tests below
+    // go through the real creation path (`recordConsent` / `getOrCreatePreferences` ->
+    // `createWithComputedDefaults`) and assert on the row actually handed to `save`, rather than
+    // calling `assignHoldout` directly. Both FAIL against the unwired code.
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * Stubs everything {@code createWithComputedDefaults} needs so a row can actually be built for
+     * {@code profileId}, and records every entity passed to {@code save} into {@code sink}.
+     */
+    private void stubRowCreation(List<CreatorAgentPreferences> sink) {
+        when(collaborationRepository.findByCreatorId(USER_ID)).thenReturn(List.of());
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(any(), any()))
+                .thenReturn(List.of());
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getLanguagesJson()).thenReturn(null);
+        when(rateEstimationService.estimate(any(), any(), any()))
+                .thenReturn(
+                        new RateEstimation(
+                                new BigDecimal("1200"), new BigDecimal("1800"), "INR", BigDecimal.TEN, "MICRO",
+                                java.util.Map.of()));
+        when(preferencesRepository.save(any(CreatorAgentPreferences.class)))
+                .thenAnswer(
+                        inv -> {
+                            sink.add(inv.getArgument(0));
+                            return inv.getArgument(0);
+                        });
+    }
+
+    @Test
+    @DisplayName(
+            "SPEC 2.9 (B6): a preferences row created on the CONSENT path carries the assigned"
+                    + " holdout -- negotiation_holdout=true and holdout_until = today+90 for a"
+                    + " bucket-0 profile id")
+    void createdRowCarriesAssignedHoldout() {
+        // Math.floorMod("profile-4".hashCode(), 5) == 0 -> the 20 percent holdout bucket.
+        String holdoutProfileId = "profile-4";
+        when(profile.getId()).thenReturn(holdoutProfileId);
+        when(preferencesRepository.findByCreatorId(holdoutProfileId)).thenReturn(Optional.empty());
+        List<CreatorAgentPreferences> saved = new ArrayList<>();
+        stubRowCreation(saved);
+
+        // recordConsent, not getOrCreatePreferences: consent precedes the first preferences read,
+        // so this is the method that creates most rows in the real flow (SPEC.md 13, correction 14).
+        service.recordConsent(USER_ID);
+
+        assertFalse(saved.isEmpty(), "createWithComputedDefaults must persist the new row");
+        CreatorAgentPreferences created = saved.get(0);
+        assertTrue(
+                created.isNegotiationHoldout(),
+                "a bucket-0 creator must be IN the holdout -- if this is false, assignHoldout is not"
+                        + " being called on the creation path and the control arm does not exist");
+        assertEquals(LocalDate.now(ZoneOffset.UTC).plusDays(90), created.getHoldoutUntil());
+    }
+
+    @Test
+    @DisplayName(
+            "SPEC 2.9 (B6): the holdout bucket is deterministic per creator_profiles.id --"
+                    + " floorMod(hashCode,5)==0, one id in five, identical on a repeat creation")
+    void holdoutBucketIsDeterministicPerProfileId() {
+        // String.hashCode() is JLS-specified, so these five buckets are fixed forever:
+        // profile-1..5 -> floorMod(hashCode,5) of 2,3,4,0,1. Only profile-4 is the holdout.
+        Map<String, Boolean> expectedHoldout = new LinkedHashMap<>();
+        expectedHoldout.put("profile-1", false);
+        expectedHoldout.put("profile-2", false);
+        expectedHoldout.put("profile-3", false);
+        expectedHoldout.put("profile-4", true);
+        expectedHoldout.put("profile-5", false);
+
+        List<CreatorAgentPreferences> saved = new ArrayList<>();
+        stubRowCreation(saved);
+
+        int inHoldout = 0;
+        for (Map.Entry<String, Boolean> entry : expectedHoldout.entrySet()) {
+            String profileId = entry.getKey();
+            boolean expected = entry.getValue();
+            when(profile.getId()).thenReturn(profileId);
+            when(preferencesRepository.findByCreatorId(profileId)).thenReturn(Optional.empty());
+
+            // Created TWICE for the same id: a deterministic bucket gives the same answer both
+            // times; a random assignment would not be pinned to the id at all.
+            for (int attempt = 1; attempt <= 2; attempt++) {
+                saved.clear();
+                service.getOrCreatePreferences(USER_ID);
+
+                assertFalse(saved.isEmpty(), "no row was saved for " + profileId);
+                CreatorAgentPreferences row = saved.get(0);
+                assertEquals(
+                        expected,
+                        row.isNegotiationHoldout(),
+                        "holdout bucket for " + profileId + " on attempt " + attempt);
+                if (expected) {
+                    assertEquals(LocalDate.now(ZoneOffset.UTC).plusDays(90), row.getHoldoutUntil());
+                } else {
+                    assertNull(row.getHoldoutUntil(), "holdout_until must be null off the holdout");
+                }
+            }
+            if (expected) {
+                inHoldout++;
+            }
+        }
+        assertEquals(1, inHoldout, "exactly one id in five falls in the 20 percent holdout");
     }
 }

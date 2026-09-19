@@ -66,6 +66,13 @@ ENDPOINT_SCOPES: dict[str, tuple[str, ...]] = {
     # keyed on creator_profile_id instead of workspace_id (see
     # VerifiedCreatorToken / verify_creator_token below).
     "creator_suggestion": (SCOPE_CREATOR,),
+    # Internal-only: called by Java's brief-extraction client (Phase B, §7.5).
+    # creator-scope for the same reason as creator_suggestion above — the caller
+    # is acting for ONE creator and the token is keyed on creator_profile_id, so
+    # a service token (which carries a workspace, not a creator) must not open
+    # this route. Without this entry verify_creator_token(endpoint="brief_extract")
+    # rejects 100% of calls, since an unlisted endpoint has no allowed scopes.
+    "brief_extract": (SCOPE_CREATOR,),
 }
 
 

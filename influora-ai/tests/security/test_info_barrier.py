@@ -29,6 +29,7 @@ from app.prompt.creator_persona import (
     MEERA_CREATOR_PERSONA,
     get_creator_persona,
 )
+from app.tools.creator_schemas import CREATOR_TOOL_NAMES, all_creator_tool_schemas
 from app.tools.schemas import get_tool_schemas
 
 PAN = "ABCDE1234F"
@@ -217,15 +218,35 @@ def test_creator_persona_formatted_for_a_creator_contains_no_banned_word():
 
 
 def test_creator_block_a_lists_no_brand_tool():
-    """Phase A creator turns are conversational only: Block A must not even
-    name a brand tool, let alone offer it."""
-    block_a_text = build_block_a_creator()["text"]
+    """The two tool sets are disjoint in BOTH directions. Block A for a creator
+    must not name a brand tool even when every creator tool is enabled — and
+    the creator tools it DOES name have to be the real ones, or the block is
+    lying to the model about what it can call.
+
+    (Safe as a substring check: no brand tool name is a substring of any
+    creator tool name, which `test_tool_schema_anthropic_valid.py` pins
+    independently as set disjointness.)"""
+    block_a_text = build_block_a_creator(list(CREATOR_TOOL_NAMES))["text"]
     for tool in get_tool_schemas():
         assert tool["name"] not in block_a_text
-    assert "none in this phase" in block_a_text
+    for creator_tool in all_creator_tool_schemas():
+        assert creator_tool["name"] in block_a_text
 
 
-def test_creator_turn_is_assembled_with_an_empty_tool_set():
+def test_creator_block_a_says_warn_only_when_no_tool_is_enabled():
+    """The Phase-A degrade (§7.2): an older Spring sends no `tools_enabled`,
+    and Block A must then say so rather than name a tool the loop would
+    reject."""
+    block_a_text = build_block_a_creator([])["text"]
+    assert "Available tools: none (warn-only mode)" in block_a_text
+    for creator_tool in all_creator_tool_schemas():
+        assert f"Available tools: {creator_tool['name']}" not in block_a_text
+
+
+def test_creator_turn_degrades_to_an_empty_tool_set_without_tools_enabled():
+    """`tools_enabled` absent -> no tools. This is the live path today: Spring
+    sends an empty list until CreatorToolScopes grants a level, and a creator
+    turn must never be handed a tool on a guess."""
     prompt = assemble_prompt(
         {
             "workspace_id": "creator-user-001",
@@ -237,6 +258,36 @@ def test_creator_turn_is_assembled_with_an_empty_tool_set():
     )
     assert prompt.audience == "CREATOR"
     assert prompt.tools == []
+    assert "Available tools: none (warn-only mode)" in prompt.system_blocks[0]["text"]
+
+
+def test_creator_turn_carries_the_creator_tools_when_spring_enables_them():
+    """The other half: with `tools_enabled` populated the turn carries those
+    schemas and ONLY those — never a brand tool, never a tool outside the
+    granted list."""
+    prompt = assemble_prompt(
+        {
+            "workspace_id": "creator-user-001",
+            "audience": "CREATOR",
+            "creator": _creator_context(tools_enabled=list(CREATOR_TOOL_NAMES)),
+            "conversation": [{"role": "user", "content": "hi"}],
+        },
+        session_id="s-1",
+    )
+    assert [t["name"] for t in prompt.tools] == list(CREATOR_TOOL_NAMES)
+    brand_names = {t["name"] for t in get_tool_schemas()}
+    assert brand_names.isdisjoint({t["name"] for t in prompt.tools})
+
+    partial = assemble_prompt(
+        {
+            "workspace_id": "creator-user-001",
+            "audience": "CREATOR",
+            "creator": _creator_context(tools_enabled=["get_my_deals", "get_my_metrics"]),
+            "conversation": [],
+        },
+        session_id="s-2",
+    )
+    assert [t["name"] for t in partial.tools] == ["get_my_deals", "get_my_metrics"]
 
 
 def test_brand_turn_still_carries_the_full_tool_set():

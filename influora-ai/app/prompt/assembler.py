@@ -30,9 +30,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.prompt.creator_persona import get_creator_directives, get_creator_persona_block
+from app.prompt.creator_persona import (
+    get_creator_directives,
+    get_creator_persona_block,
+    render_creator_capabilities,
+)
 from app.prompt.persona import get_persona_block, stamp_prompt_version
 from app.prompt.untrusted import neutralize_angle_brackets, wrap_untrusted
+from app.tools.creator_schemas import get_creator_tool_schemas
 from app.tools.schemas import get_tool_schemas
 
 # Forbidden brand-context fields — defense in depth. Spring should never send
@@ -100,6 +105,18 @@ _FORBIDDEN_BRAND_FIELDS = {
     "creator_language",
     "excluded_categories",
     "blocked_brands",
+    # Meera for Creators Phase B (SPEC.md §7.2): the Phase-B creator fields.
+    # `rate_card` is the creator's own asking prices and `negotiation_holdout`
+    # /`holdout_until` say whether she is in the coaching control arm -- a
+    # brand learning either would be handed the other side of the table.
+    # `tools_enabled` and `approved_draft_count` are creator-agent internals
+    # that describe how much autonomy her Meera has, which is hers to know.
+    "tools_enabled",
+    "negotiation_holdout",
+    "holdout_until",
+    "rate_card_shareable",
+    "approved_draft_count",
+    "rate_card",
 }
 
 # Canonical snake_case field set for POST /internal/meera/context's response
@@ -133,6 +150,10 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     # exact; `build_block_b_creator` deliberately never reads it.
     "ai_monthly_cap_usd",
     "approval_level",
+    # Phase B (§3.7): how many drafts this creator has approved. Read by the
+    # level-up surfaces, NEVER rendered -- a running total of her own approvals
+    # in Meera's mouth reads as a scoreboard, not as help.
+    "approved_draft_count",
     "audience",
     "blocked_brands",
     "brand_tone",
@@ -151,10 +172,29 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     # Gate fix round 2 (Q8): ISO 4217 code the `floors` are denominated in.
     "floor_currency",
     "floors",
+    # Phase B (§2.10): the calendar day the negotiation holdout lapses, ALREADY
+    # rendered as a display string by Java (`Rendered.date`) -- Python never
+    # formats a date. Only rendered when `negotiation_holdout` is true.
+    "holdout_until",
     "identity",
     "metrics_summary",
+    # Phase B (§2.10, B6): this creator is in the negotiation-coaching control
+    # arm. Rendered so Meera withholds counter-coaching rather than silently
+    # behaving differently -- a creator who is held out is told she is.
+    "negotiation_holdout",
+    # Phase B (§3.10, B6): whether her rate card may appear on the public media
+    # kit. A sharing switch, not negotiating input -- never rendered.
+    "rate_card_shareable",
     "represented",
     "tier",
+    # Phase B (§7.2): the creator tool names this turn may call. Spring sends
+    # the tools that have a live route -- five as of Wave U (get_my_deals,
+    # get_brief, estimate_my_rate, get_my_metrics, check_deal_risks),
+    # intersected with the creator's own scope. Absent or EMPTY still degrades
+    # to Phase-A warn-only behaviour, which is now a real state (a scope
+    # granting none of the wired tools) rather than the Wave-1 placeholder it
+    # used to describe.
+    "tools_enabled",
     "weekly_sponsored_limit",
     "working_days",
     "working_hours_end",
@@ -167,7 +207,20 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
 # Fields that pass the allow-list (so the drift test against Java stays exact)
 # but are consumed by OTHER readers and must never be rendered into Block B.
 CREATOR_CONTEXT_FIELDS_NOT_RENDERED: frozenset[str] = frozenset(
-    {"audience", "workspace_id", "consent_accepted", "consent_version", "ai_monthly_cap_usd"}
+    {
+        "audience",
+        "workspace_id",
+        "consent_accepted",
+        "consent_version",
+        "ai_monthly_cap_usd",
+        # Phase B (§2.10): allow-listed so the Java<->Python drift check stays
+        # exact, but deliberately never rendered. `approved_draft_count` drives
+        # the level-up prompt in the UI and `rate_card_shareable` is a media-kit
+        # sharing switch; neither is something Meera should reason about while
+        # helping with a deal.
+        "approved_draft_count",
+        "rate_card_shareable",
+    }
 )
 
 # ISO weekday numbers as the settings UI and Spring store them
@@ -194,11 +247,18 @@ class AssembledPrompt:
     prompt_version: str
     cache_key: str
     # Meera for Creators Phase A: the audience this prompt was assembled for
-    # and the tool set that goes with it. BRAND = the full schema set from
-    # `get_tool_schemas()`; CREATOR = [] (no money tools, no brand tools).
-    # Defaults keep every existing positional construction valid.
+    # and the tool set that goes with it. `assemble_prompt` always passes
+    # `tools` explicitly — the full brand schema set on a BRAND turn, the
+    # granted creator subset on a CREATOR turn.
+    #
+    # The default is EMPTY, not `get_tool_schemas()`. It used to be the brand
+    # set, which meant constructing an AssembledPrompt without saying which
+    # tools it offers handed the caller six brand tools including the money
+    # ones — absent yielding MORE capability, the same fail-open shape as the
+    # `tools_enabled` bug fixed in §7.2. No tools is the only safe reading of
+    # "not stated".
     audience: str = "BRAND"
-    tools: list[dict[str, Any]] = field(default_factory=get_tool_schemas)
+    tools: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _strip_forbidden_fields(brand: dict[str, Any]) -> dict[str, Any]:
@@ -432,16 +492,51 @@ def build_block_b(brand_context: dict[str, Any]) -> dict[str, Any]:
     return {"type": "text", "text": text, "cache_control": {"type": "ephemeral"}}
 
 
-def build_block_a_creator() -> dict[str, Any]:
+def build_block_a_creator(tool_names: list[str] | None = None) -> dict[str, Any]:
     """Stable, tenant-agnostic prefix for CREATOR turns: the creator persona
-    and NOTHING else. Phase A creator turns carry an empty tool set (no money
-    tools, no brand tools -- `assemble_prompt` returns `tools=[]` for the
-    loop), so no tool names are listed here either. Marked ephemeral for
-    Anthropic prompt caching, cached globally across every creator.
+    plus the names of the tools this turn may call. Never a money tool and
+    never a brand tool -- the two tool sets are disjoint
+    (`app/tools/creator_schemas.py`), and `tests/security/test_info_barrier.py`
+    asserts no brand tool name appears in this block.
+
+    `tool_names` comes from `assemble_prompt`, which derives it from the
+    creator's `tools_enabled`. Empty (or omitted) renders the warn-only line:
+    that is the Phase-A degrade for an older Spring that sends no list, and it
+    must stay truthful -- a tool named here that the loop would reject is a
+    promise the model cannot keep.
+
+    Both halves of the block are built from that ONE list: the prose
+    capabilities ("What you can do now") via `render_creator_capabilities`, and
+    the "Available tools:" line. They used to disagree -- the persona hard-coded
+    all six B0 tools while this line named only the granted ones, so a warn-only
+    turn described `draft_reply` and then said no tools were available. Anything
+    that describes a capability in here must be derived from `names`, never
+    hard-coded, or the two drift apart again.
+
+    NOTE this is Block A, cached GLOBALLY across every creator, so the tool
+    names are the only per-turn variation allowed in here. They are safe: a
+    tool NAME is product surface, not creator data. Anything creator-specific
+    belongs in Block B (`build_block_b_creator`), which is keyed per creator.
+    Two creators on different approval levels get different Block A cache
+    entries, which is correct -- they are being offered different tools.
     """
+    names = [n for n in (tool_names or []) if isinstance(n, str) and n.strip()]
+    tools_line = (
+        "Available tools: " + ", ".join(names)
+        if names
+        else "Available tools: none (warn-only mode)"
+    )
+    text = (
+        get_creator_persona_block()
+        + "\n\n"
+        + render_creator_capabilities(names)
+        + "\n"
+        + tools_line
+        + "\n"
+    )
     return {
         "type": "text",
-        "text": get_creator_persona_block() + "\n\nAvailable tools: none in this phase.\n",
+        "text": text,
         "cache_control": {"type": "ephemeral"},
     }
 
@@ -635,6 +730,39 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
             "never draft anything addressed to a brand"
         )
 
+    # Phase B (§2.10/§7.2, B6): the negotiation holdout is the control arm that
+    # proves the coaching is what moves outcomes. Rendered rather than silently
+    # applied -- a creator whose Meera has gone quiet on counters deserves to be
+    # told why, and told when it lifts. `holdout_until` is already a display
+    # string from Java (Rendered.date), so this never formats a date; when Spring
+    # sends the holdout without a date, `_creator_str` says "not available"
+    # rather than dropping the line.
+    #
+    # NOTE the reads below are written against the LOCAL `ctx`, never the
+    # `context` parameter: tests/prompt/test_creator_context_drift.py greps this
+    # module for the literal `ctx.get("<name>")` / `_creator_str(ctx, "<name>"`
+    # and a read spelled `context.get(...)` fails that test while working fine.
+    if ctx.get("negotiation_holdout"):
+        lines.append(
+            "- Negotiation coaching: withheld for this deal until "
+            f"{_creator_str(ctx, 'holdout_until')}"
+        )
+
+    # §7.2: the tools this turn may actually call. Absent or empty renders
+    # NOTHING, which is the Phase-A warn-only block verbatim. That is no longer
+    # the default: `CreatorToolScopes.toolNamesForLevel` (B0-20) is wired at
+    # `MeeraContextService`, so a consenting creator arrives here with five
+    # names (get_brief wired as of Wave U) and this line renders. The names
+    # are also rendered into Block A
+    # (`build_block_a_creator`) and the matching SCHEMAS are what
+    # `assemble_prompt` hands the loop, all three off this same list -- the
+    # persona says what Meera can do, this line says what she may do NOW.
+    tools_enabled = ctx.get("tools_enabled")
+    if isinstance(tools_enabled, list) and tools_enabled:
+        lines.append(
+            "- Tools you may call now: " + ", ".join(_safe(t) for t in tools_enabled)
+        )
+
     # Q8: the creator's own rules -- what they saved on the Meera settings
     # page. Rendered as explicit rules so Meera can act on them
     # conversationally (name a blocked brand AS blocked, decline an excluded
@@ -819,17 +947,33 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
     audience = str(brand_context.get("audience") or "BRAND").upper()
     prompt_version = brand_context.get("prompt_version") or stamp_prompt_version()
 
-    # Meera for Creators Phase A (A4): CREATOR routes to the creator persona +
-    # creator Block B (fed from `brand_context["creator"]`) and an EMPTY tool
-    # set -- no money tools, no brand tools in this phase. Anything else is the
-    # BRAND path, unchanged. `audience` comes from the ROUTE (derived from the
-    # verified token / on-behalf JWT), never from the client body.
+    # Meera for Creators (A4): CREATOR routes to the creator persona + creator
+    # Block B (fed from `brand_context["creator"]`) and the CREATOR tool set --
+    # never a money tool, never a brand tool. Anything else is the BRAND path,
+    # unchanged. `audience` comes from the ROUTE (derived from the verified
+    # token / on-behalf JWT), never from the client body.
     if audience == "CREATOR":
         creator = dict(brand_context.get("creator") or {})
         creator.setdefault("workspace_id", workspace_id)
-        block_a = build_block_a_creator()
+        # Phase B0 (§7.2): the tools this creator may call come from Spring's
+        # `tools_enabled` (CreatorToolScopes, keyed on their approval level).
+        #
+        # ABSENT OR EMPTY DEGRADES TO PHASE A -- an empty tool set, warn-only
+        # Block A -- and that is deliberate, not a fallback nobody thought
+        # about. An older Spring, a context call that failed open, or a
+        # creator whose scope grants nothing all arrive here as "no list", and
+        # in every one of those cases offering a tool would have the model
+        # propose a call the loop or Spring can only reject. `or []` is what
+        # turns absent into empty; `get_creator_tool_schemas(None)` means
+        # "every schema in the module" and is for the CI schema guard, NOT for
+        # a live turn. The isinstance check keeps a malformed value (a bare
+        # string, say) from being iterated character by character into a
+        # filter that would then match nothing but cost a confusing debug.
+        enabled = creator.get("tools_enabled")
+        enabled_names = [n for n in enabled if isinstance(n, str)] if isinstance(enabled, list) else []
+        tools: list[dict[str, Any]] = get_creator_tool_schemas(enabled_names)
+        block_a = build_block_a_creator([t["name"] for t in tools])
         block_b = build_block_b_creator(creator)
-        tools: list[dict[str, Any]] = []
     else:
         block_a = build_block_a()
         block_b = build_block_b(brand_context)

@@ -12,10 +12,11 @@ assert, for BOTH /voice/transcribe and /voice/speak:
   CONSENT_REQUIRED body /chat returns (top-level `code` + `error.code`), with
   ZERO Sarvam calls, ZERO Gemini calls, and nothing reserved on either ledger
 - the gate FAILS CLOSED: a context with no `consent_accepted` key, a null, a
-  string "true", an empty context body, and a Spring fetch failure are all
-  refused -- the "voice never dead-ends" language fallback does not extend
-  to consent
-- a CONSENTED creator (bool true, or a non-empty `consent_accepted_at`)
+  string "true", a non-empty `consent_accepted_at` with no `consent_accepted:
+  true` (K-4 -- see app/auth/consent.py), an empty context body, and a Spring
+  fetch failure are all refused -- the "voice never dead-ends" language
+  fallback does not extend to consent
+- a CONSENTED creator (`consent_accepted: true`, the only accepted signal)
   proceeds to Sarvam as before
 - BRAND calls never see the gate (no consent screen exists for brands)
 - the gate runs BEFORE the creator monthly cap gate, so an unconsented
@@ -204,6 +205,22 @@ UNCONSENTED_CONTEXTS = [
     pytest.param({"audience": "CREATOR", "creator_language": "hi-IN", "consent_accepted": None}, id="null"),
     pytest.param({"audience": "CREATOR", "creator_language": "hi-IN", "consent_accepted": "true"}, id="string-true"),
     pytest.param({"audience": "CREATOR", "consent_accepted_at": "   "}, id="blank-timestamp"),
+    # K-4 (Kabir, KABIR-CONSENT-0917.md): a non-empty consent_accepted_at with
+    # no consent_accepted:true used to count as consent regardless of which
+    # DPDP notice version it was recorded against. Must refuse now.
+    pytest.param(
+        {"audience": "CREATOR", "creator_language": "hi-IN", "consent_accepted_at": "2026-09-03T10:00:00Z"},
+        id="timestamp-only-no-version-aware-flag",
+    ),
+    pytest.param(
+        {
+            "audience": "CREATOR",
+            "creator_language": "hi-IN",
+            "consent_accepted": False,
+            "consent_accepted_at": "2026-09-03T10:00:00Z",
+        },
+        id="timestamp-plus-explicit-false",
+    ),
     pytest.param({}, id="empty-context"),
 ]
 
@@ -279,10 +296,6 @@ async def test_consent_gate_runs_before_the_creator_cap_gate():
     "context",
     [
         pytest.param({"audience": "CREATOR", "creator_language": "en-IN", "consent_accepted": True}, id="bool-true"),
-        pytest.param(
-            {"audience": "CREATOR", "creator_language": "en-IN", "consent_accepted_at": "2026-09-03T10:00:00Z"},
-            id="timestamp",
-        ),
     ],
 )
 async def test_consented_creator_reaches_sarvam_on_both_routes(context):
@@ -365,4 +378,10 @@ def test_chat_and_voice_share_one_consent_definition():
     assert not consent_module.consent_accepted(None)
     assert not consent_module.consent_accepted("yes")
     assert not consent_module.consent_accepted({"consent_accepted": 1})
-    assert consent_module.consent_accepted({"consent_accepted_at": "2026-09-03T10:00:00Z"})
+    # K-4: consent_accepted_at alone is no longer a consent signal -- only the
+    # version-aware consent_accepted:true boolean counts.
+    assert not consent_module.consent_accepted({"consent_accepted_at": "2026-09-03T10:00:00Z"})
+    assert not consent_module.consent_accepted(
+        {"consent_accepted": False, "consent_accepted_at": "2026-09-03T10:00:00Z"}
+    )
+    assert consent_module.consent_accepted({"consent_accepted": True})

@@ -15,8 +15,13 @@ import com.influora.repository.CreatorProfileRepository;
 import com.influora.service.scoring.QualityScoreService.QualityScoreResult;
 import com.influora.service.scoring.RateEstimationService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
+import com.influora.web.dto.creator.CreatorAgentDtos.RateCardDto;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePreferencesRequest;
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -43,6 +48,17 @@ public class CreatorAgentPreferencesService {
 
     private static final BigDecimal FALLBACK_STORY_FLOOR = new BigDecimal("300");
     private static final BigDecimal FALLBACK_POST_FLOOR = new BigDecimal("600");
+
+    /** SPEC.md &sect;3.7 — the two thresholds behind {@code level_up_eligible}. */
+    private static final int LEVEL_UP_MIN_APPROVED_DRAFTS = 10;
+
+    private static final Duration LEVEL_UP_MIN_CONSENT_AGE = Duration.ofDays(7);
+
+    /** SPEC.md &sect;2.9 (B6) -- one bucket in five is the holdout, i.e. 20 percent. */
+    private static final int HOLDOUT_BUCKETS = 5;
+
+    /** SPEC.md &sect;2.9 (B6) -- a holdout lapses 90 calendar days after the row was created. */
+    private static final int HOLDOUT_DAYS = 90;
 
     private final CreatorAgentPreferencesRepository preferencesRepository;
     private final CreatorProfileRepository creatorProfileRepository;
@@ -84,6 +100,41 @@ public class CreatorAgentPreferencesService {
     }
 
     /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.6, "id-space fix") — the same preferences row keyed
+     * on {@code creator_profiles.id} instead of {@code users.id}.
+     *
+     * <p><b>Why this exists.</b> Every Phase-A accessor on this service starts from the CALLING
+     * creator's principal, so they all take a {@code users.id} and resolve the profile themselves.
+     * Several Phase-B services ({@code RateQuoteService.floorTotal}, {@code
+     * DealRiskService.evaluateDeal}/{@code evaluateBrief}, {@code
+     * CreatorBriefService.ensurePlatformBrief}) are handed a {@code creator_profiles.id} by their
+     * caller and have no user id at all. Without this method each of them would have to inject
+     * {@link CreatorAgentPreferencesRepository} directly, which SPEC.md &sect;0.3 forbids — the
+     * floors on this row are exactly the numbers the info barrier exists to contain, and a dozen
+     * classes reaching for the repository is how a barrier stops meaning anything.
+     *
+     * <p>Behaviour otherwise matches {@link #getOrCreatePreferences}: unknown profile is a 404
+     * {@code CREATOR_PROFILE_NOT_FOUND}, and a profile with no row yet gets one created with the
+     * same computed defaults rather than a 404 — a creator who has never opened the settings page
+     * still has floors, and a quote asked for before she ever visits must use them.
+     */
+    @Transactional
+    public PreferencesResponse getByProfileId(String creatorProfileId) {
+        CreatorProfile profile =
+                creatorProfileRepository
+                        .findById(creatorProfileId)
+                        .orElseThrow(
+                                () ->
+                                        new ApiException(
+                                                "CREATOR_PROFILE_NOT_FOUND", "Creator profile not found", HttpStatus.NOT_FOUND));
+        CreatorAgentPreferences prefs =
+                preferencesRepository
+                        .findByCreatorId(profile.getId())
+                        .orElseGet(() -> createWithComputedDefaults(profile));
+        return toResponse(prefs);
+    }
+
+    /**
      * A6 (fix round 2, item 1) — the consent PRECONDITION {@link
      * com.influora.web.CreatorMeeraController} must check before persisting anything for a Meera
      * turn (session start or send). Deliberately read-only and does NOT lazily create a
@@ -100,12 +151,29 @@ public class CreatorAgentPreferencesService {
                 .orElse(false);
     }
 
+    /**
+     * The ONE place a {@link CreatorAgentPreferences} row is created. Four methods reach it --
+     * {@link #getOrCreatePreferences}, {@link #getByProfileId}, {@link #updatePreferences}, {@link
+     * #recordConsent} and {@link #adminSetMonthlyCapOverride} -- and in the real flow it is most
+     * often {@code recordConsent}, because DPDP consent precedes the first preferences read. That
+     * is exactly why the B6 holdout is assigned HERE and not in {@code getOrCreatePreferences}
+     * (SPEC.md &sect;2.9 and &sect;13 correction 14): {@code getOrCreatePreferences} does not
+     * create the row, so an assignment placed there would leave most Phase-B creators at
+     * {@code negotiation_holdout = false} and the control arm would not exist.
+     */
     private CreatorAgentPreferences createWithComputedDefaults(CreatorProfile profile) {
         BigDecimal floor = computeDefaultFloor(profile);
         String language = defaultLanguage(profile);
         CreatorAgentPreferences prefs =
                 CreatorAgentPreferences.newWithDefaults(
                         Ulids.newUlid(), profile.getId(), floor, floor, floor, language);
+        // SPEC.md 2.9 (B6) -- deterministic 20 percent negotiation holdout, assigned ONCE, at
+        // creation. String.hashCode() is specified by the JLS, so the bucket is stable across JVMs
+        // and restarts and needs no stored seed; a random would re-roll on every replay and make
+        // the cohort unreconstructable. LocalDate, not Instant: the holdout lapses on a calendar
+        // day (creation + 90), never at an instant.
+        boolean holdout = Math.floorMod(profile.getId().hashCode(), HOLDOUT_BUCKETS) == 0;
+        prefs.assignHoldout(holdout, holdout ? LocalDate.now(ZoneOffset.UTC).plusDays(HOLDOUT_DAYS) : null);
         return preferencesRepository.save(prefs);
     }
 
@@ -172,6 +240,14 @@ public class CreatorAgentPreferencesService {
                 req.weeklySponsoredLimit(),
                 req.represented(),
                 req.agencyName());
+        // B6 (SPEC.md §3.10) — the rate card goes through its OWN mutator, deliberately not through
+        // applyPreferences' parameter list. applyRateCard nulls the stored card when the creator
+        // opts out, which a 16-arg full-replace could not express. rate_card_shareable is a Boolean
+        // on the request: absent means "leave the card alone", not "opt out" — a PUT from a client
+        // that predates this field must not silently delete a card the creator set.
+        if (req.rateCardShareable() != null) {
+            prefs.applyRateCard(req.rateCardShareable(), JsonLists.toJsonObject(req.rateCard()));
+        }
         preferencesRepository.save(prefs);
         return toResponse(prefs);
     }
@@ -303,6 +379,37 @@ public class CreatorAgentPreferencesService {
                 prefs.isRepresented(),
                 prefs.getAgencyName(),
                 prefs.isConsentAccepted(),
-                prefs.getConsentVersion());
+                prefs.getConsentVersion(),
+                prefs.isRateCardShareable(),
+                JsonLists.objectFromJson(prefs.getRateCardJson(), RateCardDto.class),
+                prefs.isNegotiationHoldout(),
+                prefs.getApprovedDraftCount(),
+                isLevelUpEligible(prefs));
+    }
+
+    /**
+     * SPEC.md &sect;3.7 — {@code level_up_eligible} is COMPUTED on every read, never stored. All
+     * four conditions must hold:
+     *
+     * <ol>
+     *   <li>ten or more approved drafts — the creator has actually seen Meera's output enough times
+     *       to judge it;
+     *   <li>consent at least seven days old — a brand-new creator is not offered more autonomy on
+     *       day one, no matter how many drafts she approves;
+     *   <li>still at level 0 — there is nothing to level up FROM otherwise;
+     *   <li>never prompted before — a creator who declined the offer is not re-asked (SPEC.md
+     *       &sect;3.7, {@code levelUpPromptedAt}).
+     * </ol>
+     *
+     * <p>A null {@code consentAcceptedAt} fails condition 2 rather than throwing: a creator with no
+     * consent on file is not eligible, which is the same answer for a different reason.
+     */
+    private static boolean isLevelUpEligible(CreatorAgentPreferences prefs) {
+        Instant consentAt = prefs.getConsentAcceptedAt();
+        return prefs.getApprovedDraftCount() >= LEVEL_UP_MIN_APPROVED_DRAFTS
+                && consentAt != null
+                && !consentAt.isAfter(Instant.now().minus(LEVEL_UP_MIN_CONSENT_AGE))
+                && prefs.getApprovalLevel() == CreatorAgentPreferences.APPROVAL_LEVEL_DRAFT_ONLY
+                && prefs.getLevelUpPromptedAt() == null;
     }
 }

@@ -233,6 +233,85 @@ def test_kabir_fix2_known_sensitive_keys_include_stream_flow_secrets():
     assert redacted["workspace_id"] == "ws-brand-a-001"
 
 
+def test_k5_known_sensitive_keys_include_raw_text_and_summary_lines():
+    """K-5 (Kabir, KABIR-CONSENT-0917.md, LOW -- last call Kabir): `raw_text`
+    is the FULL pasted brief (CreatorBrief.rawText / brief_extract.py) and
+    `summary_lines` is the AI's summary of that same brief -- both can hold
+    third-party names, emails, phone numbers and UPI ids of people who never
+    consented. Neither key was in the redaction backstop; every call site
+    today only logs shapes (defence in depth, not a live leak), but a future
+    direct log line must still come out redacted by KEY, not only by the
+    regex scrub above, which does not catch plain names."""
+    from app.security.redaction import _redact_for_log
+
+    fake_brief = f"Brand here. Pay via UPI, confirm on {FAKE_PHONE}, PAN {FAKE_PAN}."
+    fake_summary_lines = [f"Brand asked for payment confirmation on {FAKE_PHONE}"]
+    payload = {
+        "workspace_id": "ws-creator-a-001",
+        "raw_text": fake_brief,
+        "summary_lines": fake_summary_lines,
+    }
+    redacted = _redact_for_log(payload)
+    serialized = json.dumps(redacted, default=str)
+
+    assert fake_brief not in serialized
+    assert FAKE_PHONE not in serialized
+    assert FAKE_PAN not in serialized
+    assert redacted["raw_text"] == shape_of(fake_brief, reveal_keys=False)
+    assert redacted["summary_lines"] == shape_of(fake_summary_lines, reveal_keys=False)
+    assert redacted["workspace_id"] == "ws-creator-a-001"  # non-sensitive passthrough
+
+
+def test_k5_end_to_end_log_line_never_contains_pasted_brief_text(caplog):
+    """The realistic path for K-5: log_event -> RedactionJsonFormatter -> the
+    actual JSON string that would leave the process on stdout, simulating a
+    future bug that logs a creator brief's fields directly."""
+    logger = logging.getLogger("influora_ai.test_k5")
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    logger.handlers = []
+
+    formatter = RedactionJsonFormatter()
+
+    class _ListHandler(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.lines: list[str] = []
+
+        def emit(self, record):
+            self.lines.append(self.format(record))
+
+    handler = _ListHandler()
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    fake_brief = f"Contact the creator's manager at {FAKE_EMAIL}, PAN {FAKE_PAN}."
+    seeded_brief_fields = {
+        "workspace_id": "ws-creator-a-001",
+        "raw_text": fake_brief,
+        "summary_lines": [f"Manager contact: {FAKE_EMAIL}"],
+    }
+
+    log_event(
+        logger,
+        logging.INFO,
+        "brief_logged_by_mistake",
+        workspace_id="ws-creator-a-001",
+        request_id="req-456",
+        fields=seeded_brief_fields,
+    )
+
+    assert len(handler.lines) == 1
+    line = handler.lines[0]
+    assert fake_brief not in line
+    assert FAKE_EMAIL not in line
+    assert FAKE_PAN not in line
+
+    parsed = json.loads(line)
+    assert parsed["workspace_id"] == "ws-creator-a-001"
+    assert parsed["request_id"] == "req-456"
+
+
 def test_rt_pii_1_exception_traceback_scrubbed_too():
     """If an exception's message happens to contain PII (e.g. a validation
     error echoing the offending value), the formatter must scrub exc_info

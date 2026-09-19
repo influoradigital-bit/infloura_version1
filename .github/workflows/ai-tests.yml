@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'influora-ai/**'
+      - 'influora-api/src/main/java/com/influora/web/dto/meera/**'
       - '.github/workflows/ai-tests.yml'
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - feat/creator-taxonomy-keyword-patch
     paths:
       - 'influora-ai/**'
+      - 'influora-api/src/main/java/com/influora/web/dto/meera/**'
       - '.github/workflows/ai-tests.yml'
 
 jobs:

@@ -4,6 +4,7 @@ import { Loader2, Sparkles } from 'lucide-react';
 import { CreatorLayout } from '@/components/creator/creator-layout';
 import { CopilotPreviewCard } from '@/components/creator/copilot/CopilotPreviewCard';
 import { DailySuggestionSection } from '@/components/creator/copilot/DailySuggestionSection';
+import { PasteBriefCard } from '@/components/creator/copilot/PasteBriefCard';
 import { useDailySuggestion } from '@/hooks/useDailySuggestion';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -61,6 +62,24 @@ export default function CreatorCopilotPage() {
   // enabled) both render the normal "Talk to Meera" entry — only an explicit `true` swaps it
   // out, so the entry point never has to hide, then flash back, then hide again.
   const [featureDisabled, setFeatureDisabled] = React.useState<boolean | null>(null);
+  // U-2 — what the preferences probe said about consent. `null` until a probe lands (or when it
+  // failed), so the paste card only short-circuits to the consent screen when consent is KNOWN to
+  // be missing; otherwise the server's CONSENT_REQUIRED refusal is the backstop.
+  const [consentAccepted, setConsentAccepted] = React.useState<boolean | null>(null);
+  // Which entry point asked for consent. Accepting from "Open Meera" opens the chat, as before;
+  // accepting from the paste card must not open a chat the creator did not ask for.
+  const consentForRef = React.useRef<'chat' | 'paste'>('chat');
+
+  // U-5 (RULINGS-U-0917.md R-U1) — "Ask Meera about this brief" fills the chat's composer, it
+  // never sends. `prefillTokenRef` increments on every ask so a second click on the same brief
+  // still appends (see MeeraCopilotChat's own token doc). `pendingBriefPromptRef` carries the
+  // prompt across a consent detour: set right before the consent screen opens, consumed by
+  // Accept, and dropped by Decline so a later PLAIN "Open Meera" never inherits a stale brief ask.
+  const [prefillMessage, setPrefillMessage] = React.useState<{ text: string; token: number } | null>(
+    null,
+  );
+  const prefillTokenRef = React.useRef(0);
+  const pendingBriefPromptRef = React.useRef<string | null>(null);
 
   // Probe once on mount so the entry point never renders (then disappears) for a disabled
   // account — the same GET the "Open Meera" click already made, just run earlier and only
@@ -73,6 +92,7 @@ export default function CreatorCopilotPage() {
       .then((prefs) => {
         if (cancelled) return;
         setLanguage(prefs.creator_language || 'hi-IN');
+        setConsentAccepted(prefs.consent_accepted);
         setFeatureDisabled(false);
       })
       .catch((err) => {
@@ -90,9 +110,13 @@ export default function CreatorCopilotPage() {
     try {
       const prefs = await api.creatorAgentPrefs.getPreferences();
       setLanguage(prefs.creator_language || 'hi-IN');
+      setConsentAccepted(prefs.consent_accepted);
       if (prefs.consent_accepted) {
+        // Plain "Open Meera" never carries a leftover brief prompt from an earlier ask.
+        setPrefillMessage(null);
         setChatOpen(true);
       } else {
+        consentForRef.current = 'chat';
         setShowConsent(true);
       }
     } catch (err) {
@@ -111,7 +135,63 @@ export default function CreatorCopilotPage() {
   const handleAcceptConsent = async () => {
     await api.creatorAgentPrefs.recordConsent();
     setShowConsent(false);
-    setChatOpen(true);
+    setConsentAccepted(true);
+    if (consentForRef.current === 'chat') {
+      if (pendingBriefPromptRef.current) {
+        prefillTokenRef.current += 1;
+        setPrefillMessage({ text: pendingBriefPromptRef.current, token: prefillTokenRef.current });
+      } else {
+        setPrefillMessage(null);
+      }
+      setChatOpen(true);
+    }
+    pendingBriefPromptRef.current = null;
+    consentForRef.current = 'chat';
+  };
+
+  const requestConsentForPaste = () => {
+    consentForRef.current = 'paste';
+    setConsentAccepted(false);
+    setShowConsent(true);
+  };
+
+  /**
+   * U-5 (RULINGS-U-0917.md R-U1) — "Ask Meera about this brief". Re-checks consent with a fresh
+   * `getPreferences` call, the same as `openMeera`, rather than trusting the page's last-known
+   * `consentAccepted` — a successful paste already implies consent was true THEN, but consent can
+   * be revoked between that paste and this click, and the fresh check is what actually decides
+   * whether the chat opens straight away or through the consent screen first. Consent gates
+   * opening the chat, not the prompt itself: the prompt is only ever handed to `MeeraCopilotChat`
+   * once consent is (or becomes) true, through `prefillMessage`, and that component only fills
+   * the composer — see its own doc comment for why an automatic send was rejected.
+   */
+  const askMeeraAboutBrief = async (briefId: string) => {
+    setConsentLoadError(null);
+    setCheckingConsent(true);
+    try {
+      const prefs = await api.creatorAgentPrefs.getPreferences();
+      const lang = prefs.creator_language || 'hi-IN';
+      setLanguage(lang);
+      setConsentAccepted(prefs.consent_accepted);
+      const text = lang.startsWith('hi') ? `Brief ${briefId} dekh lo.` : `Look at brief ${briefId}.`;
+      if (prefs.consent_accepted) {
+        prefillTokenRef.current += 1;
+        setPrefillMessage({ text, token: prefillTokenRef.current });
+        setChatOpen(true);
+      } else {
+        pendingBriefPromptRef.current = text;
+        consentForRef.current = 'chat';
+        setShowConsent(true);
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'FEATURE_DISABLED') {
+        setFeatureDisabled(true);
+      } else {
+        setConsentLoadError(err instanceof ApiError ? err.message : "Couldn't reach Meera — try again.");
+      }
+    } finally {
+      setCheckingConsent(false);
+    }
   };
 
   return (
@@ -154,9 +234,14 @@ export default function CreatorCopilotPage() {
                 <MeeraCopilotChat
                   firstName={firstName}
                   language={language}
-                  onClose={() => setChatOpen(false)}
+                  prefillMessage={prefillMessage}
+                  onClose={() => {
+                    setChatOpen(false);
+                    setPrefillMessage(null);
+                  }}
                   onConsentRequired={() => {
                     setChatOpen(false);
+                    consentForRef.current = 'chat';
                     setShowConsent(true);
                   }}
                 />
@@ -181,11 +266,33 @@ export default function CreatorCopilotPage() {
           </Card>
         )}
 
+        {/* U-2 (SPEC.md §8.5) — the paste card, between the Meera card and the consent screen.
+            Hidden on the same explicit `featureDisabled === true` as the Meera card above, so a
+            disabled account never sees a paste box whose every submit would 404. Consent gates
+            the ANALYSE action, not the card: a creator who has not consented still sees what
+            the feature is, and pressing Analyse opens the consent screen instead of sending. */}
+        {featureDisabled !== true && (
+          <PasteBriefCard
+            className="mb-6"
+            needsConsent={consentAccepted === false}
+            onConsentRequired={requestConsentForPaste}
+            onFeatureDisabled={() => setFeatureDisabled(true)}
+            language={language}
+            onAskMeeraAboutBrief={askMeeraAboutBrief}
+          />
+        )}
+
         <ConsentScreen
           open={showConsent}
           language={language}
           onAccept={handleAcceptConsent}
-          onDecline={() => setShowConsent(false)}
+          onDecline={() => {
+            setShowConsent(false);
+            consentForRef.current = 'chat';
+            // U-5 — a declined "Ask Meera about this brief" opens nothing, and the prompt is
+            // dropped rather than surviving to a later, unrelated "Open Meera" click.
+            pendingBriefPromptRef.current = null;
+          }}
         />
 
         {showPreview && <CopilotPreviewCard className="mb-3" />}

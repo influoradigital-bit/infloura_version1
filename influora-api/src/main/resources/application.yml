@@ -207,12 +207,53 @@ influora:
     # F-0551 — refresh-token lifetime when the login did NOT set rememberMe=true. 24h; see
     # JwtProperties' javadoc on refreshExpiryNotRememberedSeconds for the reasoning.
     refresh-expiry-not-remembered-seconds: ${JWT_REFRESH_EXPIRY_NOT_REMEMBERED:86400}
+  # T-MEERA-CREATOR-PHASE-B (SPEC.md §4.2 and §14.1.h, B0-30) — the pricing constants behind a
+  # package quote, admin-overridable without a deploy. Every key here is OPTIONAL: RateAddOns and
+  # RateTierProperties both carry the same figures as @Value placeholder defaults, so deleting
+  # this whole block changes no behaviour.
+  rates:
+    addons:
+      # SPEC.md §4.2. Midpoints of the ranges the plan gave (20-30, 25-50, 50-100, 2-3x) — these
+      # are benchmarks, not market data, and every figure derived from them carries that label.
+      # perpetuity-multiple is the package MULTIPLE, not a percentage: the add-on LINE charges
+      # (multiple - 1) so the quoted package lands at exactly multiple x subtotal. See RateAddOns.
+      repost-30d-pct: ${INFLUORA_RATES_REPOST_30D_PCT:25}
+      paid-ads-quarter-pct: ${INFLUORA_RATES_PAID_ADS_QUARTER_PCT:40}
+      whitelisting-pct: ${INFLUORA_RATES_WHITELISTING_PCT:75}
+      perpetuity-multiple: ${INFLUORA_RATES_PERPETUITY_MULTIPLE:2.5}
+      exclusivity-30d-floor-pct: ${INFLUORA_RATES_EXCLUSIVITY_30D_FLOOR_PCT:15}
+    # SPEC.md §14.1.h — per-tier base rate overrides (INR, per post). DELIBERATELY UNSET at
+    # launch: with them unset every tier prices from RateEstimationService's compiled constants
+    # and the quote carries the honest "benchmark, not market data" provenance. B0-36 is the task
+    # that sets them, from the calibration report, for any tier with realised_n >= 20 only
+    # (realised_median x 0.6 / x 1.4), and records what was set and why in REPORT.md.
+    #
+    # BOTH bounds must be set for a tier or the override is ignored entirely — a half-set band
+    # pairs a calibrated min with an uncalibrated max and produces a range nobody chose.
+    #
+    # tier:
+    #   nano:  { min: 1200, max: 4800 }
+    #   micro: { min: ..., max: ... }
+    #   mid:   { min: ..., max: ... }
+    #   macro: { min: ..., max: ... }
+    #   mega:  { min: ..., max: ... }
   meera:
     # Priya gate review defect 4 — Phase A rollback flag (MeeraCreatorFeatureProperties). true
     # (on) by default; set MEERA_CREATOR_ENABLED=false to 404 every CREATOR-audience Meera
     # surface (agent-preferences, consent, /creator/meera/**, public verified) without a code
     # rollback.
     creator-enabled: ${MEERA_CREATOR_ENABLED:true}
+    # T-MEERA-CREATOR-PHASE-B D-02 (QA-TECH-0912.md q15, ruling 1) — the separate enable step for
+    # send_routine_reply, the one creator tool that puts a message in front of a brand under the
+    # creator's name. DEFAULT false, unlike creator-enabled above: that flag guards reads, which are
+    # safe to serve; this one guards a send, whose safe state is off.
+    #
+    # send_routine_reply is ALREADY in the scope claim of every level-1/level-2 creator's on-behalf
+    # token (CreatorToolScopes.SCOPE_LEVEL_1 — scope is minted as a ceiling and requireScope is bare
+    # string membership), so without this flag the capability would go live on the code deploy that
+    # first adds the route. The route does not exist yet; CreatorSendGateTest fails if one appears
+    # without being gated here.
+    creator-send-enabled: ${MEERA_CREATOR_SEND_ENABLED:false}
     stream:
       # Kabir G2/G6 — distinct signing key from the user access/refresh JWTs. ≤60s TTL scoped
       # per Meera turn (aud=meera-stream); Python verifies this, never the user's access JWT.
@@ -255,6 +296,16 @@ influora:
   # SecretsStartupValidator check its siblings already have.
   creator-copilot-ai:
     base-url: ${CREATOR_COPILOT_AI_BASE_URL:http://localhost:8000}
+    # Both timeouts are stated here rather than left to CreatorSuggestionAiProperties' Java field
+    # defaults, which is what they were until now. They are the whole latency budget of a creator's
+    # brief paste (MeeraBriefAiClient sets connect on the HttpClient and request on the HttpRequest),
+    # and a number that exists only as a field default cannot be turned down during an incident
+    # without a redeploy. Same values as the field defaults, so this changes nothing today; it makes
+    # them operable. CreatorBriefService no longer holds a JDBC connection across this call, so the
+    # cost of a hung provider is the paste and not the pool -- but 5+15 is still 20 seconds a creator
+    # waits, so treat it as a ceiling to tighten, not a target.
+    connect-timeout-seconds: ${CREATOR_COPILOT_AI_CONNECT_TIMEOUT_SECONDS:5}
+    request-timeout-seconds: ${CREATOR_COPILOT_AI_REQUEST_TIMEOUT_SECONDS:15}
   internal-service-token:
     # Kabir 2.2/2.4, MF-2, LB-2 — distinct secret from every other key (JWT/stream/R2/Razorpay).
     # Verifies X-Meera-Service-Token (aud=influora-internal, iss=meera-python, exp<=60s) and signs

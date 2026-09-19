@@ -125,10 +125,21 @@ function currencySymbolFor(code: string): string {
 type Draft = CreatorAgentPreferencesUpdate;
 
 function toDraft(prefs: CreatorAgentPreferences): Draft {
-  // Both consent_accepted and consent_version are server-owned (recordConsent only, never this
-  // PUT) — UpdatePreferencesRequest on the Java side has no field for either, so neither belongs
-  // in the draft/payload.
-  const { consent_accepted: _consent_accepted, consent_version: _consent_version, ...rest } = prefs;
+  // Five fields are server-owned and must never round-trip into the PUT payload:
+  // consent_accepted/consent_version (recordConsent only) and, as of T-MEERA-CREATOR-PHASE-B
+  // §8.1, negotiation_holdout/approved_draft_count/level_up_eligible (server-computed —
+  // MeeraSettingsSection.ratecard.test.tsx asserts the PUT never carries negotiation_holdout).
+  // UpdatePreferencesRequest on the Java side has no field for any of the five, so none belongs
+  // in the draft/payload. rate_card_shareable/rate_card are creator-editable and flow through via
+  // ...rest untouched.
+  const {
+    consent_accepted: _consent_accepted,
+    consent_version: _consent_version,
+    negotiation_holdout: _negotiation_holdout,
+    approved_draft_count: _approved_draft_count,
+    level_up_eligible: _level_up_eligible,
+    ...rest
+  } = prefs;
   return rest;
 }
 

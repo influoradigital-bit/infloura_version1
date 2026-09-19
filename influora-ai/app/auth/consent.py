@@ -11,10 +11,25 @@ Python gate is defence in depth -- but "defence in depth" that exists on one
 of two routes is a hole, not a layer. Lifting the helpers here means a third
 creator route cannot forget them by not importing chat.py.
 
-Fail-closed contract (unchanged from chat.py): only a POSITIVE signal from
-Spring's CREATOR context -- `consent_accepted: true` or a non-empty
-`consent_accepted_at` -- counts as consent. A missing key, a null, a string
-"true", a fetch failure, or no context at all all read as NOT consented.
+Fail-closed contract: the ONLY signal that counts as consent is Spring's
+version-aware boolean, `consent_accepted is True`. A missing key, a null, a
+string "true", a non-empty `consent_accepted_at` on its own, a fetch failure,
+or no context at all all read as NOT consented.
+
+K-4 (Kabir, KABIR-CONSENT-0917.md, LOW -- last call Priya): this used to also
+accept a non-empty `consent_accepted_at` as consent, whatever
+`consent_accepted` said. Spring's `MeeraContextService` computes
+`consent_accepted` itself off the version-aware
+`CreatorAgentPreferencesService#isConsentAccepted` (which compares the stored
+version against `CreatorAgentPreferences.CURRENT_CONSENT_VERSION`), so
+`consent_accepted_at` is a raw, UN-version-checked timestamp -- a creator who
+consented to v1 has a non-empty `consent_accepted_at` forever, even after a
+v2 bump changes what she agreed to. Not exploitable today only because the
+creator context Spring sends never carries that key (only
+`CreatorAgentDtos`'s PREFERENCES response does, a different DTO) -- the day
+someone adds it to the context for an unrelated reason, every v1 creator
+would silently pass the Python chat/voice gates post-bump. Trust the single
+version-aware boolean only.
 """
 
 from __future__ import annotations
@@ -30,16 +45,14 @@ CONSENT_REQUIRED_ACTION = "show_consent_screen"
 
 
 def consent_accepted(creator_context: dict[str, Any] | None) -> bool:
-    """A6: True only when Spring's creator context POSITIVELY says consent was
-    recorded -- `consent_accepted: true` or a non-empty `consent_accepted_at`.
-    A missing key, a null, or a fetch failure all read as NOT consented (DPDP
-    consent fails closed, never open)."""
+    """A6 / K-4: True only when Spring's creator context carries the
+    version-aware `consent_accepted: true` boolean. A missing key, a null, a
+    non-bool, `consent_accepted_at` alone (see the module docstring), or a
+    fetch failure all read as NOT consented (DPDP consent fails closed,
+    never open)."""
     if not isinstance(creator_context, dict):
         return False
-    if creator_context.get("consent_accepted") is True:
-        return True
-    accepted_at = creator_context.get("consent_accepted_at")
-    return isinstance(accepted_at, str) and bool(accepted_at.strip())
+    return creator_context.get("consent_accepted") is True
 
 
 def consent_required_payload() -> dict[str, Any]:

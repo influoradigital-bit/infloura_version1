@@ -28,6 +28,11 @@ from typing import Any
 
 import pytest
 
+from app.tools.creator_schemas import (
+    CREATOR_TOOL_NAMES,
+    all_creator_tool_schemas,
+    get_creator_tool_schemas,
+)
 from app.tools.schemas import get_tool_schemas
 
 # Anthropic tool input_schema is a restricted JSON-Schema subset. These
@@ -57,8 +62,22 @@ def _iter_schema_nodes(node: Any, path: str):
 
 
 def _all_tool_schemas():
-    """Every tool exactly as offered to the model, labelled by name."""
-    return [(t.get("name", "<unnamed>"), t) for t in get_tool_schemas()]
+    """Every tool exactly as offered to the model, labelled by name — BRAND
+    and CREATOR alike.
+
+    The creator half (SPEC.md §7.1) uses `all_creator_tool_schemas()`
+    deliberately: parametrize arguments are evaluated at COLLECTION time, so a
+    flag- or context-dependent list here would silently shrink the guard to
+    whatever happened to be enabled in the test process. That helper is the one
+    explicitly-permissive read of the module, which is exactly what this guard
+    has to cover — a combinator in a creator schema 400s the WHOLE tools
+    payload, brand turns included. It is also the ONLY thing this call is for:
+    `get_creator_tool_schemas` is the live gate and now returns nothing when
+    handed no list.
+    """
+    return [(t.get("name", "<unnamed>"), t) for t in get_tool_schemas()] + [
+        (t.get("name", "<unnamed>"), t) for t in all_creator_tool_schemas()
+    ]
 
 
 @pytest.mark.parametrize("name,tool", _all_tool_schemas())
@@ -138,3 +157,70 @@ def test_get_tool_schemas_excludes_money_tools():
     names = {t["name"] for t in get_tool_schemas()}
     assert "request_payment" not in names
     assert "confirm_launch" not in names
+
+
+# ---------------------------------------------------------------------------
+# Creator tools (SPEC.md §7.1). The three parametrised guards above already
+# cover every schema in `creator_schemas.py` through `_all_tool_schemas()`;
+# these pin that the coverage set is the WHOLE module and cannot quietly
+# shrink to a subset.
+# ---------------------------------------------------------------------------
+
+
+def test_the_combinator_guard_covers_every_creator_schema():
+    """The parametrised guards must run over all six B0 creator tools, not a
+    filtered subset. If `all_creator_tool_schemas()` ever stopped meaning
+    "everything", a creator schema could carry an anyOf into production with
+    the CI guard still green."""
+    covered = {name for name, _ in _all_tool_schemas()}
+    for creator_tool in CREATOR_TOOL_NAMES:
+        assert creator_tool in covered, f"creator tool '{creator_tool}' is not schema-validated"
+    assert [t["name"] for t in all_creator_tool_schemas()] == list(CREATOR_TOOL_NAMES)
+
+
+def test_creator_schemas_are_not_offered_on_brand_turns():
+    """The two sets stay disjoint: a brand turn must never be handed a creator
+    tool, and the brand `TOOL_NAMES` structures (diffed by CI against Java's
+    MeeraToolName) must never grow a creator name."""
+    brand = {t["name"] for t in get_tool_schemas()}
+    assert brand.isdisjoint(set(CREATOR_TOOL_NAMES))
+
+
+def test_get_creator_tool_schemas_filters_to_the_enabled_list():
+    """`tools_enabled` is the live gate: empty means Phase-A behaviour, and an
+    unknown name is ignored rather than raising (deploy-order skew between
+    Spring and this service must not take a creator's chat down)."""
+    assert get_creator_tool_schemas([]) == []
+    only_deals = get_creator_tool_schemas(["get_my_deals"])
+    assert [t["name"] for t in only_deals] == ["get_my_deals"]
+    assert get_creator_tool_schemas(["get_my_deals", "not_a_tool"]) == only_deals
+
+
+def test_absent_tools_enabled_offers_no_tool_rather_than_every_tool():
+    """The fail-open shape, pinned in the filter itself and not just in its
+    one caller.
+
+    `None` meant "every schema in the module", so any call site that had no
+    list — an older Spring, a context fetch that failed open, a new caller —
+    got all six creator tools by omission. `assemble_prompt` normalising to
+    `[]` first made that invisible, not absent. Absent must mean nothing;
+    "everything" now has to be asked for by name."""
+    assert get_creator_tool_schemas(None) == []
+    assert get_creator_tool_schemas([]) == []
+    # ...and the permissive read still exists, under a name that says so.
+    assert [t["name"] for t in all_creator_tool_schemas()] == list(CREATOR_TOOL_NAMES)
+
+
+def test_deal_terms_description_separates_reporting_from_proposing():
+    """`deal_terms`' only consumer is `draft_reply`, whose COUNTER case exists
+    to propose DIFFERENT terms. A description that says only "exactly as the
+    brand stated them / never invent a term" makes a counter meant to cut a
+    perpetual usage grant faithfully re-send the brand's perpetual grant."""
+    draft_reply = next(t for t in all_creator_tool_schemas() if t["name"] == "draft_reply")
+    description = draft_reply["input_schema"]["properties"]["deal_terms"]["description"]
+    assert "COUNTER" in description
+    assert "REPLY" in description and "DECLINE" in description
+    # The reporting rail survives for the cases where it is the right one...
+    assert "exactly as the brand stated it" in description
+    # ...and the proposing case is explicitly allowed to differ.
+    assert "differ from the brand's ask" in description

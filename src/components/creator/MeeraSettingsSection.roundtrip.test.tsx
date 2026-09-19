@@ -60,6 +60,11 @@ const basePrefs: CreatorAgentPreferences = {
   agency_name: null,
   consent_accepted: true,
   consent_version: 'v1',
+  rate_card_shareable: false,
+  rate_card: null,
+  negotiation_holdout: false,
+  approved_draft_count: 0,
+  level_up_eligible: false,
 };
 
 describe('MeeraSettingsSection — currency & timezone round-trip', () => {

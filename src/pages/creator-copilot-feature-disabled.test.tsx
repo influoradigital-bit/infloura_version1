@@ -78,6 +78,11 @@ const ENABLED_PREFS: CreatorAgentPreferences = {
   agency_name: null,
   consent_accepted: false,
   consent_version: 'v1',
+  rate_card_shareable: false,
+  rate_card: null,
+  negotiation_holdout: false,
+  approved_draft_count: 0,
+  level_up_eligible: false,
 };
 
 function renderPage() {

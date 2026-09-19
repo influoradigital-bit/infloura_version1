@@ -34,7 +34,7 @@ const SCENES: Scene[] = [
             { label: 'Reel floor', value: '₹3,000' },
             { label: 'Story set floor', value: '₹1,500' },
             { label: 'भाषा', value: 'मराठी' },
-            { label: 'Level 0', value: 'मी लिहिते, तुम्ही पाठवता' },
+            { label: 'Level 0', value: 'मी सांगते, निर्णय तुमचा' },
           ],
         },
         hold: 80,
@@ -93,33 +93,17 @@ const SCENES: Scene[] = [
         },
         hold: 120,
       },
-      { kind: 'meera', text: 'मी reply draft करते आहे. पाठवण्याआधी तुम्ही नक्की वाचा.' },
+      { kind: 'meera', text: 'हे माझं वाचन. Brand ला काय सांगायचं, हे तुम्ही ठरवा.' },
     ],
     tail: 24,
   },
   {
     id: 'send',
-    chapter: 'तुम्ही approve करता · तेव्हाच जातं',
+    chapter: 'पैसे secure · मग काम सुरू',
     header: 'Meera',
-    headerSub: 'Draft तयार',
+    headerSub: 'पैसे secure झाले',
     surface: 'chat',
     beats: [
-      {
-        kind: 'card',
-        card: {
-          type: 'draft',
-          to: 'Brand ला reply',
-          body: 'Hi! Thanks for reaching out 🙌 For 1 reel with 60-day exclusivity and ad usage, my rate is ₹4,300. The #ad label stays: it is required. I work through Influora Secure Payments: funds are secured before I start, contract and invoice come automatically. Link below to confirm.',
-          footer: 'Drafted with Meera · approved by Riya',
-          actions: ['Approve', 'Edit', 'Discard'],
-        },
-        hold: 130,
-      },
-      { kind: 'tap', label: 'Approve', hold: 50 },
-      {
-        kind: 'meera',
-        text: 'पाठवलं. Brand ने link उघडून funds secure केले, की deal पक्की.',
-      },
       { kind: 'system', text: '२ दिवसांनी', hold: 40 },
       {
         kind: 'card',
@@ -146,7 +130,7 @@ const SCENES: Scene[] = [
     beats: [
       {
         kind: 'wa',
-        text: 'तुमचा reel live आहे. चोवीस तासांचा snapshot proof म्हणून save केला आहे, आणि बहात्तर तासांचा reach मी brand ला पाठवेन.',
+        text: 'तुमचा reel live आहे. चोवीस तासांचा snapshot proof म्हणून save केला आहे.',
       },
       {
         kind: 'card',
@@ -225,7 +209,7 @@ const SCENES: Scene[] = [
   },
   {
     id: 'find',
-    chapter: 'नवीन brands शोधणं · यादी Meera ची, शब्द तुमचे',
+    chapter: 'नवीन brands शोधणं · यादी Meera ची, निर्णय तुमचा',
     header: 'Meera',
     headerSub: 'Brands शोधते आहे…',
     surface: 'chat',
@@ -246,38 +230,6 @@ const SCENES: Scene[] = [
         },
         hold: 110,
       },
-      {
-        kind: 'meera',
-        text: 'तुमच्या शब्दांत दोन ओळी लिहा: हा brand का, आणि तुम्ही का. त्याशिवाय मी काहीच पाठवू शकत नाही.',
-      },
-      {
-        kind: 'card',
-        card: {
-          type: 'hook',
-          title: 'तुमच्या दोन ओळी',
-          sub: 'Brand ला या ओळी तुमच्या वाटतील, Meera च्या नाही',
-          placeholder: 'हा brand का, तुम्ही का…',
-          value: 'तुमचा rain-proof serum चा Reel पुण्याच्या पावसात अगदी योग्य होता. मी रोज १८ हजार लोकांना skincare समजावते.',
-        },
-        hold: 100,
-      },
-      {
-        kind: 'card',
-        card: {
-          type: 'draft',
-          to: 'Nimbu Naturals · email',
-          subject: 'तुमच्या monsoon launch साठी एक कल्पना',
-          body: 'Hi! तुमचा rain-proof serum चा Reel पुण्याच्या पावसात अगदी योग्य होता… मी रिया, skincare creator, 7.4K followers. एक छोटी कल्पना share करायची आहे.',
-          footer: 'सध्याचा reply rate: ४ पैकी १ · cold email मध्ये हे normal आहे',
-          actions: ['Approve', 'Edit'],
-        },
-        hold: 110,
-      },
-      { kind: 'tap', label: 'Approve', hold: 44 },
-      {
-        kind: 'meera',
-        text: 'पाठवलं. Reply आला तर इथेच सांगेन. नाही आला तरी ते normal आहे.',
-      },
     ],
     tail: 30,
   },
@@ -292,14 +244,14 @@ export const MR_LOCALE: Locale = {
     eyebrow: 'लवकरच येत आहे',
     title: 'Meera',
     sub: 'तुमची स्वतःची PR manager. तुमच्या बाजूने.',
-    line: 'निर्णय तुमचा. मी लिहिते, आणि लक्षात ठेवते.',
-    say: 'तुमची स्वतःची PR manager, तुमच्या बाजूने. निर्णय तुमचा. मी लिहिते, आणि लक्षात ठेवते.',
+    line: 'मी वाचते, आणि लक्षात ठेवते.',
+    say: 'तुमची स्वतःची PR manager, तुमच्या बाजूने. मी वाचते, आणि लक्षात ठेवते.',
   },
   outro: {
     title: 'Meera for Creators',
     sub: 'सध्या तयार होते आहे. लवकरच येत आहे.',
-    bullets: ['Brief paste करा, थेट उत्तर मिळवा', 'तुम्ही approve करता, तेव्हाच जातं', 'पैसे, proof, आणि दर सोमवारी एक note'],
+    bullets: ['Brief paste करा, थेट उत्तर मिळवा', 'तुमचा floor, तुमचा निर्णय', 'पैसे, proof, आणि दर सोमवारी एक note'],
     cta: 'Waitlist मध्ये नाव नोंदवा',
-    say: 'Meera for Creators. सध्या तयार होते आहे, लवकरच येत आहे. Brief paste करा आणि थेट उत्तर मिळवा. तुम्ही approve करता, तेव्हाच जातं. पैसे, proof, आणि दर सोमवारी एक note.',
+    say: 'Meera for Creators. सध्या तयार होते आहे, लवकरच येत आहे. Brief paste करा आणि थेट उत्तर मिळवा. तुमचा floor, तुमचा निर्णय. पैसे, proof, आणि दर सोमवारी एक note.',
   },
 };

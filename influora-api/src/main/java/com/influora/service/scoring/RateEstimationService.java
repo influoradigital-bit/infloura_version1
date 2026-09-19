@@ -82,7 +82,7 @@ public class RateEstimationService {
         }
 
         long followers = metric.get().getFollowers();
-        String tier = determineTier(followers);
+        String tier = CreatorTiers.derive(followers);
         long[] baseRange = TIER_BASE_RATES.get(tier);
 
         // Start with base range
@@ -168,11 +168,8 @@ public class RateEstimationService {
                 factors);
     }
 
-    private String determineTier(long followers) {
-        if (followers >= 1_000_000) return "MEGA";
-        if (followers >= 500_000) return "MACRO";
-        if (followers >= 50_000) return "MID";
-        if (followers >= 10_000) return "MICRO";
-        return "NANO";
-    }
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.6, B0-11): `determineTier` moved to CreatorTiers.derive
+    // (same package, no import needed). It was byte-identical to the two other copies —
+    // MeeraContextService.deriveTier and CreatorAgentBaselineService.deriveTier — MEGA branch
+    // included, so no threshold "won" over another and estimate()'s output is unchanged.
 }

@@ -16,6 +16,7 @@ import com.influora.web.dto.deal.DealDtos.OkResponse;
 import com.influora.web.dto.deal.DealDtos.RejectRequest;
 import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
 import com.influora.web.dto.deliverable.CreatorDeliverableDtos.DeliverableListItem;
+import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
 import com.influora.web.dto.shipment.ShipmentDtos.ConfirmReceiptRequest;
 import com.influora.web.dto.shipment.ShipmentDtos.MarkShippedRequest;
 import com.influora.web.dto.shipment.ShipmentDtos.ShipmentResponse;
@@ -73,6 +74,19 @@ public class DealController {
     public ResponseEntity<ApiResponse<DealResponse>> get(
             @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
         return ResponseEntity.ok(ApiResponse.ok(dealService.get(principal, id)));
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;5.3, B4) — the deal's risk flags.
+     *
+     * <p>CREATOR principal only; a brand gets 403 {@code CREATOR_ONLY}. The gate lives in {@link
+     * DealService#risksForCreator} rather than here, next to the reason it exists (the flags quote
+     * the creator's own floors), so it cannot be bypassed by a second caller of the service.
+     */
+    @GetMapping("/{id}/risks")
+    public ResponseEntity<ApiResponse<CheckDealRisksResult>> risks(
+            @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
+        return ResponseEntity.ok(ApiResponse.ok(dealService.risksForCreator(principal, id)));
     }
 
     @PostMapping

@@ -217,7 +217,12 @@ jobs:
           # Wave 1c: the canonical snake_case wire keys for POST /internal/meera/context, read
           # straight off @JsonProperty("...") annotations in ContextResponse — this IS the
           # contract influora-ai/app/prompt/assembler.py (Wave 2) must read verbatim.
-          JAVA_CONTEXT_FIELDS=$(awk '/public record ContextResponse/,/\{\}\)/' \
+          #
+          # F-0763: the old range end pattern was the literal `{})`, which never occurs in this
+          # file (records close as `... String x) {}`), so the range ran to EOF and also
+          # swallowed CreatorContextResponse's fields. Bound on the START of the next record
+          # instead — CreatorContextResponse is guaranteed to follow ContextResponse in this file.
+          JAVA_CONTEXT_FIELDS=$(awk '/public record ContextResponse\(/{f=1} f&&/public record CreatorContextResponse\(/{exit} f' \
             src/main/java/com/influora/web/dto/meera/MeeraContextDtos.java \
             | grep -oP '@JsonProperty\("\K[a-z_]+(?="\))' \
             | jq -R -s -c 'split("\n")[:-1] | sort')

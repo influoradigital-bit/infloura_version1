@@ -85,6 +85,31 @@ public class OnBehalfTokenService {
             String turnId,
             String userId,
             UserType userType) {
+        return mint(workspaceId, conversationId, turnId, userId, userType, SCOPE_DEFAULT);
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.3) — the same mint with an explicit {@code scope}
+     * claim, for audiences whose tool set is not the fixed brand one.
+     *
+     * <p>A CREATOR turn's scope depends on that creator's approval level and whether she is agency-
+     * represented ({@link CreatorToolScopes#scopeFor}), so it cannot be a constant on this class the
+     * way {@link #SCOPE_DEFAULT} is. The five-argument overload above keeps its exact previous
+     * behaviour — {@link #SCOPE_DEFAULT}, unchanged — so every existing BRAND call site is
+     * untouched by this addition; this is a pure extraction of the claim that used to be hardcoded
+     * in the body below.
+     *
+     * <p>{@code scope} is minted, not validated: {@code OnBehalfAuthResolver#requireScope} asserts
+     * only that a tool being called appears in the claim, so a name here that has no route is inert.
+     * See {@link CreatorToolScopes}' class javadoc for why that is deliberate.
+     */
+    public String mint(
+            String workspaceId,
+            String conversationId,
+            String turnId,
+            String userId,
+            UserType userType,
+            String scope) {
         Instant now = Instant.now();
         Instant exp = now.plusSeconds(MAX_TTL_SECONDS);
         PrivateKey signingKey = jwksKeyService.signingKey();
@@ -102,7 +127,7 @@ public class OnBehalfTokenService {
                 .claim("userType", userType.name())
                 .claim("conversationId", conversationId)
                 .claim("turnId", turnId)
-                .claim("scope", SCOPE_DEFAULT)
+                .claim("scope", scope)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
                 .signWith(signingKey, Jwts.SIG.ES256)

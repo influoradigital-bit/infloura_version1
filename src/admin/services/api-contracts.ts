@@ -80,7 +80,8 @@ import type {
   AdminCustomEmailPreviewResponse,
   AdminCustomEmailSendRequest,
   AdminCustomEmailSendResponse,
-  CreatorAgentBaselines
+  CreatorAgentBaselines,
+  CreatorAgentRateCalibration
 } from '../types/admin.types';
 
 // ============================================
@@ -1543,4 +1544,17 @@ export const billingApi = {
 export const creatorAgentApi = {
   /** GET /creator-agent/baselines — read-only Phase A rollout metrics snapshot. */
   getBaselines: () => apiRequest<CreatorAgentBaselines>('/creator-agent/baselines'),
+
+  /**
+   * GET /creator-agent/rate-calibration — T-MEERA-CREATOR-PHASE-B (SPEC.md §14.1.g, B0-35).
+   *
+   * Per tier: the benchmark band the quote path actually prices from (including any yml
+   * override), what creators in that tier realised, and what Meera has quoted over 90 days.
+   * Read-only, bare DTO, admin JWT — the same shape and the same auth as `getBaselines`.
+   *
+   * `realised_median` is null wherever the tier's sample is under the backend's k-anonymity
+   * floor, which on day one is every tier. That is the expected reading, not a failure.
+   */
+  getRateCalibration: () =>
+    apiRequest<CreatorAgentRateCalibration>('/creator-agent/rate-calibration'),
 };
