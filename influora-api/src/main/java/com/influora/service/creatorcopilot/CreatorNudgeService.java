@@ -1494,102 +1494,83 @@ public class CreatorNudgeService {
                     // vertical stroke) and are likewise unambiguous ("dea+h toll", "dea7h toll").
                     // Source: wiki/decisions/2026-09-18-trend-headline-screening.md.
                     //
-                    // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 HIGH fix. '!' and '+'
-                    // stay in this table (the LETTER they fold to when they DO fold is still
-                    // unambiguous), but whether to fold them AT ALL is now context-dependent — see
-                    // PUNCTUATION_LETTER_LOOKALIKES and the flanking check in normalizeForMatching.
-                    // '7' does not get that treatment: an independent reviewer's probe found no
-                    // decorative/separator use of a bare digit '7' the way "Murder!"/"**Murder**"
-                    // use '!'/'*', so it stays unconditional.
-                    Map.entry((int) '!', (int) 'i'),
-                    Map.entry((int) '+', (int) 't'),
+                    // T-GOLIVE-0918-R2 REPAIR ROUND 2 (vikram · 2026-09-19) — HIGH fix. '!' and '+'
+                    // are REMOVED from this unconditional table. Repair round 3 tried to make them
+                    // context-dependent with a same-word-flank heuristic (PUNCTUATION_LETTER_LOOKALIKES
+                    // / isWordFlank, now deleted) that inspected only the single raw character on the
+                    // trailing side. That heuristic cannot be right in either direction at once: "k!lled"
+                    // and "murder!pune" both have a plain lowercase letter immediately after the mark,
+                    // so any rule keyed on "is the next raw character lowercase" either folds both
+                    // (regluing "murder"+"pune" into one token so "murder" never reaches its own token
+                    // end — an independent reviewer's probe found "murder!pune shocked",
+                    // "Suicide+note found", "riots*delhi on edge" and "Death+destruction in town" all
+                    // bypassing this way) or folds neither. It was also case-sensitive by construction
+                    // (checked Character.isLowerCase on the neighbour), which is why "K!LLED IN DELHI",
+                    // "M*RDER IN DELHI", "R*PE CASE" and "SU!C!DE NOTE FOUND" bypassed even though the
+                    // lowercase forms blocked. '7' keeps its unconditional fold (still no decorative/
+                    // separator use attested); '!'/'+'/'*' move to the SAME technique already used for
+                    // '1'/'|'/'0'/'@' above: both readings (folded to a letter, and left as the
+                    // separator/punctuation it is) are tried as separate normalization passes, decided
+                    // once per variant rather than guessed per character from local context — see
+                    // BANG_SIGN/PLUS_SIGN/ASTERISK and buildConfusableFoldVariants below. Because
+                    // neither reading depends on the character's case, this closes the all-caps gap in
+                    // the same change, with no new case-sensitive logic.
                     Map.entry((int) '7', (int) 't'));
 
     /**
-     * T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 HIGH fix. {@code '!'}, {@code '+'} and
-     * {@link #ASTERISK} are a FOURTH kind of ambiguity, distinct from all three above: each has an
-     * unambiguous letter reading (from {@link #CONFUSABLE_FOLD} / {@link #ASTERISK}'s vowel
-     * variants), but each is ALSO an ordinary piece of punctuation/decoration with no letter reading
-     * at all — exclamation-mark emphasis ("Murder!", "Riots!! Delhi on edge"), markdown-style
-     * emphasis ("**Murder** in Pune", "*Rape* case shocks city") and, for {@code '+'}, an ordinary
-     * separator (a title joiner like "Rio+ Carnival").
+     * T-GOLIVE-0918-R2 REPAIR ROUND 2 (vikram · 2026-09-19) — HIGH fix, replaces the deleted
+     * {@code PUNCTUATION_LETTER_LOOKALIKES}/{@code isWordFlank} context-flank mechanism from repair
+     * rounds 3 and 4.
      *
-     * <p>An independent reviewer's probe found the OLD unconditional fold ('!'/'+' always folded,
-     * asterisk always one of 5 vowels, in every one of {@link #CONFUSABLE_FOLD_VARIANTS}'s 25
-     * variants shipped by repair round 2) was a HIGH regression: with no variant left where these
-     * three stay separators, folding one to a letter GLUES it into the surrounding token exactly the
-     * way an unconditionally-folded {@code '@'} would (see {@link #AT_SIGN}'s javadoc) — "Murder!"
-     * became "murderi", whose token never ends at "murder", so {@code matchesTerm}'s end anchor never
-     * fires. "Stampede!", "BREAKING: Suicide!", "10 killed!", "Riots!! Delhi on edge", "Riots* in
-     * Delhi", "**Murder** in Pune" and "*Rape* case shocks city" all bypassed the same way.
+     * <p><b>Why the flank heuristic could never work.</b> Both rounds tried to decide, from the single
+     * raw character trailing {@code '!'}/{@code '+'}/{@code '*'}, whether the mark was genuine mid-word
+     * leetspeak ("dea+h", "k!lled" — should fold) or a separator/emphasis mark between two different
+     * words ("Murder!Pune", "Suicide+Note" — must NOT fold, or the two words glue into one token and
+     * neither's end anchor ever fires). Round 4 narrowed the trailing flank to "next raw char is a
+     * plain lowercase letter", which fixed the case where the second word is capitalised — but
+     * "murder!pune shocked", "Suicide+note found", "riots*delhi on edge" and "Death+destruction in
+     * town" all have an ORDINARY LOWERCASE word after the mark too, which is locally indistinguishable
+     * from "dea+h"'s trailing "h": both are "punctuation immediately followed by a lowercase letter".
+     * No rule keyed on the single trailing character can separate these two cases, because the actual
+     * distinguishing fact — whether the run before the mark is already a complete word on its own — is
+     * not a property of one neighbouring character. The same heuristic was also inherently
+     * case-sensitive (it special-cased {@code Character.isLowerCase}), which is why "K!LLED IN DELHI",
+     * "M*RDER IN DELHI", "R*PE CASE" and "SU!C!DE NOTE FOUND" bypassed even though the lowercase forms
+     * blocked — the fold never even got the chance to fire before an uppercase neighbour.
      *
-     * <p><b>Why this is NOT solved the way {@code '@'}/{@code '1'}/{@code '|'} are solved</b> (a
-     * variant where the character folds, and a variant where it does not, unioned by "any variant
-     * matches"). That technique only ADDS matches as more variants are tried — it can fix a bypass by
-     * adding a folding variant, but it can never fix an OVER-block, because the non-folding variant
-     * does not un-match what the folding variant already matched. Round 1's own LOW defect (never
-     * closed) already showed the cost on {@code '+'}: "Rio+ Carnival looks" was OVERBLOCK [COMMUNAL]
-     * because the unconditional '+'->'t' fold turned "rio+" into "riot" regardless of what came
-     * after the '+' — trying a separator-reading variant ALONGSIDE the folding one would not have
-     * stopped the folding variant from still matching.
+     * <p><b>The actual fix: stop guessing from local context and try both readings</b>, the same
+     * technique {@link #AT_SIGN} and {@link #AMBIGUOUS_I_OR_L_CHARS} already use for exactly this kind
+     * of "no single correct static choice" ambiguity. One {@link #CONFUSABLE_FOLD_VARIANTS} pass folds
+     * {@code '!'} to {@code 'i'}/{@code '+'} to {@code 't'}/{@code '*'} to a vowel; a second pass
+     * leaves the mark as the punctuation it is, which is not a letter, so it falls into the ordinary
+     * token-ending branch. A headline is unsafe if ANY variant matches (see {@link
+     * #firstUnsafeTopic(String)}), so:
+     * <ul>
+     *   <li>"dea+h toll" blocks via the FOLDING variant ("+"-&gt;"t" completes "death").
+     *   <li>"murder!pune shocked"/"Suicide+note found"/"riots*delhi on edge"/"Death+destruction in
+     *       town" block via the SEPARATOR variant — the mark ends the token there regardless of what
+     *       follows, so "murder"/"suicide"/"riots"/"death" reach their own token end untouched.
+     *   <li>"Rio+ Carnival"/"Rio+Carnival"/"#Rio+Carnival" stay quotable in BOTH variants: the
+     *       separator variant never glues "rio" to "carnival" at all, and the folding variant produces
+     *       one token "riotcarnival" whose token-END lands after "carnival", not after "riot" — so
+     *       {@code containsTerm}'s end anchor never lands on bare "riot" either way (see {@link
+     *       #matchesTerm}'s own end-anchor discipline).
+     *   <li>Because neither reading is gated on the character's case, "K!LLED IN DELHI"/"M*RDER IN
+     *       DELHI"/"R*PE CASE"/"SU!C!DE NOTE FOUND" now fold exactly like their lowercase forms — see
+     *       {@code previousAppendedWasPunctuationFold} in {@link #normalizeForMatching} for the one
+     *       extra piece this needs: an all-caps run must not itself be split by the ordinary
+     *       camelCase-boundary rule (rule 5) reacting to the LOWERCASE letter a fold like {@code
+     *       '!'->'i'} produces in the middle of it.
+     * </ul>
      *
-     * <p><b>The actual fix: make folding CONTEXT-SENSITIVE, decided once per character, not a second
-     * per-variant dimension.</b> {@link #normalizeForMatching(String, Map)} only consults the fold
-     * table for one of these three characters when it sits BETWEEN two letter-or-digit characters
-     * (checked on the raw, pre-fold neighbours) — i.e. genuinely mid-word, the only place real
-     * leetspeak substitution ("dea+h", "k!lled", "m*rder") is ever attested. Flanked by anything
-     * else — start/end of string, whitespace, another punctuation mark, a second asterisk — the
-     * character is left exactly as-is, which is not a letter, so it falls through to the same
-     * token-ending branch every other separator does. This is a strictly BETTER fix than "add a
-     * separator variant": it removes the bypass (an unflanked '!'/'*' now always ends the token) AND
-     * the "Rio+ Carnival" over-block (an unflanked '+' is never even offered to the fold table) in
-     * one change, with no growth in {@link #CONFUSABLE_FOLD_VARIANTS}'s size. "m*rder"/"r*pe"/
-     * "s*icide"/"k!lled"/"su!c!de"/"dea+h toll" are all still mid-word and still fold exactly as
-     * before.
+     * <p>This is strictly simpler than the deleted mechanism, not just more correct: {@link
+     * #normalizeForMatching(String, Map)} needs no special-cased branch for these three characters at
+     * all any more — they are looked up in the per-variant fold map exactly like every other character,
+     * the same one line of code that already handles {@link #AT_SIGN}.
      */
-    // NOTE: uses the '*' literal rather than the ASTERISK constant below to avoid a forward
-    // reference — ASTERISK is declared later in the file (grouped with its own javadoc) but both
-    // name the same code point.
-    private static final Set<Integer> PUNCTUATION_LETTER_LOOKALIKES =
-            Set.of((int) '!', (int) '+', (int) '*');
+    private static final int BANG_SIGN = '!';
 
-    /**
-     * True when the raw (pre-lowercase, pre-fold) code point immediately after a {@link
-     * #PUNCTUATION_LETTER_LOOKALIKES} character is itself a plain LOWERCASE letter — i.e. that side
-     * is genuinely "mid-word" (continuing the SAME word). <b>Deliberately does NOT also treat
-     * another lookalike as a letter-ish neighbour</b> (e.g. the second '!' in "Riots!!"): doing so
-     * would make a doubled punctuation mark used as pure emphasis/separator ("Riots!! Delhi on
-     * edge", "**Murder**") look "mid-word" on account of the OTHER punctuation mark sitting next to
-     * it, reintroducing exactly the bypass this method exists to close. Combined with the caller's
-     * {@code inToken} check for the flank BEFORE the character, both sides must indicate "inside one
-     * word" for a fold to be offered at all.
-     *
-     * <p><b>T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 HIGH fix.</b> This used to accept
-     * ANY letter-or-digit on the trailing side, uppercase included, which is what let a decorative
-     * title-joiner or emphasis mark between two DIFFERENT capitalised words look "mid-word" purely
-     * because both neighbours happen to be alphanumeric: an independent reviewer's probe found
-     * "Murder!Pune shocked", "Riots!Delhi on edge", "Murder!Delhi shocked", "Suicide!2024 report",
-     * "Suicide+Note found", "Stampede+Chaos at station", "Death+Destruction" and "Murder*Delhi" all
-     * bypassing 857e954/cf2f33c — the fold GLUED the two sides into one token ("murderipune"), so
-     * the term's own end anchor never landed on "murder". Genuine mid-word leetspeak ("dea+h",
-     * "k!lled", "m*rder", "su!c!de") is, in every attested real-world use, followed by a LOWERCASE
-     * letter continuing the same word — never by an uppercase letter (which signals a fresh
-     * Title-Case/ALL-CAPS word starting right there) and never by a digit (a digit-suffixed hashtag
-     * like "Suicide!2024" is exactly the pattern rule 5's digitBoundary exists to split on, which
-     * folding would defeat by consuming the '!'/'+'/'*' into a letter before the digit is ever
-     * seen). Restricting the trailing flank to a plain lowercase letter closes the bypass — an
-     * unflanked '!'/'+'/'*' now falls through to the ordinary token-ending branch below, so "Murder"
-     * / "Suicide" / "Stampede" / "Death" reach their OWN token end and match directly — with no
-     * variant-table growth and no re-adding the round-3 "Rio+ Carnival" over-block (see this
-     * method's own return type: a trailing digit is excluded the same way an uppercase letter is,
-     * which ALSO closes the still-open "#Rio+Carnival"/"Rio+Carnival looks" no-space regression:
-     * '+' followed by the capital 'C' of "Carnival" is no longer treated as mid-word either). Every
-     * existing probe that needs the fold ("dea+h toll", "k!lled", "su!c!de", "m*rder in Delhi",
-     * "r*pe case", "s*icide note") is followed by a lowercase letter and is unaffected.
-     */
-    private static boolean isWordFlank(int neighbour) {
-        return Character.isLetter(neighbour) && Character.isLowerCase(neighbour);
-    }
+    private static final int PLUS_SIGN = '+';
 
     /**
      * T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 fix for the still-open "R1U BYPASS
@@ -1635,10 +1616,34 @@ public class CreatorNudgeService {
      * — all five vowel readings are tried as separate normalization passes; see {@link
      * #CONFUSABLE_FOLD_VARIANTS}. Restricting the wildcard to vowels (rather than all 26 letters)
      * keeps the combinatorial cost small and matches the actual observed evasion pattern.
+     *
+     * <p>T-GOLIVE-0918-R2 REPAIR ROUND 2 (vikram · 2026-09-19) — HIGH fix. A vowel reading is no
+     * longer forced unconditionally: {@code null} is now a sixth reading, meaning "leave '*' as
+     * punctuation, do not fold it at all" (see {@link #BANG_SIGN}'s javadoc for why the old
+     * context-flank alternative could not work). {@code null} is grouped into the SAME dimension as
+     * {@link #BANG_SIGN}/{@link #PLUS_SIGN} rather than each getting its own independent boolean —
+     * see {@link #ASTERISK_READINGS} for why.
      */
     private static final int ASTERISK = '*';
 
     private static final char[] VOWEL_READINGS = {'a', 'e', 'i', 'o', 'u'};
+
+    /**
+     * T-GOLIVE-0918-R2 REPAIR ROUND 2 (vikram · 2026-09-19). {@link #BANG_SIGN}, {@link #PLUS_SIGN}
+     * and {@link #ASTERISK} are combined into ONE variant dimension rather than three independent
+     * booleans. Every probe on record needs either ALL THREE resolved to a letter in the same pass
+     * ("dea+h toll", "k!lled", "m*rder in Delhi" — each a single mark genuinely mid-word) or NONE of
+     * them ("Murder!Pune", "Suicide+Note", "Rio+ Carnival" — the mark is a separator/emphasis mark
+     * elsewhere in the same headline); no probe needs '!' folded while '+' stays a separator in the
+     * SAME headline. Six combinations — {@code null} (fold none of the three) plus one per vowel
+     * (fold all three, '*' reading as that vowel) — cover every listed probe with no loss of
+     * coverage, instead of the 2×2×6 = 24 a fully independent treatment would need. If a future probe
+     * demonstrates a headline that genuinely needs one of the three folded and another not in the
+     * SAME pass, split this back into independent booleans then — until one does, the smaller table
+     * is preferred (see {@link #CONFUSABLE_FOLD_VARIANTS}'s own javadoc on why even the larger table
+     * would still not be a performance concern).
+     */
+    private static final Character[] ASTERISK_READINGS = {'a', 'e', 'i', 'o', 'u', null};
 
     /**
      * Digits that {@link #CONFUSABLE_FOLD} (plus, for '0', the per-variant {@link
@@ -1660,16 +1665,18 @@ public class CreatorNudgeService {
      * Every confusable-fold reading {@link #firstUnsafeTopic(String)} must try. {@link
      * #CONFUSABLE_FOLD} above holds every UNAMBIGUOUS substitution; this builds the 2 ('1'/'|' -&gt;
      * i, or -&gt; l) &times; 2 ('0' -&gt; o, or -&gt; u, T-GOLIVE-0918-R3) &times; 2 ('@' folded, or
-     * left as a separator) &times; 5 ('*' -&gt; each vowel, applied only when {@link #isWordFlank}
-     * says '*' is mid-word — see {@link #PUNCTUATION_LETTER_LOOKALIKES}) = 40 combinations on top of
-     * it (F-0857 repair round 1 shipped the first and third dimensions; T-GOLIVE-0918-R2 repair
-     * round 2 added the fourth; T-GOLIVE-0918-R3 repair round 3 added the second AND made the
-     * fourth — plus, independently of any dimension here, '!' and '+' — context-sensitive), plus 5
-     * more digit-literal variants (one per '*' vowel reading) where {@link #LETTER_FOLDED_DIGITS}
-     * are left unfolded so digit-boundary detection can see them — 45 variants total. A headline is
-     * unsafe if ANY variant's normalization matches — see {@link #firstUnsafeTopic(String)}. This
-     * many passes over a short trend headline is not a performance concern; this is not run
-     * per-suggestion (the 2026-09-18 decision moves it to ingest-time, one evaluation per trend).
+     * left as a separator) &times; 6 ({@link #ASTERISK_READINGS} — '!'/'+'/'*' all folded to a
+     * letter, '*' reading as one of 5 vowels, OR none of the three folded) = 48 combinations on top
+     * of it (F-0857 repair round 1 shipped the first and third dimensions; T-GOLIVE-0918-R2 repair
+     * round 2 added the fourth; T-GOLIVE-0918-R3 repair round 3 added the second; T-GOLIVE-0918-R2
+     * repair round 2 [2026-09-19] folded '!'/'+' into the fourth dimension, replacing the
+     * context-flank mechanism repair rounds 3-4 tried — see {@link #BANG_SIGN}'s javadoc), plus 5
+     * more digit-literal variants (one per '*' vowel reading, '!'/'+' left unfolded) where {@link
+     * #LETTER_FOLDED_DIGITS} are left unfolded so digit-boundary detection can see them — 53
+     * variants total. A headline is unsafe if ANY variant's normalization matches — see {@link
+     * #firstUnsafeTopic(String)}. This many passes over a short trend headline is not a performance
+     * concern; this is not run per-suggestion (the 2026-09-18 decision moves it to ingest-time, one
+     * evaluation per trend).
      */
     private static final List<Map<Integer, Integer>> CONFUSABLE_FOLD_VARIANTS =
             buildConfusableFoldVariants();
@@ -1681,7 +1688,11 @@ public class CreatorNudgeService {
             // reading, same technique as ilReading above. See AMBIGUOUS_O_OR_U_CHARS's javadoc.
             for (int zeroReading : new int[] {'o', 'u'}) {
                 for (boolean foldAt : new boolean[] {false, true}) {
-                    for (char vowel : VOWEL_READINGS) {
+                    // T-GOLIVE-0918-R2 REPAIR ROUND 2 (vikram · 2026-09-19) — see
+                    // ASTERISK_READINGS's javadoc for why '!'/'+'/'*' share this one loop instead of
+                    // three independent booleans. asteriskReading == null means "fold none of the
+                    // three"; any other value means "fold all three, '*' reads as this vowel".
+                    for (Character asteriskReading : ASTERISK_READINGS) {
                         Map<Integer, Integer> variant = new HashMap<>(CONFUSABLE_FOLD);
                         for (int ambiguous : AMBIGUOUS_I_OR_L_CHARS) {
                             variant.put(ambiguous, ilReading);
@@ -1692,7 +1703,11 @@ public class CreatorNudgeService {
                         if (foldAt) {
                             variant.put(AT_SIGN, (int) 'a');
                         }
-                        variant.put(ASTERISK, (int) vowel);
+                        if (asteriskReading != null) {
+                            variant.put(BANG_SIGN, (int) 'i');
+                            variant.put(PLUS_SIGN, (int) 't');
+                            variant.put(ASTERISK, (int) asteriskReading);
+                        }
                         variants.add(Collections.unmodifiableMap(variant));
                     }
                 }
@@ -2182,6 +2197,19 @@ public class CreatorNudgeService {
         // Devanagari, independent of case/digit-ness, so a Latin<->Devanagari script change is its
         // own boundary. See rule 5's scriptBoundary below.
         boolean previousAppendedWasDevanagari = false;
+        // T-GOLIVE-0918-R2 REPAIR ROUND 2 (vikram · 2026-09-19) — tracks whether the character just
+        // appended was produced by folding BANG_SIGN/PLUS_SIGN/ASTERISK to a letter, as opposed to a
+        // genuine letter typed by the source text. Such a fold is always lowercase (see
+        // buildConfusableFoldVariants) but carries NONE of the "this is really where a new,
+        // differently-cased word begins" signal a real lowercase letter carries — an all-caps run
+        // like "K!LLED" folds '!' to lowercase 'i' purely because that IS the unambiguous letter
+        // reading, not because the source text signalled a case change. Without this flag,
+        // camelBoundary below would misread the fold's lowercase-ness as a real case transition and
+        // split "K!LLED" into "ki"/"lled" right after it, the same way "DelhiRiots" splits into
+        // "Delhi"/"Riots" — which is exactly why "K!LLED IN DELHI"/"M*RDER IN DELHI"/"R*PE CASE"/
+        // "SU!C!DE NOTE FOUND" bypassed even after BANG_SIGN's fix removed the case-sensitive flank
+        // check. See camelBoundary's computation below.
+        boolean previousAppendedWasPunctuationFold = false;
 
         for (int i = 0; i < folded.length(); ) {
             int cp = folded.codePointAt(i);
@@ -2217,6 +2245,7 @@ public class CreatorNudgeService {
                 // T-GOLIVE-0918-R4 — a combining mark attached to a Devanagari base letter is
                 // itself Devanagari; the token it extends stays Devanagari for scriptBoundary's sake.
                 previousAppendedWasDevanagari = true;
+                previousAppendedWasPunctuationFold = false;
                 continue;
             }
 
@@ -2236,18 +2265,34 @@ public class CreatorNudgeService {
             // the confusable-folded result) that signals a camelCase/hashtag boundary.
             boolean isUpperBeforeFold = Character.isUpperCase(cp);
             int lowered = Character.toLowerCase(cp);
-            int normalizedCp;
-            // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 HIGH fix. See
-            // PUNCTUATION_LETTER_LOOKALIKES's javadoc: '!'/'+'/'*' only consult the fold table when
-            // BOTH neighbours are ordinary letters/digits (genuinely mid-word); otherwise they are
-            // left as the punctuation they are, which falls into the token-ending branch below like
-            // any other separator.
-            if (PUNCTUATION_LETTER_LOOKALIKES.contains(lowered)
-                    && !(inToken && i < folded.length() && isWordFlank(folded.codePointAt(i)))) {
-                normalizedCp = lowered;
-            } else {
-                normalizedCp = confusableFold.getOrDefault(lowered, lowered);
-            }
+            // T-GOLIVE-0918-R2 REPAIR ROUND 2 (vikram · 2026-09-19) — HIGH fix. BANG_SIGN/PLUS_SIGN/
+            // ASTERISK now consult the per-variant fold table like every other character (no
+            // case-sensitive flank decides WHICH letter they fold to — see BANG_SIGN's javadoc for
+            // why the round-3/4 case-sensitive mechanism could not be made correct in both
+            // directions). A minimal, case-INSENSITIVE gate is still required before even OFFERING
+            // the fold, independent of that: these three are also ordinary punctuation/decoration
+            // with no letter reading whenever they are not flanked by a letter-or-digit on BOTH
+            // sides (space, string-start/end, or another punctuation mark) — e.g. "Rio+ Carnival"
+            // (space after '+') and "**Murder**" (a second '*' has no letter/digit reading of its
+            // own). Folding an unflanked mark would glue a separator into whatever token happens to
+            // precede or follow it regardless of which variant is tried, exactly the round-1/round-3
+            // "Rio+ Carnival looks" OVERBLOCK [COMMUNAL] (unconditional '+'->'t' turned "rio+" into
+            // "riot" with nothing after the '+' to stop it). Unlike the deleted isWordFlank, this
+            // gate does NOT look at the neighbour's case or digit-ness — only whether it is a letter
+            // or digit AT ALL — so it does not reintroduce the case-sensitivity or the
+            // lowercase-neighbour ambiguity that made the deleted mechanism unfixable; the actual
+            // fold-or-not DECISION for a flanked mark is left entirely to CONFUSABLE_FOLD_VARIANTS
+            // (see ASTERISK_READINGS), which is what correctly resolves "murder!pune shocked" (via
+            // the variant that leaves '!' unfolded, so "murder" reaches its own token end) alongside
+            // "dea+h toll" and "K!LLED IN DELHI" (via the variant that folds it).
+            boolean isPunctuationLookalike = lowered == BANG_SIGN || lowered == PLUS_SIGN || lowered == ASTERISK;
+            boolean flankedByLetterOrDigit =
+                    inToken && i < folded.length() && Character.isLetterOrDigit(folded.codePointAt(i));
+            int normalizedCp =
+                    (isPunctuationLookalike && !flankedByLetterOrDigit)
+                            ? lowered
+                            : confusableFold.getOrDefault(lowered, lowered);
+            boolean isPunctuationFold = isPunctuationLookalike && normalizedCp != lowered;
 
             if (Character.isLetterOrDigit(normalizedCp)) {
                 boolean isDigitNow = Character.isDigit(normalizedCp);
@@ -2261,7 +2306,16 @@ public class CreatorNudgeService {
                 // then only ever match the full "delhiriots", never "riots" alone. All-caps runs
                 // ("GANGRAPE") and all-lowercase runs ("delhiriots") carry no case-transition signal
                 // and are NOT split by this rule; that is an accepted, stated gap, not an oversight.
-                boolean camelBoundary = inToken && isUpperBeforeFold && previousAppendedWasLowerOrDigit;
+                // T-GOLIVE-0918-R2 REPAIR ROUND 2 (vikram · 2026-09-19) — added
+                // "&& !previousAppendedWasPunctuationFold": see that field's javadoc above. Without
+                // it, an all-caps run containing a folded '!'/'+'/'*' (e.g. "K!LLED" -> "k","i","L",
+                // "L",...) misread the fold's forced-lowercase 'i' as a genuine case transition and
+                // split right after it, defeating BANG_SIGN's fix for all-caps headlines.
+                boolean camelBoundary =
+                        inToken
+                                && isUpperBeforeFold
+                                && previousAppendedWasLowerOrDigit
+                                && !previousAppendedWasPunctuationFold;
                 // T-GOLIVE-0918-R2 (vikram, 2026-09-18) — a letter<->digit transition is ALSO a
                 // boundary, independent of case. Closes the digit-suffixed-hashtag gap an
                 // independent reviewer found in 49a0415 (#DelhiRiots2020, #Riots2024,
@@ -2297,12 +2351,14 @@ public class CreatorNudgeService {
                 previousAppendedWasLowerOrDigit = !isUpperBeforeFold;
                 previousAppendedWasDigit = isDigitNow;
                 previousAppendedWasDevanagari = isDevanagariNow;
+                previousAppendedWasPunctuationFold = isPunctuationFold;
             } else if (inToken) {
                 tokenEnd.set(compact.length() - 1);
                 inToken = false;
                 previousAppendedWasLowerOrDigit = false;
                 previousAppendedWasDigit = false;
                 previousAppendedWasDevanagari = false;
+                previousAppendedWasPunctuationFold = false;
             }
         }
         if (inToken) {

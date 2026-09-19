@@ -3149,6 +3149,122 @@ class CreatorNudgeServiceTest {
     }
 
     // ---------------------------------------------------------------------------------------
+    // T-GOLIVE-0918-R2 REPAIR ROUND 2 (vikram, 2026-09-19) — go-live round 2, lane COPILOT-FILTER.
+    // Kabir's HIGH finding on 115f698: the round-4 isWordFlank fix only covered a CAPITALISED
+    // neighbour after '!'/'+'/'*'; a lowercase neighbour (the ordinary case for a second word
+    // start) was still a one-character bypass. The related MEDIUM finding: the fold was gated on
+    // Character.isLowerCase, so an all-caps run defeated it even when flanked correctly. Both are
+    // fixed by BANG_SIGN/PLUS_SIGN/ASTERISK moving to the variant-tried, case-insensitive-flank
+    // technique described in BANG_SIGN's own javadoc.
+    // ---------------------------------------------------------------------------------------
+
+    static Stream<Arguments> repairRound5Probes() {
+        return Stream.of(
+                // HIGH — Kabir's exact round-1 bypasses: punctuation-to-letter fold glued the mark's
+                // word to the NEXT, lowercase-starting word, so the marked word never reached its own
+                // token end. The round-4 fix only ever prevented this when the next word started
+                // uppercase.
+                arguments(
+                        "R2fix-HIGH: murder!pune shocked (lowercase neighbour)",
+                        "murder!pune shocked",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-HIGH: Suicide+note found (lowercase neighbour)",
+                        "Suicide+note found",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-HIGH: riots*delhi on edge (lowercase neighbour)",
+                        "riots*delhi on edge",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R2fix-HIGH: Death+destruction in town (lowercase neighbour)",
+                        "Death+destruction in town",
+                        UnsafeHeadlineTopic.DEATH),
+                // MEDIUM — all-caps defeated the fold entirely because the deleted isWordFlank
+                // special-cased Character.isLowerCase on the trailing neighbour. The fold is now
+                // decided per-variant, not per-character-case, so these match their lowercase
+                // equivalents exactly.
+                arguments("R2fix-MED: K!LLED IN DELHI (all-caps)", "K!LLED IN DELHI", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-MED: M*RDER IN DELHI (all-caps)", "M*RDER IN DELHI", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED: BREAKING: M*RDER CASE (all-caps)",
+                        "BREAKING: M*RDER CASE",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments("R2fix-MED: R*PE CASE (all-caps)", "R*PE CASE", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R2fix-MED: SU!C!DE NOTE FOUND (all-caps)",
+                        "SU!C!DE NOTE FOUND",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R2fix-MED: DEA+H TOLL RISES (all-caps)", "DEA+H TOLL RISES", UnsafeHeadlineTopic.DEATH));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\" -> {2}")
+    @MethodSource("repairRound5Probes")
+    @DisplayName(
+            "T-GOLIVE-0918-R2 repair round 2 (internal round 5): every Kabir round-1 punctuation-flank"
+                    + " bypass (lowercase neighbour) and all-caps over-defeat now blocks as its named"
+                    + " category")
+    void firstUnsafeTopic_blocksEveryRepairRound5Probe(
+            String defect, String probe, UnsafeHeadlineTopic expectedCategory) {
+        assertEquals(
+                expectedCategory,
+                CreatorNudgeService.firstUnsafeTopic(probe),
+                "probe did not block as " + expectedCategory + " [" + defect + "]: \"" + probe + "\"");
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(probe),
+                "probe must not be quotable in creator copy [" + defect + "]: \"" + probe + "\"");
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                // Regression guard — the OLD context-flank over-block this repair must not
+                // reintroduce: a '+' NOT flanked by a letter-or-digit on both sides must never fold,
+                // in ANY variant (space, or nothing at all, on at least one side).
+                "Rio+ Carnival looks",
+                "Rio+Carnival looks",
+                "#Rio+Carnival 2025",
+                // Regression guard — genuine mid-word folds (lowercase) must be unaffected by the
+                // variant/flank rework.
+                "k!lled",
+                "dea+h toll",
+                "m*rder in Delhi",
+                "su!c!de",
+                // Regression guard — a doubled/bracketing mark used as pure emphasis ("Riots!!",
+                // "**Murder**") is flanked by a letter on only ONE side (the other side is the mark
+                // itself, or a space) — the flank check correctly leaves that occurrence unfolded,
+                // but "riots"/"murder" still block because each is ALREADY a complete bare term on
+                // its own once the mark stops being folded into it — i.e. these still correctly
+                // block, unrelated to the fold fix, same as before this repair.
+                "Riots!! Delhi on edge",
+                "**Murder** in Pune",
+                // Regression guard — the round-4 accepted false positives must stay quotable: a
+                // punctuation mark immediately followed by MORE of the SAME lowercase word.
+                "Killer ab workout!",
+                "This vlog was shot at home!"
+            })
+    @DisplayName(
+            "T-GOLIVE-0918-R2 repair round 2 (internal round 5): punctuation-fold regression guards"
+                    + " stay quotable/matching as before")
+    void firstUnsafeTopic_repairRound5RegressionGuards(String control) {
+        // Split by expectation: encode which strings are benign (must stay quotable) directly,
+        // rather than a second @ValueSource, so a single probe's outcome is unambiguous in the
+        // failure message.
+        boolean expectQuotable =
+                control.equals("Rio+ Carnival looks")
+                        || control.equals("Rio+Carnival looks")
+                        || control.equals("#Rio+Carnival 2025")
+                        || control.equals("Killer ab workout!")
+                        || control.equals("This vlog was shot at home!");
+        assertEquals(
+                expectQuotable,
+                CreatorNudgeService.isQuotableInCreatorCopy(control),
+                "unexpected quotability for regression guard: " + control);
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------
 
