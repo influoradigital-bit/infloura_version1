@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# gates/F-0765-F-0766-risk-corpus.sh — origin: F-0765 (flag-fires-on-unrelated-words) and
-# F-0766 (pattern-branch-with-no-test-row), both found by kabir on 2026-09-17 in the K-2b round-5
+# gates/F-1765-F-1766-risk-corpus.sh — origin: F-1765 (flag-fires-on-unrelated-words) and
+# F-1766 (pattern-branch-with-no-test-row), both found by kabir on 2026-09-17 in the K-2b round-5
 # last call, fixed by vikram (KB5-1, KB5-2), checked fresh-context by kabir 2026-09-18
 # (.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/KABIR-KB5-CHECK-0918.md).
 #
 # THE DEFECTS.
-#   F-0765  OffPlatformPaymentRule accepted a wallet name ANYWHERE plus a send/pay word ANYWHERE,
+#   F-1765  OffPlatformPaymentRule accepted a wallet name ANYWHERE plus a send/pay word ANYWHERE,
 #           so "Please send the draft ... Your fee is released to the UPI ID saved in your
 #           Influora payout settings." raised a flag the creator cannot dismiss. Fixed by a
 #           PAIRING_WINDOW (6 tokens) between the two.
-#   F-0766  Three HideDisclosureRule HIDE_TEXT branches (Hinglish short form, Devanagari short
+#   F-1766  Three HideDisclosureRule HIDE_TEXT branches (Hinglish short form, Devanagari short
 #           form, "don't mention it's sponsored") had no corpus row, so deleting any of them left
 #           the corpus test green.
 #
@@ -24,7 +24,7 @@
 #      then serves the mutant's bytecode (reference_restore_by_copy_keeps_stale_bytecode).
 #
 # NOT CHECKED: whether 6 is the right window (the corpus only pins it between 3 and 12); the
-# sentence-boundary false positive the window still has (F-0769, open); and whether the rows
+# sentence-boundary false positive the window still has (F-1769, open); and whether the rows
 # reflect how real brands write. That is the offline model-recall run owed before go-live.
 #
 # Exit 0 proved · 1 broken · 2 unavailable (never green).

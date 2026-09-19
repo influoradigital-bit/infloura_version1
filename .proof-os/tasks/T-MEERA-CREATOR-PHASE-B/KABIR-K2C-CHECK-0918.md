@@ -1,24 +1,24 @@
-# K-2c check: F-0769 and F-0773 (kabir, 2026-09-18)
+# K-2c check: F-1769 and F-1773 (kabir, 2026-09-18)
 
-**done_when, verbatim:** "F-0769 and F-0773 are closed by tests that go red when their fix is removed; a wallet name and a request word pair only within one sentence as RULINGS-U-0917.md round 6 defines it, with 'Rs. 5,000'-style dots not ending a sentence; on the fallback path neither risk hint is set by the extractor; the pairing window is pinned at exactly 6 by literal distances; every HideDisclosureRule alternative has a row that goes red when that alternative alone is deleted; and a red run of a looped corpus assertion names every failing row."
+**done_when, verbatim:** "F-1769 and F-1773 are closed by tests that go red when their fix is removed; a wallet name and a request word pair only within one sentence as RULINGS-U-0917.md round 6 defines it, with 'Rs. 5,000'-style dots not ending a sentence; on the fallback path neither risk hint is set by the extractor; the pairing window is pinned at exactly 6 by literal distances; every HideDisclosureRule alternative has a row that goes red when that alternative alone is deleted; and a red run of a looped corpus assertion names every failing row."
 
 ## Verdict: NOT MET (one clause of six)
 
 | # | Clause | Verdict | Evidence in one line |
 |---|---|---|---|
-| 1 | F-0769 and F-0773 closed by tests that go red with the fix removed | **MET** | Sentence cut removed: red on XS-1..XS-6 plus 4 NL rows. Either old FALLBACK pattern restored: red in 3 tests. The whole pre-fix extractor from HEAD: red in 6. |
+| 1 | F-1769 and F-1773 closed by tests that go red with the fix removed | **MET** | Sentence cut removed: red on XS-1..XS-6 plus 4 NL rows. Either old FALLBACK pattern restored: red in 3 tests. The whole pre-fix extractor from HEAD: red in 6. |
 | 2 | Pairing only within one sentence as round 6 defines it; "Rs. 5,000" dots do not end a sentence | **MET** (behaviour) | The probe ran 69 cases on the built classes, clause by clause, with 0 differences from Ruling 1. All 7 round-6 pass-bar mutations go red. **Gap:** 6 parts of the definition can each be deleted while the suite stays green (see §2). |
 | 3 | On FALLBACK, the extractor sets neither risk hint | **MET** | Both hints are the literal `false` (L175-176), and no other writer exists in `src/main`. Restoring either old pattern goes red. |
 | 4 | Window pinned at exactly 6 by literal distances | **MET** | `PAIRING_WINDOW` = 5, = 7 and `<=` changed to `<` each turn `pairingWindowIsExactlySix` red. The test's gaps are fixed filler words and never read the constant. |
 | 5 | Every HideDisclosureRule alternative has a row that goes red when that alternative alone is deleted | **NOT MET** | **8 of 36 alternatives survive deletion with the suite green (18/0/0/0):** `without`, `put`, `#collab`, `ad\s*tag`, `sponsored\s+tag`, B2 `this\s+is`, B3 `it`, B3 `ad`. The other 28, all 5 whole branches and 4 optional groups go red. |
 | 6 | A red run of a looped corpus assertion names every failing row | **MET** | Every loop test collects into a list and asserts `isEmpty()` once. Examples: two alternatives deleted together named both guard rows; the bare-wallet mutation named all 9 names; an exclusion named all 96 failing row-and-wrap pairs. |
 
-**Ledger bookkeeping is not done.** In `.proof-os/ledger/failures.jsonl`, F-0769 (L768) and F-0773 (L772) still read `"status": "open"` with `"fix": ""`.
+**Ledger bookkeeping is not done.** In `.proof-os/ledger/failures.jsonl`, F-1769 (L768) and F-1773 (L772) still read `"status": "open"` with `"fix": ""`.
 
-**Numbering:** round 6 names the FALLBACK record "F-0772", but the ledger's F-0772 is meera's exemption-list record. The FALLBACK defect is ledgered as **F-0773**, and the code comments cite "F-0773 / … 'New: F-0772'", so the reference is consistent. Whoever closes it should use F-0773.
+**Numbering:** round 6 names the FALLBACK record "F-1772", but the ledger's F-1772 is meera's exemption-list record. The FALLBACK defect is ledgered as **F-1773**, and the code comments cite "F-1773 / … 'New: F-1772'", so the reference is consistent. Whoever closes it should use F-1773.
 
 ## What I read
-- **Ledger:** F-0769 and F-0773 in full, plus F-0766 and F-0772 for context.
+- **Ledger:** F-1769 and F-1773 in full, plus F-1766 and F-1772 for context.
 - **RULINGS-U-0917.md:** rounds 4, 5 and 6 in full (L416-849).
 - **The six artifact files, in full:**
   - `OffPlatformPaymentRule.java`
@@ -34,7 +34,7 @@
   - all 28 `HIDE_DISCLOSURE` rows of `nisha-blind-0917.tsv`
   - `NISHA-HIDE-WORD-ROWS-0918.md`
   - SPEC.md's `AMEND-0918` and `AMEND-0918-FALLBACK` markers (L923, L945, L965, L975); present, not reviewed in depth
-  - the gate `.proof-os/gates/F-0765-F-0766-risk-corpus.sh`
+  - the gate `.proof-os/gates/F-1765-F-1766-risk-corpus.sh`
 
 ## How I ran it
 - **Every Maven run** was `mvn -o -f "C:/Users/Sage world/Downloads/New Influora Ai/influora-b0/influora-api/pom.xml" clean -Dtest=<classes> -Dsurefire.failIfNoSpecifiedTests=true test`, with stdout sent to a log file and the exit code taken from Maven itself, not through a pipe.
@@ -60,15 +60,15 @@
 - BriefFallbackExtractorRealRiskRulesTest: 5.
 - `Skipped: 0` means the fidelity test ran against Nisha's markdown.
 
-## Clause 1: F-0769 and F-0773 go red with their fix removed
+## Clause 1: F-1769 and F-1773 go red with their fix removed
 
 | Mutation | Result (quoted from surefire) |
 |---|---|
-| **F-0769 fix removed:** `for (String sentence : sentences(norm))` → `List.of(norm)` (L243) | **RED**, 23 run / 2 failed. `offPlatformPaymentHasNoFalsePositives`: `Expecting empty but was: ["XS-1", "XS-2", "XS-3", "XS-4", "XS-5", "XS-6", "NL-bullets", "NL-bullets-num", "NL-blank", "NL-crlf-bullets"]`. `sentenceBoundaryStopsPairingAcrossSentences` names XS-1..XS-6 and NL-bullets. XS-3 and XS-5 are the ledger's two example texts. |
-| **F-0773, OFF hint restored:** HEAD's `OFF_PLATFORM` regex put back as `off_platform_payment_hint` (L175) | **RED**, 20 run / 3 failed. `onPlatformPayoutInstructionDoesNotFlag`: `Expecting ["OFF_PLATFORM_PAYMENT", "VAGUE_DELIVERABLES"] not to contain ["OFF_PLATFORM_PAYMENT"]`. `realOffPlatformAskStillFlagsFromText`: `["basis"="STATED" (expected: "BRIEF_TEXT")]`. `offPlatformPaymentHintIsAlwaysFalse`: `expected: <false> but was: <true>`. |
-| **F-0773, HIDE hint restored:** HEAD's `DISCLOSURE_HIDDEN` regex put back (L176) | **RED**, 20 run / 3 failed. `ordinaryAdCaptionDoesNotFlag`: `Expecting ["HIDE_DISCLOSURE", "VAGUE_DELIVERABLES"] not to contain ["HIDE_DISCLOSURE"]`. `realHideDisclosureAskStillFlagsFromText`: `["basis"="STATED" (expected: "BRIEF_TEXT")]`. `disclosureHiddenHintIsAlwaysFalse`: `expected: <false> but was: <true>`. |
-| **F-0773, whole file:** `git show HEAD:…/BriefFallbackExtractor.java`, the complete pre-fix extractor | **RED**, 20 run / 6 failed. All six hint and FALLBACK tests above. |
-| Same, with the corpus in the run | 38 run / 6 failed. The 18 corpus tests stay green, as expected: the corpus never runs the FALLBACK path. That is exactly why F-0773 needed its own end-to-end test. |
+| **F-1769 fix removed:** `for (String sentence : sentences(norm))` → `List.of(norm)` (L243) | **RED**, 23 run / 2 failed. `offPlatformPaymentHasNoFalsePositives`: `Expecting empty but was: ["XS-1", "XS-2", "XS-3", "XS-4", "XS-5", "XS-6", "NL-bullets", "NL-bullets-num", "NL-blank", "NL-crlf-bullets"]`. `sentenceBoundaryStopsPairingAcrossSentences` names XS-1..XS-6 and NL-bullets. XS-3 and XS-5 are the ledger's two example texts. |
+| **F-1773, OFF hint restored:** HEAD's `OFF_PLATFORM` regex put back as `off_platform_payment_hint` (L175) | **RED**, 20 run / 3 failed. `onPlatformPayoutInstructionDoesNotFlag`: `Expecting ["OFF_PLATFORM_PAYMENT", "VAGUE_DELIVERABLES"] not to contain ["OFF_PLATFORM_PAYMENT"]`. `realOffPlatformAskStillFlagsFromText`: `["basis"="STATED" (expected: "BRIEF_TEXT")]`. `offPlatformPaymentHintIsAlwaysFalse`: `expected: <false> but was: <true>`. |
+| **F-1773, HIDE hint restored:** HEAD's `DISCLOSURE_HIDDEN` regex put back (L176) | **RED**, 20 run / 3 failed. `ordinaryAdCaptionDoesNotFlag`: `Expecting ["HIDE_DISCLOSURE", "VAGUE_DELIVERABLES"] not to contain ["HIDE_DISCLOSURE"]`. `realHideDisclosureAskStillFlagsFromText`: `["basis"="STATED" (expected: "BRIEF_TEXT")]`. `disclosureHiddenHintIsAlwaysFalse`: `expected: <false> but was: <true>`. |
+| **F-1773, whole file:** `git show HEAD:…/BriefFallbackExtractor.java`, the complete pre-fix extractor | **RED**, 20 run / 6 failed. All six hint and FALLBACK tests above. |
+| Same, with the corpus in the run | 38 run / 6 failed. The 18 corpus tests stay green, as expected: the corpus never runs the FALLBACK path. That is exactly why F-1773 needed its own end-to-end test. |
 
 ## Clause 2: the sentence rule matches Ruling 1
 
@@ -170,7 +170,7 @@ Every run was `-Dtest=RiskFlagCorpusTest`; "green" means `Tests run: 18, Failure
 **Why this is NOT MET.**
 - The 7 alternatives round 6 §3c named (Hinglish `sponsored`, `nahi`, `na`, `laga`, `mention`; Devanagari `sponsored`, `नहीं`) are now guarded.
 - The done_when says **every** alternative, and 8 others have no row that depends on them. Each can be deleted with the corpus green.
-- This is F-0766's defect class, one level below the branch.
+- This is F-1766's defect class, one level below the branch.
 - **I missed these in my KB5 check.** My KB5 note 4 listed only the Hinglish and Devanagari alternatives; these 8 were unguarded then too.
 
 **B3's `ad` is dead in grammatical English.**
@@ -239,8 +239,8 @@ Alternatively, prune an alternative under §3c. For B3 `ad`, the choice is prune
 - **Markers:** `grep -rn FALSIFY-TEMP influora-api/src` finds **0**.
 - **Staging:** `git diff --cached` names **0** files.
 - **No new stash:** the one stash entry is from 2026-08-17. No commit. Nothing under `influora-ai/` or the `New Influora` tree was touched.
-- **Gate:** `bash .proof-os/gates/F-0765-F-0766-risk-corpus.sh` printed `PROVED: RiskFlagCorpusTest tests=18 failures=0 errors=0 skipped=0; guarding rows present; PAIRING_WINDOW present` and exited **0**.
-  - LOW: its header comment is now stale. It still says F-0769 is open, and that "the corpus only pins it between 3 and 12".
+- **Gate:** `bash .proof-os/gates/F-1765-F-1766-risk-corpus.sh` printed `PROVED: RiskFlagCorpusTest tests=18 failures=0 errors=0 skipped=0; guarding rows present; PAIRING_WINDOW present` and exited **0**.
+  - LOW: its header comment is now stale. It still says F-1769 is open, and that "the corpus only pins it between 3 and 12".
 - **Restored regression run**, clean, 870 + 346 files compiled: `Tests run: 130, Failures: 0, Errors: 0, Skipped: 0`, BUILD SUCCESS. The classes were:
   - RiskFlagCorpusTest 18
   - BriefFallbackExtractorTest 15
@@ -259,11 +259,11 @@ Alternatively, prune an alternative under §3c. For B3 `ad`, the choice is prune
 - FALLBACK is not rare. It is the normal state once a creator's monthly brief allowance is spent, as well as during an AI outage.
 - Rounds 5 §2a and 6 place recall on "the hint". On this path there is no hint.
 
-Measured with the probe on the built classes. "Flag" is the extractor's hint OR the rule's text check, as `apply` computes it. "Pre-F-0773" is HEAD's extractor pattern.
+Measured with the probe on the built classes. "Flag" is the extractor's hint OR the rule's text check, as `apply` computes it. "Pre-F-1773" is HEAD's extractor pattern.
 
 **Off-platform, real asks, no flag on FALLBACK now:**
 
-| Ask | Pre-F-0773 extractor |
+| Ask | Pre-F-1773 extractor |
 |---|---|
 | "Kindly share your UPI ID for payment." | flagged |
 | "Can we do this via GPay instead? Saves the commission." | flagged |
@@ -282,7 +282,7 @@ Measured with the probe on the built classes. "Flag" is the extractor's hint OR 
 
 **Hide-the-ad, real asks, no flag on FALLBACK now:**
 
-| Ask | Pre-F-0773 extractor |
+| Ask | Pre-F-1773 extractor |
 |---|---|
 | "Please skip the #ad tag on this one." | flagged |
 | "Keep it looking organic, no hashtags like #ad." | flagged |
@@ -296,7 +296,7 @@ Measured with the probe on the built classes. "Flag" is the extractor's hint OR 
 Controls that do flag: "Send me your UPI and we'll G-Pay you the balance.", "Paying via UPI outside Influora saves us 10%.", "We can pay you directly, skip the platform.", "Post it without the #ad tag.", "Don’t use #ad" (curly apostrophe) and "#ad नहीं लगाना".
 
 **Assessment.**
-- **F-0773's trade.** Round 6 accepted the loss of vocabulary the ruled patterns leave out on purpose, "such as bare wallet names, 'keep it organic' and 'avoid disclosure'". Most of the off-platform losses above are that trade.
+- **F-1773's trade.** Round 6 accepted the loss of vocabulary the ruled patterns leave out on purpose, "such as bare wallet names, 'keep it organic' and 'avoid disclosure'". Most of the off-platform losses above are that trade.
 - **Two losses are not on the ruling's list:**
   - `skip` as a negator ("skip the #ad tag")
   - `#\s*ad`, a hash then a space ("# ad")

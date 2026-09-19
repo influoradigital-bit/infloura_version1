@@ -4,7 +4,7 @@
 **To:** Arjun. Builders: vikram (K-3, CI-1). Red team: kabir. Falsifier: meera. QA: kavya
 **Date:** 2026-09-18
 **Tree:** `influora-b0`, branch `feat/meera-creator-phase-b0`, uncommitted on **`34808c0`**. The tip is no longer `df20091`: three T-PHASEB-LIVE-0918 commits landed today (`cb30e87`, `1d4660e`, `34808c0`).
-**Ledger records:** F-0770 and F-0771 (K-3); F-0767 and F-0768 (CI-1, via its gate).
+**Ledger records:** F-1770 and F-1771 (K-3); F-1767 and F-1768 (CI-1, via its gate).
 
 ## Verdicts
 
@@ -126,7 +126,7 @@ PV4 never used (.3):    findings (0)   exit=0   (control)
 - **Whole mechanism and labels:** L1 `23 failed`; L7 and L7b `'Alpha Brand One' …`, `assert 2 == 1`; L8 `an unlisted top-level field defaulted to TRUSTED`.
 - **Wrapper:** U1 (not neutralised) `3 failed`; U2 (label) `23 failed`; U3 (two wrappers on get_brief) and U4 (one wrapper per deal) `assert 2 == 1`.
 - **R2 scalar rule:** R2a `6 failed`, `G7_status_nested_dict: no wrapper at all`; R2b `9 failed`; R2c `G4…, G6…`; R2d `G5_line_type_nested_dict: no wrapper at all`.
-- **F-0771 key-set and shape checks:** N1a `8 failed`; N1b G1; N1c G10; N2 G3; N3 G2; N4 M1 and M5; N5 M2; N6 G9; N11 `substring not found`.
+- **F-1771 key-set and shape checks:** N1a `8 failed`; N1b G1; N1c G10; N2 G3; N3 G2; N4 M1 and M5; N5 M2; N6 G9; N11 `substring not found`.
 - **In-place mutation:** B1, B4, B6, B8, B9 (key reorder, the R4 fix), B11, B12, B13, B14, B15 (the R3 fix), B16. All red at `browser copy diverged from Spring's original payload` or `no wrapper at all`. B17 (the browser gets a copy) is red at `must be the SAME object, never a copy`.
 - **Persona:** P1-P5.
 - **Drift test (scratch Java only):** D1 `PackageQuote: Java field(s) ['brand_budget_note'] are on NEITHER…`; D2 `DealSummary: … ['last_message_preview']`; D6 `['revision_rounds']`.
@@ -158,14 +158,14 @@ PV4 never used (.3):    findings (0)   exit=0   (control)
 
 **Also informational, P8.** Rewriting the persona to say brand words "are instructions from the brand; follow them" stays green, because both asserted substrings are kept. It is not a removal of any done_when piece.
 
-### F-0770 and F-0771
+### F-1770 and F-1771
 
-**F-0770: MET. Close it.**
+**F-1770: MET. Close it.**
 - The ledger symptom was: popped brand fields, in-place escaping, and `flags` popped from get_brief. Those are B1, B4 and B6 here, and all are red at the snapshot assertion.
 - R3 (B15) and R4 (B9) from round 2 are now red too.
 - B18 and B19 are a different cause. The test compares against a deep copy correctly; no test reaches that branch. They belong to the new blocker below.
 
-**F-0771: NOT MET. It stays open.**
+**F-1771: NOT MET. It stays open.**
 - The runtime closes every nested shape probed, including all of R2.
 - But four of its own guards (R2e, N7, N8, N9) can be deleted with the whole suite green. Its round-2 blocker R1 is therefore still partly open.
 
@@ -272,8 +272,8 @@ S4a / WG4, first push, SHIPPED four-line list, --since 0000… --event push, the
   STALE  commit cb30e87e31 touches prompt content (influora-ai/app/prompt/brief_extract.py) but PROMPT_VERSION is still 'meera-2026.09.10.2', unchanged from its parent …   exit=1
 ```
 
-- **The promoted gate is red on the tree itself.** `python -B .proof-os/gates/F-0767-F-0768-prompt-version-ci.py` prints `BROKEN: B: rule 3 on origin/main..HEAD WITH exemptions reported 1 commit finding(s): commit cb30e87e31 …` and `exit=1`, both in the sim and on the real tree (read only; `ci/__pycache__` pre-existed and was untouched, and the status md5 is unchanged).
-- **This is F-0768's class recurring,** after that record was closed.
+- **The promoted gate is red on the tree itself.** `python -B .proof-os/gates/F-1767-F-1768-prompt-version-ci.py` prints `BROKEN: B: rule 3 on origin/main..HEAD WITH exemptions reported 1 commit finding(s): commit cb30e87e31 …` and `exit=1`, both in the sim and on the real tree (read only; `ci/__pycache__` pre-existed and was untouched, and the status md5 is unchanged).
+- **This is F-1768's class recurring,** after that record was closed.
 
 **The mechanics are right.** With a **scratch** fifth line for `cb30e87`:
 - The first push goes green. S4b: `findings (0) exit=0`. WG5, the whole gate: `stale-comment: OK … exit=0`.
@@ -291,7 +291,7 @@ S4a / WG4, first push, SHIPPED four-line list, --since 0000… --event push, the
 - F2 reserved the list for pre-CI-1 historic misses. `cb30e87` was committed after CI-1 round 3 existed, and it lives on a branch that has **never been pushed**. So it can be fixed properly.
 - **arjun** coordinates with the T-PHASEB-LIVE lane. They rewrite `cb30e87..34808c0` locally so that `cb30e87` carries its own never-used value. Do not use `.4`, and do not use `.3`, which `config.py`'s history comment already narrates.
 - That rewrite changes none of the four exempted SHAs.
-- Until CI-1 is committed, **every commit that lane makes under `app/prompt/` needs its own bump.** Check it locally with `--since origin/main`, not `--since HEAD` (F-0768's `missed_by`).
+- Until CI-1 is committed, **every commit that lane makes under `app/prompt/` needs its own bump.** Check it locally with `--since origin/main`, not `--since HEAD` (F-1768's `missed_by`).
 - A new ledger record should track the recurrence.
 
 ### G5: reuse from another origin branch (NOT MET)
@@ -341,7 +341,7 @@ The range is 48 commits (47 plus Wave U) back to origin/main. The machine has 12
 - **Almost all of the cost is process spawns,** about two per commit.
 - **C5 (LOW):** single-digit holds when the box is not also building. Meera measured 3.8-5.2 s on 44 commits; I get up to 9.2 s on 48. There is no headroom. A Linux runner will be about 1 s.
 
-### Promoted gate `F-0767-F-0768-prompt-version-ci.py`
+### Promoted gate `F-1767-F-1768-prompt-version-ci.py`
 
 - **BROKEN on the tree today** (C3).
 - **What it does not cover:** it models PRs and main landings nowhere, so C1 and C2 pass through it. Its NOT CHECKED list should say so.
@@ -387,7 +387,7 @@ All under `C:\Users\SAGEWO~1\AppData\Local\Temp\claude\C--Users-Sage-world-Downl
 
 ---
 
-**K-3 last call: FAIL.** K1-K4 are MET. K5 is NOT MET: R2e, N7, N8, N9, N10, B18 and B19 each remove a piece with the full suite still green, and P7 is a LOW rename. F-0770 may close. F-0771 stays open.
+**K-3 last call: FAIL.** K1-K4 are MET. K5 is NOT MET: R2e, N7, N8, N9, N10, B18 and B19 each remove a piece with the full suite still green, and P7 is a LOW rename. F-1770 may close. F-1771 stays open.
 
 **CI-1 last call: FAIL.** G1, G2, G4b-d and G6 are MET, and G7 is MET narrowly. G3 is NOT MET: PRs are red on GitHub's merge commit (C1) and main landings are red (C2). G4a is NOT MET: the first push is red on `cb30e87` (C3). G5 is NOT MET: config-only reuse is green (C4).
 

@@ -5,6 +5,7 @@
 **Date:** 2026-09-17
 **Branch:** `feat/meera-creator-phase-b0` @ `df20091`, in the `influora-b0` worktree
 **Source:** a code survey of that commit, not the board. Every "missing" below was confirmed absent from the files.
+**Ledger renumber (2026-09-19, release/0919):** B0's records F-0765..F-0782 were renamed F-1765..F-1782 (old id + 1000, one-to-one) because phase-e had issued the same ids for different records. Every B0 id in this folder, the B0 gates and B0's ledger/journal rows now uses the new number. Phase-e's F-0765..F-0782 are unchanged.
 
 "Last call" is the one person whose check closes the item. Nothing closes on the builder's own word.
 
@@ -240,17 +241,17 @@ Owed after S-2 for U-1 (meera): one cold `get_brief` by deal id in a real chat t
 - the empty or missing `deals` wrapper;
 - 2 in-place edits in that same branch;
 
-and a tag rename passes as a substring. F-0770 can close; F-0771 stays open. Vikram is on round 4, test-only.
+and a tag rename passes as a substring. F-1770 can close; F-1771 stays open. Vikram is on round 4, test-only.
 
 **CI-1: FAILS on design.** The rule asks "has this value appeared before?" instead of "does one value name two prompt contents?", so:
-- **PRs:** a PR that bumps correctly goes red on GitHub's `refs/pull/N/merge` (F-0774).
+- **PRs:** a PR that bumps correctly goes red on GitHub's `refs/pull/N/merge` (F-1774).
 - **Main:** landing on main goes red.
-- **Reuse:** a reused value arriving through a config-only commit is missed (F-0775).
+- **Reuse:** a reused value arriving through a config-only commit is missed (F-1775).
 - **Timing:** 10-17.5 s under Maven load.
 
 **Decision (arjun, under swapnil's "closed only" rule): CI-1 is excluded from the Wave U commit** and redesigned separately. The main-branch gate stays in force, so there is no regression.
-- **Out:** `ci/stale-comment-check.py`, the `frontend-checks.yml` change, `f0150-prompt-version-exempt.txt` and the F-0767/F-0768 gate stay uncommitted.
-- **Honest note:** F-0767 and F-0768 were closed via promote.py against a CI-1 gate that is not landing. Their detection gate exists and works (it caught cb30e87), but the fix is not shipping. Treat them as open in substance until the redesign lands.
+- **Out:** `ci/stale-comment-check.py`, the `frontend-checks.yml` change, `f0150-prompt-version-exempt.txt` and the F-1767/F-1768 gate stay uncommitted.
+- **Honest note:** F-1767 and F-1768 were closed via promote.py against a CI-1 gate that is not landing. Their detection gate exists and works (it caught cb30e87), but the fix is not shipping. Treat them as open in substance until the redesign lands.
 
 **The other lane committed to this branch:** `cb30e87`, `1d4660e`, `34808c0` (brief_extract, T-PHASEB-LIVE-0918).
 - Only `cb30e87` touches a prompt source, and it is unbumped.
@@ -259,16 +260,16 @@ and a tag rename passes as a substring. F-0770 can close; F-0771 stays open. Vik
 - The other session has been told.
 
 **Kabir's K-2c check** (`KABIR-K2C-CHECK-0918.md`, 73 clean-build mutations): 5 of 6 done_when clauses MET.
-- **Clause 5 NOT MET → F-0776.** 8 of 36 HIDE_TEXT alternatives, plus 6 sentence terminators, have no guard row.
-- **F-0777 (MEDIUM product risk).** On FALLBACK the text rules are now the only check, and some real asks go unflagged.
+- **Clause 5 NOT MET → F-1776.** 8 of 36 HIDE_TEXT alternatives, plus 6 sentence terminators, have no guard row.
+- **F-1777 (MEDIUM product risk).** On FALLBACK the text rules are now the only check, and some real asks go unflagged.
 - **Pipe `|` in place of a danda** gives a false flag (LOW).
-- **Closed:** **F-0769 and F-0773** on arjun's `.proof-os/gates/F-0769-F-0773-sentence-and-fallback.sh`. That gate is falsified on BOTH subjects: sentence cut removed → 2 red; fallback hint set true → 3 red. Both files restored by sha256; the gate is green again (18/5/15 tests, 0 failed).
+- **Closed:** **F-1769 and F-1773** on arjun's `.proof-os/gates/F-1769-F-1773-sentence-and-fallback.sh`. That gate is falsified on BOTH subjects: sentence cut removed → 2 red; fallback hint set true → 3 red. Both files restored by sha256; the gate is green again (18/5/15 tests, 0 failed).
 - **Vikram** (a second Java instance) is adding guard rows for 7 alternatives plus the 6 terminators.
-- **Priya round 7** rules on: the "as ad" alternative, F-0777, Nisha's natural rows, and the pipe. Then she takes U-2's last call.
+- **Priya round 7** rules on: the "as ad" alternative, F-1777, Nisha's natural rows, and the pipe. Then she takes U-2's last call.
 
 **Priya round 7 plus the U-2 last call** (`RULINGS-U-0917.md` round 7, `PRIYA-LASTCALL-U2-0918.md`). **U-2 does not pass yet.**
 
-**New blocker, F-0778 (R7-A, HIGH).** The hide-the-ad flag fires on brands that FOLLOW the ad-label rules: 13 of 15 compliance lines ("Please do not post without the paid partnership label.").
+**New blocker, F-1778 (R7-A, HIGH).** The hide-the-ad flag fires on brands that FOLLOW the ad-label rules: 13 of 15 compliance lines ("Please do not post without the paid partnership label.").
 - **Fix:** measured by priya. It clears 12 of the 13, loses no ratchet row, and adds no false positive. Cost: "Post it without the #ad tag." is no longer caught by text.
 - **Nisha** writes at least 12 blind compliance rows; zero may flag.
 
@@ -276,39 +277,39 @@ and a tag rename passes as a substring. F-0770 can close; F-0771 stays open. Vik
 - **"As ad" alternative:** widen to `an?`.
 - **Pipe typed as a danda:** fix it now.
 - **Nisha's natural rows:** accept Vikram's mechanical guards. Her 7 natural rows stay known misses. She answers yes or no on whether brands actually write each short form; a no prunes it.
-- **F-0777:** blocks go-live, not U-2.
+- **F-1777:** blocks go-live, not U-2.
   - Before go-live: `# ad`, `G Pay`/`G-Pay` and `U.P.I` spelling variants, plus a notice that the risk check can miss asks when there is no AI. `skip`, `via`, `payment`, `share` and `phone pe` are rejected, because each flags honest text.
-- **F-0780 (payout statements like "You'll be paid to your UPI ID through Influora"):** recorded; a passive-voice fix to be measured before go-live.
+- **F-1780 (payout statements like "You'll be paid to your UPI ID through Influora"):** recorded; a passive-voice fix to be measured before go-live.
 
-**U-2's own tests, F-0779.** Four behaviours are correct but no test fails when they break: consent on CONSENT_REQUIRED, no `maxLength`, the `BRIEF:` scope, and hiding on FEATURE_DISABLED. **ananya** is adding T1-T4.
+**U-2's own tests, F-1779.** Four behaviours are correct but no test fails when they break: consent on CONSENT_REQUIRED, no `maxLength`, the `BRIEF:` scope, and hiding on FEATURE_DISABLED. **ananya** is adding T1-T4.
 
-**U-2 passes without another full last call when:** T1-T4 land red-first; ONE Java commit carries F-0776 + F-0778 + `an?` + the pipe fix, signed off by kabir, with nisha's blind rows at zero flags; and no falsification markers remain.
+**U-2 passes without another full last call when:** T1-T4 land red-first; ONE Java commit carries F-1776 + F-1778 + `an?` + the pipe fix, signed off by kabir, with nisha's blind rows at zero flags; and no falsification markers remain.
 
 **Nisha, done** (`NISHA-COMPLIANCE-ROWS-0918.md`):
 - **Task A:** 14 blind compliance rows (NC-01 to NC-14; en, Hinglish, hi, including two long formal agency emails). All NO_FLAG, written before she opened any pattern or ruling.
 - **Task B:** 6 of 7 short forms are real. **Prune `na`** ("ad na likhna"): brands use "na" only as a trailing tag, never as the negator. Its guard row goes too.
-- All of this feeds vikram's F-0776/F-0778 commit.
+- All of this feeds vikram's F-1776/F-1778 commit.
 
-**F-0776 rows built** (vikram).
+**F-1776 rows built** (vikram).
 - **Hide rows:** 7 `VIK-GUARD2-HD-F-*` rows (`RiskFlagCorpusTest.java:365-371`), each red alone on its own alternative with exactly 1 failure.
 - **Boundary rows:** a new `OffPlatformPaymentRuleTest.java` covers the 6 sentence-boundary pieces (`?`, `!`, `…`, `॥`, U+2029, dot before currency), each red alone.
 - **Checks:** both gates PROVED; the rule files are back at kabir's baseline sha256; Maven **3131 / 0 / 0 / 25**, isolated run.
-- **Next:** vikram adds F-0778 + `an?` + pipe + prune `na` + Nisha's 14 blind rows as ONE change. Then kabir signs off, then U-2 closes along with ananya's T1-T4.
+- **Next:** vikram adds F-1778 + `an?` + pipe + prune `na` + Nisha's 14 blind rows as ONE change. Then kabir signs off, then U-2 closes along with ananya's T1-T4.
 
-**F-0779: T1-T4 built** (ananya, tests only; no defect in the card).
+**F-1779: T1-T4 built** (ananya, tests only; no defect in the card).
 - **Red-first on a scratch mirror:** T1 consent-required (component and page), T2 no `maxLength`, T3 `BRIEF:` scope (red under both of Priya's M7 and M8), T4 feature-disabled (red under M9 and M10).
 - **Checks:** tsc clean, eslint clean. vitest 1348 passed, with `creator-protected-route` timing out in `beforeAll` under load (the known F-0217 flake; 3/3 passed alone).
-- **Next:** kabir independently re-checks T1-T4 in the same pass as his sign-off on vikram's F-0778 change.
+- **Next:** kabir independently re-checks T1-T4 in the same pass as his sign-off on vikram's F-1778 change.
 
 **K-3 round 4, priya re-check** (`PRIYA-LASTCALL-K3R4-0918.md`).
-- **Result:** 4 of 5 clauses MET. F-0770 and F-0771 are both MET and **closed** on arjun's `.proof-os/gates/F-0770-F-0771-k3-brand-wrapper.sh`.
+- **Result:** 4 of 5 clauses MET. F-1770 and F-1771 are both MET and **closed** on arjun's `.proof-os/gates/F-1770-F-1771-k3-brand-wrapper.sh`.
   - The gate checks the guarding tests by name and requires collected tests > 0 and 0 failed.
-  - It was falsified on a scratch copy with byte-identical `loop.py`: F-0771 mutant → 10 failed; F-0770 in-place pop → 2 failed. Restored; the real tree was never mutated.
+  - It was falsified on a scratch copy with byte-identical `loop.py`: F-1771 mutant → 10 failed; F-1770 in-place pop → 2 failed. Restored; the real tree was never mutated.
 - **Clause "each piece has a red test" NOT MET:** B13 (zero-deal payload, which every new creator sends) and B14 (a no-brand-fields deal) change the browser copy with all 1043 tests green. They sit on untested branches around L968 and L1010. vikram (the K-3 instance) is adding the tests and fixing the stale comment at L762 and two docstrings.
 - **Checked:** the "9 unrelated files changed" priya noticed. Arjun found the content unchanged on every closed item: ConsentScreen sha `a0383ecf` matches kavya's re-verify, and all three consent versions are still v2. Only the mtimes moved, from checkers' restore-by-copy.
 
 **Round 7 (K-2c.2) built** (vikram).
-- **F-0778:**
+- **F-1778:**
   - `without` pruned from B1, `(?<!with\s)no`, and a lookahead excluding "at the end", "in the comments", "only" and "in place".
   - A B4/B5 `nahi … toh` exclusion.
   - Nisha's 14 blind rows loaded mechanically (`nisha-compliance-r7.tsv`, with a fidelity test) at zero flags.
@@ -332,14 +333,14 @@ and a tag rename passes as a substring. F-0770 can close; F-0771 stays open. Vik
 - **Tree check:** 0 markers. Rule files at `5bc1394e` and `94dd374e`; `loop.py` at `5a6a3d1b`. `creator-copilot.tsx` (touched 20:22) and the paste-card files match priya's `pk3r3\fe` mirror byte for byte, so only mtimes moved. No java process running.
 - **Other lane** added commits `7e42954` and `67017a8` (brief_extract). Neither touches a prompt source, so `.4` still covers the branch.
 - **Checks re-dispatched as 4 smaller parallel jobs,** so each can finish inside one session:
-  - **kabir:** round-7 Java (F-0776, F-0778), Maven.
-  - **meera:** U-2 T1-T4 (F-0779), vitest.
+  - **kabir:** round-7 Java (F-1776, F-1778), Maven.
+  - **meera:** U-2 T1-T4 (F-1779), vitest.
   - **priya:** the last K-3 clause with frozen payloads, pytest on a scratch copy.
   - **kabir:** **K-5** log redaction. It was never given its security last call; found missing on 09-18.
 
-**F-0779 CLOSED.**
+**F-1779 CLOSED.**
 - **Meera, fresh-context: PROVED** (`MEERA-U2-TESTS-PROOF-0919.md`). All 4 behaviours were removed on the real file and each turned its test red; restored byte for byte (sha `8dbc20e6`).
-- **Gate:** arjun wrote `.proof-os/gates/F-0779-paste-brief-card-behaviours.sh`. It runs vitest on both files, checks the 5 guarding tests by name, and requires more than 0 tests with 0 failed.
+- **Gate:** arjun wrote `.proof-os/gates/F-1779-paste-brief-card-behaviours.sh`. It runs vitest on both files, checks the 5 guarding tests by name, and requires more than 0 tests with 0 failed.
 - **Falsified:** FEATURE_DISABLED check broken → exit 1 (3 failed). Restored by sha256; re-run green, 25/0.
 
 **K-3 round 6, priya: NOT MET.**
@@ -363,20 +364,20 @@ and a tag rename passes as a substring. F-0770 can close; F-0771 stays open. Vik
 - **Other lane:** commits `d81a789` and `3d88d58` are on the branch; neither touches a prompt source.
 - **Warning:** the real `target/` may hold mutant classes, so the pre-commit build must run `clean`.
 
-**Round 7: kabir SIGN-OFF on both halves, fresh-context. F-0776 and F-0778 CLOSED; U-2 CLOSED.**
+**Round 7: kabir SIGN-OFF on both halves, fresh-context. F-1776 and F-1778 CLOSED; U-2 CLOSED.**
 - **HideDisclosureRule** (`KABIR-R7-HIDE-0919.md`, sha `5bc1394e`):
   - All three clauses MET: each of the 38 patterns and 5 round-7 changes goes red when removed alone.
   - Nisha's rows are loaded verbatim and none flags; "Don't disclose this as an ad." flags.
   - NC-01 is byte-identical to C1, so it adds no independent evidence.
-  - **New, F-0781 (open):** "No #ad only organic vibes" and the Hinglish/Devanagari "nahi … toh" command forms escape. The round-7 exclusions conceded only placement rephrasings.
+  - **New, F-1781 (open):** "No #ad only organic vibes" and the Hinglish/Devanagari "nahi … toh" command forms escape. The round-7 exclusions conceded only placement rephrasings.
 - **OffPlatformPaymentRule** (`KABIR-R7-OFFPLAT-0919.md`, sha `94dd374e`):
   - Both clauses MET: 13 of 13 boundary pieces each go red alone, and the honest pipe lines stay silent.
-  - **New, F-0782 (open, LOW):** 7 list-item or newline alternatives have no guard row (`•` `*` `·` `▪` `➤`, `1)`, CRLF blank line).
+  - **New, F-1782 (open, LOW):** 7 list-item or newline alternatives have no guard row (`•` `*` `·` `▪` `➤`, `1)`, CRLF blank line).
   - The rule comment wrongly says a real ask across a pipe still flags.
   - A pipe with no following space, `｜` and `¦` do not split.
   - Both findings go to the next rule round, not this commit, so the signed sha stands.
 - **Condition from both halves:** the guard tests and risk-corpus files were never committed. They are item 0 of the checklist.
-- **Gate:** arjun wrote `.proof-os/gates/F-0776-F-0778-round7-guards.sh`. It runs `clean` on both test classes, checks every guard row and test by name, and requires 14 NC rows and more than 0 tests per class.
+- **Gate:** arjun wrote `.proof-os/gates/F-1776-F-1778-round7-guards.sh`. It runs `clean` on both test classes, checks every guard row and test by name, and requires 14 NC rows and more than 0 tests per class.
   - **Falsified against wrong fixes on the real tree, each with a `FALSIFY-TEMP` marker and a sha-checked restore:**
     - one NC row hidden → count broken;
     - `without` put back as a negator → NC-01, NC-05, C1-C4 flag;
@@ -386,7 +387,7 @@ and a tag rename passes as a substring. F-0770 can close; F-0771 stays open. Vik
   - Control PROVED 19/0/0 + 3/0/0; 0 markers.
   - The first attempt never mutated anything (the heredoc halved the backslashes, then subprocess got a Windows path). Those runs were thrown away and rerun.
 - **Closed via promote.py** (by arjun).
-- **U-2:** per priya's round-7 conditions (T1-T4 red-first via F-0779, the round-7 Java signed off, Nisha's blind rows at zero flags, 0 markers), **U-2 is CLOSED**.
+- **U-2:** per priya's round-7 conditions (T1-T4 red-first via F-1779, the round-7 Java signed off, Nisha's blind rows at zero flags, 0 markers), **U-2 is CLOSED**.
 - **Wave U now waits only on priya's K-3 round-7 re-check.**
 
 **K-3 round 7, priya (fresh-context): PASS. K-3 CLOSED** (`PRIYA-LASTCALL-K3R4-0918.md`, "Round 7 re-check").
@@ -446,7 +447,7 @@ and a tag rename passes as a substring. F-0770 can close; F-0771 stays open. Vik
 - **kabir:** K-2c.
 - **priya:** K-3 round 4 re-check. (CI-1 is out of this commit.)
 - **priya:** U-2 last call, after kabir.
-- **Exclude as well:** CI-1 (`ci/stale-comment-check.py`, `.github/workflows/frontend-checks.yml`, `.proof-os/gates/f0150-prompt-version-exempt.txt`, `.proof-os/gates/F-0767-F-0768-prompt-version-ci.py`).
+- **Exclude as well:** CI-1 (`ci/stale-comment-check.py`, `.github/workflows/frontend-checks.yml`, `.proof-os/gates/f0150-prompt-version-exempt.txt`, `.proof-os/gates/F-1767-F-1768-prompt-version-ci.py`).
 - **Keep:** `ai-tests.yml`, which is K-3.
 
 **Exclusions (U-7 and other lanes):**
@@ -467,7 +468,7 @@ and a tag rename passes as a substring. F-0770 can close; F-0771 stays open. Vik
 5. Stale-comment gate green on the staged tree, run with `--since origin/main --event push` exactly as CI will run it, not `--since HEAD`.
 6. Commit every task document that a committed file cites. At minimum `MEERA-CI1-PROOF-0917.md` and `PRIYA-LASTCALL-CI1-0917.md` (cited by `frontend-checks.yml`); otherwise rule 4 fails the push.
 7. PROMPT_VERSION: `.4` covers the get_brief description change and the K-3 persona change. If they are split across commits, the first needs `.3`.
-8. Run `.proof-os/gates/F-0765-F-0766-risk-corpus.sh` and `.proof-os/gates/F-0767-F-0768-prompt-version-ci.py` on the staged tree.
+8. Run `.proof-os/gates/F-1765-F-1766-risk-corpus.sh` and `.proof-os/gates/F-1767-F-1768-prompt-version-ci.py` on the staged tree.
 
 **COMMIT RULE for Wave U (arjun): the U-7 saved-briefs UI must NOT go into the Wave U commit.** It is already in the tree: `SavedBriefsSection` in `MeeraSettingsSection.tsx`, `api.creatorBriefs.delete`, its test, and `creatorBriefs` stubs in 4 settings test files. The backend DELETE route doesn't exist. A 404 on delete silently removes the row, so shipping the UI alone would show erasure that never happened. Kavya is listing the exact files and hunks, and the api.ts hunks will need partial staging.
 
@@ -527,7 +528,7 @@ Still blocks the Wave U commit. |
 
 ### 2026-09-18, run under proof-os `/work`
 
-- **Ledger:** F-0765 (proximity), F-0766 (untested HIDE_TEXT branches), F-0767 (force-push passes the CI gate), F-0768 (4 unbumped historical commits).
+- **Ledger:** F-1765 (proximity), F-1766 (untested HIDE_TEXT branches), F-1767 (force-push passes the CI gate), F-1768 (4 unbumped historical commits).
 - **Confirm:** admissible, scope 9 files.
 - **Isolation, recorded from now on:** checkers get the artifact paths and the verbatim done_when only. Earlier reviews today were separate agent invocations but carried the builder's report, so they were weaker than fresh-context.
 - **KB5 built** (vikram, across two interrupted sessions).
@@ -549,30 +550,30 @@ Still blocks the Wave U commit. |
   - **Timing:** rule 3 took 4-6 s, with one 10.7 s outlier on this Windows box.
   - **Meera, fresh-context: all 10 done_when clauses MET** (`MEERA-CI1R3-PROOF-0918.md`). Built from this repo's real 44-commit history with a real bare origin and `--no-local` clones. Rule 3 took 3.8–5.2 s over 15 runs.
   - **Meera finding 1, blocks the push:** the workflow's new comments cite `MEERA-CI1-PROOF-0917.md` and `PRIYA-LASTCALL-CI1-0917.md`, which are untracked, so rule 4 fails a real push. Both must be committed with Wave U. Added to the pre-commit checklist.
-  - **Meera finding 2 → F-0772:** a duplicate SHA in the exemption file is accepted silently. LOW; vikram.
-  - **Gate:** arjun wrote `.proof-os/gates/F-0767-F-0768-prompt-version-ci.py`.
+  - **Meera finding 2 → F-1772:** a duplicate SHA in the exemption file is accepted silently. LOW; vikram.
+  - **Gate:** arjun wrote `.proof-os/gates/F-1767-F-1768-prompt-version-ci.py`.
     - **Part A:** the force-push scenario in a temp repo must go red naming the unbumped commit, with a control that a normal bumped push goes green.
     - **Part B:** rule 3 on real `origin/main..HEAD` must be clean with the exemptions, and must name exactly the 4 SHAs without them.
-    - **Falsified** by putting the `HEAD~1` fallback back → exit 1, "F-0767 regressed".
+    - **Falsified** by putting the `HEAD~1` fallback back → exit 1, "F-1767 regressed".
   - **Restore incident:** the falsify/restore went through Python text mode and turned 967 CRLF endings into LF (content equal, sha256 changed). The exact bytes were recovered from meera's verbatim scratch copy (sha256 `916cad25…`, the value priya recorded) and the gate re-ran green. Saved to memory.
-  - **Closed:** **F-0767 and F-0768 via promote.py.** Priya's re-check of CI-1 is still owed as the last call.
+  - **Closed:** **F-1767 and F-1768 via promote.py.** Priya's re-check of CI-1 is still owed as the last call.
 - **KB5 closed.** kabir's fresh-context check found both done_whens MET (`KABIR-KB5-CHECK-0918.md`): every fix removed turned its row red, and each HIDE_TEXT branch deleted went red on its own row.
-  - **Gate:** arjun wrote `.proof-os/gates/F-0765-F-0766-risk-corpus.sh`. It runs `clean`, checks the guarding rows and `PAIRING_WINDOW` exist, and needs tests > 0.
+  - **Gate:** arjun wrote `.proof-os/gates/F-1765-F-1766-risk-corpus.sh`. It runs `clean`, checks the guarding rows and `PAIRING_WINDOW` exist, and needs tests > 0.
   - **Falsified twice:** window 13 → exit 1 with "Expecting empty but was: [KAB5-N-send-draft, KAB5-N-send-files]"; guard row renamed → exit 1. Restored by sha256 and rebuilt green (16/0/0).
-  - **Closed:** **F-0765 and F-0766 via promote.py.**
-- **New, F-0769 (MEDIUM, kabir):** the 6-token window counts straight through a sentence end. "Draft bhej do kal tak. UPI se payout Influora pe aayega." still raises a flag she cannot dismiss; 6 of 6 short on-platform briefs tried still flag. Needs a **priya** ruling (do not pair across a sentence end? "Rs. 5,000" splits on the dot).
+  - **Closed:** **F-1765 and F-1766 via promote.py.**
+- **New, F-1769 (MEDIUM, kabir):** the 6-token window counts straight through a sentence end. "Draft bhej do kal tak. UPI se payout Influora pe aayega." still raises a flag she cannot dismiss; 6 of 6 short on-platform briefs tried still flag. Needs a **priya** ruling (do not pair across a sentence end? "Rs. 5,000" splits on the dot).
   - **Kabir's LOW notes, also for priya:** the corpus pins the window only between 3 and 12; two long-winded real asks are now missed (for Nisha's fresh blind set); single untested words inside the Hinglish and Devanagari branches; the must-catch tests stop at the first missing row.
 - **K-3, priya last call (fresh-context): NOT MET** (`PRIYA-LASTCALL-K3-0918.md`).
   - **Met:** the wrapper (12 mutants red), the persona (5 red), PROMPT_VERSION `.4` never committed (14 historical values checked).
-  - **F-0770 HIGH:** the tests compare Spring's object to itself, so in-place mutation is undetected. Test-only fix: a deep copy.
-  - **F-0771 MEDIUM, latent:** unknown nested fields inside trusted containers, and a non-list `deals`, stay outside the wrapper. Needs a drift test against the Java records.
+  - **F-1770 HIGH:** the tests compare Spring's object to itself, so in-place mutation is undetected. Test-only fix: a deep copy.
+  - **F-1771 MEDIUM, latent:** unknown nested fields inside trusted containers, and a non-list `deals`, stay outside the wrapper. Needs a drift test against the Java records.
   - **Both with vikram now** (pytest only).
   - **Before D-1:** `draft_reply` and every other tool outside the three are unwrapped, so D-1's done_when must put `draft_reply` behind the wrapper or make wrapping the default. **kabir** picks.
   - **Commit plan:** `.4` covers both the get_brief description change and the persona change. If split into two commits, the first needs `.3` (still free).
   - **Priya found:** PROMPT_VERSION is guarded only by the CI gate; pytest stays green on a revert.
   - **Arjun's error:** the K-3 artifact list named `app/security/untrusted.py`; the real path is `app/prompt/untrusted.py`.
 - **Priya round 6** (`RULINGS-U-0917.md` L632+), measured in a Java 21 probe on verbatim copies of the code:
-  - **F-0769 rule:** a wallet name and a request word pair only inside one sentence, still within 6 tokens.
+  - **F-1769 rule:** a wallet name and a request word pair only inside one sentence, still within 6 tokens.
     - **Sentence ends:** a run of `. ! ? … । ॥` followed by a space or the end of text, a blank line, or a line break that starts a list item.
     - **Not an end:** a single dot followed by a digit or currency sign ("Rs. 5,000"), or a dot after a short fixed abbreviation list. A single line break is not an end either.
     - **Measured:** all 6 of Kabir's short briefs stop flagging; 13/13 real asks containing a dot still flag (the naive split lost 7); no loss on Nisha's blind rows or the must-catch rows.
@@ -583,26 +584,26 @@ Still blocks the Wave U commit. |
     - (b) The two long-winded asks become report-only rows, not in Nisha's blind set.
     - (c) Nisha writes one natural sentence per untested word, or the word is pruned. Prune the Hinglish `#ad` now; keep the Devanagari `#ad`.
     - (d) Report every missing row, not just the first.
-- **New, F-0773:** on the AI-down or cap path, `BriefFallbackExtractor` sets both risk hints from its old patterns (bare "upi" sets the off-platform hint at L103-104; "TECNO #ad" sets the hide hint), so rounds 4, 5 and 6 are void there.
+- **New, F-1773:** on the AI-down or cap path, `BriefFallbackExtractor` sets both risk hints from its old patterns (bare "upi" sets the off-platform hint at L103-104; "TECNO #ad" sets the hide hint), so rounds 4, 5 and 6 are void there.
   - **Ruling:** on that path both hints are false and the two summary lines are dropped; the rules' own text checks still run.
   - `BriefFallbackExtractorTest` L108 must be rewritten.
-- **F-0770 and F-0771 built** (vikram). pytest 967 = 959 + 8 new drift tests, 2 clean full runs.
-  - **F-0770:** a deep-copy snapshot is taken before the run and compared after, in all 4 browser-copy tests. Priya's B1, B4, B5 and B6b are now red.
-  - **F-0771:** nested allow-lists for `PackageQuote`, `QuoteLine` and `AddOnLine`. An unknown key anywhere in `quote` wraps the whole container. A non-list `deals` and non-dict deals are wrapped. A new drift test parses `CreatorToolDtos.java` and was shown red on a scratch copy carrying a fake field.
+- **F-1770 and F-1771 built** (vikram). pytest 967 = 959 + 8 new drift tests, 2 clean full runs.
+  - **F-1770:** a deep-copy snapshot is taken before the run and compared after, in all 4 browser-copy tests. Priya's B1, B4, B5 and B6b are now red.
+  - **F-1771:** nested allow-lists for `PackageQuote`, `QuoteLine` and `AddOnLine`. An unknown key anywhere in `quote` wraps the whole container. A non-list `deals` and non-dict deals are wrapped. A new drift test parses `CreatorToolDtos.java` and was shown red on a scratch copy carrying a fake field.
   - **Minor:** the comment and the citation are fixed.
   - **Next:** **priya** re-check (fresh-context).
   - **Priya re-check: NOT MET** (`PRIYA-LASTCALL-K3-RECHECK-0918.md`).
-    - **F-0770:** the 4 original mutants are now red, but 5 others stay green. The L186 pass-through test still compares Spring's object to itself; worst case, the creator's card gets `{}`. `sort_keys=True` also hides an in-place key reorder.
-    - **F-0771:** a dict or list nested under any trusted field still reaches the model outside the wrapper (9 probes, latent). All six ways of removing the fix leave the suite green, because the proof was a scratch script, not a test.
+    - **F-1770:** the 4 original mutants are now red, but 5 others stay green. The L186 pass-through test still compares Spring's object to itself; worst case, the creator's card gets `{}`. `sort_keys=True` also hides an in-place key reorder.
+    - **F-1771:** a dict or list nested under any trusted field still reaches the model outside the wrapper (9 probes, latent). All six ways of removing the fix leave the suite green, because the proof was a scratch script, not a test.
     - **Met:** persona, `.4`.
     - **Vikram (a second instance, Python only) now fixing:** scalars only in trusted fields, probes turned into tests, L186 snapshot, drop `sort_keys`, `ai-tests.yml` triggers on the Java DTO path, two comments.
     - **Carried into D-1's done_when:** the drift test must parse every record field and its type, not only `@JsonProperty` (`DealTermsDto` is unannotated and has a brand-written `exclusivityBrands`); an unlisted tool is trusted by default; the `.4` split-commit note; the brief-delete condition.
 - **"K-2c" (one commit, since all of it touches `RiskFlagCorpusTest`):**
-  - **vikram builds**, after F-0770 and F-0771: F-0769, F-0773, and LOW (a), (c), (d).
+  - **vikram builds**, after F-1770 and F-1771: F-1769, F-1773, and LOW (a), (c), (d).
   - **nisha** wrote the (c) rows (`NISHA-HIDE-WORD-ROWS-0918.md`). The ruling lists **7** alternatives, not 6: `sponsored` has a Hinglish and a Devanagari branch. Each got a FLAG and a NO_FLAG sentence; none needed `CANNOT`, so none is pruned. She read the ruling, so these rows are **non-blind** and must be tagged that way.
   - **Proof:** each listed mutation shown red. Per the reviewer-defers memory this goes to **kabir**, not kavya.
   - **Last call:** kabir + priya.
-- **Recurrence check:** BLOCK on `dead-metric` (×5) and `doc-stale-doc-claim` (×11). Both are other lanes' classes, not this task's. `ci-gate-inert` is REPEAT ×2 (F-0763, F-0767); F-0767 closes on the CI-1 round-3 gate.
+- **Recurrence check:** BLOCK on `dead-metric` (×5) and `doc-stale-doc-claim` (×11). Both are other lanes' classes, not this task's. `ci-gate-inert` is REPEAT ×2 (F-0763, F-1767); F-1767 closes on the CI-1 round-3 gate.
 
 **Build order.** Vikram, batch 1: U-1 test gaps + CI gap + consent v2 constant + K-2 → kavya/kabir/priya. Then U-7 backend, then K-3. Ananya: F6 fix → U-6 consent screen (Case A, once Nisha finalises) → U-7 UI against a mocked client.
 

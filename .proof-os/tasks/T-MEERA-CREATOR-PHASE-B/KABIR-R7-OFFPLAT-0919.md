@@ -1,4 +1,4 @@
-# K-2c.2 last call, OFF_PLATFORM half: F-0776 sentence-boundary guards and the pipe (kabir, 2026-09-19)
+# K-2c.2 last call, OFF_PLATFORM half: F-1776 sentence-boundary guards and the pipe (kabir, 2026-09-19)
 
 ## Verdict
 
@@ -22,11 +22,11 @@ No FALSIFY marker is in the real tree (`grep -c FALSIFY` returns 0). Nothing in 
 
 ## What I read
 
-- Ledger F-0776.
+- Ledger F-1776.
 - `RULINGS-U-0917.md`, rounds 6 and 7, in full. In particular, round 6 Ruling 1 and its pass bar, and round 7 Ruling 4 and pass-bar items 1 and 4.
 - `OffPlatformPaymentRule.java`, `OffPlatformPaymentRuleTest.java` and `RiskFlagCorpusTest.java`, in full.
 - `RiskText.norm`.
-- `KABIR-K2C-CHECK-0918.md` clause 2, which is the origin of F-0776's six OFF_PLATFORM pieces.
+- `KABIR-K2C-CHECK-0918.md` clause 2, which is the origin of F-1776's six OFF_PLATFORM pieces.
 
 ## How I ran it
 
@@ -68,7 +68,7 @@ No FALSIFY marker is in the real tree (`grep -c FALSIFY` returns 0). Nothing in 
 | M13 | abbreviation protection | `return false;` in place of `SENTENCE_DOT_ABBREVIATIONS.contains(word)` | RED, 3 | `offPlatformPaymentStillCatches`: `["AB-ac-no", "AB-amt", "AB-eg"]`; the boundary test (the same three ids); suppression: 12 wraps (`AB-ac-no#1..4`, `AB-amt#1..4`, `AB-eg#1..4`) |
 
 **Notes on the table:**
-- **Named failures.** Every piece in F-0776's symptom (`?` `!` `…` `॥` U+2029, and the dot before a currency symbol) now fails a named assertion of its own. The `OffPlatformPaymentRuleTest` message names the exact character, so one red run shows which piece went.
+- **Named failures.** Every piece in F-1776's symptom (`?` `!` `…` `॥` U+2029, and the dot before a currency symbol) now fails a named assertion of its own. The `OffPlatformPaymentRuleTest` message names the exact character, so one red run shows which piece went.
 - **The two protection halves** each go red on their own: M11 through `AB-rupee-sym`, and M12 through the new `₹5000` case. So neither half is carried by the other.
 - **No encoding false pass.** `…` and `॥` are raw UTF-8 in the test source (`e2 80 a6`, `e0 a5 a5`), and M04 and M06 go red. So the file compiles to the intended code points. `RiskText.norm` is NFC, not NFKC, so `…` is not folded to `...` before the rule sees it.
 
@@ -93,7 +93,7 @@ The texts come from the built `RiskFlagCorpusTest.CORPUS`, read by reflection, s
 
 ## Outside the done_when
 
-### F1: seven boundary alternatives have no dependent row (LOW; F-0776's class one level down)
+### F1: seven boundary alternatives have no dependent row (LOW; F-1776's class one level down)
 
 The pieces are guarded, but some alternatives inside two of them are not. Each alternative below was deleted alone and the whole suite stayed green:
 
@@ -118,7 +118,7 @@ The pieces are guarded, but some alternatives inside two of them are not. Each a
 
 **The fix:** vikram adds 7 NO_FLAG rows in the NL shape: one per marker `*` `•` `·` `▪` `➤`, one `N)` list and one CRLF blank line. Each deletion must be shown red.
 
-**Why it does not block this done_when.** It is not in F-0776's symptom, not in round 7's pass bar, and not among the pieces this check was scoped to. I recommend a new ledger record, class `pattern-branch-with-no-test-row`, in `OffPlatformPaymentRule.java`.
+**Why it does not block this done_when.** It is not in F-1776's symptom, not in round 7's pass bar, and not among the pieces this check was scoped to. I recommend a new ledger record, class `pattern-branch-with-no-test-row`, in `OffPlatformPaymentRule.java`.
 
 ### F2: the pipe javadoc overstates what still flags (LOW, a comment defect)
 
@@ -156,7 +156,7 @@ The first residual inherits the documented no-space residual, but the javadoc st
 
 **What history shows.** `git log --all` on them is empty, so none of these files has ever been committed. `OffPlatformPaymentRule.java` is tracked (last committed in `a33f07e`) and shows as modified.
 
-**The risk.** A commit that stages only modified files ships the rule with none of the guards this check relied on. The proof-os gate `F-0765-F-0766-risk-corpus.sh` would still pass locally, because it reads the working tree.
+**The risk.** A commit that stages only modified files ships the rule with none of the guards this check relied on. The proof-os gate `F-1765-F-1766-risk-corpus.sh` would still pass locally, because it reads the working tree.
 
 **The condition.** At commit time, `git status --short -- influora-api/src/test/java/com/influora/service/risk/rules influora-api/src/test/resources/risk-corpus` must show nothing untracked. The earlier memory note, "Untracked file invisible to local gates", describes this exact failure.
 

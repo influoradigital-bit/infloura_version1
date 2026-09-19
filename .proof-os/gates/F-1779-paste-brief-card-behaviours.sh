@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gates/F-0779-paste-brief-card-behaviours.sh — origin: F-0779 (behaviour-with-no-failing-test), found
+# gates/F-1779-paste-brief-card-behaviours.sh — origin: F-1779 (behaviour-with-no-failing-test), found
 # by priya at the U-2 last call (.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/PRIYA-LASTCALL-U2-0918.md),
 # tests added by ananya, proved fresh-context by meera 2026-09-19 (MEERA-U2-TESTS-PROOF-0919.md):
 # each behaviour removed turned its own test red.

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# gates/F-0770-F-0771-k3-brand-wrapper.sh — origin: F-0770 (test-compares-object-to-itself) and
-# F-0771 (unclassified-nested-field-trusted), both found by priya on 2026-09-18 at the K-3 last
+# gates/F-1770-F-1771-k3-brand-wrapper.sh — origin: F-1770 (test-compares-object-to-itself) and
+# F-1771 (unclassified-nested-field-trusted), both found by priya on 2026-09-18 at the K-3 last
 # call, fixed by vikram across K-3 rounds 2-4, and judged MET by priya fresh-context
 # (.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/PRIYA-LASTCALL-K3R4-0918.md).
 #
 # THE DEFECTS.
-#   F-0770  The K-3 browser-copy tests compared Spring's payload object to itself, so a loop that
+#   F-1770  The K-3 browser-copy tests compared Spring's payload object to itself, so a loop that
 #           mutated that object in place (popping brand fields, escaping '<') stayed green. The
 #           fix: a deep copy taken before the run, compared after.
-#   F-0771  influora-ai/app/tools/loop.py classified only top-level and per-deal keys, so an
+#   F-1771  influora-ai/app/tools/loop.py classified only top-level and per-deal keys, so an
 #           unknown key nested inside a trusted container (quote.brand_budget_note), or a
 #           non-scalar under a trusted key, reached the model outside the untrusted wrapper. The
 #           fix: scalars only in trusted fields, a whole-container wrap for anything unrecognised,

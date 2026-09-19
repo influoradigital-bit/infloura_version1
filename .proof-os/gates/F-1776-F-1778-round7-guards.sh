@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# gates/F-0776-F-0778-round7-guards.sh — origin: F-0776 (pattern-branch-with-no-test-row, kabir
-# 2026-09-18 K-2c check, clause 5) and F-0778 (flag-fires-on-compliant-text, priya 2026-09-18
+# gates/F-1776-F-1778-round7-guards.sh — origin: F-1776 (pattern-branch-with-no-test-row, kabir
+# 2026-09-18 K-2c check, clause 5) and F-1778 (flag-fires-on-compliant-text, priya 2026-09-18
 # round 7 / R7-A). Both fixed by vikram in K-2c.1 and K-2c.2, signed off fresh-context by kabir
 # (.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/KABIR-R7-HIDE-0919.md and KABIR-R7-OFFPLAT-0919.md).
 #
 # THE DEFECTS.
-#   F-0776  8 of 36 HIDE_TEXT alternatives and 6 sentence terminators in OffPlatformPaymentRule had
+#   F-1776  8 of 36 HIDE_TEXT alternatives and 6 sentence terminators in OffPlatformPaymentRule had
 #           no row that went red when they were removed, so any of them could be deleted with the
 #           whole build green.
-#   F-0778  The hide-the-ad flag fired on brands that FOLLOW the ad-label rules ("Please do not post
+#   F-1778  The hide-the-ad flag fired on brands that FOLLOW the ad-label rules ("Please do not post
 #           without the paid partnership label."): 13 of 15 compliance lines raised a flag the
 #           creator cannot dismiss.
 #
@@ -23,8 +23,8 @@
 #   3. both classes actually RAN (tests > 0 in their own surefire report), with `clean` always
 #      passed (reference_restore_by_copy_keeps_stale_bytecode).
 #
-# NOT CHECKED: F-0781 (bare "only" and "nahi ... toh" hide asks that escape, open); F-0777 (asks the
-# text rules miss on the FALLBACK path, before go-live); F-0780 (passive payout statements); how
+# NOT CHECKED: F-1781 (bare "only" and "nahi ... toh" hide asks that escape, open); F-1777 (asks the
+# text rules miss on the FALLBACK path, before go-live); F-1780 (passive payout statements); how
 # real brands write beyond the rows here.
 #
 # Exit 0 proved · 1 broken · 2 unavailable (never green).

@@ -18,7 +18,7 @@ Artifact hashes, the same at the start and end of this check. The real worktree 
 
 ## What I read
 - `HideDisclosureRule.java` in full. `RiskFlagCorpusTest.java` in full. `RiskText.norm` and `RiskText.matches`. `gen_nisha_compliance_tsv.py`. The compliance TSV, byte by byte.
-- Ledger F-0776 and F-0778.
+- Ledger F-1776 and F-1778.
 - RULINGS-U-0917.md round 7 in full (L853-1165).
 - NISHA-COMPLIANCE-ROWS-0918.md in full.
 - Nisha's blind HD-F rows in `nisha-blind-0917.tsv`.

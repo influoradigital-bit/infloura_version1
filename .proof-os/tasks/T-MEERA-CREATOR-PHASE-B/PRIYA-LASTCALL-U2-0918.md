@@ -8,15 +8,15 @@
 
 ## Verdict: **NOT PASSED. Passes on three conditions, listed below, without another full last call.**
 
-**Is F-0776 the only thing outstanding? No.** Three things are:
+**Is F-1776 the only thing outstanding? No.** Three things are:
 
 | # | Outstanding | Owner | Where it is specified |
 |---|---|---|---|
-| 1 | **K-2c.2**: F-0776's guard rows plus round 7's rulings 1, 3 and 4 | vikram, nisha | `RULINGS-U-0917.md` round 7, "K-2c.2 pass bar" |
+| 1 | **K-2c.2**: F-1776's guard rows plus round 7's rulings 1, 3 and 4 | vikram, nisha | `RULINGS-U-0917.md` round 7, "K-2c.2 pass bar" |
 | 2 | **R7-A (new, HIGH)**: HIDE_DISCLOSURE raises its non-dismissible "Breaks ASCI guidelines" flag on compliant brands. 13 of 15 lines telling the creator to **keep** the label flag, e.g. "Please do not post without the paid partnership label." It goes in the same commit as item 1 | vikram, nisha | round 7, "R7-A" |
 | 3 | **Four U-2 bar items have no test that goes red** when their behaviour is removed | ananya | this file, below |
 
-- **F-0777 does not block U-2.** It blocks go-live (round 7, Ruling 2).
+- **F-1777 does not block U-2.** It blocks go-live (round 7, Ruling 2).
 - **The OFF_PLATFORM payout-statement residual does not block U-2** either (round 7, last "New" section).
 
 ## How this was checked
@@ -42,7 +42,7 @@
 
 | # | Bar item | Verdict | Evidence |
 |---|---|---|---|
-| 1 | R-U2 in the branch, and K-2, K-2b, round 5 R1 + 2b, K-2c closed | **NOT MET** | R-U2: MET. The consent text and version are v2 on all three sides and the sync test passes 7/7; Kabir APPROVE and priya PASS on U-6. K-2, K-2b and round 5: closed (F-0765, F-0766). K-2c: F-0769 and F-0773 closed, **F-0776 open**. **R7-A open** (round 7 made it a condition) |
+| 1 | R-U2 in the branch, and K-2, K-2b, round 5 R1 + 2b, K-2c closed | **NOT MET** | R-U2: MET. The consent text and version are v2 on all three sides and the sync test passes 7/7; Kabir APPROVE and priya PASS on U-6. K-2, K-2b and round 5: closed (F-1765, F-1766). K-2c: F-1769 and F-1773 closed, **F-1776 open**. **R7-A open** (round 7 made it a condition) |
 | 2a | Consent known missing: Analyse sends nothing and opens consent | MET | M1 (short-circuit removed): **RED**, 2 failed, both "asks for consent instead of sending the paste…" tests |
 | 2b | Accepting from the paste card does not open the chat | MET | M3 (paste consent tagged as chat consent): **RED**, 1 failed, "…and accepting does not open the chat" |
 | 2c | Consent unknown: the paste is sent, and a `CONSENT_REQUIRED` refusal is handled | **NOT MET (no test)** | The code handles it (`PasteBriefCard.tsx` L139-141). M2, with that branch replaced by `if (false)`: **GREEN, `Tests 56 passed (56)`**. No test in either file makes `paste` reject with `CONSENT_REQUIRED` |
@@ -75,7 +75,7 @@ The mutants are in `scratchpad/pk3r3/u2mut.py`, with exact anchors. Vitest count
 U-2 passes, without a new full last call, when all three hold:
 1. **T1-T4** are in `src/`, each shown red on its mutant by kavya (red lines quoted), then green, with vitest per-file counts.
 2. **K-2c.2** lands exactly as round 7's pass bar says:
-   - F-0776 closed;
+   - F-1776 closed;
    - R7-A built, including Nisha's 12 or more blind compliance rows with **0 flagged**;
    - Nisha's yes or no on the terse forms, with any "no" pruned;
    - the pipe fix;
@@ -87,7 +87,7 @@ U-2 passes, without a new full last call, when all three hold:
 
 ## Not U-2, recorded so it is not lost
 
-- **F-0777 (go-live):**
+- **F-1777 (go-live):**
   - the FALLBACK notice must also say that the risk check can miss asks written in other words;
   - the offline recall run gains a FALLBACK column;
   - K-2d adds `#\s?ad`, `g[\s-]?pay` and `u\.p\.i\.?`.
@@ -115,4 +115,4 @@ All under `C:\Users\SAGEWO~1\AppData\Local\Temp\claude\C--Users-Sage-world-Downl
 
 ---
 
-**U-2 last call: NOT PASSED.** U-2's own code passes bar items 2a, 2b, 3a, 4, 5, 7a, 8 and 9. Items 2c, 3b, 6 and 7b have no test that goes red. Item 1 is open on K-2c.2 (F-0776 plus round 7) and on R7-A. U-2 passes on the three conditions above, and I confirm it on evidence, without a new full last call.
+**U-2 last call: NOT PASSED.** U-2's own code passes bar items 2a, 2b, 3a, 4, 5, 7a, 8 and 9. Items 2c, 3b, 6 and 7b have no test that goes red. Item 1 is open on K-2c.2 (F-1776 plus round 7) and on R7-A. U-2 passes on the three conditions above, and I confirm it on evidence, without a new full last call.

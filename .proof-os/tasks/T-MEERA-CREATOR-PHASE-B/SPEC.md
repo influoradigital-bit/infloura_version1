@@ -920,7 +920,7 @@ interface RiskRule { Optional<RiskFlag> apply(RiskContext ctx); }
      the live 50-brief sample's `basis` split. See `OffPlatformPaymentRule.PAIRING_WINDOW`'s
      javadoc. -->
 
-<!-- AMEND-0918 / VIKRAM 2026-09-18 (F-0769, K-2c, RULINGS-U-0917.md round 6 "Ruling 1"): the
+<!-- AMEND-0918 / VIKRAM 2026-09-18 (F-1769, K-2c, RULINGS-U-0917.md round 6 "Ruling 1"): the
      6-token window in AMEND-0917-KB5 still counted straight through a sentence end, so short,
      ordinary on-platform briefs such as "Send the draft by Monday. UPI payouts go through
      Influora as usual." still paired a wallet name in one sentence with an unrelated "send" in
@@ -945,8 +945,8 @@ interface RiskRule { Optional<RiskFlag> apply(RiskContext ctx); }
      `OffPlatformPaymentRule.sentences`, `.SENTENCE_TERMINATOR`, `.SENTENCE_BLANK_LINE`,
      `.SENTENCE_LIST_ITEM_LINE` and `.isProtectedDot`'s javadoc. -->
 
-<!-- AMEND-0918-FALLBACK / VIKRAM 2026-09-18 (F-0772 / F-0773, K-2c, RULINGS-U-0917.md round 6
-     "New: F-0772"): on the FALLBACK path (`BriefFallbackExtractor`, used when AI extraction is
+<!-- AMEND-0918-FALLBACK / VIKRAM 2026-09-18 (F-1772 / F-1773, K-2c, RULINGS-U-0917.md round 6
+     "New: F-1772"): on the FALLBACK path (`BriefFallbackExtractor`, used when AI extraction is
      skipped), `off_platform_payment_hint` and `disclosure_hidden_hint` are now always `false` and
      never derived from the extractor's own patterns -- those patterns predated and bypassed
      AMEND-0917, AMEND-0917-R5, AMEND-0917-KB5 and AMEND-0918 entirely (a bare "upi" flagged an
@@ -957,7 +957,7 @@ interface RiskRule { Optional<RiskFlag> apply(RiskContext ctx); }
      `BriefFallbackExtractor.extract`'s javadoc and `BriefFallbackExtractorRealRiskRulesTest`. -->
 
 <!-- AMEND-0918-R7 / VIKRAM 2026-09-18 (K-2c.2, RULINGS-U-0917.md round 7): two independent fixes.
-     (1) R7-A / F-0778 (HIGH, priya): HIDE_DISCLOSURE fired on ASCI-compliance instructions -- a
+     (1) R7-A / F-1778 (HIGH, priya): HIDE_DISCLOSURE fired on ASCI-compliance instructions -- a
      brand or agency telling the creator to KEEP, add or place the disclosure label, worse than the
      round-4 TECNO case because it accused the most compliant brands ("Please do not post without
      the paid partnership label."). Four independent changes clear 12 measured trigger lines with
@@ -968,7 +968,7 @@ interface RiskRule { Optional<RiskFlag> apply(RiskContext ctx); }
      instruction ("...at the end", "...in the comments", "...only", "...in place of...") does not
      fire; and the Hinglish/Devanagari short forms' conditional-compliance shape ("...nahi likha toh
      ...", "...नहीं लगाया तो...") does not fire. See `HideDisclosureRule.HIDE_TEXT`'s javadoc for the
-     full falsify map and residuals. (2) Round 7 Ruling 1 (F-0776): B3's bare `ad` alternative, dead
+     full falsify map and residuals. (2) Round 7 Ruling 1 (F-1776): B3's bare `ad` alternative, dead
      in grammatical English ("as an ad" never matched), is widened to `an?` rather than pruned, so
      "Don't disclose this as an ad." now flags. Round 7 Ruling 3 (Nisha's yes/no,
      NISHA-COMPLIANCE-ROWS-0918.md): the Hinglish `na` short form ("ad na likhna") is pruned --
@@ -993,7 +993,7 @@ Severity scales with deal value: `value = extraction.budget_inr` or `collaborati
 | `CALENDAR_OVERLOAD` | INFO | the deadline week already holds ≥ `prefs.weekly_sponsored_limit` deliverables (count IN_PROGRESS and CONTRACTED collaborations with `endDate` in that ISO week) | Action: propose a later date |
 | `PARTNERSHIP_ADS_REQUEST` | WARN | only in `evaluateDeal`: status ≥ CONTRACTED and the last brand message matches `partnership ad|boost|promote (this|the) (post|reel)|whitelist` and `usageChannels` lacks PAID_ADS and WHITELISTING | "Do not approve the partnership-ads request until the paid-ads add-on is paid." |
 
-AMEND-0918-FALLBACK. On the FALLBACK path (`BriefFallbackExtractor`), `off_platform_payment_hint` and `disclosure_hidden_hint` are always `false`; `OFF_PLATFORM_PAYMENT` and `HIDE_DISCLOSURE` fire from the text checks in this table alone on that path, labelled `basis=BRIEF_TEXT` (F-0772 / F-0773).
+AMEND-0918-FALLBACK. On the FALLBACK path (`BriefFallbackExtractor`), `off_platform_payment_hint` and `disclosure_hidden_hint` are always `false`; `OFF_PLATFORM_PAYMENT` and `HIDE_DISCLOSURE` fire from the text checks in this table alone on that path, labelled `basis=BRIEF_TEXT` (F-1772 / F-1773).
 
 Every flag: `title` ≤ 60 chars, `detail` one sentence with rendered numbers, `action` one sentence, `data` rendered strings only. `dismissible = false` for `HIDE_DISCLOSURE`, `OFF_PLATFORM_PAYMENT`, `REGULATED_CATEGORY`.
 

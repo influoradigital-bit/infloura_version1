@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# gates/F-0769-F-0773-sentence-and-fallback.sh — origin: F-0769 (flag-fires-on-unrelated-words,
-# kabir 2026-09-18) and F-0773 (flag-fires-on-unrelated-words, priya 2026-09-18). Both fixed by
+# gates/F-1769-F-1773-sentence-and-fallback.sh — origin: F-1769 (flag-fires-on-unrelated-words,
+# kabir 2026-09-18) and F-1773 (flag-fires-on-unrelated-words, priya 2026-09-18). Both fixed by
 # vikram in K-2c; checked fresh-context by kabir with 73 clean-build mutations
 # (.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/KABIR-K2C-CHECK-0918.md, clauses 1-4 and 6 MET).
 #
 # THE DEFECTS.
-#   F-0769  OffPlatformPaymentRule's 6-token pairing window counted straight through a sentence
+#   F-1769  OffPlatformPaymentRule's 6-token pairing window counted straight through a sentence
 #           end, so "Draft bhej do kal tak. UPI se payout Influora pe aayega." raised a flag the
 #           creator cannot dismiss. Fixed by pairing only within one sentence (RULINGS-U-0917.md
 #           round 6); "Rs. 5,000"-style dots do not end a sentence.
-#   F-0773  On the FALLBACK path (monthly AI allowance spent, or AI down) BriefFallbackExtractor set
+#   F-1773  On the FALLBACK path (monthly AI allowance spent, or AI down) BriefFallbackExtractor set
 #           both risk hints from its own older patterns, which brought back every false flag that
 #           rounds 4-6 fixed. Fixed by never setting either hint on that path.
 #
@@ -20,8 +20,8 @@
 #   2. every one of the three classes actually RAN (tests > 0 in its own surefire report);
 #   3. `clean` is always passed (reference_restore_by_copy_keeps_stale_bytecode).
 #
-# NOT CHECKED: F-0776 (8 HIDE_TEXT alternatives and 6 sentence terminators with no guard row, open);
-# F-0777 (real asks the text rules miss on the FALLBACK path, open, a product ruling); whether the
+# NOT CHECKED: F-1776 (8 HIDE_TEXT alternatives and 6 sentence terminators with no guard row, open);
+# F-1777 (real asks the text rules miss on the FALLBACK path, open, a product ruling); whether the
 # rows reflect how real brands write.
 #
 # Exit 0 proved · 1 broken · 2 unavailable (never green).

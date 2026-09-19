@@ -629,12 +629,12 @@ Nisha's NO_FLAG labels on `OPP-N-02` and `OPP-N-09` are right. So is Kabir's own
 
 ---
 
-## Round 6 — F-0769: pairing across a sentence end, and the FALLBACK path (K-2c)
+## Round 6 — F-1769: pairing across a sentence end, and the FALLBACK path (K-2c)
 
 **From:** Priya (CTO). **Written:** 2026-09-18. **Product rulings.** Read-only, no Maven, nothing in the tree changed.
 
 **Read:**
-- `KABIR-KB5-CHECK-0918.md`, in full, and ledger F-0769.
+- `KABIR-KB5-CHECK-0918.md`, in full, and ledger F-1769.
 - In full:
   - `OffPlatformPaymentRule.java` (`4f5e9905…08ff`)
   - `HideDisclosureRule.java` (`72c27e65…a53c`)
@@ -667,8 +667,8 @@ Nisha's NO_FLAG labels on `OPP-N-02` and `OPP-N-09` are right. So is Kabir's own
 | 3b | Kabir's two long-winded asks | Corpus rows as known misses (report only), plus a non-blind supplement to the offline recall run. **Not** in Nisha's fresh blind set |
 | 3c | Untested alternatives | One natural row per alternative, written by nisha. Prune any alternative she cannot write naturally. Prune the Hinglish-branch `#ad` now: it is redundant (measured) |
 | 3d | Report every missing row in one run | **Yes**, for every test in the class that asserts inside a loop |
-| 4 | Owner and order | **vikram**, after F-0770/F-0771, in one commit (**K-2c**) that also carries F-0772. **nisha** writes her rows now, in parallel. **kavya** QA. **kabir + priya** last call |
-| new | FALLBACK path | **F-0772, to be ledgered.** FALLBACK briefs set both hints from the extractor's own old patterns, which bypass rounds 4 and 5 and this fix. It goes in the same commit and blocks U-2 the same way |
+| 4 | Owner and order | **vikram**, after F-1770/F-1771, in one commit (**K-2c**) that also carries F-1772. **nisha** writes her rows now, in parallel. **kavya** QA. **kabir + priya** last call |
+| new | FALLBACK path | **F-1772, to be ledgered.** FALLBACK briefs set both hints from the extractor's own old patterns, which bypass rounds 4 and 5 and this fix. It goes in the same commit and blocks U-2 the same way |
 
 ### Ruling 1: the boundary
 
@@ -770,14 +770,14 @@ The round 3 §1 deploy check (delete every `creator_briefs` row from before the 
 
 ### Ruling 4: owner and order
 - **vikram builds, in this order:**
-  1. **Finish F-0770 and F-0771 first.** They are in flight in `influora-ai` and gate D-1 through K-3.
-  2. **Then K-2c, as one commit in `influora-api`:** F-0769, F-0772 and LOW (a), (c) and (d). All of these touch `RiskFlagCorpusTest`, and one reviewed change to that file beats three.
+  1. **Finish F-1770 and F-1771 first.** They are in flight in `influora-ai` and gate D-1 through K-3.
+  2. **Then K-2c, as one commit in `influora-api`:** F-1769, F-1772 and LOW (a), (c) and (d). All of these touch `RiskFlagCorpusTest`, and one reviewed change to that file beats three.
 - **Why this order.** K-3's fixes are smaller and already open, and the two pieces of work touch different modules. Both sit on D-1's path: K-3 directly, and U-2 through the close of Wave U. I review K-3 when it comes back, while K-2c is being built.
 - **nisha, now, in parallel:** the (c) guard rows, plus a naturalness sign-off on the Hinglish and Devanagari rows below (the round 4 owner rule).
 - **kavya:** QA. Each mutation shown red first, with the red line quoted.
 - **kabir + priya:** last call. Kabir re-runs his KB5 probe against the built rule.
 
-### New: F-0772 — the FALLBACK path ignores rounds 4 and 5 and this round
+### New: F-1772 — the FALLBACK path ignores rounds 4 and 5 and this round
 
 I found this while reading the path the flag takes.
 
@@ -793,7 +793,7 @@ I found this while reading the path the flag takes.
 - The FALLBACK summary line then tells the creator the brand "Mentions paying you outside a platform" (L230-231).
 
 **Consequences:**
-- On FALLBACK, round 5 Ruling 1 and any F-0769 fix do nothing.
+- On FALLBACK, round 5 Ruling 1 and any F-1769 fix do nothing.
 - `BriefFallbackExtractorTest` L108 even pins "Bank transfer within 7 days" as a positive, which contradicts Ruling 1.
 
 **Ruling: on FALLBACK the extractor sets both hints to false and drops those two summary lines.**
@@ -810,7 +810,7 @@ I found this while reading the path the flag takes.
   - `KAB-HD-F-01` raises `HIDE_DISCLOSURE`
   - `TRIGGER_TEXT` raises both
 - **Falsify:** restore the extractor's own OFF_PLATFORM pattern. The `OPP-N-02` case goes red.
-- **Ledger:** a new record at the next free id (F-0772), opened by priya. Not F-0769: it is a different path with a different fix.
+- **Ledger:** a new record at the next free id (F-1772), opened by priya. Not F-1769: it is a different path with a different fix.
 
 ### K-2c pass bar
 1. **Build.** Ruling 1 built as specified. The rule's javadoc states:
@@ -833,7 +833,7 @@ I found this while reading the path the flag takes.
    - `।` removed from the terminator set → XS-5
    - the window set to 5, then 7 → the pin test
    - an Influora or payout exclusion added → the suppression test
-   - the FALLBACK OFF_PLATFORM pattern restored → the F-0772 test
+   - the FALLBACK OFF_PLATFORM pattern restored → the F-1772 test
 4. **Suppression wraps.** The suppression test gains the probe's three extra wraps:
    - terminators and abbreviations around the row
    - blank-line paragraphs
@@ -845,20 +845,20 @@ I found this while reading the path the flag takes.
    - the `CompetitorConflictRule` and `ExclusivityLongRule` tests
 
    Counts are quoted from surefire's "Tests run / Failures / Errors / Skipped" line.
-7. **U-2's last-call bar, item 1,** now reads: R-U2 in the branch, and K-2, K-2b, round 5 Ruling 1 plus 2b, and **K-2c (F-0769, F-0772)** closed.
+7. **U-2's last-call bar, item 1,** now reads: R-U2 in the branch, and K-2, K-2b, round 5 Ruling 1 plus 2b, and **K-2c (F-1769, F-1772)** closed.
 
 
 ---
 
-## Round 7 — K-2c follow-up: the last dead alternative, F-0777, Nisha's rows, the pipe, and compliance lines that flag (R7-A)
+## Round 7 — K-2c follow-up: the last dead alternative, F-1777, Nisha's rows, the pipe, and compliance lines that flag (R7-A)
 
 **From:** Priya (CTO). **Written:** 2026-09-18, 17:15. **Product rulings.** Read-only on the tree: no Maven, nothing in `influora-api/` or `src/` edited, no stash.
 
-**Numbering correction:** round 6 called the FALLBACK record "F-0772". In the ledger, F-0772 is meera's exemption-list record, and the FALLBACK record is **F-0773**, as Kabir noted. Read every "F-0772" in round 6 as F-0773.
+**Numbering correction:** round 6 called the FALLBACK record "F-1772". In the ledger, F-1772 is meera's exemption-list record, and the FALLBACK record is **F-1773**, as Kabir noted. Read every "F-1772" in round 6 as F-1773.
 
 **Read:**
 - `KABIR-K2C-CHECK-0918.md`, in full.
-- Ledger F-0769, F-0773, F-0776 and F-0777.
+- Ledger F-1769, F-1773, F-1776 and F-1777.
 - `NISHA-HIDE-WORD-ROWS-0918.md`.
 - Source, by sha256:
   - `HideDisclosureRule.java` (`e9c38087…`)
@@ -881,7 +881,7 @@ I found this while reading the path the flag takes.
 - **Corpus.** The corpus and both ratchets are read by reflection from the built `RiskFlagCorpusTest`: 138 rows (69 HD, 69 OP), with ratchets of 22 (HD) and 24 (OP).
 - **OFF_PLATFORM variants** run through a copy of the pairing code. The copy agrees with the built `matches()` on all 159 texts tried.
 - **Every row I wrote is non-blind.** My rows are existence proofs and regression rows, not precision evidence.
-- **Vikram's F-0776 work was in flight while I measured.**
+- **Vikram's F-1776 work was in flight while I measured.**
   - `RiskFlagCorpusTest.java` changed at 16:51 (the VIK-GUARD2 rows).
   - `HideDisclosureRule.java` changed at 17:04, and again before 17:07. At 17:04 `ad\s*tag` was missing, presumably a falsification run. That line had no FALSIFY marker.
   - Nothing below is measured on those states.
@@ -891,7 +891,7 @@ I found this while reading the path the flag takes.
 | # | Question | Ruling |
 |---|---|---|
 | 1 | B3's `ad` (only "as ad" / "as a ad") | **Widen** `(?:a\s+)?` to `(?:an?\s+)?`. Guard row: "Don't disclose this as an ad." 0 corpus false flags, 0 ratchet rows lost |
-| 2 | F-0777 | **(c).** No recall regex before U-2. Five candidate words are rejected on measured false flags. Three spelling variants are accepted for a go-live **K-2d**. Before go-live, the FALLBACK notice also covers the risk check, and the offline recall run gains a FALLBACK column. **Blocks go-live, not U-2** |
+| 2 | F-1777 | **(c).** No recall regex before U-2. Five candidate words are rejected on measured false flags. Three spelling variants are accepted for a go-live **K-2d**. Before go-live, the FALLBACK notice also covers the risk check, and the offline recall run gains a FALLBACK column. **Blocks go-live, not U-2** |
 | 3 | Nisha's 7 natural rows fire on nothing | **Accept the mechanical rows** as deletion guards. Nisha's 7 FLAG rows stay as report-only known misses; her 7 NO_FLAG rows stay in the zero-false-positive test. No rewrite and no widening before U-2. Nisha answers yes or no: does a brand send each terse form? A "no" prunes that alternative |
 | 4 | Pipe `\|` typed as a danda | **Fix now**, in the same commit. Measured: it clears the three on-platform pipe lines and keeps both real asks. 0 corpus false flags, 0 ratchet rows lost |
 | new | **R7-A: HIDE_DISCLOSURE fires on ASCI-compliance lines** | 13 of 15 lines in which the brand tells the creator to **keep or place** the label raise the non-dismissible "Breaks ASCI guidelines" flag. **Blocks U-2.** Fixed in the same commit: a measured candidate clears 12 of the 13 with 0 corpus false flags and 0 ratchet rows lost |
@@ -909,7 +909,7 @@ I found this while reading the path the flag takes.
 Corpus, for both variants: false flags `[]`, ratchet rows lost `[]`.
 
 **Why widen, not prune:**
-- F-0776 forces an edit here either way. A dead alternative can be made live or removed; it cannot stay.
+- F-1776 forces an edit here either way. A dead alternative can be made live or removed; it cannot stay.
 - The words before it, "don't disclose this/it as", already say it is a hide ask. An article cannot add a false flag, and none was measured.
 - Pruning would leave the natural English form uncaught on the one path where the text is the only control (FALLBACK, Ruling 2).
 
@@ -981,7 +981,7 @@ Each subject and verb alternative still appears exactly once. The measured candi
 **What the candidate does:**
 - **Compliance rows:** 0 of C1-C12 flag.
 - **Hide asks, all still caught:**
-  - Kabir's 7 F-0776 guard texts and "Don't disclose this as an ad."
+  - Kabir's 7 F-1776 guard texts and "Don't disclose this as an ad."
   - "ad mat likhna", "#ad mat lagana", "ad nahi likhna", "ad na likhna", "Caption mein #ad nahi likhna hai."
   - "#ad मत डालना", "#ad नहीं डालना।", "विज्ञापन मत लिखना"
 - **Corpus:** NO_FLAG rows flagged `[]`; HD ratchet rows lost `[]`; 22 of 22 caught SHOULD_FLAG rows still caught.
@@ -1025,9 +1025,9 @@ Each subject and verb alternative still appears exactly once. The measured candi
 - **Symptom:** compliance lines C1-C12 raise the non-dismissible flag.
 - **missed_by:** every HIDE_DISCLOSURE NO_FLAG row states compliance positively; none tells the creator not to post without the label.
 
-### Ruling 2: F-0777 — (c), and it blocks go-live, not U-2
+### Ruling 2: F-1777 — (c), and it blocks go-live, not U-2
 
-**Why not U-2.** F-0777 is a miss on the FALLBACK path, not a false accusation, and the card claims nothing when there is no flag:
+**Why not U-2.** F-1777 is a miss on the FALLBACK path, not a false accusation, and the card claims nothing when there is no flag:
 - `DealRiskCard` renders nothing for zero flags. Its own javadoc (L126-128) refuses an empty "no risks found" panel.
 - The FALLBACK notice already says the reading is rule-based and to check it against the brief.
 
@@ -1059,11 +1059,11 @@ What is missing is a sentence that covers the risk check. That is copy, and it i
    - The test asserts the new sentence in all three cases.
 2. **The offline recall run (round 5 §2c) gains a FALLBACK column.**
    - It reports the text half alone, per rule and per language, on the same rows.
-   - Non-blind supplement: Kabir's F-0777 asks, plus Nisha's 7 natural `nisha_guard` FLAG rows.
+   - Non-blind supplement: Kabir's F-1777 asks, plus Nisha's 7 natural `nisha_guard` FLAG rows.
    - The FALLBACK column has no numeric bar. If it falls below the AI path's 80%, creator-facing copy may not claim Meera catches these asks once her monthly allowance is spent. That goes to Swapnil, together with round 5's decision.
 3. **K-2d (vikram).** `#\s?ad`, `g[\s-]?pay` and `u\.p\.i\.?`, each with a ratchet row, and each deletion shown red.
 
-**Closing F-0777.** It closes when items 1 and 2 exist. The text half's recall on FALLBACK is then an accepted, documented property, not a defect for regex to chase.
+**Closing F-1777.** It closes when items 1 and 2 exist. The text half's recall on FALLBACK is then an accepted, documented property, not a defect for regex to chase.
 
 ### Ruling 3: Nisha's natural rows — accept the mechanical guards
 
@@ -1075,7 +1075,7 @@ What is missing is a sentence that covers the risk check. That is copy, and it i
 **What her rows prove.** The short-form branches need the subject, negator and verb next to each other, and natural sentences put words between them ("'sponsored' word bilkul mat daalna", "#ad wala hashtag mat laga"). That is a recall limit of the branch's shape, not of any one word. Pruning single words would not change it.
 
 **The ruling:**
-- **Accept the mechanical rows** as the deletion guards F-0776's done_when asks for.
+- **Accept the mechanical rows** as the deletion guards F-1776's done_when asks for.
 - **Nisha's 7 FLAG rows** stay as SHOULD_FLAG report-only known misses. They are the honest recall figure for these branches: 0 of 7. They also join the offline run's supplement (Ruling 2).
 - **Her 7 NO_FLAG rows** stay in the zero-false-positive test, where they already pass.
 - **No tighter rewrite.** A sentence written to fit the pattern is vikram's mechanical row with a longer tail, and it adds no evidence.
@@ -1138,7 +1138,7 @@ Measure it against the corpus, these 7 lines and Nisha's fresh blind set, and br
 ### K-2c.2 pass bar: one commit
 
 vikram builds; kavya checks red-first; kabir and priya take the last call.
-1. **F-0776.**
+1. **F-1776.**
    - Each remaining alternative is guarded, with its deletion shown red alone: `put`, `#collab`, `ad\s*tag`, `sponsored\s+tag`, B2 `this\s+is`, B3 `it` (vikram's VIK-GUARD2 rows), and B3 `ad` (Ruling 1's row). `without` is pruned under R7-A.
    - Kabir's six definition rows, each shown red: `?`, `!`, `…`, `॥`, U+2029, and the currency-symbol protection (his clause 2 fix).
 2. **R7-A.**
@@ -1152,11 +1152,11 @@ vikram builds; kavya checks red-first; kabir and priya take the last call.
 5. **SPEC and comments.**
    - §5.2's HIDE_DISCLOSURE cell gets the R7-A sentence, and the terminator line gains `|`. Marker: `AMEND-0918-R7`.
    - Both javadocs updated.
-   - The stale header comment in `.proof-os/gates/F-0765-F-0766-risk-corpus.sh` fixed (Kabir's LOW).
+   - The stale header comment in `.proof-os/gates/F-1765-F-1766-risk-corpus.sh` fixed (Kabir's LOW).
 6. **Regression.** Round 6 item 6's list stays green, plus both proof-os risk gates. Counts quoted from surefire's "Tests run / Failures / Errors / Skipped" line.
 7. **Kabir** re-runs his K-2c probe and the R7-A rows against the **built** pattern, and signs.
 8. **Every falsification carries a FALSIFY marker**, and the tree shows none when the commit is cut (arjun's pre-commit checklist).
-9. **U-2's last-call bar, item 1,** now reads: R-U2 in the branch, and K-2, K-2b, round 5 Ruling 1 plus 2b, K-2c (F-0769, F-0773), and **K-2c.2 (F-0776, R7-A, the pipe)** closed.
+9. **U-2's last-call bar, item 1,** now reads: R-U2 in the branch, and K-2, K-2b, round 5 Ruling 1 plus 2b, K-2c (F-1769, F-1773), and **K-2c.2 (F-1776, R7-A, the pipe)** closed.
 
 **Parallel work, starting now:**
 - **nisha:** the blind compliance rows and the yes/no on the terse forms.

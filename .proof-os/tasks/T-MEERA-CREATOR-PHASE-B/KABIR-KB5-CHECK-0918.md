@@ -1,20 +1,20 @@
-# KB5 check: F-0765 and F-0766 (kabir, 2026-09-18)
+# KB5 check: F-1765 and F-1766 (kabir, 2026-09-18)
 
-**done_when, verbatim:** "F-0765 and F-0766 closed by RiskFlagCorpusTest rows that go red against the fix removed"
+**done_when, verbatim:** "F-1765 and F-1766 closed by RiskFlagCorpusTest rows that go red against the fix removed"
 
 ## Verdict
 
 | Record | Verdict | Evidence in one line |
 |---|---|---|
-| **F-0765** (OFF_PLATFORM_PAYMENT pairs a wallet name and a send word from anywhere in the brief) | **MET** | With the fix removed (M1), `KAB5-N-send-draft` and `KAB5-N-send-files` go red. They also go red when the window is widened to 13 (W13). |
-| **F-0766** (HIDE_TEXT branches with no test row) | **MET** | Each of the three unguarded branches, deleted on its own, goes red on its intended row: Hinglish (M3), Devanagari (M4) and "don't mention" (M5). The fifth branch goes red on TRIGGER_TEXT (M6). |
+| **F-1765** (OFF_PLATFORM_PAYMENT pairs a wallet name and a send word from anywhere in the brief) | **MET** | With the fix removed (M1), `KAB5-N-send-draft` and `KAB5-N-send-files` go red. They also go red when the window is widened to 13 (W13). |
+| **F-1766** (HIDE_TEXT branches with no test row) | **MET** | Each of the three unguarded branches, deleted on its own, goes red on its intended row: Hinglish (M3), Devanagari (M4) and "don't mention" (M5). The fifth branch goes red on TRIGGER_TEXT (M6). |
 
 **Ledger bookkeeping is not done yet.** In `.proof-os/ledger/failures.jsonl` (L764-765), both records still read `"status": "open"` with `"fix": ""`. The test side of the done_when holds. Whoever closes the records should set `status` and `fix`, pointing at the row ids below and at this file.
 
 ## What I read
 - `OffPlatformPaymentRule.java` and `HideDisclosureRule.java` in full, plus `RiskText.java` in full.
 - `RiskFlagCorpusTest.java` in full, and all 56 rows of `risk-corpus/nisha-blind-0917.tsv`.
-- Ledger records F-0765 and F-0766.
+- Ledger records F-1765 and F-1766.
 - `KABIR-CONSENT-0917.md` "Last call — K-2b round 5" (L762-948).
 - SPEC.md L897-936, including the AMEND-0917-KB5 comment and the OFF_PLATFORM_PAYMENT cell ("WITHIN 6 TOKENS").
 
@@ -28,7 +28,7 @@
 
 **Baseline:** `Tests run: 16, Failures: 0, Errors: 0, Skipped: 0`, BUILD SUCCESS. `Skipped: 0` means the fidelity test ran against Nisha's markdown.
 
-## F-0765: mutations and output
+## F-1765: mutations and output
 
 **About M1.** The pre-fix code was never committed; the worktree is uncommitted. M1 is therefore a reconstruction, based on my own K-2b round 5 note (KABIR-CONSENT L866-874 and Q2: strip wallet names with a space, then run `SEND_REQUEST.find` on the rest). W13 does not depend on that reconstruction.
 
@@ -44,7 +44,7 @@
 - The two NO_FLAG rows are load-bearing: they go red against the fix removed.
 - The must-catch side is guarded as well: a window that is too tight (W2) and the trim bug (TOK1) both go red.
 
-## F-0766: mutations and output
+## F-1766: mutations and output
 
 | # | Mutation (HideDisclosureRule `HIDE_TEXT`) | Result |
 |---|---|---|
@@ -72,7 +72,7 @@
 
 ## Not covered by the done_when, but it matters
 
-### 1. MEDIUM: F-0765's defect class survives when the sentences are short
+### 1. MEDIUM: F-1765's defect class survives when the sentences are short
 The fix closes the two measured texts, which put the wallet name 13 tokens from "send". It does not stop pairing across a sentence boundary: the window counts tokens straight through a full stop.
 
 Measured on the built rule (probe output):
@@ -94,7 +94,7 @@ Measured on the built rule (probe output):
   - That is still a positive-context-only rule, so Constraint A holds.
   - It is **unmeasured.** Abbreviations such as "Rs. 5,000" would split a real ask ("we'll send Rs. 5,000 to your UPI"), so any measurement has to include them.
 - **Recommendation:**
-  - Open a new ledger record for this; do not reopen F-0765, whose literal symptom ("anywhere") is fixed.
+  - Open a new ledger record for this; do not reopen F-1765, whose literal symptom ("anywhere") is fixed.
   - Add XS-3 (Hinglish) and XS-5 (Devanagari) as NO_FLAG rows when the fix lands.
   - The pattern change needs Priya's ruling.
 
@@ -112,12 +112,12 @@ Measured on the built rule (probe output):
 - No corpus row covers wording like the first two, and Ruling 2b ratchets only named rows.
 - This wording belongs in Nisha's fresh blind set for the hint measurement. It is not a blocker.
 
-### 4. LOW: F-0766's defect class persists one level down, in alternatives
+### 4. LOW: F-1766's defect class persists one level down, in alternatives
 M7 removed every alternative that no row exercises, and the suite stayed at 16/0.
 - **Hinglish branch:** `sponsored`, `nahi`, `na`, `laga` and `mention` are unguarded.
   - Its `#ad` alternative is effectively unreachable. The `\b` before `#` needs a word character in front of it, so "#ad mat daalna" actually matches through the `ad` alternative.
 - **Devanagari branch:** `sponsored` and `नहीं` are unguarded.
-- A future edit could delete any of these and stay green. That is the same defect as F-0766, below branch level.
+- A future edit could delete any of these and stay green. That is the same defect as F-1766, below branch level.
 - **Recommendation:** add one caught row per alternative, or record it as a known gap.
 
 ### 5. LOW: a red ratchet run under-reports

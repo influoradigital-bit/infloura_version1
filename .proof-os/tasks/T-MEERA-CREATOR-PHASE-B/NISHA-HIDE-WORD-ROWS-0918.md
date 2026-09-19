@@ -2,7 +2,7 @@
 
 **From:** Nisha (Content Lead)
 **Date:** 2026-09-18
-**Ruling this answers:** `RULINGS-U-0917.md`, Round 6 — F-0769 / K-2c, item 3(c) ("Untested alternatives").
+**Ruling this answers:** `RULINGS-U-0917.md`, Round 6 — F-1769 / K-2c, item 3(c) ("Untested alternatives").
 
 Priya's exact list (7 alternatives, not the 6 the task brief guessed at — "sponsored" is
 two separate alternatives because it sits in two different regex branches):

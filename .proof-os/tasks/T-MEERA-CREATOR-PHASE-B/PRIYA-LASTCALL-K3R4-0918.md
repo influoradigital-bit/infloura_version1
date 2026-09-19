@@ -21,7 +21,7 @@
   - the full `influora-ai` suite: `1043 passed`
 - **Worktree hashes.** I hashed 116 files before starting and re-checked them at the end.
   - Every K-3 artifact file is unchanged.
-  - Nine unrelated files changed during this session, all from other lanes: risk rules and their tests, Nisha's corpus, the journal and ledger appends F-0778 to F-0780, and `PRIYA-LASTCALL-U2-0918.md`. I wrote nothing in the worktree except this file.
+  - Nine unrelated files changed during this session, all from other lanes: risk rules and their tests, Nisha's corpus, the journal and ledger appends F-1778 to F-1780, and `PRIYA-LASTCALL-U2-0918.md`. I wrote nothing in the worktree except this file.
 - **Nothing else touched.** No stash, no commit, and nothing in the `New Influora` tree.
 
 ## Verdicts
@@ -104,7 +104,7 @@ All red. Every row ran against both K-3 files.
 | W11: get_brief wraps as `brand_text` | `15 failed` |
 | W12 / W13: `brand_name` / `campaign_title` trusted | `:819: 'Alpha Brand One' must survive INSIDE the wrapper` / `1 failed` |
 | W14 / W15: `extraction` / `flags` trusted as containers | `1 failed` each |
-| N01: quote trusted whole (F-0771 before the fix) | `12 failed`; `G1_quote_top_unknown_key: no wrapper at all -- probe leaked with nothing wrapping it` |
+| N01: quote trusted whole (F-1771 before the fix) | `12 failed`; `G1_quote_top_unknown_key: no wrapper at all -- probe leaked with nothing wrapping it` |
 | N02 / N03 / N05 / N06 / N07 | G1 / G4+G6 / G3 / N8 / G5 |
 | N09 / N10 / N11 | G2 / N9 / R2E |
 | N12: `_split_trusted_scalar` scalar check removed | `6 failed` (G7, G8, C1, M3, M4, M6), each `no wrapper at all` |
@@ -190,7 +190,7 @@ Rows P01-P07 were run on `tests/tools/test_loop_creator_dispatch.py` plus `tests
 
 **Caveat, not a K-3 defect.** The step already exits 1 on every variant, V0 included: `commit cb30e87e31 touches prompt content (influora-ai/app/prompt/brief_extract.py) but PROMPT_VERSION is still 'meera-2026.09.10.2'`. That is round 3's CI-1 finding C3, on the other lane's committed brief_extract work. Until C3 is exempted or bumped, the K-3 finding shows up as an extra STALE line rather than a change in exit code.
 
-#### F-0771's drift test
+#### F-1771's drift test
 
 Rows J01-J13 were run on `test_k3_dto_field_classification_drift.py`.
 
@@ -203,15 +203,15 @@ Rows J01-J13 were run on `test_k3_dto_field_classification_drift.py`.
 | J13: stale `bogus` added in Python | `AddOnLine: Python names field(s) ['bogus'] that CreatorToolDtos.java no longer carries` |
 | J09 / J10: camelCase or unannotated component | GREEN. This is the documented R5 blind spot; at runtime the key is unknown, so the whole quote is wrapped (N02 is red on G1). |
 
-## F-0770: MET. Close it.
+## F-1770: MET. Close it.
 
 The ledger named three in-place shapes: brand fields popped, angle brackets escaped in place, and `flags` popped from get_brief. Those are B01, B02, B04 and B05 here, and all are red at `browser copy diverged from Spring's original payload`.
 
 - Every K-3 test now compares `json.dumps` against a pre-run `copy.deepcopy`, without `sort_keys`, so B03's key reorder is red too.
 - The tests also assert `is payload`, so B10 is red.
-- B13 and B14 have a different cause. Nothing compares an object to itself there; no snapshot test reaches those two branches at all. They are tracked under K5, not F-0770.
+- B13 and B14 have a different cause. Nothing compares an object to itself there; no snapshot test reaches those two branches at all. They are tracked under K5, not F-1770.
 
-## F-0771: MET. Close it.
+## F-1771: MET. Close it.
 
 - **The runtime closes every nested shape.**
   - The quote key-set, per-key scalar and per-element checks are in place, as are the non-list `deals` and non-dict deal handling.
@@ -253,13 +253,13 @@ All under `C:\Users\SAGEWO~1\AppData\Local\Temp\claude\C--Users-Sage-world-Downl
 
 ---
 
-**K-3 last call: FAIL.** K1-K4 are MET, and F-0770 and F-0771 both close. K5 is NOT MET: B13 (Java's zero-deal get_my_deals payload) and B14 (a deal with no campaign) can each have Spring's payload mutated in place with the full suite green (`1043 passed`). A clean-shape browser-copy test turns K-3 green.
+**K-3 last call: FAIL.** K1-K4 are MET, and F-1770 and F-1771 both close. K5 is NOT MET: B13 (Java's zero-deal get_my_deals payload) and B14 (a deal with no campaign) can each have Spring's payload mutated in place with the full suite green (`1043 passed`). A clean-shape browser-copy test turns K-3 green.
 
 ---
 
 ## Round 5 re-check (2026-09-18): K5 only
 
-**Scope.** The coordinator asked me to re-check only K5: "each of those is a test that goes red when its piece is removed, including in-place mutation of Spring's payload". K1-K4, F-0770 and F-0771 stand as written above.
+**Scope.** The coordinator asked me to re-check only K5: "each of those is a test that goes red when its piece is removed, including in-place mutation of Spring's payload". K1-K4, F-1770 and F-1771 stand as written above.
 
 **What changed since round 4:**
 - `test_loop_creator_dispatch.py` adds two tests:
@@ -339,7 +339,7 @@ S09 (get_my_deals, deals order): Spring sent ['D1', 'D2'] -> browser got ['D2', 
 - **S18 and S19: counted.** Any deal with more than one risk flag hits them. `DealRiskService` sorts CRITICAL, WARN, INFO deliberately (`CheckDealRisksExecutor` L72-73), and the reversal puts the blocked-brand flag last on the creator's card.
 - **S16 and S17: counted.** A brief for more than one deliverable type or more than one add-on hits them.
 - **S09: not counted.** It needs two or more deals whose DRAFT campaigns were deleted (`CampaignValidator.ensureDeletable` allows DRAFT only, and GetMyDealsExecutor L126 falls back to `orElse(null)`), so it is legacy data only. The same fix covers it.
-- **In-place sort is the textbook way to hit this.** The classic accidental in-place mutation in Python is `list.sort()` where `sorted()` was meant. It is the same harm F-0770 exists to catch, and it is the list twin of the key-reorder mutant B9 that round 3 required fixing.
+- **In-place sort is the textbook way to hit this.** The classic accidental in-place mutation in Python is `list.sort()` where `sorted()` was meant. It is the same harm F-1770 exists to catch, and it is the list twin of the key-reorder mutant B9 that round 3 required fixing.
 
 **This is my miss, not the team's.** Round 4's sweep never tested list reordering, so its closing line ("A clean-shape browser-copy test turns K-3 green") was wrong. The team met the round-4 bar exactly. The bar below is finite: every operator class listed above must be observable at every Java-reachable site, and list order is the only class left.
 
@@ -376,7 +376,7 @@ All under the same scratchpad `k3r4\`:
 
 ## Round 6 re-check (2026-09-19): K5 only
 
-**Scope.** Only the clause "each of those is a test that goes red when its piece is removed, including in-place mutation of Spring's payload." K1-K4, F-0770 and F-0771 stand as written above.
+**Scope.** Only the clause "each of those is a test that goes red when its piece is removed, including in-place mutation of Spring's payload." K1-K4, F-1770 and F-1771 stand as written above.
 
 **What changed since round 5:**
 - Only `tests/tools/test_loop_creator_dispatch.py` changed: sha256 `1e7fd52f…` became `085ea2c0…`.
@@ -397,7 +397,7 @@ All under the same scratchpad `k3r4\`:
   - The full suite now has 1153 tests (the brief_extract lane added tests) and gives `2 failed, 1151 passed`. Both failures are timing tests: `test_f14_a_slow_tool_still_delivers_its_result_after_several_heartbeats` and `test_f09_the_voice_route_verifies_the_token_off_the_event_loop`. The heartbeat test passed 3 times out of 3 on rerun. This is the same flake class as round 4's B11F, with other lanes running Maven and vitest on the same machine.
 - **Worktree hashes.**
   - Every K-3 artifact file hashes the same at the end as at the start.
-  - During the session, other lanes changed the journal, the ledger, `HideDisclosureRule.java`, `ASSIGN-PENDING-0917.md` and `PasteBriefCard.tsx`, and added `F-0779-paste-brief-card-behaviours.sh`, `KABIR-K5-LASTCALL-0919.md` and `MEERA-U2-TESTS-PROOF-0919.md`. I wrote nothing in the worktree except this section.
+  - During the session, other lanes changed the journal, the ledger, `HideDisclosureRule.java`, `ASSIGN-PENDING-0917.md` and `PasteBriefCard.tsx`, and added `F-1779-paste-brief-card-behaviours.sh`, `KABIR-K5-LASTCALL-0919.md` and `MEERA-U2-TESTS-PROOF-0919.md`. I wrote nothing in the worktree except this section.
   - No stash, no commit, and nothing touched in the `New Influora` tree.
 
 ### 1. Ordinary in-place mutations: all red
@@ -552,7 +552,7 @@ All under `…\scratchpad\k3r6\b\`:
 
 ## Round 7 re-check (2026-09-19): K5 only
 
-**Scope.** Three checks: the round-6 swallowed and bypass mutants, the recording mechanism itself, and the clause "each of those is a test that goes red when its piece is removed, including in-place mutation of Spring's payload." K1-K4, F-0770 and F-0771 stand as written above.
+**Scope.** Three checks: the round-6 swallowed and bypass mutants, the recording mechanism itself, and the clause "each of those is a test that goes red when its piece is removed, including in-place mutation of Spring's payload." K1-K4, F-1770 and F-1771 stand as written above.
 
 **What changed.**
 - Only `tests/tools/test_loop_creator_dispatch.py` changed: `085ea2c0…` became `5bf5f4b7…`.
