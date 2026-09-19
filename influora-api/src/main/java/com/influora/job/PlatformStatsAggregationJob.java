@@ -9,7 +9,6 @@ import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.PlatformStatRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.CreatorProfileSpecifications;
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -148,9 +147,8 @@ public class PlatformStatsAggregationJob {
     @Transactional
     boolean aggregateOne(CreatorProfile creator) {
         String creatorProfileId = creator.getId();
-        long totalFollowers = 0L;
-        BigDecimal latestEngagementRate = null;
         boolean wroteAny = false;
+        List<PlatformStat> written = new java.util.ArrayList<>();
 
         for (String platform : SUPPORTED_PLATFORMS) {
             Optional<CreatorMetric> latest =
@@ -161,12 +159,8 @@ public class PlatformStatsAggregationJob {
             }
 
             CreatorMetric metric = latest.get();
-            upsertPlatformStat(creatorProfileId, platform, metric);
+            written.add(upsertPlatformStat(creatorProfileId, platform, metric));
             wroteAny = true;
-            totalFollowers += metric.getFollowers();
-            if (metric.getAvgEngagementRate() != null) {
-                latestEngagementRate = metric.getAvgEngagementRate();
-            }
         }
 
         if (!wroteAny) {
@@ -177,12 +171,18 @@ public class PlatformStatsAggregationJob {
             return false;
         }
 
-        creator.applyAggregatedStats(totalFollowers, latestEngagementRate);
+        // F-0965: the total counts only Meta-synced platforms (or an imported one when there is
+        // none), never a creator-declared platform — see FollowerTotals.
+        // Stored stats (incl. an IMPORTED one with no creator_metrics rows) merged with the ones
+        // just upserted.
+        creator.applyFollowerTotals(
+                com.influora.service.FollowerTotals.from(
+                        platformStatRepository.findByCreatorProfileId(creatorProfileId), written));
         creatorProfileRepository.save(creator);
         return true;
     }
 
-    private void upsertPlatformStat(String creatorProfileId, String platform, CreatorMetric metric) {
+    private PlatformStat upsertPlatformStat(String creatorProfileId, String platform, CreatorMetric metric) {
         Optional<PlatformStat> existing =
                 platformStatRepository.findByCreatorProfileIdAndPlatform(creatorProfileId, platform);
 
@@ -210,6 +210,7 @@ public class PlatformStatsAggregationJob {
                             metric.isPlatformVerified(),
                             handle);
             platformStatRepository.save(existing.get());
+            return existing.get();
         } else {
             PlatformStat created =
                     PlatformStat.builder()
@@ -223,6 +224,7 @@ public class PlatformStatsAggregationJob {
                             .verified(metric.isPlatformVerified())
                             .build();
             platformStatRepository.save(created);
+            return created;
         }
     }
 }

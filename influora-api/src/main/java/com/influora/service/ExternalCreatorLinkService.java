@@ -325,7 +325,7 @@ public class ExternalCreatorLinkService {
             String handle = external.getIgUsername();
 
             Long followers = external.getFollowers();
-            platformStatRepository.save(
+            PlatformStat imported =
                     PlatformStat.builder()
                             .id(Ulids.newUlid())
                             .creatorProfileId(creatorProfileId)
@@ -337,7 +337,11 @@ public class ExternalCreatorLinkService {
                             .followers(followers == null ? 0L : followers)
                             .engagementRate(external.getEngagementRate())
                             .verified(false)
-                            .build());
+                            // F-0965: imported data counts toward the total only while the
+                            // creator has no Meta-synced platform, and is labelled as imported.
+                            .source(PlatformStat.SOURCE_IMPORTED)
+                            .build();
+            platformStatRepository.save(imported);
 
             // CreatorProfileSpecifications#followersBetween reads CreatorProfile.totalFollowers,
             // NOT the platform row — without this roll-up the creator appears for the platform chip
@@ -347,15 +351,11 @@ public class ExternalCreatorLinkService {
                     .findById(creatorProfileId)
                     .ifPresent(
                             profile -> {
-                                long total =
-                                        platformStatRepository.findByCreatorProfileId(creatorProfileId).stream()
-                                                .mapToLong(PlatformStat::getFollowers)
-                                                .sum();
-                                profile.applyAggregatedStats(
-                                        total,
-                                        external.getEngagementRate() != null
-                                                ? external.getEngagementRate()
-                                                : profile.getEngagementRate());
+                                profile.applyFollowerTotals(
+                                        com.influora.service.FollowerTotals.from(
+                                                platformStatRepository.findByCreatorProfileId(
+                                                        creatorProfileId),
+                                                java.util.List.of(imported)));
                                 creatorProfileRepository.save(profile);
                             });
 

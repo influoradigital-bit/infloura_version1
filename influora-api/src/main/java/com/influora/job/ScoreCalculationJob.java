@@ -266,9 +266,11 @@ public class ScoreCalculationJob {
      */
     private boolean scoreOne(CreatorProfile creator, boolean runBrandSafety, RunCounters counters) {
         String creatorProfileId = creator.getId();
+        // F-0965: score only from Meta-synced data. A creator-declared Instagram row (written
+        // before the first sync) must not feed quality/authenticity scoring.
         Optional<CreatorMetric> latestMetric =
-                creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        creatorProfileId, PLATFORM_INSTAGRAM);
+                creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        creatorProfileId, PLATFORM_INSTAGRAM, CreatorMetric.DATA_SOURCE_META_API);
 
         if (latestMetric.isEmpty()) {
             log.info(

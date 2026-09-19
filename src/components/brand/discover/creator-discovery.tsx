@@ -456,6 +456,14 @@ const languages = ['Hindi', 'English', 'Tamil', 'Telugu', 'Kannada', 'Malayalam'
  */
 const titleCaseCategory = (id: string): string => id.replace(/\b\w/g, (ch) => ch.toUpperCase());
 
+/**
+ * F-0965 — an IMPORTED total (Meta Creator Marketplace / admin import, not from the creator's own
+ * Meta connection) must not read like a verified count to a brand about to spend money.
+ */
+export function followersCaption(source: CreatorProfile['followersSource']): string {
+  return source === 'IMPORTED' ? 'Followers · imported, not verified' : 'Followers';
+}
+
 export function CreatorDiscovery() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -1267,6 +1275,8 @@ export function CreatorDiscovery() {
                   size="sm"
                   className="h-8 w-8 p-0"
                   onClick={() => setViewMode('grid')}
+                  aria-label="Grid view"
+                  aria-pressed={viewMode === 'grid'}
                 >
                   <Grid3X3 className="h-4 w-4" />
                 </Button>
@@ -1275,6 +1285,8 @@ export function CreatorDiscovery() {
                   size="sm"
                   className="h-8 w-8 p-0"
                   onClick={() => setViewMode('list')}
+                  aria-label="List view"
+                  aria-pressed={viewMode === 'list'}
                 >
                   <List className="h-4 w-4" />
                 </Button>
@@ -1375,7 +1387,7 @@ export function CreatorDiscovery() {
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">{sc.displayName}</p>
                         <p className="truncate text-xs text-muted-foreground">
-                          {formatFollowers(sc.totalFollowers)} followers
+                          {formatFollowers(sc.totalFollowers)} {followersCaption(sc.followersSource).toLowerCase()}
                         </p>
                       </div>
                     </button>
@@ -1522,7 +1534,7 @@ export function CreatorDiscovery() {
                   <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                     <div className="rounded-lg bg-muted/50 p-2">
                       <p className="text-sm font-semibold">{formatFollowers(creator.totalFollowers)}</p>
-                      <p className="text-xs text-muted-foreground">Followers</p>
+                      <p className="text-xs text-muted-foreground">{followersCaption(creator.followersSource)}</p>
                     </div>
                     <div className="rounded-lg bg-muted/50 p-2">
                       <p className="text-sm font-semibold">{creator.engagementRate}%</p>
@@ -1598,7 +1610,7 @@ export function CreatorDiscovery() {
                   <div className="hidden md:flex items-center gap-6 text-sm">
                     <div className="text-center">
                       <p className="font-semibold">{formatFollowers(creator.totalFollowers)}</p>
-                      <p className="text-xs text-muted-foreground">Followers</p>
+                      <p className="text-xs text-muted-foreground">{followersCaption(creator.followersSource)}</p>
                     </div>
                     <div className="text-center">
                       <p className="font-semibold">{creator.engagementRate}%</p>

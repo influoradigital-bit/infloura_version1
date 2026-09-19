@@ -534,6 +534,7 @@ public class PortfolioService {
             boolean crossLink) {
         Optional<PlatformStat> existing =
                 platformStatRepository.findByCreatorProfileIdAndPlatform(profile.getId(), platform);
+        PlatformStat written;
         if (existing.isPresent()) {
             String handle = metric.getUsername() != null ? metric.getUsername() : existing.get().getHandle();
             // CR-119 — mirrors PlatformStatsAggregationJob#upsertPlatformStat: the verified flag
@@ -546,9 +547,10 @@ public class PortfolioService {
                             metric.getAvgEngagementRate(),
                             metric.isPlatformVerified(),
                             handle);
-            platformStatRepository.save(existing.get());
+            written = existing.get();
+            platformStatRepository.save(written);
         } else {
-            platformStatRepository.save(
+            written =
                     PlatformStat.builder()
                             .id(Ulids.newUlid())
                             .creatorProfileId(profile.getId())
@@ -558,14 +560,15 @@ public class PortfolioService {
                             .engagementRate(metric.getAvgEngagementRate())
                             // CR-119 — was a hardcoded `false`; see the update branch above.
                             .verified(metric.isPlatformVerified())
-                            .build());
+                            .build();
+            platformStatRepository.save(written);
         }
 
-        long totalFollowers =
-                platformStatRepository.findByCreatorProfileId(profile.getId()).stream()
-                        .mapToLong(PlatformStat::getFollowers)
-                        .sum();
-        profile.applyAggregatedStats(totalFollowers, metric.getAvgEngagementRate());
+        // F-0965: the same rule as the aggregation job — declared platforms never count.
+        profile.applyFollowerTotals(
+                com.influora.service.FollowerTotals.from(
+                        platformStatRepository.findByCreatorProfileId(profile.getId()),
+                        java.util.List.of(written)));
         creatorProfileRepository.save(profile);
 
         // T-CREATORCONNECT-0902 — the JOINED hook. A real Instagram handle from a Meta sync, not

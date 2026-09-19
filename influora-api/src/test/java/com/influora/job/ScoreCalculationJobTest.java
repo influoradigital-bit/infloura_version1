@@ -91,8 +91,8 @@ class ScoreCalculationJobTest {
         when(creatorProfileRepository.findAll(any(Specification.class))).thenReturn(List.of(creator));
 
         CreatorMetric metric = createTestMetric(CREATOR_ID);
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        CREATOR_ID, "INSTAGRAM"))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        CREATOR_ID, "INSTAGRAM", CreatorMetric.DATA_SOURCE_META_API))
                 .thenReturn(Optional.of(metric));
 
         List<MediaMetric> media = List.of(mock(MediaMetric.class));
@@ -167,15 +167,15 @@ class ScoreCalculationJobTest {
         CreatorMetric metric1 = createTestMetric(creator1);
         CreatorMetric metric3 = createTestMetric(creator3);
 
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        creator1, "INSTAGRAM"))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        creator1, "INSTAGRAM", CreatorMetric.DATA_SOURCE_META_API))
                 .thenReturn(Optional.of(metric1));
         // creator2: metrics lookup itself throws an unexpected exception.
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        creator2, "INSTAGRAM"))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        creator2, "INSTAGRAM", CreatorMetric.DATA_SOURCE_META_API))
                 .thenThrow(new RuntimeException("boom"));
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        creator3, "INSTAGRAM"))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        creator3, "INSTAGRAM", CreatorMetric.DATA_SOURCE_META_API))
                 .thenReturn(Optional.of(metric3));
 
         when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
@@ -207,8 +207,8 @@ class ScoreCalculationJobTest {
         CreatorProfile creator = createTestProfile(CREATOR_ID, null);
         when(creatorProfileRepository.findAll(any(Specification.class))).thenReturn(List.of(creator));
 
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        CREATOR_ID, "INSTAGRAM"))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        CREATOR_ID, "INSTAGRAM", CreatorMetric.DATA_SOURCE_META_API))
                 .thenReturn(Optional.empty());
 
         job.calculateScores();
@@ -219,6 +219,28 @@ class ScoreCalculationJobTest {
     }
 
     @Test
+    @DisplayName("F-0965 calculateScores: a creator-declared Instagram row is never scored")
+    void testDeclaredInstagramRowIsNotScored() {
+        CreatorProfile creator = createTestProfile(CREATOR_ID, null);
+        when(creatorProfileRepository.findAll(any(Specification.class))).thenReturn(List.of(creator));
+        // A declared row exists (only the any-source finder would return it); no Meta row does.
+        CreatorMetric declared = createTestMetric(CREATOR_ID);
+        org.mockito.Mockito.lenient()
+                .when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
+                        CREATOR_ID, "INSTAGRAM"))
+                .thenReturn(Optional.of(declared));
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        CREATOR_ID, "INSTAGRAM", CreatorMetric.DATA_SOURCE_META_API))
+                .thenReturn(Optional.empty());
+
+        job.calculateScores();
+
+        verify(creatorScoreRepository, never()).save(any(CreatorScore.class));
+        verify(creatorMetricsRepository, never())
+                .findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(anyString(), anyString());
+    }
+
+    @Test
     @DisplayName("calculateScores: empty discoverable-creator list completes cleanly with no saves")
     void testCalculateScoresNoCreators() {
         when(creatorProfileRepository.findAll(any(Specification.class))).thenReturn(List.of());
@@ -226,7 +248,7 @@ class ScoreCalculationJobTest {
         job.calculateScores();
 
         verify(creatorMetricsRepository, never())
-                .findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(anyString(), anyString());
+                .findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(anyString(), anyString(), anyString());
         verify(creatorScoreRepository, never()).save(any(CreatorScore.class));
     }
 
@@ -246,8 +268,8 @@ class ScoreCalculationJobTest {
                 .thenReturn(Optional.empty());
 
         CreatorMetric metric = createTestMetric(CREATOR_ID);
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        CREATOR_ID, "INSTAGRAM"))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        CREATOR_ID, "INSTAGRAM", CreatorMetric.DATA_SOURCE_META_API))
                 .thenReturn(Optional.of(metric));
 
         List<MediaMetric> media = List.of(mock(MediaMetric.class));
@@ -298,8 +320,8 @@ class ScoreCalculationJobTest {
         when(creatorProfileRepository.findAll(any(Specification.class))).thenReturn(List.of(creator));
 
         CreatorMetric metric = createTestMetric(CREATOR_ID);
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        CREATOR_ID, "INSTAGRAM"))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        CREATOR_ID, "INSTAGRAM", CreatorMetric.DATA_SOURCE_META_API))
                 .thenReturn(Optional.of(metric));
 
         List<MediaMetric> media = List.of(mock(MediaMetric.class));
@@ -361,8 +383,8 @@ class ScoreCalculationJobTest {
                 .thenReturn(Optional.empty());
 
         // All three are fully scorable.
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        anyString(), eq("INSTAGRAM")))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        anyString(), eq("INSTAGRAM"), eq(CreatorMetric.DATA_SOURCE_META_API)))
                 .thenAnswer(inv -> Optional.of(createTestMetric(inv.getArgument(0))));
         List<MediaMetric> media = List.of(mock(MediaMetric.class));
         when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(anyString(), any(Pageable.class)))

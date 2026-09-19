@@ -92,6 +92,14 @@ public class CreatorProfile {
     @Column(name = "total_followers", nullable = false)
     private long totalFollowers;
 
+    /**
+     * F-0965 — what {@link #totalFollowers} is made of: {@code VERIFIED} (Meta-synced platforms),
+     * {@code IMPORTED} (Marketplace/admin import, shown as "imported, not verified") or {@code
+     * NONE}. Written only by {@link #applyFollowerTotals}.
+     */
+    @Column(name = "followers_source", nullable = false, length = 20)
+    private String followersSource = "NONE";
+
     @Column(name = "username_changed_at")
     private Instant usernameChangedAt;
 
@@ -469,10 +477,17 @@ public class CreatorProfile {
      * platform_stats}; never fabricates a value — callers pass through whatever was actually
      * aggregated from real metrics.
      */
-    public void applyAggregatedStats(long totalFollowers, BigDecimal engagementRate) {
-        this.totalFollowers = totalFollowers;
-        this.engagementRate = engagementRate;
+    public void applyFollowerTotals(com.influora.service.FollowerTotals totals) {
+        // F-0965: every writer goes through FollowerTotals, so a creator-declared platform can
+        // never inflate the total brands filter and rank on.
+        this.totalFollowers = totals.totalFollowers();
+        this.engagementRate = totals.engagementRate();
+        this.followersSource = totals.source();
         touch();
+    }
+
+    public String getFollowersSource() {
+        return followersSource;
     }
 
     /** Uniqueness/format validation happens in the service before this is called. */

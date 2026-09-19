@@ -66,7 +66,8 @@ public final class CreatorMapper {
                 profile.isVerified(),
                 portfolioItems,
                 saved,
-                scores);
+                scores,
+                profile.getFollowersSource());
     }
 
     /**

@@ -11,6 +11,18 @@ import java.time.Instant;
 @Table(name = "platform_stats")
 public class PlatformStat {
 
+    /**
+     * F-0965 — where this platform's numbers came from. Only {@link #SOURCE_META_API} counts
+     * toward a creator's verified follower total; an {@link #SOURCE_IMPORTED} stat (Meta Creator
+     * Marketplace or admin import, adopted by ExternalCreatorLinkService) counts only when the
+     * creator has no verified platform, and is labelled; {@link #SOURCE_CREATOR_REPORTED} (a
+     * creator's own declaration) never counts. See FollowerTotals.
+     */
+    public static final String SOURCE_META_API = "META_API";
+
+    public static final String SOURCE_IMPORTED = "IMPORTED";
+    public static final String SOURCE_CREATOR_REPORTED = "CREATOR_REPORTED";
+
     @Id
     @Column(length = 26)
     private String id;
@@ -35,6 +47,9 @@ public class PlatformStat {
 
     @Column(name = "profile_url", length = 500)
     private String profileUrl;
+
+    @Column(name = "source", nullable = false, length = 20)
+    private String source = SOURCE_CREATOR_REPORTED;
 
     protected PlatformStat() {}
 
@@ -70,6 +85,10 @@ public class PlatformStat {
         return profileUrl;
     }
 
+    public String getSource() {
+        return source;
+    }
+
     /**
      * H-10 fix: this table previously had no writer at all (no setters, no {@code save} call
      * site anywhere) — {@code PlatformStatsAggregationJob} calls this to roll the latest {@code
@@ -85,6 +104,8 @@ public class PlatformStat {
         this.engagementRate = engagementRate;
         this.verified = verified;
         this.handle = handle;
+        // F-0965: a snapshot is either a Meta sync or the creator's own declaration.
+        this.source = verified ? SOURCE_META_API : SOURCE_CREATOR_REPORTED;
     }
 
     public static Builder builder() {
@@ -134,7 +155,19 @@ public class PlatformStat {
             return this;
         }
 
+        /** F-0965 — only needed for {@link #SOURCE_IMPORTED}; otherwise derived from {@code verified}. */
+        public Builder source(String source) {
+            s.source = source;
+            sourceSet = true;
+            return this;
+        }
+
+        private boolean sourceSet;
+
         public PlatformStat build() {
+            if (!sourceSet) {
+                s.source = s.verified ? SOURCE_META_API : SOURCE_CREATOR_REPORTED;
+            }
             return s;
         }
     }

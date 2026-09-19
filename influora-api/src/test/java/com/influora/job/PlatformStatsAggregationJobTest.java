@@ -57,6 +57,44 @@ class PlatformStatsAggregationJobTest {
     }
 
     @Test
+    @DisplayName("F-0965 a stored creator-declared platform never counts toward the total")
+    void aggregate_declaredPlatformDoesNotInflateTotal() {
+        CreatorProfile creator = testProfile(CREATOR_ID);
+        when(creatorProfileRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(creator)));
+        CreatorMetric metric =
+                CreatorMetric.builder()
+                        .id("01HMETRICF0965AGG0001")
+                        .creatorProfileId(CREATOR_ID)
+                        .platform("INSTAGRAM")
+                        .followers(12000L)
+                        .avgEngagementRate(new BigDecimal("4.10"))
+                        .dataSource(CreatorMetric.DATA_SOURCE_META_API)
+                        .build();
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(CREATOR_ID, "INSTAGRAM"))
+                .thenReturn(Optional.of(metric));
+        when(platformStatRepository.findByCreatorProfileIdAndPlatform(CREATOR_ID, "INSTAGRAM"))
+                .thenReturn(Optional.empty());
+        // Already stored: a creator-declared YouTube stat (PortfolioService.declarePlatform).
+        PlatformStat declaredYoutube =
+                PlatformStat.builder()
+                        .id("01HSTATF0965DECLARED1")
+                        .creatorProfileId(CREATOR_ID)
+                        .platform("YOUTUBE")
+                        .followers(900_000L)
+                        .engagementRate(new BigDecimal("9.99"))
+                        .verified(false)
+                        .build();
+        when(platformStatRepository.findByCreatorProfileId(CREATOR_ID)).thenReturn(List.of(declaredYoutube));
+
+        job.aggregate();
+
+        assertEquals(12000L, creator.getTotalFollowers());
+        assertEquals(new BigDecimal("4.10"), creator.getEngagementRate());
+        assertEquals("VERIFIED", creator.getFollowersSource());
+    }
+
+    @Test
     @DisplayName("aggregate: creates a new platform_stats row and denormalizes onto creator_profiles when none exists yet")
     void aggregate_createsNewPlatformStatAndDenormalizes() {
         CreatorProfile creator = testProfile(CREATOR_ID);
@@ -167,6 +205,7 @@ class PlatformStatsAggregationJobTest {
                         .platform("INSTAGRAM")
                         .followers(5000L)
                         .avgEngagementRate(null)
+                        .dataSource(CreatorMetric.DATA_SOURCE_META_API)
                         .build();
         when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
                         CREATOR_ID, "INSTAGRAM"))
@@ -197,6 +236,7 @@ class PlatformStatsAggregationJobTest {
                         .creatorProfileId("01HCREATOR0000000000002")
                         .platform("INSTAGRAM")
                         .followers(3000L)
+                        .dataSource(CreatorMetric.DATA_SOURCE_META_API)
                         .build();
         when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
                         "01HCREATOR0000000000002", "INSTAGRAM"))

@@ -44,7 +44,10 @@ public final class CreatorDtos {
             // quality/authenticity are null for any creator never polled/scored yet. Never coerce
             // to BigDecimal.ZERO here (see CreatorDiscoveryService#buildScores /
             // AdminCreatorService#latestQualityScore for the wrong way to do this).
-            DiscoveryDtos.CreatorScores scores) {}
+            DiscoveryDtos.CreatorScores scores,
+            // F-0965: VERIFIED | IMPORTED | NONE — what totalFollowers is made of. IMPORTED means
+            // Marketplace/admin-imported numbers, shown as "imported, not verified".
+            String followersSource) {}
 
     public record PortfolioItemResponse(
             String id,

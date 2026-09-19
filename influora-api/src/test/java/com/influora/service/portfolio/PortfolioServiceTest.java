@@ -423,6 +423,39 @@ class PortfolioServiceTest {
         org.junit.jupiter.api.Assertions.assertNotNull(response.syncedAt());
     }
 
+    @Test
+    @org.junit.jupiter.api.DisplayName(
+            "F-0965 declarePlatform: a declared 900k YouTube never inflates the verified total")
+    void declarePlatform_declaredCountNeverCountsTowardTotal() {
+        AuthPrincipal principal = org.mockito.Mockito.mock(AuthPrincipal.class);
+        CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Real Creator");
+        when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
+        when(platformStatRepository.findByCreatorProfileIdAndPlatform(PROFILE_ID, "YOUTUBE"))
+                .thenReturn(Optional.empty());
+        PlatformStat syncedInstagram =
+                PlatformStat.builder()
+                        .id("01HSTATF0965SYNCED01")
+                        .creatorProfileId(PROFILE_ID)
+                        .platform("INSTAGRAM")
+                        .followers(5000L)
+                        .verified(true)
+                        .build();
+        org.mockito.Mockito.lenient()
+                .when(platformStatRepository.findByCreatorProfileId(PROFILE_ID))
+                .thenReturn(List.of(syncedInstagram));
+
+        service.declarePlatform(
+                principal,
+                new com.influora.web.dto.portfolio.PortfolioDtos.PlatformDeclarationRequest(
+                        "YOUTUBE", "realcreator", 900_000L));
+
+        assertEquals(5000L, profile.getTotalFollowers());
+        assertEquals("VERIFIED", profile.getFollowersSource());
+        ArgumentCaptor<PlatformStat> declared = ArgumentCaptor.forClass(PlatformStat.class);
+        verify(platformStatRepository).save(declared.capture());
+        assertEquals(PlatformStat.SOURCE_CREATOR_REPORTED, declared.getValue().getSource());
+    }
+
     // ---------------------------------------------------------------------------------------
     // CR-119 — `syncPlatforms` is the SECOND writer of PlatformStat.verified (the first being
     // PlatformStatsAggregationJob#upsertPlatformStat). It is the more user-visible of the two:

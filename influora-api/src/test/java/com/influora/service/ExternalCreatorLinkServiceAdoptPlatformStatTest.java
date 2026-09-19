@@ -205,6 +205,11 @@ class ExternalCreatorLinkServiceAdoptPlatformStatTest {
                 "CreatorProfileSpecifications#followersBetween reads totalFollowers, not the"
                         + " platform row — without this the creator is filtered out by any"
                         + " follower range a brand sets");
+        // F-0965: the imported number counts only while nothing is verified, and says so.
+        assertEquals("IMPORTED", profile.getFollowersSource());
+        ArgumentCaptor<PlatformStat> adopted = ArgumentCaptor.forClass(PlatformStat.class);
+        verify(platformStatRepository).save(adopted.capture());
+        assertEquals(PlatformStat.SOURCE_IMPORTED, adopted.getValue().getSource());
     }
 
     @Test

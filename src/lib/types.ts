@@ -552,6 +552,13 @@ export interface CreatorProfile {
   categories: string[];
   platforms: PlatformStats[];
   totalFollowers: number;
+  /**
+   * F-0965 — what totalFollowers is made of (CreatorDtos.CreatorResponse.followersSource):
+   * VERIFIED = Meta-synced platforms only; IMPORTED = Meta Creator Marketplace / admin import
+   * (shown as "imported, not verified"); NONE = nothing counted. Creator-declared platforms
+   * never count toward the total.
+   */
+  followersSource?: 'VERIFIED' | 'IMPORTED' | 'NONE';
   engagementRate: number;
   averageRate?: number;
   currency?: string;

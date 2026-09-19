@@ -46,6 +46,10 @@ public interface CreatorMetricsRepository extends JpaRepository<CreatorMetric, S
     List<CreatorMetric> findByCreatorProfileIdAndDataSourceOrderByTimeDesc(
             String creatorProfileId, String dataSource, Pageable pageable);
 
+    /** F-0965 — newest row of one platform AND one data source (e.g. Meta-synced Instagram). */
+    Optional<CreatorMetric> findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+            String creatorProfileId, String platform, String dataSource);
+
     /** Time-range query for a single creator/platform (trend charts). */
     List<CreatorMetric> findByCreatorProfileIdAndPlatformAndTimeBetweenOrderByTimeAsc(
             String creatorProfileId, String platform, Instant from, Instant to);
