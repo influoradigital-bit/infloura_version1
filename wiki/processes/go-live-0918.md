@@ -119,6 +119,28 @@ pattern in the two Utho files), so §5's "flip `MEERA_CREATOR_ENABLED=false`" ro
 is a no-op on that stack. All 6 are fixed below, each marked **[REPAIR R7]** at its fix point — see
 the bottom "REPAIR ROUND 7 — defect-by-defect" section for the full mapping.
 
+**REPAIR ROUND 8 (2026-09-19, this revision):** an independent reviewer failed commit `bd50234` on 1
+HIGH and 2 LOW defects, plus the same 2 done_when clauses this document has failed before. 1 HIGH:
+R7's own fix for §3.2 step 2's boot-verification (wait on `docker inspect --format
+'{{.State.Health.Status}}' influora-api`, citing `influora-api/Dockerfile:56-57`'s `HEALTHCHECK`)
+does not apply on the live box — that exact `ssh` block builds with `cd /usr/local/App/influora &&
+docker build -t influora-api:latest .`, which uses the box's own 4-line Dockerfile
+(`live-state.txt:166-170`: no `HEALTHCHECK` at all), so `docker inspect` finds no `Health` object and
+the loop FATALs after 70 polls on every deploy regardless of whether the API is actually healthy
+(`live-state.txt:23` confirms the running container shows no health suffix, unlike `influora-ai`).
+Even building from the repo's own Dockerfile would not have fixed it: that probe targets
+`127.0.0.1:8080`, but the live container runs `SERVER_PORT=8082` (`live-state.txt:188`), so the
+status would resolve to `unhealthy` instead and still end in FATAL. 2 LOW: (1) `application.yml:289-
+291` documents the JWKS keypair as `INFLUORA_JWKS_PRIVATE_KEY_PEM`/`INFLUORA_JWKS_PUBLIC_KEY_PEM`,
+while `generate-env.sh` and all three compose files forwarded the dash-stripped
+`...PRIVATEKEYPEM`/`...PUBLICKEYPEM` — the same two-names-for-one-secret pattern already fixed for
+brand-safety, admin-MFA and `MEERA_PUBLIC_CHAT_URL`, failing the done_when name-agreement clause; (2)
+`AI_DOMAIN` — the compose host variable `generate-env.sh:43` writes — appeared only inside the
+`MEERA_PUBLIC_CHAT_URL` row's quoted literal (`https://${AI_DOMAIN}/chat`) with no `${}` placeholder
+and no explicit runbook-local marker, failing the variable-extraction clause. All 3 are fixed below,
+each marked **[REPAIR R8]** at its fix point — see the bottom "REPAIR ROUND 8 — defect-by-defect"
+section for the full mapping.
+
 ## READ THIS FIRST — two things that block a same-day go-live as briefed
 
 ### 1. The live box does not run docker-compose for Influora. `/usr/local/App/docker-compose.prod.yml` is Snapsby's file, not Influora's.
@@ -464,10 +486,15 @@ Utho's forwarded keyset (see §0 item 8) — no other Hostinger-specific change 
    operator reads three concrete lines and compares them against what THIS release intends; no
    script can know that intent, release by release, only surface it. `FATAL` is now reserved for
    what actually blocks verification: the container not running / its env unreadable at all —
-   **[REPAIR R7] originally checked via a bare `docker exec influora-api true` plus a fixed `sleep
-   3`, which only proved the process was alive, not that Spring had booted; now waits on the
-   container's own `HEALTHCHECK` status instead (§3.2 step 2, same fix class as item 8's `influora-ai`
-   STATUS loop).**
+   **[REPAIR R7, corrected by R8] originally checked via a bare `docker exec influora-api true` plus
+   a fixed `sleep 3`, which only proved the process was alive, not that Spring had booted; R7's own
+   fix (wait on the container's `HEALTHCHECK` status) does not apply on this box — the `docker build`
+   in this exact step uses `/usr/local/App/influora`'s own 4-line Dockerfile (`live-state.txt:166-
+   170`), which has no `HEALTHCHECK` at all, so `docker inspect` finds no `Health` object and the loop
+   FATALs on every deploy regardless of whether the API is actually up (`live-state.txt:23` confirms
+   the running container shows no health suffix, unlike `influora-ai`). Now polls the API itself from
+   the host instead: reads `SERVER_PORT` from `influora.env` (`--network host` makes it reachable at
+   `127.0.0.1` from the host) and `curl`s `GET /api/v1/health` (§3.2 step 2), same 70×2s=140s budget.**
 8.7. **[REPAIR R5 — LOW, known gap, not fixed this round] Neither compose gate catches a required key
    deleted from BOTH Utho files at once.** `utho-compose-keysets-match.sh` (item 6) only diffs
    `docker-compose.utho.yml` against `docker-compose.utho-shared.yml` — if a key such as
@@ -789,7 +816,7 @@ FRESH box.
 | Var | Secret? | Source |
 |---|---|---|
 | `VOICE_AI_BASE_URL` | no (internal DNS/URL), **REQUIRED, no default in prod** | dev default falls back to `MEERA_CHAT_AI_BASE_URL`, then `http://localhost:8000` (`application.yml:231`) — prod profile overrides with **no default** (`application-prod.yml:118`). Unset in prod (once the profile is active), boot fails the same as the `*_AI_BASE_URL` family above; if it is somehow set but wrong, every Meera voice reply silently degrades to `SpeakResult.fallback()` instead (`MeeraVoiceAiClient`'s own "never throws" contract) |
-| `MEERA_PUBLIC_CHAT_URL` | no (a PUBLIC hostname, not a secret) | `MeeraStreamProperties#publicChatUrl`, dev default `http://localhost:8000/chat` — prod profile overrides with **no default** (`application-prod.yml:109`). This is the browser-facing URL for Meera's SSE stream (`BLUEPRINT/06-DEPLOYMENT-AND-API-KEYS.md:300`, `docs/docs/features/meera-ai.md:54`), e.g. `https://ai.influora.in/chat` — a prior lane's own review (`.proof-os/tasks/T-UTHO-DEPLOY-0907/priya-review.md:197,248-258`) already found and recorded that exact value as live. **[REPAIR R7 — same two-names-for-one-property pattern as brand-safety (R2) and admin-MFA (R5)]** All three compose files forwarded `INFLUORA_MEERA_STREAM_PUBLICCHATURL` (Spring's relaxed-binding alias for `influora.meera.stream.public-chat-url` — **no `${}` placeholder anywhere in this repo**, confirmed by `grep -rn INFLUORA_MEERA_STREAM_PUBLICCHATURL influora-api/src/main/`) and never forwarded `MEERA_PUBLIC_CHAT_URL` itself at all — 0 hits before this revision. Unlike brand-safety's HIGH (where the wrong name resolved to a BLANK value and shadowed a real one), this alias carried a real, working literal (`https://${AI_DOMAIN}/chat`) and Spring's relaxed binding likely already resolves it correctly — same LOW-not-HIGH reasoning as the admin-MFA case (§0.8.5) — but it still fails the done_when name-agreement clause and silently ignores an operator who instead sets the literal name `application-prod.yml:109` itself documents. Fixed in all three compose files to forward `MEERA_PUBLIC_CHAT_URL` directly, dropping the alias entirely, same convention as the other two fixes. **If the live box's own `influora.env` already holds `INFLUORA_MEERA_STREAM_PUBLICCHATURL`**, rename that key to `MEERA_PUBLIC_CHAT_URL` IN PLACE (keep the value) on the next edit — same migration-note pattern as the admin-MFA rename (§0.8.5) — do not assume it is already named correctly just because compose is now fixed. |
+| `MEERA_PUBLIC_CHAT_URL` | no (a PUBLIC hostname, not a secret) | `MeeraStreamProperties#publicChatUrl`, dev default `http://localhost:8000/chat` — prod profile overrides with **no default** (`application-prod.yml:109`). This is the browser-facing URL for Meera's SSE stream (`BLUEPRINT/06-DEPLOYMENT-AND-API-KEYS.md:300`, `docs/docs/features/meera-ai.md:54`), e.g. `https://ai.influora.in/chat` — a prior lane's own review (`.proof-os/tasks/T-UTHO-DEPLOY-0907/priya-review.md:197,248-258`) already found and recorded that exact value as live. **[REPAIR R7 — same two-names-for-one-property pattern as brand-safety (R2) and admin-MFA (R5)]** All three compose files forwarded `INFLUORA_MEERA_STREAM_PUBLICCHATURL` (Spring's relaxed-binding alias for `influora.meera.stream.public-chat-url` — **no `${}` placeholder anywhere in this repo**, confirmed by `grep -rn INFLUORA_MEERA_STREAM_PUBLICCHATURL influora-api/src/main/`) and never forwarded `MEERA_PUBLIC_CHAT_URL` itself at all — 0 hits before this revision. Unlike brand-safety's HIGH (where the wrong name resolved to a BLANK value and shadowed a real one), this alias carried a real, working literal (`https://${AI_DOMAIN}/chat`) and Spring's relaxed binding likely already resolves it correctly — same LOW-not-HIGH reasoning as the admin-MFA case (§0.8.5) — but it still fails the done_when name-agreement clause and silently ignores an operator who instead sets the literal name `application-prod.yml:109` itself documents. Fixed in all three compose files to forward `MEERA_PUBLIC_CHAT_URL` directly, dropping the alias entirely, same convention as the other two fixes. **If the live box's own `influora.env` already holds `INFLUORA_MEERA_STREAM_PUBLICCHATURL`**, rename that key to `MEERA_PUBLIC_CHAT_URL` IN PLACE (keep the value) on the next edit — same migration-note pattern as the admin-MFA rename (§0.8.5) — do not assume it is already named correctly just because compose is now fixed. **[REPAIR R8]** the literal value both compose files forward, `https://${AI_DOMAIN}/chat`, itself names `AI_DOMAIN` — that is a **compose host variable** `generate-env.sh:43` writes (`AI_DOMAIN=ai.influora.in`), not a Spring property; it has no `${}` placeholder in `application.yml`/`config.py` and is not meant to, same reasoning as `DEPLOY_SHA`/`BUILD_DIR`/`STATUS`/`TS` elsewhere in this document (§0.3.5 explains the general pattern) — marked explicitly here so the variable-extraction check does not miss it. |
 
 **Brand-safety client (Spring → influora-ai)**
 | Var | Secret? | Source |
@@ -963,24 +990,38 @@ docker run -d --name influora-api --network host --restart unless-stopped \
 # operator reads three concrete lines and compares them to what THIS release intends -- no script
 # can know that intent, only surface it. FATAL is now reserved for what actually blocks
 # verification: the container not running / its env unreadable at all.
-# [REPAIR R7 -- LOW] `sleep 3` + `docker exec influora-api true` only proved the container process
-# was alive 3s after `docker run`, not that Spring had finished booting -- `influora-api/Dockerfile:
-# 56-57` sets HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3, so a genuinely
-# broken boot (a missing placeholder from item 8.9 above, a SecretsStartupValidator failure) needs
-# up to ~135s (45s start-period + 3*30s interval) to report "unhealthy" -- `true` inside the
-# container succeeds instantly regardless of whether the JVM has even started, so this check could
-# read "influora-api container is not running" as the only failure mode and pass straight through a
-# still-booting or crash-looping container, straight into the feature-flag printenv calls below
-# (which read stale/empty env from a container that never finished starting). Same failure class
-# already fixed once for influora-ai's redeploy (R4, the STATUS loop a few lines below this one).
-# Fixed the same way: wait on the container's own HEALTHCHECK status instead of a fixed sleep.
+# [REPAIR R7 -- LOW, WRONG -- see R8] `sleep 3` + `docker exec influora-api true` only proved the
+# container process was alive 3s after `docker run`, not that Spring had finished booting -- true,
+# but R7's own fix (`docker inspect --format '{{.State.Health.Status}}' influora-api`, citing the
+# repo's `influora-api/Dockerfile:56-57` HEALTHCHECK) does not apply on this box. This exact `ssh`
+# block builds with `cd /usr/local/App/influora && docker build -t influora-api:latest .` — that is
+# the BOX'S OWN 4-line Dockerfile (`live-state.txt:166-170`: `FROM eclipse-temurin:21-jre` /
+# `WORKDIR` / `COPY` / `ENTRYPOINT`, no HEALTHCHECK at all), not the repo's. `live-state.txt:23`
+# confirms it: the running `influora-api` container shows plain "Up 24 hours", no health suffix,
+# unlike `influora-ai` on the next line which shows "(healthy)". With no `Health` object, `docker
+# inspect`'s template errors, the `|| echo "starting"` fallback fires every iteration, and after 70
+# polls the loop's own final check reports FATAL on a container that is actually fine — reproduced
+# against a fake `docker` that behaves like a container with no HEALTHCHECK:
+# `FATAL: influora-api never reported healthy after 140s (last status: starting)`, exit=1; a control
+# run with a `Health` object present passed. (Even switching this step to build from the repo's
+# Dockerfile would not fix it: that probe targets `127.0.0.1:8080`, but `live-state.txt:188` records
+# the live container running with `SERVER_PORT=8082`, so the status would resolve to "unhealthy"
+# instead of erroring, and still end in FATAL.) [REPAIR R8] Poll the API itself from the host instead
+# of a container Health object that does not exist here: `--network host` means the host and
+# container share one network namespace, so `influora.env`'s own `SERVER_PORT` is reachable at
+# `127.0.0.1` from the host directly. `GET /api/v1/health` is explicitly `permitAll` (no token
+# needed) per `influora-api/Dockerfile`'s own comment above its HEALTHCHECK line.
+SERVER_PORT_LIVE=$(grep -E '^SERVER_PORT=' influora.env | tail -1 | cut -d= -f2-)
+SERVER_PORT_LIVE="${SERVER_PORT_LIVE:-8080}"
 for i in $(seq 1 70); do
-  STATUS=$(docker inspect --format '{{.State.Health.Status}}' influora-api 2>/dev/null || echo "starting")
-  [ "$STATUS" = "healthy" ] && { echo "influora-api healthy"; break; }
-  [ "$STATUS" = "unhealthy" ] && { echo "FATAL: influora-api unhealthy after recreate — cannot verify its feature-flag env at all" >&2; exit 1; }
+  if curl -fsS -o /dev/null "http://127.0.0.1:${SERVER_PORT_LIVE}/api/v1/health"; then
+    echo "influora-api healthy (port ${SERVER_PORT_LIVE})"
+    HEALTHY=1
+    break
+  fi
   sleep 2
 done
-[ "$STATUS" = "healthy" ] || { echo "FATAL: influora-api never reported healthy after 140s (last status: $STATUS) — cannot verify its feature-flag env at all" >&2; exit 1; }
+[ "${HEALTHY:-0}" = "1" ] || { echo "FATAL: influora-api never answered http://127.0.0.1:${SERVER_PORT_LIVE}/api/v1/health after 140s — cannot verify its feature-flag env at all" >&2; exit 1; }
 echo "CREATOR_COPILOT_ENABLED: $(docker exec influora-api sh -c 'printenv CREATOR_COPILOT_ENABLED' 2>/dev/null || echo 'unset (defaults false, application.yml:542)')"
 echo "TREND_INGEST_ENABLED: $(docker exec influora-api sh -c 'printenv TREND_INGEST_ENABLED' 2>/dev/null || echo 'unset (defaults false, application.yml:570)')"
 echo "MEERA_CREATOR_ENABLED: $(docker exec influora-api sh -c 'printenv MEERA_CREATOR_ENABLED' 2>/dev/null || echo 'unset (defaults TRUE, application.yml:215 -- creator Meera stays ON unless explicitly set to false)')"
@@ -1349,3 +1390,11 @@ plain boolean gate (`MeeraCreatorFeatureProperties.java:31`, `application.yml:54
 | 4 | LOW | The `SPRING_JWKS_URL` row claimed `localhost` is "unreachable across two separately hand-run containers" — wrong under this box's own `--network host` (§READ THIS FIRST §1), where both containers share one network namespace and `localhost` **is** reachable between them; `live-state.txt`'s FOURTH CAPTURE already records `influora-ai` running on localhost-based values successfully, and `config.py:544-552` has no loopback-rejecting validator on this var the way `CREATOR_COPILOT_AI_BASE_URL` does on the Java side | Row rewritten: the localhost-unreachable claim removed and replaced with the correct reasoning (shared network namespace, no Python-side loopback validator), while keeping the existing advice to read the box's CURRENT value before overwriting it on a redeploy |
 | 5 | LOW | The `CREATOR_COPILOT_AI_BASE_URL` row cited `docker-compose.utho-shared.yml:224` as where that var is present since before this lane's changes — line 224 is `TRENDSPARK_AI_BASE_URL`; the Co-pilot key is actually at `:230` (checked with `grep -n`) | Citation corrected to `:230` |
 | 6 | LOW | `deploy/hostinger/docker-compose.hostinger.yml:241` hardcodes `MEERA_CREATOR_ENABLED: "true"` as a literal, so §5's "flip `MEERA_CREATOR_ENABLED=false`" rollback instruction is a no-op on the Hostinger stack — R1 fixed the identical pattern (`${VAR:-default}` form) in the two Utho files only, never Hostinger | `docker-compose.hostinger.yml:241` switched to `${MEERA_CREATOR_ENABLED:-true}`, matching both Utho files' existing form and default |
+
+## REPAIR ROUND 8 — defect-by-defect (commit `bd50234` → this revision)
+
+| # | Sev | Finding | Fix |
+|---|---|---|---|
+| 1 | HIGH | §3.2 step 2's R7 fix waited on `docker inspect --format '{{.State.Health.Status}}' influora-api`, citing `influora-api/Dockerfile:56-57`'s `HEALTHCHECK` — but this exact step builds with `cd /usr/local/App/influora && docker build -t influora-api:latest .`, the box's OWN 4-line Dockerfile (`live-state.txt:166-170`, no `HEALTHCHECK` at all; `live-state.txt:23` confirms the running container shows no health suffix, unlike `influora-ai`). With no `Health` object, `docker inspect` errors on every poll, the `|| echo "starting"` fallback never changes, and the loop FATALs after 140s regardless of the API's real state — reproduced against a fake `docker` that always errors on the inspect: `FATAL: influora-api never reported healthy after 140s (last status: starting)`, exit=1, vs. a control run with a `Health` object present passing. Even the repo Dockerfile would not fix it: its probe targets `127.0.0.1:8080` while the live container runs `SERVER_PORT=8082` (`live-state.txt:188`), so status would resolve to `unhealthy` and still FATAL | §3.2 step 2 rewritten to poll the API from the host instead of a container `Health` object that does not exist on this box: reads `SERVER_PORT` from `influora.env` (defaulting `8080`) and `curl -fsS`s `GET /api/v1/health` at `127.0.0.1:$SERVER_PORT` — reachable from the host because both containers run `--network host` (§READ THIS FIRST §1) — same 70×2s=140s budget, `FATAL`+`exit 1` only if it never answers. §0 item 8.6's description of this check updated to match |
+| 2 | LOW | `application.yml:289-291` documents the JWKS keypair as `INFLUORA_JWKS_PRIVATE_KEY_PEM`/`INFLUORA_JWKS_PUBLIC_KEY_PEM` (its only mention of the pair, inside a commented-out example block); `generate-env.sh` and all three compose files forwarded the dash-stripped `INFLUORA_JWKS_PRIVATEKEYPEM`/`INFLUORA_JWKS_PUBLICKEYPEM` — Spring's relaxed binding (`SystemEnvironmentPropertyMapper.convertLegacyName`) accepts either spelling so the live path was not broken, but it fails the done_when name-agreement clause, the same two-names-for-one-secret pattern already fixed for brand-safety, admin-MFA and `MEERA_PUBLIC_CHAT_URL` | `generate-env.sh:101-102` and all three compose files' `INFLUORA_JWKS_*` keys renamed to the underscored spelling `application.yml` documents, each with a migration note for a box whose `influora.env` already holds the old dash-stripped name. `bash .proof-os/gates/utho-compose-keysets-match.sh` still exits 0 (rename, not add/remove, on both Utho files symmetrically) |
+| 3 | LOW | `AI_DOMAIN` — the compose host variable `generate-env.sh:43` writes (`AI_DOMAIN=ai.influora.in`) — appeared only inside the `MEERA_PUBLIC_CHAT_URL` row's quoted literal value (`https://${AI_DOMAIN}/chat`), with no `${}` placeholder in `application.yml`/`config.py` and no explicit runbook-local marker, failing the variable-extraction clause | The `MEERA_PUBLIC_CHAT_URL` row (§2) now explicitly marks `AI_DOMAIN` as a compose host variable, not a Spring property, same reasoning and same convention as `DEPLOY_SHA`/`BUILD_DIR`/`STATUS`/`TS` elsewhere in this document (§0.3.5) |

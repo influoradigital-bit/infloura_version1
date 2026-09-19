@@ -93,8 +93,13 @@ META_TOKEN_ENCRYPTION_KEY=$(aes32)
 INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY=$(aes32)
 INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY=$(aes32)
 INFLUORA_CONVERSIONWEBHOOK_TOKENENCRYPTIONKEY=$(aes32)
-INFLUORA_JWKS_PRIVATEKEYPEM="$JWKS_PRIV"
-INFLUORA_JWKS_PUBLICKEYPEM="$JWKS_PUB"
+# [REPAIR R8] renamed from the dash-stripped INFLUORA_JWKS_PRIVATEKEYPEM/PUBLICKEYPEM to match the
+# literal name application.yml:290-291 documents (influora.jwks.private-key-pem/public-key-pem's
+# only env-var mention in this repo). Spring's relaxed binding accepted both spellings either way
+# (SystemEnvironmentPropertyMapper.convertLegacyName), so this is a name-agreement fix, not a
+# behavior change — see wiki/processes/go-live-0918.md REPAIR ROUND 8.
+INFLUORA_JWKS_PRIVATE_KEY_PEM="$JWKS_PRIV"
+INFLUORA_JWKS_PUBLIC_KEY_PEM="$JWKS_PUB"
 UNSUBSCRIBE_SIGNING_SECRET=$(secret)
 # T-FESTIVALBOX-0905 -- salts festival_enquiries.source_ip_hash (public enquiry-form throttle).
 # SecretsStartupValidator fails CLOSED on the committed default outside dev, so a missing value

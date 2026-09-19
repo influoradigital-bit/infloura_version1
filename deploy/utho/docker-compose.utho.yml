@@ -170,8 +170,17 @@ services:
       # on exactly one name, not silently accept two.
       BRAND_SAFETY_SERVICE_TOKEN_SECRET: ${BRAND_SAFETY_SERVICE_TOKEN_SECRET}
       # ---- Keys with no YAML default (doc 06 §2.2) ----
-      INFLUORA_JWKS_PRIVATEKEYPEM: ${INFLUORA_JWKS_PRIVATEKEYPEM}
-      INFLUORA_JWKS_PUBLICKEYPEM: ${INFLUORA_JWKS_PUBLICKEYPEM}
+      # T-GOLIVE-0918-R2 [meera - 2026-09-18] REPAIR R8 LOW: renamed from the dash-stripped
+      # INFLUORA_JWKS_PRIVATEKEYPEM/PUBLICKEYPEM to the literal name application.yml:290-291
+      # documents (influora.jwks.private-key-pem/public-key-pem's only mention in this repo) --
+      # generate-env.sh, all three compose files and application.yml must agree on one name.
+      # Spring's relaxed binding (SystemEnvironmentPropertyMapper.convertLegacyName) accepted
+      # both spellings either way, so this is name-agreement only, not a behavior change. If the
+      # live box's own influora.env already holds INFLUORA_JWKS_PRIVATEKEYPEM/PUBLICKEYPEM,
+      # rename those keys IN PLACE (keep the values) on the next edit -- same migration-note
+      # pattern as the admin-MFA and MEERA_PUBLIC_CHAT_URL renames elsewhere in this document.
+      INFLUORA_JWKS_PRIVATE_KEY_PEM: ${INFLUORA_JWKS_PRIVATE_KEY_PEM}
+      INFLUORA_JWKS_PUBLIC_KEY_PEM: ${INFLUORA_JWKS_PUBLIC_KEY_PEM}
       # T-GOLIVE-0918-R2 [meera - 2026-09-18] REPAIR R5 LOW (weaker than the brand-safety HIGH above --
       # relaxed binding likely already made the alias work; see generate-env.sh:69 for the full
       # analysis). Was INFLUORA_ADMIN_MFASECRETENCRYPTIONKEY (Spring's relaxed-binding alias); renamed
