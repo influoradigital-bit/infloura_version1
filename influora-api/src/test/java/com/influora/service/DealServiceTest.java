@@ -3005,7 +3005,10 @@ class DealServiceTest {
         when(dealMessageRepository.save(any(DealMessage.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
         when(idempotencyService.executeOnce(
-                        eq("deal-accept:" + DEAL_ID), eq(CREATOR_USER_ID), eq("deal.accept"), any()))
+                        startsWith("deal-accept:" + DEAL_ID + ":"),
+                        eq(CREATOR_USER_ID),
+                        eq("deal.accept"),
+                        any()))
                 .thenAnswer(
                         inv -> {
                             @SuppressWarnings("unchecked")
