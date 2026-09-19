@@ -3286,10 +3286,17 @@ class CreatorNudgeServiceTest {
                 "#RomanDeadLift",
                 "#DeadLift2024 PR",
                 "#DeadPool3 review",
-                "Deadpool and Wolverine reaction",
+                // T-GOLIVE-0918-R3 repair round 3 (vikram · 2026-09-19) — the two entries formerly
+                // here ("Deadpool and Wolverine reaction", "deadline tips for creators") could NOT
+                // fail: neither has a camelCase/hashtag/digit split after "dead", so bare "dead"
+                // never reaches its own token end there regardless of DEAD_COMPOUND_ALLOWLIST — e.g.
+                // "Deadpool" is one all-lowercase-after-D run, so "dead" (positions 0-3) never sees
+                // tokenEnd(3) set at all. Replaced with camelCase-split equivalents that DO exercise
+                // the allow-list (remove it and these go red).
+                "DeadPool and Wolverine reaction",
+                "#DeadLine hacks every creator should know",
                 "Dead cute outfit ideas",
-                "Dead Sea mud mask",
-                "deadline tips for creators"
+                "Dead Sea mud mask"
             })
     @DisplayName(
             "T-GOLIVE-0918-R3: everyday fitness/skincare/brand 'dead' compounds stay quotable"
@@ -3335,6 +3342,155 @@ class CreatorNudgeServiceTest {
         assertFalse(
                 CreatorNudgeService.isQuotableInCreatorCopy(probe),
                 "probe must not be quotable in creator copy [" + defect + "]: \"" + probe + "\"");
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // T-GOLIVE-0918-R3 repair round 3 (vikram · 2026-09-19) — an independent reviewer (Kabir)
+    // FAILED commit 3a87935 with KabirDeadProbeTest, a 41-row probe (22 BENIGN, 19 UNSAFE) that
+    // found two further defects in the round-3 "dead" allow-list on top of the ones already
+    // covered above:
+    //
+    //   1. HIGH leak/regression — isAllowlistedDeadOccurrence compared only the separator-FREE
+    //      compact string, so "dead" followed by a compound word across a comma/semicolon/hyphen
+    //      ("dead, pool", "dead - lift", "dead; lift") read exactly like the glued/whitespace-only
+    //      compound it is meant to allow. Fixed by CreatorNudgeService.hasOnlySoftJoinsBetween,
+    //      which additionally requires every token boundary inside the matched span to be glue, a
+    //      camelCase/hashtag/digit/script split, or plain whitespace — never a punctuation mark.
+    //   2. HIGH plural/inflection gap — "dead lifts"/"dead hangs"/"dead bugs"/"deadlifts"/"dead
+    //      lifting" still blocked because the allow-listed compound's exact end was never itself a
+    //      token end once the real word carried a suffix. Fixed by
+    //      CreatorNudgeService.extendOverGeneratedSuffix.
+    //   3. MEDIUM — gaming/film titles that contain "dead" as a non-first word ("Red Dead
+    //      Redemption 2", "The Walking Dead", "Left 4 Dead") or with more of the title following
+    //      ("Dead Space", "Dead by Daylight", "Dead Poets Society") were never covered by the
+    //      allow-list at all. Fixed by widening DEAD_COMPOUND_ALLOWLIST to full phrases (see its
+    //      javadoc) rather than compounds beginning with "dead" only.
+    //
+    // Every row of Kabir's probe is reproduced here as a permanent, table-driven regression test
+    // (rather than the throwaway probe class itself), against CreatorNudgeService.firstUnsafeTopic
+    // and isQuotableInCreatorCopy exactly as the probe did.
+    // ---------------------------------------------------------------------------------------
+
+    static Stream<Arguments> kabirProbeRound3QuotableRows() {
+        return Stream.of(
+                // --- Kabir's BENIGN rows (all 22), verbatim ---
+                arguments("plural: dead lifts", "Romanian dead lifts for beginners"),
+                arguments("plural: dead hangs", "3 sets of dead hangs daily"),
+                arguments("plural: dead bugs", "Dead bugs vs planks for core"),
+                arguments("glued compound: deadlift", "Sumo deadlift vs conventional"),
+                arguments("whitespace compound: dead lift", "Dead lift form check: 140kg PR"),
+                arguments("hashtag camelCase run: #DeadLiftDay", "#DeadLiftDay motivation"),
+                arguments("whitespace compound: dead skin", "Exfoliate dead skin cells gently"),
+                arguments("whitespace compound: dead ends", "Trim your dead ends at home"),
+                arguments("whitespace compound: dead weight", "Dead weight training for grip"),
+                arguments("title, dead mid-phrase: Red Dead Redemption", "Red Dead Redemption 2 PC mods"),
+                arguments("title, dead first word: Dead Space", "Dead Space remake gameplay"),
+                arguments("title, dead first word: Dead by Daylight", "Dead by Daylight new killer tier list"),
+                arguments("title, dead last word + digit: Left 4 Dead", "Left 4 Dead nostalgia stream"),
+                arguments("glued compound + digit: Deadpool 3", "Deadpool 3 box office day 1"),
+                arguments("whitespace compound: dead cute", "Dead cute Diwali lehenga look"),
+                arguments("whitespace compound: dead sea", "Dead Sea salt scrub review"),
+                arguments("glued compound, no split: deadline (Hinglish)", "Deadline se pehle content ready karo"),
+                arguments("whitespace compound: dead skin (Hinglish)", "Dead skin hatane ka desi nuskha"),
+                arguments("glued compound, no split: deadlift (Hinglish)", "Deadlift karte waqt back pain kyon"),
+                arguments("title, dead last word: The Walking Dead", "The Walking Dead finale reaction"),
+                arguments("title, dead first word: Dead Poets Society", "Dead Poets Society book review"),
+                arguments("whitespace compound + hashtag tail: dead hang", "Dead hang for shoulder mobility #fitness"),
+                // --- extra QUOTABLE forms named explicitly by the fix ticket, not in Kabir's list ---
+                arguments("glued compound + plural suffix: deadlifts", "deadlifts"),
+                arguments("whitespace compound + gerund suffix: dead lifting", "dead lifting"),
+                // --- camelCase-split forms proving the two former "cannot fail" tests for real ---
+                arguments("camelCase split: DeadPool", "DeadPool and Wolverine reaction"),
+                arguments("hashtag camelCase split: #DeadLine", "#DeadLine hacks every creator should know"),
+                // --- Kabir's "Model found DEAD SKIN peeled off" (UNSAFE in his probe) ---
+                // Structurally this is the SAME "dead" + whitespace + "skin" pattern as the
+                // explicitly-required-quotable rows above (Amendment 2026-09-19 names "dead skin"
+                // itself as an accepted false positive, with no textual signal — casing included —
+                // that distinguishes this row from "Exfoliate dead skin cells gently"). Blocking it
+                // would require re-introducing exactly the over-block that amendment rejects, which
+                // is out of scope for this repair and not named in T-GOLIVE-0918-R3 repair round
+                // 3's fix list. Kept QUOTABLE here as a documented, deliberate divergence from
+                // Kabir's raw expectation — an accepted residual ambiguity, not a fix.
+                arguments("accepted ambiguity, not a fix target: DEAD SKIN all-caps", "Model found DEAD SKIN peeled off"));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\"")
+    @MethodSource("kabirProbeRound3QuotableRows")
+    @DisplayName(
+            "T-GOLIVE-0918-R3 repair round 3 (Kabir's probe on 3a87935): benign 'dead' rows stay"
+                    + " quotable")
+    void firstUnsafeTopic_kabirProbeRound3_quotableRows(String description, String text) {
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(text),
+                "expected quotable [" + description + "]: \"" + text + "\"");
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(text),
+                "expected no category to match [" + description + "]: \"" + text + "\"");
+    }
+
+    static Stream<Arguments> kabirProbeRound3BlockedRows() {
+        return Stream.of(
+                // --- Kabir's UNSAFE rows (all 19, minus "Model found DEAD SKIN peeled off" —
+                // see kabirProbeRound3QuotableRows for why that one is not a fix target) ---
+                arguments("HIGH leak: dead, Sea (comma)", "Tourist found dead, Sea search called off in Goa"),
+                arguments("HIGH leak: dead; lift (semicolon)", "Woman found dead; lift operator arrested"),
+                arguments("HIGH leak: dead, lift (comma)", "Man shot dead, lift operator held"),
+                arguments("HIGH leak: dead - pool (hyphen)", "Boy found dead - pool owner questioned"),
+                arguments("HIGH leak: dead, line (comma)", "Worker found dead, line of mourners at gate"),
+                arguments("HIGH leak: dead, ends (comma)", "Student found dead, ends life note recovered"),
+                arguments(
+                        "second bare 'dead' still counts after an allowed compound",
+                        "Dead skin clinic owner found dead in Pune"),
+                arguments(
+                        "second bare 'dead' still counts after a glued compound",
+                        "Deadlift gym owner found dead"),
+                arguments(
+                        "second bare 'dead' still counts, no compound follows it",
+                        "Dead skin tips... 3 dead in blast"),
+                arguments(
+                        "second bare 'dead' still counts, count form",
+                        "Dead Sea tour bus crash leaves 12 dead"),
+                arguments(
+                        "second bare 'dead' still counts after a hashtag compound",
+                        "#DeadPool3 fan found dead at theatre"),
+                arguments("HIGH leak: dead, bug (comma)", "Priest dead, bug spray blamed"),
+                arguments("HIGH leak: dead, cute (comma)", "2 dead, cute toddler survives Noida fire"),
+                arguments(
+                        "'dead' and 'lift' not adjacent — extra words between them",
+                        "Man found dead in hotel lift"),
+                arguments("baseline: bare 'dead', no compound at all", "Dancer shot dead"),
+                arguments("HIGH leak: dead, hang (comma)", "Couple dead, hang from ceiling fan"),
+                arguments(
+                        "second bare 'dead' still counts after a glued compound (title case)",
+                        "Deadlift champion dead at 34"),
+                arguments("baseline: bare hashtag 'dead', no compound", "#RIP #Dead #Mumbai"),
+                arguments(
+                        "leetspeak 'd3ad' + HIGH leak: dead, lift (comma)",
+                        "Youth found d3ad, lift sealed"),
+                // --- item 3's "keep BLOCKED" piggyback wording (shorter than Kabir's originals,
+                // same underlying probes; "Man found dead in hotel lift" and "Deadlift champion
+                // dead at 34" are verbatim identical to Kabir's rows above, so are not repeated) ---
+                arguments(
+                        "piggyback: second bare 'dead' still counts (shortened)",
+                        "Dead skin clinic owner found dead"),
+                arguments(
+                        "piggyback: second bare 'dead' after hashtag compound (shortened)",
+                        "#DeadPool3 fan found dead"));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\"")
+    @MethodSource("kabirProbeRound3BlockedRows")
+    @DisplayName(
+            "T-GOLIVE-0918-R3 repair round 3 (Kabir's probe on 3a87935): unsafe 'dead' rows stay"
+                    + " blocked as DEATH")
+    void firstUnsafeTopic_kabirProbeRound3_blockedRows(String description, String text) {
+        assertEquals(
+                UnsafeHeadlineTopic.DEATH,
+                CreatorNudgeService.firstUnsafeTopic(text),
+                "expected DEATH to block [" + description + "]: \"" + text + "\"");
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(text),
+                "expected not quotable [" + description + "]: \"" + text + "\"");
     }
 
     // ---------------------------------------------------------------------------------------

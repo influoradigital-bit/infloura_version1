@@ -1904,21 +1904,51 @@ public class CreatorNudgeService {
      * T-GOLIVE-0918-R3 [vikram · 2026-09-19] — precise allow-list for the DEATH term "dead" only,
      * per Amendment 2026-09-19 to wiki/decisions/2026-09-18-trend-headline-screening.md
      * ("Over-blocking is not accepted... dead skin, dead ends, deadlift, dead hang, dead bug and
-     * Deadpool" must stay quotable, with the same severity as a bypass). Every entry is a compact
-     * form that STARTS WITH "dead", so {@link #isAllowlistedDeadOccurrence} can only ever rescue an
-     * actual "dead" occurrence at the position it is checked against — it cannot widen any other
-     * DEATH/CRIME/COMMUNAL/LEGAL term, and it cannot rescue a "dead" occurring elsewhere in the same
-     * headline (checked per-occurrence, not per-headline; see {@link #containsTerm}). "Man found
-     * dead in Delhi", "3 dead in Mumbai building collapse", "Dead body recovered from lake", "death
-     * toll rises" and "#DeadInDelhi" all still match "dead"/"death" at a position none of these
-     * compounds cover, so they keep blocking. Same declaration-order requirement as {@link
-     * #GENERATED_SUFFIXES}/{@link #GENERATED_FORM_BLOCKLIST} above — must stay declared ABOVE the
-     * anti-vacuity {@code static} guard below, which reaches this via {@code containsTerm}.
+     * Deadpool" must stay quotable, with the same severity as a bypass). Each entry is a compact
+     * PHRASE containing the literal substring "dead" exactly once — {@code "dead"} does not have to
+     * be the first word ({@code "walkingdead"}, {@code "reddeadredemption"}, {@code "left4dead"}
+     * cover phrases where it is preceded by other words); {@link #isAllowlistedDeadOccurrence}
+     * locates "dead" inside the phrase itself ({@code phrase.indexOf("dead")}) and anchors the
+     * phrase around the SAME "dead" occurrence it was called for, so it can only ever rescue that
+     * one occurrence — it cannot widen any other DEATH/CRIME/COMMUNAL/LEGAL term, and it cannot
+     * rescue a "dead" occurring elsewhere in the same headline (checked per-occurrence, not
+     * per-headline; see {@link #containsTerm}). "Man found dead in Delhi", "3 dead in Mumbai
+     * building collapse", "Dead body recovered from lake", "death toll rises" and "#DeadInDelhi" all
+     * still match "dead"/"death" at a position none of these phrases cover, so they keep blocking.
+     *
+     * <p>T-GOLIVE-0918-R3 repair round 3 (vikram · 2026-09-19) — an independent reviewer's probe
+     * (KabirDeadProbeTest) found two further defects fixed alongside this entry list, both handled
+     * in {@link #isAllowlistedDeadOccurrence} rather than here:
+     *
+     * <ul>
+     *   <li><b>HIGH leak/regression.</b> The original check compared only the separator-FREE compact
+     *       string, so "Boy found dead - pool owner questioned", "Tourist found dead, Sea search
+     *       called off in Goa" etc. read as the "deadpool"/"deadsea" compounds purely because
+     *       dropping the comma/hyphen/semicolon made "dead" and the next word adjacent. Fixed by
+     *       {@link #hasOnlySoftJoinsBetween}, which additionally requires every token boundary
+     *       inside the matched span to be glue (no separator), a camelCase/hashtag/digit/script
+     *       split, or plain whitespace — never a punctuation character.
+     *   <li><b>HIGH plural/inflection gap.</b> "Romanian dead lifts", "3 sets of dead hangs", "Dead
+     *       bugs vs planks", "deadlifts", "dead lifting" were still blocked because the compound's
+     *       exact end (e.g. {@code "...lift"}) was never itself a token end once the real word was
+     *       "lifts"/"lifting". Fixed by {@link #extendOverGeneratedSuffix}, which — only when the
+     *       exact end is not a token end — retries with one {@link #GENERATED_SUFFIXES} entry
+     *       appended.
+     * </ul>
+     *
+     * <p>Same declaration-order requirement as {@link #GENERATED_SUFFIXES}/{@link
+     * #GENERATED_FORM_BLOCKLIST} above — must stay declared ABOVE the anti-vacuity {@code static}
+     * guard below, which reaches this via {@code containsTerm}.
      */
     private static final Set<String> DEAD_COMPOUND_ALLOWLIST =
             Set.of(
+                    // "dead" is the phrase's first word.
                     "deadskin", "deadends", "deadhang", "deadbug", "deadlift", "deadpool",
-                    "deadcute", "deadsea", "deadline");
+                    "deadcute", "deadsea", "deadline", "deadweight", "deadspace", "deadbydaylight",
+                    "deadpoetssociety",
+                    // "dead" sits inside or at the end of the phrase (film/game titles — row 3 of
+                    // the reviewer's probe).
+                    "reddeadredemption", "left4dead", "walkingdead");
 
     static {
         // Anti-vacuity guard. Every term must already be in matching-normal form (lowercase,
@@ -2205,26 +2235,102 @@ public class CreatorNudgeService {
 
     /**
      * T-GOLIVE-0918-R3 [vikram · 2026-09-19] — true when the "dead" occurrence starting at {@code
-     * start} is really the start of one of {@link #DEAD_COMPOUND_ALLOWLIST}'s benign compounds,
-     * decided against {@code reference} (see {@link #DEAD_ALLOWLIST_BOUNDARY_FOLD}'s javadoc for
-     * why this is a dedicated digit-literal reading rather than whichever variant found the "dead"
-     * match). Checked with the SAME token-start/token-end anchoring {@link #containsTerm} uses for
-     * every ordinary term, so a hashtag/camelCase/digit split — "#RomanDeadLift" -> Roman|Dead|Lift,
-     * "#DeadLift2024" -> Dead|Lift|2024, "#DeadPool3" -> Dead|Pool|3 — rescues the compound exactly
-     * as it would match it as an ordinary multi-word phrase term. Source: wiki/decisions/
-     * 2026-09-18-trend-headline-screening.md (Amendment 2026-09-19).
+     * start} is really part of one of {@link #DEAD_COMPOUND_ALLOWLIST}'s benign phrases, decided
+     * against {@code reference} (see {@link #DEAD_ALLOWLIST_BOUNDARY_FOLD}'s javadoc for why this is
+     * a dedicated digit-literal reading rather than whichever variant found the "dead" match).
+     *
+     * <p>T-GOLIVE-0918-R3 repair round 3 [vikram · 2026-09-19] — an independent reviewer's probe
+     * (KabirDeadProbeTest) found the original two-anchor check (token-start at {@code start}, plain
+     * {@code tokenEnd} at the compound's last character) both under- and over-inclusive; see
+     * {@link #DEAD_COMPOUND_ALLOWLIST}'s javadoc for the two defects. This version: (1) locates
+     * "dead" inside the candidate phrase via {@code indexOf}, so a phrase can have "dead" anywhere
+     * in it, not only at position 0; (2) if the phrase's literal end is not itself a token end, asks
+     * {@link #extendOverGeneratedSuffix} whether an inflection makes it one; (3) requires — via
+     * {@link #hasOnlySoftJoinsBetween} — every token boundary inside the matched span to be a
+     * glue/camelCase/hashtag/digit/script split or plain whitespace, never a punctuation character.
+     * A hashtag/camelCase/digit split — "#RomanDeadLift" -&gt; Roman|Dead|Lift, "#DeadLift2024" -&gt;
+     * Dead|Lift|2024, "#DeadPool3" -&gt; Dead|Pool|3 — still rescues the compound, exactly as before;
+     * "Boy found dead - pool owner questioned" and "Tourist found dead, Sea search called off in
+     * Goa" now do not. Source: wiki/decisions/2026-09-18-trend-headline-screening.md (Amendment
+     * 2026-09-19).
      */
     private static boolean isAllowlistedDeadOccurrence(NormalizedText reference, int start) {
         String compact = reference.compact();
-        for (String allow : DEAD_COMPOUND_ALLOWLIST) {
-            int end = start + allow.length() - 1;
-            if (compact.regionMatches(start, allow, 0, allow.length())
-                    && reference.tokenStart().get(start)
-                    && reference.tokenEnd().get(end)) {
+        for (String phrase : DEAD_COMPOUND_ALLOWLIST) {
+            int deadOffset = phrase.indexOf("dead");
+            int phraseStart = start - deadOffset;
+            int phraseEnd = phraseStart + phrase.length() - 1;
+            if (phraseStart < 0
+                    || phraseEnd >= compact.length()
+                    || !reference.tokenStart().get(phraseStart)
+                    || !compact.regionMatches(phraseStart, phrase, 0, phrase.length())) {
+                continue;
+            }
+            int matchEnd = phraseEnd;
+            if (!reference.tokenEnd().get(matchEnd)) {
+                matchEnd = extendOverGeneratedSuffix(reference, phraseEnd);
+                if (matchEnd < 0) {
+                    continue;
+                }
+            }
+            if (hasOnlySoftJoinsBetween(reference, phraseStart, matchEnd)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * T-GOLIVE-0918-R3 repair round 3 [vikram · 2026-09-19] — HIGH fix. A plural or inflected form
+     * of the word right after an 0-offset allow-listed compound's last word (e.g. "lift" -&gt;
+     * "lifts"/"lifting", "hang" -&gt; "hangs", "bug" -&gt; "bugs") still has to be QUOTABLE per the
+     * decision's own examples ("Romanian dead lifts", "3 sets of dead hangs", "Dead bugs vs
+     * planks", "deadlifts", "dead lifting" — an independent reviewer's probe). {@link
+     * #isAllowlistedDeadOccurrence} calls this only when {@code phraseEnd} is NOT already a token
+     * end (i.e. the literal compound match is a strict prefix of the real word), and only accepts
+     * the extension when appending the suffix reaches an ACTUAL token end — so "deadlifted" is fine
+     * (ed) but a non-word tail like "deadliftxyz" is correctly refused. Reuses {@link
+     * #GENERATED_SUFFIXES} rather than inventing a second list, for the same reason {@link
+     * #matchesTerm} does: one auditable suffix set, not two that could drift apart.
+     */
+    private static int extendOverGeneratedSuffix(NormalizedText reference, int phraseEnd) {
+        String compact = reference.compact();
+        for (String suffix : GENERATED_SUFFIXES) {
+            int candidateEnd = phraseEnd + suffix.length();
+            if (candidateEnd < compact.length()
+                    && compact.regionMatches(phraseEnd + 1, suffix, 0, suffix.length())
+                    && reference.tokenEnd().get(candidateEnd)) {
+                return candidateEnd;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * T-GOLIVE-0918-R3 repair round 3 [vikram · 2026-09-19] — HIGH fix for the leak an independent
+     * reviewer's probe found: {@link #isAllowlistedDeadOccurrence}'s old two-anchor check compared
+     * only {@link NormalizedText#compact()}, which drops EVERY separator character — comma, hyphen,
+     * semicolon, period AND whitespace alike — so "dead" and the next allow-listed word read as
+     * adjacent (and therefore as the compound) regardless of what, if anything, stood between them
+     * in the source text. "Boy found dead - pool owner questioned", "Tourist found dead, Sea search
+     * called off in Goa", "Man shot dead, lift operator held" etc. all rescued this way, wrongly.
+     *
+     * <p>True only when every token boundary strictly inside ({@code start}, {@code end}] — i.e.
+     * every point where {@link NormalizedText#tokenStart()} is set, checked via {@link
+     * #DEAD_ALLOWLIST_BOUNDARY_FOLD}'s per-position {@code hardSeparatorBefore} bit — was produced
+     * by something other than a punctuation character: two words glued with nothing between them,
+     * a camelCase/hashtag/digit/script split (no separator character consumed at all), or plain
+     * whitespace. The moment one boundary's gap contained ANY non-whitespace character, this
+     * returns false — matching the decision's own wording: joined "by nothing... by a
+     * camelCase/hashtag boundary... or by WHITESPACE ONLY. Never across any punctuation."
+     */
+    private static boolean hasOnlySoftJoinsBetween(NormalizedText reference, int start, int end) {
+        for (int position = start + 1; position <= end; position++) {
+            if (reference.tokenStart().get(position) && reference.hardSeparatorBefore().get(position)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -2233,8 +2339,19 @@ public class CreatorNudgeService {
      *
      * <p>{@link #spaced()} is the same tokens joined by single spaces — used ONLY by the class-load
      * term-form guard, never by matching.
+     *
+     * <p>T-GOLIVE-0918-R3 repair round 3 [vikram · 2026-09-19] — {@link #hardSeparatorBefore()} is
+     * set at a position {@code p} exactly when {@link #tokenStart()} is also set at {@code p} AND
+     * the (possibly multi-character) run of skipped separator characters immediately before this
+     * token contained at least one character that is not whitespace (a comma, hyphen, semicolon,
+     * period, quote, ...). It is false both when the previous token is glued directly onto this one
+     * (nothing skipped) and when only whitespace was skipped — i.e. false is "soft join", true is
+     * "hard/punctuation join". Used ONLY by {@link #hasOnlySoftJoinsBetween} (the "dead" compound
+     * allow-list); ordinary term matching does not care what kind of separator stood between tokens,
+     * only that one did.
      */
-    private record NormalizedText(String compact, String spaced, BitSet tokenStart, BitSet tokenEnd) {}
+    private record NormalizedText(
+            String compact, String spaced, BitSet tokenStart, BitSet tokenEnd, BitSet hardSeparatorBefore) {}
 
     /**
      * Reduces {@code text} to matchable tokens. <b>This method is the filter's entire defence
@@ -2298,7 +2415,14 @@ public class CreatorNudgeService {
         StringBuilder spaced = new StringBuilder(folded.length() + 1);
         BitSet tokenStart = new BitSet();
         BitSet tokenEnd = new BitSet();
+        BitSet hardSeparatorBefore = new BitSet();
         boolean inToken = false;
+        // T-GOLIVE-0918-R3 repair round 3 (vikram · 2026-09-19) — accumulates, across the whole run
+        // of separator characters between the previous token and the next one, whether ANY of them
+        // was not whitespace. Reset to false the instant a new token actually starts (recorded into
+        // hardSeparatorBefore at that position first). See NormalizedText.hardSeparatorBefore's
+        // javadoc and hasOnlySoftJoinsBetween.
+        boolean pendingHardSeparator = false;
         // F-0855 (decision 2026-09-18) — tracks whether the character just appended was lowercase
         // or a digit, so a following uppercase letter can be recognised as a camelCase/hashtag
         // boundary. See rule 5 below.
@@ -2346,6 +2470,8 @@ public class CreatorNudgeService {
                 // isDevanagariCombiningMark's javadoc for why these do NOT vanish like every other
                 // combining mark: they are appended, like a letter, and never break the token.
                 if (!inToken) {
+                    hardSeparatorBefore.set(compact.length(), pendingHardSeparator);
+                    pendingHardSeparator = false;
                     tokenStart.set(compact.length());
                     if (spaced.length() > 0) {
                         spaced.append(' ');
@@ -2454,6 +2580,13 @@ public class CreatorNudgeService {
                     if (boundary) {
                         tokenEnd.set(compact.length() - 1);
                     }
+                    // T-GOLIVE-0918-R3 repair round 3 (vikram · 2026-09-19) — record whether a real
+                    // (punctuation) separator preceded this new token BEFORE clearing the
+                    // accumulator. A `boundary`-only split (camelCase/digit/script) never set
+                    // pendingHardSeparator in the first place — no character was skipped to reach
+                    // it — so this is always false for those, exactly as intended.
+                    hardSeparatorBefore.set(compact.length(), pendingHardSeparator);
+                    pendingHardSeparator = false;
                     tokenStart.set(compact.length());
                     if (spaced.length() > 0) {
                         spaced.append(' ');
@@ -2466,19 +2599,34 @@ public class CreatorNudgeService {
                 previousAppendedWasDigit = isDigitNow;
                 previousAppendedWasDevanagari = isDevanagariNow;
                 previousAppendedWasPunctuationFold = isPunctuationFold;
-            } else if (inToken) {
-                tokenEnd.set(compact.length() - 1);
-                inToken = false;
-                previousAppendedWasLowerOrDigit = false;
-                previousAppendedWasDigit = false;
-                previousAppendedWasDevanagari = false;
-                previousAppendedWasPunctuationFold = false;
+            } else {
+                // T-GOLIVE-0918-R3 repair round 3 (vikram · 2026-09-19) — HIGH fix. Every character
+                // that does not become part of a token runs through here, not just the first one in
+                // a gap: `if (inToken)` alone (the pre-fix condition) only closed the token out on
+                // the FIRST separator character and then went silent for the rest of the gap, so
+                // "dead - pool" (space, hyphen, space) never even looked at the hyphen. Tracking
+                // pendingHardSeparator unconditionally, for every skipped character, is what lets
+                // hasOnlySoftJoinsBetween tell "dead lift" (whitespace only) apart from "dead - lift"
+                // / "dead, lift" / "dead; lift" (a real punctuation mark in the gap) even though both
+                // collapse to the identical "deadlift" in the compact string.
+                if (inToken) {
+                    tokenEnd.set(compact.length() - 1);
+                    inToken = false;
+                    previousAppendedWasLowerOrDigit = false;
+                    previousAppendedWasDigit = false;
+                    previousAppendedWasDevanagari = false;
+                    previousAppendedWasPunctuationFold = false;
+                }
+                if (!Character.isWhitespace(cp)) {
+                    pendingHardSeparator = true;
+                }
             }
         }
         if (inToken) {
             tokenEnd.set(compact.length() - 1);
         }
-        return new NormalizedText(compact.toString(), spaced.toString(), tokenStart, tokenEnd);
+        return new NormalizedText(
+                compact.toString(), spaced.toString(), tokenStart, tokenEnd, hardSeparatorBefore);
     }
 
 
