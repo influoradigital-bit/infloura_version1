@@ -452,7 +452,6 @@ _YEAR_UNIT_RE = re.compile(
     re.IGNORECASE,
 )
 _USAGE_CONTEXT_RE = re.compile(r"usage|use\b|rights?|licen[sc]e", re.IGNORECASE)
-_EXCLUSIVITY_CONTEXT_RE = re.compile(r"exclusiv\w*", re.IGNORECASE)
 # A heuristic window, not full sentence parsing (same caveat as the brand
 # exclusion check below): wide enough to span a short clause ("2 months
 # category exclusivity"), narrow enough that an unrelated context word two
@@ -468,9 +467,9 @@ _DURATION_CONTEXT_WINDOW = 30
 _SENTENCE_BREAK_RE = re.compile(r"(?<!\d)[.!?;\n।](?!\d)")
 
 
-def _clause_window(text: str, start: int, end: int, width: int) -> str:
-    """text[start-width : end+width], clipped to the sentence that holds
-    text[start:end]."""
+def _clause_bounds(text: str, start: int, end: int, width: int) -> tuple[int, int]:
+    """(lo, hi) of text[start-width : end+width], clipped to the sentence that
+    holds text[start:end]."""
     lo = max(0, start - width)
     hi = min(len(text), end + width)
     before = text[lo:start]
@@ -480,6 +479,13 @@ def _clause_window(text: str, start: int, end: int, width: int) -> str:
     after_break = _SENTENCE_BREAK_RE.search(text, end, hi)
     if after_break is not None:
         hi = after_break.start()
+    return lo, hi
+
+
+def _clause_window(text: str, start: int, end: int, width: int) -> str:
+    """text[start-width : end+width], clipped to the sentence that holds
+    text[start:end]."""
+    lo, hi = _clause_bounds(text, start, end, width)
     return text[lo:hi]
 
 
@@ -497,22 +503,32 @@ def _numbers_with_unit(text: str, unit_re: re.Pattern[str]) -> set[str]:
 def _numbers_with_context_unit(
     text: str,
     unit_re: re.Pattern[str],
-    context_re: re.Pattern[str],
+    context_re: re.Pattern[str] | None,
     *,
     multiplier: float = 1,
+    context_spans: list[tuple[int, int]] | None = None,
 ) -> set[str]:
     """Like `_numbers_with_unit`, but a match only counts when `context_re`
     (a USAGE or EXCLUSIVITY context word) also appears within
     `_DURATION_CONTEXT_WINDOW` characters of it — see REPAIR ROUND 2 finding
     4 above. `multiplier` converts the unit found into the target field's own
-    unit (e.g. a YEAR match feeding usage_months passes multiplier=12)."""
+    unit (e.g. a YEAR match feeding usage_months passes multiplier=12).
+
+    `context_spans` (T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18]) is
+    the alternative to `context_re`: positions in the normalised text where
+    the brief STATES the term (see `_exclusivity_spans`), so a word that
+    merely looks like the context ("Exclusive 20% off for 30 days") does not
+    count. Source: B0-AI repair-round-2 verdict, defect 4."""
     found: set[str] = set()
     normalized = _normalize_digits(text or "")
     for match in unit_re.finditer(normalized):
-        window = _clause_window(
+        lo, hi = _clause_bounds(
             normalized, match.start(), match.end(), _DURATION_CONTEXT_WINDOW
         )
-        if context_re.search(window) is None:
+        if context_spans is not None:
+            if not any(s < hi and e > lo for s, e in context_spans):
+                continue
+        elif context_re is None or context_re.search(normalized[lo:hi]) is None:
             continue
         raw_numbers = _numbers_in(match.group(1))
         if multiplier == 1:
@@ -542,13 +558,16 @@ def _grounded_exclusivity_days(text: str) -> set[str]:
     """exclusivity_days grounds against a day figure, a month figure (x30) or
     a year figure (x365) stated in an EXCLUSIVITY context (REPAIR ROUND 2
     finding 4, U2/U4)."""
+    spans = _exclusivity_spans(text)
+    if not spans:
+        return set()
     return (
-        _numbers_with_context_unit(text, _DAY_UNIT_RE, _EXCLUSIVITY_CONTEXT_RE)
+        _numbers_with_context_unit(text, _DAY_UNIT_RE, None, context_spans=spans)
         | _numbers_with_context_unit(
-            text, _MONTH_UNIT_RE, _EXCLUSIVITY_CONTEXT_RE, multiplier=30
+            text, _MONTH_UNIT_RE, None, multiplier=30, context_spans=spans
         )
         | _numbers_with_context_unit(
-            text, _YEAR_UNIT_RE, _EXCLUSIVITY_CONTEXT_RE, multiplier=365
+            text, _YEAR_UNIT_RE, None, multiplier=365, context_spans=spans
         )
     )
 
@@ -592,14 +611,22 @@ _MARK_START = r"(?<![A-Za-zऀ-ॿ])"
 _CURRENCY_MARKER_RE_TEXT = r"₹|rs\.?|inr|rupees?|rupaye|rupay|रुपये|रुपए|रु\.?"
 _BUDGET_MARKER_RE_TEXT = (
     rf"{_CURRENCY_MARKER_RE_TEXT}|budgets?|fees?|pay|pays|payment|paying|paid|payout|"
-    r"price|pricing|cost|compensation|remuneration|honorarium|offers?|offered|offering|"
+    # T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: a bare
+    # "price"/"pricing"/"cost" is how a brief states its PRODUCT's price
+    # ("Promote our new serum (price ₹999). Budget TBD." grounded 999), so
+    # only a price qualified as the creator's or the collab's counts here;
+    # "price per reel" is the per-deliverable marker below. The bare words
+    # are barter markers instead (the product's value). Source: B0-AI
+    # repair-round-2 verdict, defect 3.
+    r"(?:your|creator|collab(?:oration)?|campaign|deal|content)\s+(?:price|pricing|cost|rate)|"
+    r"compensation|remuneration|honorarium|offers?|offered|offering|"
     r"amount|commercials?|dunge|denge|de\s+sakte|milenge|paisa|paise|"
     r"per\s+(?:reels?|posts?|stor(?:y|ies)|videos?|shorts?|deliverables?|pieces?|integrations?)|"
     r"बजट|फीस|फ़ीस|भुगतान|पेमेंट"
 )
 _BARTER_MARKER_RE_TEXT = (
     rf"{_CURRENCY_MARKER_RE_TEXT}|worth|barter|bartered|mrp|value|valued|"
-    r"retail\s+price|कीमत|मूल्य"
+    r"retail\s+price|price|priced|pricing|costs?|कीमत|मूल्य"
 )
 # T-GOLIVE-0918-R2 [ash · 2026-09-18] — Kabir round-1 B0-AI HIGH #1: a number
 # (plain or shorthand) that COUNTS an audience is never money, however close a
@@ -710,8 +737,94 @@ _NON_FEE_BEFORE_RE = re.compile(
 )
 
 
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: more amounts
+# that are not this creator's fee. A product's own price ("serum (price
+# ₹999)", "costs ₹999") — unless the price is the creator's or the collab's
+# ("your price", "collab cost") — and a refund/reimbursement ("we refund
+# ₹1,299 after posting", "₹1,299 will be refunded"). Source: B0-AI
+# repair-round-2 verdict, defect 3.
+_PRODUCT_PRICE_BEFORE_RE = re.compile(
+    r"(?<![A-Za-z])(?P<qual>[A-Za-z]+\s+)?(?:price[ds]?|pricing|costs?|refund\w*|"
+    r"reimburs\w*)(?:\s+(?:is|of|at|will\s+be|back))?\s*[:\-(]?\s*(?:₹|rs\.?|inr)?\s*$",
+    re.IGNORECASE,
+)
+_FEE_PRICE_QUALIFIERS = frozenset(
+    {"your", "creator", "collab", "collaboration", "campaign", "deal", "content", "reel", "post"}
+)
+_REFUND_AFTER_RE = re.compile(
+    r"\s*(?:(?:will\s+be|to\s+be|is|gets?|get|as\s+a?)\s+)?(?:refund\w*|reimburs\w*)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+
+
+def _is_product_price_or_refund(text: str, start: int, end: int) -> bool:
+    if _REFUND_AFTER_RE.match(text, end) is not None:
+        return True
+    before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
+    match = _PRODUCT_PRICE_BEFORE_RE.search(before)
+    if match is None:
+        return False
+    qualifier = (match.group("qual") or "").strip().lower()
+    return qualifier not in _FEE_PRICE_QUALIFIERS
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: a phone number
+# ("Call 98200 12345 to discuss budget" grounded 12345) and a calendar year
+# ("Budget for 2026 campaign tbd" grounded 2026) are not amounts. A number is a
+# phone number when it is part of a digit run (spaces/dashes allowed) of 8+
+# digits, or follows call/phone/whatsapp/+91; a 19xx/20xx figure is a year when
+# a period noun follows it or in/since/till/year/FY precedes it, and no
+# currency sign touches it ("₹2026" stays an amount). Applied to every money
+# field and to summary-line money. Source: B0-AI repair-round-2 verdict,
+# defect 3.
+_PHONE_CUE_BEFORE_RE = re.compile(
+    r"(?:(?<![A-Za-z])(?:call|phone|mobile|mob|ph|tel|whats\s*app|wa|contact|number|no)"
+    r"\.?\s*(?:(?:on|at|us|me|number|no)\.?\s*)?[:\-]?\s*|\+\s*91[\s\-]*)$",
+    re.IGNORECASE,
+)
+_DIGIT_RUN_RE = re.compile(r"\+?\d[\d \-]*\d|\d")
+_YEAR_RE = re.compile(r"(?:19|20)\d\d")
+_YEAR_NOUN_AFTER_RE = re.compile(
+    r"\s*(?:-\s*\d{2,4}\s*)?(?:campaigns?|seasons?|launch\w*|collections?|editions?|series|"
+    r"drops?|range|sales?|festive|calendar|year|fy|q[1-4]|batch|model|version|onwards?|"
+    r"diwali|holi|christmas|summer|winter|monsoon|spring|autumn|wedding)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+_YEAR_CUE_BEFORE_RE = re.compile(
+    r"(?<![A-Za-z])(?:in|since|till|until|year|fy|calendar|of\s+year|circa|est\.?|estd\.?|"
+    r"established|founded)\s*$",
+    re.IGNORECASE,
+)
+_CURRENCY_TOUCHING_BEFORE_RE = re.compile(r"(?:₹|rs\.?|inr|rupees?)\s*$", re.IGNORECASE)
+_CURRENCY_TOUCHING_AFTER_RE = re.compile(r"\s*(?:₹|rs\b|inr\b|rupees?|/-)", re.IGNORECASE)
+
+
+def _is_phone_number(text: str, start: int, end: int) -> bool:
+    before = text[max(0, start - 30) : start]
+    if _PHONE_CUE_BEFORE_RE.search(before) is not None:
+        return True
+    for run in _DIGIT_RUN_RE.finditer(text, max(0, start - 20), min(len(text), end + 20)):
+        if run.start() <= start and run.end() >= end:
+            return sum(ch.isdigit() for ch in run.group(0)) >= 8
+    return False
+
+
+def _is_year(text: str, start: int, end: int) -> bool:
+    if _YEAR_RE.fullmatch(text[start:end]) is None:
+        return False
+    before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
+    if _CURRENCY_TOUCHING_BEFORE_RE.search(before) or _CURRENCY_TOUCHING_AFTER_RE.match(text, end):
+        return False
+    return (
+        _YEAR_NOUN_AFTER_RE.match(text, end) is not None
+        or _YEAR_CUE_BEFORE_RE.search(before) is not None
+    )
+
+
 def _is_non_fee_amount(text: str, start: int, end: int) -> bool:
     if _NON_FEE_AFTER_RE.match(text, end) is not None:
+        return True
+    if _is_product_price_or_refund(text, start, end):
         return True
     before = text[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
     return _NON_FEE_BEFORE_RE.search(before) is not None
@@ -756,6 +869,8 @@ def _numbers_with_money_marker(
         if _is_glued_to_a_word(normalized, start):
             continue
         if _is_audience_count(normalized, start, end):
+            continue
+        if _is_phone_number(normalized, start, end) or _is_year(normalized, start, end):
             continue
         if veto_non_fee and _is_non_fee_amount(normalized, start, end):
             continue
@@ -999,9 +1114,61 @@ def _grounded_deadline(value: str | None, raw_text: str) -> str | None:
         return None
     if parsed < datetime.now(timezone.utc).date():
         return None
-    if (parsed.year, parsed.month, parsed.day) not in _dates_in(raw_text):
+    if (parsed.year, parsed.month, parsed.day) not in _deadline_dates_in(raw_text):
         return None
     return value
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: any date in the
+# brief grounded the deadline apart from "Sent on": "Offer valid till
+# 31/12/2026 for customers. Post anytime." kept 2026-12-31 and "Batch no
+# 2026/11/15" kept 2026-11-15. A date now grounds `deadline` only when the
+# same clause frames it as one — a cue before it ("by", "before", "deadline",
+# "due", "live", "post on", "submit", "tak", ...) or right after it ("...
+# deadline", "... tak") — and nothing in the clause before it marks it as an
+# offer validity, expiry, batch/lot/invoice/order number or founding date.
+# Fail-closed: an unframed date leaves deadline null, which is "no deadline
+# stated". Source: B0-AI repair-round-2 verdict, defect 5.
+_DEADLINE_CUE_RE = re.compile(
+    r"(?<![A-Za-z])(?:by|before|till|until|upto|up\s+to|deadline|due|live|go-?live|"
+    r"timeline|post(?:ed|ing)?|publish\w*|submi\w*|deliver\w*|drafts?|latest|tak|pehle|"
+    r"launch\w*|schedul\w*|last\s+date|no\s+later\s+than|on\s+or\s+before)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+_DEADLINE_CUE_AFTER_RE = re.compile(
+    r"\s*(?:,\s*)?(?:deadline|tak|se\s+pehle|ke\s+pehle|last\s+date)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+_NON_DEADLINE_CUE_RE = re.compile(
+    r"(?<![A-Za-z])(?:valid\w*|validity|expir\w*|exp|offer\s+ends?|sale\s+ends?|"
+    r"batch|lot|mfg|manufactur\w*|best\s+before|use\s+by|invoice|order|ref\w*|"
+    r"dob|born|since|established|estd|founded|registered)(?![A-Za-z])|(?:no\.?|number|#)\s*[:\-]?\s*$",
+    re.IGNORECASE,
+)
+_ANY_DATE_RES = (_ISO_DATE_RE, _DMY_DATE_RE, _DAY_MONTH_YEAR_RE, _MONTH_DAY_YEAR_RE)
+
+
+def _deadline_dates_in(text: str) -> set[tuple[int, int, int]]:
+    """The subset of `_dates_in` that the brief frames as a deadline."""
+    normalized = _normalize_digits(text or "")
+    framed: set[tuple[int, int, int]] = set()
+    for pattern in _ANY_DATE_RES:
+        for match in pattern.finditer(normalized):
+            date_parts = _dates_in(match.group(0))
+            if not date_parts:
+                continue
+            lo, _ = _clause_bounds(normalized, match.start(), match.end(), 40)
+            before = normalized[lo : match.start()]
+            if _NON_DEADLINE_CUE_RE.search(before) is not None:
+                continue
+            if _RECORD_DATE_BEFORE_RE.search(before) is not None:
+                continue
+            if (
+                _DEADLINE_CUE_RE.search(before) is not None
+                or _DEADLINE_CUE_AFTER_RE.match(normalized, match.end()) is not None
+            ):
+                framed |= date_parts
+    return framed
 
 
 # REPAIR ROUND 1 [vikram · 2026-09-18] — finding 8 (MEDIUM): a plain substring
@@ -1051,12 +1218,33 @@ _BRAND_EXCLUSION_WINDOW = 25
 # not the sender. Directly adjacent only, so "Glow would like 1 reel" does not
 # veto Glow. Source: B0-AI repair-round-1 verdict, defect 6.
 _BRAND_REFERENCE_BEFORE_RE = re.compile(
-    r"(?<![A-Za-z])(?:your|like|than|vs\.?|versus|similar\s+to|inspired\s+by|"
-    r"compared\s+to|such\s+as)\s+$",
+    # "unlike"/"via"/"through" added T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash ·
+    # 2026-09-18] — LOW: "Unlike Minimalist, we are vegan" grounded
+    # "Minimalist". Source: B0-AI repair-round-2 verdict, defect 7.
+    r"(?<![A-Za-z])(?:your|like|unlike|than|vs\.?|versus|similar\s+to|inspired\s+by|"
+    r"compared\s+to|such\s+as|via|through)\s+$",
     re.IGNORECASE,
 )
 _BRAND_REFERENCE_AFTER_RE = re.compile(
     r"\s+(?:jaise|jaisa|jaisi|ki\s+tarah|type|style)(?![A-Za-z])", re.IGNORECASE
+)
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — LOW: "Found you on
+# Instagram" grounded brand_name "Instagram" and "I'm from BuzzMedia agency,
+# reaching out for a client" grounded "BuzzMedia". The platform a brief was
+# sent through is never the client, and a name the brief itself calls an
+# agency is the intermediary, not the brand whose deal it is. Source: B0-AI
+# repair-round-2 verdict, defect 7.
+_PLATFORM_NAMES = frozenset(
+    {
+        "instagram", "insta", "ig", "youtube", "yt", "facebook", "fb", "whatsapp",
+        "tiktok", "linkedin", "twitter", "x", "snapchat", "moj", "josh", "telegram",
+        "gmail", "email", "dm", "threads", "pinterest", "google",
+    }
+)
+_AGENCY_AFTER_RE = re.compile(
+    r"\s*(?:\(|,)?\s*(?:(?:media|pr|marketing|digital|talent|influencer|creative|ad)\s+)?"
+    r"(?:agency|agencies|talent\s+management)(?![A-Za-z])",
+    re.IGNORECASE,
 )
 
 
@@ -1085,6 +1273,10 @@ def _grounded_brand_name(value: str | None, raw_text: str) -> str | None:
     if _BRAND_EXCLUSION_TRIGGER_RE.search(before) or _BRAND_EXCLUSION_TRIGGER_RE.search(after):
         return None
     if _BRAND_REFERENCE_BEFORE_RE.search(before) or _BRAND_REFERENCE_AFTER_RE.match(after):
+        return None
+    if name.lower() in _PLATFORM_NAMES:
+        return None
+    if _AGENCY_AFTER_RE.match(text, match.end()) is not None:
         return None
     return value
 
@@ -1265,8 +1457,27 @@ def _grounded_deliverable_counts(raw_text: str, kind: str) -> set[str]:
     found: set[str] = set()
     for pattern in patterns:
         for match in pattern.finditer(normalized):
+            if _is_past_deliverable(normalized, match.start(), match.end()):
+                continue
             found |= _count_token_value(match.group(1))
     return found
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — LOW: "5 reels already
+# done by other creators" grounded qty=5. A count the same clause describes as
+# work already done (by anyone) is not what this brief asks for. Source: B0-AI
+# repair-round-2 verdict, defect 8.
+_PAST_DELIVERABLE_RE = re.compile(
+    r"(?<![A-Za-z])(?:already|previously|earlier|done\s+by|made\s+by|posted\s+by|"
+    r"by\s+(?:other|another|previous|past)|last\s+(?:month|year|week|time|campaign)|"
+    r"in\s+the\s+past|so\s+far|ho\s+chuk\w*|kar\s+chuk\w*|ban\s+chuk\w*)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+
+
+def _is_past_deliverable(text: str, start: int, end: int) -> bool:
+    lo, hi = _clause_bounds(text, start, end, 40)
+    return _PAST_DELIVERABLE_RE.search(text, lo, hi) is not None
 
 
 def _clean_deliverables(value: Any, raw_text: str) -> list[dict[str, Any]]:
@@ -1396,8 +1607,11 @@ _TERM_NEGATION_BEFORE_RE = re.compile(
 # A bare English "not" after the term is NOT a negation of it: "Paid ads, not
 # organic" and "Paid ads are not optional" state paid ads. Source: B0-AI
 # repair-round-1 verdict, defect 3.
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — LOW: a question answered
+# in the next words ("Paid promotion? Bilkul nahi.") is negated too, so "?"
+# is accepted as the separator. Source: B0-AI repair-round-2 verdict, defect 8.
 _TERM_NEGATION_AFTER_RE = re.compile(
-    r"(?:\s*[:\-]\s*|\s+)(?:[A-Za-zऀ-ॿ']+\s+){0,3}?"
+    r"(?:\s*[:\-?]\s*|\s+)(?:[A-Za-zऀ-ॿ']+\s+){0,3}?"
     r"(?:nahi\w*|nahin|nai|mat|नहीं|नही|मत|none|nil|n/?a|"
     r"not\s+(?:required|needed|necessary|allowed|included|applicable|wanted|"
     r"expected|permitted|planned|part\s+of|in\s+scope))"
@@ -1447,8 +1661,16 @@ _USAGE_CHANNEL_TERMS: dict[str, _Term] = {
         r"white-?list\w*|allow-?list\w*|partnership\s+ads?|branded\s+content\s+ads?|"
         r"spark\s+ads?|creator\s+licens\w*"
     ),
+    # T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: "Visit our
+    # website for product details", "Link to our website in bio" and "Website
+    # pe order karna" grounded WEBSITE usage: a brand's website is where a
+    # customer shops, not by itself a place the CONTENT is used. Every website
+    # word is now weak — it states website usage only next to a usage/rights
+    # word in the same clause ("Content will be used on our website"). Source:
+    # B0-AI repair-round-2 verdict, defect 4.
     "WEBSITE": _Term(
-        r"web\s*site\w*|e-?commerce|landing\s+pages?|product\s+pages?|online\s+store",
+        r"(?:web\s*site|e-?commerce|landing\s+page|product\s+page)\s+(?:usage|use|rights?|banners?)",
+        r"web\s*site\w*|e-?commerce|landing\s+pages?|product\s+pages?|online\s+store|"
         r"amazon|flipkart|myntra|marketplace\w*",
         _USAGE_CONTEXT_TERMS,
     ),
@@ -1467,11 +1689,93 @@ _USAGE_PERPETUAL_TERMS = _Term(
     r"usage|use|used|using|re-?use\w*|rights?|licen[sc]\w*|repost\w*|repurpos\w*|"
     r"istemaal|इस्तेमाल",
 )
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: "exclusive"
+# and "competitors" are everyday marketing words: "Exclusive launch for our
+# fans!", "Exclusive 20% off for 30 days", "Glow is cheaper than competitors!"
+# and "ये हमारा एक्सक्लूसिव लॉन्च है" each grounded exclusivity_scope=CATEGORY
+# (and the second exclusivity_days=30). Only the noun "exclusivity",
+# "non-compete", "competing/rival brands", "same category" and "exclusive"
+# qualified as a deal term ("exclusive rights/partnership/contract") state it
+# alone. A bare "exclusive" states it only next to a duration/category/brand
+# word and no promo word (off/discount/offer/sale/launch/%...) in the same
+# clause; "competitor(s)" only next to a restriction ("don't post for
+# competitors", "competitor brands not allowed"). See `_exclusivity_spans`.
+# Source: B0-AI repair-round-2 verdict, defect 4.
 _EXCLUSIVITY_TERMS = _Term(
-    r"exclusiv\w*|non-?compete|competitors?|competing\s+brands?|rival\s+brands?|"
-    r"same\s+category|एक्सक्लूसिव"
+    r"exclusivit\w*|non-?compete|competing\s+brands?|rival\s+brands?|same\s+category|"
+    r"exclusive(?:ly)?\s+(?:rights?|partner\w*|contracts?|collab\w*|arrangements?|"
+    r"associations?|period|terms?|tie-?ups?|ambassador\w*|basis|agreements?|with\s+us)|"
+    r"एक्सक्लूसिविटी"
 )
+_EXCLUSIVE_WEAK_RE = re.compile(
+    rf"{_MARK_START}(?:exclusive(?:ly)?|एक्सक्लूसिव){_WORD_END}", re.IGNORECASE
+)
+_EXCLUSIVE_CONTEXT_RE = re.compile(
+    r"(?<![A-Za-z])(?:days?|din|weeks?|months?|mahine|years?|period|category|categories|"
+    r"brands?|competit\w*|rival\w*|rights?|contracts?|agreements?|partner\w*)(?![A-Za-z])|"
+    r"दिन|महीन[ेा]|साल|ब्रांड",
+    re.IGNORECASE,
+)
+_EXCLUSIVE_PROMO_RE = re.compile(
+    r"(?<![A-Za-z])(?:off|discounts?|offers?|sale|launch\w*|coupons?|codes?|access|drops?|"
+    r"previews?|deals?|prices?|fans?|customers?|members?|events?|giveaways?|"
+    r"collections?|editions?|products?)(?![A-Za-z])|%|लॉन्च|ऑफर|सेल",
+    re.IGNORECASE,
+)
+_COMPETITOR_WEAK_RE = re.compile(
+    rf"{_MARK_START}(?:competitors?|competition|rivals?|प्रतिस्पर्धी){_WORD_END}",
+    re.IGNORECASE,
+)
+_RESTRICTION_RE = re.compile(
+    r"(?<![A-Za-z])(?:no|not|never|don'?t|do\s+not|avoid\w*|can'?t|cannot|mustn'?t|"
+    r"must\s+not|shouldn'?t|should\s+not|refrain|restrict\w*|prohibit\w*|banned|"
+    r"disallow\w*|mat|nahi\w*|nahin)(?![A-Za-z])|नहीं|मत",
+    re.IGNORECASE,
+)
+_RESTRICTED_ACTIVITY_RE = re.compile(
+    r"(?<![A-Za-z])(?:post\w*|promot\w*|work\w*|collab\w*|partner\w*|feature\w*|"
+    r"endors\w*|advertis\w*|associat\w*|tag\w*|content|brands?|allowed|permitted|"
+    r"days?|months?|period|karna|kaam)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+
+
+def _exclusivity_spans(raw_text: str) -> list[tuple[int, int]]:
+    """Where the brief states an exclusivity term, as spans of the NFC/digit-
+    normalised text. Empty when it states none."""
+    normalized = _normalize_digits(raw_text or "")
+    spans: list[tuple[int, int]] = []
+    strong = re.compile(
+        rf"{_MARK_START}(?:{_EXCLUSIVITY_TERMS.strong}){_WORD_END}", re.IGNORECASE
+    )
+    for match in strong.finditer(normalized):
+        if not _term_is_negated(normalized, match.start(), match.end()):
+            spans.append(match.span())
+    for match in _EXCLUSIVE_WEAK_RE.finditer(normalized):
+        if _term_is_negated(normalized, match.start(), match.end()):
+            continue
+        clause = _clause_window(normalized, match.start(), match.end(), _DURATION_CONTEXT_WINDOW)
+        if _EXCLUSIVE_CONTEXT_RE.search(clause) and not _EXCLUSIVE_PROMO_RE.search(clause):
+            spans.append(match.span())
+    for match in _COMPETITOR_WEAK_RE.finditer(normalized):
+        before = normalized[max(0, match.start() - 12) : match.start()]
+        if re.search(r"(?<![A-Za-z])than\s*$", before, re.IGNORECASE):
+            continue
+        clause = _clause_window(normalized, match.start(), match.end(), _DURATION_CONTEXT_WINDOW)
+        if _RESTRICTION_RE.search(clause) and _RESTRICTED_ACTIVITY_RE.search(clause):
+            spans.append(match.span())
+    return spans
+
+
+def _brief_states_exclusivity(raw_text: str) -> bool:
+    return bool(_exclusivity_spans(raw_text))
+
+
 _BARTER_TERMS = _Term(
+    # "sirf product"/"paisa nahi" added T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash ·
+    # 2026-09-18] — LOW: "Sirf product milega, paisa nahi" lost barter_only.
+    # Source: B0-AI repair-round-2 verdict, defect 8.
+    r"sirf\s+products?|(?:paisa|paise|cash|payment)\s+(?:nahi\w*|nahin|nai)|"
     r"barter\w*|in\s+exchange|free\s+products?|gifted|gifting|complimentary|"
     r"pr\s+(?:package|kit|box)|product\s+(?:only|in\s+return|as\s+payment|seeding)|"
     r"no\s+(?:cash|fee|monetary|payment|budget)|unpaid|non-?paid|बार्टर"
@@ -1523,7 +1827,7 @@ def _grounded_exclusivity_brands(brands: list[str], raw_text: str) -> list[str]:
     whole word AND either the brief states exclusivity at all or the name
     sits next to an exclusion trigger ("no Nykaa posts", "Nykaa mat karna")."""
     text = raw_text or ""
-    has_exclusivity = _brief_states_term(text, _EXCLUSIVITY_TERMS)
+    has_exclusivity = _brief_states_exclusivity(text)
     kept: list[str] = []
     for brand in brands:
         match = re.search(rf"\b{re.escape(brand.strip())}\b", text, re.IGNORECASE)
@@ -1546,7 +1850,7 @@ def _grounded_exclusivity_scope(
     exclusivity; NAMED_BRANDS needs that or at least one grounded brand."""
     if scope is None or scope == "NONE":
         return scope
-    if _brief_states_term(raw_text, _EXCLUSIVITY_TERMS):
+    if _brief_states_exclusivity(raw_text):
         return scope
     if scope == "NAMED_BRANDS" and grounded_brands:
         return scope
@@ -1604,30 +1908,229 @@ def _line_has_unanchored_money_word(line: str) -> bool:
 # brief states that term too. ORGANIC is not checked: it is the no-uplift
 # default and its vocabulary ("your page") is ordinary restating language.
 # Source: Kabir round-1 verdict, B0-AI defects[3].
-_SUMMARY_LINE_TERM_CHECKS: tuple[str, ...] = (
+_SUMMARY_LINE_TERM_CHECKS: tuple[Any, ...] = (
     _USAGE_PERPETUAL_TERMS,
     _USAGE_CHANNEL_TERMS["PAID_ADS"],
     _USAGE_CHANNEL_TERMS["WHITELISTING"],
     _USAGE_CHANNEL_TERMS["WEBSITE"],
     _USAGE_CHANNEL_TERMS["OFFLINE"],
-    _EXCLUSIVITY_TERMS,
 )
 
 
 def _line_states_ungrounded_term(line: str, raw_text: str) -> bool:
+    if _brief_states_exclusivity(line) and not _brief_states_exclusivity(raw_text):
+        return True
     return any(
         _brief_states_term(line, terms) and not _brief_states_term(raw_text, terms)
         for terms in _SUMMARY_LINE_TERM_CHECKS
     )
 
 
-def _acceptable_summary_line(
-    line: str,
-    allowed_numbers: set[str],
-    grounded_money: set[str],
-    raw_text: str = "",
-    audience_numbers: set[str] | None = None,
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — HIGH: a summary line
+# could still state an invented brand OFFER. The line check dropped audience
+# counts, but not the amounts `_is_non_fee_amount` keeps out of budget_inr, so
+# with budget_inr correctly None these lines were KEPT: "Brand pays 50k" /
+# "Budget is 50,000" (brief: "Last month we paid 50k to another creator"),
+# "Fee ₹200" ("Use code GLOW for ₹200 off"), "Payment ₹499" ("Min order ₹499
+# for free shipping"), "You get paid ₹1,499" ("serum (₹1,499) in exchange"),
+# "Budget 10L" ("Pichle Diwali 10L ki sale hui"), "Fee 999" ("Serum MRP 999"),
+# "Budget 30k" ("prev creator ko 30k diye the"). A money figure in a line is
+# now checked by what the LINE says it is: next to a fee word (budget, fee,
+# pay, paid, payment, offer, per reel, ...) it must be a figure that grounds
+# budget_inr; next to only a currency sign it must ground budget_inr or
+# barter_mrp_inr; a line that itself frames it as a product value, discount
+# or past payment ("Serum MRP ₹999") keeps the old any-amount check.
+# Source: B0-AI repair-round-2 verdict, defect 1.
+_FEE_WORD_RE_TEXT = (
+    r"budgets?|fees?|pay|pays|payment|paying|paid|payout|compensation|remuneration|"
+    r"honorarium|offers?|offered|offering|amount|commercials?|dunge|denge|de\s+sakte|"
+    r"milenge|milega|paisa|paise|earn\w*|get\s+paid|gets?|"
+    r"(?:your|creator|collab(?:oration)?|campaign|deal|content)\s+(?:price|pricing|cost|rate)|"
+    r"per\s+(?:reels?|posts?|stor(?:y|ies)|videos?|shorts?|deliverables?|pieces?|integrations?)|"
+    r"बजट|फीस|फ़ीस|भुगतान|पेमेंट"
+)
+_OPTIONAL_CURRENCY = rf"(?:\s*(?:{_CURRENCY_MARKER_RE_TEXT}))?"
+_FEE_WORD_BEFORE_RE = re.compile(
+    rf"{_MARK_START}(?:{_FEE_WORD_RE_TEXT}){_WORD_END}{_MONEY_MARKER_WINDOW_WORDS}"
+    rf"\s*[:\-]?{_OPTIONAL_CURRENCY}\s*[(]?\s*$",
+    re.IGNORECASE,
+)
+_FEE_WORD_AFTER_RE = re.compile(
+    rf"{_OPTIONAL_CURRENCY}\s*[:\-/)]?{_MONEY_MARKER_WINDOW_WORDS}\s*{_MARK_START}"
+    rf"(?:{_FEE_WORD_RE_TEXT}){_WORD_END}",
+    re.IGNORECASE,
+)
+
+
+def _money_role_in_line(line: str, start: int, end: int) -> str | None:
+    """What the LINE says the amount at line[start:end] is: "fee" (next to a
+    fee word), "money" (next to a currency sign only) or None (neither, or
+    the line frames it as a non-fee amount)."""
+    if _is_non_fee_amount(line, start, end):
+        return None
+    before = line[max(0, start - _CONTEXT_LOOKAROUND_CHARS) : start]
+    if _FEE_WORD_BEFORE_RE.search(before) or _FEE_WORD_AFTER_RE.match(line, end):
+        return "fee"
+    if _has_money_marker_near(line, start, end, _CURRENCY_MARKER_RE_TEXT):
+        return "money"
+    return None
+
+
+def _line_states_ungrounded_offer(
+    line: str, fee_money: set[str], any_money: set[str]
 ) -> bool:
+    normalized = _normalize_digits(line)
+    checks: list[tuple[int, int, set[str]]] = []
+    for match in _MONEY_NUMBER_SCAN_RE.finditer(normalized):
+        start, end = match.span()
+        if _is_shorthand_digits(normalized, end) or _is_glued_to_a_word(normalized, start):
+            continue
+        checks.append((start, end, _numbers_in(match.group(0))))
+    for match in _SHORTHAND_RE.finditer(normalized):
+        checks.append((match.start(), match.end(), _shorthand_expansions_in(match.group(0))))
+    for start, end, values in checks:
+        if not values or _is_audience_count(normalized, start, end):
+            continue
+        role = _money_role_in_line(normalized, start, end)
+        if role == "fee" and not values <= fee_money:
+            return True
+        if role == "money" and not values <= any_money:
+            return True
+    return False
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: "Budget fifty
+# k" was kept: a spelled number plus a bare "k"/"L"/"grand" is an amount no
+# computer here can expand, so — like "fifty thousand" — it fails closed.
+# Source: B0-AI repair-round-2 verdict, defect 6.
+_SPELLED_NUMBER_WORDS = (
+    r"one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|"
+    r"fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|"
+    r"fourty|fifty|sixty|seventy|eighty|ninety|half|ek|do|teen|char|chaar|paanch|"
+    r"panch|chhe|saat|aath|nau|das|bees|pachas|pachaas|sau"
+)
+_SPELLED_SHORTHAND_RE = re.compile(
+    rf"(?<![A-Za-z])(?:{_SPELLED_NUMBER_WORDS})(?:[\s\-]+(?:{_SPELLED_NUMBER_WORDS}))*"
+    r"\s*-?\s*(?:k|l|lacs?|lakhs?|cr|crores?|grand|mn|million|bn)(?![A-Za-z])",
+    re.IGNORECASE,
+)
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: "Nykaa wants a
+# reel" was kept for a brief that never names Nykaa. A line whose SUBJECT is a
+# capitalised name ("X wants/needs/offers/is/will ...") must use a name the
+# brief contains, and no line may repeat a brand name the model gave that
+# grounding rejected (brand_name, exclusivity_brands). This is a heuristic for
+# the subject position only; a name elsewhere in a line is not checked
+# against the brief. Source: B0-AI repair-round-2 verdict, defect 6.
+_LINE_SUBJECT_RE = re.compile(
+    r"^\s*(?P<name>[A-Z][\w&'.\-]*(?:\s+[A-Z][\w&'.\-]*){0,2})(?:'s)?\s+"
+    r"(?:wants?|needs?|offers?|pays?|is|are|would|will|has|have|asks?|seeks?|requires?|"
+    r"looking|expects?|plans?|proposes?|invites?|sent|chahta|chahti|chahte)(?![A-Za-z])"
+)
+_GENERIC_SUBJECT_WORDS = frozenset(
+    {
+        "the", "brand", "brands", "they", "we", "you", "it", "this", "that", "client",
+        "company", "creator", "sender", "team", "deal", "budget", "fee", "payment",
+        "usage", "content", "campaign", "deadline", "product", "exclusivity", "terms",
+        "offer", "a", "an", "their", "our", "your", "he", "she", "reel", "reels",
+        "story", "post", "brief", "agency",
+    }
+)
+
+
+def _line_names_an_ungrounded_brand(
+    line: str, raw_text: str, dropped_names: set[str]
+) -> bool:
+    for name in dropped_names:
+        if re.search(rf"(?<!\w){re.escape(name)}(?!\w)", line, re.IGNORECASE):
+            return True
+    match = _LINE_SUBJECT_RE.match(line)
+    if match is None:
+        return False
+    name = match.group("name")
+    words = [w.lower().strip(".'") for w in name.split()]
+    if all(w in _GENERIC_SUBJECT_WORDS for w in words):
+        return False
+    return re.search(rf"(?<!\w){re.escape(name)}(?!\w)", raw_text or "", re.IGNORECASE) is None
+
+
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: a line could
+# state a deadline the brief never gave: "Post by 31 Dec 2026" survived for
+# "Offer valid till 31/12/2026 for customers". A date the LINE frames as a
+# deadline must be one `_deadline_dates_in` grounds in the brief; a day and
+# month without a year compare on (month, day). Source: B0-AI repair-round-2
+# verdict, defect 5.
+_LINE_DAY_MONTH_RE = re.compile(r"(?<!\d)(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?(?![A-Za-z])")
+_LINE_MONTH_DAY_RE = re.compile(r"(?<![A-Za-z])([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?!\d)")
+
+
+def _line_states_ungrounded_deadline(
+    line: str, deadline_dates: set[tuple[int, int, int]]
+) -> bool:
+    normalized = _normalize_digits(line)
+    if _DEADLINE_CUE_RE.search(normalized) is None:
+        return False
+    full = _dates_in(normalized)
+    if any(d not in deadline_dates for d in full):
+        return True
+    month_days = {(m, d) for _, m, d in deadline_dates}
+    for match in _LINE_DAY_MONTH_RE.finditer(normalized):
+        month = _MONTH_NAMES.get(match.group(2).lower())
+        if month is not None and (month, int(match.group(1))) not in month_days:
+            return True
+    for match in _LINE_MONTH_DAY_RE.finditer(normalized):
+        month = _MONTH_NAMES.get(match.group(1).lower())
+        if month is not None and (month, int(match.group(2))) not in month_days:
+            return True
+    return False
+
+
+class _Grounding(NamedTuple):
+    """What the brief grounds, for checking model-written free text (summary
+    lines, product, payment_terms, claims)."""
+
+    raw_text: str
+    allowed_numbers: set[str]
+    grounded_money: set[str]
+    audience_numbers: set[str]
+    fee_money: set[str]
+    any_money: set[str]
+    deadline_dates: set[tuple[int, int, int]]
+    dropped_names: set[str]
+
+
+def _free_text_is_grounded(text: str, grounding: _Grounding) -> bool:
+    """The number, money, deadline and brand checks of a summary line, for
+    any model-written text the creator or Java may read.
+
+    T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: product,
+    payment_terms and claims had no grounding at all: for "budget TBD",
+    payment_terms "Rs 50,000 on delivery", product "Serum (you get 25k)" and
+    claims ["Brand pays 1 lakh"] all passed through into extracted_json.
+    Source: B0-AI repair-round-2 verdict, defect 6."""
+    if _line_has_unanchored_money_word(text) or _SPELLED_SHORTHAND_RE.search(text):
+        return False
+    line_numbers = _split_numbers_by_audience(text)
+    audience = grounding.audience_numbers
+    if not (line_numbers.plain <= grounding.allowed_numbers):
+        return False
+    if not (line_numbers.audience_plain <= grounding.allowed_numbers | audience):
+        return False
+    if not (line_numbers.expanded <= grounding.grounded_money):
+        return False
+    if not (line_numbers.audience_expanded <= grounding.grounded_money | audience):
+        return False
+    if _line_states_ungrounded_offer(text, grounding.fee_money, grounding.any_money):
+        return False
+    if _line_states_ungrounded_deadline(text, grounding.deadline_dates):
+        return False
+    return not _line_names_an_ungrounded_brand(
+        text, grounding.raw_text, grounding.dropped_names
+    )
+
+
+def _acceptable_summary_line(line: str, grounding: _Grounding) -> bool:
     """One summary line the creator may actually be shown.
 
     Rejects a line that carries a banned word, addresses the creator with a
@@ -1642,21 +2145,13 @@ def _acceptable_summary_line(
         return False
     if _has_forbidden_petname(line):
         return False
-    if _line_has_unanchored_money_word(line):
-        return False
-    if _line_states_ungrounded_term(line, raw_text):
+    if _line_states_ungrounded_term(line, grounding.raw_text):
         return False
     # An audience count in the line ("50k+ followers") may restate an audience
     # count in the brief; every other number must be grounded without one.
-    audience = audience_numbers or set()
-    line_numbers = _split_numbers_by_audience(line)
-    if not (line_numbers.plain <= allowed_numbers):
-        return False
-    if not (line_numbers.audience_plain <= allowed_numbers | audience):
-        return False
-    if not (line_numbers.expanded <= grounded_money):
-        return False
-    return line_numbers.audience_expanded <= grounded_money | audience
+    # Money the line calls a fee must ground budget_inr (REPAIR ROUND 2 HIGH),
+    # and a deadline or subject brand it states must be in the brief.
+    return _free_text_is_grounded(line, grounding)
 
 
 def parse_and_validate_extraction(
@@ -1720,12 +2215,23 @@ def parse_and_validate_extraction(
     grounded_days = _grounded_exclusivity_days(raw_text)
 
     deliverables = _clean_deliverables(tool_input.get("deliverables"), raw_text)
-    exclusivity_brands = _grounded_exclusivity_brands(
-        _clean_string_list(
-            tool_input.get("exclusivity_brands"), max_items=20, max_chars=120
-        ),
-        raw_text,
+    model_exclusivity_brands = _clean_string_list(
+        tool_input.get("exclusivity_brands"), max_items=20, max_chars=120
     )
+    exclusivity_brands = _grounded_exclusivity_brands(model_exclusivity_brands, raw_text)
+    model_brand_name = _clean_text(tool_input.get("brand_name"), max_chars=200)
+    brand_name = _grounded_brand_name(model_brand_name, raw_text)
+    # Names the model gave that the brief never contains; no free text may
+    # repeat them (REPAIR ROUND 2, defect 6). A name the brief does contain
+    # but grounding declined as the CLIENT (an excluded competitor, a
+    # reference) may still be restated: "No Nykaa posts for 60 days".
+    dropped_names = {
+        name.strip()
+        for name in [model_brand_name, *model_exclusivity_brands]
+        if name
+        and name.strip()
+        and re.search(rf"(?<!\w){re.escape(name.strip())}(?!\w)", raw_text, re.IGNORECASE) is None
+    }
     budget_stated = bool(tool_input.get("budget_stated"))
     budget_inr = _grounded_amount(
         _clean_number(tool_input.get("budget_inr"), minimum=0, maximum=1_000_000_000),
@@ -1739,9 +2245,7 @@ def parse_and_validate_extraction(
         budget_inr = None
 
     extraction: dict[str, Any] = {
-        "brand_name": _grounded_brand_name(
-            _clean_text(tool_input.get("brand_name"), max_chars=200), raw_text
-        ),
+        "brand_name": brand_name,
         "product": _clean_text(tool_input.get("product"), max_chars=200),
         "category": _clean_enum(tool_input.get("category"), BRIEF_CATEGORIES),
         "deliverables": deliverables,
@@ -1798,7 +2302,27 @@ def parse_and_validate_extraction(
         "vague_deliverables": bool(tool_input.get("vague_deliverables")),
     }
 
-    allowed_numbers = grounded_amounts | _own_numbers(extraction)
+    grounding = _Grounding(
+        raw_text=raw_text,
+        allowed_numbers=grounded_amounts | _own_numbers(extraction),
+        grounded_money=grounded_amounts,
+        audience_numbers=audience_amounts,
+        fee_money=grounded_budget,
+        any_money=grounded_budget | grounded_barter,
+        deadline_dates=_deadline_dates_in(raw_text),
+        dropped_names=dropped_names,
+    )
+    # T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — MEDIUM: product,
+    # payment_terms and claims get the summary line's number/money/deadline/
+    # brand checks; a value that fails is absent (§2.11 "absent means null"),
+    # a failing claim is dropped. Source: B0-AI repair-round-2 verdict, defect 6.
+    for field in ("product", "payment_terms"):
+        value = extraction[field]
+        if value is not None and not _free_text_is_grounded(value, grounding):
+            extraction[field] = None
+    extraction["claims"] = [
+        claim for claim in extraction["claims"] if _free_text_is_grounded(claim, grounding)
+    ]
     raw_lines = tool_input.get("summary_lines")
     candidate_lines = _clean_string_list(
         raw_lines, max_items=BRIEF_SUMMARY_LINES_MAX, max_chars=1_000
@@ -1807,9 +2331,7 @@ def parse_and_validate_extraction(
         line
         for line in candidate_lines
         if len(line) <= BRIEF_SUMMARY_LINE_MAX_CHARS
-        and _acceptable_summary_line(
-            line, allowed_numbers, grounded_amounts, raw_text, audience_amounts
-        )
+        and _acceptable_summary_line(line, grounding)
     ]
     if len(summary_lines) < BRIEF_SUMMARY_LINES_MIN:
         return None

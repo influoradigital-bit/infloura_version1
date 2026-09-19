@@ -2541,3 +2541,313 @@ async def test_rr1_a_sent_on_date_does_not_ground_the_deadline():
     raw = f"Glow: 1 reel, budget 8000. Sent on {_LIVE_DEADLINE}."
     data = await _probe(raw, _probe_input(deadline=_LIVE_DEADLINE))
     assert data["deadline"] is None
+
+
+# ===========================================================================
+# T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — the reviewer FAILED
+# d81a789. Every defect in that verdict, rebuilt from the reviewer's own probe
+# briefs. Source: T-GOLIVE-0918-R2 B0-AI repair-round-2 verdict.
+# ===========================================================================
+
+
+# --- HIGH: a summary line stating a non-fee amount as the brand's offer -----
+
+
+@pytest.mark.parametrize(
+    ("raw", "invented_line"),
+    [
+        (
+            "Glow: 1 reel. Last month we paid 50k to another creator. For you, budget to be discussed",
+            "Brand pays 50k",
+        ),
+        (
+            "Glow: 1 reel. Last month we paid 50,000 to another creator. For you, budget to be discussed",
+            "Budget is 50,000",
+        ),
+        ("Glow: 1 reel. Use code GLOW for ₹200 off. Budget tbd.", "Fee ₹200"),
+        ("Glow: 1 reel. Min order ₹499 for free shipping. Budget tbd.", "Payment ₹499"),
+        ("Glow: our serum (₹1,499) in exchange for 1 reel. Barter collab.", "You get paid ₹1,499"),
+        ("Glow: Pichle Diwali 10L ki sale hui! budget baad me", "Budget 10L"),
+        ("Glow: 1 reel. Serum MRP 999. Budget tbd.", "Fee 999"),
+        ("*Collab*\nGlow: 1 reel\nprev creator ko 30k diye the\napka budget call pe", "Budget 30k"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr2_summary_line_stating_a_non_fee_amount_as_the_offer_is_stripped(raw, invented_line):
+    """Reviewer's probe2_fin.txt: budget_inr was correctly None, but each line
+    was KEPT at d81a789 because summary lines never applied the non-fee veto."""
+    data = await _probe(raw, _probe_input(summary_lines=_lines(invented_line)))
+    assert data["budget_inr"] is None
+    assert invented_line not in data["summary_lines"]
+
+
+@pytest.mark.parametrize(
+    ("raw", "line"),
+    [
+        ("Glow: 1 reel, budget 50k.", "Brand pays 50k"),
+        ("Glow: 1 reel, fee ₹8,000. Use code GLOW for ₹200 off.", "Fee ₹8,000"),
+        ("Glow: our serum (₹1,499) in exchange for 1 reel. Barter collab.", "Serum worth ₹1,499"),
+        ("Glow: 1 reel. Serum MRP 999. Budget tbd.", "Serum MRP 999"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr2_summary_line_restating_a_grounded_amount_in_its_role_is_kept(raw, line):
+    data = await _probe(raw, _probe_input(summary_lines=_lines(line)))
+    assert line in data["summary_lines"]
+
+
+# --- MEDIUM: the GLOW20 letter-glued digits are pinned ----------------------
+
+
+@pytest.mark.asyncio
+async def test_rr2_digits_glued_to_a_coupon_code_do_not_ground_budget():
+    """Reviewer's surviving mutant: with `_is_glued_to_a_word` disabled, the
+    "20" of "GLOW20" grounded budget_inr=20 one filler word from "for ₹200"."""
+    raw = "Glow: Use code GLOW20 for ₹200 off. 1 reel, budget tbd"
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=20))
+    assert data["budget_inr"] is None
+
+
+def test_rr2_is_glued_to_a_word_unit():
+    from app.routes.brief_extract import _is_glued_to_a_word
+
+    text = "code GLOW20 or Rs500 or INR 700"
+    assert _is_glued_to_a_word(text, text.index("20")) is True
+    assert _is_glued_to_a_word(text, text.index("500")) is False
+    assert _is_glued_to_a_word(text, text.index("700")) is False
+
+
+# --- MEDIUM: hand-enumerated non-fee lists ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "invented"),
+    [
+        ("Glow: 1 reel. Promote our new serum (price ₹999). Budget TBD.", 999),
+        ("Glow: 1 reel, we refund ₹1,299 after posting.", 1299),
+        ("Glow: 1 reel. Call 98200 12345 to discuss budget", 12345),
+        ("Glow: 1 reel. Budget for 2026 campaign tbd", 2026),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr2_price_refund_phone_and_year_do_not_ground_budget(raw, invented):
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=invented))
+    assert data["budget_inr"] is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "amount"),
+    [
+        ("Glow: 1 reel, budget 2000.", 2000),
+        ("Glow: collab price ₹15,000 for 1 reel.", 15000),
+        ("Glow: 1 reel, fee 8000. Call 98200 12345.", 8000),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr2_real_fee_still_grounds_next_to_a_price_phone_or_year(raw, amount):
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=amount))
+    assert data["budget_inr"] == float(amount)
+
+
+@pytest.mark.asyncio
+async def test_rr2_product_price_still_grounds_barter_mrp():
+    raw = "Glow: 1 reel for our new serum (price ₹999), barter."
+    data = await _probe(raw, _probe_input(barter_only=True, barter_mrp_inr=999))
+    assert data["barter_mrp_inr"] == 999.0
+
+
+# --- MEDIUM: everyday marketing words grounding exclusivity / website -------
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "Exclusive launch for our fans!",
+        "Exclusive 20% off for 30 days.",
+        "Glow is cheaper than competitors!",
+        "ये हमारा एक्सक्लूसिव लॉन्च है।",
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr2_marketing_exclusive_does_not_ground_exclusivity(tail):
+    raw = "Glow: 1 reel. " + tail
+    data = await _probe(raw, _probe_input(exclusivity_scope="CATEGORY", exclusivity_days=30))
+    assert data["exclusivity_scope"] is None
+    assert data["exclusivity_days"] is None
+
+
+@pytest.mark.asyncio
+async def test_rr2_exclusivity_line_is_stripped_for_an_exclusive_offer():
+    raw = "Glow: 1 reel. Exclusive offer for our customers, valid 30 days."
+    data = await _probe(raw, _probe_input(summary_lines=_lines("30 days exclusivity applies")))
+    assert "30 days exclusivity applies" not in data["summary_lines"]
+
+
+@pytest.mark.parametrize(
+    ("tail", "days"),
+    [
+        ("Exclusive rights for 60 days.", 60),
+        ("Don't post for competitors for 60 days.", 60),
+        ("60 days category exclusivity.", 60),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr2_stated_exclusivity_still_grounds(tail, days):
+    raw = "Glow: 1 reel. " + tail
+    data = await _probe(raw, _probe_input(exclusivity_scope="CATEGORY", exclusivity_days=days))
+    assert data["exclusivity_scope"] == "CATEGORY"
+    assert data["exclusivity_days"] == days
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "Visit our website for product details.",
+        "Link to our website in bio.",
+        "Website pe order karna.",
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr2_a_shop_website_does_not_ground_website_usage(tail):
+    raw = "Glow: 1 reel. " + tail
+    line = "Content will be used on the brand website"
+    data = await _probe(raw, _probe_input(usage_channels=["WEBSITE"], summary_lines=_lines(line)))
+    assert data["usage_channels"] == []
+    assert line not in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_rr2_stated_website_usage_still_grounds():
+    raw = "Glow: 1 reel. Content will be used on our website."
+    data = await _probe(raw, _probe_input(usage_channels=["WEBSITE"]))
+    assert data["usage_channels"] == ["WEBSITE"]
+
+
+# --- MEDIUM: a date that is not a deadline ---------------------------------
+
+
+_DMY = _LIVE_DEADLINE_DATE.strftime("%d/%m/%Y")
+_YMD_SLASH = _LIVE_DEADLINE_DATE.strftime("%Y/%m/%d")
+_LINE_DEADLINE = (
+    f"Post by {_LIVE_DEADLINE_DATE.day} {_LIVE_DEADLINE_DATE.strftime('%b')} "
+    f"{_LIVE_DEADLINE_DATE.year}"
+)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        f"Glow: 1 reel. Offer valid till {_DMY} for customers. Post anytime.",
+        f"Glow: 1 reel. Batch no {_YMD_SLASH}.",
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr2_an_offer_or_batch_date_does_not_ground_the_deadline(raw):
+    data = await _probe(
+        raw, _probe_input(deadline=_LIVE_DEADLINE, summary_lines=_lines(_LINE_DEADLINE))
+    )
+    assert data["deadline"] is None
+    assert _LINE_DEADLINE not in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_rr2_a_framed_deadline_still_grounds():
+    raw = f"Glow: 1 reel, post by {_DMY}."
+    data = await _probe(
+        raw, _probe_input(deadline=_LIVE_DEADLINE, summary_lines=_lines(_LINE_DEADLINE))
+    )
+    assert data["deadline"] == _LIVE_DEADLINE
+    assert _LINE_DEADLINE in data["summary_lines"]
+
+
+# --- MEDIUM: spelled shorthand, invented brand, ungrounded free text --------
+
+
+@pytest.mark.asyncio
+async def test_rr2_spelled_number_with_bare_k_is_stripped():
+    data = await _probe(
+        "Glow: 1 reel, budget tbd.", _probe_input(summary_lines=_lines("Budget fifty k"))
+    )
+    assert "Budget fifty k" not in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_rr2_a_line_naming_a_brand_the_brief_never_names_is_stripped():
+    data = await _probe(
+        "Glow: 1 reel, budget tbd.", _probe_input(summary_lines=_lines("Nykaa wants a reel"))
+    )
+    assert "Nykaa wants a reel" not in data["summary_lines"]
+    assert "Glow wants a reel" in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_rr2_free_text_fields_cannot_state_an_invented_offer():
+    """Reviewer: payment_terms 'Rs 50,000 on delivery', product 'Serum (you
+    get 25k)' and claims ['Brand pays 1 lakh'] all passed through for
+    'budget TBD' into extracted_json."""
+    data = await _probe(
+        "Glow: 1 reel for our serum, budget TBD. 50% advance.",
+        _probe_input(
+            payment_terms="Rs 50,000 on delivery",
+            product="Serum (you get 25k)",
+            claims=["Brand pays 1 lakh", "Vegan formula"],
+        ),
+    )
+    assert data["payment_terms"] is None
+    assert data["product"] is None
+    assert data["claims"] == ["Vegan formula"]
+
+
+@pytest.mark.asyncio
+async def test_rr2_grounded_free_text_fields_are_kept():
+    data = await _probe(
+        "Glow: 1 reel for our serum, budget TBD. 50% advance.",
+        _probe_input(payment_terms="50% advance", product="Serum", claims=["Vegan formula"]),
+    )
+    assert data["payment_terms"] == "50% advance"
+    assert data["product"] == "Serum"
+    assert data["claims"] == ["Vegan formula"]
+
+
+# --- LOW: brand names, past deliverables, negation, barter ------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "brand"),
+    [
+        ("Found you on Instagram! Glow here, 1 reel.", "Instagram"),
+        ("Unlike Minimalist, we are vegan. Glow, 1 reel.", "Minimalist"),
+        ("I'm from BuzzMedia agency, reaching out for a client (Glow). 1 reel.", "BuzzMedia"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr2_a_platform_competitor_or_agency_is_not_the_client(raw, brand):
+    data = await _probe(raw, _probe_input(brand_name=brand))
+    assert data["brand_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_rr2_the_client_brand_still_grounds():
+    data = await _probe("Hi from Glow, 1 reel.", _probe_input(brand_name="Glow"))
+    assert data["brand_name"] == "Glow"
+
+
+@pytest.mark.asyncio
+async def test_rr2_a_count_of_work_already_done_is_not_the_ask():
+    raw = "Glow: 5 reels already done by other creators. Need 1 reel."
+    data = await _probe(raw, _probe_input(deliverables=[{"type": "REEL", "qty": 5}]))
+    assert data["deliverables"] == [{"type": "REEL", "qty": 1}]
+
+
+@pytest.mark.asyncio
+async def test_rr2_a_question_answered_with_a_negation_is_negated():
+    raw = "Glow: 1 reel. Paid promotion? Bilkul nahi."
+    data = await _probe(raw, _probe_input(usage_channels=["PAID_ADS"]))
+    assert data["usage_channels"] == []
+
+
+@pytest.mark.asyncio
+async def test_rr2_hinglish_product_only_grounds_barter():
+    raw = "Glow: 1 reel. Sirf product milega, paisa nahi."
+    data = await _probe(raw, _probe_input(barter_only=True))
+    assert data["barter_only"] is True

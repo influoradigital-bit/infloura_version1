@@ -97,6 +97,49 @@ async def test_a_response_without_stop_reason_leaves_it_none():
     assert result.stop_reason is None
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("junk", [object(), 3, b"max_tokens"])
+async def test_a_non_string_stop_reason_is_reported_as_none(junk):
+    """T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — LOW: the
+    isinstance(stop_reason, str) guard was unpinned (reviewer: deleting it
+    left '4 passed'). A mocked or future SDK object in that slot must not
+    reach the route's `== "max_tokens"` check or its structured log as a
+    non-string. Source: B0-AI repair-round-2 verdict, defect 9."""
+    response = type(
+        "R",
+        (),
+        {"content": (_tool_use_block({"a": 1}),), "usage": _Usage(), "stop_reason": junk},
+    )()
+    result = await _provider_returning(response).complete_with_forced_tool(
+        system_blocks=[], messages=[], tool_schema={"name": "t"}
+    )
+    assert result.stop_reason is None
+
+
+@pytest.mark.asyncio
+async def test_tool_input_is_the_tool_use_blocks_input():
+    """T-GOLIVE-0918-R2 REPAIR ROUND 2 [ash · 2026-09-18] — LOW: no test
+    pinned complete_with_forced_tool's tool_input (reviewer: replacing it with
+    {} left the full suite green, because every route test mocks the
+    provider). Source: B0-AI repair-round-2 verdict, defect 9."""
+    payload = {"brand_name": "Glow", "deliverables": [{"type": "REEL", "qty": 1}]}
+    response = type(
+        "R",
+        (),
+        {
+            "content": (type("B", (), {"type": "text", "text": "x"})(), _tool_use_block(payload)),
+            "usage": _Usage(),
+            "stop_reason": "tool_use",
+        },
+    )()
+    result = await _provider_returning(response).complete_with_forced_tool(
+        system_blocks=[], messages=[], tool_schema={"name": "extract_brief"}
+    )
+    assert result.ok is True
+    assert result.tool_input == payload
+    assert result.stop_reason == "tool_use"
+
+
 def test_stop_reason_is_additive_and_defaulted():
     """Every existing positional/keyword constructor keeps working."""
     assert ClaudeToolResult(ok=True).stop_reason is None
