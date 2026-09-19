@@ -2263,3 +2263,281 @@ async def test_a_clean_tool_use_stop_is_not_flagged_as_truncation(caplog):
     )
     assert response["success"] is True
     assert _truncation_records(caplog) == []
+
+
+# ===========================================================================
+# T-GOLIVE-0918-R2 REPAIR ROUND 1 [ash · 2026-09-18] — the reviewer FAILED
+# 67017a8. Every defect in that verdict, rebuilt from the reviewer's own probe
+# briefs. Source: T-GOLIVE-0918-R2 B0-AI repair-round-1 verdict.
+# ===========================================================================
+
+
+def _lines(*extra: str) -> list[str]:
+    return ["Glow wants a reel", "Terms are still open", "Reply to confirm interest", *extra]
+
+
+# --- HIGH: an audience count restated as money in a SUMMARY LINE ------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "invented_line"),
+    [
+        ("Glow: 1 reel for creators with 50k+ followers, budget to be discussed.", "Brand offers 50k"),
+        ("Glow: 1 reel for creators with 50k+ followers, budget to be discussed.", "Budget is 50,000"),
+        ("Glow: 1.5L followers wali creator chahiye, budget baad mein", "Budget 1.5L"),
+        ("Glow: 2 lakh followers wali creator chahiye. Budget to be discussed.", "Pay is 2 lakh"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr1_summary_line_restating_an_audience_count_as_money_is_stripped(raw, invented_line):
+    """Reviewer's probe: budget_inr was correctly null, but the invented lines
+    'Brand offers 50k' / 'Budget is 50,000' / 'Budget 1.5L' / 'Pay is 2 lakh'
+    were KEPT because summary lines were checked against every amount in the
+    brief, follower counts included."""
+    data = await _probe(raw, _probe_input(summary_lines=_lines(invented_line)))
+    assert invented_line not in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_rr1_summary_line_restating_the_audience_count_as_audience_is_kept():
+    """Control: the same number, restated as the audience count it is, stays."""
+    raw = "Glow: 1 reel for creators with 50k+ followers, budget to be discussed."
+    line = "Creators need 50k+ followers"
+    data = await _probe(raw, _probe_input(summary_lines=_lines(line)))
+    assert line in data["summary_lines"]
+
+
+@pytest.mark.asyncio
+async def test_rr1_summary_line_restating_a_real_budget_is_kept():
+    raw = "Glow: budget 50k for 1 reel, creators with 10k+ followers only."
+    data = await _probe(raw, _probe_input(summary_lines=_lines("Budget is 50,000", "Budget 50k")))
+    assert "Budget is 50,000" in data["summary_lines"]
+    assert "Budget 50k" in data["summary_lines"]
+
+
+# --- HIGH: Devanagari audience nouns (nukta variants, singular, others) -----
+
+
+_DEVANAGARI_AUDIENCE_NOUNS = [
+    "फ़ॉलोवर्स",  # decomposed nukta, -vars spelling
+    "फ़ॉलोअर्स",  # precomposed U+095E
+    "फॉलोअर",  # singular
+    "सब्सक्राइबर्स",  # subscribers
+    "लाइक्स",  # likes
+    "व्यूअर्स",  # viewers
+]
+
+
+@pytest.mark.parametrize("noun", _DEVANAGARI_AUDIENCE_NOUNS)
+@pytest.mark.parametrize(
+    "template",
+    [
+        "बजट: ५० हज़ार {noun} वाले creators ke liye baad mein",
+        "Paid collab: 50k {noun} chahiye, budget baad mein",
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr1_devanagari_audience_noun_vetoes_an_invented_budget(template, noun):
+    """Reviewer's probe: with budget_inr=50000 every one of these nouns came
+    back 50000.0 — only the exact listed decomposed spellings were vetoed."""
+    raw = "Glow: 1 reel. " + template.format(noun=noun)
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=50000))
+    assert data["budget_inr"] is None
+
+
+@pytest.mark.asyncio
+async def test_rr1_devanagari_budget_next_to_a_follower_count_still_grounds():
+    raw = (
+        "Glow: 1 reel. बजट ५० हज़ार, "
+        "10k फ़ॉलोअर्स wale creators."
+    )
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=50000))
+    assert data["budget_inr"] == 50000.0
+
+
+# --- MEDIUM: a negation AFTER the term ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("tail", "overrides", "field", "expected"),
+    [
+        ("Ads nahi chalenge.", {"usage_channels": ["PAID_ADS"]}, "usage_channels", []),
+        ("Exclusivity ki zarurat nahi hai.", {"exclusivity_scope": "CATEGORY"}, "exclusivity_scope", None),
+        ("Whitelisting nahi karenge.", {"usage_channels": ["WHITELISTING"]}, "usage_channels", []),
+        ("Usage lifetime nahi.", {"usage_perpetual": True}, "usage_perpetual", False),
+        (
+            "एक्सक्लूसिव नहीं चाहिए",
+            {"exclusivity_scope": "CATEGORY"},
+            "exclusivity_scope",
+            None,
+        ),
+        ("Exclusivity: not required.", {"exclusivity_scope": "CATEGORY"}, "exclusivity_scope", None),
+        ("Paid ads: none.", {"usage_channels": ["PAID_ADS"]}, "usage_channels", []),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr1_negation_after_the_term_does_not_ground_it(tail, overrides, field, expected):
+    raw = "Glow: 1 reel, budget 8000. " + tail
+    data = await _probe(raw, _probe_input(**overrides))
+    assert data[field] == expected
+
+
+@pytest.mark.asyncio
+async def test_rr1_lifetime_usage_line_does_not_survive_a_trailing_negation():
+    raw = "Glow: 1 reel, budget 8000. Lifetime usage nahi hoga."
+    data = await _probe(raw, _probe_input(summary_lines=_lines("Lifetime usage rights")))
+    assert "Lifetime usage rights" not in data["summary_lines"]
+
+
+@pytest.mark.parametrize(
+    ("tail", "overrides", "field", "expected"),
+    [
+        ("Paid ads, not organic.", {"usage_channels": ["PAID_ADS"]}, "usage_channels", ["PAID_ADS"]),
+        ("Exclusivity: 30 days, not negotiable.", {"exclusivity_scope": "CATEGORY"}, "exclusivity_scope", "CATEGORY"),
+        ("Paid ads are not optional.", {"usage_channels": ["PAID_ADS"]}, "usage_channels", ["PAID_ADS"]),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr1_a_term_followed_by_an_unrelated_negation_is_kept(tail, overrides, field, expected):
+    raw = "Glow: 1 reel, budget 8000. " + tail
+    data = await _probe(raw, _probe_input(**overrides))
+    assert data[field] == expected
+
+
+# --- MEDIUM: term vocabulary matching unrelated phrases ---------------------
+
+
+@pytest.mark.parametrize(
+    ("tail", "overrides", "field", "expected"),
+    [
+        ("Our ad agency will share the script.", {"usage_channels": ["PAID_ADS"]}, "usage_channels", []),
+        ("We'd be forever grateful.", {"usage_perpetual": True}, "usage_perpetual", False),
+        ("Glow permanent hair colour launch.", {"usage_perpetual": True}, "usage_perpetual", False),
+        ("Hamesha brand ko tag karna.", {"usage_perpetual": True}, "usage_perpetual", False),
+        ("Hum TV show ke sponsor hain.", {"usage_channels": ["OFFLINE"]}, "usage_channels", []),
+        ("Add our Amazon link in bio.", {"usage_channels": ["WEBSITE"]}, "usage_channels", []),
+        ("Promote our Diwali gift hampers.", {"barter_only": True}, "barter_only", False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr1_unrelated_phrase_does_not_ground_a_term(tail, overrides, field, expected):
+    raw = "Glow: 1 reel, budget 20k. " + tail
+    data = await _probe(raw, _probe_input(**overrides))
+    assert data[field] == expected
+
+
+@pytest.mark.parametrize(
+    ("tail", "overrides", "field", "expected"),
+    [
+        ("Usage on our website and Amazon listing.", {"usage_channels": ["WEBSITE"]}, "usage_channels", ["WEBSITE"]),
+        ("TV ads usage allowed.", {"usage_channels": ["OFFLINE"]}, "usage_channels", ["OFFLINE"]),
+        ("Lifetime usage rights.", {"usage_perpetual": True}, "usage_perpetual", True),
+        ("Content will be used forever.", {"usage_perpetual": True}, "usage_perpetual", True),
+        ("We will run ads with it.", {"usage_channels": ["PAID_ADS"]}, "usage_channels", ["PAID_ADS"]),
+        ("Gifted collab, product worth 3000.", {"barter_only": True}, "barter_only", True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr1_stated_terms_still_ground(tail, overrides, field, expected):
+    raw = "Glow: 1 reel. " + tail
+    data = await _probe(raw, _probe_input(**overrides))
+    assert data[field] == expected
+
+
+# --- MEDIUM: a rupee amount that is not a fee -------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "invented"),
+    [
+        ("Glow: our serum (₹1,499) in exchange for 1 reel. Barter collab.", 1499),
+        ("Glow: 1 reel. Last month we paid 50k to another creator. Budget tbd.", 50000),
+        ("Glow: 1 reel. Use code GLOW20 for ₹200 off. Budget tbd.", 200),
+        ("Glow: 1 reel. Min order ₹499 for free shipping. Budget tbd.", 499),
+        ("Glow: 1 reel, budget 8000 k andar hai.", 8000000),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr1_rupee_amount_that_is_not_a_fee_does_not_ground_budget(raw, invented):
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=invented))
+    assert data["budget_inr"] is None
+
+
+@pytest.mark.asyncio
+async def test_rr1_barter_product_price_still_grounds_barter_mrp():
+    raw = "Glow: our serum (₹1,499) in exchange for 1 reel. Barter collab."
+    data = await _probe(raw, _probe_input(barter_only=True, barter_mrp_inr=1499))
+    assert data["barter_mrp_inr"] == 1499.0
+    assert data["barter_only"] is True
+
+
+@pytest.mark.parametrize(
+    ("raw", "amount"),
+    [
+        ("Glow: 1 reel, budget 8000 k andar hai.", 8000),
+        ("Glow: 1 reel, fee ₹8000. Use code GLOW20 for ₹200 off.", 8000),
+        ("Glow: 1 reel, budget 15 k.", 15000),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr1_real_fee_still_grounds_next_to_non_fee_amounts(raw, amount):
+    data = await _probe(raw, _probe_input(budget_stated=True, budget_inr=amount))
+    assert data["budget_inr"] == float(amount)
+
+
+# --- LOW: counts, durations, revisions, brand, deadline ---------------------
+
+
+@pytest.mark.asyncio
+async def test_rr1_hinglish_number_word_grounds_a_deliverable_count():
+    raw = "Glow: teen reels chahiye, budget 20k."
+    data = await _probe(raw, _probe_input(deliverables=[{"type": "REEL", "qty": 3}]))
+    assert data["deliverables"] == [{"type": "REEL", "qty": 3}]
+
+
+@pytest.mark.asyncio
+async def test_rr1_din_grounds_exclusivity_days():
+    raw = "Glow: 1 reel, budget 8000, 15 din exclusivity."
+    data = await _probe(raw, _probe_input(exclusivity_days=15))
+    assert data["exclusivity_days"] == 15
+
+
+@pytest.mark.asyncio
+async def test_rr1_a_duration_after_the_deliverable_noun_is_not_a_count():
+    raw = "Glow: Reels: 3 min max duration, just one reel. Budget 8000."
+    data = await _probe(raw, _probe_input(deliverables=[{"type": "REEL", "qty": 3}]))
+    assert data["deliverables"] == [{"type": "REEL", "qty": 1}]
+
+
+@pytest.mark.asyncio
+async def test_rr1_product_changes_do_not_ground_max_revisions():
+    raw = "Glow: 1 reel, budget 8000. We made 3 changes to the formula."
+    data = await _probe(raw, _probe_input(max_revisions=3))
+    assert data["max_revisions"] is None
+
+
+@pytest.mark.asyncio
+async def test_rr1_usage_context_in_the_next_sentence_does_not_ground_usage_months():
+    raw = "Glow: 1 reel, budget 8000. Campaign runs 3 months. Usage: organic only."
+    data = await _probe(raw, _probe_input(usage_months=3))
+    assert data["usage_months"] is None
+
+
+@pytest.mark.parametrize(
+    ("raw", "brand"),
+    [
+        ("Hi, Glow here! Loved your Nykaa reel. 1 reel, budget 8000.", "Nykaa"),
+        ("Hi, Glow here, hum Mamaearth jaise hain. 1 reel, budget 8000.", "Mamaearth"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_rr1_a_brand_named_only_as_a_reference_is_not_the_client(raw, brand):
+    data = await _probe(raw, _probe_input(brand_name=brand))
+    assert data["brand_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_rr1_a_sent_on_date_does_not_ground_the_deadline():
+    raw = f"Glow: 1 reel, budget 8000. Sent on {_LIVE_DEADLINE}."
+    data = await _probe(raw, _probe_input(deadline=_LIVE_DEADLINE))
+    assert data["deadline"] is None
