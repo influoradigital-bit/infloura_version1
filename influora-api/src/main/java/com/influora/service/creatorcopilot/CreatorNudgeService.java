@@ -640,7 +640,23 @@ public class CreatorNudgeService {
      *       ("heart attack", "attack the day"), bare {@code clash} (routine sports headline verb),
      *       {@code court} ("tennis court" — the LEGAL set uses "high court"/"supreme
      *       court"/"courtroom" instead), and bare {@code mob} ("flash mob" — COMMUNAL uses "lynch
-     *       mob").
+     *       mob"). <b>T-GOLIVE-0918-R4 additions:</b> Devanagari {@code कातिल} (qatil, "killer") —
+     *       the exact Hindi-Urdu translation of the excluded {@code killer} above, with the
+     *       identical romantic/song-lyric false-positive rate ("कातिल अदाएं", "कातिल निगाहें");
+     *       bare Latin {@code phansi}/{@code fansi} — transliterate identically to both फांसी
+     *       ("hanging", unsafe) and फंसना ("to get stuck", benign); bare {@code man shot at}/
+     *       {@code woman shot at}/{@code opened fire} — the plain-news "&lt;victim&gt; shot at
+     *       &lt;place&gt;" register is lexically identical to photography "shot at
+     *       &lt;location/time&gt;" ("Woman shot at golden hour on 85mm"), and "opened fire"
+     *       collides with the Indian gadget brand "Fire-Boltt" ("opened Fire-Boltt Ninja 3
+     *       unboxing"); bare {@code goli maar di}/{@code maar diya gaya}/{@code को मार डाला} —
+     *       collide with Hinglish idiom, cricket-commentary and hyperbolic-song usage ("Tension ko
+     *       goli maar di, weekend vibes", "chhakka maar diya gaya", "इस गाने ने दिल को मार डाला");
+     *       bare {@code hanged} — collides with the ordinary transitive "hang" ("Hanged fairy
+     *       lights for Diwali decor" — kept only as the qualified "hanged himself"/"hanged
+     *       herself"); bare {@code body found} — collides with fitness idiom ("My body found its
+     *       rhythm with Pilates", "Your dream body found in 30 days") with no available qualifier
+     *       that keeps the crime-discovery sense apart.
      *   <li><b>F-0826: the phrase technique now applies to those exclusions too.</b> Rescuing a
      *       high-false-positive word by qualifying it ("lynch mob", "high court") was invented for
      *       {@code mob}/{@code court} but never applied to {@code shooting}/{@code attack}/{@code
@@ -737,7 +753,36 @@ public class CreatorNudgeService {
                         // same reason "school shooting" was accepted for a bare-excluded word: the
                         // combination is far more specific than either word alone. Source:
                         // wiki/decisions/2026-09-18-trend-headline-screening.md.
-                        "मौत", "खुदकुशी", "aatmhatya", "atmhatya", "khudkushi", "hanged", "body found",
+                        "मौत", "खुदकुशी", "aatmhatya", "atmhatya", "khudkushi",
+                        // T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 MEDIUM fix. Bare
+                        // "hanged" and "body found" are REMOVED: an independent reviewer's probe found
+                        // both over-blocking ordinary creator content that has nothing to do with a
+                        // death — "Hanged fairy lights for Diwali decor" (the ordinary transitive verb
+                        // "hang" applied to decorations, not a person) and "My body found its rhythm
+                        // with Pilates"/"Your dream body found in 30 days" (routine fitness-content
+                        // idiom "body found X"). "hanged" is kept ONLY as the qualified phrases
+                        // "hanged himself"/"hanged herself" below — the reflexive object is what makes
+                        // the self-harm reading unambiguous ("Man hanged himself in hostel" still
+                        // blocks; "Hanged fairy lights" has no "himself"/"herself" to match). "body
+                        // found" has no comparable qualifier that keeps the crime-discovery sense
+                        // ("Body found in suitcase") separate from the fitness idiom — both say
+                        // "body found in <noun phrase>" — so it is dropped outright, same discipline
+                        // as excluding bare "killer"/"shot"/"attack": the false-positive rate in this
+                        // product's actual creator-content niche is too high. ACCEPTED GAP: a bare
+                        // "Body found in <place>" headline with no other DEATH/CRIME vocabulary no
+                        // longer blocks on its own (see
+                        // firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable in the test suite).
+                        "hanged himself", "hanged herself",
+                        // T-GOLIVE-0918-R4 — vocabulary gaps an independent reviewer's probe named
+                        // outright: सुसाइड is the Devanagari transliteration of "suicide" itself,
+                        // routinely used in Hindi entertainment/crime headlines ("सुसाइड नोट में बड़ा
+                        // खुलासा") and distinct from the already-listed आत्महत्या/खुदकुशी (both
+                        // native-register words, not the transliterated loanword); मारे गए ("were
+                        // killed", passive plural) is routine Indian-news phrasing ("हादसे में 5 लोग
+                        // मारे गए") not reachable from any already-listed मार/मार डाला vocabulary;
+                        // निधन (nidhan, "demise/passing away", the formal register used for a
+                        // public figure's death) closes an outright gap ("दिग्गज अभिनेता का निधन").
+                        "सुसाइड", "मारे गए", "निधन",
                         // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — HIGH regression fix.
                         // Devanagari has no suffix generator (GENERATED_SUFFIXES is ASCII-only), so
                         // every grammatical inflection of a Devanagari term has to be its own literal,
@@ -762,16 +807,32 @@ public class CreatorNudgeService {
                         // hanging/execution by hanging) is routine Indian-news self-harm/death
                         // phrasing distinct from the DEATH set's existing "hanged"/"found hanging"
                         // entries (those are English; this is the Devanagari word itself, e.g. "फांसी
-                        // लगाकर जान दी" — took their own life by hanging). "fansi" is its Hinglish
-                        // (Latin-script) counterpart.
-                        "फांसी", "fansi",
-                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix: "phansi"
-                        // (double-h transliteration, distinct from the single-h "fansi" already
-                        // listed — both spellings are attested) and "khudkhushi" (double-h
-                        // transliteration, distinct from the already-listed single-h "khudkushi").
-                        // An independent reviewer's probe found "phansi laga li" and "khudkhushi kar
-                        // li" bypassing.
-                        "phansi", "khudkhushi",
+                        // लगाकर जान दी" — took their own life by hanging). Kept bare — unlike its
+                        // Latin transliteration below, the Devanagari spelling itself is what
+                        // disambiguates it from the unrelated फंसना ("to get stuck"); there is no
+                        // separate Devanagari spelling for "stuck" that collides with this one.
+                        "फांसी",
+                        // T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 MEDIUM fix. Bare
+                        // Latin "fansi"/"phansi" are REMOVED: an independent reviewer's probe found
+                        // them over-blocking the everyday Hinglish word फंसना ("to get stuck"), which
+                        // transliterates IDENTICALLY to फांसी ("hanging") in Latin script — "Traffic
+                        // mein phansi hui thi 2 ghante" and "Exam ke chakkar mein fansi rahi" were
+                        // quotable at 49a0415 and were wrongly blocked once the bare Latin forms were
+                        // added in round 2/3. Unlike फांसी's Devanagari spelling (kept bare above),
+                        // there is no separate Latin spelling for the two senses, so the qualified
+                        // hanging-specific collocations below — which only ever occur in the hanging
+                        // sense, never the "stuck" sense — replace the bare forms, same discipline as
+                        // bare "छेड़छाड़"'s round-3 removal. The four cover every currently-attested
+                        // spelling/helper-verb combination (round-2's "fansi laga ke jaan de di" and
+                        // round-3's "phansi laga li" probes both still block through these).
+                        "phansi laga li", "phansi lagakar", "phansi laga ke",
+                        "fansi laga li", "fansi lagakar", "fansi laga ke",
+                        // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix:
+                        // "khudkhushi" (double-h transliteration, distinct from the already-listed
+                        // single-h "khudkushi"). An independent reviewer's probe found "khudkhushi kar
+                        // li" bypassing. Not flagged as ambiguous the way phansi/fansi are — "khudkushi"
+                        // /"khudkhushi" has no attested unrelated benign meaning — so it stays bare.
+                        "khudkhushi",
                         // T-GOLIVE-0918-R2 repair round 2 — MEDIUM: "unalive"/"unalived" is
                         // algorithm-evasion slang for "kill"/"killed"/"suicide" (an independent
                         // reviewer's probe: "unalived himself"), in wide use on video platforms
@@ -877,8 +938,27 @@ public class CreatorNudgeService {
                         // "Reel shot at Marine Drive", "Shot at golden hour on iPhone 15" and "This
                         // whole vlog was shot at home" have no "man"/"woman" immediately before
                         // "shot at", so none of them gain a new match.
-                        "man shot at", "woman shot at",
-                        "gangrape", "strangle", "shot at by", "opened fire", "molester", "molesters",
+                        // T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 MEDIUM fix: round
+                        // 3's bare "man shot at"/"woman shot at" and this same round's "opened fire"
+                        // are REMOVED. An independent reviewer's probe found all three over-blocking
+                        // ordinary creator content: "Woman shot at golden hour on 85mm", "Street
+                        // portrait: man shot at Chandni Chowk" and "Old man shot at sunset on 35mm
+                        // film" are photography-usage "shot at <location/time>", lexically identical
+                        // to the crime-reporting register these terms were added for; "Just opened
+                        // Fire-Boltt Ninja 3 unboxing" collides with a real, widely-used Indian
+                        // smartwatch brand. Unlike the round-2 "bare shot at" narrowing (which had
+                        // "shot at by" as a safe, unambiguous replacement), there is no phrase-only
+                        // fix here that keeps blocking a bare-victim-noun shooting headline without
+                        // also matching a bare-victim-noun photography caption — the two share
+                        // identical surface grammar. ACCEPTED GAP, same discipline as excluding bare
+                        // "killer"/"shot"/"attack"/"clash"/"mob"/"court" above (see this enum's own
+                        // "Terms deliberately EXCLUDED" note): "Man/Woman shot at outside
+                        // mall/market" with no other CRIME vocabulary no longer blocks on its own
+                        // (see firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable). "shot at by"
+                        // (unambiguous — names the attacker) and "gunman"/"gunfire"/"shootout"/
+                        // "gunned down" (bare, unaffected) still catch the genuine crime register
+                        // whenever the headline names the attacker or uses gun-specific vocabulary.
+                        "gangrape", "strangle", "shot at by", "molester", "molesters",
                         "murderous", "custodial torture", "set ablaze",
                         // Devanagari coverage (correctly spelled, per isDevanagariCombiningMark):
                         // गैंगरेप (gangrape) is its own literal because it is one fused token —
@@ -897,10 +977,20 @@ public class CreatorNudgeService {
                         // self-check — the remaining nukta-free "कत्ल" below now matches both
                         // spellings of input on its own, the same way it already matched "क़त्ल"
                         // before this round (both folded onto the same normalized form once
-                        // DEVANAGARI_NUKTA landed). "कातिल" (qatil/katil, "murderer", Urdu-Hindi
-                        // register, nukta-free) is added — an independent reviewer's probe named
-                        // "क़ातिल" as still bypassing round 1 "with no test, not even one recording
-                        // that it is deliberately excluded"; this closes that gap outright instead.
+                        // DEVANAGARI_NUKTA landed).
+                        //
+                        // T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 MEDIUM fix: round
+                        // 3's "कातिल" (qatil/katil, "murderer") is REMOVED again. An independent
+                        // reviewer's probe found it over-blocking standard Bollywood-song/romantic
+                        // vocabulary — "कातिल अदाएं डांस कवर" and "तेरी कातिल निगाहें रील" ("killer
+                        // moves", "your killer gaze") were quotable at 49a0415 and are ordinary
+                        // creator-content phrasing, the SAME false-positive class as the already
+                        // excluded English "killer" (see this enum's own "Terms deliberately
+                        // EXCLUDED" note above — कातिल is its literal Hindi-Urdu translation and
+                        // inherits the identical accepted-false-positive reasoning, now added there).
+                        // "कत्ल"/"katl"/"qatl" below are unaffected — they are the noun for the
+                        // ACT of killing, not "killer" as a person/adjective, and carry no comparable
+                        // romantic usage.
                         //
                         // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix. Bare
                         // "रेप" is the ordinary Hindi loanword for "rape" but is IDENTICALLY spelled
@@ -913,10 +1003,16 @@ public class CreatorNudgeService {
                         // without the bare word's gym-context false positives. "गैंगरेप" is
                         // unaffected — it is its own fused token, not reachable via रेप.
                         "रेप केस",
-                        "गैंगरेप", "हत्याकांड", "हत्यारा", "हत्याओं", "कत्ल", "कातिल",
+                        "गैंगरेप", "हत्याकांड", "हत्यारा", "हत्याओं", "कत्ल",
                         // Latin/Hinglish alternate spellings of terms already covered above —
                         // "balatkaar" (balatkar), "hatyaa" (hatya), "qatal"/"katl" (qatl).
                         "balatkaar", "hatyaa", "qatal", "katl",
+                        // T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 MEDIUM fix: Latin
+                        // "hatyaon" (हत्याओं, murders — oblique plural) had no Latin counterpart at
+                        // all; an independent reviewer's probe found "hatyaon ka silsila" bypassing
+                        // (bare "hatya" cannot match inside it — matchesTerm's end anchor never lands
+                        // on "hatya" while "on" continues the same token).
+                        "hatyaon",
                         // T-GOLIVE-0918-R3 (vikram · 2026-09-18) — repair round 3 MEDIUM fix: Latin/
                         // Hinglish counterparts of Devanagari terms already listed above that had no
                         // Latin spelling at all — "hatyara"/"hatyare" (हत्यारा/हत्यारे, murderer,
@@ -1010,14 +1106,48 @@ public class CreatorNudgeService {
                         // diya/daala GAYA", "goli maar(i) DI/GAYI") — narrower phrases below keep
                         // that register blocked without touching any of the benign forms above (none
                         // of them end in "gaya"/"di"/"gayi" after the maar phrase).
-                        "maar diya gaya", "maar daala gaya", "maar dala gaya", "goli maar di",
-                        "goli maari gayi",
+                        // T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 MEDIUM fix: bare
+                        // "maar diya gaya" and "goli maar di" are REMOVED. An independent reviewer's
+                        // probe found both over-blocking common Hinglish creator content: "Cheat day
+                        // pe diet ko goli maar di"/"Tension ko goli maar di, weekend vibes" are the
+                        // idiom "goli maar di X" ("forget about X"/"to hell with X"), and "Last ball
+                        // pe chhakka maar diya gaya" is routine cricket commentary ("a six was hit").
+                        // "maar daala gaya"/"maar dala gaya"/"goli maari gayi" are NOT flagged the
+                        // same way (no attested idiom/commentary collision for these three exact
+                        // spellings) and stay bare. ACCEPTED GAP: a bare "X ko/ne goli maar di" or
+                        // "X ko/ne maar diya gaya" crime headline using exactly these two spellings,
+                        // with no other CRIME vocabulary, no longer blocks on its own (see
+                        // firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable).
+                        "maar daala gaya", "maar dala gaya", "goli maari gayi",
+                        // T-GOLIVE-0918-R4 — बलात्कारियो (informal spelling of the already-listed
+                        // बलात्कारियों, missing the final anusvara — same "informal spelling"
+                        // pattern as मौते/दंगो) and हत्याओ (informal spelling of the already-listed
+                        // हत्याओं, same pattern) are DIFFERENT token sequences from their anusvara-
+                        // bearing counterparts; an independent reviewer's probe found "बलात्कारियो
+                        // को सजा" and "हत्याओ का सिलसिला" bypassing. अपहरणकर्ता (abductor/kidnapper,
+                        // agent-noun of the already-listed अपहरण) is a DIFFERENT, longer token for
+                        // the same reason हत्यारा/हत्यारे are ("अपहरणकर्ता गिरफ्तार" bypassing).
+                        // हत्यारिन (hatyarin, "murderess" — feminine of the already-listed हत्यारा)
+                        // is likewise a different token ("हत्यारिन पत्नी गिरफ्तार" bypassing).
+                        // "balatkariyon" is the Latin/Hinglish counterpart of the already-listed
+                        // बलात्कारियों ("balatkariyon ko saza" bypassing). "चाकू से हमला" (knife
+                        // attack) is the same class of killing-method phrase as the already-listed
+                        // "stabbed"/"stabbing"/"strangle" ("चाकू से हमला" bypassing outright). "जिंदा
+                        // जला दिया" is a different verb inflection of the already-listed "जिंदा
+                        // जलाया" ("महिला को ज़िंदा जला दिया" bypassing — ज़िंदा's nukta already folds
+                        // onto जिंदा per DEVANAGARI_NUKTA, but "जला दिया" itself was never listed).
+                        "बलात्कारियो", "हत्याओ", "अपहरणकर्ता", "हत्यारिन", "balatkariyon",
+                        "चाकू से हमला", "जिंदा जला दिया",
                         // Devanagari counterparts of the same passive construction — an independent
-                        // reviewer's probe named "युवक को मार डाला" and "गोली मार दी" outright.
-                        // "को मार डाला" requires the dative marker को immediately before मार डाला,
-                        // which the Devanagari spelling of the same song title ("मार डाला" alone,
-                        // with no को) does not carry.
-                        "को मार डाला", "गोली मार दी")),
+                        // reviewer's probe named "गोली मार दी" outright. "को मार डाला" is REMOVED
+                        // (T-GOLIVE-0918-R4 MEDIUM fix): an independent reviewer's probe found it
+                        // over-blocking the identical hyperbolic-song-lyric register as the already-
+                        // excluded active maar-diya/daala forms — "इस गाने ने दिल को मार डाला" ("this
+                        // song killed my heart") was quotable at 49a0415 and shares the exact same
+                        // "<object> को मार डाला" construction as the genuine crime headline "युवक को
+                        // मार डाला", with no lexical way to tell them apart. ACCEPTED GAP, same
+                        // discipline as the maar-diya/goli-maar exclusions above.
+                        "गोली मार दी")),
         COMMUNAL(
                 Set.of(
                         "communal", "sectarian", "riot", "riots", "rioting", "unrest", "curfew",
@@ -1097,6 +1227,17 @@ public class CreatorNudgeService {
                         // and धमाका are bare no longer, only the phrases "बम धमाका" and "बम ब्लास्ट"
                         // (bomb blast) are listed, matching the reviewer's suggested fix.
                         "दंगाई", "आतंकी", "बम धमाका", "बम ब्लास्ट",
+                        // T-GOLIVE-0918-R4 (vikram · 2026-09-19) — बम धमाके (oblique/plural of the
+                        // already-listed बम धमाका) and बम धमाकों (its oblique plural) are DIFFERENT
+                        // token sequences from धमाका's bare form for the same reason हत्यारे/हत्यारों
+                        // are — an independent reviewer's probe found "बम धमाके से दहला शहर", "बम
+                        // धमाकों से दहला शहर" and "बम धमाके में 10 घायल" bypassing. दंगो (informal
+                        // spelling of the already-listed दंगों, missing the final anusvara — same
+                        // "informal spelling" pattern as मौते) is a regression the same probe found
+                        // ("दंगो में 5 घायल" bypassing, BLOCKED at 49a0415). "dangon" is the Latin/
+                        // Hinglish oblique-plural counterpart of the already-listed "danga"/"dange"
+                        // ("dangon mein 5 ghayal" bypassing).
+                        "बम धमाके", "बम धमाकों", "दंगो", "dangon",
                         // Latin/Hinglish counterparts: "dangai" (rioter), "aatankwadi" (terrorist),
                         // "bam dhamaka" (bomb blast — kept as a phrase rather than a bare "bam",
                         // since "bam" alone as a 3-letter English token risks colliding with
@@ -1142,6 +1283,16 @@ public class CreatorNudgeService {
                         // "atankwadi hamla"); "sampradayik" ("sampradayik hinsa").
                         "आतंकवादी", "आतंकवाद", "सांप्रदायिक", "लिंचिंग", "पथराव", "atankwadi", "aatanki",
                         "sampradayik",
+                        // T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 vocabulary gaps an
+                        // independent reviewer's probe named outright. आतंकवादियों (oblique plural of
+                        // the already-listed आतंकवादी) and आतंकियों (oblique plural of the already-
+                        // listed आतंकी) are DIFFERENT tokens from their singular forms, same pattern
+                        // as हत्यारे/हत्यारों ("आतंकवादियों ने हमला किया", "आतंकियों का सफाया"
+                        // bypassing). "aatankwadiyon" is the Latin/Hinglish counterpart
+                        // ("aatankwadiyon ne hamla kiya" bypassing). "आत्मघाती हमला" (self-
+                        // destructive/suicide attack — a terrorism term distinct from personal
+                        // आत्महत्या in DEATH) closes an outright gap ("आत्मघाती हमला" bypassing).
+                        "आतंकवादियों", "आतंकियों", "aatankwadiyon", "आत्मघाती हमला",
                         // T-GOLIVE-0918-R2 repair round 2 — MEDIUM digit/case-boundary fix: an
                         // all-Devanagari joined hashtag carries no case-transition signal for rule 5
                         // to split on (Devanagari has no upper/lower case) and, being all-letters,
@@ -1404,16 +1555,40 @@ public class CreatorNudgeService {
 
     /**
      * True when the raw (pre-lowercase, pre-fold) code point immediately after a {@link
-     * #PUNCTUATION_LETTER_LOOKALIKES} character is itself a plain letter or digit — i.e. that side
-     * is "mid-word". <b>Deliberately does NOT also treat another lookalike as a letter-ish
-     * neighbour</b> (e.g. the second '!' in "Riots!!"): doing so would make a doubled punctuation
-     * mark used as pure emphasis/separator ("Riots!! Delhi on edge", "**Murder**") look "mid-word" on
-     * account of the OTHER punctuation mark sitting next to it, reintroducing exactly the bypass this
-     * method exists to close. Combined with the caller's {@code inToken} check for the flank BEFORE
-     * the character, both sides must be an ordinary letter/digit for a fold to be offered at all.
+     * #PUNCTUATION_LETTER_LOOKALIKES} character is itself a plain LOWERCASE letter — i.e. that side
+     * is genuinely "mid-word" (continuing the SAME word). <b>Deliberately does NOT also treat
+     * another lookalike as a letter-ish neighbour</b> (e.g. the second '!' in "Riots!!"): doing so
+     * would make a doubled punctuation mark used as pure emphasis/separator ("Riots!! Delhi on
+     * edge", "**Murder**") look "mid-word" on account of the OTHER punctuation mark sitting next to
+     * it, reintroducing exactly the bypass this method exists to close. Combined with the caller's
+     * {@code inToken} check for the flank BEFORE the character, both sides must indicate "inside one
+     * word" for a fold to be offered at all.
+     *
+     * <p><b>T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 HIGH fix.</b> This used to accept
+     * ANY letter-or-digit on the trailing side, uppercase included, which is what let a decorative
+     * title-joiner or emphasis mark between two DIFFERENT capitalised words look "mid-word" purely
+     * because both neighbours happen to be alphanumeric: an independent reviewer's probe found
+     * "Murder!Pune shocked", "Riots!Delhi on edge", "Murder!Delhi shocked", "Suicide!2024 report",
+     * "Suicide+Note found", "Stampede+Chaos at station", "Death+Destruction" and "Murder*Delhi" all
+     * bypassing 857e954/cf2f33c — the fold GLUED the two sides into one token ("murderipune"), so
+     * the term's own end anchor never landed on "murder". Genuine mid-word leetspeak ("dea+h",
+     * "k!lled", "m*rder", "su!c!de") is, in every attested real-world use, followed by a LOWERCASE
+     * letter continuing the same word — never by an uppercase letter (which signals a fresh
+     * Title-Case/ALL-CAPS word starting right there) and never by a digit (a digit-suffixed hashtag
+     * like "Suicide!2024" is exactly the pattern rule 5's digitBoundary exists to split on, which
+     * folding would defeat by consuming the '!'/'+'/'*' into a letter before the digit is ever
+     * seen). Restricting the trailing flank to a plain lowercase letter closes the bypass — an
+     * unflanked '!'/'+'/'*' now falls through to the ordinary token-ending branch below, so "Murder"
+     * / "Suicide" / "Stampede" / "Death" reach their OWN token end and match directly — with no
+     * variant-table growth and no re-adding the round-3 "Rio+ Carnival" over-block (see this
+     * method's own return type: a trailing digit is excluded the same way an uppercase letter is,
+     * which ALSO closes the still-open "#Rio+Carnival"/"Rio+Carnival looks" no-space regression:
+     * '+' followed by the capital 'C' of "Carnival" is no longer treated as mid-word either). Every
+     * existing probe that needs the fold ("dea+h toll", "k!lled", "su!c!de", "m*rder in Delhi",
+     * "r*pe case", "s*icide note") is followed by a lowercase letter and is unaffected.
      */
     private static boolean isWordFlank(int neighbour) {
-        return Character.isLetterOrDigit(neighbour);
+        return Character.isLetter(neighbour) && Character.isLowerCase(neighbour);
     }
 
     /**
@@ -1628,6 +1803,17 @@ public class CreatorNudgeService {
                 && (type == Character.NON_SPACING_MARK
                         || type == Character.COMBINING_SPACING_MARK
                         || type == Character.ENCLOSING_MARK);
+    }
+
+    /**
+     * T-GOLIVE-0918-R4 (vikram · 2026-09-19) — repair round 4 MEDIUM fix. True for any code point
+     * (mark or base letter alike) inside the core Devanagari block — used by rule 5 in {@link
+     * #normalizeForMatching} to treat a Latin&lt;-&gt;Devanagari script change as a token boundary,
+     * the same way a case change or a letter&lt;-&gt;digit change already is. See that rule's own
+     * comment for the bypass this closes.
+     */
+    private static boolean isDevanagariCodePoint(int cp) {
+        return cp >= DEVANAGARI_BLOCK_START && cp <= DEVANAGARI_BLOCK_END;
     }
 
     /** The suffixes {@link #matchesTerm} generates from every term's compact form (F-0853/F-0855,
@@ -1992,6 +2178,10 @@ public class CreatorNudgeService {
         // digit, independent of case, so a letter<->digit transition is its own boundary. See rule
         // 5's digitBoundary below.
         boolean previousAppendedWasDigit = false;
+        // T-GOLIVE-0918-R4 (vikram · 2026-09-19) — tracks whether the character just appended was
+        // Devanagari, independent of case/digit-ness, so a Latin<->Devanagari script change is its
+        // own boundary. See rule 5's scriptBoundary below.
+        boolean previousAppendedWasDevanagari = false;
 
         for (int i = 0; i < folded.length(); ) {
             int cp = folded.codePointAt(i);
@@ -2024,6 +2214,9 @@ public class CreatorNudgeService {
                 spaced.appendCodePoint(foldedMark);
                 previousAppendedWasLowerOrDigit = false;
                 previousAppendedWasDigit = false;
+                // T-GOLIVE-0918-R4 — a combining mark attached to a Devanagari base letter is
+                // itself Devanagari; the token it extends stays Devanagari for scriptBoundary's sake.
+                previousAppendedWasDevanagari = true;
                 continue;
             }
 
@@ -2077,7 +2270,18 @@ public class CreatorNudgeService {
                 // containsTerm's end anchor. Source: wiki/decisions/2026-09-18-trend-headline-
                 // screening.md ("hashtags split on case and joined-word boundaries").
                 boolean digitBoundary = inToken && isDigitNow != previousAppendedWasDigit;
-                boolean boundary = camelBoundary || digitBoundary;
+                // T-GOLIVE-0918-R2 repair round 2 (vikram · 2026-09-18) — repair round 4 fix
+                // (vikram · 2026-09-19). A Latin<->Devanagari script change is ALSO a boundary,
+                // independent of case/digit-ness — Devanagari has no case, so rule 5's camelBoundary
+                // gives it no signal at all, and an independent reviewer's probe found
+                // "#Delhiदंगे"/"#Delhiहत्याकांड" (Latin then Devanagari) and "#दंगेDelhi" (Devanagari
+                // then Latin — a regression, BLOCKED at 49a0415 before this rule existed via the
+                // since-replaced skeleton technique) all bypassing: with no boundary, "Delhi" and
+                // "दंगे" glued into one token that neither term's own end/start anchor could ever
+                // land on. See isDevanagariCodePoint's javadoc.
+                boolean isDevanagariNow = isDevanagariCodePoint(normalizedCp);
+                boolean scriptBoundary = inToken && isDevanagariNow != previousAppendedWasDevanagari;
+                boolean boundary = camelBoundary || digitBoundary || scriptBoundary;
                 if (!inToken || boundary) {
                     if (boundary) {
                         tokenEnd.set(compact.length() - 1);
@@ -2092,11 +2296,13 @@ public class CreatorNudgeService {
                 spaced.appendCodePoint(normalizedCp);
                 previousAppendedWasLowerOrDigit = !isUpperBeforeFold;
                 previousAppendedWasDigit = isDigitNow;
+                previousAppendedWasDevanagari = isDevanagariNow;
             } else if (inToken) {
                 tokenEnd.set(compact.length() - 1);
                 inToken = false;
                 previousAppendedWasLowerOrDigit = false;
                 previousAppendedWasDigit = false;
+                previousAppendedWasDevanagari = false;
             }
         }
         if (inToken) {

@@ -2198,7 +2198,13 @@ class CreatorNudgeServiceTest {
                         UnsafeHeadlineTopic.CRIME),
                 // (b) all-lowercase/all-caps joined hashtags — closed for the two named compounds
                 // by listing them, not by a general segmenter (see the CRIME/COMMUNAL javadoc).
-                arguments("R2-b: #gangrape (all-lowercase hashtag)", "#gangrape", UnsafeHeadlineTopic.CRIME),
+                // T-GOLIVE-0918-R4 (vikram, 2026-09-19) — repinned to the full attested probe
+                // string (was the shortened "#gangrape" alone); behaviour is unchanged, this only
+                // makes the table literally pin what an independent reviewer's probe used.
+                arguments(
+                        "R2-b: #gangrape trending (all-lowercase hashtag)",
+                        "#gangrape trending",
+                        UnsafeHeadlineTopic.CRIME),
                 arguments(
                         "R2-b: #delhiriots (all-lowercase hashtag)",
                         "#delhiriots",
@@ -2232,10 +2238,13 @@ class CreatorNudgeServiceTest {
                         "R2-c: Man hanged himself in hostel",
                         "Man hanged himself in hostel",
                         UnsafeHeadlineTopic.DEATH),
-                arguments(
-                        "R2-c: Body found in suitcase",
-                        "Body found in suitcase",
-                        UnsafeHeadlineTopic.DEATH),
+                // T-GOLIVE-0918-R4 (vikram, 2026-09-19) — "R2-c: Body found in suitcase" is REMOVED,
+                // not merely re-pointed: round 4 found bare "body found" over-blocking fitness-idiom
+                // content ("My body found its rhythm with Pilates") that uses the identical "body
+                // found <noun phrase>" construction. See CreatorNudgeService's DEATH-set javadoc for
+                // why no phrase-only fix keeps blocking a crime-discovery headline without also
+                // matching the idiom, and firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable for
+                // the now-documented, tested accepted gap this leaves.
                 arguments(
                         "R2-c: Actor jailed for 2 years",
                         "Actor jailed for 2 years",
@@ -2295,7 +2304,12 @@ class CreatorNudgeServiceTest {
                 arguments("R2-c: क़त्ल (qatl, with nukta)", "क़त्ल", UnsafeHeadlineTopic.CRIME),
                 arguments("R2-c: कत्ल (qatl, without nukta)", "कत्ल", UnsafeHeadlineTopic.CRIME),
                 // (c) Latin/Hinglish alternate spellings Kabir's round-1 review found bypassing.
-                arguments("R2-c: balatkaar", "balatkaar", UnsafeHeadlineTopic.CRIME),
+                // T-GOLIVE-0918-R4 (vikram, 2026-09-19) — repinned to the full attested probe
+                // string (was the shortened "balatkaar" alone); behaviour is unchanged.
+                arguments(
+                        "R2-c: balatkaar ka aaropi giraftar",
+                        "balatkaar ka aaropi giraftar",
+                        UnsafeHeadlineTopic.CRIME),
                 arguments("R2-c: hatyaa", "hatyaa", UnsafeHeadlineTopic.CRIME),
                 arguments("R2-c: aatmhatya", "aatmhatya", UnsafeHeadlineTopic.DEATH),
                 arguments("R2-c: atmhatya", "atmhatya", UnsafeHeadlineTopic.DEATH),
@@ -2522,7 +2536,10 @@ class CreatorNudgeServiceTest {
                         UnsafeHeadlineTopic.CRIME),
                 arguments(
                         "R2fix-MED-vocab: maar daala gaya", "maar daala gaya", UnsafeHeadlineTopic.CRIME),
-                arguments("R2fix-MED-vocab: goli maar di", "goli maar di", UnsafeHeadlineTopic.CRIME),
+                // T-GOLIVE-0918-R4 (vikram, 2026-09-19) — "R2fix-MED-vocab: goli maar di" (the bare
+                // phrase, no subject) is REMOVED: round 4 found it over-blocking the Hinglish idiom
+                // "X ko goli maar di" ("forget about X") — see CRIME's own javadoc and
+                // firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable.
                 arguments(
                         "R2fix-MED-vocab: aatanki hamla", "aatanki hamla", UnsafeHeadlineTopic.COMMUNAL),
                 arguments(
@@ -2548,10 +2565,11 @@ class CreatorNudgeServiceTest {
                         UnsafeHeadlineTopic.DEATH),
                 arguments("R2fix-LOW: dea7h toll (7->t)", "dea7h toll", UnsafeHeadlineTopic.DEATH),
                 arguments("R2fix-LOW: dea+h toll (+->t)", "dea+h toll", UnsafeHeadlineTopic.DEATH),
-                arguments(
-                        "R2fix-LOW: maar diya gaya (round-1 LOW, never closed)",
-                        "maar diya gaya",
-                        UnsafeHeadlineTopic.CRIME),
+                // T-GOLIVE-0918-R4 (vikram, 2026-09-19) — "R2fix-LOW: maar diya gaya" (the bare
+                // phrase, no subject) is REMOVED: round 4 found it over-blocking routine cricket
+                // commentary ("Last ball pe chhakka maar diya gaya") — see CRIME's own javadoc and
+                // firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable. "maar daala gaya"/
+                // "maar dala gaya" above are unaffected (no attested commentary collision).
                 arguments(
                         "R2fix-LOW: ѕуісіде (all-Cyrillic homoglyph, missing д->d fold)",
                         "ѕуісіде",
@@ -2654,10 +2672,11 @@ class CreatorNudgeServiceTest {
                         "maar dala gaya",
                         UnsafeHeadlineTopic.CRIME),
                 arguments("R3-HIGH2: goli maari gayi", "goli maari gayi", UnsafeHeadlineTopic.CRIME),
-                arguments(
-                        "R3-HIGH2: युवक को मार डाला (Devanagari passive)",
-                        "युवक को मार डाला",
-                        UnsafeHeadlineTopic.CRIME),
+                // T-GOLIVE-0918-R4 (vikram, 2026-09-19) — "R3-HIGH2: युवक को मार डाला" is REMOVED:
+                // round 4 found bare "को मार डाला" over-blocking the identical hyperbolic-song-lyric
+                // construction ("इस गाने ने दिल को मार डाला") — see CRIME's own javadoc and
+                // firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable. "गोली मार दी" below is
+                // unaffected (no attested idiom collision for that exact spelling).
                 arguments(
                         "R3-HIGH2: गोली मार दी (Devanagari passive)",
                         "गोली मार दी",
@@ -2716,21 +2735,19 @@ class CreatorNudgeServiceTest {
                         UnsafeHeadlineTopic.CRIME),
                 arguments(
                         "R3-MED-latin: khudkhushi kar li", "khudkhushi kar li", UnsafeHeadlineTopic.DEATH),
-                // MEDIUM — "shot at by" narrowing (857e954) regressed the plain "shot at" news form.
-                arguments(
-                        "R3-MED-shot: Man shot at outside mall",
-                        "Man shot at outside mall",
-                        UnsafeHeadlineTopic.CRIME),
-                arguments(
-                        "R3-MED-shot: Woman shot at outside market",
-                        "Woman shot at outside market",
-                        UnsafeHeadlineTopic.CRIME),
-                // MEDIUM — क़ातिल (qatil, murderer) was named in round 1 with no term and no test.
-                arguments("R3-MED-qatil: क़ातिल (with nukta)", "क़ातिल", UnsafeHeadlineTopic.CRIME),
-                arguments(
-                        "R3-MED-qatil: कातिल गिरफ्तार (no nukta)",
-                        "कातिल गिरफ्तार",
-                        UnsafeHeadlineTopic.CRIME),
+                // T-GOLIVE-0918-R4 (vikram, 2026-09-19) — "R3-MED-shot: Man/Woman shot at outside
+                // mall/market" (both rows) are REMOVED: round 4 found bare "man/woman shot at"
+                // over-blocking photography captions using the identical "<person> shot at
+                // <location/time>" grammar ("Woman shot at golden hour on 85mm") — see CRIME's own
+                // javadoc and firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable. "shot at by"
+                // (unambiguous — names the attacker) still blocks.
+                //
+                // "R3-MED-qatil: क़ातिल (with nukta)" and "कातिल गिरफ्तार (no nukta)" (both rows) are
+                // REMOVED: round 4 found कातिल over-blocking Bollywood-song/romantic vocabulary
+                // ("कातिल अदाएं डांस कवर") — the exact Hindi-Urdu translation of the already-excluded
+                // English "killer", now added to that same exclusion list. See
+                // firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable and
+                // firstUnsafeTopic_repairRound4BenignSetStaysQuotable.
                 // LOW (still open per the round-3 review's failed clause 1) — '0' is genuinely
                 // ambiguous between 'o' and 'u'; the old single '0'->'o' fold gave "succombs",
                 // which matches nothing.
@@ -2857,6 +2874,278 @@ class CreatorNudgeServiceTest {
                         + " digit-boundary rule or the bare \"sue\" accepted false positive has changed"
                         + " — update this test's comment, do not just delete the row): "
                         + acceptedOverblock);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // T-GOLIVE-0918-R4 repair round 4 (vikram, 2026-09-19) — an independent reviewer FAILED commit
+    // cf2f33c1d37ed943b6939334ba5a82ddeab8528d with one HIGH, five MEDIUMs and two LOWs. Every row
+    // below reproduces one named bypass/over-block from that review, table-driven, same discipline
+    // as repairRound1Probes()/repairRound2Probes()/repairRound3Probes() above.
+    // ---------------------------------------------------------------------------------------
+
+    static Stream<Arguments> repairRound4Probes() {
+        return Stream.of(
+                // HIGH — '!'/'+'/'*' folded to a letter whenever BOTH raw neighbours were merely
+                // letter-or-digit, which let a decorative title-joiner/emphasis mark between two
+                // DIFFERENT capitalised (or digit-suffixed) words glue them into one token exactly
+                // like an unconditionally-folded '@' would. Fixed by restricting isWordFlank's
+                // trailing side to a plain LOWERCASE letter (see its own javadoc) instead of adding
+                // more fold-variant readings — a variant-only fix could only ADD matches, never
+                // remove the over-fold causing this.
+                arguments(
+                        "R4-HIGH: Murder!Pune shocked", "Murder!Pune shocked", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-HIGH: Riots!Delhi on edge",
+                        "Riots!Delhi on edge",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-HIGH: Murder!Delhi shocked",
+                        "Murder!Delhi shocked",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-HIGH: Suicide!2024 report", "Suicide!2024 report", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R4-HIGH: Suicide+Note found", "Suicide+Note found", UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R4-HIGH: Stampede+Chaos at station",
+                        "Stampede+Chaos at station",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R4-HIGH: Death+Destruction", "Death+Destruction", UnsafeHeadlineTopic.DEATH),
+                arguments("R4-HIGH: Murder*Delhi", "Murder*Delhi", UnsafeHeadlineTopic.CRIME),
+                // LOW — the round-3 "Rio+ Carnival" (with space) fix never covered the no-space
+                // hashtag form; the SAME isWordFlank fix above also closes this, since '+' followed
+                // by the capital 'C' of "Carnival" is no longer treated as mid-word either. Verified
+                // as a genuine bypass fix, not a benign control, by also asserting it below in the
+                // benign set (a moot assertion would mean this row belongs there instead).
+                //
+                // MEDIUM — mixed-script hashtag boundary. A Latin<->Devanagari script change carries
+                // no case-transition signal for rule 5's camelBoundary and, for a Devanagari suffix,
+                // no digit either — so "Delhi" + "दंगे"/"हत्याकांड" glued into one token with no
+                // boundary at all. "#दंगेDelhi" is a regression (BLOCKED at 49a0415 via the
+                // since-replaced skeleton technique).
+                arguments(
+                        "R4-MED-script: #Delhiदंगे (Latin->Devanagari)",
+                        "#Delhiदंगे",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-script: #Delhiहत्याकांड (Latin->Devanagari)",
+                        "#Delhiहत्याकांड",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-MED-script: #दंगेDelhi (Devanagari->Latin, regression)",
+                        "#दंगेDelhi",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                // MEDIUM — Devanagari/Hinglish literal-inflection gaps an independent reviewer's
+                // probe named outright.
+                arguments(
+                        "R4-MED-vocab: आतंकवादियों ने हमला किया",
+                        "आतंकवादियों ने हमला किया",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-vocab: आतंकियों का सफाया",
+                        "आतंकियों का सफाया",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-vocab: बम धमाके से दहला शहर",
+                        "बम धमाके से दहला शहर",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-vocab: बम धमाकों से दहला शहर",
+                        "बम धमाकों से दहला शहर",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-vocab: बम धमाके में 10 घायल",
+                        "बम धमाके में 10 घायल",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-vocab: aatankwadiyon ne hamla kiya",
+                        "aatankwadiyon ne hamla kiya",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-vocab: dangon mein 5 ghayal",
+                        "dangon mein 5 ghayal",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-vocab: hatyaon ka silsila",
+                        "hatyaon ka silsila",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-MED-vocab: balatkariyon ko saza",
+                        "balatkariyon ko saza",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-MED-vocab: दंगो में 5 घायल (informal, regression)",
+                        "दंगो में 5 घायल",
+                        UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-vocab: हत्याओ का सिलसिला (informal)",
+                        "हत्याओ का सिलसिला",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-MED-vocab: बलात्कारियो को सजा (informal)",
+                        "बलात्कारियो को सजा",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-MED-vocab: अपहरणकर्ता गिरफ्तार",
+                        "अपहरणकर्ता गिरफ्तार",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-MED-vocab: आत्मघाती हमला", "आत्मघाती हमला", UnsafeHeadlineTopic.COMMUNAL),
+                arguments(
+                        "R4-MED-vocab: सुसाइड नोट में बड़ा खुलासा",
+                        "सुसाइड नोट में बड़ा खुलासा",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R4-MED-vocab: हादसे में 5 लोग मारे गए",
+                        "हादसे में 5 लोग मारे गए",
+                        UnsafeHeadlineTopic.DEATH),
+                arguments(
+                        "R4-MED-vocab: चाकू से हमला", "चाकू से हमला", UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-MED-vocab: महिला को ज़िंदा जला दिया",
+                        "महिला को ज़िंदा जला दिया",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-MED-vocab: हत्यारिन पत्नी गिरफ्तार",
+                        "हत्यारिन पत्नी गिरफ्तार",
+                        UnsafeHeadlineTopic.CRIME),
+                arguments(
+                        "R4-MED-vocab: दिग्गज अभिनेता का निधन",
+                        "दिग्गज अभिनेता का निधन",
+                        UnsafeHeadlineTopic.DEATH),
+                // MEDIUM (phansi/fansi vocabulary) — the qualified hanging-specific collocations
+                // that replace the now-removed bare Latin forms must still block.
+                arguments(
+                        "R4-MED-latin: fansi laga ke jaan de di (still blocks via qualified phrase)",
+                        "fansi laga ke jaan de di",
+                        UnsafeHeadlineTopic.DEATH),
+                // LOW — the mutation-testing gap: removing the vowel-fold from ONLY the 40 main
+                // CONFUSABLE_FOLD_VARIANTS entries (as opposed to the 5 digit-literal variants,
+                // which also map '*' to a vowel) used to survive undetected because no probe forced
+                // BOTH an unconditionally-letter-folded digit (here '3'->'e', which the 5
+                // digit-literal variants deliberately leave AS a digit so hashtag/digit-suffix
+                // boundaries stay visible) and an asterisk-vowel fold in the SAME matched word: the
+                // digit-literal variants can never match "m*rd3r" as "murder" (their '3' stays a
+                // literal digit, not 'e'), so only a main-loop variant with vowel='u' can.
+                arguments("R4-LOW: m*rd3r (asterisk->u AND digit-fold 3->e together)",
+                        "m*rd3r", UnsafeHeadlineTopic.CRIME));
+    }
+
+    @ParameterizedTest(name = "{0}: \"{1}\" -> {2}")
+    @MethodSource("repairRound4Probes")
+    @DisplayName(
+            "T-GOLIVE-0918-R4: every independent-reviewer probe against cf2f33c blocks as its named"
+                    + " category")
+    void firstUnsafeTopic_blocksEveryRepairRound4Probe(
+            String defect, String probe, UnsafeHeadlineTopic expectedCategory) {
+        assertEquals(
+                expectedCategory,
+                CreatorNudgeService.firstUnsafeTopic(probe),
+                "probe did not block as " + expectedCategory + " [" + defect + "]: \"" + probe + "\"");
+        assertFalse(
+                CreatorNudgeService.isQuotableInCreatorCopy(probe),
+                "probe must not be quotable in creator copy [" + defect + "]: \"" + probe + "\"");
+    }
+
+    /**
+     * Benign controls for every round-4 over-block fix, plus at least 10 new everyday creator
+     * headlines in Hindi/Hinglish (done_when) not covered by any earlier round's benign set.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                // phansi/fansi — the everyday "stuck" sense, lexically identical in Latin script to
+                // the now-qualified hanging sense.
+                "Traffic mein phansi hui thi 2 ghante",
+                "Exam ke chakkar mein fansi rahi",
+                // कातिल — Bollywood-song/romantic register, the same false-positive class as the
+                // already-excluded English "killer".
+                "कातिल अदाएं डांस कवर",
+                "तेरी कातिल निगाहें रील",
+                // man/woman shot at — photography usage, lexically identical to the crime register.
+                "Woman shot at golden hour on 85mm",
+                "Street portrait: man shot at Chandni Chowk",
+                "Old man shot at sunset on 35mm film",
+                // opened fire — brand-name collision.
+                "Just opened Fire-Boltt Ninja 3 unboxing",
+                // goli maar di / maar diya gaya — Hinglish idiom and cricket commentary.
+                "Cheat day pe diet ko goli maar di",
+                "Tension ko goli maar di, weekend vibes",
+                "Last ball pe chhakka maar diya gaya",
+                // को मार डाला — hyperbolic song-lyric idiom, identical construction to the genuine
+                // crime headline.
+                "इस गाने ने दिल को मार डाला",
+                // hanged / body found — ordinary transitive "hang" and fitness idiom.
+                "Hanged fairy lights for Diwali decor",
+                "My body found its rhythm with Pilates",
+                "Your dream body found in 30 days",
+                // LOW — the no-space "Rio+Carnival" hashtag form, closed by the same isWordFlank
+                // fix as the HIGH bypasses above.
+                "#Rio+Carnival 2025",
+                "Rio+Carnival looks",
+                // HIGH regression guard — the narrower isWordFlank must not reintroduce any
+                // ALREADY-accepted false positive, nor stop matching a genuine mid-word fold that
+                // happens to be followed by more of the SAME lowercase word.
+                "Killer ab workout!",
+                "This vlog was shot at home!",
+                // 10+ new everyday creator headlines in Hindi/Hinglish (done_when), distinct from
+                // every earlier round's benign set.
+                "Aaj subah gym mein naya PR banaya",
+                "Yeh recipe har kisi ko pasand aayegi",
+                "Mera naya vlog Goa trip pe based hai",
+                "Is outfit ke saath konsa makeup try karu",
+                "Weekend pe naya trek explore kiya humne",
+                "आज की रील बहुत सारे लोगों को पसंद आई",
+                "यह प्रोडक्ट स्किन को ग्लो देगा",
+                "कल का मैच बहुत रोमांचक रहा",
+                "नए साल का प्लान बना लिया हमने",
+                "यह गाना हर पार्टी में बजता है"
+            })
+    @DisplayName(
+            "T-GOLIVE-0918-R4: benign Hinglish/Devanagari creator content stays quotable after the"
+                    + " punctuation-flank, phansi/fansi, कातिल, shot-at, maar-diya/goli-maar, को मार"
+                    + " डाला, hanged and body-found fixes")
+    void firstUnsafeTopic_repairRound4BenignSetStaysQuotable(String benign) {
+        assertNull(
+                CreatorNudgeService.firstUnsafeTopic(benign),
+                "benign control was classified unsafe: " + benign);
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(benign),
+                "benign control was classified unsafe: " + benign);
+    }
+
+    /**
+     * T-GOLIVE-0918-R4 (vikram, 2026-09-19) — DOCUMENTED, TESTED accepted GAPS: headlines that stay
+     * quotable although each names something the corresponding removed term used to catch. Every
+     * one of these shares its exact surface grammar with a benign headline in the set above (see
+     * each removed term's own comment in {@code UnsafeHeadlineTopic} for the specific collision),
+     * so no phrase-only fix can keep blocking one without also re-blocking the other. Same class of
+     * call as round 3's छेड़छाड़ accepted gap, and flagged for a Priya ruling the same way.
+     */
+    @ParameterizedTest
+    @ValueSource(
+            strings = {
+                "कातिल गिरफ्तार", // कातिल — collides with romantic/song usage.
+                "Man shot at outside mall", // collides with photography "shot at <place>".
+                "Woman shot at outside market",
+                "goli maar di", // collides with the Hinglish "forget about X" idiom.
+                "maar diya gaya", // collides with cricket commentary.
+                "युवक को मार डाला", // को मार डाला — collides with hyperbolic song-lyric idiom.
+                "Body found in suitcase" // body found — collides with the fitness idiom.
+            })
+    @DisplayName(
+            "T-GOLIVE-0918-R4: documented accepted gaps — headlines that stay quotable despite"
+                    + " naming a real crime/death, because the term that used to catch them collided"
+                    + " with a benign headline of identical surface grammar (a stated product"
+                    + " trade-off, not a bug)")
+    void firstUnsafeTopic_repairRound4AcceptedGapsStayQuotable(String acceptedGap) {
+        assertTrue(
+                CreatorNudgeService.isQuotableInCreatorCopy(acceptedGap),
+                "expected accepted-gap string to be quotable (if this now fails, either the gap has"
+                        + " been independently closed or a term was wrongly re-added — update this"
+                        + " test's comment, do not just delete the row): "
+                        + acceptedGap);
     }
 
     // ---------------------------------------------------------------------------------------
