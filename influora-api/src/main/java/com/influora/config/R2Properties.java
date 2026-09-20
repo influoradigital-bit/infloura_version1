@@ -14,11 +14,23 @@ public class R2Properties {
     private int presignExpirySeconds = 900;
     private long maxVideoBytes = 524_288_000L;
 
+    /**
+     * EV-006: the placeholders application.yml and influora-api/env.example ship
+     * ({@code REPLACE_WITH_YOUR_R2_*}) used to count as configured because they are non-blank, so
+     * {@link com.influora.integration.storage.R2StorageService#isAvailable()} said yes and presign
+     * handed the browser a URL on a host that does not exist. A placeholder is now "not configured"
+     * -- the same {@code REPLACE_WITH_} sentinel {@link ShopifyProperties} already refuses.
+     */
     public boolean isConfigured() {
-        return accountId != null && !accountId.isBlank()
-                && accessKeyId != null && !accessKeyId.isBlank()
-                && secretAccessKey != null && !secretAccessKey.isBlank()
+        return isReal(accountId)
+                && isReal(accessKeyId)
+                && isReal(secretAccessKey)
                 && bucketName != null && !bucketName.isBlank();
+    }
+
+    private static boolean isReal(String value) {
+        return value != null && !value.isBlank()
+                && !value.startsWith("REPLACE_WITH_") && !value.startsWith("REPLACE_ME");
     }
 
     /** S3 API endpoint: https://{accountId}.r2.cloudflarestorage.com */

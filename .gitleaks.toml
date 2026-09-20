@@ -3,18 +3,24 @@
 # (proof-os task deep-audit-0814): all 89 historical findings are documented
 # dev-only throwaway keys, test fixtures, .env.example placeholders, or sibling
 # worktree duplicates of the same. A finding outside these paths is REAL.
-# Rotation note: nothing allowlisted here was ever a live credential.
+# Rotation note: WRONG as first written -- the env.example entry covered live keys (EV-006).
 
 [extend]
 useDefault = true
 
 [allowlist]
 description = "Audited benign paths — dev-only keys with in-file rationale, test fixtures, examples, worktree duplicates"
+# EV-006: an empty `NAME=` line followed by another `NAME=` line makes generic-api-key capture the
+# next variable's NAME as the "secret". A bare UPPER_CASE identifier is never a credential.
+regexes = [
+  '''^[A-Z][A-Z0-9_]*=?$''',
+]
 paths = [
   # sibling Claude worktrees duplicate the same audited fixtures
   '''\.claude[/\\]worktrees[/\\].*''',
-  # committed example env files — placeholders by definition
-  '''(^|[/\\])\.?env\.example$''',
+  # EV-006: the env.example files used to be allow-listed here as "placeholders by definition".
+  # They were not: they held live Anthropic, Sarvam, R2 and MSG91 credentials, and this entry is
+  # what hid them. Removed. The CI gate is ci/secret-scan.py (.github/workflows/secret-scan.yml).
   # dev-profile config: documented, deliberately-committed local AES keys
   # (in-file V0-1 rationale, lines 11-16; MUST NOT be copied to prod)
   '''influora-api[/\\]src[/\\]main[/\\]resources[/\\]application-dev\.yml''',

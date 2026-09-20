@@ -950,4 +950,41 @@ class SecretsStartupValidatorTest {
         setField(validator, "festivalIpHashSalt", "change-me-festival-ip-hash-salt-min-32-chars");
         assertDoesNotThrow(validator::validate);
     }
+
+    // ------------------------------------------------------------------------------------------
+    // EV-006 -- the exact-match KNOWN_DEV_DEFAULTS check only knew application.yml's literals.
+    // influora-api/env.example ships DIFFERENT change-me values for the same secrets, so a non-dev
+    // box started from a copied env.example booted clean on them. Any committed-placeholder marker
+    // now fails closed outside dev, and still only warns in dev.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("validate: env.example-style change-me JWT secret (not the yml literal) fails closed in prod")
+    void testEnvExampleStyleChangeMeSecretFailsClosedInProd() throws Exception {
+        jwtProperties.setAccessSecret("access-secret-from-env-example-change-me-at-least-32-bytes");
+        SecretsStartupValidator validator = buildValidator("prod");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.jwt.access-secret"));
+        assertTrue(ex.getMessage().contains("committed placeholder"));
+    }
+
+    @Test
+    @DisplayName("validate: REPLACE_WITH_ placeholder signing secret fails closed in prod")
+    void testReplaceWithPlaceholderSecretFailsClosedInProd() throws Exception {
+        internalServiceTokenProperties.setHmacSigningSecret("REPLACE_WITH_YOUR_INTERNAL_REQUEST_HMAC_SECRET");
+        SecretsStartupValidator validator = buildValidator("prod");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, validator::validate);
+        assertTrue(ex.getMessage().contains("influora.internal-service-token.hmac-signing-secret"));
+        assertTrue(ex.getMessage().contains("committed placeholder"));
+    }
+
+    @Test
+    @DisplayName("validate: env.example-style change-me secret only WARNS (does not throw) in env=dev")
+    void testEnvExampleStyleChangeMeSecretOnlyWarnsInDev() throws Exception {
+        jwtProperties.setAccessSecret("access-secret-from-env-example-change-me-at-least-32-bytes");
+        SecretsStartupValidator validator = buildValidator("dev");
+        assertDoesNotThrow(validator::validate);
+    }
 }

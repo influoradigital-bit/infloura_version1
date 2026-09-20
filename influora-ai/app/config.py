@@ -57,6 +57,16 @@ def _get_optional_float(name: str) -> float | None:
         return None
 
 
+# EV-006: markers every committed placeholder/dev value in env.example carries. No real generated
+# key contains one. Mirrors SecretsStartupValidator.PLACEHOLDER_SENTINELS on the Spring side.
+_PLACEHOLDER_SENTINELS = ("replace_with_", "replace_me", "change-me", "change-in-production")
+
+
+def _is_placeholder(value: str) -> bool:
+    lower = value.strip().lower()
+    return any(marker in lower for marker in _PLACEHOLDER_SENTINELS)
+
+
 # ---------------------------------------------------------------------------
 # Pinned model / prompt versions — this constant IS the P0 fix. Do not point
 # this at gemini-2.0-flash again; that model id is deprecated.
@@ -534,12 +544,27 @@ class Settings:
         Per D0 DoD: "Missing/weak key -> refuse boot". main.py calls this at startup.
         """
         missing: list[str] = []
-        if not self.anthropic_api_key:
-            missing.append("ANTHROPIC_API_KEY")
-        if not self.gemini_api_key:
-            missing.append("GEMINI_API_KEY")
-        if not self.sarvam_api_key:
-            missing.append("SARVAM_API_KEY")
+        # EV-006: env.example now ships REPLACE_WITH_YOUR_* for the provider keys. A non-empty
+        # placeholder used to satisfy this check, boot clean, and 401 on the first provider call.
+        # A placeholder provider key can never authenticate, so it counts as missing everywhere.
+        for name, value in (
+            ("ANTHROPIC_API_KEY", self.anthropic_api_key),
+            ("GEMINI_API_KEY", self.gemini_api_key),
+            ("SARVAM_API_KEY", self.sarvam_api_key),
+        ):
+            if not value:
+                missing.append(name)
+            elif _is_placeholder(value):
+                missing.append(f"{name} (still the env.example placeholder)")
+        # EV-006: the committed dev signing keys (dev-...-change-in-production-...) are fine for
+        # APP_ENV=dev only; outside dev they are public values and must refuse boot.
+        if self.env != "dev":
+            for name, value in (
+                ("INTERNAL_HMAC_KEY", self.internal_hmac_key),
+                ("SERVICE_TOKEN_SIGNING_KEY", self.service_token_signing_key),
+            ):
+                if value and _is_placeholder(value):
+                    missing.append(f"{name} (committed dev/placeholder value outside APP_ENV=dev)")
         # F-10: DEV_SHARED_JWT_SECRET is an acceptable substitute for
         # SPRING_JWKS_URL **only** in env=dev. Accepting it everywhere meant the
         # symmetric-secret path could satisfy the boot check in any environment.

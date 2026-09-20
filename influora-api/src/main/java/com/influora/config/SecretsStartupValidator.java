@@ -128,6 +128,19 @@ public class SecretsStartupValidator {
 
     private static final int MIN_SECRET_BYTES = 32;
 
+    // EV-006: markers every committed placeholder/dev value in application.yml and the env.example
+    // files carries. No real generated secret contains one, so any of them means "never replaced".
+    private static final java.util.List<String> PLACEHOLDER_SENTINELS =
+            java.util.List.of("change-me", "change-in-production", "replace_with_", "replace_me");
+
+    static boolean containsPlaceholderSentinel(String value) {
+        if (value == null) {
+            return false;
+        }
+        String lower = value.toLowerCase(java.util.Locale.ROOT);
+        return PLACEHOLDER_SENTINELS.stream().anyMatch(lower::contains);
+    }
+
     // Must match the literal defaults in application.yml exactly.
     private static final Set<String> KNOWN_DEV_DEFAULTS =
             Set.of(
@@ -320,6 +333,12 @@ public class SecretsStartupValidator {
                                 .append(MIN_SECRET_BYTES).append(" bytes\n");
                     } else if (KNOWN_DEV_DEFAULTS.contains(value)) {
                         problems.append("  - ").append(name).append(" is still the committed dev default\n");
+                    } else if (containsPlaceholderSentinel(value)) {
+                        // EV-006: exact-match on application.yml's defaults missed the DIFFERENT
+                        // dev values influora-api/env.example ships (e.g. its JWT_ACCESS_SECRET), so
+                        // a non-dev box started from a copied env.example booted clean on them.
+                        problems.append("  - ").append(name)
+                                .append(" is still a committed placeholder (contains a change-me / REPLACE_WITH_ marker)\n");
                     }
                 });
 
