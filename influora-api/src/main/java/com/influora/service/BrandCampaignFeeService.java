@@ -6,9 +6,11 @@ import com.influora.domain.entity.Plan;
 import com.influora.domain.entity.PlatformFeeConfig;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.enums.PlanCode;
+import com.influora.domain.enums.TxnDirection;
 import com.influora.domain.enums.TxnReferenceType;
 import com.influora.domain.enums.WalletTransactionType;
 import com.influora.repository.PlatformFeeConfigRepository;
+import com.influora.repository.WalletTransactionRepository;
 import com.influora.service.billing.SubscriptionService;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -61,6 +63,7 @@ public class BrandCampaignFeeService {
   private final WalletService walletService;
   private final SubscriptionService subscriptionService;
   private final CommissionInvoiceService commissionInvoiceService;
+  private final WalletTransactionRepository walletTransactionRepository;
 
   public BrandCampaignFeeService(
       PlatformFeeConfigRepository configRepository,
@@ -68,13 +71,15 @@ public class BrandCampaignFeeService {
       PlatformWalletService platformWalletService,
       WalletService walletService,
       SubscriptionService subscriptionService,
-      CommissionInvoiceService commissionInvoiceService) {
+      CommissionInvoiceService commissionInvoiceService,
+      WalletTransactionRepository walletTransactionRepository) {
     this.configRepository = configRepository;
     this.ledgerService = ledgerService;
     this.platformWalletService = platformWalletService;
     this.walletService = walletService;
     this.subscriptionService = subscriptionService;
     this.commissionInvoiceService = commissionInvoiceService;
+    this.walletTransactionRepository = walletTransactionRepository;
   }
 
   /**
@@ -155,6 +160,20 @@ public class BrandCampaignFeeService {
    * already treats as the campaign's authoritative budget when no milestone is specified — so the
    * brand-fee base and the escrow-fund base stay consistent with each other.
    *
+   * <p><b>EV-005 / EV-026 / F-0857 / F-0858 — one-time publish fee.</b> This is reached from
+   * {@link CampaignActivationGuard#activate} on EVERY real edge to ACTIVE, including a PAUSED -&gt;
+   * ACTIVE resume and a resume after the budget was edited while paused. The fee is a ONE-TIME
+   * publish fee: once any brand PLATFORM_FEE has been posted for this campaign (read fresh from
+   * the ledger via {@link WalletTransactionRepository#sumAmountByReferenceAndTypeAndDirection},
+   * never a cached flag), every later activation charges NOTHING and skips the balance check —
+   * so a resume can never fail for a fee already paid (F-0857), can never collide with the
+   * first posting's idempotency key because the recomputed amount differs (F-0858), and can never
+   * post a second PLATFORM_FEE debit that has no matching commission invoice (EV-026: the
+   * abandoned delta-charge design did exactly that, because {@code CommissionInvoiceService}
+   * issues one brand-leg invoice per campaign). Exactly one posting, exactly one invoice, one
+   * idempotency key {@code "brand-fee-publish:" + campaignId} — two concurrent first activations
+   * compute the same key and the ledger's insert-first-wins dedup replays instead of charging twice.
+   *
    * <p>[SEC] The unlocked wallet-balance read here is a fast-path/friendly-error check only, same
    * discipline as {@code EscrowService.initiateFund}'s guard — it exists purely to produce a clear
    * "top up Rs. X" error instead of a generic one. The AUTHORITATIVE check-and-debit happens
@@ -179,6 +198,13 @@ public class BrandCampaignFeeService {
     }
 
     int feeBps = resolveBrandFeeBps(workspaceId);
+
+    // One-time rule: a campaign that has already paid its publish fee is never charged again —
+    // not on a resume, not after a budget edit while paused, not after a plan-rate change.
+    if (alreadyPaidFee(campaign.getId()).signum() > 0) {
+      return new FeeChargeResult(budget, feeBps, BigDecimal.ZERO, null);
+    }
+
     BigDecimal fee =
         budget
             .multiply(BigDecimal.valueOf(feeBps))
@@ -229,12 +255,21 @@ public class BrandCampaignFeeService {
     // D14 Doc#3a — brand-leg commission invoice, created AFTER the PLATFORM_FEE posting above has
     // actually succeeded (gated on `posting`, never on "chargeOnPublish was called"), inside this
     // same @Transactional method so invoice + ledger posting + campaign-ACTIVE flip are atomic.
-    // Idempotency key "brand-fee-publish:" + campaignId already dedupes the posting itself; the
-    // invoice service does its own additional findByCampaignIdAndLeg check before minting a
-    // statutory number.
+    // One posting per campaign (one-time rule above) means exactly one invoice per posting.
     commissionInvoiceService.createBrandLegAtPublish(campaign, workspaceId, feeBps, fee, posting);
 
     return new FeeChargeResult(budget, feeBps, fee, posting);
+  }
+
+  /**
+   * Sum of every brand PLATFORM_FEE debit already posted against this campaign — non-zero means
+   * the one-time publish fee has been paid. See {@link WalletTransactionRepository
+   * #sumAmountByReferenceAndTypeAndDirection}'s javadoc for why this can never pick up the
+   * unrelated creator-side release fee (posted against MILESTONE, not CAMPAIGN).
+   */
+  private BigDecimal alreadyPaidFee(String campaignId) {
+    return walletTransactionRepository.sumAmountByReferenceAndTypeAndDirection(
+        TxnReferenceType.CAMPAIGN, campaignId, WalletTransactionType.PLATFORM_FEE, TxnDirection.DEBIT);
   }
 
   /**

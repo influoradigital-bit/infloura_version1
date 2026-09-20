@@ -38,6 +38,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { CampaignStateMachine } from '@/components/brand/campaigns/campaign-state-machine';
 import { CollaborationTimeline } from '@/components/brand/timeline/collaboration-timeline';
+import { SecureAndPublishStep } from '@/components/brand/campaigns/secure-and-publish-step';
 import { api, isApiLive, ApiError, type Deal, type CampaignAnalytics } from '@/lib/api';
 import type { Campaign as ApiCampaign, Collaboration, ContractStatus } from '@/lib/types';
 import {
@@ -596,6 +597,12 @@ export default function BrandCampaignDetailPage() {
   const [reloadToken, setReloadToken] = React.useState(0);
   const [mutatingId, setMutatingId] = React.useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+  // F-0874 — a DRAFT campaign has no funds secured yet, so "Resume" must never send it straight to
+  // `update(id, { status: 'ACTIVE' })` (the server's activation guard correctly refuses it, but the
+  // brand only sees a raw error). Opens the same "Secure the funds to publish" step the two create
+  // flows use. A PAUSED campaign (funds already secured when it first went ACTIVE) still resumes
+  // directly below — see `handleToggleCampaignStatus`.
+  const [publishStepOpen, setPublishStepOpen] = React.useState(false);
 
   // BR-37 — GET /campaigns/:id/export?format=csv|pdf (ReportExportController). Pro-gated
   // (@RequiresPlan EXPORT); a non-Pro workspace gets a 402, surfaced below as an upgrade
@@ -912,6 +919,13 @@ export default function BrandCampaignDetailPage() {
       toast({ title: next === 'PAUSED' ? 'Campaign paused' : 'Campaign resumed' });
       if (liveApi) setReloadToken((k) => k + 1);
     } catch (e) {
+      // EV-005 — a resume (PAUSED/PENDING_APPROVAL -> ACTIVE) runs the same activation guard as a
+      // first publish. If no funds are secured any more, open the secure-the-funds step instead of
+      // showing the server's refusal as a dead-end error.
+      if (next === 'ACTIVE' && e instanceof ApiError && e.code === 'ESCROW_NOT_FUNDED') {
+        setPublishStepOpen(true);
+        return;
+      }
       toast({
         title: 'Could not update campaign',
         description: e instanceof ApiError ? e.message : 'Try again in a moment.',
@@ -1121,7 +1135,19 @@ export default function BrandCampaignDetailPage() {
                           >
                             <Pause className="mr-2 h-4 w-4" />Pause Campaign
                           </DropdownMenuItem>
+                        ) : campaign.status === 'DRAFT' ? (
+                          // F-0874 — a DRAFT has never been funded, so this must not claim to
+                          // "resume" anything or send ACTIVE straight to the server. It opens the
+                          // same secure-the-funds step the create flows use.
+                          <DropdownMenuItem
+                            disabled={mutatingId === id}
+                            onClick={() => setPublishStepOpen(true)}
+                          >
+                            <Zap className="mr-2 h-4 w-4" />Publish campaign
+                          </DropdownMenuItem>
                         ) : (
+                          // PAUSED (or another still-editable non-DRAFT status): this campaign was
+                          // ACTIVE before, so its funds are already secured — resume directly.
                           <DropdownMenuItem
                             disabled={mutatingId === id}
                             onClick={() => handleToggleCampaignStatus('ACTIVE')}
@@ -1164,6 +1190,30 @@ export default function BrandCampaignDetailPage() {
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
+                {id && (
+                  // F-0874 — a DRAFT reopened here may already have its funds secured from an
+                  // earlier attempt (checkExistingFunds), in which case the fund control never
+                  // renders and this step goes straight to "Publish campaign".
+                  <Dialog open={publishStepOpen} onOpenChange={setPublishStepOpen}>
+                    <DialogContent className="sm:max-w-lg">
+                      <DialogHeader>
+                        <DialogTitle>Publish campaign</DialogTitle>
+                        <DialogDescription>Secure the funds, then this campaign goes live.</DialogDescription>
+                      </DialogHeader>
+                      <SecureAndPublishStep
+                        campaignId={id}
+                        budgetAmount={campaign.budget?.max ?? 0}
+                        checkExistingFunds
+                        onPublished={() => {
+                          setPublishStepOpen(false);
+                          toast({ title: 'Campaign published', description: 'Your campaign is live.' });
+                          if (liveApi) setReloadToken((k) => k + 1);
+                        }}
+                        onKeepDraft={() => setPublishStepOpen(false)}
+                      />
+                    </DialogContent>
+                  </Dialog>
+                )}
               </div>
             </div>
           </div>

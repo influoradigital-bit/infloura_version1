@@ -118,6 +118,16 @@ class BrandFeePublishPathConformanceTest {
     private static final String BRAND_FEE_SERVICE_OWNER = "com/influora/service/BrandCampaignFeeService";
     private static final String CHARGE_ON_PUBLISH = "chargeOnPublish";
 
+    /**
+     * F-0848 (Priya ruling c): both publish paths now charge through {@code
+     * CampaignActivationGuard.activate}, the only class allowed to call {@code chargeOnPublish}
+     * ({@code architecture/CampaignActivationPathTest} T4 proves the guard itself makes that call).
+     * A real call to {@code activate} from the named entry point therefore counts as reaching the
+     * charge; deleting that call still turns the matching assertion below RED.
+     */
+    private static final String ACTIVATION_GUARD_OWNER = "com/influora/service/CampaignActivationGuard";
+    private static final String ACTIVATE = "activate";
+
     /** A method identified the way the JVM identifies it: name + full descriptor, never name alone. */
     private record MethodKey(String name, String descriptor) {}
 
@@ -235,6 +245,9 @@ class BrandFeePublishPathConformanceTest {
                                     String calledDesc,
                                     boolean isInterface) {
                                 if (owner.equals(BRAND_FEE_SERVICE_OWNER) && calledName.equals(CHARGE_ON_PUBLISH)) {
+                                    callsDirectly[0] = true;
+                                }
+                                if (owner.equals(ACTIVATION_GUARD_OWNER) && calledName.equals(ACTIVATE)) {
                                     callsDirectly[0] = true;
                                 }
                                 if (owner.equals(selfInternalName)) {

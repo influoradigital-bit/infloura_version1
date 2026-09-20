@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import type { Platform, ContentType, CampaignStatus, CampaignType, TargetAudience } from '@/lib/types';
+import type { Campaign, Platform, ContentType, CampaignStatus, CampaignType, TargetAudience } from '@/lib/types';
 import { useCampaignStore } from '@/lib/store';
 import { api, ApiError, type CreatorSuggestionItem } from '@/lib/api';
 import { isWorkspaceNotVerified, isCampaignActiveNotEditable } from '@/lib/api-errors';
@@ -24,6 +24,11 @@ import { validateCampaignTitle } from '@/lib/campaign-validation';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceVerification } from '@/hooks/brand/useWorkspaceVerification';
 import { VerificationRequiredBox } from '@/components/brand/VerificationRequiredBox';
+import {
+  SecureAndPublishStep,
+  isCreateStatusNotAllowed,
+  CREATE_STATUS_NOT_ALLOWED_TOAST,
+} from '@/components/brand/campaigns/secure-and-publish-step';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -314,6 +319,14 @@ export function CampaignForm({
   const [budgetConfirmed, setBudgetConfirmed] = React.useState(!budgetHint);
   const confirmBudgetTouch = () => setBudgetConfirmed(true);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  // F-0848 — drops a second submit that lands before `isSubmitting` has re-rendered the button
+  // disabled (double-click): each one would otherwise create its own draft.
+  const submitInFlightRef = React.useRef(false);
+  // F-0848 — set once "Publish Campaign" has saved the campaign as a DRAFT; renders the inline
+  // "Secure the funds to publish" step in place of the review navigation.
+  const [publishStep, setPublishStep] = React.useState<{ campaignId: string; checkExistingFunds: boolean } | null>(
+    null,
+  );
   // Set when a publish (ACTIVE) is refused because the workspace isn't verified — renders the
   // persistent inline box instead of a disappearing toast. Cleared on the next submit attempt.
   const [verificationBlocked, setVerificationBlocked] = React.useState(false);
@@ -619,12 +632,24 @@ export function CampaignForm({
     }
   };
 
-  const handleSubmit = async (status: CampaignStatus = 'DRAFT') => {
+  /**
+   * F-0848 (Priya's ruling b) — `intent` is what the brand pressed, NOT the status sent. No create
+   * ever sends ACTIVE: the server refuses it (`CAMPAIGN_CREATE_STATUS_NOT_ALLOWED`) because a
+   * campaign cannot have secured funds before it has an id. "Publish Campaign" saves a DRAFT (an
+   * edit leaves the stored status alone), then shows `SecureAndPublishStep`, which secures the
+   * funds and sets ACTIVE through `update` — where the server checks the funds and charges the fee.
+   */
+  const handleSubmit = async (intent: CampaignStatus = 'DRAFT') => {
+    if (submitInFlightRef.current || publishStep) return;
     if (!validateStep(currentStep)) return;
 
+    const publishing = intent === 'ACTIVE';
+    submitInFlightRef.current = true;
     setIsSubmitting(true);
     setErrors({});
     setVerificationBlocked(false);
+
+    const savedStatus: CampaignStatus | undefined = publishing ? (isEditing ? undefined : 'DRAFT') : intent;
 
     const payload = {
       title: formData.title.trim(),
@@ -633,7 +658,7 @@ export function CampaignForm({
       // F-0240: campaignType is immutable after creation (not part of CampaignPatchRequest on the
       // backend), so only send it on create — never on an edit's PATCH.
       campaignType: isEditing ? undefined : formData.campaignType,
-      status,
+      status: savedStatus,
       budget: {
         min: formData.budgetMin,
         max: formData.budgetMax,
@@ -662,28 +687,17 @@ export function CampaignForm({
         ? await api.campaigns.update(campaignId, payload)
         : await api.campaigns.create(payload);
 
-      // T-CREATORCONNECT-0902 — post-create/post-publish invite for the creator Discover handed
-      // off via `?creatorId=`. Reuses the exact `api.creators.invite` path creator-discovery.tsx's
-      // own invite dialog calls (POST /creators/:id/invite). Best-effort: a failed invite must not
-      // block navigation away from a campaign that was, in fact, created successfully.
-      //
-      // Q6.2 — gated on `status === 'ACTIVE'`: this used to fire on every create regardless of
-      // status, so saving a DRAFT silently invited the creator to a campaign the brand had not
-      // published yet (and, per CreatorDiscoveryService's own DRAFT guard, made that draft
-      // undeletable). A DRAFT save instead STASHES the handoff (creatorId + resolved handle,
-      // keyed by the new campaign id) so the invite fires later when this same draft is actually
-      // published — see the isEditing/ACTIVE branch below.
+      // T-CREATORCONNECT-0902 Q6.2 — the Discover handoff invite fires only once the campaign is
+      // actually live. Every create is a DRAFT now (F-0848), so the handoff is always stashed
+      // against the new id and consumed in `handlePublished` after the ACTIVE `update` succeeds —
+      // whether that happens on this screen or when the brand reopens the draft later.
       if (!isEditing && creatorIdParam) {
-        if (status === 'ACTIVE') {
-          await inviteHandoffCreator(creatorIdParam, saved.id, creatorBannerHandle);
-        } else {
-          stashPendingCreatorInvite(saved.id, creatorIdParam, creatorBannerHandle);
-        }
-      } else if (isEditing && campaignId && status === 'ACTIVE') {
-        const pending = takePendingCreatorInvite(campaignId);
-        if (pending) {
-          await inviteHandoffCreator(pending.creatorId, campaignId, pending.ig);
-        }
+        stashPendingCreatorInvite(saved.id, creatorIdParam, creatorBannerHandle);
+      }
+
+      if (publishing) {
+        setPublishStep({ campaignId: isEditing && campaignId ? campaignId : saved.id, checkExistingFunds: isEditing });
+        return;
       }
 
       addCampaign(saved);
@@ -708,16 +722,34 @@ export function CampaignForm({
         });
         return;
       }
+      // F-0848 — only reachable from a client still sending a non-DRAFT create (an old bundle).
+      if (isCreateStatusNotAllowed(err)) {
+        toast({ ...CREATE_STATUS_NOT_ALLOWED_TOAST, variant: 'destructive' });
+        return;
+      }
       const message =
         err instanceof ApiError ? err.message : 'Failed to save campaign';
       toast({
-        title: status === 'ACTIVE' ? 'Could not publish campaign' : 'Could not save draft',
+        title: publishing ? 'Could not save your campaign' : 'Could not save draft',
         description: message,
         variant: 'destructive',
       });
     } finally {
       setIsSubmitting(false);
+      submitInFlightRef.current = false;
     }
+  };
+
+  /** F-0848 — runs after `SecureAndPublishStep` has set the campaign ACTIVE on the server. */
+  const handlePublished = async (published: Campaign) => {
+    const publishedId = publishStep?.campaignId ?? published.id;
+    const pending = takePendingCreatorInvite(publishedId);
+    if (pending) {
+      await inviteHandoffCreator(pending.creatorId, publishedId, pending.ig);
+    }
+    addCampaign(published);
+    toast({ title: 'Campaign published', description: 'Your campaign is live.' });
+    navigate('/brand/campaigns');
   };
 
   const addRequirement = () => {
@@ -1667,7 +1699,20 @@ export function CampaignForm({
                 </div>
               )}
 
+              {/* F-0848 — after "Publish Campaign" saved the draft, the inline secure-the-funds step
+                  replaces the navigation, so nothing here can save or create the campaign again. */}
+              {currentStep === 'review' && publishStep && (
+                <SecureAndPublishStep
+                  campaignId={publishStep.campaignId}
+                  budgetAmount={formData.budgetMax}
+                  checkExistingFunds={publishStep.checkExistingFunds}
+                  onPublished={handlePublished}
+                  onKeepDraft={() => navigate('/brand/campaigns')}
+                />
+              )}
+
               {/* Navigation */}
+              {!publishStep && (
               <div className="flex items-center justify-between mt-8 pt-6 border-t border-border">
                 {currentStepIndex > 0 ? (
                   <Button type="button" variant="outline" onClick={handleBack}>
@@ -1698,7 +1743,7 @@ export function CampaignForm({
                         {isSubmitting ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Publishing...
+                            Saving...
                           </>
                         ) : (
                           <>
@@ -1716,6 +1761,7 @@ export function CampaignForm({
                   )}
                 </div>
               </div>
+              )}
             </CardContent>
           </Card>
         </div>
