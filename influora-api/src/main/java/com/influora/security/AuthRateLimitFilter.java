@@ -967,13 +967,15 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * True for the paths behind {@code InternalServiceTokenFilter}'s service-mesh gate. Normalises
-     * the URI the same way {@link #bucketFor} does, so an encoded or matrix-param'd
-     * {@code /internal/**} cannot be dressed up as a public path to get the quota headers back.
+     * True for the paths behind {@code InternalServiceTokenFilter}'s service-mesh gate. Goes
+     * through the same shared normaliser as {@link #bucketFor} (EV-004: {@link RequestPaths}), so
+     * an encoded or matrix-param'd {@code /internal/**} cannot be dressed up as a public path to
+     * get the quota headers back. Fails CLOSED (treated as internal) on an unnormalisable path,
+     * same as {@link RequestPaths#isUnder} always does — the header-withholding this guards is the
+     * safe direction to fail in.
      */
     private static boolean isInternalPath(HttpServletRequest request) {
-        return stripMatrixParams(decode(stripContext(request.getRequestURI())))
-                .startsWith(INTERNAL_PREFIX);
+        return RequestPaths.isUnder(request, INTERNAL_PREFIX);
     }
 
     /** SHA-256 of the token bytes, hex. Null only if the JRE has no SHA-256, which cannot happen. */
