@@ -48,7 +48,7 @@ Every step lands behind switches that default to **off**. `CREATOR_CREDITS_ENABL
 | 0.1 | **Gemini key tier.** Must be the **paid** tier: 1,500 free grounded searches a day, and Google does not use the data. On the free tier it's 500 a day, and Google uses creators' searches to improve its products. | meera | Billing tier recorded in this file, with the date checked | rohan |
 | 0.2 | **DONE `a4f233e`.** **Anthropic library.** Raise the `anthropic` pin in `influora-ai/requirements.txt` from **0.42.0**, which has no web search, to a current version. **Local runs have been on 0.125.0 from the user site-packages while CI and the Docker image install 0.42.0**, so local pytest has never proved the production library. | vikram | Full pytest green **in a clean venv built from `requirements.txt`**, plus the CI run green, as its own commit | meera |
 | 0.3 | **Claude Haiku 4.5 + web search test call.** Anthropic's docs don't list which models support it. | vikram | One real call succeeds, with tokens and cost recorded here. If Haiku isn't supported, record Sonnet 4.5 as the model (₹3.34 per search; still profitable) | ash |
-| 0.4 | **Consent.** A search sends the creator's question to Google or Anthropic. Does the v2 notice cover that? | nisha (words), kabir | A yes or no recorded. If no: new wording + version bump, shipped in the **same deploy** as search (the G-1 rule) | kabir |
+| 0.4 | **ANSWERED: NO — v3 bump needed.** nisha checked the shipped v2 notice (`NISHA-CONSENT-SEARCH-0920.md` beside this file): v2 discloses profile, deals, metrics and pasted briefs, and never says a typed question goes to an outside company. A search is a new processing activity, so it needs **v2 → v3 with re-consent**, and the text plus the backend version must ship in the **same deploy** (the G-1 rule). Her fourth paragraph and the two search-card labels are written in English and Hindi. **kabir reviews the words next.** | nisha (words), kabir | A yes or no recorded. If no: new wording + version bump, shipped in the **same deploy** as search (the G-1 rule) | kabir |
 
 ### Step 1: Amend `CREDITS-SPEC.md` (spec only)
 
@@ -173,7 +173,8 @@ ceiling; the next rupee is in cache hit rate and output bounds, not history leng
 - Weekly counter columns on the creator credit table (D1-D3).
 
 **Rules from the providers' terms** (read 2026-09-19; these are requirements, not polish):
-- **Gemini:** results shown **only to the creator who asked**, with Google's search suggestions displayed, and **never stored or analysed**. So a Gemini result is shown as its own card, **never fed into Meera's chat or saved**.
+- **Gemini:** results shown **only to the creator who asked**, with Google's search suggestions displayed, and the **result never stored or analysed**. So a Gemini result is shown as its own card, never fed into Meera's chat or saved.
+  - **Correction (nisha, 2026-09-20):** an earlier draft of this plan said search "stores nothing". That was wrong and the consent wording would have inherited it. The **result** is not stored; the creator's **question** is saved with her conversation like any other message. Her v3 paragraph says exactly that.
 - **Claude:** **sources must be shown** with the answer.
 - Search result text is untrusted: never treated as instructions.
 
@@ -216,7 +217,7 @@ ceiling; the next rupee is in cache hit rate and output bounds, not history leng
 - **Staging:** stage from an explicit list of files; another session works in this repo.
 - **Branching:** new work branches from `release/0919`. Do not merge `feat/meera-creator-phase-b0` again; it still uses the old ledger ids.
 - **Ledger ids:** B0's ledger ids are F-1765..F-1782. New records take ids from the ledger tool as usual.
-- **Search results:** never treated as instructions; Gemini results never stored.
+- **Search results:** never treated as instructions. The Gemini **result** is never stored; the creator's **question** is saved with her conversation, and the consent wording says so.
 
 ---
 
