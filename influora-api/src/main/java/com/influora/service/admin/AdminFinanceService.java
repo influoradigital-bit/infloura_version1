@@ -13,6 +13,7 @@ import com.influora.domain.entity.WalletTopUp;
 import com.influora.domain.enums.TxnReferenceType;
 import com.influora.domain.enums.WalletTransactionType;
 import com.influora.repository.WalletRepository;
+import com.influora.service.LedgerIdempotencyKeys;
 import com.influora.service.PlatformWalletService;
 import com.influora.service.WalletLedgerService;
 import com.influora.web.dto.admin.AdminFinanceDtos.ManualPayoutResultDto;
@@ -213,6 +214,19 @@ public class AdminFinanceService {
         String payoutId = Ulids.newUlid();
         Wallet clearingWallet = platformWalletService.requireClearingWallet();
 
+        // [EV-014] The Idempotency-Key header used to be written VERBATIM into both
+        // wallet_transactions.idempotency_key (VARCHAR(64), plus WalletLedgerService's ":D"/":C"
+        // leg suffix) and payouts.idempotency_key (VARCHAR(64)). Nothing bounded it: the admin
+        // console, a curl, or a UUID-with-a-prefix convention could send a token longer than 62
+        // characters and the posting would either be rejected by MySQL outright or truncated into
+        // a uq_wtx_idem collision between the two legs of the same double entry. Same defect as the
+        // creator withdrawal path, and the more urgent of the two in practice, because while
+        // RazorpayX is unprovisioned (EV-020) this is the ONLY rail that actually moves money.
+        // Hashed to a fixed 37 characters, scoped by creator so two admins recording two different
+        // creators' payouts under the same header value cannot collide.
+        String ledgerIdempotencyKey =
+                LedgerIdempotencyKeys.manualPayout(creatorUserId, idempotencyKey);
+
         ledgerService.post(
                 wallet.getId(),
                 clearingWallet.getId(),
@@ -222,7 +236,7 @@ public class AdminFinanceService {
                 TxnReferenceType.MANUAL,
                 payoutId,
                 "Manual payout recorded by admin",
-                idempotencyKey,
+                ledgerIdempotencyKey,
                 bankReference);
 
         Payout payout =
@@ -234,7 +248,7 @@ public class AdminFinanceService {
                                 wallet.getCurrency(),
                                 bankReference,
                                 tdsAmount,
-                                idempotencyKey,
+                                ledgerIdempotencyKey,
                                 Instant.now()));
 
         // The bank reference is the audit link; the amounts are what a later TDS filing needs.

@@ -193,9 +193,7 @@ public class PayoutReconciliationService {
         }
 
         boolean debitPosted =
-                walletTransactionRepository
-                        .findByIdempotencyKey("payout-debit:" + payout.getMilestoneId() + ":D")
-                        .isPresent();
+                walletTransactionRepository.findByIdempotencyKey(queueTimeDebitKey(payout)).isPresent();
         if (!debitPosted) {
             log.warn(
                     "PayoutReconciliation: PENDING payout {} (milestone {}) has no debit posted yet —"
@@ -217,7 +215,39 @@ public class PayoutReconciliationService {
         // re-credit key changed below — one namespace, no risk of a later attempt's re-credit
         // colliding with this one.
         attemptGatewayPayout(
-                payout, payout.getIdempotencyKey(), "payout-reversed:" + payout.getRazorpayPayoutId());
+                payout, payout.getIdempotencyKey(), reversalKey(payout.getRazorpayPayoutId()));
+    }
+
+    /**
+     * [EV-003] The ledger key the ORIGINAL (queue-time) debit for {@code payout} was posted under,
+     * as {@link WalletLedgerService#post} stored it — i.e. including the {@code ":D"} debit-leg
+     * suffix that method appends.
+     *
+     * <p>There are two producers of a {@link Payout#STATUS_PENDING} row and they do not use the
+     * same key, so this cannot be one hard-coded string:
+     *
+     * <ul>
+     *   <li>{@code PayoutService#doQueuePayout} — a milestone-linked payout, debited under
+     *       {@code "payout-debit:" + milestoneId}.
+     *   <li>{@code CreatorWithdrawalOps#reserveWithdrawal} — a lump-sum creator wallet withdrawal,
+     *       which has NO milestone ({@code milestone_id} is nullable precisely for this case) and is
+     *       debited under the payout's own {@code idempotencyKey}.
+     * </ul>
+     *
+     * <p>Before this existed the sweep built {@code "payout-debit:" + payout.getMilestoneId()},
+     * which for a withdrawal evaluated to the literal string {@code "payout-debit:null:D"}. That
+     * matches no ledger row, so {@link #reconcileOrphanedPendingPayout} always concluded "no debit
+     * posted — nothing orphaned" and returned, for every withdrawal, forever: a creator debited for
+     * a withdrawal whose gateway result was never recorded would have been left permanently short,
+     * with the sweep reporting it as healthy. Deriving the key from the row itself is also what
+     * makes the reaper recoverable with no new column — both inputs are already persisted.
+     */
+    static String queueTimeDebitKey(Payout payout) {
+        String base =
+                payout.getMilestoneId() != null
+                        ? "payout-debit:" + payout.getMilestoneId()
+                        : payout.getIdempotencyKey();
+        return base + ":D";
     }
 
     /**
@@ -419,8 +449,23 @@ public class PayoutReconciliationService {
         return "payout-debit:retry:" + digestRetryAttemptKey(retryAttemptKey);
     }
 
+    /**
+     * [EV-014, fourth instance — found by {@code LedgerIdempotencyKeyLengthTest}] Unlike its two
+     * siblings this key is never stored in one of OUR columns; it is sent to RazorpayX as the
+     * payout {@code reference_id}, which RazorpayX documents as at most {@value
+     * LedgerIdempotencyKeys#RAZORPAYX_REFERENCE_ID_MAX_LENGTH} characters. The prefix used to be
+     * {@code "payout-retry:"}, making the key 13 + 32 = 45 — over that limit, so every admin
+     * payout retry would have been rejected by the gateway with a 400 the moment RazorpayX was
+     * provisioned. Shortened to {@code "pretry:"} (7 + 32 = 39). Nothing else about the key
+     * changed: same digest, same determinism, same recompute-from-the-row recoverability.
+     *
+     * <p>The {@value LedgerIdempotencyKeys#RAZORPAYX_REFERENCE_ID_MAX_LENGTH} figure comes from
+     * RazorpayX's published API reference, not from anything in this repository, so it is the one
+     * number here that a reader cannot check from source — which is precisely why the key is sized
+     * with room to spare rather than exactly at the limit.
+     */
     static String retryGatewayKey(String retryAttemptKey) {
-        return "payout-retry:" + digestRetryAttemptKey(retryAttemptKey);
+        return "pretry:" + digestRetryAttemptKey(retryAttemptKey);
     }
 
     static String retryReversalKey(String retryAttemptKey) {
@@ -511,7 +556,30 @@ public class PayoutReconciliationService {
      * webhook delivery for the SAME attempt (same id in, same key out).
      */
     private void reCreditReversedPayout(Payout payout, String razorpayPayoutId) {
-        reCreditReversedPayout(payout, razorpayPayoutId, "payout-reversed:" + razorpayPayoutId);
+        reCreditReversedPayout(payout, razorpayPayoutId, reversalKey(razorpayPayoutId));
+    }
+
+    /**
+     * [EV-014, third instance — found by {@code LedgerIdempotencyKeyLengthTest}] The re-credit
+     * ledger key for one gateway attempt, keyed on {@code razorpayPayoutId} exactly as red-team F1
+     * requires, but DIGESTED rather than concatenated.
+     *
+     * <p>{@code "payout-reversed:" + razorpayPayoutId} was 16 characters plus whatever {@code
+     * payouts.razorpay_payout_id} holds — a {@code VARCHAR(64)} column, so up to 80 before {@link
+     * WalletLedgerService#post} appends its {@code ":D"}/{@code ":C"} leg suffix, against a
+     * {@code VARCHAR(64)} target. A real RazorpayX id ({@code pout_} + 14) never reached that, but
+     * two ids this codebase mints itself do get long: the unconfigured-gateway mock returns {@code
+     * "payout_stub_" + <the reference id we sent>}, and the admin retry path sends a 45-character
+     * reference id, so a reversal on a dev/staging retry already produced a 73-character key. The
+     * digest makes the length independent of what the gateway (or our own mock) hands back.
+     *
+     * <p>Deterministic in exactly the way F1 needs: same {@code razorpayPayoutId} in, same key out,
+     * so a duplicate webhook delivery for the same attempt still dedupes and two different attempts
+     * still get two different credits.
+     */
+    static String reversalKey(String razorpayPayoutId) {
+        return LedgerIdempotencyKeys.scopedDigest(
+                "payout-reversed:", razorpayPayoutId == null ? "" : razorpayPayoutId);
     }
 
     private void reCreditReversedPayout(
@@ -525,8 +593,13 @@ public class PayoutReconciliationService {
                 payout.getAmount(),
                 payout.getCurrency(),
                 WalletTransactionType.PAYOUT,
-                TxnReferenceType.MILESTONE,
-                payout.getMilestoneId(),
+                // [EV-003] A lump-sum creator withdrawal has no milestone, so labelling its
+                // reversal MILESTONE with a null reference id would write a row whose
+                // reference_type points at nothing — and idx_wtx_reference is the index the
+                // creator's own payout history is read through. Same branch doRetryFailedPayout
+                // already uses for the retry debit a few lines above.
+                payout.getMilestoneId() != null ? TxnReferenceType.MILESTONE : TxnReferenceType.MANUAL,
+                payout.getMilestoneId() != null ? payout.getMilestoneId() : payout.getId(),
                 "Payout reversed by RazorpayX — re-credited to creator wallet",
                 ledgerIdempotencyKey,
                 razorpayPayoutId);

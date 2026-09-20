@@ -32,6 +32,7 @@ import com.influora.repository.WalletRepository;
 import com.influora.repository.WalletTopUpRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.PayoutReconciliationService;
+import com.influora.service.LedgerIdempotencyKeys;
 import com.influora.service.PlatformWalletService;
 import com.influora.service.WalletLedgerService;
 import com.influora.web.dto.admin.AdminFinanceDtos.ManualPayoutResultDto;
@@ -448,7 +449,10 @@ class AdminFinanceServiceTest {
                         eq(TxnReferenceType.MANUAL),
                         anyString(),
                         anyString(),
-                        eq("idem-1"),
+                        // [EV-014] The Idempotency-Key header no longer reaches the ledger raw:
+                        // it was unbounded, and both wallet_transactions.idempotency_key and
+                        // payouts.idempotency_key are VARCHAR(64).
+                        eq(LedgerIdempotencyKeys.manualPayout("usr_creator_1", "idem-1")),
                         eq("UTR123456789"));
     }
 

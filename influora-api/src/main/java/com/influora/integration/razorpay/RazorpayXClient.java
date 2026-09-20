@@ -110,6 +110,24 @@ public class RazorpayXClient {
     }
 
     /**
+     * [EV-020] Whether {@link #initiatePayout} can do anything at all right now — i.e. whether it
+     * will return a result rather than throw {@link RazorpayIntegrationException} from {@link
+     * #requireConfiguredOutsideDev}. True when RazorpayX is genuinely provisioned, and also true in
+     * dev, where the unconfigured path deliberately returns a mock stub instead of failing.
+     *
+     * <p>Exists so a caller that commits a wallet debit BEFORE calling the gateway can refuse up
+     * front instead of debiting a creator for a payout that cannot possibly be sent. {@code
+     * isConfigured()} alone is the wrong question for that caller: it is false in dev, where
+     * payouts do work (as mocks). Payouts are off by default — the owner has to set
+     * {@code RAZORPAY_KEY_ID}, {@code RAZORPAY_KEY_SECRET} and {@code RAZORPAYX_ACCOUNT_NUMBER} to
+     * real values (they ship as {@code REPLACE_WITH_*} placeholders in application.yml) before this
+     * returns true outside dev.
+     */
+    public boolean canInitiatePayouts() {
+        return isConfigured() || environment.isDev();
+    }
+
+    /**
      * Initiates a payout. Returns a stub payout id in QUEUED status when RazorpayX is not
      * configured, matching {@code PayoutService.queuePayout}'s out-of-band-confirm design —
      * nothing here marks a payout PROCESSED without a webhook confirming it.

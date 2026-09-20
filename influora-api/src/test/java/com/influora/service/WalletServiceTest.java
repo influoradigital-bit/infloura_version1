@@ -10,8 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -50,6 +52,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -67,13 +70,20 @@ class WalletServiceTest {
     private static final String USER_ID = "01HCREATORUSER1234567";
     private static final String BANK_ACCOUNT_ID = "01HBANKACCOUNT1234567";
     private static final String IDEMPOTENCY_KEY = "client-key-123";
-    private static final String SCOPED_KEY = "creator-withdraw:" + USER_ID + ":" + IDEMPOTENCY_KEY;
+    /**
+     * [EV-014] Was {@code "creator-withdraw:" + USER_ID + ":" + IDEMPOTENCY_KEY}. Computed through
+     * the production helper rather than restated here: a test that hard-codes the key shape passes
+     * whatever length that shape happens to be, which is exactly how an 80-character key against a
+     * VARCHAR(64) column stayed green. {@code LedgerIdempotencyKeyLengthTest} is what bounds it.
+     */
+    private static final String SCOPED_KEY =
+            LedgerIdempotencyKeys.creatorWithdrawal(USER_ID, IDEMPOTENCY_KEY);
 
     @Mock private WalletRepository walletRepository;
     @Mock private WalletLedgerService ledgerService;
     @Mock private WalletTransactionRepository walletTransactionRepository;
     @Mock private PaymentMilestoneRepository paymentMilestoneRepository;
-    @Mock private PlatformWalletService platformWalletService;
+    @Mock private CreatorWithdrawalOps creatorWithdrawalOps;
     @Mock private CreatorBankAccountRepository creatorBankAccountRepository;
     @Mock private RazorpayXClient razorpayXClient;
     @Mock private RazorpayFundAccountService fundAccountService;
@@ -92,7 +102,7 @@ class WalletServiceTest {
                         ledgerService,
                         walletTransactionRepository,
                         paymentMilestoneRepository,
-                        platformWalletService,
+                        creatorWithdrawalOps,
                         creatorBankAccountRepository,
                         razorpayXClient,
                         fundAccountService,
@@ -107,6 +117,16 @@ class WalletServiceTest {
         CreatorProfile profile = CreatorProfile.newForUser("01HCREATORPROFILE1234", USER_ID, "Test Creator");
         profile.applyIdentityKyc("ABCDE1234F", "1234", "kyc/selfie-key.jpg");
         return profile;
+    }
+
+    /**
+     * [EV-020] Every withdrawal test past the guard needs the payout rail reported as usable.
+     * Stubbed per-test rather than in setUp so {@link #testWithdrawalRefusedWhenPayoutRailIsOff}
+     * can assert the OFF case, and so Mockito's strict stubbing flags any test that stops
+     * reaching the guard at all.
+     */
+    private void payoutRailIsOn() {
+        when(razorpayXClient.canInitiatePayouts()).thenReturn(true);
     }
 
     /** Mirrors {@code PayoutServiceTest#mockIdempotencyExecuteOnce}: run the supplier as the race winner. */
@@ -332,22 +352,52 @@ class WalletServiceTest {
 
     @Test
     @DisplayName(
-            "requestCreatorWithdrawal: happy path debits the ledger, resolves a real fund account, calls"
-                    + " RazorpayX, and persists a Payout row with no linked milestone")
-    void testWithdrawalInitiatesRealDisbursementAndPersistsPayout() {
+            "[EV-020] requestCreatorWithdrawal: with the payout rail switched off, nothing is"
+                    + " reserved, nothing is debited, and the balance is untouched")
+    void testWithdrawalRefusedWhenPayoutRailIsOff() {
+        when(razorpayXClient.canInitiatePayouts()).thenReturn(false);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                walletService.requestCreatorWithdrawal(
+                                        USER_ID, new BigDecimal("1000.00"), IDEMPOTENCY_KEY));
+
+        assertEquals("WITHDRAWALS_UNAVAILABLE", ex.getCode());
+        assertEquals(503, ex.getStatus().value());
+
+        // This is the whole point of the guard. The EV-003 restructure commits the wallet debit
+        // BEFORE the gateway call, so without refusing here an unprovisioned RazorpayX would take
+        // the creator's balance on every attempt and leave it gone until the orphan sweep reversed
+        // it. Under the old single-transaction shape the gateway's throw rolled the debit back;
+        // that safety net no longer exists, so it has to be replaced by not starting at all.
+        verify(creatorWithdrawalOps, never())
+                .reserveWithdrawal(any(), any(), any(), anyString(), anyInt());
+        verify(idempotencyService, never()).executeOnce(any(), any(), any(), any());
+        verify(razorpayXClient, never()).initiatePayout(any(), any(), any(), any());
+        verify(walletRepository, never()).findByOwnerId(any());
+    }
+
+    @Test
+    @DisplayName(
+            "[EV-003] requestCreatorWithdrawal: reserves (debit + PENDING payout) in one transaction,"
+                    + " calls RazorpayX with NO transaction open, then records the result in a second"
+                    + " one — in that order")
+    void testWithdrawalOrdersReserveThenGatewayThenRecord() {
         com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
-        when(walletRepository.findByOwnerIdForUpdate(USER_ID)).thenReturn(Optional.of(wallet));
+        payoutRailIsOn();
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
         when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
                         eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
                 .thenReturn(0L);
-        CreatorBankAccount bankAccount = primaryBankAccount();
         when(creatorBankAccountRepository.findByCreatorUserIdAndPrimaryTrue(USER_ID))
-                .thenReturn(Optional.of(bankAccount));
+                .thenReturn(Optional.of(primaryBankAccount()));
         when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(kycSubmittedProfile()));
-        com.influora.domain.entity.Wallet clearingWallet =
-                com.influora.domain.entity.Wallet.forWorkspace(PLATFORM_WALLET_ID, "platform-clearing");
-        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
         when(fundAccountService.resolveFundAccountId(USER_ID, BANK_ACCOUNT_ID)).thenReturn("fund_acc_1");
+        when(creatorWithdrawalOps.reserveWithdrawal(
+                        eq(USER_ID), eq("fund_acc_1"), eq(new BigDecimal("1000.00")), eq(SCOPED_KEY), anyInt()))
+                .thenReturn(new CreatorWithdrawalOps.ReservedWithdrawal("01HPAYOUTROW000000000", "INR"));
         when(razorpayXClient.initiatePayout(
                         eq("fund_acc_1"), eq(new BigDecimal("1000.00")), eq("INR"), eq(SCOPED_KEY)))
                 .thenReturn(new PayoutResult("payout_xyz", "queued"));
@@ -357,36 +407,111 @@ class WalletServiceTest {
                 walletService.requestCreatorWithdrawal(USER_ID, new BigDecimal("1000.00"), IDEMPOTENCY_KEY);
 
         assertEquals("payout_xyz", response.payoutId());
-        verify(ledgerService)
-                .post(
-                        eq(WALLET_ID),
-                        eq(PLATFORM_WALLET_ID),
-                        eq(new BigDecimal("1000.00")),
-                        eq("INR"),
-                        eq(WalletTransactionType.WITHDRAWAL),
-                        eq(TxnReferenceType.MANUAL),
-                        any(),
-                        eq("Creator withdrawal"),
-                        eq(SCOPED_KEY),
-                        eq(null));
-        verify(razorpayXClient, times(1))
-                .initiatePayout(eq("fund_acc_1"), eq(new BigDecimal("1000.00")), eq("INR"), eq(SCOPED_KEY));
 
-        ArgumentCaptor<Payout> captor = ArgumentCaptor.forClass(Payout.class);
-        verify(payoutRepository).save(captor.capture());
-        Payout saved = captor.getValue();
-        assertNull(saved.getMilestoneId(), "wallet withdrawal is not tied to a milestone");
-        assertEquals(USER_ID, saved.getCreatorUserId());
-        assertEquals("payout_xyz", saved.getRazorpayPayoutId());
-        assertEquals("fund_acc_1", saved.getFundAccountId());
-        assertEquals(SCOPED_KEY, saved.getIdempotencyKey());
+        // The ordering IS the fix. Before EV-003 all three of these happened inside one
+        // @Transactional method that held a pessimistic lock on the creator's wallet and on the
+        // platform clearing wallet across the RazorpayX call.
+        InOrder order = inOrder(creatorWithdrawalOps, razorpayXClient);
+        order.verify(creatorWithdrawalOps)
+                .reserveWithdrawal(eq(USER_ID), eq("fund_acc_1"), any(), eq(SCOPED_KEY), anyInt());
+        order.verify(razorpayXClient).initiatePayout(eq("fund_acc_1"), any(), eq("INR"), eq(SCOPED_KEY));
+        order.verify(creatorWithdrawalOps)
+                .recordGatewayResult("01HPAYOUTROW000000000", "payout_xyz", "queued");
+        order.verifyNoMoreInteractions();
+
+        // WalletService itself must no longer touch the ledger or the payouts table on this path:
+        // both writes belong to the one short transaction inside CreatorWithdrawalOps. If they
+        // leaked back out here they would run in whatever (or no) transaction this method has.
+        verify(ledgerService, never())
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(payoutRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName(
+            "[EV-014] requestCreatorWithdrawal: the key sent to the ledger, the payouts row and"
+                    + " RazorpayX fits every one of those columns even for an absurd client header")
+    void testWithdrawalKeyStaysBoundedForAnyClientHeader() {
+        String absurdClientKey = "k".repeat(4096);
+        String expectedKey = LedgerIdempotencyKeys.creatorWithdrawal(USER_ID, absurdClientKey);
+
+        com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
+        payoutRailIsOn();
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
+        when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
+                        eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
+                .thenReturn(0L);
+        when(creatorBankAccountRepository.findByCreatorUserIdAndPrimaryTrue(USER_ID))
+                .thenReturn(Optional.of(primaryBankAccount()));
+        when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(kycSubmittedProfile()));
+        when(fundAccountService.resolveFundAccountId(USER_ID, BANK_ACCOUNT_ID)).thenReturn("fund_acc_1");
+        when(creatorWithdrawalOps.reserveWithdrawal(any(), any(), any(), anyString(), anyInt()))
+                .thenReturn(new CreatorWithdrawalOps.ReservedWithdrawal("01HPAYOUTROW000000000", "INR"));
+        when(razorpayXClient.initiatePayout(any(), any(), any(), anyString()))
+                .thenReturn(new PayoutResult("payout_xyz", "queued"));
+        mockIdempotencyExecuteOnce();
+
+        walletService.requestCreatorWithdrawal(USER_ID, new BigDecimal("1000.00"), absurdClientKey);
+
+        ArgumentCaptor<String> gatewayKey = ArgumentCaptor.forClass(String.class);
+        verify(razorpayXClient).initiatePayout(any(), any(), any(), gatewayKey.capture());
+        assertEquals(expectedKey, gatewayKey.getValue());
+
+        // Asserted against the same constants LedgerIdempotencyKeyLengthTest reads back out of the
+        // migrations, so this cannot pass because someone picked a comfortable number here.
+        int budget =
+                LedgerIdempotencyKeys.WALLET_TRANSACTION_KEY_MAX_LENGTH
+                        - LedgerIdempotencyKeys.LEDGER_LEG_SUFFIX_LENGTH;
+        assertTrue(
+                expectedKey.length() <= budget,
+                "ledger key " + expectedKey.length() + " chars exceeds the " + budget + "-char budget");
+        assertTrue(expectedKey.length() <= LedgerIdempotencyKeys.PAYOUT_KEY_MAX_LENGTH);
+        assertTrue(expectedKey.length() <= LedgerIdempotencyKeys.RAZORPAYX_REFERENCE_ID_MAX_LENGTH);
+
+        verify(idempotencyService).executeOnce(eq(expectedKey), eq(USER_ID), anyString(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "[EV-003] a gateway failure leaves the reservation standing and does NOT record a result —"
+                    + " the PENDING row is what the orphan sweep needs to find")
+    void testWithdrawalGatewayFailureLeavesReservationForTheReaper() {
+        com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
+        payoutRailIsOn();
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
+        when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
+                        eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
+                .thenReturn(0L);
+        when(creatorBankAccountRepository.findByCreatorUserIdAndPrimaryTrue(USER_ID))
+                .thenReturn(Optional.of(primaryBankAccount()));
+        when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.of(kycSubmittedProfile()));
+        when(fundAccountService.resolveFundAccountId(USER_ID, BANK_ACCOUNT_ID)).thenReturn("fund_acc_1");
+        when(creatorWithdrawalOps.reserveWithdrawal(any(), any(), any(), anyString(), anyInt()))
+                .thenReturn(new CreatorWithdrawalOps.ReservedWithdrawal("01HPAYOUTROW000000000", "INR"));
+        when(razorpayXClient.initiatePayout(any(), any(), any(), anyString()))
+                .thenThrow(new RuntimeException("connect timed out"));
+        mockIdempotencyExecuteOnce();
+
+        assertThrows(
+                RuntimeException.class,
+                () ->
+                        walletService.requestCreatorWithdrawal(
+                                USER_ID, new BigDecimal("1000.00"), IDEMPOTENCY_KEY));
+
+        // Exactly one reservation, and no result recorded. Recording one here would claim an
+        // outcome the gateway never gave us; reversing here would be worse still, because the
+        // request may have reached RazorpayX and only the response been lost.
+        verify(creatorWithdrawalOps, times(1))
+                .reserveWithdrawal(any(), any(), any(), anyString(), anyInt());
+        verify(creatorWithdrawalOps, never()).recordGatewayResult(any(), any(), any());
     }
 
     @Test
     @DisplayName("requestCreatorWithdrawal: BANK_ACCOUNT_NOT_FOUND (409) when the creator has no primary bank/UPI account")
     void testWithdrawalRequiresPrimaryBankAccount() {
         com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
-        when(walletRepository.findByOwnerIdForUpdate(USER_ID)).thenReturn(Optional.of(wallet));
+        payoutRailIsOn();
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
         when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
                         eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
                 .thenReturn(0L);
@@ -411,7 +536,8 @@ class WalletServiceTest {
                     + " submitted identity KYC — no CreatorProfile row bearing identityKycStatus at all")
     void testWithdrawalRequiresIdentityKycNoProfile() {
         com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
-        when(walletRepository.findByOwnerIdForUpdate(USER_ID)).thenReturn(Optional.of(wallet));
+        payoutRailIsOn();
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
         when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
                         eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
                 .thenReturn(0L);
@@ -439,7 +565,8 @@ class WalletServiceTest {
                     + " /onboarding/creator/kyc)")
     void testWithdrawalRequiresIdentityKycUnverified() {
         com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
-        when(walletRepository.findByOwnerIdForUpdate(USER_ID)).thenReturn(Optional.of(wallet));
+        payoutRailIsOn();
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
         when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
                         eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
                 .thenReturn(0L);
@@ -466,7 +593,8 @@ class WalletServiceTest {
     @DisplayName("requestCreatorWithdrawal: INSUFFICIENT_BALANCE (400) when the wallet balance is below the requested amount")
     void testWithdrawalInsufficientBalance() {
         com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("100.00"));
-        when(walletRepository.findByOwnerIdForUpdate(USER_ID)).thenReturn(Optional.of(wallet));
+        payoutRailIsOn();
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
 
         ApiException ex =
                 assertThrows(
@@ -485,7 +613,8 @@ class WalletServiceTest {
                     + " instead of calling RazorpayX again")
     void testWithdrawalRetryReplaysPersistedPayout() {
         com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
-        when(walletRepository.findByOwnerIdForUpdate(USER_ID)).thenReturn(Optional.of(wallet));
+        payoutRailIsOn();
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
         when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
                         eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
                 .thenReturn(0L);
@@ -522,7 +651,8 @@ class WalletServiceTest {
                     + " retry-safe 409, never a generic 500")
     void testWithdrawalInProgressNoVisibleRowThrows409() {
         com.influora.domain.entity.Wallet wallet = userWallet(new BigDecimal("5000.00"));
-        when(walletRepository.findByOwnerIdForUpdate(USER_ID)).thenReturn(Optional.of(wallet));
+        payoutRailIsOn();
+        when(walletRepository.findByOwnerId(USER_ID)).thenReturn(Optional.of(wallet));
         when(walletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter(
                         eq(WALLET_ID), eq(WalletTransactionType.WITHDRAWAL), any()))
                 .thenReturn(0L);

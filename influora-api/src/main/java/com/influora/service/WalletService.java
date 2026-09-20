@@ -72,7 +72,12 @@ public class WalletService {
     private final WalletLedgerService ledgerService;
     private final WalletTransactionRepository walletTransactionRepository;
     private final PaymentMilestoneRepository paymentMilestoneRepository;
-    private final PlatformWalletService platformWalletService;
+    /**
+     * [EV-003] The two short, real transactions a withdrawal is made of. A separate bean
+     * because Spring's {@code @Transactional} is a no-op on a self-invoked method — see that
+     * class's javadoc for the full ordering and why the gateway call sits between them.
+     */
+    private final CreatorWithdrawalOps creatorWithdrawalOps;
     private final CreatorBankAccountRepository creatorBankAccountRepository;
     private final RazorpayXClient razorpayXClient;
     private final RazorpayFundAccountService fundAccountService;
@@ -88,7 +93,7 @@ public class WalletService {
             WalletLedgerService ledgerService,
             WalletTransactionRepository walletTransactionRepository,
             PaymentMilestoneRepository paymentMilestoneRepository,
-            PlatformWalletService platformWalletService,
+            CreatorWithdrawalOps creatorWithdrawalOps,
             CreatorBankAccountRepository creatorBankAccountRepository,
             RazorpayXClient razorpayXClient,
             RazorpayFundAccountService fundAccountService,
@@ -100,7 +105,7 @@ public class WalletService {
         this.ledgerService = ledgerService;
         this.walletTransactionRepository = walletTransactionRepository;
         this.paymentMilestoneRepository = paymentMilestoneRepository;
-        this.platformWalletService = platformWalletService;
+        this.creatorWithdrawalOps = creatorWithdrawalOps;
         this.creatorBankAccountRepository = creatorBankAccountRepository;
         this.razorpayXClient = razorpayXClient;
         this.fundAccountService = fundAccountService;
@@ -241,12 +246,40 @@ public class WalletService {
      * PayoutService#doQueuePayout} (resolve a real fund account, call RazorpayX, persist {@code
      * Payout}).
      *
-     * <p><b>[B10/M-6]</b> {@code Idempotency-Key} is now mandatory (the previous fallback derived a
+     * <p><b>[B10/M-6]</b> {@code Idempotency-Key} is mandatory (the previous fallback derived a
      * fresh key on every call missing the header — a new ULID each time — so a client retry with no
-     * header double-debited the wallet and could double-disburse). The client-supplied key is also
-     * never passed to the ledger/gateway raw — it is namespaced per user+endpoint before use.
+     * header double-debited the wallet and could double-disburse). The client-supplied key is never
+     * passed to the ledger/gateway raw.
+     *
+     * <p><b>[EV-014] The namespacing is now a hash, not a concatenation.</b> It used to be {@code
+     * "creator-withdraw:" + userId + ":" + <client header>} — 80 characters for a ULID user id and
+     * the UUID the frontend sends — and that string is written to {@code
+     * wallet_transactions.idempotency_key} {@code VARCHAR(64)} (plus a {@code ":D"}/{@code ":C"}
+     * leg suffix), to {@code payouts.idempotency_key} {@code VARCHAR(64)}, and to RazorpayX as
+     * {@code reference_id}. Every creator withdrawal would have failed on the first one the moment
+     * payouts were switched on. {@link LedgerIdempotencyKeys#creatorWithdrawal} replaces it with a
+     * 36-character scoped digest that fits all three by construction; see that class for the full
+     * measurement, and {@code LedgerIdempotencyKeyLengthTest} for the regression guard covering
+     * every ledger caller, not just this one.
+     *
+     * <p><b>[EV-003] This method is deliberately NOT {@code @Transactional}.</b> It used to be, and
+     * the RazorpayX call happened inside that transaction while it held pessimistic write locks on
+     * the creator's wallet and on the platform clearing wallet — so a slow gateway blocked every
+     * other wallet posting on the platform, and a request that reached RazorpayX but whose response
+     * was lost rolled the debit back while the bank transfer stayed in flight. The work is now
+     * three ordered steps: {@link CreatorWithdrawalOps#reserveWithdrawal} (one short transaction:
+     * PENDING payout row + ledger debit, locks released at its commit), then the gateway call with
+     * no transaction open, then {@link CreatorWithdrawalOps#recordGatewayResult} (a second short
+     * transaction). {@code executeOnce} marks the reservation COMPLETED only after that last commit
+     * returns. Adding {@code @Transactional} back to this method — or to {@code
+     * processWithdrawal} if it were ever made public — reinstates the defect; {@code
+     * WalletServiceWithdrawalTransactionBoundaryTest} fails if anyone does.
+     *
+     * <p>Not being transactional also fixes something {@link IdempotencyService}'s own javadoc
+     * calls out by name: {@code executeOnce} reserves its key in a {@code REQUIRES_NEW}
+     * transaction, and calling it from inside an ambient transaction (as this method did) meant the
+     * insert-first-wins guarantee was not the arbiter it is supposed to be.
      */
-    @Transactional
     public CreatorWithdrawResponse requestCreatorWithdrawal(
             String userId, BigDecimal amount, String idempotencyKey) {
         validateCreatorWithdrawalAmount(amount);
@@ -258,11 +291,34 @@ public class WalletService {
                     HttpStatus.BAD_REQUEST);
         }
 
-        // Pessimistic owner lock serializes concurrent withdrawals for the same creator so
-        // balance and daily-count checks cannot race ahead of ledgerService.post() (Kabir M-18-1/M-18-2).
+        // [EV-020, and the one way the EV-003 restructure could have made things worse] Refuse
+        // BEFORE anything is reserved or debited when the payout rail is switched off.
+        //
+        // Payouts are off by default: RazorpayXClient#requireConfiguredOutsideDev throws outside dev
+        // when the RazorpayX credentials are still the application.yml placeholders. Under the OLD
+        // single-transaction shape that throw rolled the wallet debit back with it, so a creator on
+        // a platform with payouts disabled simply got an error and kept their balance. Under the new
+        // shape the debit has already COMMITTED by the time the gateway is called, so without this
+        // guard every attempted withdrawal would take the creator's balance away and leave it away
+        // until PayoutOrphanedDebitSweepJob reversed it — up to ~25 minutes later. Checking first
+        // costs nothing and is strictly correct: when the gateway is unprovisioned we know for
+        // certain no request was sent, which is the one case where refusing outright is safe.
+        if (!razorpayXClient.canInitiatePayouts()) {
+            throw new ApiException(
+                    "WITHDRAWALS_UNAVAILABLE",
+                    "Withdrawals are not available right now. Your balance is unchanged.",
+                    HttpStatus.SERVICE_UNAVAILABLE);
+        }
+
+        // Cheap pre-flight only, deliberately NOT under a lock: these exist so an obviously-bad
+        // request gets a clean 400/409 without ever reserving an idempotency key (the same
+        // validate-before-executeOnce ordering PayoutService#validateForPayout uses, so a bad input
+        // can never reserve-then-FAIL a key and wedge a later corrected retry). The authoritative
+        // balance and daily-cap checks run again under the wallet lock inside
+        // CreatorWithdrawalOps#reserveWithdrawal, which is the only place they are load-bearing.
         Wallet wallet =
                 walletRepository
-                        .findByOwnerIdForUpdate(userId)
+                        .findByOwnerId(userId)
                         .orElseThrow(
                                 () ->
                                         new ApiException(
@@ -300,15 +356,15 @@ public class WalletService {
 
         requireIdentityKycSubmitted(userId);
 
-        // Namespaced, never the raw client header — see method javadoc [M-6].
-        String scopedKey = "creator-withdraw:" + userId + ":" + idempotencyKey;
+        // Bounded scoped digest, never the raw client header — see method javadoc [EV-014].
+        String scopedKey = LedgerIdempotencyKeys.creatorWithdrawal(userId, idempotencyKey);
 
         try {
             return idempotencyService.executeOnce(
                     scopedKey,
                     userId,
                     "wallet.withdraw",
-                    () -> doProcessWithdrawal(wallet, bankAccount, amount, userId, scopedKey));
+                    () -> processWithdrawal(userId, bankAccount.getId(), amount, scopedKey));
         } catch (IdempotencyService.AlreadyInProgressException
                 | IdempotencyService.AlreadyCompletedException raced) {
             CreatorWithdrawResponse replay = replayWithdrawalIfPresent(scopedKey);
@@ -371,45 +427,43 @@ public class WalletService {
     }
 
     /**
-     * Runs ONLY inside {@code executeOnce} — {@code wallet}/{@code bankAccount} were already
-     * loaded/validated before the idempotency key was reserved (mirrors {@code
-     * PayoutService#doQueuePayout}). Debits the creator's wallet via the ledger (its own unique
-     * idempotency-key constraint backstops this against a double-debit even if this method were
-     * somehow re-entered), resolves a real RazorpayX fund account, initiates the payout, and
-     * persists the durable {@link Payout} row.
+     * [EV-003] The body of one withdrawal attempt, run inside {@code executeOnce} and — this is the
+     * whole point — with NO transaction open around it. Three ordered steps, each commented below
+     * with what a crash at that point leaves behind and who cleans it up.
+     *
+     * <p>Private, so it cannot accidentally acquire transactional behaviour later: a private method
+     * is never routed through Spring's proxy, so annotating it would be silently inert rather than
+     * quietly reintroducing EV-003.
      */
-    @Transactional
-    protected CreatorWithdrawResponse doProcessWithdrawal(
-            Wallet wallet, CreatorBankAccount bankAccount, BigDecimal amount, String userId, String scopedKey) {
-        Wallet clearingWallet = platformWalletService.requireClearingWallet();
-        ledgerService.post(
-                wallet.getId(),
-                clearingWallet.getId(),
-                amount,
-                wallet.getCurrency(),
-                WalletTransactionType.WITHDRAWAL,
-                TxnReferenceType.MANUAL,
-                Ulids.newUlid(),
-                "Creator withdrawal",
-                scopedKey,
-                null);
+    private CreatorWithdrawResponse processWithdrawal(
+            String userId, String bankAccountId, BigDecimal amount, String scopedKey) {
 
-        String fundAccountId = fundAccountService.resolveFundAccountId(userId, bankAccount.getId());
+        // Step 0 — resolve a real RazorpayX fund account. This is itself an outbound call (it
+        // lazily creates the Contact and Fund Account on first use), which is exactly why it is out
+        // here rather than inside the reservation transaction: it must not run while a wallet lock
+        // is held either. It is idempotent on the creator's stored fund-account id.
+        String fundAccountId = fundAccountService.resolveFundAccountId(userId, bankAccountId);
+
+        // Step 1 — ONE short transaction: PENDING payout row + ledger debit, wallet locks released
+        // at its commit. A crash before the commit leaves nothing at all; after it, exactly one
+        // PENDING row and exactly one debit. Re-entrant on scopedKey: a retry reuses both.
+        CreatorWithdrawalOps.ReservedWithdrawal reserved =
+                creatorWithdrawalOps.reserveWithdrawal(
+                        userId, fundAccountId, amount, scopedKey, MAX_CREATOR_WITHDRAWALS_PER_DAY);
+
+        // Step 2 — the gateway, with no transaction open. A timeout/exception here propagates:
+        // executeOnce marks the reservation FAILED (reclaimable, so a retry re-enters this method
+        // and step 1 dedupes rather than debiting again), and the PENDING row left behind is what
+        // PayoutOrphanedDebitSweepJob sweeps if no retry ever comes. Deliberately NOT reversed
+        // here: the request may have reached RazorpayX and only its response been lost, so the
+        // reaper's re-drive-then-reverse is the only safe resolution.
         RazorpayXClient.PayoutResult payoutResult =
-                razorpayXClient.initiatePayout(fundAccountId, amount, wallet.getCurrency(), scopedKey);
+                razorpayXClient.initiatePayout(fundAccountId, amount, reserved.currency(), scopedKey);
 
-        payoutRepository.save(
-                Payout.createQueued(
-                        Ulids.newUlid(),
-                        null, // no linked milestone — lump-sum wallet withdrawal
-                        userId,
-                        payoutResult.payoutId(),
-                        fundAccountId,
-                        amount,
-                        wallet.getCurrency(),
-                        payoutResult.status(),
-                        scopedKey,
-                        Instant.now()));
+        // Step 3 — second short transaction. Only once this commits does executeOnce mark the
+        // idempotency row COMPLETED, so a COMPLETED key always implies a durably-recorded outcome.
+        creatorWithdrawalOps.recordGatewayResult(
+                reserved.payoutRowId(), payoutResult.payoutId(), payoutResult.status());
 
         return new CreatorWithdrawResponse(payoutResult.payoutId());
     }

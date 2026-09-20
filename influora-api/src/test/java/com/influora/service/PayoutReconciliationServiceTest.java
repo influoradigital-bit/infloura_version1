@@ -181,7 +181,7 @@ class PayoutReconciliationServiceTest {
                         eq(TxnReferenceType.MILESTONE),
                         eq(MILESTONE_ID),
                         anyString(),
-                        eq("payout-reversed:pending:" + PAYOUT_ID),
+                        eq(PayoutReconciliationService.reversalKey("pending:" + PAYOUT_ID)),
                         anyString());
     }
 
@@ -231,7 +231,7 @@ class PayoutReconciliationServiceTest {
                         eq(TxnReferenceType.MILESTONE),
                         eq(MILESTONE_ID),
                         anyString(),
-                        eq("payout-reversed:payout_xyz"),
+                        eq(PayoutReconciliationService.reversalKey("payout_xyz")),
                         eq("payout_xyz"));
     }
 
@@ -281,7 +281,7 @@ class PayoutReconciliationServiceTest {
                         eq(TxnReferenceType.MILESTONE),
                         eq(MILESTONE_ID),
                         anyString(),
-                        eq("payout-reversed:payout_xyz"),
+                        eq(PayoutReconciliationService.reversalKey("payout_xyz")),
                         eq("payout_xyz"));
     }
 
@@ -311,7 +311,7 @@ class PayoutReconciliationServiceTest {
                         eq(TxnReferenceType.MILESTONE),
                         eq(MILESTONE_ID),
                         anyString(),
-                        eq("payout-reversed:payout_xyz"),
+                        eq(PayoutReconciliationService.reversalKey("payout_xyz")),
                         eq("payout_xyz"));
     }
 
@@ -401,7 +401,7 @@ class PayoutReconciliationServiceTest {
                         eq(TxnReferenceType.MILESTONE),
                         eq(MILESTONE_ID),
                         anyString(),
-                        eq("payout-reversed:payout_xyz"),
+                        eq(PayoutReconciliationService.reversalKey("payout_xyz")),
                         anyString());
         verify(ledgerService, times(1))
                 .post(
@@ -505,7 +505,7 @@ class PayoutReconciliationServiceTest {
                         eq(TxnReferenceType.MILESTONE),
                         eq(MILESTONE_ID),
                         anyString(),
-                        eq("payout-reversed:payout_xyz"),
+                        eq(PayoutReconciliationService.reversalKey("payout_xyz")),
                         anyString());
 
         // The NEW attempt (pout_new) now reverses via a real webhook.
@@ -513,7 +513,7 @@ class PayoutReconciliationServiceTest {
 
         assertEquals("reversed", payout.getStatus());
         // The RETRY debit gets its OWN, distinct re-credit -- this is the F1 fix: before it, this
-        // call collided with the "payout-reversed:payout_xyz" key above and silently wrote nothing.
+        // call collided with the reversal key for "payout_xyz" above and silently wrote nothing.
         verify(ledgerService, times(1))
                 .post(
                         eq(CLEARING_WALLET_ID),
@@ -524,7 +524,7 @@ class PayoutReconciliationServiceTest {
                         eq(TxnReferenceType.MILESTONE),
                         eq(MILESTONE_ID),
                         anyString(),
-                        eq("payout-reversed:pout_new"),
+                        eq(PayoutReconciliationService.reversalKey("pout_new")),
                         eq("pout_new"));
         // The OLD (pre-fix) collision key must never be used -- regression guard.
         verify(ledgerService, never())
@@ -537,7 +537,7 @@ class PayoutReconciliationServiceTest {
                         any(),
                         any(),
                         any(),
-                        eq("payout-reversed:" + PAYOUT_ID),
+                        eq(PayoutReconciliationService.reversalKey(PAYOUT_ID)),
                         any());
     }
 
@@ -632,6 +632,128 @@ class PayoutReconciliationServiceTest {
                         anyString(),
                         eq(PayoutReconciliationService.retryReversalKey(expectedAttemptKey)),
                         any());
+    }
+
+    // ------------------------------------------------------------------
+    // [EV-003] The SAME sweep, for a creator wallet withdrawal. These rows have no milestone --
+    // payouts.milestone_id is nullable precisely for them -- so the key the sweep looks the debit
+    // up by cannot be derived from a milestone id.
+    // ------------------------------------------------------------------
+
+    private static final String WITHDRAWAL_KEY =
+            LedgerIdempotencyKeys.creatorWithdrawal(CREATOR_ID, "af1c0de0-0000-4000-8000-000000000001");
+
+    private Payout pendingWithdrawal() {
+        return Payout.createPending(
+                PAYOUT_ID, null, CREATOR_ID, FUND_ACCOUNT_ID, AMOUNT, "INR", WITHDRAWAL_KEY, Instant.now());
+    }
+
+    @Test
+    @DisplayName(
+            "[EV-003] a withdrawal whose gateway result was never recorded IS resolvable -- the sweep"
+                    + " finds its debit by the payout row's own key, not by a milestone id")
+    void testOrphanedWithdrawalIsResolved() {
+        Payout payout = pendingWithdrawal();
+        // Before the fix the sweep built "payout-debit:" + getMilestoneId(), which for a withdrawal
+        // is the literal string "payout-debit:null:D" -- matching no ledger row ever. Every orphaned
+        // withdrawal was therefore reported as "no debit posted, nothing orphaned" and the creator
+        // stayed permanently short. This stub is the row that really exists.
+        when(walletTransactionRepository.findByIdempotencyKey(WITHDRAWAL_KEY + ":D"))
+                .thenReturn(Optional.of(withdrawalDebitLeg()));
+        when(razorpayXClient.initiatePayout(FUND_ACCOUNT_ID, AMOUNT, "INR", WITHDRAWAL_KEY))
+                .thenReturn(new PayoutResult("payout_recovered_w", "queued"));
+
+        service.reconcileOrphanedPendingPayout(payout);
+
+        assertEquals("queued", payout.getStatus());
+        assertEquals("payout_recovered_w", payout.getRazorpayPayoutId());
+        verify(payoutRepository, times(1)).save(payout);
+        // Re-drive first, reverse only on failure: the original call may have reached RazorpayX and
+        // only its response been lost, so reversing here would be the double-pay hole.
+        verify(ledgerService, never())
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "[EV-003] an orphaned withdrawal whose gateway retry also fails is reversed as MANUAL,"
+                    + " not as a MILESTONE reference pointing at nothing")
+    void testOrphanedWithdrawalReversalIsNotLabelledMilestone() {
+        Payout payout = pendingWithdrawal();
+        when(walletTransactionRepository.findByIdempotencyKey(WITHDRAWAL_KEY + ":D"))
+                .thenReturn(Optional.of(withdrawalDebitLeg()));
+        when(razorpayXClient.initiatePayout(FUND_ACCOUNT_ID, AMOUNT, "INR", WITHDRAWAL_KEY))
+                .thenThrow(new RuntimeException("connect timed out"));
+        when(platformWalletService.requireClearingWallet())
+                .thenReturn(Wallet.forWorkspace(CLEARING_WALLET_ID, "platform-clearing"));
+        when(walletService.requireOrCreateUserWallet(CREATOR_ID))
+                .thenReturn(Wallet.forUser(CREATOR_WALLET_ID, CREATOR_ID));
+
+        service.reconcileOrphanedPendingPayout(payout);
+
+        assertEquals("reversed", payout.getStatus());
+        verify(ledgerService, times(1))
+                .post(
+                        eq(CLEARING_WALLET_ID),
+                        eq(CREATOR_WALLET_ID),
+                        eq(AMOUNT),
+                        eq("INR"),
+                        eq(WalletTransactionType.PAYOUT),
+                        // MANUAL + the payout row id. Labelling it MILESTONE with a null id writes a
+                        // row whose reference_type points at nothing, and idx_wtx_reference is the
+                        // index the creator's own payout history is read through.
+                        eq(TxnReferenceType.MANUAL),
+                        eq(PAYOUT_ID),
+                        anyString(),
+                        eq(PayoutReconciliationService.reversalKey("pending:" + PAYOUT_ID)),
+                        anyString());
+    }
+
+    @Test
+    @DisplayName("[EV-003] a withdrawal with no debit posted is still correctly read as not-orphaned")
+    void testWithdrawalWithNoDebitIsNotOrphaned() {
+        Payout payout = pendingWithdrawal();
+        when(walletTransactionRepository.findByIdempotencyKey(WITHDRAWAL_KEY + ":D"))
+                .thenReturn(Optional.empty());
+
+        service.reconcileOrphanedPendingPayout(payout);
+
+        // Falsification guard for the two tests above: if queueTimeDebitKey silently returned
+        // something that matches nothing, they would still pass only because their own stub is
+        // keyed the same wrong way. This one asserts the sweep genuinely branches on the lookup.
+        verify(razorpayXClient, never()).initiatePayout(any(), any(), any(), any());
+        verify(payoutRepository, never()).save(any());
+        assertEquals(Payout.STATUS_PENDING, payout.getStatus());
+    }
+
+    @Test
+    @DisplayName("[EV-003] the two payout kinds derive genuinely different debit keys")
+    void testQueueTimeDebitKeyBranchesOnMilestone() {
+        assertEquals(
+                "payout-debit:" + MILESTONE_ID + ":D",
+                PayoutReconciliationService.queueTimeDebitKey(pendingPayout()));
+        assertEquals(
+                WITHDRAWAL_KEY + ":D",
+                PayoutReconciliationService.queueTimeDebitKey(pendingWithdrawal()));
+        assertNotEquals(
+                PayoutReconciliationService.queueTimeDebitKey(pendingPayout()),
+                PayoutReconciliationService.queueTimeDebitKey(pendingWithdrawal()));
+    }
+
+    private WalletTransaction withdrawalDebitLeg() {
+        return WalletTransaction.builder()
+                .id("01HDEBITLEGW234567890")
+                .walletId(CREATOR_WALLET_ID)
+                .groupId("01HGROUPW234567890AB")
+                .direction(TxnDirection.DEBIT)
+                .type(WalletTransactionType.WITHDRAWAL)
+                .amount(AMOUNT)
+                .currency("INR")
+                .balanceAfter(BigDecimal.ZERO)
+                .referenceType(TxnReferenceType.MANUAL)
+                .referenceId(PAYOUT_ID)
+                .idempotencyKey(WITHDRAWAL_KEY + ":D")
+                .build();
     }
 
     private WalletTransaction debitLeg() {
