@@ -2,7 +2,7 @@
 
 > ⚠️ **v0 DRAFT — PENDING INDIAN LEGAL COUNSEL / CA REVIEW. NOT LEGALLY BINDING. Ships `noindex` until validated.**
 
-We handle the tax complexity so you don't have to. This policy explains how Tax Deducted at Source works on creator Payouts — the exact rate is confirmed by our Chartered Accountant before publish.
+This policy explains how Tax Deducted at Source (TDS) relates to creator Payouts on Influora. Influora does not currently calculate, deduct or file TDS automatically in the app, and the invoices the app generates do not include a TDS line.
 
 **Last updated: 2026-07-13**
 
@@ -10,19 +10,17 @@ We handle the tax complexity so you don't have to. This policy explains how Tax 
 
 ## 1. What TDS is and why it applies
 
-**TDS ("Tax Deducted at Source")** is tax withheld from a payment before it reaches you, and paid directly to the Indian government on your behalf. Under **Section 194-O of the Income Tax Act**, Influora acts as an **e-commerce operator** facilitating payment between brands and creators, which means we are required to deduct TDS from creator Payouts before releasing them.
+**TDS ("Tax Deducted at Source")** is tax withheld from a payment before it reaches you, and paid directly to the Indian government on your behalf. Depending on how a payment is structured, provisions such as **Section 194-O of the Income Tax Act** (e-commerce operators) may apply. `[PENDING CA / LEGAL REVIEW — which provision, if any, applies to Influora Payouts]`
 
-This applies to every creator Payout released through payment protection, regardless of Campaign size, unless a specific exemption applies (see below).
+Where TDS applies to a creator Payout, it is handled as Indian tax law requires. It is not calculated automatically by the Influora app today.
 
 ## 2. How it works, step by step
 
-1. A Campaign completes and payment protection is approved for release.
-2. We calculate the **gross Payout** (the full amount owed to the creator before deductions).
-3. We deduct:
-   - The Platform commission (see our Pricing page for the current rate)
-   - **TDS** at the applicable rate under Section 194-O
-4. The **net Payout** — what actually reaches your bank account — is gross, minus commission, minus TDS.
-5. We issue a TDS certificate (Form 16A) so you can claim credit for the deducted tax when filing your income tax return.
+1. A Campaign completes and the brand approves the Deliverable.
+2. The reserved amount is released to your Influora wallet, minus the creator commission (see our Pricing page for the current rate).
+3. An invoice is generated for the Payout. It does not show a TDS line.
+4. You withdraw your balance to your bank account or UPI.
+5. If tax is deducted at source when a withdrawal is paid out, we record the amount against that payout and can share the details with you — write to `info@influora.in`.
 
 ## 3. The TDS rate
 
@@ -41,20 +39,20 @@ We are not publishing a specific percentage here until our Chartered Accountant 
 
 TDS (Section 194-O) and GST on the Platform fee are two different taxes, paid by different parties, and we do not combine them in this document:
 
-- **TDS** is deducted from the **creator's Payout** and paid to the government on the creator's behalf.
+- **TDS**, where it applies, is deducted from the **creator's Payout** and paid to the government on the creator's behalf.
 - **GST** applies to **Influora's Platform fee** (charged to brands) and is a separate line item — see our Pricing page.
 
-Don't confuse a TDS deduction on your Payout with GST charged on the Platform fee — they appear as separate entries on your invoice/certificate.
+Don't confuse a TDS deduction on your Payout with GST charged on the Platform fee — they are separate taxes and are never combined into one figure.
 
 ## 6. Your TDS certificate
 
-After each Payout, we provide a statement showing the gross amount, commission deducted, TDS deducted, and net Payout. Form 16A certificates are issued per the timelines required under Indian tax law, so you can claim TDS credit when filing your return.
+TDS statements and Form 16A certificates are not available in the Influora app yet. Where tax has been deducted from your Payout, a certificate will be provided as Indian tax law requires. `[PENDING CA / LEGAL REVIEW — certificate process and timelines]`
 
 ## 7. What we recommend
 
 - Keep your PAN updated and verified in KYC at all times.
 - Consult your own tax advisor or CA for how TDS affects your personal tax filing — this policy explains the platform mechanism, not personal tax advice.
-- Download and retain your TDS certificates for your records.
+- Keep your Payout invoices, and any TDS certificates you receive, for your records.
 
 ## 8. Changes to this policy
 

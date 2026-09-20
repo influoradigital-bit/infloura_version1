@@ -2,6 +2,7 @@ package com.influora.repository;
 
 import com.influora.domain.entity.WalletTransaction;
 import com.influora.domain.enums.TxnDirection;
+import com.influora.domain.enums.TxnReferenceType;
 import com.influora.domain.enums.WalletTransactionType;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -90,4 +91,30 @@ public interface WalletTransactionRepository extends JpaRepository<WalletTransac
                     + "WHERE t.type = :type AND t.createdAt <= :asOf")
     BigDecimal sumAmountByTypeAndCreatedAtBefore(
             @Param("type") WalletTransactionType type, @Param("asOf") Instant asOf);
+
+    /**
+     * F-0857/F-0858 fix — sums the DEBIT leg only of every ledger posting already made against
+     * {@code (referenceType, referenceId)} of the given {@code type}, so {@code
+     * BrandCampaignFeeService.chargeOnPublish} can compute "how much of this campaign's publish fee
+     * has already been paid" and charge only the delta on a resume. DEBIT-only (not both legs of
+     * each balanced posting) so a campaign with N postings sums to the true cumulative amount moved,
+     * not 2x it — every {@link WalletLedgerService#post} call writes one DEBIT leg and one CREDIT leg
+     * per posting, both carrying the same {@code referenceType}/{@code referenceId}/{@code type}.
+     * {@code referenceType = CAMPAIGN} scopes this to the brand-side publish fee specifically:
+     * {@code PlatformFeeService.deductAtRelease} (the OTHER {@code PLATFORM_FEE} poster in this
+     * codebase, the creator-side release fee) always posts with {@code referenceType = MILESTONE},
+     * never {@code CAMPAIGN}, so the two fee types can never be conflated here. {@code
+     * COALESCE(...,0)} matches this repository's zero-for-no-rows convention (see {@link
+     * #sumAmountByTypeAndCreatedAtBefore}) — a campaign that has never been charged sums to zero, not
+     * {@code null}.
+     */
+    @Query(
+            "SELECT COALESCE(SUM(t.amount), 0) FROM WalletTransaction t "
+                    + "WHERE t.referenceType = :referenceType AND t.referenceId = :referenceId "
+                    + "AND t.type = :type AND t.direction = :direction")
+    BigDecimal sumAmountByReferenceAndTypeAndDirection(
+            @Param("referenceType") TxnReferenceType referenceType,
+            @Param("referenceId") String referenceId,
+            @Param("type") WalletTransactionType type,
+            @Param("direction") TxnDirection direction);
 }

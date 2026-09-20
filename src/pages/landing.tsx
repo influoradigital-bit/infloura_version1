@@ -88,7 +88,7 @@ const FAQS = [
   {
     question: 'How do I pay an influencer safely?',
     answer:
-      'The safe pattern is to never pay in full up front and never expect a creator to work with nothing secured. On Influora the brand deposits the deal amount with a licensed payment partner when the contract is e-signed, the creator delivers, the brand approves, and only then does the payment release \u2014 so neither side is ever exposed to the other.',
+      'The safe pattern is to never pay in full up front and never expect a creator to work with nothing secured. On Influora the brand reserves the deal amount in its Influora wallet when the contract is e-signed, the creator delivers, the brand approves, and only then does the payment release \u2014 so neither side is ever exposed to the other.',
   },
   {
     question: 'What is a Deal Room?',
@@ -131,7 +131,7 @@ const FEATURES = [
   {
     icon: Wallet,
     title: 'Clean payouts',
-    body: 'Invoices generated with any recorded TDS shown, UPI or bank transfer — creators see gross → net clearly.',
+    body: 'Invoices generated on every payout, and withdrawals to UPI or a bank account.',
   },
   {
     icon: Zap,
@@ -220,7 +220,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Influencer Marketing Platform for India | Influora"
-        description="Hire verified Indian creators, agree terms in one Deal Room, pay only on approval. Contracts, payment protection, TDS shown on invoices. Free to start."
+        description="Hire verified Indian creators, agree terms in one Deal Room, pay only on approval. Contracts, payment protection and invoices built in. Free to start."
         canonical="/"
       />
       <JsonLd data={getOrganizationSchema()} />
@@ -255,7 +255,7 @@ export default function LandingPage() {
             'Deal Room negotiation',
             'Auto-generated e-signed contracts',
             'Protected payments released on approval',
-            'Invoice generation with recorded TDS shown',
+            'Invoice generation on every payout',
             'Hype multi-creator campaigns',
             'Per-creator sales and coupon tracking',
           ],
@@ -666,7 +666,7 @@ export default function LandingPage() {
               <h2 className="text-3xl font-semibold">Creators earn three ways</h2>
               <p className="mt-3 text-muted-foreground">
                 Every stream pays through the same protected rail — funds lock before you start, payout lands
-                after approval, invoice generated for you showing any recorded TDS.
+                after approval, invoice generated for you.
               </p>
             </FadeUp>
             <StaggerContainer className="mt-12 grid gap-8 md:grid-cols-3 md:gap-0 md:divide-x md:divide-border/60">

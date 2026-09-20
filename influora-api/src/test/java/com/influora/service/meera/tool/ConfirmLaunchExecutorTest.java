@@ -34,6 +34,7 @@ import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.MeeraToolCallRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.BrandCampaignFeeService;
+import com.influora.service.CampaignActivationGuard;
 import com.influora.service.IdempotencyService;
 import com.influora.service.meera.AICreditService;
 import com.influora.web.dto.meera.MeeraToolDtos.ConfirmLaunchResult;
@@ -117,7 +118,7 @@ class ConfirmLaunchExecutorTest {
                         auditLogService,
                         aiCreditService,
                         idempotencyService,
-                        brandCampaignFeeService,
+                        new CampaignActivationGuard(escrowHoldRepository, brandCampaignFeeService),
                         meeraInteractionLogService,
                         null);
     }

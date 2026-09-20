@@ -33,7 +33,7 @@ const WHY_IT_MATTERS = [
   {
     icon: Wallet,
     title: 'For creators',
-    body: "Guaranteed payment. The brand's money is already locked and protected before you film a single reel, so there's no invoice-chasing, no \"will pay you next week.\"",
+    body: "Money set aside first. The brand's payment is already reserved in their Influora wallet before you film a single reel, so there's no invoice-chasing, no \"will pay you next week.\"",
   },
 ];
 
@@ -59,12 +59,12 @@ const FAQS = [
   {
     question: 'How does payment protection work, in plain terms?',
     answer:
-      'Payment protection means your money is held by a neutral third party — Influora — until both sides of a deal have done their part. The brand deposits the deal amount up front; Influora holds it; the creator delivers; the brand approves; the payment releases the payment. Neither side can access the funds outside that flow.',
+      'Payment protection means the brand\u2019s deal amount is reserved in its Influora wallet before work starts, and stays there until both sides have done their part. The brand adds money to its wallet (card, UPI and net-banking payments are processed securely by Razorpay) and reserves the deal amount; the creator delivers; the brand approves; the payment releases to the creator. Neither side can move reserved funds outside that flow.',
   },
   {
     question: 'When does the brand fund the deal?',
     answer:
-      'As soon as the contract is signed in the Deal Room — before the creator starts producing content. This is what guarantees payment for the creator.',
+      'As soon as the contract is signed in the Deal Room — before the creator starts producing content. That way the creator knows the money is set aside before they start.',
   },
   {
     question: "What happens if the creator doesn't deliver?",
@@ -94,7 +94,7 @@ const FAQS = [
 // get the identical sentence, or the page is demoted for mismatch.
 const CANONICAL_QUESTION = 'How do influencer payments stay safe on Influora?';
 const CANONICAL_ANSWER =
-  'Influora holds the brand\u2019s payment with a licensed payment partner from the moment the ' +
+  'Influora reserves the brand\u2019s payment in their Influora wallet from the moment the ' +
   'contract is signed, and releases it to the creator only after the brand approves the ' +
   'delivered work. The brand never pays in advance for work that does not arrive, and the ' +
   'creator never starts filming without the money already secured.';
@@ -207,9 +207,9 @@ export default function SecurePaymentsFeaturePage() {
         <section className="border-t border-border/60 py-20">
           <div className="mx-auto max-w-3xl px-6 text-center">
             <FadeUp>
-              <h2 className="text-3xl font-semibold">Backed by a licensed payment partner</h2>
+              <h2 className="text-3xl font-semibold">Payments processed securely by Razorpay</h2>
               <p className="mt-3 text-muted-foreground">
-                Protected funds move through Influora's payment gateway partner, not a private bank account.
+                Brands add money by card, UPI or net banking through Razorpay, and the deal amount is reserved on Influora's ledger.
                 Every fund and release event is logged against the deal, so both sides always have a
                 record of where the money is.
               </p>
@@ -255,7 +255,7 @@ export default function SecurePaymentsFeaturePage() {
           sub="Post a campaign, agree terms in the Deal Room, and the payment is secured before anyone starts work."
           primary={{ label: 'Create a brand account', to: '/brand/register' }}
           secondary={{ label: "I'm a creator — show me how I get paid", to: '/how-it-works/creators' }}
-          reassurances={['Free to start', 'No subscription on the Free tier', 'Contracts and TDS included']}
+          reassurances={['Free to start', 'No subscription on the Free tier', 'Contracts and invoices included']}
         />
       </main>
 

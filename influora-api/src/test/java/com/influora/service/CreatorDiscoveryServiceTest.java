@@ -307,8 +307,12 @@ class CreatorDiscoveryServiceTest {
         when(creatorScoreRepository.findFirstByCreatorProfileIdOrderByTimeDesc(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(score));
 
+        // EV-008: the brand profile page needs the totals' provenance to label IMPORTED numbers.
+        when(profile.getFollowersSource()).thenReturn("IMPORTED");
+
         var response = service.getPublicProfile(principal, USERNAME);
 
+        assertEquals("IMPORTED", response.followersSource());
         assertEquals(CREATOR_PROFILE_ID, response.id());
         assertEquals(USERNAME, response.username());
         assertEquals("Riya Sharma", response.displayName());
@@ -541,12 +545,15 @@ class CreatorDiscoveryServiceTest {
         when(peer.getEngagementRate()).thenReturn(new BigDecimal("4.5"));
         when(peer.getCity()).thenReturn("Mumbai");
         when(peer.getCategoriesJson()).thenReturn(JsonLists.toJson(List.of("fitness")));
+        // EV-008: "Similar creators" cards must be able to label an imported total.
+        when(peer.getFollowersSource()).thenReturn("IMPORTED");
 
         when(creatorProfileRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(peer)));
 
         var response = service.getSimilar(principal, USERNAME, 6);
 
+        assertEquals("IMPORTED", response.similar().get(0).followersSource());
         assertEquals(1, response.similar().size());
         assertEquals("arjun_fitness", response.similar().get(0).username());
         assertTrue(response.similar().get(0).matchScore() > 0);

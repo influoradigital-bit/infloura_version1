@@ -97,7 +97,7 @@ export const CREATOR_STEPS: readonly HowItWorksStep[] = [
     icon: FileSignature,
     step: '04',
     title: 'Accept the contract — payment already secured',
-    body: 'E-sign the generated contract. The funds are already locked and protected before you start work, so payment is guaranteed.',
+    body: 'E-sign the generated contract. The brand\u2019s funds are already reserved in their Influora wallet before you start work, so you are never filming on a promise.',
   },
   {
     icon: UploadCloud,
@@ -109,6 +109,6 @@ export const CREATOR_STEPS: readonly HowItWorksStep[] = [
     icon: Wallet,
     step: '06',
     title: 'Get paid, then post',
-    body: 'Once the brand approves, the payment releases to you automatically — invoice generated with any recorded TDS shown. Post within the campaign window and see the payment land, usually within 24 hours.',
+    body: 'Once the brand approves, the payment releases to you automatically and an invoice is generated for you. Post within the campaign window and see the payment land, usually within 24 hours.',
   },
 ] as const;

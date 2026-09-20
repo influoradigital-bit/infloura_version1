@@ -7,6 +7,11 @@ import { isWorkspaceNotVerified, isCampaignActiveNotEditable } from '@/lib/api-e
 import type { Campaign, CampaignStatus } from '@/lib/types';
 import { useWorkspaceVerification } from '@/hooks/brand/useWorkspaceVerification';
 import { VerificationRequiredBox } from '@/components/brand/VerificationRequiredBox';
+import {
+  SecureAndPublishStep,
+  isCreateStatusNotAllowed,
+  CREATE_STATUS_NOT_ALLOWED_TOAST,
+} from '@/components/brand/campaigns/secure-and-publish-step';
 import { cn, formatINR } from '@/lib/utils';
 import { validateCampaignTitle } from '@/lib/campaign-validation';
 import { useToast } from '@/hooks/use-toast';
@@ -110,7 +115,15 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
   const [customLane, setCustomLane] = React.useState('');
   // Publish (ACTIVE launch) refused because the workspace isn't verified — shown inline.
   const [verificationBlocked, setVerificationBlocked] = React.useState(false);
-  const { canVerify } = useWorkspaceVerification();
+  const { canVerify, isLoading: verificationLoading, isVerified } = useWorkspaceVerification();
+  // F-0848 — drops a second submit that lands before `submitting` has re-rendered the button
+  // disabled (double-click / Enter held down): each one would otherwise create its own draft.
+  const submitInFlightRef = React.useRef(false);
+  // F-0848 — set once Launch has saved the campaign as a DRAFT; renders the inline
+  // "Secure the funds to publish" step in place of the Launch button.
+  const [publishStep, setPublishStep] = React.useState<{ campaignId: string; checkExistingFunds: boolean } | null>(
+    null,
+  );
 
   const isEditing = !!campaignId;
 
@@ -223,8 +236,23 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
     void submit('ACTIVE');
   };
 
-  const submit = async (status: CampaignStatus) => {
+  /**
+   * F-0848 (Priya's ruling b) — `intent` is what the brand pressed, NOT the status sent. No create
+   * ever sends ACTIVE (the server refuses it with `CAMPAIGN_CREATE_STATUS_NOT_ALLOWED`). Launch
+   * saves a DRAFT (an edit leaves the stored status alone), then `SecureAndPublishStep` secures the
+   * funds and sets ACTIVE through `update`, where the server checks the funds and charges the fee.
+   */
+  const submit = async (intent: CampaignStatus) => {
+    if (submitInFlightRef.current || publishStep) return;
     if (!validate()) return;
+    const publishing = intent === 'ACTIVE';
+    // A KNOWN-unverified workspace cannot go live. Stop before anything is saved or funded, rather
+    // than letting the brand secure funds for a campaign the server will then refuse to publish.
+    if (publishing && !verificationLoading && isVerified === false) {
+      setVerificationBlocked(true);
+      return;
+    }
+    submitInFlightRef.current = true;
     setSubmitting(true);
     setVerificationBlocked(false);
     try {
@@ -238,7 +266,7 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
         title: form.title.trim(),
         description: form.description.trim() || undefined,
         campaignType: 'HYPE',
-        status,
+        status: publishing ? (isEditing ? undefined : 'DRAFT') : intent,
         budget: { min: totalBudget, max: totalBudget, currency: 'INR' },
         platforms: ['INSTAGRAM'],
         contentTypes: ['REEL'],
@@ -267,10 +295,17 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
         },
       };
 
+      let savedId: string;
       if (isEditing && campaignId) {
         await api.campaigns.update(campaignId, payload);
+        savedId = campaignId;
       } else {
-        await api.campaigns.create(payload);
+        savedId = (await api.campaigns.create(payload)).id;
+      }
+
+      if (publishing) {
+        setPublishStep({ campaignId: savedId, checkExistingFunds: isEditing });
+        return;
       }
       navigate('/brand/campaigns');
     } catch (err) {
@@ -294,14 +329,30 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
         });
         return;
       }
+      // F-0848 — only reachable from a client still sending a non-DRAFT create (an old bundle).
+      if (isCreateStatusNotAllowed(err)) {
+        toast({ ...CREATE_STATUS_NOT_ALLOWED_TOAST, variant: 'destructive' });
+        return;
+      }
       const description =
         err instanceof ApiError
           ? err.message
-          : 'Failed to launch campaign. Please try again.';
-      toast({ title: 'Could not launch Hype campaign', description, variant: 'destructive' });
+          : 'Failed to save the campaign. Please try again.';
+      toast({
+        title: publishing ? 'Could not save your Hype campaign' : 'Could not save draft',
+        description,
+        variant: 'destructive',
+      });
     } finally {
       setSubmitting(false);
+      submitInFlightRef.current = false;
     }
+  };
+
+  /** F-0848 — runs after `SecureAndPublishStep` has set the campaign ACTIVE on the server. */
+  const handlePublished = () => {
+    toast({ title: 'Hype campaign published', description: 'Your campaign is live.' });
+    navigate('/brand/campaigns');
   };
 
   // While an edit fetch is in flight (or failed), never show a submittable
@@ -636,6 +687,7 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
             />
           )}
 
+          {!publishStep && (
           <div className="flex items-center justify-end gap-3">
             <Button type="button" variant="ghost" onClick={() => navigate('/brand/campaigns')}>
               Cancel
@@ -653,8 +705,21 @@ export default function BrandNewHypeCampaignPage({ campaignId }: { campaignId?: 
               {isEditing ? 'Review → Launch' : 'Launch Hype Campaign'}
             </Button>
           </div>
+          )}
         </div>
       </form>
+
+      {/* F-0848 — the Launch button is gone once the draft is saved, and `submit` ignores a
+          repeat (Enter in a field), so nothing here can create the campaign a second time. */}
+      {publishStep && (
+        <SecureAndPublishStep
+          campaignId={publishStep.campaignId}
+          budgetAmount={totalBudget}
+          checkExistingFunds={publishStep.checkExistingFunds}
+          onPublished={handlePublished}
+          onKeepDraft={() => navigate('/brand/campaigns')}
+        />
+      )}
     </div>
   );
 }

@@ -21,7 +21,7 @@ import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.MeeraToolCallRepository;
 import com.influora.service.AuditLogService;
-import com.influora.service.BrandCampaignFeeService;
+import com.influora.service.CampaignActivationGuard;
 import com.influora.service.IdempotencyService;
 import com.influora.service.meera.AICreditService;
 import com.influora.service.meera.MeeraInteractionLogService;
@@ -82,13 +82,14 @@ import org.springframework.transaction.annotation.Transactional;
  * re-invites creators or re-triggers a credit reset.
  *
  * <p><b>[SEC: Kabir red-team CRITICAL-1 fix, 2026-07-14] Brand publish fee.</b> {@link
- * BrandCampaignFeeService} was previously removed from this class's constructor entirely (a
+ * com.influora.service.BrandCampaignFeeService} was previously removed from this class's constructor entirely (a
  * mistaken "P3-20" assumption that {@code CampaignService} covered the AI-launch path too — it
  * does not, since this class never calls into {@code CampaignService}). The result was a complete
  * brand-fee bypass on every campaign launched via Meera's {@code confirm_launch} tool: an AI-driven
  * launch charged a silent 0% fee while the equivalent brand-initiated PATCH
  * {@code /campaigns/{id}} path (via {@code CampaignService.update}) charged the real one. {@link
- * BrandCampaignFeeService#chargeOnPublish} is now called from {@link #doExecute} at the real
+ * com.influora.service.BrandCampaignFeeService#chargeOnPublish} is now reached from {@link
+ * #doExecute}, via {@link CampaignActivationGuard#activate} since F-0848, at the real
  * DRAFT/PAUSED/PENDING_APPROVAL -&gt; ACTIVE transition, mirroring {@code
  * CampaignService.update()}'s charge-then-save pattern exactly (same {@code @Transactional}
  * atomicity contract — see that method's javadoc: a fee-charge failure rolls back the whole
@@ -134,7 +135,7 @@ public class ConfirmLaunchExecutor {
     private final AuditLogService auditLogService;
     private final AICreditService aiCreditService;
     private final IdempotencyService idempotencyService;
-    private final BrandCampaignFeeService brandCampaignFeeService;
+    private final CampaignActivationGuard activationGuard;
     private final MeeraInteractionLogService meeraInteractionLogService;
     private final ConfirmLaunchExecutor self;
 
@@ -148,7 +149,7 @@ public class ConfirmLaunchExecutor {
             AuditLogService auditLogService,
             AICreditService aiCreditService,
             IdempotencyService idempotencyService,
-            BrandCampaignFeeService brandCampaignFeeService,
+            CampaignActivationGuard activationGuard,
             MeeraInteractionLogService meeraInteractionLogService,
             @Lazy ConfirmLaunchExecutor self) {
         this.campaignIntentRepository = campaignIntentRepository;
@@ -160,7 +161,7 @@ public class ConfirmLaunchExecutor {
         this.auditLogService = auditLogService;
         this.aiCreditService = aiCreditService;
         this.idempotencyService = idempotencyService;
-        this.brandCampaignFeeService = brandCampaignFeeService;
+        this.activationGuard = activationGuard;
         this.meeraInteractionLogService = meeraInteractionLogService;
         this.self = self;
     }
@@ -335,8 +336,12 @@ public class ConfirmLaunchExecutor {
         // wallet balance, missing fee config), the whole @Transactional method rolls back — the
         // campaign never ends up ACTIVE, and no invite/bind/credit-reset ever runs, without having
         // paid the fee.
-        campaign.setStatus(CampaignStatus.ACTIVE);
-        brandCampaignFeeService.chargeOnPublish(campaign, workspaceId);
+        //
+        // F-0848 (Priya ruling c) — the funds check, the fee and the status flip now run in the one
+        // shared CampaignActivationGuard (MANDATORY propagation: joins this method's transaction).
+        // The FUNDED pre-check above stays because its audit-logged rejection is part of this
+        // tool's contract; the guard re-reads the holds itself and never trusts that pre-check.
+        activationGuard.activate(campaign, workspaceId);
         campaignRepository.save(campaign);
 
         // Phase 2 item 2.3 — flywheel logging, at the REAL DRAFT/PAUSED/PENDING_APPROVAL -> ACTIVE

@@ -78,7 +78,7 @@ class CampaignActivationGatesTest {
                         brandContext,
                         new CampaignValidator(),
                         integrationHealthService,
-                        brandCampaignFeeService);
+                        new CampaignActivationGuard(escrowHoldRepository, brandCampaignFeeService));
     }
 
     @Test

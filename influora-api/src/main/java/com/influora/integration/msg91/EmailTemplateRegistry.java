@@ -342,7 +342,7 @@ final class EmailTemplateRegistry {
                         "{{brand_name}} wants to work with you on Influora",
                         "A brand wants to work with you",
                         "A brand on Influora asked to collaborate with @{{ig_username}}. Join Influora"
-                                + " to see the opportunity, get paid through escrow, and manage the deal.",
+                                + " to see the opportunity, agree terms, and get paid once the brand approves your work.",
                         "Join Influora",
                         "signup_url"));
         SPECS.put(

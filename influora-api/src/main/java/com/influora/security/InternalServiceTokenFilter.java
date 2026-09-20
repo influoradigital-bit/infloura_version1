@@ -5,6 +5,9 @@ import com.influora.common.ApiResponse;
 import com.influora.config.InternalServiceTokenProperties;
 import com.influora.service.AuditLogService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -54,12 +57,26 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public class InternalServiceTokenFilter extends OncePerRequestFilter {
 
-    private static final String CTX = "/api/v1";
-    private static final String INTERNAL_PREFIX = "/internal/";
+    /**
+     * EV-004: matched through {@link RequestPaths#isUnder} (decoded, dot/matrix/slash-normalised,
+     * context-stripped, case-insensitive, fail-closed) — NOT {@code getRequestURI().startsWith},
+     * which {@code /api/v1/%69nternal/meera/turns/release} walked straight past while Spring MVC
+     * still dispatched it to the refund route.
+     */
+    static final String INTERNAL_ROOT = "/internal";
     public static final String SERVICE_TOKEN_AUDIENCE = "influora-internal";
     public static final String SERVICE_TOKEN_ISSUER = "meera-python";
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    /**
+     * {@link ApiResponse#timestamp()} is an {@link java.time.Instant}; a bare {@code new
+     * ObjectMapper()} cannot serialise it, so every rejection used to throw from {@link #reject}
+     * instead of writing the 401/403 body (EV-004 red run).
+     */
+    private static final ObjectMapper MAPPER =
+            JsonMapper.builder()
+                    .addModule(new JavaTimeModule())
+                    .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+                    .build();
 
     private final InternalServiceTokenProperties props;
     private final InternalRequestVerifier requestVerifier;
@@ -79,8 +96,8 @@ public class InternalServiceTokenFilter extends OncePerRequestFilter {
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
-        String path = stripContext(request.getRequestURI());
-        if (!path.startsWith(INTERNAL_PREFIX)) {
+        // Fail closed: isUnder answers true for any path it cannot normalise.
+        if (!RequestPaths.isUnder(request, INTERNAL_ROOT)) {
             chain.doFilter(request, response);
             return;
         }
@@ -93,6 +110,16 @@ public class InternalServiceTokenFilter extends OncePerRequestFilter {
             claims = parseServiceToken(serviceToken);
         } catch (JwtException | IllegalArgumentException e) {
             reject(response, "BAD_SERVICE_TOKEN", "auth.internal.rejected", HttpStatus.UNAUTHORIZED);
+            return;
+        }
+
+        // The HMAC covers the canonical application path (what influora-ai signs, e.g.
+        // /internal/meera/messages). A path with no canonical form is refused outright.
+        String path;
+        try {
+            path = RequestPaths.pathWithinApplication(request);
+        } catch (RequestPaths.UnnormalisablePathException e) {
+            reject(response, "NON_CANONICAL_PATH", "auth.internal.rejected", HttpStatus.BAD_REQUEST);
             return;
         }
 
@@ -157,12 +184,5 @@ public class InternalServiceTokenFilter extends OncePerRequestFilter {
                 ApiResponse.fail(
                         ApiErrorBody.of("INTERNAL_AUTH_REJECTED", "Internal request rejected: " + reasonCode));
         response.getWriter().write(MAPPER.writeValueAsString(body));
-    }
-
-    private static String stripContext(String uri) {
-        if (uri.startsWith(CTX)) {
-            return uri.substring(CTX.length());
-        }
-        return uri;
     }
 }

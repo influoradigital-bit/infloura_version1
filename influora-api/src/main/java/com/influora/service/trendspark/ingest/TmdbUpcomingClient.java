@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -41,6 +42,11 @@ public class TmdbUpcomingClient implements TrendSourceClient {
     private final TrendIngestProperties props;
     private volatile RestClient restClient;
 
+    // EV-175 [vikram · 2026-09-19] — two constructors (this one and the package-private test
+    // seam below) and neither @Autowired, so Spring fell back to a missing no-arg constructor
+    // ("No default constructor found") and the API failed to boot. Guarded by
+    // TrendSourceClientsWiringTest.
+    @Autowired
     public TmdbUpcomingClient(TrendIngestProperties props) {
         this.props = props;
     }

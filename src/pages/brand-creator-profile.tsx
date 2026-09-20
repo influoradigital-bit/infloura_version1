@@ -29,6 +29,7 @@ import { api, isApiLive, ApiError, type CreatorPublicProfile, type SimilarCreato
 import type { Platform, CreatorDemographics } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { cssVars } from '@/lib/css-vars';
+import { followersCaption } from '@/components/brand/discover/creator-discovery';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -82,6 +83,8 @@ interface CreatorDisplayModel {
   stats: {
     totalFollowers: number;
     avgEngagement: number;
+    /** EV-008 — provenance of totalFollowers/avgEngagement (absent in mock mode). */
+    followersSource?: 'VERIFIED' | 'IMPORTED' | 'NONE';
     /**
      * F-0260 — DiscoveryDtos.CreatorPublicProfileResponse has no per-post average likes/
      * comments/views field. `null` in live mode, rendered as an explicit "—" instead of a
@@ -434,6 +437,7 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
     stats: {
       totalFollowers: row.totalFollowers,
       avgEngagement: row.engagementRate,
+      followersSource: row.followersSource,
       // F-0260 — was hardcoded to 0, rendering as a fabricated "0 Avg Likes"/"0 Avg Views" for
       // every creator. `null`: DTO has no per-post average likes/comments/views field.
       avgLikes: null,
@@ -831,8 +835,28 @@ export default function BrandCreatorProfilePage() {
         {/* Stats Grid */}
         <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
           {[
-            { label: 'Followers', value: formatNumber(creator.stats.totalFollowers), icon: Users },
-            { label: 'Engagement', value: `${creator.stats.avgEngagement}%`, icon: TrendingUp },
+            // EV-008 — the headline total is Meta-synced (VERIFIED) or Marketplace/admin-imported
+            // (IMPORTED); an imported figure is labelled so a brand never reads it as verified, and
+            // NONE (nothing counted yet) renders "—" instead of a measured-looking 0.
+            {
+              label: followersCaption(creator.stats.followersSource),
+              value:
+                creator.stats.followersSource === 'NONE'
+                  ? '—'
+                  : formatNumber(creator.stats.totalFollowers),
+              icon: Users,
+            },
+            {
+              label:
+                creator.stats.followersSource === 'IMPORTED'
+                  ? 'Engagement · imported, not verified'
+                  : 'Engagement',
+              value:
+                creator.stats.avgEngagement != null && creator.stats.followersSource !== 'NONE'
+                  ? `${creator.stats.avgEngagement}%`
+                  : '—',
+              icon: TrendingUp,
+            },
             {
               // F-0260 — `null` means the DTO has no per-post average; render an explicit
               // not-available state instead of a fabricated "0" (same rule as Rating below).
@@ -1308,7 +1332,8 @@ export default function BrandCreatorProfilePage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{sc.displayName}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {formatNumber(sc.totalFollowers)} followers · {sc.engagementRate}% ER
+                      {formatNumber(sc.totalFollowers)} {followersCaption(sc.followersSource).toLowerCase()}
+                      {sc.engagementRate != null ? ` · ${sc.engagementRate}% ER` : ''}
                     </p>
                   </div>
                   <Badge variant="outline" className="shrink-0 text-xs">

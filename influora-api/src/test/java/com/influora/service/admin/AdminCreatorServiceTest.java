@@ -145,8 +145,8 @@ class AdminCreatorServiceTest {
                         .avgReachPerPost(30000L)
                         .time(Instant.parse("2026-07-01T00:00:00Z"))
                         .build();
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        PROFILE_ID, "INSTAGRAM"))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        PROFILE_ID, "INSTAGRAM", "META_API"))
                 .thenReturn(Optional.of(metric));
 
         CreatorDetailDto dto = service.getById(principal, PROFILE_ID);
@@ -212,8 +212,8 @@ class AdminCreatorServiceTest {
         when(metaOAuthTokenRepository.findFirstByCreatorProfileIdAndRevokedFalseOrderByCreatedAtAsc(
                         PROFILE_ID))
                 .thenReturn(Optional.empty());
-        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(
-                        PROFILE_ID, "INSTAGRAM"))
+        when(creatorMetricsRepository.findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                        PROFILE_ID, "INSTAGRAM", "META_API"))
                 .thenReturn(Optional.empty());
         when(mediaMetricsRepository.findByCreatorProfileIdAndPlatformOrderByTimeDesc(
                         eq(PROFILE_ID), eq("INSTAGRAM"), any(PageRequest.class)))

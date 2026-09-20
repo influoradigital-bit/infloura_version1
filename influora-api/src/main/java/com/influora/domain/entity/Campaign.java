@@ -153,8 +153,44 @@ public class Campaign {
         return status;
     }
 
+    /**
+     * F-0872 — structural half of the "only one path to ACTIVE" guarantee (Priya ruling c, option
+     * a). {@code CampaignActivationPathTest}'s bytecode scan proves no PRODUCTION CLASS other than
+     * {@code CampaignActivationGuard} calls {@code setStatus(CampaignStatus.ACTIVE)}/{@code
+     * .status(CampaignStatus.ACTIVE)} with a LITERAL constant — but it explicitly cannot see ACTIVE
+     * arriving through a variable (e.g. a status field reassigned/reordered so the constant is no
+     * longer adjacent to the call in bytecode). This method closes that gap at the entity itself,
+     * where no amount of refactoring the CALLER's code shape can evade it: {@code status == ACTIVE}
+     * is refused unconditionally, regardless of whether ACTIVE arrived as a literal or through any
+     * number of local variables/fields/ternaries. The ONLY way to set a campaign ACTIVE through this
+     * entity's API is {@link #activateForPublish()} — see its javadoc.
+     */
     public void setStatus(CampaignStatus status) {
+        if (status == CampaignStatus.ACTIVE) {
+            throw new IllegalStateException(
+                    "Campaign.setStatus() cannot set ACTIVE directly -- activation must go through"
+                            + " CampaignActivationGuard.activate(), which verifies a FUNDED hold and charges"
+                            + " the publish fee in the same transaction before calling activateForPublish()"
+                            + " (F-0848/F-0872)");
+        }
         this.status = status;
+        touch();
+    }
+
+    /**
+     * F-0872 — the ONE method on this entity that may set {@link CampaignStatus#ACTIVE}. {@link
+     * #setStatus} refuses ACTIVE unconditionally (see its javadoc), so this is structurally the sole
+     * entity-level path to it, immune to the bytecode scan's disclosed "arrives through a variable"
+     * blind spot (B5) because it takes NO status argument at all — there is no constant or variable
+     * to hide. Only {@link com.influora.service.CampaignActivationGuard#activate} calls this, and
+     * only after it has verified a FUNDED hold and charged the publish fee in the same transaction;
+     * a caller reaching this method any other way still bypasses those business checks even though
+     * the entity invariant holds, which is why {@code CampaignActivationPathTest} also flags any
+     * call site to this method outside the guard, the same discipline as its existing {@code
+     * chargeOnPublish} call-site scan.
+     */
+    public void activateForPublish() {
+        this.status = CampaignStatus.ACTIVE;
         touch();
     }
 
@@ -403,6 +439,17 @@ public class Campaign {
             if (c.status == null) {
                 c.status = CampaignStatus.DRAFT;
             }
+            // F-0872 note: a Builder-level refusal of ACTIVE was tried and reverted here — it broke
+            // legitimate fixture setup in real @DataJpaTest suites (BrandDeliverableServiceApproval
+            // RollbackIsolationTest, CreatorCampaignServiceApplyHistoryFkRaceTest) and Mockito-fixture
+            // tests across 15+ files that construct an already-ACTIVE Campaign as a POJO/DB row to
+            // test unrelated behavior, never as a production activation. B6 (a NEW campaign minted
+            // ACTIVE via CampaignStatus.valueOf("ACTIVE")) is instead closed at the PRODUCTION-code
+            // layer only, by CampaignActivationPathTest's new T6 rule: every Campaign.Builder.status(
+            // ...) call site under target/classes (main sources only — test fixtures are never
+            // scanned) must pass a literal CampaignStatus constant, so a dynamic/valueOf() value
+            // reaching this Builder in production code is flagged even though this method itself does
+            // not runtime-check it.
             return c;
         }
     }
@@ -431,6 +478,12 @@ public class Campaign {
             String endBrandCategory) {
         if (title != null) this.title = title;
         if (description != null) this.description = description;
+        if (status == CampaignStatus.ACTIVE) {
+            // EV-005 — same refusal as setStatus(): a PATCH must never flip a campaign live without
+            // CampaignActivationGuard (CampaignService.update passes null here for ACTIVE).
+            throw new IllegalStateException(
+                    "Campaign.applyPatch() cannot set ACTIVE -- use CampaignActivationGuard.activate()");
+        }
         if (status != null) this.status = status;
         if (budgetMin != null) this.budgetMin = budgetMin;
         if (budgetMax != null) this.budgetMax = budgetMax;

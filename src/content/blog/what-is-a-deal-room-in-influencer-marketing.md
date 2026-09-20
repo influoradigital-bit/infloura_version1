@@ -76,7 +76,7 @@ A group chat makes the conversation shared. A deal room makes the **agreement** 
 
 ## Where Payment Fits
 
-A deal room handles what was agreed and what was delivered. It does not, on its own, guarantee anyone gets paid — that requires the money to be held somewhere neutral while the work happens. This is why deal rooms are usually paired with payment protection: the brand funds the deal when terms are signed, the funds stay locked while the creator produces the content, and release is triggered by the same approval action that closes the deliverable in the thread.
+A deal room handles what was agreed and what was delivered. It does not, on its own, guarantee anyone gets paid — that requires the money to be set aside before the work starts. This is why deal rooms are usually paired with payment protection: the brand funds the deal when terms are signed, the funds stay locked while the creator produces the content, and release is triggered by the same approval action that closes the deliverable in the thread.
 
 If you are new to that side of it, start with [what payment protection means in influencer marketing](/blog/what-is-payment-protection-in-influencer-marketing), then read [how to pay influencers safely in India](/blog/how-to-pay-influencers-safely-india-2026).
 

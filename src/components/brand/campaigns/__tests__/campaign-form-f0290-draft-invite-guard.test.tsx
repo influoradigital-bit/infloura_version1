@@ -36,6 +36,8 @@ const campaignsUpdate = vi.fn();
 const campaignsGet = vi.fn();
 const creatorsInvite = vi.fn();
 const creatorsSuggestions = vi.fn();
+const escrowList = vi.fn();
+const fundEscrow = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -45,8 +47,16 @@ vi.mock('@/lib/api', async () => {
       ...actual.api,
       campaigns: { ...actual.api.campaigns, create: (...a: unknown[]) => campaignsCreate(...a), update: (...a: unknown[]) => campaignsUpdate(...a), get: (...a: unknown[]) => campaignsGet(...a) },
       creators: { ...actual.api.creators, invite: (...a: unknown[]) => creatorsInvite(...a), suggestions: (...a: unknown[]) => creatorsSuggestions(...a) },
+      wallet: { ...actual.api.wallet, escrowList: (...a: unknown[]) => escrowList(...a) },
     },
+    isMoneyActionBlocked: () => false,
   };
+});
+
+// F-0848 — publishing now secures the funds through FundEscrowButton (useEscrowFund → meeraApi).
+vi.mock('@/lib/meera-api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/meera-api')>('@/lib/meera-api');
+  return { ...actual, meeraApi: { ...actual.meeraApi, fundEscrow: (...a: unknown[]) => fundEscrow(...a) } };
 });
 
 const PENDING_INVITE_KEY = (campaignId: string) => `influora:pending-creator-invite:${campaignId}`;
@@ -119,7 +129,10 @@ describe('CampaignForm — DRAFT save must not invite the Discover handoff creat
     expect(JSON.parse(stashed!)).toMatchObject({ creatorId: 'cp_01HLINKED', ig: 'foodie.mumbai' });
   });
 
-  it('a later publish of that same (now-edited) draft consumes the stash exactly once', async () => {
+  // F-0848 — "Publish Campaign" on a draft now saves the fields, then the inline step secures the
+  // funds and sets ACTIVE with a second `update`. The invite must wait for THAT update: firing it
+  // after the field save would invite a creator to a campaign that is still an unfunded draft.
+  it('a later publish of that same (now-edited) draft consumes the stash exactly once, after the ACTIVE update', async () => {
     const CAMPAIGN_ID = 'campaign_draft_2';
     // Seed the stash exactly as a prior DRAFT save (the test above) would have left it — this
     // test only needs to prove the CONSUME half, independent of the STASH half above.
@@ -146,6 +159,8 @@ describe('CampaignForm — DRAFT save must not invite the Discover handoff creat
       endBrandCategory: 'Fashion',
     });
     campaignsUpdate.mockResolvedValue({ id: CAMPAIGN_ID, status: 'ACTIVE' });
+    escrowList.mockResolvedValue([]);
+    fundEscrow.mockResolvedValue({ escrowHoldId: 'hold_1', amount: 25000, currency: 'INR', razorpayOrderId: null, status: 'FUNDED' });
     creatorsInvite.mockResolvedValue({ id: 'collab_1', status: 'INVITED', appliedAt: new Date().toISOString() });
 
     const user = userEvent.setup({ delay: null });
@@ -162,8 +177,16 @@ describe('CampaignForm — DRAFT save must not invite the Discover handoff creat
     await user.click(screen.getByRole('button', { name: /publish campaign/i }));
 
     await waitFor(() => expect(campaignsUpdate).toHaveBeenCalledTimes(1));
+    // Saving the fields alone is not publishing — no invite yet, and the stash is still there.
+    await screen.findByRole('heading', { name: /secure the funds to publish/i });
+    expect(creatorsInvite).not.toHaveBeenCalled();
+    expect(localStorage.getItem(PENDING_INVITE_KEY(CAMPAIGN_ID))).not.toBeNull();
+
+    await user.click(await screen.findByRole('button', { name: /fund & go live/i }));
+    await waitFor(() => expect(campaignsUpdate).toHaveBeenCalledWith(CAMPAIGN_ID, { status: 'ACTIVE' }));
     await waitFor(() => expect(creatorsInvite).toHaveBeenCalledTimes(1));
     expect(creatorsInvite).toHaveBeenCalledWith('cp_01HLINKED', CAMPAIGN_ID);
+    expect(creatorsInvite.mock.invocationCallOrder[0]).toBeGreaterThan(campaignsUpdate.mock.invocationCallOrder[1]);
 
     // Consumed at most once — the key must be gone so a second publish (e.g. re-editing an
     // already-ACTIVE campaign later) can never re-fire the same invite.

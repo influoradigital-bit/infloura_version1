@@ -135,7 +135,7 @@ class EscrowServiceReleaseTest {
             .collaborationId(COLLABORATION_ID)
             .sequenceNo(1)
             .amount(new BigDecimal("10000.00"))
-            .status(MilestoneStatus.FUNDED)
+            .status(MilestoneStatus.PENDING)
             .build();
     milestone.markFunded(ESCROW_HOLD_ID);
 
@@ -243,7 +243,7 @@ class EscrowServiceReleaseTest {
             .collaborationId(COLLABORATION_ID)
             .sequenceNo(1)
             .amount(new BigDecimal("10000.00"))
-            .status(MilestoneStatus.FUNDED)
+            .status(MilestoneStatus.PENDING)
             .releaseCondition(condition)
             .build();
     milestone.markFunded(ESCROW_HOLD_ID);

@@ -4,8 +4,10 @@ import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.enums.MilestoneStatus;
 import java.math.BigDecimal;
 import java.util.List;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -28,6 +30,23 @@ public interface PaymentMilestoneRepository extends JpaRepository<PaymentMilesto
                     + "(SELECT c.id FROM Collaboration c WHERE c.campaignId IN "
                     + "(SELECT ca.id FROM Campaign ca WHERE ca.workspaceId = :workspaceId))")
     Optional<PaymentMilestone> findByIdAndWorkspaceId(
+            @Param("id") String id, @Param("workspaceId") String workspaceId);
+
+    /**
+     * [FIX: EV-002] Same workspace-scoped lookup as {@link #findByIdAndWorkspaceId}, taken under a
+     * {@code PESSIMISTIC_WRITE} row lock ({@code SELECT ... FOR UPDATE}). Used by {@code
+     * EscrowService#initiateFund} so two fund attempts for one milestone serialise on this row, and
+     * so the status it checks is the latest committed value (a locking read is not bound to the
+     * transaction's REPEATABLE READ snapshot). Callers must make this the FIRST load of the
+     * milestone in their transaction: if a plain read already put the entity in the persistence
+     * context, Hibernate returns that cached instance without refreshing its state.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query(
+            "SELECT m FROM PaymentMilestone m WHERE m.id = :id AND m.collaborationId IN "
+                    + "(SELECT c.id FROM Collaboration c WHERE c.campaignId IN "
+                    + "(SELECT ca.id FROM Campaign ca WHERE ca.workspaceId = :workspaceId))")
+    Optional<PaymentMilestone> findByIdAndWorkspaceIdForUpdate(
             @Param("id") String id, @Param("workspaceId") String workspaceId);
 
     Optional<PaymentMilestone> findByIdempotencyKey(String idempotencyKey);

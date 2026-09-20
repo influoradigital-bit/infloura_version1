@@ -19,19 +19,19 @@ This policy explains what personal data we collect, why, and how you can control
 | Account data | Name, email, phone number, password | To create and secure your account |
 | KYC data | PAN, Aadhaar (creators), GST/company documents (brands) | Identity verification, required before Payout (see KYC Policy) |
 | Campaign data | Campaign briefs, Deliverables, messages, approvals | To run and record Campaigns |
-| Payment data | Bank/UPI details, transaction history | To route payment protection funding and Payouts through our licensed Payment Aggregator |
+| Payment data | Bank/UPI details, transaction history | To process wallet top-ups through our payment processor (Razorpay) and to pay out creator withdrawals |
 | Usage data | Device, IP address, log data, cookies | Security, analytics, product improvement |
 | Communications | Support tickets, grievance submissions | To respond to you |
 | Connected social accounts | Instagram profile, your own media, account insights, aggregated audience demographics | Verified analytics and deliverable verification — only if you choose to connect an account. See our [Meta Platform Data & Instagram Data Policy](/meta-data-policy) for the exact fields, permissions and deletion process |
 
-We do not store full card numbers or bank credentials ourselves — these are handled by our licensed Payment Aggregator.
+We do not store full card numbers or bank credentials ourselves — these are handled by our payment processor, Razorpay.
 
 ## 3. Why we collect it (our legal basis)
 
 Under the DPDP Act, we process your personal data based on:
 
 - **Your consent** — given when you sign up, given clearly and specifically, and withdrawable at any time (withdrawal doesn't affect processing already done).
-- **Legitimate uses permitted by law** — such as verifying identity for KYC/AML compliance (PMLA, RBI KYC Master Directions), deducting TDS under Section 194-O, and responding to your own requests.
+- **Legitimate uses permitted by law** — such as verifying identity for KYC/AML compliance (PMLA, RBI KYC Master Directions), meeting tax obligations (including tax deducted at source where it applies), and responding to your own requests.
 
 We will always tell you what we're collecting and why at the point of collection, not just in this document.
 
@@ -39,7 +39,7 @@ We will always tell you what we're collecting and why at the point of collection
 
 - Operate your account and Campaigns
 - Verify identity (KYC) before releasing a Payout
-- Calculate and disclose Platform fees and TDS
+- Calculate and disclose Platform fees and commissions, and meet our tax obligations
 - Detect fraud, fake engagement, or policy violations
 - Improve our product, including training and evaluating AI features (Meera)
 - Communicate with you about your account, Campaigns, and grievances
@@ -49,7 +49,7 @@ We will always tell you what we're collecting and why at the point of collection
 
 We share data only where necessary:
 
-- **Payment Aggregator** — a licensed, RBI-authorized partner that processes payment protection funding and Payouts. They receive only what's needed to process the transaction.
+- **Payment processor (Razorpay)** — processes the card, UPI and net-banking payments brands use to add money to their Influora wallet. They receive only what's needed to process the transaction.
 - **Verification providers** — for KYC document checks.
 - **Cloud and AI infrastructure providers** — for hosting and AI-assisted features, under contractual confidentiality obligations.
 - **Regulators and authorities** — where required by Indian law (tax, AML, law enforcement requests).

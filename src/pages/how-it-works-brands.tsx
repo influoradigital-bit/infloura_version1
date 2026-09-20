@@ -39,11 +39,11 @@ import {
 
   What was deliberately NOT carried over from the design, and why:
     - "RBI Escrow Vault", "RBI-regulated nodal trustee account", "legally backed escrow".
-      Our licensed partner is an RBI-authorized Payment Aggregator; we are not a
-      trustee and not RBI-licensed. "escrow" is also banned in user copy (2026-09-02).
+      EV-007: brand funds are a reserved balance on Influora's own ledger; we are
+      not a trustee and not RBI-licensed, and no PA holds the funds. "escrow" is also banned in user copy (2026-09-02).
     - "Automated 194J TDS", "Auto GST filing", "Real-Time NSDL PAN Check",
-      "Form 26Q Export Pack". TDS is recorded and shown on payouts; none of it is filed
-      for you. Live copy is hedged on purpose and this page stays hedged.
+      "Form 26Q Export Pack". EV-007: TDS is not computed on the automated rail and
+      invoices carry no TDS line. Live copy is hedged on purpose and this page stays hedged.
     - "10x more campaigns", "4.2x faster brief-to-live", "98.4% on-time", "0% ghost-follower
       tolerance", "42 hours wasted per quarter", "3.64x blended ROAS", "₹8.40L attributed GMV".
       None are measured. Campaign performance is creator-reported, not measured by us.
@@ -93,7 +93,7 @@ const PAYMENT_FLOW = [
     n: '01',
     icon: Wallet,
     title: 'You fund the deal',
-    body: 'The full amount is deposited with a licensed, RBI-authorized Payment Aggregator before the creator starts. You are not paying an advance into a DM.',
+    body: 'The full amount is reserved from your Influora wallet before the creator starts. You are not paying an advance into a DM.',
     tag: 'Secured',
   },
   {
@@ -114,7 +114,7 @@ const PAYMENT_FLOW = [
     n: '04',
     icon: ArrowRight,
     title: 'Payout releases',
-    body: 'Approval releases the payment to the creator and generates the invoice, with any recorded TDS shown on it.',
+    body: 'Approval releases the payment to the creator and generates the invoice.',
     tag: 'On approval',
   },
 ] as const;
@@ -130,7 +130,7 @@ const INFLUORA_WAY = [
   'One dashboard with every campaign, deal and payout in it.',
   'An e-signed contract on every deal, with usage rights and revision limits written in.',
   'Funds secured before filming and released only when you approve.',
-  'An invoice generated on payout, with any recorded TDS shown.',
+  'An invoice generated on every payout, for clean books.',
 ] as const;
 
 export default function HowItWorksBrandsPage() {
@@ -522,7 +522,7 @@ export default function HowItWorksBrandsPage() {
                   Your money does not move until you approve the work
                 </h2>
                 <p className="mt-4 text-muted-foreground">
-                  Payments are held with a licensed, RBI-authorized Payment Aggregator from the
+                  Your payment is reserved in your Influora wallet from the
                   moment the contract is signed. You never pay in advance for work that has not
                   arrived, and the creator never films without the money already secured.
                 </p>
@@ -650,7 +650,7 @@ export default function HowItWorksBrandsPage() {
                 </h2>
                 <p className="mt-4 text-muted-foreground">
                   Every deal leaves a record: a signed contract, an approval, a payout and an
-                  invoice with any recorded TDS shown on it.
+                  invoice.
                 </p>
               </div>
             </FadeUp>
@@ -687,8 +687,8 @@ export default function HowItWorksBrandsPage() {
                     ))}
                   </ul>
                   <p className="mt-5 text-xs text-muted-foreground">
-                    Influora records and shows TDS on payouts and generates the invoice. It does not
-                    file your returns for you — see the{' '}
+                    Influora generates the invoice on every payout. It does not calculate, deduct or
+                    file TDS for you — see the{' '}
                     <Link to="/tds" className="underline underline-offset-2 hover:text-foreground">
                       TDS policy
                     </Link>

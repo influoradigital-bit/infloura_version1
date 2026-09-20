@@ -186,9 +186,9 @@ const buildHtml = (lockupSrc) => `<!doctype html>
            src/pages/landing.tsx verbatim: the card and that description are
            rendered side by side in a share preview, so they must not disagree.
            Per Swapnil's ruling this claim is replaced with what is true, not
-           stripped — the platform records TDS on the invoice, it does not
-           file or remit it. -->
-      <li><span class="dot"></span>TDS shown on invoices</li>
+           stripped. EV-007: invoices carry no TDS line (TDS is not computed on the
+           automated rail), so the card names what is true: invoices. -->
+      <li><span class="dot"></span>Invoices built in</li>
     </ul>
   </div>
 </body>

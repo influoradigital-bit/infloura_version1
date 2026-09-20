@@ -306,7 +306,8 @@ public class CreatorDiscoveryService {
                 // yet, same "don't backfill missing data with zero" convention
                 // PortfolioService#computeStats/DeliverableMetricService already use.
                 computeAvgRating(profile.getUserId()),
-                saved);
+                saved,
+                profile.getFollowersSource());
     }
 
     @Transactional(readOnly = true)
@@ -766,7 +767,8 @@ public class CreatorDiscoveryService {
                 candidate.getTotalFollowers(),
                 candidate.getEngagementRate(),
                 roundScore(score),
-                reasons);
+                reasons,
+                candidate.getFollowersSource());
     }
 
     private CreatorSuggestionItem toSuggestionItem(

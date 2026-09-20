@@ -216,7 +216,14 @@ export interface ShowCreatorsPayload {
     totalFollowers: number;
     /** Nullable on the DTO (`BigDecimal`) — omitted from JSON when null. */
     engagementRate?: number;
+    /** CreatorProfile.verified — an identity flag, NOT a claim about the follower numbers. */
     verified: boolean;
+    /**
+     * EV-008 — MeeraToolDtos.CreatorSummary.followersSource. The ONLY field that may back a
+     * "verified stats" badge: VERIFIED = Meta-synced platforms; IMPORTED = Marketplace/admin
+     * import (label it); NONE = nothing counted.
+     */
+    followersSource?: 'VERIFIED' | 'IMPORTED' | 'NONE';
   }>;
 }
 

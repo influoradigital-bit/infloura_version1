@@ -27,6 +27,19 @@ public interface DeliverableRepository extends JpaRepository<Deliverable, String
   List<Deliverable> findByCollaborationIdOrderBySlotIndexAsc(String collaborationId);
 
   /**
+   * [EV-015] Locking read of every deliverable on a collaboration, for {@code
+   * EscrowService#refundInternal}'s "has the creator started delivering?" gate. It must be a
+   * locking read ({@code SELECT ... FOR UPDATE}), not a plain one: under MySQL REPEATABLE READ a
+   * plain SELECT is served from the read view the refund transaction opened at its first plain
+   * read (the membership lookup), so it would miss a submission committed while the refund was
+   * waiting on the hold/collaboration locks. A locking read always sees the latest committed row
+   * and also blocks a submission whose UPDATE is not committed yet until this transaction ends.
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT d FROM Deliverable d WHERE d.collaborationId = :collaborationId ORDER BY d.id")
+  List<Deliverable> findByCollaborationIdForUpdate(@Param("collaborationId") String collaborationId);
+
+  /**
    * @deprecated CR-51 / Priya's Option B ruling: the release-condition gate in {@code
    *     EscrowService#assertReleaseConditionSatisfied} now re-keys off {@code collaborationId} via
    *     {@link #findByCollaborationIdOrderBySlotIndexAsc(String)}, not this method. {@code

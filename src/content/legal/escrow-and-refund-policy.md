@@ -2,7 +2,7 @@
 
 > ⚠️ **v0 DRAFT — PENDING INDIAN LEGAL COUNSEL / CA REVIEW. NOT LEGALLY BINDING. Ships `noindex` until validated.**
 
-We hold Campaign funds safely in payment protection through a licensed, RBI-authorized Payment Aggregator. Funds move only through payment protection release or a dispute-resolution outcome — there are no informal or on-demand refunds outside that process.
+When a brand funds a Campaign, the amount is reserved in the brand's Influora wallet until the work is approved or a dispute is resolved. Funds move only through payment protection release or a dispute-resolution outcome — there are no informal or on-demand refunds outside that process.
 
 **Last updated: 2026-07-13**
 
@@ -10,7 +10,7 @@ We hold Campaign funds safely in payment protection through a licensed, RBI-auth
 
 ## 1. How payment protection works
 
-When a brand funds a Campaign, the money does not go to Influora and does not go directly to the creator. It is held in **payment protection** by a licensed, RBI-authorized Payment Aggregator, in line with RBI's Payment Aggregator / Payment Gateway guidelines. Influora never pools Campaign funds in its own bank account.
+Brands add money to their Influora wallet through Razorpay, which processes card, UPI and net-banking payments. When a brand funds a Campaign, the Campaign amount is reserved from that wallet balance and recorded against the Campaign on Influora's ledger — this reserved amount is what we call **payment protection**. It does not go directly to the creator, and the brand cannot spend it elsewhere while it is reserved.
 
 Payment protection protects both sides:
 
@@ -23,7 +23,7 @@ Payment protection protects both sides:
 2. **Delivery** — the creator submits the Deliverable through the platform.
 3. **Review** — the brand reviews the Deliverable within the agreed review window.
 4. **Outcome:**
-   - **Approved** → the payment releases the Payout to the creator, minus the Platform fee and applicable TDS.
+   - **Approved** → the payment releases the Payout to the creator, minus the creator commission and any tax that must be deducted by law.
    - **Rejected** → the brand and creator work through our revision process, or either party opens a dispute.
    - **No response within the review window** → handled per the Campaign's default approval terms (auto-approval or escalation, as agreed at Campaign setup).
 
@@ -56,11 +56,11 @@ A Platform fee is deducted from the brand's funded amount, and a commission is d
 
 ## 6. Failed or reversed payments
 
-If a payment into a protected balance fails, is reversed, or triggers a chargeback through the Payment Aggregator, the affected Campaign is paused until the funding issue is resolved. We do not release Payouts against funds that have not successfully settled in payment protection.
+If a payment into a protected balance fails, is reversed, or triggers a chargeback through our payment processor (Razorpay), the affected Campaign is paused until the funding issue is resolved. We do not release Payouts against funds that have not successfully settled in payment protection.
 
 ## 7. Cancellations before delivery
 
-If both the brand and creator agree to cancel a Campaign before any Deliverable is submitted, the funded payment protection amount is returned to the brand, minus any Payment Aggregator processing costs that cannot be reversed. This mutual-cancellation path is separate from the dispute process described above.
+If both the brand and creator agree to cancel a Campaign before any Deliverable is submitted, the funded payment protection amount is returned to the brand, minus any payment-processing charges that cannot be reversed. This mutual-cancellation path is separate from the dispute process described above.
 
 ## 8. Questions or concerns
 

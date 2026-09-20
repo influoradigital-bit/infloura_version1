@@ -199,7 +199,8 @@ class DisputeEscrowConcurrencyTest {
                         COLLABORATION_ID, "01HCAMPAIGN1234567AB", CREATOR_USER_ID, null, "INR");
 
         when(escrowHoldRepository.findByIdForUpdate(ESCROW_HOLD_ID)).thenReturn(Optional.of(hold));
-        when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
+        // [EV-015] refund now reads the collaboration under a row lock.
+        when(collaborationRepository.findByIdForUpdate(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
         when(disputeRepository.existsByCollaborationIdAndStatusIn(eq(COLLABORATION_ID), any()))
                 .thenReturn(true);
 
@@ -283,7 +284,7 @@ class DisputeEscrowConcurrencyTest {
                         .collaborationId(COLLABORATION_ID)
                         .sequenceNo(1)
                         .amount(new BigDecimal("10000.00"))
-                        .status(MilestoneStatus.FUNDED)
+                        .status(MilestoneStatus.PENDING)
                         .build();
         milestone.markFunded(ESCROW_HOLD_ID);
         return milestone;

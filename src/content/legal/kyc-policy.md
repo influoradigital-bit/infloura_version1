@@ -18,7 +18,7 @@ You cannot fund a Campaign or receive a Payout until your KYC is verified.
 
 **Creators (individuals):**
 
-- PAN (Permanent Account Number) — required for TDS calculation and payout processing
+- PAN (Permanent Account Number) — required for tax compliance and payout processing
 - Aadhaar or another government-issued photo ID — for identity verification
 - Bank account or UPI details — to receive Payouts
 

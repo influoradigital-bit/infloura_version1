@@ -108,7 +108,7 @@ class CampaignAuthzTest {
                         brandContext,
                         new CampaignValidator(),
                         integrationHealthService,
-                        brandCampaignFeeService);
+                        new CampaignActivationGuard(escrowHoldRepository, brandCampaignFeeService));
     }
 
     /**

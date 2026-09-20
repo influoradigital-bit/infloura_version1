@@ -37,7 +37,9 @@ public final class DiscoveryDtos {
             long totalFollowers,
             BigDecimal engagementRate,
             double matchScore,
-            List<String> matchReasons) {}
+            List<String> matchReasons,
+            // EV-008: same provenance field as CreatorResponse.followersSource.
+            String followersSource) {}
 
     public record SimilarCreatorsResponse(List<SimilarCreator> similar) {}
 
@@ -80,5 +82,8 @@ public final class DiscoveryDtos {
             boolean discoverable,
             long completedCampaigns,
             BigDecimal avgRating,
-            Boolean saved) {}
+            Boolean saved,
+            // EV-008: VERIFIED | IMPORTED | NONE - what totalFollowers/engagementRate are made of
+            // (CreatorProfile.followersSource, F-0965). The brand profile page labels IMPORTED.
+            String followersSource) {}
 }

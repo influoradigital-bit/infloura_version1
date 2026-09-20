@@ -38,7 +38,7 @@ import {
     - "₹0 Forever — zero platform cuts from your agreed brand fees". Flatly false.
       Creator commission is 15%, identical on Free and Pro (see /pricing).
     - "RBI-regulated trustee escrow", "RBI Nodal Protected", "Escrow Vault".
-      Our partner is an RBI-authorized Payment Aggregator; we are not a trustee.
+      EV-007: funds are a reserved balance on Influora's ledger; we are not a trustee.
       "escrow" is banned in user copy (2026-09-02).
     - "< 3 Seconds" instant payout. Live copy says payout typically inside 24 hours.
     - "99.2% on-time completion score", "78% Tier-1 presence", "Industry Avg 1.8%",
@@ -86,7 +86,7 @@ const PAYOUT_FLOW = [
     n: '01',
     icon: Wallet,
     title: 'The brand funds it first',
-    body: 'Before you shoot anything, the full amount is deposited with a licensed, RBI-authorized Payment Aggregator. You see “Payment secured” on the invite.',
+    body: 'Before you shoot anything, the full amount is reserved from the brand\u2019s Influora wallet. You see “Payment secured” on the invite.',
     tag: 'Before filming',
   },
   {
@@ -107,7 +107,7 @@ const PAYOUT_FLOW = [
     n: '04',
     icon: ArrowRight,
     title: 'Payout releases to you',
-    body: 'Approval releases the money to your UPI or bank account, typically inside 24 hours, with an invoice generated for you showing gross → net and any recorded TDS.',
+    body: 'Approval releases the money to your Influora wallet, typically inside 24 hours, ready to withdraw to your UPI or bank account, with an invoice generated for you.',
     tag: '~24 hours',
   },
 ] as const;
@@ -116,14 +116,14 @@ const OLD_WAY = [
   'Rates negotiated in DMs, with the number moving every time someone new joins the thread.',
   'Filming first and invoicing after, then waiting 60–90 days to be paid.',
   'Revisions with no ceiling — "just one more version" until the shoot is unpaid work.',
-  'Writing your own invoice and working out the TDS deduction yourself.',
+  'Writing your own invoice, then chasing the brand to pay it.',
 ] as const;
 
 const INFLUORA_WAY = [
   'The rate is agreed and written into a contract before you start.',
   'The brand’s money is secured before you film, not after you deliver.',
   'Revision limits and usage rights are in the contract both sides e-signed.',
-  'The invoice is generated for you, with any recorded TDS shown on it.',
+  'The invoice is generated for you on every payout.',
 ] as const;
 
 export default function HowItWorksCreatorsPage() {
@@ -425,7 +425,7 @@ export default function HowItWorksCreatorsPage() {
                 </h2>
                 <p className="mt-4 text-muted-foreground">
                   You do not raise an invoice and wait. Approval releases the payout and the invoice
-                  is generated for you, showing gross to net with any recorded TDS on it.
+                  is generated for you.
                 </p>
               </div>
             </FadeUp>
@@ -550,7 +550,7 @@ export default function HowItWorksCreatorsPage() {
             label: 'First, show me how my payment is protected',
             to: '/features/secure-payments',
           }}
-          reassurances={['Free to join', 'Paid after approval', 'TDS and invoices handled']}
+          reassurances={['Free to join', 'Paid after approval', 'Invoices generated for you']}
           className="py-20"
         />
       </main>

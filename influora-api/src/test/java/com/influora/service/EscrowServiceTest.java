@@ -1,21 +1,28 @@
 package com.influora.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import com.influora.common.ApiException;
 import com.influora.common.InsufficientFundsException;
+import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.EscrowHold;
@@ -44,11 +51,15 @@ import com.influora.security.AuthPrincipal;
 import com.influora.service.EscrowService.PagedEscrowHolds;
 import com.influora.service.escrow.EscrowBackend;
 import com.influora.service.escrow.LedgerEscrowBackend;
+import com.influora.web.dto.money.MoneyDtos.EscrowFundResponse;
 import com.influora.web.dto.money.MoneyDtos.EscrowStatusResponse;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -120,6 +131,22 @@ class EscrowServiceTest {
                         collaborationLifecycleService,
                         escrowBackend,
                         applicationHistoryService);
+
+        // F-0873: initiateFund now locks the owning campaign row and checks for an existing active
+        // (PENDING/FUNDED) hold in the same fund scope before creating a new one. Lenient defaults
+        // so every pre-existing initiateFund test keeps working unchanged (campaign exists, no
+        // pre-existing active hold in scope) without having to touch each test individually; the new
+        // F-0873-specific tests below override these per-case.
+        // EV-177: the campaign-level path now also proves the locked campaign belongs to the
+        // caller's workspace, so the default campaign is owned by WORKSPACE_ID.
+        Campaign ownedCampaign = mock(Campaign.class);
+        lenient().when(ownedCampaign.getWorkspaceId()).thenReturn(WORKSPACE_ID);
+        lenient()
+                .when(campaignRepository.findByIdForUpdate(anyString()))
+                .thenReturn(Optional.of(ownedCampaign));
+        lenient()
+                .when(escrowHoldRepository.findActiveCampaignLevelHoldsForUpdate(anyString(), any()))
+                .thenReturn(List.of());
     }
 
     private EscrowHold fundedHold() {
@@ -690,6 +717,374 @@ class EscrowServiceTest {
         verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
     }
 
+    // ==================================================================================
+    // F-0873 — duplicate funding attempts (reload / second tab) for the same campaign/milestone
+    // scope must not create a second hold. CONTRACT: a duplicate returns the EXISTING active hold
+    // as a normal success response, never a new error code.
+    // ==================================================================================
+
+    @Test
+    @DisplayName(
+        "F-0873: a second funds attempt with a DIFFERENT idempotency key for the same campaign-level"
+            + " scope returns the EXISTING active hold and creates no new hold")
+    void secondFundAttemptWithDifferentKeyReturnsExistingHoldNoDuplicate() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.existsByCampaignIdAndStatus(CAMPAIGN_ID, MilestoneStatus.PENDING))
+                .thenReturn(false);
+        EscrowHold alreadyActive =
+                EscrowHold.builder()
+                        .id("01HESCROWALREADY123AB")
+                        .workspaceId(WORKSPACE_ID)
+                        .campaignId(CAMPAIGN_ID)
+                        .amount(BigDecimal.valueOf(50000))
+                        .currency("INR")
+                        .status(EscrowStatus.FUNDED)
+                        .idempotencyKey("idem-fund-original")
+                        .build();
+        when(escrowHoldRepository.findByIdempotencyKey("idem-fund-retry")).thenReturn(Optional.empty());
+        when(escrowHoldRepository.findActiveCampaignLevelHoldsForUpdate(eq(CAMPAIGN_ID), any()))
+                .thenReturn(List.of(alreadyActive));
+
+        EscrowFundResponse response =
+                service.initiateFund(
+                        principal,
+                        WORKSPACE_ID,
+                        CAMPAIGN_ID,
+                        null,
+                        BigDecimal.valueOf(50000),
+                        "INR",
+                        "idem-fund-retry");
+
+        assertEquals(alreadyActive.getId(), response.escrowHoldId());
+        assertEquals(0, alreadyActive.getAmount().compareTo(response.amount()));
+        assertEquals(EscrowStatus.FUNDED, response.status());
+        // No new hold, no wallet touched, no ledger posting -- CONTRACT: no new error code either
+        // (the call above did not throw).
+        verify(escrowHoldRepository, never()).save(any(EscrowHold.class));
+        verify(walletService, never()).requireWorkspaceWallet(anyString());
+        verify(ledgerService, never())
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+        "F-0873: a retry after a failed attempt (no persisted row -- the failed transaction rolled"
+            + " back) creates a NEW hold, not blocked")
+    void retryAfterFailedAttemptCreatesNewHold() {
+        // No FAILED/CANCELLED EscrowStatus exists in this schema: a failed initiateFund call throws
+        // before commit, so its INSERT never lands. "Retry after failure" is therefore identical, at
+        // this method's boundary, to the default lenient stub already set up in @BeforeEach --
+        // findActiveCampaignLevelHoldsForUpdate returns empty -- proving the retry is NOT blocked.
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.existsByCampaignIdAndStatus(CAMPAIGN_ID, MilestoneStatus.PENDING))
+                .thenReturn(false);
+        when(escrowHoldRepository.findByIdempotencyKey(FUND_IDEMPOTENCY_KEY)).thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID))
+                .thenReturn(walletWithBalance(BigDecimal.valueOf(50000)));
+        stubWalletFunding();
+
+        service.initiateFund(
+                principal, WORKSPACE_ID, CAMPAIGN_ID, null, BigDecimal.valueOf(50000), "INR", FUND_IDEMPOTENCY_KEY);
+
+        verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class)); // PENDING, then FUNDED
+    }
+
+    @Test
+    @DisplayName("F-0873: two DIFFERENT milestones on the same campaign stay independently fundable")
+    void twoMilestonesStayIndependentlyFundable() {
+        String milestoneA = MILESTONE_ID;
+        String milestoneB = "01HMILESTONEB1234567";
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        // Milestone A already has an active (FUNDED) hold ...
+        EscrowHold milestoneAHold =
+                EscrowHold.builder()
+                        .id("01HESCROWMILESTONEA1B")
+                        .workspaceId(WORKSPACE_ID)
+                        .campaignId(CAMPAIGN_ID)
+                        .milestoneId(milestoneA)
+                        .amount(BigDecimal.valueOf(5000))
+                        .currency("INR")
+                        .status(EscrowStatus.FUNDED)
+                        .idempotencyKey("idem-fund-milestone-a")
+                        .build();
+        // (EV-002 merge: a milestone is deduplicated by its own locked row and state, not by a
+        // campaign-wide hold query, so A's hold is never consulted when funding B -- it is kept
+        // here to document the scenario; the campaign-level query must not be reached at all.)
+        lenient().when(escrowHoldRepository.findByMilestoneId(milestoneA)).thenReturn(List.of(milestoneAHold));
+        // ... milestone B is its own PENDING row with no hold, and must not be blocked by A's hold.
+        PaymentMilestone milestoneBRow =
+                PaymentMilestone.builder()
+                        .id(milestoneB)
+                        .contractId(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .amount(BigDecimal.valueOf(5000))
+                        .build();
+        when(milestoneRepository.findByIdAndWorkspaceIdForUpdate(milestoneB, WORKSPACE_ID))
+                .thenReturn(Optional.of(milestoneBRow));
+        when(milestoneRepository.findById(milestoneB)).thenReturn(Optional.of(milestoneBRow));
+        Contract fullySigned =
+                Contract.builder()
+                        .id(CONTRACT_ID)
+                        .collaborationId(COLLAB_ID)
+                        .workspaceId(WORKSPACE_ID)
+                        .totalAmount(BigDecimal.valueOf(5000))
+                        .build();
+        fullySigned.recordBrandSignature("Test Brand Owner");
+        fullySigned.recordCreatorSignature("Test Creator");
+        when(contractRepository.findById(CONTRACT_ID)).thenReturn(Optional.of(fullySigned));
+        when(collaborationRepository.findByIdForUpdate(COLLAB_ID))
+                .thenReturn(
+                        Optional.of(Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR")));
+        when(escrowHoldRepository.findByIdempotencyKey("idem-fund-milestone-b")).thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID))
+                .thenReturn(walletWithBalance(BigDecimal.valueOf(5000)));
+        stubWalletFunding();
+
+        EscrowFundResponse response =
+                service.initiateFund(
+                        principal,
+                        WORKSPACE_ID,
+                        CAMPAIGN_ID,
+                        milestoneB,
+                        BigDecimal.valueOf(5000),
+                        "INR",
+                        "idem-fund-milestone-b");
+
+        // Proceeded to a genuinely NEW hold for B (not A's id echoed back).
+        assertNotEquals(milestoneAHold.getId(), response.escrowHoldId());
+        verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class)); // B's PENDING then FUNDED
+        assertEquals(response.escrowHoldId(), milestoneBRow.getEscrowHoldId());
+        verify(escrowHoldRepository, never()).findActiveCampaignLevelHoldsForUpdate(any(), any());
+        verify(campaignRepository, never()).findByIdForUpdate(any());
+    }
+
+    @Test
+    @DisplayName(
+        "F-0873: two attempts for the same campaign-level scope each take the campaign row lock --"
+            + " the second sees the hold the first just created (simulating the lock serializing a"
+            + " real concurrent race) and returns it instead of creating a duplicate")
+    void secondAttemptAfterLockSeesTheFirstHoldInsteadOfDuplicating() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.existsByCampaignIdAndStatus(CAMPAIGN_ID, MilestoneStatus.PENDING))
+                .thenReturn(false);
+        EscrowHold createdByFirstAttempt =
+                EscrowHold.builder()
+                        .id("01HESCROWRACEWINNER1B")
+                        .workspaceId(WORKSPACE_ID)
+                        .campaignId(CAMPAIGN_ID)
+                        .amount(BigDecimal.valueOf(50000))
+                        .currency("INR")
+                        .status(EscrowStatus.FUNDED)
+                        .idempotencyKey("idem-fund-A")
+                        .build();
+        // First attempt: nothing active yet. Second attempt: the row lock (campaignRepository.
+        // findByIdForUpdate, asserted below) would have blocked a real concurrent caller until the
+        // first committed -- by the time it re-reads, the first attempt's hold is now visible.
+        when(escrowHoldRepository.findActiveCampaignLevelHoldsForUpdate(eq(CAMPAIGN_ID), any()))
+                .thenReturn(List.of())
+                .thenReturn(List.of(createdByFirstAttempt));
+        when(escrowHoldRepository.findByIdempotencyKey("idem-fund-A")).thenReturn(Optional.empty());
+        when(escrowHoldRepository.findByIdempotencyKey("idem-fund-B")).thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID))
+                .thenReturn(walletWithBalance(BigDecimal.valueOf(100000)));
+        stubWalletFunding();
+
+        service.initiateFund(
+                principal, WORKSPACE_ID, CAMPAIGN_ID, null, BigDecimal.valueOf(50000), "INR", "idem-fund-A");
+        EscrowFundResponse second =
+                service.initiateFund(
+                        principal, WORKSPACE_ID, CAMPAIGN_ID, null, BigDecimal.valueOf(50000), "INR", "idem-fund-B");
+
+        assertEquals(createdByFirstAttempt.getId(), second.escrowHoldId());
+        // Exactly the first attempt's two saves (PENDING, then FUNDED); the second attempt saves
+        // nothing.
+        verify(escrowHoldRepository, times(2)).save(any(EscrowHold.class));
+        // Both attempts took the serializing row lock -- the real guarantee against a genuine
+        // concurrent race (proven end-to-end only by a real-thread Testcontainers IT, unavailable
+        // without Docker in this environment -- see repo rules).
+        verify(campaignRepository, times(2)).findByIdForUpdate(CAMPAIGN_ID);
+    }
+
+    // ==================================================================================
+    // EV-176 / EV-177 / EV-178 -- campaign-level ("Secure Funds") pool funding guard, merged with
+    // EV-002. A stateful in-memory hold table stands in for escrow_holds so the second call sees
+    // exactly what the first one saved (Mockito cannot prove the row lock itself; the locking
+    // query runs for real in EscrowHoldRepositoryCampaignLevelForUpdateTest).
+    // ==================================================================================
+
+    /** Saved holds, and the campaign-level locking query answered from them like the DB would. */
+    private List<EscrowHold> statefulHoldTable() {
+        List<EscrowHold> table = new ArrayList<>();
+        lenient()
+                .when(escrowHoldRepository.save(any(EscrowHold.class)))
+                .thenAnswer(
+                        inv -> {
+                            EscrowHold h = inv.getArgument(0);
+                            if (table.stream().noneMatch(t -> t == h)) {
+                                table.add(h);
+                            }
+                            return h;
+                        });
+        lenient()
+                .when(escrowHoldRepository.findActiveCampaignLevelHoldsForUpdate(anyString(), anyCollection()))
+                .thenAnswer(
+                        inv -> {
+                            String campaignId = inv.getArgument(0);
+                            Collection<EscrowStatus> statuses = inv.getArgument(1);
+                            return table.stream()
+                                    .filter(h -> campaignId.equals(h.getCampaignId()))
+                                    .filter(h -> h.getMilestoneId() == null)
+                                    .filter(h -> statuses.contains(h.getStatus()))
+                                    .toList();
+                        });
+        return table;
+    }
+
+    @Test
+    @DisplayName(
+            "EV-176: a second campaign-level fund with a NEW key replays the first pool hold --"
+                    + " one hold, one ledger post")
+    void campaignLevelSecondFundWithNewKeyCreatesNoSecondHoldOrDebit() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.existsByCampaignIdAndStatus(CAMPAIGN_ID, MilestoneStatus.PENDING))
+                .thenReturn(false);
+        when(escrowHoldRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID))
+                .thenReturn(walletWithBalance(BigDecimal.valueOf(200000)));
+        stubWalletFunding();
+        List<EscrowHold> table = statefulHoldTable();
+
+        EscrowFundResponse first =
+                service.initiateFund(
+                        principal, WORKSPACE_ID, CAMPAIGN_ID, null, BigDecimal.valueOf(50000), "INR", "pool-key-1");
+        EscrowFundResponse second =
+                service.initiateFund(
+                        principal, WORKSPACE_ID, CAMPAIGN_ID, null, BigDecimal.valueOf(50000), "INR", "pool-key-2");
+
+        assertEquals(1, table.size());
+        assertEquals(first.escrowHoldId(), second.escrowHoldId());
+        assertEquals(EscrowStatus.FUNDED, second.status());
+        verify(ledgerService, times(1))
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(campaignRepository, times(2)).findByIdForUpdate(CAMPAIGN_ID);
+    }
+
+    @Test
+    @DisplayName("EV-176: a blank milestoneId is campaign-level funding and is deduplicated the same way")
+    void blankMilestoneIdIsDeduplicatedAsCampaignLevel() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.existsByCampaignIdAndStatus(CAMPAIGN_ID, MilestoneStatus.PENDING))
+                .thenReturn(false);
+        when(escrowHoldRepository.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID))
+                .thenReturn(walletWithBalance(BigDecimal.valueOf(200000)));
+        stubWalletFunding();
+        List<EscrowHold> table = statefulHoldTable();
+
+        service.initiateFund(principal, WORKSPACE_ID, CAMPAIGN_ID, "", BigDecimal.valueOf(50000), "INR", "pool-key-1");
+        service.initiateFund(principal, WORKSPACE_ID, CAMPAIGN_ID, " ", BigDecimal.valueOf(50000), "INR", "pool-key-2");
+
+        assertEquals(1, table.size());
+        assertNull(table.get(0).getMilestoneId());
+        verify(ledgerService, times(1))
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "EV-177: a campaign-level fund for ANOTHER workspace's campaign id is 404 before any"
+                    + " dedupe read, wallet read or debit")
+    void campaignLevelFundForOtherWorkspacesCampaignIsRejected() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        Campaign foreign = mock(Campaign.class);
+        when(foreign.getWorkspaceId()).thenReturn("01HOTHERWORKSPACE9999");
+        when(campaignRepository.findByIdForUpdate("01HFOREIGNCAMPAIGN99")).thenReturn(Optional.of(foreign));
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.initiateFund(
+                                        principal,
+                                        WORKSPACE_ID,
+                                        "01HFOREIGNCAMPAIGN99",
+                                        null,
+                                        BigDecimal.valueOf(50000),
+                                        "INR",
+                                        "pool-key-foreign"));
+
+        assertEquals("CAMPAIGN_NOT_FOUND", ex.getCode());
+        assertEquals(404, ex.getStatus().value());
+        verify(milestoneRepository, never()).existsByCampaignIdAndStatus(any(), any());
+        verify(escrowHoldRepository, never()).findActiveCampaignLevelHoldsForUpdate(any(), any());
+        verify(escrowHoldRepository, never()).save(any(EscrowHold.class));
+        verify(walletService, never()).requireWorkspaceWallet(anyString());
+    }
+
+    @Test
+    @DisplayName("EV-177: a campaign-level fund for a campaign id that does not exist is 404, no debit")
+    void campaignLevelFundForUnknownCampaignIsRejected() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(campaignRepository.findByIdForUpdate("01HNOSUCHCAMPAIGN999")).thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                service.initiateFund(
+                                        principal,
+                                        WORKSPACE_ID,
+                                        "01HNOSUCHCAMPAIGN999",
+                                        null,
+                                        BigDecimal.valueOf(50000),
+                                        "INR",
+                                        "pool-key-missing"));
+
+        assertEquals("CAMPAIGN_NOT_FOUND", ex.getCode());
+        verify(escrowHoldRepository, never()).save(any(EscrowHold.class));
+        verify(walletService, never()).requireWorkspaceWallet(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "EV-176 business rule: a RELEASED or REFUNDED pool hold does not block a NEW pool fund;"
+                    + " only PENDING/FUNDED are active")
+    void releasedOrRefundedPoolHoldAllowsNewFund() {
+        when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
+        when(milestoneRepository.existsByCampaignIdAndStatus(CAMPAIGN_ID, MilestoneStatus.PENDING))
+                .thenReturn(false);
+        when(escrowHoldRepository.findByIdempotencyKey("pool-key-new")).thenReturn(Optional.empty());
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID))
+                .thenReturn(walletWithBalance(BigDecimal.valueOf(50000)));
+        stubWalletFunding();
+        List<EscrowHold> table = statefulHoldTable();
+        for (EscrowStatus past : List.of(EscrowStatus.RELEASED, EscrowStatus.REFUNDED)) {
+            table.add(
+                    EscrowHold.builder()
+                            .id("01HPASTPOOLHOLD" + past.name().substring(0, 3) + "AB")
+                            .workspaceId(WORKSPACE_ID)
+                            .campaignId(CAMPAIGN_ID)
+                            .amount(BigDecimal.valueOf(50000))
+                            .currency("INR")
+                            .status(past)
+                            .idempotencyKey("pool-key-" + past.name())
+                            .build());
+        }
+
+        EscrowFundResponse response =
+                service.initiateFund(
+                        principal, WORKSPACE_ID, CAMPAIGN_ID, null, BigDecimal.valueOf(50000), "INR", "pool-key-new");
+
+        assertEquals(3, table.size());
+        assertEquals(EscrowStatus.FUNDED, response.status());
+        verify(ledgerService, times(1))
+                .post(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<EscrowStatus>> statuses = ArgumentCaptor.forClass(Collection.class);
+        verify(escrowHoldRepository).findActiveCampaignLevelHoldsForUpdate(eq(CAMPAIGN_ID), statuses.capture());
+        assertEquals(EnumSet.of(EscrowStatus.PENDING, EscrowStatus.FUNDED), EnumSet.copyOf(statuses.getValue()));
+    }
+
     /**
      * Persistent application-history requirement — wiring the 8 remaining event types. Uses the
      * milestone-based funding path (not the pool-fund path above) because only that path binds a
@@ -708,7 +1103,7 @@ class EscrowServiceTest {
                         .collaborationId(COLLAB_ID)
                         .amount(amount)
                         .build();
-        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        when(milestoneRepository.findByIdAndWorkspaceIdForUpdate(MILESTONE_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(milestone));
         Contract fullySignedContract =
                 Contract.builder()
@@ -775,7 +1170,7 @@ class EscrowServiceTest {
                         .collaborationId(COLLAB_ID)
                         .amount(amount)
                         .build();
-        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        when(milestoneRepository.findByIdAndWorkspaceIdForUpdate(MILESTONE_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(milestone));
         Contract fullySignedContract =
                 Contract.builder()
@@ -844,7 +1239,7 @@ class EscrowServiceTest {
                     + " contract is DRAFT (neither party has signed) -- no hold is created")
     void initiateFundRejectsWhenContractNotSigned() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
-        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        when(milestoneRepository.findByIdAndWorkspaceIdForUpdate(MILESTONE_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(milestoneForContract(CONTRACT_ID)));
         Contract unsignedContract =
                 Contract.builder()
@@ -881,7 +1276,7 @@ class EscrowServiceTest {
                     + " signed (creatorSignedAt still null) -- half-signed is not enough")
     void initiateFundRejectsWhenOnlyBrandSigned() {
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
-        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        when(milestoneRepository.findByIdAndWorkspaceIdForUpdate(MILESTONE_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(milestoneForContract(CONTRACT_ID)));
         Contract halfSigned =
                 Contract.builder()
@@ -918,7 +1313,7 @@ class EscrowServiceTest {
         BigDecimal requiredAmount = BigDecimal.valueOf(5000);
         Wallet wallet = walletWithBalance(requiredAmount);
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
-        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        when(milestoneRepository.findByIdAndWorkspaceIdForUpdate(MILESTONE_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(milestoneForContract(CONTRACT_ID)));
         Contract fullySigned =
                 Contract.builder()
@@ -970,7 +1365,7 @@ class EscrowServiceTest {
     void initiateFundRejectsCancelledCollaborationEvenWhenContractActive() {
         BigDecimal requiredAmount = BigDecimal.valueOf(5000);
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(workspaceMember);
-        when(milestoneRepository.findByIdAndWorkspaceId(MILESTONE_ID, WORKSPACE_ID))
+        when(milestoneRepository.findByIdAndWorkspaceIdForUpdate(MILESTONE_ID, WORKSPACE_ID))
                 .thenReturn(Optional.of(milestoneForContract(CONTRACT_ID)));
         Contract fullySigned =
                 Contract.builder()
@@ -1195,7 +1590,8 @@ class EscrowServiceTest {
         Collaboration cancelled =
                 Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
         cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
-        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(cancelled));
+        // [EV-015] refund now reads the collaboration under a row lock.
+        when(collaborationRepository.findByIdForUpdate(COLLAB_ID)).thenReturn(Optional.of(cancelled));
         Wallet clearingWallet = Wallet.forWorkspace("01HCLEARING1234567890", "platform-clearing");
         Wallet brandWallet = Wallet.forWorkspace(WORKSPACE_ID, "brand");
         when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);

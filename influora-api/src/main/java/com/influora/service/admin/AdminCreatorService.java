@@ -631,7 +631,10 @@ public class AdminCreatorService {
     private PlatformStatsDto platformStats(String creatorProfileId) {
         CreatorMetric latest =
                 creatorMetricsRepository
-                        .findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc(creatorProfileId, "INSTAGRAM")
+                        // EV-008: Meta-synced rows only - a creator-declared Instagram row
+                        // (CREATOR_REPORTED) must not stand in for the synced snapshot here.
+                        .findFirstByCreatorProfileIdAndPlatformAndDataSourceOrderByTimeDesc(
+                                creatorProfileId, "INSTAGRAM", CreatorMetric.DATA_SOURCE_META_API)
                         .orElse(null);
 
         long avgReach = latest != null && latest.getAvgReachPerPost() != null ? latest.getAvgReachPerPost() : 0L;
