@@ -6,7 +6,9 @@
 **Branch:** `feat/creator-credits-search`, cut from `release/0919` @ `9bfe7dc`, in the `influora-credits` worktree
 **Sources:** a code check of `release/0919` (section 6 lists every file read), `CREDITS-SPEC.md` in `T-MEERA-CREATOR-PHASE-B`, and provider pricing and terms pages read on 2026-09-19.
 
-Nothing here is built yet. This file sets the order, the owner, the proof required for each step ("done when"), and who checks it. Nothing closes on the builder's own word.
+**Progress, 2026-09-20 (branch `feat/creator-credits-search`, local, not pushed).** Step 0.2 DONE (`a4f233e`). Step 1 DONE (priya; the amended spec sits beside this file as `CREDITS-SPEC.md`, 1,320 lines, 56 dated notes, and the Phase B original is untouched). Step 2 DONE (`db3b837`), review running. Steps 0.1, 0.3, 0.4 and 3-8 not started.
+
+Nothing else here is built yet. This file sets the order, the owner, the proof required for each step ("done when"), and who checks it. Nothing closes on the builder's own word.
 
 ---
 
@@ -44,7 +46,7 @@ Every step lands behind switches that default to **off**. `CREATOR_CREDITS_ENABL
 | # | Check | Owner | Done when | Checked by |
 |---|---|---|---|---|
 | 0.1 | **Gemini key tier.** Must be the **paid** tier: 1,500 free grounded searches a day, and Google does not use the data. On the free tier it's 500 a day, and Google uses creators' searches to improve its products. | meera | Billing tier recorded in this file, with the date checked | rohan |
-| 0.2 | **Anthropic library.** Raise the `anthropic` pin in `influora-ai/requirements.txt` from **0.42.0**, which has no web search, to a current version. **Local runs have been on 0.125.0 from the user site-packages while CI and the Docker image install 0.42.0**, so local pytest has never proved the production library. | vikram | Full pytest green **in a clean venv built from `requirements.txt`**, plus the CI run green, as its own commit | meera |
+| 0.2 | **DONE `a4f233e`.** **Anthropic library.** Raise the `anthropic` pin in `influora-ai/requirements.txt` from **0.42.0**, which has no web search, to a current version. **Local runs have been on 0.125.0 from the user site-packages while CI and the Docker image install 0.42.0**, so local pytest has never proved the production library. | vikram | Full pytest green **in a clean venv built from `requirements.txt`**, plus the CI run green, as its own commit | meera |
 | 0.3 | **Claude Haiku 4.5 + web search test call.** Anthropic's docs don't list which models support it. | vikram | One real call succeeds, with tokens and cost recorded here. If Haiku isn't supported, record Sonnet 4.5 as the model (₹3.34 per search; still profitable) | ash |
 | 0.4 | **Consent.** A search sends the creator's question to Google or Anthropic. Does the v2 notice cover that? | nisha (words), kabir | A yes or no recorded. If no: new wording + version bump, shipped in the **same deploy** as search (the G-1 rule) | kabir |
 
@@ -60,12 +62,37 @@ Owner **priya**. It edits the spec in place, not as an appendix. `CREDITS-SPEC` 
 **Done when:** priya signs the amended spec, and every changed section is edited in place with a dated note.
 **Checked by:** kavya reads the amended spec against the files in section 6 and confirms each cited line.
 
-### Step 2: Quick win, independent of credits. Trim Meera's history
+### Step 2: Quick win, independent of credits. Trim Meera's history — **DONE `db3b837`**
 
 - **Why:** the browser sends every message in the thread, and Spring loads up to **100** (`MeeraSessionService.DEFAULT_HISTORY_LIMIT = 100`, L125). All of it is re-sent at full input price on every Meera message, which makes the worst-case chat message ₹5.39 instead of ₹2.86.
 - **Change:** `influora-ai/app/prompt/assembler.py` sends the model only the **last 20 messages**. The UI still shows the whole thread.
 - **Owner:** vikram. **Done when:** a test with 30 messages proves the model receives 20, and the test goes red when the trim is removed.
 - **Checked by:** ash (answer quality with a shorter memory), then meera (full pytest on the pinned library).
+
+### Step 1 result: what the amended spec corrected about today's code
+
+priya's amendment (`CREDITS-SPEC.md`, beside this file) fixed six things the Phase B spec had wrong about the code.
+Each would have cost build time or money:
+
+- **The brief charge site would have double-charged.** The old §4.3 implied charging in `CreatorBriefService.analyse`,
+  which has three callers: reopening a stale brief through `get` → `readOrReanalyse` would bill a second 3.0 credits.
+  The charge now sits in `paste` (L199-209), with the refund in a try/catch plus a FALLBACK check.
+- **`ai_messages.credits_charged` is brand-owned** (its comment reads "1 per exchange, 10 for analysis"), so the
+  creator branch writes `0` there instead of tenths into a shared column.
+- **`CreditsSummary` and `SendTurnResponse.creditsRemaining` are brand-owned `int`s** and cannot carry creator tenths.
+  Two sub-steps were deleted rather than built wrong.
+- **The ledger column is `delta`, not `amount`.**
+- **`AICreditService.tryConsume` (L152) reads then decides.** Fine for a paid cap, wrong for a free allowance, so the
+  creator debit must be the conditional UPDATE the spec specifies.
+- **Pack seeds are tenths:** 500 / 1000 / 3000.
+
+**New work this uncovered, folded into step 5:** `ModelRate` in `app/costs/pricing.py` has four per-token fields and
+**no per-request slot**, so adding search-fee rows alone changes nothing. A per-request fee needs its own field and call
+site, and the real `usage` field name for a web search comes from step 0.3's test call. **So 0.3 now blocks search-fee
+accounting too**, not only the model choice.
+
+**Five more decisions (O8-O12)** are logged in the amended spec. Under D2's default the D1 predicate is dead code, and
+priya recommends not building it until D2 is answered.
 
 ### Step 3: Credits core (`CREDITS-SPEC` K1, K2, K5, K7, K9)
 
@@ -186,7 +213,7 @@ Assumptions: ₹88 = $1; Meera's prompt measured (instructions ~1,770 tokens + t
 - **Brand credits:** `influora-api/src/main/java/com/influora/service/meera/AICreditService.java`, `domain/entity/BrandAiCredit.java`, migrations `V14`, `V16`, `V20260917120000`…`V20260918180000`.
 - **Charge points:** `service/meera/MeeraSessionService.java` (`DEFAULT_HISTORY_LIMIT = 100`, L125), `web/CreatorMeeraController.java` (routes L138, L176, L212, L245, L277), `web/CreatorBriefController.java`.
 - **Payments:** `integration/razorpay/RazorpayClient.java`, `RazorpayWebhookController.java`.
-- **AI service:** `influora-ai/requirements.txt` (`anthropic==0.42.0`, `google-genai==0.8.0`); `app/costs/pricing.py` (no search rows); `app/costs/spend_tracker.py` (`record_creator_spend`, cap default $0.75); `app/providers/gemini.py` (no Google Search, thinking not limited); `app/prompt/assembler.py`.
+- **AI service:** `influora-ai/requirements.txt` (`anthropic` was 0.42.0, **now pinned 0.125.0 in `a4f233e`**; `google-genai==0.8.0`); `app/costs/pricing.py` (no search rows); `app/costs/spend_tracker.py` (`record_creator_spend`, cap default $0.75); `app/providers/gemini.py` (no Google Search, thinking not limited); `app/prompt/assembler.py`.
 - **Frontend:** `src/components/creator/MeeraCopilotChat.tsx` (handles only `CREATOR_MONTHLY_CAP_REACHED`, L87).
 - **Provider terms and prices:**
   - Gemini: ai.google.dev pricing and terms (grounding free 1,500/day on the paid tier, then $35 per 1,000; results only to the requester, no caching).
