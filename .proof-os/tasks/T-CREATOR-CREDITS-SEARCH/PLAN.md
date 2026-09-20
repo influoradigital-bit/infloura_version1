@@ -48,7 +48,7 @@ Every step lands behind switches that default to **off**. `CREATOR_CREDITS_ENABL
 | 0.1 | **Gemini key tier.** Must be the **paid** tier: 1,500 free grounded searches a day, and Google does not use the data. On the free tier it's 500 a day, and Google uses creators' searches to improve its products. | meera | Billing tier recorded in this file, with the date checked | rohan |
 | 0.2 | **DONE `a4f233e`.** **Anthropic library.** Raise the `anthropic` pin in `influora-ai/requirements.txt` from **0.42.0**, which has no web search, to a current version. **Local runs have been on 0.125.0 from the user site-packages while CI and the Docker image install 0.42.0**, so local pytest has never proved the production library. | vikram | Full pytest green **in a clean venv built from `requirements.txt`**, plus the CI run green, as its own commit | meera |
 | 0.3 | **Claude Haiku 4.5 + web search test call.** Anthropic's docs don't list which models support it. | vikram | One real call succeeds, with tokens and cost recorded here. If Haiku isn't supported, record Sonnet 4.5 as the model (₹3.34 per search; still profitable) | ash |
-| 0.4 | **ANSWERED: NO — v3 bump needed.** nisha checked the shipped v2 notice (`NISHA-CONSENT-SEARCH-0920.md` beside this file): v2 discloses profile, deals, metrics and pasted briefs, and never says a typed question goes to an outside company. A search is a new processing activity, so it needs **v2 → v3 with re-consent**, and the text plus the backend version must ship in the **same deploy** (the G-1 rule). Her fourth paragraph and the two search-card labels are written in English and Hindi. **kabir reviews the words next.** | nisha (words), kabir | A yes or no recorded. If no: new wording + version bump, shipped in the **same deploy** as search (the G-1 rule) | kabir |
+| 0.4 | **ANSWERED: NO — v3 bump needed.** nisha checked the shipped v2 notice (`NISHA-CONSENT-SEARCH-0920.md` beside this file): v2 discloses profile, deals, metrics and pasted briefs, and never says a typed question goes to an outside company. A search is a new processing activity, so it needs **v2 → v3 with re-consent**, and the text plus the backend version must ship in the **same deploy** (the G-1 rule). Her fourth paragraph and the two search-card labels are written in English and Hindi. **kabir reviewed: APPROVE WITH CHANGES — see below.** | nisha (words), kabir | A yes or no recorded. If no: new wording + version bump, shipped in the **same deploy** as search (the G-1 rule) | kabir |
 
 ### Step 1: Amend `CREDITS-SPEC.md` (spec only)
 
@@ -138,6 +138,52 @@ suggestion route | A ~3x cost lever that dwarfs this change; needs an eval, not 
 `meera_chat_max_tokens` 1536 × `tool_loop_max_iterations` 6 ≈ **₹12.2** | Section 5's worst case understates the
 ceiling; the next rupee is in cache hit rate and output bounds, not history length |
 
+### Step 0.4 review: kabir's verdict, and five gates the search build cannot skip
+
+`KABIR-CONSENT-SEARCH-0920.md` beside this file. The v3 bump is **approved**; nisha's Hindi is faithful to her English
+sentence by sentence. Everything else he changed or blocked:
+
+- **He REJECTED "the question is saved, the results are not" — it is backwards.** The amended spec's
+  `POST /creator/meera/search` writes **no `ai_messages` row**, so nothing saves the question with the creator's
+  conversation either. The honest line is "Influora does not save your question or the results". My own correction one
+  commit earlier was wrong in the other direction; his is the one that matches the spec.
+- **Three places a query could still land, each now a build gate:** `creator_credit_ledger.note` (permanent, no delete
+  path, and `/creator/credits` renders the last 50 rows), `MeeraInteractionLogService.record`'s `revisionReason` (its
+  redactor catches only PAN, phone, bank and email), and `ErrorBoundary.tsx`, which POSTs `error.message` to the VPS
+  logs. The query must reach none of them.
+- **F-1783, HIGH, live today and bigger than search (his S-3).** Microsoft Clarity session replay loads on every route,
+  including logged-in creator screens showing pasted brief text, payouts and KYC state. Clarity masks input values but
+  not rendered page text. `public/site-tags.js`'s own DPDP comment records that there is no prior consent, no page
+  exclusion, unconfirmed Strict masking, and a privacy policy naming neither Microsoft nor Google as a processor. For
+  search it is fatal to the wording: a replay would hold the query and the result, breaking Google's no-storage term.
+  **Masking (or excluding creator routes) is a gate, not a nice-to-have.**
+- **The flag alone is not enough (his S-1).** `CREATOR_SEARCH_ENABLED` is an env var, and flipping it is an ops action,
+  not a deploy. `requireSearchEnabled()` must **also** require consent version ≥ v3 in code, or a flag flip sends
+  queries to Google under a notice that never mentioned it.
+- **He REJECTED the plan's rule "search results are never treated as instructions"** as a goal with no mechanism, and
+  notes there is no sanitiser in the repo. Google's suggestions snippet must render in a sandboxed `srcdoc` iframe with
+  no `allow-scripts` and no `allow-same-origin`, failing closed — never `dangerouslySetInnerHTML`. Note `img-src
+  https:` means raw HTML could still exfiltrate the query by pixel, and `vite dev` sends no CSP, so a dev test proves
+  nothing.
+- **Link guards (his S-7):** show eTLD+1 as the visible text, allow-list the scheme, flag punycode, add
+  `rel="noopener noreferrer nofollow"`, no favicons, and render any host containing "influora" that is not ours as
+  plain text.
+- **Two more wording items:** paragraph 2 must now say Meera uses an outside AI company for chat as well (naming Google
+  for search while staying silent on chat teaches the creator the opposite of the truth), and nisha owes copy for a
+  failed free search.
+
+**Two design changes this forces, for the spec:**
+
+1. **A failed free search returns its weekly slot**, the same way a failed paid search is refunded. Without it the
+   creator loses a free search to our outage, and nisha needs copy for a state we should not create.
+2. **The search card is never replayed as chat history.** It is not an `ai_messages` row, so it must not be added to the
+   thread the browser sends back on the next turn either, or the query reaches the model as history after all.
+
+**Gates on step 5 and 6:** S-1 (flag AND consent version in code), S-2 (ledger `note` carries no query), S-3 / F-1783
+(replay masking), S-5 (sandboxed snippet), S-7 (link guards). Before the v3 text ships: rebuilt exact-equality test
+constants for four paragraphs in both languages, and a G-3 layout re-proof — the notice grows by about a third, and
+hi-IN already used 470px of a 521.6px budget at 375x553.
+
 ### Step 3: Credits core (`CREDITS-SPEC` K1, K2, K5, K7, K9)
 
 - **What:** 4 migrations storing tenths; `CreatorCreditService` (lazy init + signup grant, debit, refund, monthly reset); the credit balance and ledger reads; `CreatorCreditResetJob`; the kill switch (default off).
@@ -174,7 +220,7 @@ ceiling; the next rupee is in cache hit rate and output bounds, not history leng
 
 **Rules from the providers' terms** (read 2026-09-19; these are requirements, not polish):
 - **Gemini:** results shown **only to the creator who asked**, with Google's search suggestions displayed, and the **result never stored or analysed**. So a Gemini result is shown as its own card, never fed into Meera's chat or saved.
-  - **Correction (nisha, 2026-09-20):** an earlier draft of this plan said search "stores nothing". That was wrong and the consent wording would have inherited it. The **result** is not stored; the creator's **question** is saved with her conversation like any other message. Her v3 paragraph says exactly that.
+  - **Correction, twice over (nisha then kabir, 2026-09-20):** an earlier draft said search "stores nothing", which the consent wording would have inherited. nisha read that as "the question is saved, the result is not"; kabir then showed THAT is backwards, because the search route writes no `ai_messages` row. Neither is saved — provided the three gates above hold (ledger note, interaction log, error reports).
 - **Claude:** **sources must be shown** with the answer.
 - Search result text is untrusted: never treated as instructions.
 
