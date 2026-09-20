@@ -320,7 +320,16 @@ class MeeraContextServiceTest {
         when(profile.getGstin()).thenReturn(null);
         when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
         when(profile.getTierOverride()).thenReturn(null);
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+        // EV-008: the assembler now reads the Meta-verified row via
+        // findByCreatorProfileIdAndDataSourceOrderByTimeDesc(id, DATA_SOURCE_META_API, ...), not the
+        // unfiltered findByCreatorProfileIdOrderByTimeDesc this stub used to target pre-merge (that
+        // overload is asserted NEVER called at line ~547's
+        // `verify(creatorMetricsRepository, never()).findByCreatorProfileIdOrderByTimeDesc(...)`).
+        // Stubbing the no-longer-called overload here left this the one test in the file still
+        // pointed at the old collaborator, which is exactly what Mockito's strict-stub
+        // UnnecessaryStubbingException flagged after the EV-008/B0 merge.
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(
+                        eq("profile1"), eq("META_API"), any()))
                 .thenReturn(List.of());
         when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
 
