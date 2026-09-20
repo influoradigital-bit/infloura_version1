@@ -24,10 +24,14 @@ export function verifiedFollowers(page: PortfolioPage) {
 export function metaDescription(page: PortfolioPage): string {
   const who = `${page.displayName} is a ${page.verified ? 'verified ' : ''}${page.niches[0]?.toLowerCase() || 'content'} creator${page.city ? ' based in ' + page.city : ''}`;
   const followers = verifiedFollowers(page);
-  const collabs = `${page.stats.totalCollabs} brand collaborations`;
-  return followers > 0
-    ? `${who} with ${formatFollowers(followers)} platform-verified followers and ${collabs}.`
-    : `${who} with ${collabs}.`;
+  // [F-0972] `stats` is null when the creator hid their trust bar. This string is the
+  // page's public meta description, so a withheld collab count must drop out of the
+  // sentence entirely — never appear as "0 brand collaborations".
+  const collabs = page.stats != null ? `${page.stats.totalCollabs} brand collaborations` : null;
+  const audience =
+    followers > 0 ? `${formatFollowers(followers)} platform-verified followers` : null;
+  const tail = [audience, collabs].filter(Boolean).join(' and ');
+  return tail ? `${who} with ${tail}.` : `${who}.`;
 }
 
 /** EV-008 — the Platform Stats footnote may only claim "synced from the API" when every card is. */

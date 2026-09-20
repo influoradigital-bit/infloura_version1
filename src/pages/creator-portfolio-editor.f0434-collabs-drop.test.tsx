@@ -99,7 +99,7 @@ function portfolioPage(displayMode: PortfolioCollab['displayMode'] = 'logo') {
     bio: 'Fashion & lifestyle creator.',
     niches: ['Fashion'],
     verified: true,
-    stats: { totalCollabs: 1, avgRating: 4.8, onTimeRate: 95, repeatBrands: 1 },
+    stats: { totalCollabs: 1, avgRating: 4.8, onTimeRate: 95, onTimeSampleSize: 1, repeatBrands: 1 },
     badges: [],
     platforms: [],
     collabs: [

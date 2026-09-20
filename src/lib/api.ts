@@ -2070,6 +2070,13 @@ export interface CreatorPublicProfile {
   avgRating: number | null;
   saved: boolean | null;
   /**
+   * [F-0972/F-0974] Everything the creator authored in their portfolio editor — rate
+   * card, pinned posts, past collabs, custom links, badges, trust stats. Until
+   * 2026-09-20 this endpoint did not carry it at all and buildLiveCreatorView in
+   * brand-creator-profile.tsx hardcoded five empty arrays in its place.
+   */
+  portfolio: PortfolioBrandView;
+  /**
    * EV-008 — DiscoveryDtos.CreatorPublicProfileResponse.followersSource: what totalFollowers /
    * engagementRate are made of. VERIFIED = Meta-synced platforms only; IMPORTED = Marketplace/admin
    * import, must be labelled "imported, not verified"; NONE = nothing counted yet.
@@ -4721,6 +4728,48 @@ export interface PortfolioVisibility {
   contactForm: boolean;
 }
 
+/**
+ * Trust signals computed server-side from deal history (PortfolioDtos.PortfolioStats).
+ * Named rather than inline so PortfolioBrandView and PortfolioPage cannot drift apart.
+ */
+export interface PortfolioStats {
+  totalCollabs: number;
+  avgRating: number;            // 0–5
+  /**
+   * [F-0589] NULLABLE by design — `null` means "we hold no measurable delivery evidence for
+   * this creator", not 0 and not 100. The backend only measures a deliverable that carries both
+   * a deadline and a submission; when none does, it sends `null` rather than the flat 100% it
+   * used to publish for every creator with missing deadline data. Render it as an explicit "—",
+   * never interpolate it into a string (a raw `${onTimeRate}%` prints "null%").
+   */
+  onTimeRate: number | null;    // 0–100 (%), or null when nothing was measurable
+  /** [F-0589] Completed collabs the rate was actually measured over. 0 exactly when onTimeRate is null. */
+  onTimeSampleSize: number;
+  repeatBrands: number;
+}
+
+/**
+ * PortfolioDtos.PortfolioBrandView — the slice of a creator's portfolio a signed-in brand is
+ * served, nested on CreatorPublicProfileResponse. Assembled by PortfolioService#getForBrand
+ * under the same visibility rules the public page obeys, with one difference: a rate card set
+ * to 'brands_only' resolves to real rows here.
+ *
+ * Every list arrives already filtered by the creator's own toggles — an empty array means
+ * they hid that section or have nothing in it. Never re-filter it client-side.
+ */
+export interface PortfolioBrandView {
+  badges: PortfolioBadge[];
+  pastCollabs: PortfolioCollab[];
+  contentPortfolio: PortfolioPinnedPost[];
+  customLinks: PortfolioCustomLink[];
+  rateCard: PortfolioRateRow[];
+  /** [F-0972] null when the creator hid their trust bar — never 0 (F-0589). */
+  stats: PortfolioStats | null;
+  topAudienceCities: string[];
+  /** [F-0977] presigned by the server; the raw column is a bare R2 object key. */
+  coverUrl: string | null;
+}
+
 export interface PortfolioPage {
   username: string;
   displayName: string;
@@ -4731,13 +4780,12 @@ export interface PortfolioPage {
   coverUrl?: string;
   verified: boolean;
 
-  // Trust signals (computed server-side from deal history)
-  stats: {
-    totalCollabs: number;
-    avgRating: number;            // 0–5
-    onTimeRate: number;           // 0–100 (%)
-    repeatBrands: number;
-  };
+  /**
+   * [F-0972] NULLABLE. null means the creator switched their trust bar off and the
+   * server withheld these numbers — it is never a zeroed block, because a published
+   * `0 collabs / 0.0 rating` reads as measured fact (F-0589). Guard every read.
+   */
+  stats: PortfolioStats | null;
 
   badges: PortfolioBadge[];
   platforms: PortfolioPlatformStats[];
@@ -4817,9 +4865,13 @@ export const portfolio = {
 
   /**
    * POST /portfolio/:username/contact   (PUBLIC — anti-spam protected on server)
-   * Body: { name, email, message, captchaToken }
+   * Body: { name, email, message }
+   *
+   * [F-0976] `captchaToken` was removed 2026-09-20. The server record declared it and
+   * nothing in the repository ever read it — no verifier existed — so sending it
+   * implied a protection this endpoint does not have. Throttling is the real control.
    */
-  contact: (username: string, payload: { name: string; email: string; message: string; captchaToken?: string }) =>
+  contact: (username: string, payload: { name: string; email: string; message: string }) =>
     isLive()
       ? http.request<{ delivered: boolean }>('POST', `/portfolio/${encodeURIComponent(username)}/contact`, {
           body: payload,
@@ -4860,7 +4912,7 @@ function mockPortfolio(username: string): PortfolioPage {
     avatarUrl: '',
     coverUrl: '',
     verified: true,
-    stats: { totalCollabs: 45, avgRating: 4.8, onTimeRate: 95, repeatBrands: 12 },
+    stats: { totalCollabs: 45, avgRating: 4.8, onTimeRate: 95, onTimeSampleSize: 40, repeatBrands: 12 },
     badges: ['top_creator', 'fast_responder', 'on_time', 'brand_favorite'],
     platforms: [
       {

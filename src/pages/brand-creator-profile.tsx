@@ -25,7 +25,14 @@ import {
   Lock,
   type LucideIcon,
 } from 'lucide-react';
-import { api, isApiLive, ApiError, type CreatorPublicProfile, type SimilarCreator } from '@/lib/api';
+import {
+  api,
+  isApiLive,
+  ApiError,
+  type CreatorPublicProfile,
+  type SimilarCreator,
+  type PortfolioRateRow,
+} from '@/lib/api';
 import type { Platform, CreatorDemographics } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { cssVars } from '@/lib/css-vars';
@@ -118,10 +125,32 @@ interface CreatorDisplayModel {
      */
     authenticity: number | null;
   };
-  portfolio: { id: number | string; type: string; brand: string; views: number; likes: number }[];
+  /**
+   * [F-0972] The creator's own pinned posts, from PortfolioBrandView.contentPortfolio.
+   * `caption` replaces the old `brand` field: a pinned post carries no brand attribution,
+   * so the previous shape could only have been filled by inventing one. `views`/`likes`
+   * are optional on the wire and stay nullable here — absent is not zero.
+   */
+  portfolio: {
+    id: string;
+    platform: Platform;
+    caption: string | null;
+    thumbnailUrl: string | null;
+    views: number | null;
+    likes: number | null;
+  }[];
+  /**
+   * [F-0974] `rows` is the creator's real per-deliverable rate card, served to a brand when
+   * they set it to 'public' or 'brands_only' and empty when they set it to 'hidden'.
+   * `floor`/`ceiling` are the profile-level rateMin/rateMax, which the DTO has always
+   * carried and this page used to discard — the fallback for a creator whose only pricing
+   * ever came from onboarding rather than the rate-card editor.
+   */
   rates: {
-    instagram: { type: string; price: number }[];
-    youtube: { type: string; price: number }[];
+    rows: PortfolioRateRow[];
+    floor: number | null;
+    ceiling: number | null;
+    currency: string | null;
   };
   pastBrands: string[];
   reviews: { brand: string; rating: number; comment: string; date: string }[];
@@ -135,7 +164,15 @@ interface CreatorDisplayModel {
      */
     completionRate: number | null;
     onTimeDelivery: number | null;
-    repeatClients: number | null;
+    /** [F-0589] Collabs onTimeDelivery was measured over; 0 exactly when it is null. */
+    onTimeSampleSize: number;
+    /**
+     * [F-0972] A COUNT of brands who hired this creator more than once, not a percentage.
+     * PortfolioStats.repeatBrands. The tile below renders it bare for that reason — the
+     * old 'Repeat Clients' tile appended a '%', which would have turned a count of 3 into
+     * a fabricated '3%'.
+     */
+    repeatBrands: number | null;
   };
 }
 
@@ -298,25 +335,24 @@ const mockCreator: CreatorDisplayModel = {
   },
 
   portfolio: [
-    { id: 1, type: 'Reel', brand: 'Myntra', views: 1250000, likes: 89000 },
-    { id: 2, type: 'Post', brand: 'Nykaa', views: 450000, likes: 32000 },
-    { id: 3, type: 'Video', brand: 'Boat', views: 890000, likes: 45000 },
-    { id: 4, type: 'Reel', brand: 'Sugar Cosmetics', views: 2100000, likes: 156000 },
-    { id: 5, type: 'Post', brand: 'FabIndia', views: 320000, likes: 28000 },
-    { id: 6, type: 'Story', brand: 'Mamaearth', views: 280000, likes: 21000 },
+    { id: 'p1', platform: 'INSTAGRAM', caption: 'Summer edit with Myntra', thumbnailUrl: null, views: 1250000, likes: 89000 },
+    { id: 'p2', platform: 'INSTAGRAM', caption: 'Nykaa skincare routine', thumbnailUrl: null, views: 450000, likes: 32000 },
+    { id: 'p3', platform: 'YOUTUBE', caption: 'boAt unboxing', thumbnailUrl: null, views: 890000, likes: 45000 },
+    { id: 'p4', platform: 'INSTAGRAM', caption: 'Sugar Cosmetics festive look', thumbnailUrl: null, views: 2100000, likes: 156000 },
+    { id: 'p5', platform: 'INSTAGRAM', caption: 'FabIndia handloom haul', thumbnailUrl: null, views: 320000, likes: 28000 },
+    { id: 'p6', platform: 'INSTAGRAM', caption: null, thumbnailUrl: null, views: 280000, likes: 21000 },
   ],
 
   rates: {
-    instagram: [
-      { type: 'Single Post', price: 45000 },
-      { type: 'Reel', price: 75000 },
-      { type: 'Story (3 frames)', price: 15000 },
-      { type: 'Post + Reel Bundle', price: 100000 },
+    rows: [
+      { id: 'instagram_post', label: 'Instagram Post', min: 45000, max: 60000, currency: 'INR' },
+      { id: 'instagram_reel', label: 'Instagram Reel', min: 75000, max: 95000, currency: 'INR' },
+      { id: 'instagram_story', label: 'Instagram Story (3 frames)', min: 15000, max: 20000, currency: 'INR' },
+      { id: 'youtube_integration', label: 'YouTube Integration (60-90s)', min: 150000, max: 180000, currency: 'INR' },
     ],
-    youtube: [
-      { type: 'Integration (60-90s)', price: 150000 },
-      { type: 'Dedicated Video', price: 300000 },
-    ],
+    floor: 15000,
+    ceiling: 180000,
+    currency: 'INR',
   },
 
   pastBrands: ['Myntra', 'Nykaa', 'Boat', 'Sugar Cosmetics', 'FabIndia', 'Mamaearth', 'Puma India', 'H&M India'],
@@ -331,7 +367,8 @@ const mockCreator: CreatorDisplayModel = {
     responseTime: '< 4 hours',
     completionRate: 98,
     onTimeDelivery: 96,
-    repeatClients: 72,
+    onTimeSampleSize: 24,
+    repeatBrands: 7,
   },
 };
 
@@ -450,9 +487,13 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       // PR-1 fix — real avg of brand→creator star reviews, or `null` (not a fabricated 0)
       // when this creator has no reviews yet (CreatorDiscoveryService H-22 comment).
       rating: row.avgRating,
-      // TODO(vikram): DTO still has no reviewCount field — `null`, not a fabricated 0, so the
-      // Reviews-tab render below never prints "0 reviews" next to a real average rating.
-      reviewCount: null,
+      // [F-0972] Real count of reviewed collabs now that pastCollabs carries ratings and
+      // quotes. Still `null` — not 0 — when the portfolio section is hidden or empty, so a
+      // real average rating is never captioned "0 reviews".
+      reviewCount:
+        (row.portfolio?.pastCollabs ?? []).filter(
+          (c) => c.rating != null || (c.publicQuote ?? '').trim().length > 0
+        ).length || null,
     },
     platforms: (row.platforms ?? []).map((p) => ({
       name: PLATFORM_LABEL[p.platform] ?? p.platform,
@@ -474,21 +515,49 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       // `null` (not yet scored) stays null all the way to the ring below.
       authenticity: row.scores?.authenticity ?? null,
     },
-    // TODO(vikram): PortfolioItemResponse (id/title/description/thumbnailUrl/mediaUrl/platform)
-    // has no brand/type/views/likes fields, so it can't be mapped into this grid without inventing data
-    portfolio: [],
-    // TODO(vikram): DTO only has rateMin/rateMax/currency, no per-platform/per-type rate cards
-    rates: { instagram: [], youtube: [] },
-    pastBrands: [], // TODO(vikram): DTO has no past-brands history
-    reviews: [], // TODO(vikram): DTO has no individual reviews, only the avgRating aggregate
+    // [F-0972] All four of these were hardcoded empty because GET /creators/profile/:x did not
+    // carry the portfolio. It does now (PortfolioBrandView, assembled by
+    // PortfolioService#getForBrand), already filtered by the creator's own visibility
+    // toggles — so an empty array here means the creator chose to hide that section or has
+    // nothing in it, never that the field is unimplemented. Do not re-filter it client-side.
+    portfolio: (row.portfolio?.contentPortfolio ?? []).map((post) => ({
+      id: post.id,
+      platform: post.platform,
+      caption: post.caption ?? null,
+      thumbnailUrl: post.thumbnailUrl ?? null,
+      views: post.views ?? null,
+      likes: post.likes ?? null,
+    })),
+    rates: {
+      rows: row.portfolio?.rateCard ?? [],
+      floor: row.rateMin,
+      ceiling: row.rateMax,
+      currency: row.currency,
+    },
+    // A 'category' or 'hidden' collab is anonymised or dropped server-side, so brandName is
+    // already safe to print; dedupe because one brand can run several campaigns.
+    pastBrands: Array.from(
+      new Set((row.portfolio?.pastCollabs ?? []).map((c) => c.brandName).filter(Boolean))
+    ),
+    // Only collabs the brand actually reviewed. A collab with neither a rating nor a quote
+    // is a completed campaign, not a review, and must not appear as a blank one.
+    reviews: (row.portfolio?.pastCollabs ?? [])
+      .filter((c) => c.rating != null || (c.publicQuote ?? '').trim().length > 0)
+      .map((c) => ({
+        brand: c.brandName,
+        rating: c.rating ?? 0,
+        comment: c.publicQuote ?? '',
+        date: c.completedAt,
+      })),
     metrics: {
-      // TODO(vikram): DTO has no work-quality metrics (response time / completion / on-time / repeat).
-      // `null` (not 0) for the three percentage metrics — PR-1: a "0%" here rendered as fact for
-      // every creator is the exact fabricated-zero bug this ticket exists to close.
+      // responseTime and completionRate still have no backend field anywhere — PortfolioStats
+      // measures delivery, not responsiveness — so they stay honestly absent. on-time and
+      // repeat-brands are real now (F-0972).
       responseTime: '—',
       completionRate: null,
-      onTimeDelivery: null,
-      repeatClients: null,
+      onTimeDelivery: row.portfolio?.stats?.onTimeRate ?? null,
+      onTimeSampleSize: row.portfolio?.stats?.onTimeSampleSize ?? 0,
+      repeatBrands: row.portfolio?.stats?.repeatBrands ?? null,
     },
   };
 }
@@ -971,12 +1040,18 @@ export default function BrandCreatorProfilePage() {
                   value: creator.metrics.completionRate != null ? `${creator.metrics.completionRate}%` : '—',
                 },
                 {
-                  label: 'On-Time Delivery',
+                  // [F-0589] onTimeRate is null when nothing was measurable — not 0%.
+                  label:
+                    creator.metrics.onTimeSampleSize > 0
+                      ? `On-Time Delivery (${creator.metrics.onTimeSampleSize})`
+                      : 'On-Time Delivery',
                   value: creator.metrics.onTimeDelivery != null ? `${creator.metrics.onTimeDelivery}%` : '—',
                 },
                 {
-                  label: 'Repeat Clients',
-                  value: creator.metrics.repeatClients != null ? `${creator.metrics.repeatClients}%` : '—',
+                  // [F-0972] A count, rendered bare. The old tile said 'Repeat Clients' and
+                  // appended '%', which would print a count of 3 as '3%'.
+                  label: 'Repeat Brands',
+                  value: creator.metrics.repeatBrands != null ? String(creator.metrics.repeatBrands) : '—',
                 },
               ].map((metric) => (
                 <div key={metric.label} className="rounded-lg border p-4">
@@ -1138,87 +1213,129 @@ export default function BrandCreatorProfilePage() {
 
           {/* Portfolio Tab */}
           <TabsContent value="portfolio">
+            {/* [F-0972] Empty means the creator hid this section or has pinned nothing —
+                say which rather than rendering a silent blank grid. */}
+            {creator.portfolio.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-8 text-center">
+                <p className="font-medium">No content to show</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This creator hasn't pinned any content to their portfolio, or has chosen not to
+                  display it.
+                </p>
+              </div>
+            ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {creator.portfolio.map((item) => (
                 <div
                   key={item.id}
                   className="group relative aspect-square overflow-hidden rounded-lg bg-muted"
                 >
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    {item.type === 'Reel' || item.type === 'Video' ? (
-                      <Play className="h-12 w-12 text-muted-foreground/50" />
-                    ) : (
-                      <Eye className="h-12 w-12 text-muted-foreground/50" />
-                    )}
-                  </div>
-                  <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-4 opacity-0 transition-opacity group-hover:opacity-100">
-                    <Badge variant="secondary" className="w-fit mb-2">{item.type}</Badge>
-                    <p className="text-sm font-medium text-white">for {item.brand}</p>
-                    <div className="mt-2 flex gap-4 text-xs text-white/80">
-                      <span className="flex items-center gap-1">
-                        <Eye className="h-3 w-3" />
-                        {formatNumber(item.views)}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Heart className="h-3 w-3" />
-                        {formatNumber(item.likes)}
-                      </span>
+                  {item.thumbnailUrl ? (
+                    <img
+                      src={item.thumbnailUrl}
+                      alt={item.caption ?? 'Portfolio content'}
+                      className="absolute inset-0 h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      {item.platform === 'YOUTUBE' ? (
+                        <Play className="h-12 w-12 text-muted-foreground/50" />
+                      ) : (
+                        <Eye className="h-12 w-12 text-muted-foreground/50" />
+                      )}
                     </div>
+                  )}
+                  <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/80 via-black/20 to-transparent p-4 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Badge variant="secondary" className="w-fit mb-2">
+                      {PLATFORM_LABEL[item.platform] ?? item.platform}
+                    </Badge>
+                    {/* [F-0972] A pinned post carries a caption, not a brand. The old markup
+                        printed `for {item.brand}` from a field the wire never had. */}
+                    {item.caption && (
+                      <p className="line-clamp-2 text-sm font-medium text-white">{item.caption}</p>
+                    )}
+                    {/* views/likes are optional on the wire — absent is not zero (F-0589). */}
+                    {(item.views != null || item.likes != null) && (
+                      <div className="mt-2 flex gap-4 text-xs text-white/80">
+                        {item.views != null && (
+                          <span className="flex items-center gap-1">
+                            <Eye className="h-3 w-3" />
+                            {formatNumber(item.views)}
+                          </span>
+                        )}
+                        {item.likes != null && (
+                          <span className="flex items-center gap-1">
+                            <Heart className="h-3 w-3" />
+                            {formatNumber(item.likes)}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
+            )}
           </TabsContent>
 
           {/* Rates Tab */}
           <TabsContent value="rates" className="space-y-6">
-            {/* Instagram Rates */}
-            <div className="rounded-lg border p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <Instagram className="h-5 w-5 text-[#E4405F]" />
-                <h3 className="font-medium">Instagram</h3>
+            {/* [F-0974] The creator's real per-deliverable rate card, served here when they
+                set it to 'public' or 'brands_only'. Until 2026-09-20 this tab mapped to two
+                hardcoded empty arrays and rendered two empty bordered cards under an
+                'Instagram'/'YouTube' split the rate card does not actually have. */}
+            {creator.rates.rows.length > 0 ? (
+              <div className="rounded-lg border p-5">
+                <h3 className="mb-4 font-medium">Rate card</h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {creator.rates.rows.map((rate) => (
+                    <div
+                      key={rate.id}
+                      className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 p-4"
+                    >
+                      <span>{rate.label}</span>
+                      <span className="flex shrink-0 items-center gap-1 font-semibold">
+                        <IndianRupee className="h-3.5 w-3.5" />
+                        {rate.min === rate.max
+                          ? formatINR(rate.min)
+                          : `${formatINR(rate.min)}–${formatINR(rate.max)}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {creator.rates.instagram.map((rate) => (
-                  <div
-                    key={rate.type}
-                    className="flex items-center justify-between rounded-lg bg-muted/50 p-4"
-                  >
-                    <span>{rate.type}</span>
-                    <span className="font-semibold flex items-center gap-1">
-                      <IndianRupee className="h-3.5 w-3.5" />
-                      {formatINR(rate.price)}
-                    </span>
-                  </div>
-                ))}
+            ) : creator.rates.floor != null || creator.rates.ceiling != null ? (
+              /* No per-deliverable card, but the profile-level range exists — the DTO has
+                 always carried it and this page used to throw it away. */
+              <div className="rounded-lg border p-5">
+                <h3 className="mb-1 font-medium">Typical range</h3>
+                <p className="flex items-center gap-1 text-2xl font-semibold">
+                  <IndianRupee className="h-5 w-5" />
+                  {creator.rates.floor != null && creator.rates.ceiling != null
+                    ? `${formatINR(creator.rates.floor)}–${formatINR(creator.rates.ceiling)}`
+                    : formatINR((creator.rates.floor ?? creator.rates.ceiling) as number)}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This creator hasn't published a per-deliverable rate card.
+                </p>
               </div>
-            </div>
+            ) : (
+              <div className="rounded-lg border border-dashed p-8 text-center">
+                <p className="font-medium">Rates not shared</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This creator has chosen not to publish pricing. Send them a brief to get a quote.
+                </p>
+              </div>
+            )}
 
-            {/* YouTube Rates */}
-            <div className="rounded-lg border p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <Youtube className="h-5 w-5 text-[#FF0000]" />
-                <h3 className="font-medium">YouTube</h3>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {creator.rates.youtube.map((rate) => (
-                  <div
-                    key={rate.type}
-                    className="flex items-center justify-between rounded-lg bg-muted/50 p-4"
-                  >
-                    <span>{rate.type}</span>
-                    <span className="font-semibold flex items-center gap-1">
-                      <IndianRupee className="h-3.5 w-3.5" />
-                      {formatINR(rate.price)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <p className="text-sm text-muted-foreground">
-              * Rates are indicative and may vary based on campaign requirements, exclusivity, and usage rights.
-            </p>
+            {(creator.rates.rows.length > 0 ||
+              creator.rates.floor != null ||
+              creator.rates.ceiling != null) && (
+              <p className="text-sm text-muted-foreground">
+                * Rates are indicative and may vary based on campaign requirements, exclusivity, and usage rights.
+              </p>
+            )}
           </TabsContent>
 
           {/* Reviews Tab */}

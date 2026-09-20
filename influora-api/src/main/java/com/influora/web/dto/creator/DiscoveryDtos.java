@@ -3,6 +3,7 @@ package com.influora.web.dto.creator;
 import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
 import java.util.List;
+import com.influora.web.dto.portfolio.PortfolioDtos;
 import java.util.Map;
 
 public final class DiscoveryDtos {
@@ -85,5 +86,18 @@ public final class DiscoveryDtos {
             Boolean saved,
             // EV-008: VERIFIED | IMPORTED | NONE - what totalFollowers/engagementRate are made of
             // (CreatorProfile.followersSource, F-0965). The brand profile page labels IMPORTED.
-            String followersSource) {}
+            String followersSource,
+            /**
+             * F-0972/F-0974 -- everything the creator authored in their portfolio editor,
+             * assembled by {@code PortfolioService#getForBrand} under the same visibility
+             * rules the public page obeys. ONE nested field on purpose: this record had
+             * already grown a column at a time three times (completedCampaigns/avgRating,
+             * scores, followersSource), and flattening eight more would hand-duplicate
+             * every visibility rule that lives in PortfolioService#assemble.
+             *
+             * <p>Never null in practice -- a creator who never opened the editor still gets
+             * PortfolioVisibility.defaults() -- but consumers should treat its list fields
+             * as possibly empty and its {@code stats} as possibly null (F-0589).
+             */
+            PortfolioDtos.PortfolioBrandView portfolio) {}
 }

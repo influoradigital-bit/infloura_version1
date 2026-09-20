@@ -78,7 +78,7 @@ function portfolioPage(platforms: Array<Record<string, unknown>> = []) {
     bio: 'Fashion & lifestyle creator.',
     niches: ['Fashion'],
     verified: false,
-    stats: { totalCollabs: 0, avgRating: 0, onTimeRate: 0, repeatBrands: 0 },
+    stats: { totalCollabs: 0, avgRating: 0, onTimeRate: null, onTimeSampleSize: 0, repeatBrands: 0 },
     badges: [],
     platforms,
     collabs: [],

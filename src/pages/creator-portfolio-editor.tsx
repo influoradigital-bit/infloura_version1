@@ -462,7 +462,19 @@ export default function CreatorPortfolioEditorPage() {
             <div className="space-y-1">
               <VisibilityRow
                 label="Trust signals bar"
-                hint={`${page.stats.totalCollabs} collabs · ${page.stats.avgRating}★ · ${page.stats.onTimeRate}% OTD`}
+                // [F-0589] onTimeRate is null when nothing measurable exists — interpolating it
+                // directly would show the creator "null% OTD" in their own editor.
+                // [F-0972] `stats` is typed nullable because the PUBLIC payload withholds it when
+                // trustBar is off. This editor is the OWNER view, which is never restricted, so it
+                // is always present here — guarded rather than asserted, so a later change to that
+                // rule cannot crash the creator's own editor.
+                hint={
+                  page.stats
+                    ? `${page.stats.totalCollabs} collabs · ${page.stats.avgRating}★ · ${
+                        page.stats.onTimeRate != null ? `${page.stats.onTimeRate}%` : '—'
+                      } OTD`
+                    : undefined
+                }
                 value={page.visibility.trustBar}
                 onChange={(v) => updateVisibility({ trustBar: v })}
               />

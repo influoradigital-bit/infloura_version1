@@ -62,6 +62,7 @@ import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioPatchRequest;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioPinnedPost;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioRateRow;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioStats;
+import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioBrandView;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioVisibility;
 import com.influora.web.dto.portfolio.PortfolioDtos.SyncPlatformsResponse;
 import java.io.IOException;
@@ -91,6 +92,28 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class PortfolioService {
 
+    /**
+     * Who is asking. Replaces the {@code boolean publicView} this class used until 2026-09-20,
+     * which could express only two audiences and so forced a signed-in brand to be served either
+     * the anonymous page or a second, parallel projection assembled elsewhere (F-0972/F-0974).
+     *
+     * <p>{@code OWNER} is the creator reading their own editor: no visibility flag applies, they
+     * must see and edit everything they have hidden. {@code ANONYMOUS} and {@code BRAND} are both
+     * restricted and differ in exactly one respect -- a {@code rateCard} of "brands_only" resolves
+     * to real rows for {@code BRAND} and to nothing for {@code ANONYMOUS}. Any future audience
+     * (e.g. a consent-gated BRAND_CONSENTED) is a new constant here, never a new DTO.
+     */
+    public enum ViewerMode {
+        OWNER,
+        ANONYMOUS,
+        BRAND
+    }
+
+    /** Every visibility flag binds for everyone except the creator reading their own page. */
+    private static boolean restricted(ViewerMode mode) {
+        return mode != ViewerMode.OWNER;
+    }
+
     private static final Logger log = LoggerFactory.getLogger(PortfolioService.class);
     /**
      * F-0498 — {@code withExactBigDecimals(true)} because plain {@code JsonNodeFactory}'s {@code
@@ -104,6 +127,12 @@ public class PortfolioService {
             new ObjectMapper().setNodeFactory(JsonNodeFactory.withExactBigDecimals(true));
     /** Spec 12 §5.1 image cap (10 MB) — same as deliverable proof screenshots. */
     private static final long MAX_COVER_BYTES = 10_485_760L;
+    /**
+     * [F-0588] Maximum ids in any single {@code IN (...)} the portfolio stats path issues. The
+     * completed-collaboration list this path walks has no upper bound, so batching it into one
+     * query would just trade N small queries for one unboundedly large one.
+     */
+    private static final int STATS_BATCH_SIZE = 500;
     /**
      * F-0498 — no cap existed before, so a client could persist an unbounded array into
      * {@code portfolio_settings_json}. {@link DeliverableType} is the platform's own catalog of
@@ -242,7 +271,7 @@ public class PortfolioService {
     public PortfolioPageResponse getPublic(String username) {
         CreatorProfile profile = creatorProfileService.requireProfileByUsername(username);
         requireDiscoverablePortfolio(profile);
-        return assemble(profile, true);
+        return assemble(profile, ViewerMode.ANONYMOUS);
     }
 
     /**
@@ -256,7 +285,9 @@ public class PortfolioService {
     @Transactional
     public void recordPublicView(String username) {
         CreatorProfile profile = creatorProfileService.requireProfileByUsername(username);
-        if (!profile.isDiscoverable()) {
+        // F-0975 -- mirrors requireDiscoverablePortfolio: a suspended creator's page is not
+        // served, so nothing public was shown and no view may be recorded against it.
+        if (!profile.isDiscoverable() || profile.isSuspended()) {
             return;
         }
         portfolioEventRepository.save(
@@ -280,7 +311,7 @@ public class PortfolioService {
     public PortfolioPageResponse getMine(AuthPrincipal principal) {
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
         creatorProfileService.ensureUsername(profile);
-        return assemble(profile, false);
+        return assemble(profile, ViewerMode.OWNER);
     }
 
     @Transactional
@@ -341,7 +372,7 @@ public class PortfolioService {
             throw new ApiException(
                     "USERNAME_TAKEN", "This username is already taken", HttpStatus.CONFLICT);
         }
-        return assemble(profile, false);
+        return assemble(profile, ViewerMode.OWNER);
     }
 
     /**
@@ -708,6 +739,17 @@ public class PortfolioService {
         CreatorProfile profile = creatorProfileService.requireProfileByUsername(username);
         requireDiscoverablePortfolio(profile);
 
+        // F-0973 -- this method never loaded settings at all, so `contactForm: false` hid the
+        // button in creator-portfolio-public.tsx and nothing else: a creator who switched their
+        // contact form off was still emailed and in-app notified by anyone who POSTed here
+        // directly, bounded only by MAX_CONTACT_PER_CREATOR_PER_WINDOW. Checked before field
+        // validation because a disabled form must answer identically for a well-formed and a
+        // malformed body, and 404 (not 403) so it is indistinguishable from an unknown handle.
+        if (!loadSettings(profile).getVisibility().contactForm()) {
+            throw new ApiException(
+                    "PORTFOLIO_NOT_FOUND", "Portfolio not found", HttpStatus.NOT_FOUND);
+        }
+
         // Validate inputs
         if (name == null || name.isBlank()) {
             throw new ApiException("INVALID_NAME", "Name is required", HttpStatus.BAD_REQUEST);
@@ -765,13 +807,60 @@ public class PortfolioService {
     }
 
     private void requireDiscoverablePortfolio(CreatorProfile profile) {
-        if (!profile.isDiscoverable()) {
+        // F-0975 -- isDiscoverable() alone is not a moderation check: CreatorProfile#suspend()
+        // never flips `discoverable`, so a creator removed by an admin kept a fully live public
+        // portfolio at /@handle, kept accruing view events and could still be contacted. The SEC
+        // Wave-1 S4-discovery pass added this same filter to every CreatorDiscoveryService
+        // resolver and skipped the portfolio path. Same 404 for both states, so a suspension is
+        // not distinguishable from a handle that never existed.
+        if (!profile.isDiscoverable() || profile.isSuspended()) {
             throw new ApiException(
                     "PORTFOLIO_NOT_FOUND", "Portfolio not found", HttpStatus.NOT_FOUND);
         }
     }
 
-    private PortfolioPageResponse assemble(CreatorProfile profile, boolean publicView) {
+    /**
+     * Brand-facing assembly for {@code CreatorDiscoveryService#getPublicProfile}, the sibling
+     * of {@link #getVisiblePinnedPosts} and the reason a brand no longer needs a second,
+     * parallel projection of the same creator (F-0972/F-0974).
+     *
+     * <p>Identical to the anonymous page in every visibility rule except one: a rate card set
+     * to "brands_only" resolves to real rows here. A creator's per-collab hide/anonymise
+     * choices are NOT relaxed for a signed-in brand -- they were made about a brand
+     * relationship, and a different brand looking is not a reason to override them.
+     *
+     * <p>Callers must not re-implement any visibility check against the result. If a rule is
+     * needed it belongs in {@link #assemble}, keyed on {@link ViewerMode}; a second copy is
+     * how the two projections drifted apart in the first place.
+     */
+    @Transactional(readOnly = true)
+    public PortfolioBrandView getForBrand(CreatorProfile profile) {
+        PortfolioPageResponse page = assemble(profile, ViewerMode.BRAND);
+        return new PortfolioBrandView(
+                page.badges(),
+                page.collabs(),
+                page.pinnedPosts(),
+                page.customLinks(),
+                page.rateCard(),
+                page.stats(),
+                page.topAudienceCities(),
+                // F-0977 -- assemble() presigns this; the brand DTO used to emit the raw
+                // column, which uploadCover stores as a bare R2 object key, not a URL.
+                page.coverUrl());
+    }
+
+    /**
+     * F-0974 -- lets {@code CreatorDiscoveryService} honour a "hidden" rate card when deciding
+     * whether to emit the profile-level {@code rateMin}/{@code rateMax} columns, which
+     * {@link #updateMine} keeps in sync with the rate card and which are therefore its true
+     * floor and ceiling. Reads the flag; makes no decision about it.
+     */
+    @Transactional(readOnly = true)
+    public String rateCardVisibilityOf(CreatorProfile profile) {
+        return loadSettings(profile).getVisibility().rateCard();
+    }
+
+    private PortfolioPageResponse assemble(CreatorProfile profile, ViewerMode mode) {
         List<PlatformStat> platformStats = platformStatRepository.findByCreatorProfileId(profile.getId());
         PortfolioSettings settings = loadSettings(profile);
         List<Collaboration> completed =
@@ -782,7 +871,7 @@ public class PortfolioService {
 
         PortfolioStats stats = computeStats(completed, brandReviewsByCollab);
         List<PortfolioCollab> collabs =
-                buildCollabs(completed, publicView, settings, brandReviewsByCollab, collabDisplayModes);
+                buildCollabs(completed, mode, settings, brandReviewsByCollab, collabDisplayModes);
         List<String> badges = computeBadges(profile, platformStats, stats);
         List<String> topCities = loadTopAudienceCities(profile.getId());
 
@@ -796,19 +885,41 @@ public class PortfolioService {
                 profile.getAvatarUrl(),
                 resolveCoverUrl(profile.getCoverImageUrl()),
                 profile.isVerified(),
-                stats,
-                publicView && !settings.getVisibility().trustBar() ? List.of() : badges,
-                platformStats.stream().map(this::toPlatform).toList(),
-                publicView && !settings.getVisibility().pastCollabs() ? List.of() : collabs,
-                publicView && !settings.getVisibility().contentPortfolio()
+                // F-0972 -- `stats` is the trust bar's own payload and was returned to every
+                // caller regardless of the toggle that governs it. NULL, never a zeroed
+                // PortfolioStats: publishing 0 collabs / 0.0 rating for a creator who merely
+                // hid the bar is the fabricated-zero failure F-0589 exists to prevent.
+                // Consumers must render an explicit absent state -- every read in
+                // creator-portfolio-public.tsx is guarded.
+                restricted(mode) && !settings.getVisibility().trustBar() ? null : stats,
+                // F-0972 -- was gated on trustBar(), so switching off the trust bar silently
+                // deleted the creator's achievements too, while `badges` itself had ZERO
+                // readers anywhere in src/main. Two controls, two meanings.
+                restricted(mode) && !settings.getVisibility().badges() ? List.of() : badges,
+                // F-0972 -- platformStats had ZERO server-side readers: the browser hid the
+                // section while GET /portfolio/{username}, which is permitAll, kept shipping
+                // every handle, follower count, engagement rate and profile URL to any
+                // anonymous caller that read the JSON instead of the page.
+                restricted(mode) && !settings.getVisibility().platformStats()
+                        ? List.of()
+                        : platformStats.stream().map(this::toPlatform).toList(),
+                restricted(mode) && !settings.getVisibility().pastCollabs() ? List.of() : collabs,
+                restricted(mode) && !settings.getVisibility().contentPortfolio()
                         ? List.of()
                         : settings.getPinnedPosts(),
-                publicView && !settings.getVisibility().customLinks()
+                restricted(mode) && !settings.getVisibility().customLinks()
                         ? List.of()
                         : settings.getCustomLinks(),
-                buildRateCard(profile, settings, publicView),
-                JsonLists.stringListFromJson(profile.getLanguagesJson()),
-                topCities,
+                buildRateCard(profile, settings, mode),
+                // F-0972 -- languages had ZERO server-side readers, and it governs BOTH
+                // lists: the editor labels the single switch "Languages & audience cities" and
+                // creator-portfolio-public.tsx gates both sections on it, so topAudienceCities
+                // -- a top-5 city breakdown derived from audience demographics, the most
+                // identifying field on the page -- travels with it rather than leaking alone.
+                restricted(mode) && !settings.getVisibility().languages()
+                        ? List.of()
+                        : JsonLists.stringListFromJson(profile.getLanguagesJson()),
+                restricted(mode) && !settings.getVisibility().languages() ? List.of() : topCities,
                 settings.getVisibility());
     }
 
@@ -824,11 +935,11 @@ public class PortfolioService {
 
     private List<PortfolioCollab> buildCollabs(
             List<Collaboration> completed,
-            boolean publicView,
+            ViewerMode mode,
             PortfolioSettings settings,
             Map<String, Review> brandReviewsByCollab,
             Map<String, String> collabDisplayModes) {
-        if (publicView && !settings.getVisibility().pastCollabs()) {
+        if (restricted(mode) && !settings.getVisibility().pastCollabs()) {
             return List.of();
         }
         List<PortfolioCollab> out = new ArrayList<>();
@@ -841,16 +952,16 @@ public class PortfolioService {
             // F-0674 (privacy-leak-client-side-only) — server-side enforcement of the "Past
             // collabs — what shows on your page" choice, mirroring the pattern
             // getVisiblePinnedPosts already uses for section-level visibility. The public,
-            // unauthenticated GET /portfolio/{username} path (publicView=true) previously
+            // unauthenticated GET /portfolio/{username} path (ViewerMode.ANONYMOUS) previously
             // returned every collab's real brandName regardless of displayMode — the browser
             // (creator-portfolio-public.tsx) filtered "hidden" and swapped in a label for
             // "category" purely cosmetically, so an unauthenticated curl of the endpoint still
             // exposed the brand names a creator had explicitly chosen to hide or anonymise.
-            // getMine (publicView=false) is UNCHANGED: the creator must still see and edit their
+            // getMine (ViewerMode.OWNER) is UNCHANGED: the creator must still see and edit their
             // own real collab names, including ones they've marked hidden.
             String displayMode =
                     collabDisplayModes.getOrDefault(collab.getId(), DEFAULT_COLLAB_DISPLAY_MODE);
-            if (publicView && "hidden".equals(displayMode)) {
+            if (restricted(mode) && "hidden".equals(displayMode)) {
                 continue;
             }
             Workspace workspace =
@@ -858,7 +969,7 @@ public class PortfolioService {
             Review brandReview = brandReviewsByCollab.get(collab.getId());
             Double rating = brandReview != null ? (double) brandReview.getStars() : null;
             String quote = brandReview != null ? brandReview.getReviewText() : null;
-            boolean anonymize = publicView && "category".equals(displayMode);
+            boolean anonymize = restricted(mode) && "category".equals(displayMode);
             out.add(
                     new PortfolioCollab(
                             collab.getId(),
@@ -898,7 +1009,11 @@ public class PortfolioService {
 
     private PortfolioStats computeStats(
             List<Collaboration> completed, Map<String, Review> brandReviewsByCollab) {
-        int repeatBrands = countRepeatBrands(completed);
+        // [F-0588] Both per-collaboration lookups below used to run one query EACH, inside a loop
+        // over an unbounded completed-collaboration list. They are now two batched, chunked reads
+        // taken once for the whole list.
+        Map<String, Campaign> campaignsById = loadCampaignsByIdFor(completed);
+        int repeatBrands = countRepeatBrands(completed, campaignsById);
         double avgRating = 0;
         if (!brandReviewsByCollab.isEmpty()) {
             double sum =
@@ -908,52 +1023,168 @@ public class PortfolioService {
                             .setScale(1, RoundingMode.HALF_UP)
                             .doubleValue();
         }
-        return new PortfolioStats(completed.size(), avgRating, computeOnTimeRate(completed), repeatBrands);
+        OnTimeDelivery onTime = computeOnTimeDelivery(completed);
+        return new PortfolioStats(
+                completed.size(), avgRating, onTime.rate(), onTime.sampleSize(), repeatBrands);
     }
 
     /**
-     * H-22 — real on-time-delivery rate, replacing the previous hardcoded {@code 95}. A completed
-     * collaboration counts as "on time" if every one of its deliverables that actually has both a
-     * {@code deadline} and a {@code submittedAt} was submitted on or before that deadline — a
-     * deliverable with no deadline set, or one that was never actually submitted (can't evaluate
-     * lateness at all), is not held against the creator. A collaboration with zero deliverable
-     * rows is treated as on-time (nothing to be late on) rather than excluded, matching {@code
-     * completed.size()} already being the stats denominator elsewhere in this method.
+     * [F-0589] The on-time percentage together with the denominator it was actually measured
+     * over. {@code rate} is {@code null} when nothing measurable exists — never a number standing
+     * in for "unknown".
      */
-    private int computeOnTimeRate(List<Collaboration> completed) {
+    private record OnTimeDelivery(Integer rate, int sampleSize) {
+        private static final OnTimeDelivery NOT_MEASURABLE = new OnTimeDelivery(null, 0);
+    }
+
+    /**
+     * H-22 / [F-0589] — real on-time-delivery rate, replacing first a hardcoded {@code 95} and
+     * then a version that was inflated by default.
+     *
+     * <p><b>Ruling (F-0589): what we cannot measure is EXCLUDED from the denominator</b> — neither
+     * credited nor blamed. This metric is public and brand-facing; brands use it to decide whom to
+     * hire, and creators are judged by it. It must therefore describe only the evidence we
+     * actually hold.
+     *
+     * <p>The previous behaviour (documented at the time as deliberate) counted three separate
+     * unmeasurable situations as ON TIME: a deliverable with no {@code deadline}, a deliverable
+     * that was never submitted, and a collaboration with zero deliverable rows. Because the
+     * denominator was {@code completed.size()}, a creator for whom we held no deadline data at all
+     * scored a flat 100% — a number brands could not distinguish from a genuinely perfect record,
+     * and the {@code on_time} badge was awarded on it. The rejected alternative — counting the
+     * unmeasurable as LATE — is worse in the other direction: it would publish a failure a creator
+     * did not commit and cannot correct, since the missing deadline/submission rows are ours.
+     *
+     * <p>Concretely:
+     *
+     * <ul>
+     *   <li>A deliverable is MEASURABLE only if it carries both a {@code deadline} and a {@code
+     *       submittedAt}; it is on time iff it was submitted on or before that deadline (UTC).
+     *   <li>A completed collaboration enters the denominator only if it has at least one
+     *       measurable deliverable, and counts as on time iff ALL of its measurable deliverables
+     *       were. Its unmeasurable deliverables are ignored, not treated as passes.
+     *   <li>A collaboration with zero deliverable rows, or with none measurable, is excluded
+     *       entirely — it no longer contributes a free 100%.
+     *   <li>When nothing at all is measurable the rate is {@code null} with a sample size of
+     *       {@code 0}: the API says "no data", clients render "—", and {@code computeBadges}
+     *       awards no {@code on_time} badge. A creator with no measurable deliverable can no
+     *       longer render as 100% on-time anywhere.
+     * </ul>
+     *
+     * <p>Deliberately NOT changed here, so it can be ruled on separately rather than smuggled in:
+     * a deliverable whose deadline has already PASSED and that was never submitted is arguably
+     * genuinely late rather than unmeasurable. Treating it as late would re-introduce blame from
+     * absent data for legitimately descoped slots, so it stays excluded under this ruling.
+     */
+    private OnTimeDelivery computeOnTimeDelivery(List<Collaboration> completed) {
         if (completed.isEmpty()) {
-            return 0;
+            return OnTimeDelivery.NOT_MEASURABLE;
         }
-        long onTimeCount = completed.stream().filter(this::isCollaborationOnTime).count();
-        return (int) Math.round((onTimeCount * 100.0) / completed.size());
+        Map<String, List<Deliverable>> deliverablesByCollaboration =
+                loadDeliverablesByCollaborationFor(completed);
+        int measured = 0;
+        int onTime = 0;
+        for (Collaboration collaboration : completed) {
+            List<Deliverable> measurable =
+                    deliverablesByCollaboration.getOrDefault(collaboration.getId(), List.of()).stream()
+                            .filter(PortfolioService::isDeliverableMeasurable)
+                            .toList();
+            if (measurable.isEmpty()) {
+                // Nothing to be late on AND nothing to be on time on — excluded, not credited.
+                continue;
+            }
+            measured++;
+            if (measurable.stream().allMatch(PortfolioService::isDeliverableOnTime)) {
+                onTime++;
+            }
+        }
+        if (measured == 0) {
+            return OnTimeDelivery.NOT_MEASURABLE;
+        }
+        return new OnTimeDelivery((int) Math.round((onTime * 100.0) / measured), measured);
     }
 
-    private boolean isCollaborationOnTime(Collaboration collaboration) {
-        List<Deliverable> deliverables =
-                deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(collaboration.getId());
-        if (deliverables == null) {
-            return true;
-        }
-        return deliverables.stream().allMatch(PortfolioService::isDeliverableOnTime);
+    /**
+     * [F-0589] Timeliness is only a fact about a creator when we hold both halves of it: the
+     * deadline that was committed to, and the moment it was actually submitted.
+     */
+    private static boolean isDeliverableMeasurable(Deliverable deliverable) {
+        return deliverable.getDeadline() != null && deliverable.getSubmittedAt() != null;
     }
 
+    /** Only ever called on a deliverable {@link #isDeliverableMeasurable} has accepted. */
     private static boolean isDeliverableOnTime(Deliverable deliverable) {
-        if (deliverable.getDeadline() == null || deliverable.getSubmittedAt() == null) {
-            return true;
-        }
         java.time.LocalDate submittedDate =
                 deliverable.getSubmittedAt().atZone(java.time.ZoneOffset.UTC).toLocalDate();
         return !submittedDate.isAfter(deliverable.getDeadline());
     }
 
-    private int countRepeatBrands(List<Collaboration> completed) {
+    private int countRepeatBrands(
+            List<Collaboration> completed, Map<String, Campaign> campaignsById) {
         Map<String, Long> counts =
                 completed.stream()
                         .map(Collaboration::getCampaignId)
-                        .map(id -> campaignRepository.findById(id).orElse(null))
-                        .filter(c -> c != null)
+                        .map(campaignsById::get)
+                        .filter(Objects::nonNull)
                         .collect(Collectors.groupingBy(Campaign::getWorkspaceId, Collectors.counting()));
         return (int) counts.values().stream().filter(c -> c > 1).count();
+    }
+
+    /**
+     * [F-0588] One batched read of every completed collaboration's deliverables, replacing a
+     * {@code findByCollaborationIdOrderBySlotIndexAsc} call issued once PER collaboration inside
+     * {@code computeOnTimeDelivery}'s loop. Chunked, because moving an unbounded loop into a
+     * single unbounded {@code IN (...)} would only relocate the problem into one enormous query.
+     */
+    private Map<String, List<Deliverable>> loadDeliverablesByCollaborationFor(
+            List<Collaboration> completed) {
+        Map<String, List<Deliverable>> byCollaboration = new HashMap<>();
+        List<String> ids =
+                completed.stream()
+                        .map(Collaboration::getId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList();
+        for (List<String> chunk : chunked(ids)) {
+            for (Deliverable deliverable : deliverableRepository.findByCollaborationIdIn(chunk)) {
+                byCollaboration
+                        .computeIfAbsent(deliverable.getCollaborationId(), key -> new ArrayList<>())
+                        .add(deliverable);
+            }
+        }
+        return byCollaboration;
+    }
+
+    /**
+     * [F-0588] The second N+1 in the same stats path, which the ledger did not name: {@code
+     * countRepeatBrands} resolved its campaigns with a {@code findById} per completed
+     * collaboration. Fixed alongside the deliverable one because leaving it would have kept the
+     * whole path O(collaborations) in queries — the deliverable fix would have been invisible in
+     * production.
+     */
+    private Map<String, Campaign> loadCampaignsByIdFor(List<Collaboration> completed) {
+        Map<String, Campaign> byId = new HashMap<>();
+        List<String> ids =
+                completed.stream()
+                        .map(Collaboration::getCampaignId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList();
+        for (List<String> chunk : chunked(ids)) {
+            for (Campaign campaign : campaignRepository.findAllById(chunk)) {
+                byId.put(campaign.getId(), campaign);
+            }
+        }
+        return byId;
+    }
+
+    /** [F-0588] Bounds the size of any single {@code IN (...)} the stats path issues. */
+    private static List<List<String>> chunked(List<String> ids) {
+        List<List<String>> chunks = new ArrayList<>();
+        for (int from = 0; from < ids.size(); from += STATS_BATCH_SIZE) {
+            chunks.add(ids.subList(from, Math.min(ids.size(), from + STATS_BATCH_SIZE)));
+        }
+        return chunks;
     }
 
     private List<String> computeBadges(
@@ -963,7 +1194,10 @@ public class PortfolioService {
                 && profile.getEngagementRate().compareTo(BigDecimal.valueOf(3)) >= 0) {
             badges.add("top_creator");
         }
-        if (stats.onTimeRate() >= 90) {
+        // [F-0589] Null-safe on purpose: "we cannot measure this creator's timeliness" must never
+        // earn the public on_time badge. Previously an unmeasurable creator scored a default 100
+        // and was awarded it.
+        if (stats.onTimeRate() != null && stats.onTimeRate() >= 90) {
             badges.add("on_time");
         }
         if (stats.repeatBrands() >= 3) {
@@ -982,12 +1216,18 @@ public class PortfolioService {
      * while the values still sat in the JSON.
      */
     private List<PortfolioRateRow> buildRateCard(
-            CreatorProfile profile, PortfolioSettings settings, boolean publicView) {
+            CreatorProfile profile, PortfolioSettings settings, ViewerMode mode) {
         String rateCardVisibility = settings.getVisibility().rateCard();
         if ("hidden".equals(rateCardVisibility)) {
             return List.of();
         }
-        if (publicView && !"public".equals(rateCardVisibility)) {
+        // F-0974 -- the one respect in which BRAND differs from ANONYMOUS.
+        // "brands_only" is the shipped default and, until a BRAND mode existed, resolved
+        // to nothing on every path a non-owner could reach -- so the public page's
+        // "Sign in as a brand to view this creator's rate card" pointed at a door that
+        // opened onto an empty room. "hidden" is handled above and stays hidden from
+        // brands too.
+        if (mode == ViewerMode.ANONYMOUS && !"public".equals(rateCardVisibility)) {
             return List.of();
         }
         // F-0498 — real per-deliverable rows persisted via updateMine win over the fabricated

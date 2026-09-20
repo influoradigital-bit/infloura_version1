@@ -40,6 +40,7 @@ import com.influora.web.dto.creator.CreatorDtos.CreatorResponse;
 import com.influora.web.dto.creator.CreatorDtos.InviteResponse;
 import com.influora.web.dto.creator.CreatorDtos.SaveResponse;
 import com.influora.web.dto.creator.DiscoveryDtos.AvailableFiltersMeta;
+import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioBrandView;
 import com.influora.web.dto.creator.DiscoveryDtos.CategoryFacet;
 import com.influora.web.dto.creator.DiscoveryDtos.CreatorPublicProfileResponse;
 import com.influora.web.dto.creator.DiscoveryDtos.CreatorScores;
@@ -280,13 +281,22 @@ public class CreatorDiscoveryService {
                         .findByCreatorIdAndStatus(profile.getUserId(), CollaborationStatus.COMPLETED)
                         .size();
 
+        // F-0972/F-0974/F-0977 -- one call, one settings load, and every visibility rule stays
+        // in PortfolioService. Do NOT re-check a visibility flag against this result here:
+        // a second copy of a rule is exactly how this endpoint and the portfolio page came
+        // to disagree about what a creator had chosen to show.
+        PortfolioBrandView portfolio = portfolioService.getForBrand(profile);
+        boolean rateCardHidden = "hidden".equals(portfolioService.rateCardVisibilityOf(profile));
+
         return new CreatorPublicProfileResponse(
                 profile.getId(),
                 profile.getUsername(),
                 profile.getDisplayName(),
                 profile.getBio(),
                 profile.getAvatarUrl(),
-                profile.getCoverImageUrl(),
+                // F-0977 -- was profile.getCoverImageUrl(), the raw column, which uploadCover
+                // persists as a bare R2 object key. The portfolio view presigns it.
+                portfolio.coverUrl(),
                 JsonLists.stringListFromJson(profile.getCategoriesJson()),
                 JsonLists.stringListFromJson(profile.getLanguagesJson()),
                 profile.getCity(),
@@ -294,9 +304,13 @@ public class CreatorDiscoveryService {
                 profile.getTotalFollowers(),
                 profile.getEngagementRate(),
                 buildScores(score),
-                profile.getRateMin(),
-                profile.getRateMax(),
-                profile.getCurrency(),
+                // F-0974 -- updateMine writes the rate card's own min/max into these columns,
+                // so emitting them unconditionally published the floor and ceiling of a rate
+                // card the creator had set to "hidden". null, never 0: a zero here would read
+                // as "works for free" rather than "declined to say".
+                rateCardHidden ? null : profile.getRateMin(),
+                rateCardHidden ? null : profile.getRateMax(),
+                rateCardHidden ? null : profile.getCurrency(),
                 profile.isVerified(),
                 profile.isDiscoverable(),
                 completedCampaigns,
@@ -307,7 +321,8 @@ public class CreatorDiscoveryService {
                 // PortfolioService#computeStats/DeliverableMetricService already use.
                 computeAvgRating(profile.getUserId()),
                 saved,
-                profile.getFollowersSource());
+                profile.getFollowersSource(),
+                portfolio);
     }
 
     @Transactional(readOnly = true)

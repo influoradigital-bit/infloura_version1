@@ -112,9 +112,28 @@ public class CreatorProfileService {
         return toSelfResponse(profile, user);
     }
 
+    /**
+     * Resolves a creator by public handle, for PUBLIC serving only.
+     *
+     * <p>F-0975 — filters {@code isSuspended()} here, at the resolver, not only at the call
+     * sites. {@code CreatorProfile#suspend} never flips {@code discoverable}, so an
+     * {@code isDiscoverable()} check alone is not a moderation check; the SEC Wave-1
+     * S4-discovery pass added this filter to every {@code CreatorDiscoveryService} resolver and
+     * skipped this one.
+     *
+     * <p>All three callers ({@code PortfolioService#getPublic}, {@code #recordPublicView},
+     * {@code #contact}) already guard suspension themselves, so this is deliberately redundant
+     * today. It is here because the guarantee was previously a property of who happened to call
+     * this method rather than of the method itself: a fourth caller added later would have been
+     * unprotected, and nothing would have failed. The creator's own editor is unaffected — it
+     * resolves through {@code CreatorContextService#requireCreatorProfile}, never through here.
+     *
+     * <p>Same 404 for suspended and unknown, so the two are indistinguishable from outside.
+     */
     public CreatorProfile requireProfileByUsername(String username) {
         return creatorProfileRepository
                 .findByUsernameIgnoreCase(username)
+                .filter(profile -> !profile.isSuspended())
                 .orElseThrow(
                         () ->
                                 new ApiException(

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,6 +37,7 @@ import com.influora.repository.SavedCreatorRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.billing.SubscriptionService;
 import com.influora.service.portfolio.PortfolioService;
+import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioBrandView;
 import com.influora.web.dto.creator.CreatorDtos.SaveResponse;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioPinnedPost;
 import com.influora.web.dto.creator.DiscoveryDtos.CreatorSuggestionRequest;
@@ -92,6 +94,19 @@ class CreatorDiscoveryServiceTest {
         // an empty list, not null, so this isn't guarding an NPE) so any test path reaching
         // toResponseForWorkspace (single-profile read) is unambiguous about what it returns.
         when(portfolioService.getVisiblePinnedPosts(any())).thenReturn(List.of());
+        // F-0972/F-0974 — getPublicProfile now nests the creator's portfolio (assembled under
+        // ViewerMode.BRAND) instead of hardcoding absent sections into the brand page. Unlike the
+        // List-returning stub above, this one IS guarding an NPE: a mock returns null for a record
+        // and getPublicProfile dereferences the view for coverUrl. An all-empty view is the right
+        // default here — these tests are about the discovery fields, and a test that cares about
+        // portfolio content stubs its own.
+        lenient()
+                .when(portfolioService.getForBrand(any()))
+                .thenReturn(
+                        new PortfolioBrandView(
+                                List.of(), List.of(), List.of(), List.of(), List.of(), null,
+                                List.of(), null));
+        lenient().when(portfolioService.rateCardVisibilityOf(any())).thenReturn("brands_only");
         service =
                 new CreatorDiscoveryService(
                         brandContext,

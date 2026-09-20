@@ -292,7 +292,10 @@ export default function CreatorPortfolioPublicPage() {
     );
   }
 
-  const totalRepeat = page.stats.repeatBrands;
+  // [F-0972] `stats` is null when the creator hid their trust bar. Only read inside the
+  // trustBar gate below, so the fallback never actually renders — it exists so this
+  // line cannot throw if the gate and the payload ever disagree.
+  const totalRepeat = page.stats?.repeatBrands ?? 0;
 
   // Brand-acquisition deep-link: if not logged in, brand-login then back here with intent
   const inviteUrl = `/brand/login?inviteCreator=${encodeURIComponent(page.username)}`;
@@ -460,7 +463,7 @@ export default function CreatorPortfolioPublicPage() {
             SECTION 2 — TRUST SIGNALS BAR
             (hidden if visibility off OR creator has <3 collabs and chose to hide)
         ============================================================ */}
-        {page.visibility.trustBar && page.stats.totalCollabs >= 1 && (
+        {page.visibility.trustBar && page.stats != null && page.stats.totalCollabs >= 1 && (
           <section className="px-4 sm:px-6 mt-8">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <TrustStat value={String(page.stats.totalCollabs)} label="Brand Collabs" />
@@ -473,7 +476,15 @@ export default function CreatorPortfolioPublicPage() {
                 }
                 label="Avg Brand Rating"
               />
-              <TrustStat value={`${page.stats.onTimeRate}%`} label="On-Time Delivery" />
+              {/* [F-0589] onTimeRate is null when the backend holds no measurable delivery
+                  evidence for this creator. Show an honest "—" rather than a number: a bare
+                  `${onTimeRate}%` would print "null%", and the value this used to show in that
+                  case was a flat 100% that no delivery history supported. Same discipline as
+                  brand-creator-profile.tsx's onTimeDelivery. */}
+              <TrustStat
+                value={page.stats.onTimeRate != null ? `${page.stats.onTimeRate}%` : '—'}
+                label="On-Time Delivery"
+              />
               <TrustStat value={String(totalRepeat)} label="Repeat Brands" />
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground flex items-center gap-1 justify-center">
@@ -519,7 +530,12 @@ export default function CreatorPortfolioPublicPage() {
         ============================================================ */}
         {page.visibility.pastCollabs && visibleCollabs(page).length > 0 && (
           <section className="px-4 sm:px-6 mt-8">
-            <SectionHeading title="Worked With" subtitle={`${page.stats.totalCollabs} brand collaborations`} />
+            {/* [F-0972] This section is gated on pastCollabs, not trustBar, so `stats` can be null here.
+                Fall back to the number of collabs actually on the page rather than printing a 0. */}
+            <SectionHeading
+              title="Worked With"
+              subtitle={`${page.stats?.totalCollabs ?? visibleCollabs(page).length} brand collaborations`}
+            />
             <CollabsSection collabs={visibleCollabs(page)} />
           </section>
         )}
@@ -709,7 +725,10 @@ function TrustStat({ value, label }: { value: React.ReactNode; label: string }) 
 const BADGE_META: Record<PortfolioBadge, { label: string; sub: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {
   top_creator:    { label: 'Top Creator',     sub: 'Top 5% engagement',   icon: Trophy,    color: 'text-amber-600 bg-amber-50' },
   fast_responder: { label: 'Fast Responder',  sub: '<2hr reply time',     icon: Clock,     color: 'text-emerald-600 bg-emerald-50' },
-  on_time:        { label: 'On-Time Delivery', sub: '95%+ on time',       icon: CheckCircle2, color: 'text-blue-600 bg-blue-50' },
+  // [F-0589] "95%+" was never the rule: PortfolioService#computeBadges awards on_time at >= 90.
+  // With the rate now measured only over deliverables we can actually evaluate, this badge makes
+  // a real claim about a real sample, so the copy has to state the threshold it is actually given at.
+  on_time:        { label: 'On-Time Delivery', sub: '90%+ on time',       icon: CheckCircle2, color: 'text-blue-600 bg-blue-50' },
   brand_favorite: { label: 'Brand Favorite',  sub: '10+ repeat brands',   icon: Heart,     color: 'text-rose-600 bg-rose-50' },
   rising_star:    { label: 'Rising Star',     sub: 'New + 5 deals done',  icon: Sparkles,  color: 'text-violet-600 bg-violet-50' },
   premium:        { label: 'Premium Creator', sub: '50+ deals · 4.5★+',   icon: Award,     color: 'text-purple-600 bg-purple-50' },

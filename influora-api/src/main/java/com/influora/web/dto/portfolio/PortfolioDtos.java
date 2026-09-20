@@ -28,8 +28,31 @@ public final class PortfolioDtos {
         }
     }
 
+    /**
+     * [F-0589] {@code onTimeRate} is NULLABLE and must stay nullable. It is a public,
+     * brand-visible trust number, and it is only a true statement about a creator when we
+     * actually hold the evidence to compute it: a deliverable is measurable for timeliness only
+     * when it carries BOTH a {@code deadline} and a {@code submittedAt}. When a creator has no
+     * measurable deliverable at all, {@code onTimeRate} is {@code null} ("we cannot say") rather
+     * than {@code 100} (which inflated every creator with missing deadline data — the defect this
+     * field shape closes) or {@code 0} (which would blame the creator for OUR missing data).
+     *
+     * <p>{@code onTimeSampleSize} is the denominator the rate was actually measured over — the
+     * number of completed collaborations that had at least one measurable deliverable. It is
+     * always present, always {@code >= 0}, and is {@code 0} exactly when {@code onTimeRate} is
+     * {@code null}; it lets a client distinguish "100% of one deliverable" from "100% of forty"
+     * without re-deriving anything.
+     *
+     * <p>Consumers must render {@code null} as an explicit "no data" ("—"), never as a number —
+     * the same discipline {@code brand-creator-profile.tsx}'s {@code onTimeDelivery: number |
+     * null} already applies for the discovery-side metric.
+     */
     public record PortfolioStats(
-            int totalCollabs, double avgRating, int onTimeRate, int repeatBrands) {}
+            int totalCollabs,
+            double avgRating,
+            Integer onTimeRate,
+            int onTimeSampleSize,
+            int repeatBrands) {}
 
     public record PortfolioCollab(
             String id,
@@ -59,6 +82,31 @@ public final class PortfolioDtos {
     public record PortfolioRateRow(
             String id, String label, BigDecimal min, BigDecimal max, String currency) {}
 
+    /**
+     * The slice of a creator's portfolio a signed-in brand is served, assembled by
+     * {@code PortfolioService#getForBrand} under {@code ViewerMode.BRAND} and nested into
+     * {@code DiscoveryDtos.CreatorPublicProfileResponse} as ONE field (F-0972/F-0974).
+     *
+     * <p>Nested rather than flattened on purpose. Every visibility rule these fields obey
+     * lives in {@code PortfolioService#assemble}; spreading them across the brand record as
+     * loose columns is what produced two projections of one creator that disagreed about
+     * whether the portfolio existed. A brand-only concern (saved, scores, discoverable,
+     * completedCampaigns, followersSource) stays on the outer record and must NOT migrate
+     * here -- the portfolio has no concept of a viewing workspace.
+     *
+     * <p>{@code stats} is nullable, matching {@code PortfolioPageResponse}: null means the
+     * creator hid their trust bar, never zero (F-0589).
+     */
+    public record PortfolioBrandView(
+            List<String> badges,
+            List<PortfolioCollab> pastCollabs,
+            List<PortfolioPinnedPost> contentPortfolio,
+            List<PortfolioCustomLink> customLinks,
+            List<PortfolioRateRow> rateCard,
+            PortfolioStats stats,
+            List<String> topAudienceCities,
+            String coverUrl) {}
+
     public record PortfolioPageResponse(
             String username,
             String displayName,
@@ -68,6 +116,11 @@ public final class PortfolioDtos {
             String avatarUrl,
             String coverUrl,
             boolean verified,
+            /**
+             * F-0972 -- NULLABLE. Null means the creator switched their trust bar off and
+             * these numbers were withheld; it is never a zeroed PortfolioStats, because a
+             * published 0 collabs / 0.0 rating reads as measured fact (F-0589).
+             */
             PortfolioStats stats,
             List<String> badges,
             List<PlatformStatResponse> platforms,
@@ -104,11 +157,19 @@ public final class PortfolioDtos {
         }
     }
 
+    /**
+     * F-0976 -- carried a {@code String captchaToken} until 2026-09-20 whose only
+     * occurrence in the whole repository was its own declaration. No verifier ever
+     * existed, so it read to anyone auditing this endpoint as though a captcha gate were
+     * in place, and it contradicted {@code PortfolioService#contact}'s own javadoc,
+     * which reasons explicitly that throttling alone is this endpoint's control.
+     * Removed rather than implemented: a control that is documented but absent is worse
+     * than one that is honestly missing. Reinstate it only alongside a real verifier.
+     */
     public record PortfolioContactRequest(
             @NotBlank @Size(max = 100) String name,
             @NotBlank @Email String email,
-            @NotBlank @Size(max = 2000) String message,
-            String captchaToken) {}
+            @NotBlank @Size(max = 2000) String message) {}
 
     public record PortfolioContactResponse(boolean delivered) {}
 

@@ -74,7 +74,7 @@ function portfolioPage(opts: { platformStatsVisible: boolean }) {
     bio: 'bio',
     niches: [],
     verified: true,
-    stats: { totalCollabs: 0, avgRating: 0, onTimeRate: 0, repeatBrands: 0 },
+    stats: { totalCollabs: 0, avgRating: 0, onTimeRate: null, onTimeSampleSize: 0, repeatBrands: 0 },
     badges: [],
     platforms: [platformStats('INSTAGRAM', true), platformStats('YOUTUBE', false)],
     collabs: [],
