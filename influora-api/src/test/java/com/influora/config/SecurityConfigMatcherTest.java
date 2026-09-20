@@ -333,4 +333,47 @@ class SecurityConfigMatcherTest {
     void genericProtectedRouteStillDeniedAnonymous() {
         assertTrue(!isGranted(ANONYMOUS, request(HttpMethod.GET, "/campaigns")));
     }
+
+    // ---- EV-004: /internal/** needs the InternalPrincipal authority, not just any login ------
+
+    private static final Supplier<Authentication> INTERNAL_SERVICE =
+            () -> {
+                com.influora.security.InternalPrincipal principal =
+                        new com.influora.security.InternalPrincipal("meera-ai-service");
+                return new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
+            };
+
+    @Test
+    @DisplayName("EV-004: a logged-in BRAND user is DENIED POST /internal/meera/turns/release")
+    void internalRefundDeniedForBrandUser() {
+        assertTrue(
+                !isGranted(
+                        authenticatedAs(UserType.BRAND),
+                        request(HttpMethod.POST, "/internal/meera/turns/release")));
+    }
+
+    @Test
+    @DisplayName("EV-004: CREATOR and ADMIN users are DENIED /internal/meera/*")
+    void internalDeniedForCreatorAndAdmin() {
+        assertTrue(
+                !isGranted(
+                        authenticatedAs(UserType.CREATOR),
+                        request(HttpMethod.POST, "/internal/meera/messages")));
+        assertTrue(
+                !isGranted(
+                        authenticatedAs(UserType.ADMIN),
+                        request(HttpMethod.POST, "/internal/meera/context")));
+    }
+
+    @Test
+    @DisplayName("EV-004: the mesh InternalPrincipal is PERMITTED /internal/meera/turns/release")
+    void internalPermittedForInternalPrincipal() {
+        assertTrue(isGranted(INTERNAL_SERVICE, request(HttpMethod.POST, "/internal/meera/turns/release")));
+    }
+
+    @Test
+    @DisplayName("EV-004: the InternalPrincipal gets nothing outside /internal/** it did not have before")
+    void internalPrincipalNotGrantedAdminRoutes() {
+        assertTrue(!isGranted(INTERNAL_SERVICE, request(HttpMethod.GET, "/admin/users")));
+    }
 }

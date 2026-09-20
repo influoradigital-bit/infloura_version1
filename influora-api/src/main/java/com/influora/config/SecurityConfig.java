@@ -82,7 +82,15 @@ public class SecurityConfig {
                                                 csp -> csp.policyDirectives(contentSecurityPolicy)))
                 .authorizeHttpRequests(
                         auth ->
-                                auth.requestMatchers("/health")
+                                // EV-004 backstop, FIRST so no permit below can shadow it: an
+                                // /internal/** route needs the ROLE_INTERNAL_SERVICE authority that
+                                // only InternalServiceTokenFilter grants (InternalPrincipal). The
+                                // filter is the primary gate; this rule means a user JWT is still
+                                // denied here if a future path spelling ever slips past the filter,
+                                // because this matcher uses the same path semantics MVC routes on.
+                                auth.requestMatchers("/internal/**")
+                                        .hasRole("INTERNAL_SERVICE")
+                                        .requestMatchers("/health")
                                         .permitAll()
                                         .requestMatchers(HttpMethod.POST, "/auth/**")
                                         .permitAll()
