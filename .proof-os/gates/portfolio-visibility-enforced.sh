@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# portfolio-visibility-enforced.sh   (F-0972 / F-0973 / F-0974 / F-0975 / F-0976)
+# portfolio-visibility-enforced.sh
+# (F-0972 / F-0973 / F-0974 / F-0975 / F-0976 / F-0977)
 #
 # Exit 0 = proved · 1 = broken · 2 = unavailable (never green)
 #
@@ -110,6 +111,17 @@ if ! grep -qE "^$DISC:.*rateCardVisibilityOf\(" "$STRIPPED"; then
   fail=1
 else
   note "ok: brand endpoint consults rateCard visibility"
+fi
+
+# --- 3b. the brand DTO does not emit the raw cover column -------------------
+# F-0977: uploadCover persists a bare R2 object key, not a URL. getPublicProfile
+# used to emit profile.getCoverImageUrl() directly, so every brand-side cover was
+# an unservable key -- invisible only because that page never rendered it.
+if grep -qE "^$DISC:.*profile\.getCoverImageUrl\(\)" "$STRIPPED"; then
+  note "BROKEN: CreatorDiscoveryService emits the raw cover column -- uploadCover stores an R2 object key, not a URL; it must come through the presigned portfolio view (F-0977)"
+  fail=1
+else
+  note "ok: brand cover photo is served presigned, not as a raw object key"
 fi
 
 # --- 4. no re-declared dead control on the contact request ------------------
