@@ -1590,7 +1590,8 @@ class EscrowServiceTest {
         Collaboration cancelled =
                 Collaboration.invite(COLLAB_ID, CAMPAIGN_ID, CREATOR_USER_ID, null, "INR");
         cancelled.transitionTo(com.influora.domain.enums.CollaborationStatus.CANCELLED);
-        when(collaborationRepository.findById(COLLAB_ID)).thenReturn(Optional.of(cancelled));
+        // [EV-015] refund now reads the collaboration under a row lock.
+        when(collaborationRepository.findByIdForUpdate(COLLAB_ID)).thenReturn(Optional.of(cancelled));
         Wallet clearingWallet = Wallet.forWorkspace("01HCLEARING1234567890", "platform-clearing");
         Wallet brandWallet = Wallet.forWorkspace(WORKSPACE_ID, "brand");
         when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);

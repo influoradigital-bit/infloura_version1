@@ -1089,7 +1089,17 @@ public class EscrowService {
         return toStatusResponse(hold);
     }
 
-    /** Refunds a FUNDED escrow hold back to the brand's own wallet (e.g. cancelled campaign). */
+    /**
+     * Refunds a FUNDED escrow hold back to the brand's own wallet (e.g. cancelled campaign).
+     *
+     * <p>[FIX: EV-015] Brand-initiated refunds are allowed only before the creator has started
+     * delivering — see {@link #assertBrandRefundBeforeWorkStarted} for the exact rule, including
+     * campaign-level pool holds. Once work has been submitted the brand is refused with 409
+     * {@code REFUND_REQUIRES_DISPUTE} and must open a dispute on the deal ({@code POST
+     * /deals/{dealId}/disputes}); an admin then settles it through {@link #adminRefundForDispute},
+     * {@link #adminReleaseForDispute} or {@link #adminSplitForDispute}, none of which go through
+     * this method or its gate.
+     */
     @Transactional
     public EscrowStatusResponse refund(AuthPrincipal principal, String workspaceId, String escrowHoldId) {
         WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
@@ -1126,14 +1136,31 @@ public class EscrowService {
             return toStatusResponse(hold); // idempotent no-op
         }
 
+        // [FIX: EV-015] Lock order on this path: hold (above), then the collaboration row, then its
+        // deliverable rows. The collaboration is read with a locking read so its status is the
+        // latest committed one, not the read view this transaction opened before it waited on the
+        // hold lock. A hold that names a collaboration we cannot load is refused (fail closed) —
+        // before this fix it silently skipped every collaboration check and refunded.
         String collaborationId = resolveCollaborationId(hold);
+        Collaboration collaboration = null;
         if (collaborationId != null) {
-            collaborationRepository
-                    .findById(collaborationId)
-                    .ifPresent(this::assertEscrowNotBlockedByDispute);
+            collaboration =
+                    collaborationRepository
+                            .findByIdForUpdate(collaborationId)
+                            .orElseThrow(
+                                    () ->
+                                            new ApiException(
+                                                    "COLLABORATION_NOT_FOUND",
+                                                    "Collaboration not found",
+                                                    HttpStatus.NOT_FOUND));
+            assertEscrowNotBlockedByDispute(collaboration);
         }
 
         requireStatus(hold, EscrowStatus.FUNDED, "refund");
+
+        if (collaboration != null) {
+            assertBrandRefundBeforeWorkStarted(collaboration);
+        }
 
         String idempotencyKey = "refund:" + hold.getId();
         var outcome =
@@ -1945,6 +1972,77 @@ public class EscrowService {
             throw new ApiException(
                     "COLLABORATION_CANCELLED",
                     "This deal was cancelled and its secured funds can no longer be released to the creator",
+                    HttpStatus.CONFLICT);
+        }
+    }
+
+    /**
+     * [EV-015] Deliverable states in which the creator has not handed anything to the brand yet.
+     * Every other {@link DeliverableStatus} is reached only through a submission (SUBMITTED,
+     * RESUBMITTED) or a brand decision on one (REVISION_REQUESTED, APPROVED, REJECTED) or later
+     * (POSTED, METRICS_REPORTED, VERIFIED), so any of them means work was delivered.
+     */
+    private static final Set<DeliverableStatus> PRE_SUBMISSION_DELIVERABLE_STATUSES =
+            EnumSet.of(DeliverableStatus.PENDING, DeliverableStatus.DRAFT);
+
+    /**
+     * [EV-015] Collaboration states that are only reached after the creator submitted work
+     * ({@code CollaborationLifecycleService#recomputeReviewState}). DISPUTED is handled earlier by
+     * {@link #assertEscrowNotBlockedByDispute}; CANCELLED is the refund remedy (see {@link
+     * #assertReleaseNotBlockedByCancellation}) and is deliberately not here.
+     */
+    private static final Set<CollaborationStatus> WORK_DELIVERED_COLLABORATION_STATUSES =
+            EnumSet.of(
+                    CollaborationStatus.REVIEW_PENDING,
+                    CollaborationStatus.REVISION_REQUESTED,
+                    CollaborationStatus.COMPLETED);
+
+    /**
+     * [FIX: EV-015] A brand OWNER/ADMIN could pull a FUNDED hold back to its own wallet at any time,
+     * including after the creator submitted and the brand approved the work, because {@link
+     * #refundInternal} checked only workspace, not-already-refunded, the dispute freeze and FUNDED.
+     *
+     * <p>The rule for a brand-initiated refund of a hold bound to a collaboration (directly via
+     * {@code collaboration_id}, or through its milestone):
+     *
+     * <ul>
+     *   <li>collaboration CANCELLED: allowed. That is the refund remedy; today CANCELLED is written
+     *       only by the pre-contract reject path ({@code Collaboration#canReject}), and no
+     *       post-contract termination flow exists yet (CR-22b), so no delivered work can sit behind
+     *       a CANCELLED row.
+     *   <li>collaboration REVIEW_PENDING, REVISION_REQUESTED or COMPLETED: refused.
+     *   <li>any deliverable of the collaboration outside PENDING/DRAFT: refused.
+     *   <li>otherwise (pre-submission: negotiation, CONTRACTED, IN_PROGRESS with nothing
+     *       submitted): allowed.
+     * </ul>
+     *
+     * <p>Campaign-level pool holds ({@code milestone_id} NULL). A pool hold is refundable only if no
+     * collaboration funded from it has started work. A pool hold funds a collaboration only once it
+     * is bound to one ({@code EscrowHold#bindCollaboration}, the Meera launch path); a bound pool
+     * hold therefore goes through exactly the rule above for that collaboration. An unbound pool
+     * hold funds no collaboration: it is never stamped on a milestone, never releasable to a creator
+     * ({@code ESCROW_HOLD_NOT_LINKED} in {@link #releaseByHoldIdInternal}), not counted as a deal's
+     * secured payment, and not frozen by a dispute; refusing its refund would strand the money, so
+     * it stays refundable.
+     *
+     * <p>Races: called with the hold and the collaboration rows locked, and it reads the
+     * deliverables with a locking read, so a submission committed before this point is seen, and a
+     * submission still in flight waits for this transaction and lands after the refund (the same
+     * outcome as a refund that simply happened first).
+     */
+    private void assertBrandRefundBeforeWorkStarted(Collaboration collaboration) {
+        if (collaboration.getStatus() == CollaborationStatus.CANCELLED) {
+            return;
+        }
+        boolean workDelivered =
+                WORK_DELIVERED_COLLABORATION_STATUSES.contains(collaboration.getStatus())
+                        || deliverableRepository.findByCollaborationIdForUpdate(collaboration.getId()).stream()
+                                .anyMatch(d -> !PRE_SUBMISSION_DELIVERABLE_STATUSES.contains(d.getStatus()));
+        if (workDelivered) {
+            throw new ApiException(
+                    "REFUND_REQUIRES_DISPUTE",
+                    "The creator has already submitted work on this deal, so this secured payment can't be"
+                            + " returned directly. Open a dispute on the deal and our team will review it.",
                     HttpStatus.CONFLICT);
         }
     }
