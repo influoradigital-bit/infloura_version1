@@ -30,6 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.config import get_settings
 from app.prompt.creator_persona import (
     get_creator_directives,
     get_creator_persona_block,
@@ -795,6 +796,27 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
 # `app/tools/loop.py`, in-process, for the live turn — that is the whole rule.
 
 
+def _creator_history_window(conversation: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The newest `creator_history_turns` turns of a CREATOR conversation.
+
+    Block C is never cached, so each replayed turn is billed at the full input rate on every turn,
+    and twice on a turn that calls a tool. The client sends the whole visible thread and Spring
+    serves up to `MeeraSessionService.DEFAULT_HISTORY_LIMIT` (100) messages, which is the difference
+    between INR 1.31 and INR 5.39 for one chat message (T-CREATOR-CREDITS-SEARCH/PLAN.md §5).
+
+    Slicing the RAW turns, before `build_block_c_messages` converts them, keeps the window
+    countable: one input turn is one replayed message. It is safe against the tool-call rule those
+    two findings in that function's comment closed — replayed history never carries a native
+    `tool_use`/`tool_result` pair, only a text summary, so a window can never orphan one.
+
+    `0` (or any non-positive setting) replays everything. The newest turn is always kept.
+    """
+    window = get_settings().creator_history_turns
+    if window <= 0 or len(conversation) <= window:
+        return conversation
+    return conversation[-window:]
+
+
 def build_block_c_messages(conversation: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Volatile suffix: the conversation history the CLIENT sent, replayed.
 
@@ -978,7 +1000,10 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
         block_a = build_block_a()
         block_b = build_block_b(brand_context)
         tools = get_tool_schemas()
-    messages = build_block_c_messages(brand_context.get("conversation") or [])
+    conversation = brand_context.get("conversation") or []
+    if audience == "CREATOR":
+        conversation = _creator_history_window(conversation)
+    messages = build_block_c_messages(conversation)
 
     return AssembledPrompt(
         system_blocks=[block_a, block_b],

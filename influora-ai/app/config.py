@@ -541,6 +541,20 @@ class Settings:
         default_factory=lambda: _get_float("AI_CREATOR_MONTHLY_CAP_USD", 0.75)
     )
 
+    # --- CREATOR history window (T-CREATOR-CREDITS-SEARCH step 2) ---
+    # How many of the creator's most recent conversation turns Block C replays.
+    # Block C is the uncached suffix, so every replayed turn is billed at the
+    # full input rate on every turn — twice on a turn that calls a tool. The
+    # browser sends the whole visible thread and Spring serves up to
+    # `MeeraSessionService.DEFAULT_HISTORY_LIMIT` (100) messages, which is the
+    # difference between INR 1.31 and INR 5.39 for one chat message (rohan,
+    # T-CREATOR-CREDITS-SEARCH/PLAN.md §5). The newest turn is always kept.
+    # CREATOR only: the BRAND path's history behaviour is unchanged. `0`
+    # disables the window and replays everything Spring sent.
+    creator_history_turns: int = field(
+        default_factory=lambda: _get_int("CREATOR_HISTORY_TURNS", 20)
+    )
+
     # --- Brief extraction's OWN monthly cap (SPEC §14.4.b) ---
     # POST /internal/brief-extract is metered on a SEPARATE per-creator monthly
     # bucket (`f"{creator_profile_id}:brief"`) from the chat cap above, so a
