@@ -15,7 +15,7 @@ featuredImageAlt: "A brand marketer reviewing an influencer payment dashboard sh
 
 ## Quick Answer
 
-The safest way to pay an influencer in India is through **payment protection**: the brand funds the agreed amount upfront, a neutral third party holds it, and the money releases to the creator only after the brand approves the delivered content. This removes the two most common failure points in influencer payments — brands who don't pay after the post goes live, and creators who take an advance and never deliver. Pair payment protection with a written contract, a staged payment schedule, and UPI or bank transfer with a proper invoice, and you've closed almost every gap that leads to disputes.
+The safest way to pay an influencer in India is through **payment protection**: the brand sets the agreed amount aside upfront, out of reach of either side, and the money releases to the creator only after the brand approves the delivered content. This removes the two most common failure points in influencer payments — brands who don't pay after the post goes live, and creators who take an advance and never deliver. Pair payment protection with a written contract, a staged payment schedule, and UPI or bank transfer with a proper invoice, and you've closed almost every gap that leads to disputes.
 
 This guide walks through the full process, step by step, with the specific risks each step protects against.
 
@@ -49,7 +49,7 @@ A simple written agreement — even a short one — turns a verbal understanding
 
 This is the step that actually removes risk, rather than just documenting it.
 
-**Payment protection holds the brand's payment with a neutral third party until the creator delivers approved content.** The brand pays into a protected balance when the contract is signed — before the creator starts work. The creator can see the funds are already secured, so there's no reason to distrust the brand's ability or intent to pay. The brand's money stays locked and refundable until the deliverable is approved, so there's no risk of paying for content that never arrives or doesn't match the brief.
+**Payment protection sets the brand's payment aside until the creator delivers approved content.** The brand pays into a protected balance when the contract is signed — before the creator starts work. The creator can see the funds are already secured, so there's no reason to distrust the brand's ability or intent to pay. The brand's money stays locked and refundable until the deliverable is approved, so there's no risk of paying for content that never arrives or doesn't match the brief.
 
 This single change eliminates the two most common disputes:
 
@@ -81,7 +81,7 @@ Once content is approved, payment should move through UPI or direct bank transfe
 
 Payments to influencers for promotional services can attract TDS obligations under Section 194 provisions covering professional/technical services or benefits/perquisites, depending on how the arrangement is structured (cash payment vs. product-plus-cash, for instance). Brands should deduct and deposit TDS correctly and issue Form 16A where applicable. *(Exact applicable section and rate depend on the nature of payment and the creator's status — brands should confirm current thresholds and rates with a tax advisor, as rules are updated periodically.)*
 
-A platform that auto-calculates and deducts TDS, and auto-generates invoices for every transaction, removes this from being a manual, error-prone step for either side.
+A platform that auto-generates an invoice for every transaction gives both sides the paper trail they need; working out any TDS itself still sits with the brand and its tax advisor.
 
 ## Step 5: Keep Every Negotiation and Approval in One Place
 
@@ -105,6 +105,6 @@ Paying influencers safely in India isn't about finding "trustworthy" creators or
 
 ## Pay Every Influencer Deal With Payment protection
 
-Influora funds every campaign through payment protection from the moment a contract is signed, with auto-generated contracts, TDS-calculated payouts, and UPI transfers built in — so neither side is ever left waiting or exposed.
+Influora funds every campaign through payment protection from the moment a contract is signed, with auto-generated contracts, an invoice on every payout, and UPI withdrawals built in — so neither side is ever left waiting or exposed.
 
 **[Launch a campaign →](/get-started)**

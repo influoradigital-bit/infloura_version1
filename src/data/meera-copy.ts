@@ -24,7 +24,7 @@ export const MEERA_CTAS = {
 export const MEERA_TRUST_COPY = {
   lockCaption: (amount: string) => `${amount} secured. Released only on your approval.`,
   releaseNote: 'Money moves only when you approve.',
-  escrowGuarantee: 'Guaranteed.',
+  escrowGuarantee: 'Reserved for this deal.',
 }
 
 /** T1 — persistent escrow pill states. Amount leads ("₹17,250 Secured") — the

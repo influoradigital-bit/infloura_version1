@@ -108,11 +108,11 @@ import {
 //     24 hours" (see how-it-works/creators). Never printed here.
 //   - "Instant automated TDS challans and Form 26Q reporting" / "Tax
 //     Compliance Auto-Pilot" / "claim complete 18% Input Tax Credit on every
-//     single platform invoice" — TDS is recorded and shown on the payout and
-//     invoice; Influora does not file returns or give tax advice. Rule 4.
+//     single platform invoice" — EV-007: TDS is not computed on the automated
+//     rail and invoices carry no TDS line; Influora does not file returns. Rule 4.
 //   - "RBI-regulated safety vault" / "RBI Licensed Banking Partner" — we are
-//     not RBI-licensed; only our payments partner is an RBI-authorized
-//     Payment Aggregator, stated as such where this page names it. "ISO 27001
+//     not RBI-licensed, and no PA holds brand funds (EV-007) — they are a
+//     reserved balance on Influora's own ledger; Razorpay processes top-ups. "ISO 27001
 //     Certified" deleted outright, per standing rule.
 //   - A testimonial quote attributed to a fabricated "Kavya Sharma, Fashion &
 //     Tech Creator" (name collision with this team's own QA lead is
@@ -146,7 +146,7 @@ const EVERY_PLAN_INCLUDED: string[] = [
   'Campaign performance dashboard (unlimited)',
   'Auto-generated contracts + e-signature',
   'Payment protection on every deal',
-  'TDS recorded on payouts + dispute resolution',
+  'Invoices on every payout + dispute resolution',
 ];
 
 const FREE_INCLUDED: IncludedItem[] = [
@@ -181,7 +181,7 @@ const HERO_FACTS = [
 const CREATOR_INCLUDED = [
   'Free to join and build your profile',
   'Free to accept deals and Hype Campaign slots',
-  'Invoice with any recorded TDS shown',
+  'Invoice generated on every payout',
   'UPI or direct bank payout',
   'Payment protection before you start work',
 ];
@@ -275,7 +275,7 @@ const MATRIX_GROUPS: MatrixGroup[] = [
         pro: { kind: 'text', value: 'Every deal' },
       },
       {
-        feature: 'TDS recorded on payouts + dispute resolution',
+        feature: 'Invoices on every payout + dispute resolution',
         free: { kind: 'check' },
         pro: { kind: 'check' },
       },
@@ -333,12 +333,12 @@ const FAQS = [
   {
     question: 'Do I have to subscribe to use Influora?',
     answer:
-      'No. Using the platform requires no subscription. Discovering creators, running deals, Secure Payments, auto-generated contracts, dispute resolution, TDS shown on payouts and your campaign dashboard are all on the Free tier, permanently. A subscription buys AI capacity — and, alongside it, higher limits on seats, tracked creators and analytics.',
+      'No. Using the platform requires no subscription. Discovering creators, running deals, Secure Payments, auto-generated contracts, dispute resolution, invoices on every payout and your campaign dashboard are all on the Free tier, permanently. A subscription buys AI capacity — and, alongside it, higher limits on seats, tracked creators and analytics.',
   },
   {
     question: "What's the difference between Free and Pro?",
     answer:
-      'The headline difference is AI: Pro gives you 400 AI credits a month instead of 100 (150 after your first funded campaign). Pro also raises the limits Free caps — unlimited creator analytics deep-dives (vs. 1/month), 5 workspace seats (vs. 1), unlimited tracked creators (vs. 5) — adds report export (CSV/PDF) and campaign templates when they launch, and reduces the brand fee charged when a campaign goes live. Everything else — contracts, payment protection, dispute resolution, TDS on payouts, the campaign dashboard — is the same on both. See the comparison table above.',
+      'The headline difference is AI: Pro gives you 400 AI credits a month instead of 100 (150 after your first funded campaign). Pro also raises the limits Free caps — unlimited creator analytics deep-dives (vs. 1/month), 5 workspace seats (vs. 1), unlimited tracked creators (vs. 5) — adds report export (CSV/PDF) and campaign templates when they launch, and reduces the brand fee charged when a campaign goes live. Everything else — contracts, payment protection, dispute resolution, invoices on every payout, the campaign dashboard — is the same on both. See the comparison table above.',
   },
   {
     question: 'Does upgrading to Pro change what creators earn?',
@@ -372,7 +372,7 @@ const FAQS = [
     // is selling a surprise. This answer names every cap in one place.
     question: 'Is Free actually free, or is it a limited version?',
     answer:
-      'Both, honestly. Every plan — Free included — gets auto-generated contracts, payment protection on every deal, dispute resolution, TDS shown on payouts and an unlimited campaign dashboard. None of that is behind the subscription. Free is capped, though: 1 workspace seat, up to 5 tracked creators, 1 creator analytics deep-dive a month, and 100 AI credits a month (150 after your first funded campaign). A platform fee applies when a campaign goes live, on either plan. Pro raises the caps and cuts that fee.',
+      'Both, honestly. Every plan — Free included — gets auto-generated contracts, payment protection on every deal, dispute resolution, invoices on every payout and an unlimited campaign dashboard. None of that is behind the subscription. Free is capped, though: 1 workspace seat, up to 5 tracked creators, 1 creator analytics deep-dive a month, and 100 AI credits a month (150 after your first funded campaign). A platform fee applies when a campaign goes live, on either plan. Pro raises the caps and cuts that fee.',
   },
   {
     question: 'When do I actually pay (or get paid)?',
@@ -396,7 +396,7 @@ export default function PricingPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Pricing"
-        description="No subscription to use Influora: contracts, payment protection, dispute resolution, TDS on payouts and the campaign dashboard are on the Free tier. Pro (₹4,999/month) is for more AI credits and higher seat, creator and analytics limits. Creators join free."
+        description="No subscription to use Influora: contracts, payment protection, dispute resolution, invoices on every payout and the campaign dashboard are on the Free tier. Pro (₹4,999/month) is for more AI credits and higher seat, creator and analytics limits. Creators join free."
         canonical="/pricing"
       />
       {/*
@@ -412,7 +412,7 @@ export default function PricingPage() {
       <JsonLd
         data={getSoftwareApplicationSchema({
           description:
-            'Influora pricing for brands and creators: the platform carries no subscription — the Free tier includes contracts, payment protection, dispute resolution, TDS on payouts and the campaign dashboard. Pro at ₹4,999/month buys 400 AI credits a month and higher seat, creator and analytics limits. Creators join free.',
+            'Influora pricing for brands and creators: the platform carries no subscription — the Free tier includes contracts, payment protection, dispute resolution, invoices on every payout and the campaign dashboard. Pro at ₹4,999/month buys 400 AI credits a month and higher seat, creator and analytics limits. Creators join free.',
           url: 'https://influora.in/pricing',
           offers: [
             {
@@ -435,7 +435,7 @@ export default function PricingPage() {
         data={getWebPageSchema({
           name: 'Influora Pricing',
           description:
-            'Using Influora needs no subscription: the Free tier includes contracts, payment protection, dispute resolution, TDS on payouts and the campaign dashboard, with a platform fee charged when a campaign goes live. Pro at ₹4,999 per month buys more AI credits and raises the seat, tracked-creator and analytics limits. Creators join and get paid for free.',
+            'Using Influora needs no subscription: the Free tier includes contracts, payment protection, dispute resolution, invoices on every payout and the campaign dashboard, with a platform fee charged when a campaign goes live. Pro at ₹4,999 per month buys more AI credits and raises the seat, tracked-creator and analytics limits. Creators join and get paid for free.',
           url: '/pricing',
         })}
       />
@@ -454,7 +454,7 @@ export default function PricingPage() {
                 No subscription to use Influora. AI is what you pay for.
               </h1>
               <p className="mt-4 text-lg text-muted-foreground">
-                Contracts, payment protection, dispute resolution, TDS shown on payouts and your campaign
+                Contracts, payment protection, dispute resolution, invoices on every payout and your campaign
                 dashboard are included on every plan — Free included. Pro adds AI credits and raises the
                 limits on seats, tracked creators and analytics.
               </p>

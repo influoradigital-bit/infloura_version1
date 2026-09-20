@@ -1219,7 +1219,7 @@ export default function BrandWalletPage() {
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground">
-                TDS @ 1% deducted on creator payments (Sec. 194-O)
+                TDS isn&apos;t calculated automatically in the app yet — check with your CA.
               </p>
             </CardContent>
           </Card>
@@ -1415,7 +1415,7 @@ export default function BrandWalletPage() {
                                 </div>
                                 {transaction.breakdown.tds && (
                                   <div className="flex justify-between">
-                                    <span>TDS (1% Sec. 194-O)</span>
+                                    <span>TDS</span>
                                     <span>{formatCurrency(transaction.breakdown.tds)}</span>
                                   </div>
                                 )}
@@ -1706,7 +1706,7 @@ export default function BrandWalletPage() {
                 <div>
                   <p className="font-medium">How Secure Payments Work</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    When you start a campaign, funds are secured to guarantee payment to creators.
+                    When you start a campaign, the amount is reserved from your wallet balance so creators know the money is set aside.
                     Once you approve the deliverables, funds are automatically released to the creator.
                     If there is a dispute, our team will mediate and ensure fair resolution.
                   </p>

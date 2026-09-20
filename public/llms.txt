@@ -1,6 +1,6 @@
 # Influora
 
-> Influora is an influencer marketing platform for India. Brands hire verified creators, agree scope and price in a shared Deal Room, and pay only after they approve the delivered work. Contracts and invoices are generated automatically, with any recorded TDS shown on the payout. Creators join, build a portfolio and get paid for free.
+> Influora is an influencer marketing platform for India. Brands hire verified creators, agree scope and price in a shared Deal Room, and pay only after they approve the delivered work. Contracts and invoices are generated automatically. Creators join, build a portfolio and get paid for free.
 
 Influora is a platform, not an agency. It does not take a cut of creator content rights and does not sell followers or engagement.
 
@@ -9,13 +9,13 @@ Influora is a platform, not an agency. It does not take a cut of creator content
 Written to be quoted standing alone. Each one matches the copy rendered at the URL given, so quoting either source gives the same answer.
 
 **How do influencer payments stay safe on Influora?**
-Influora holds the brand's payment with a licensed payment partner from the moment the contract is signed, and releases it to the creator only after the brand approves the delivered work. The brand never pays in advance for work that does not arrive, and the creator never starts filming without the money already secured. (https://influora.in/features/secure-payments)
+Influora reserves the brand's payment in their Influora wallet from the moment the contract is signed, and releases it to the creator only after the brand approves the delivered work. The brand never pays in advance for work that does not arrive, and the creator never starts filming without the money already secured. (https://influora.in/features/secure-payments)
 
 **What is a Deal Room?**
 A Deal Room is the single shared workspace where one brand and one creator settle a collaboration: the chat, the proposal and counter-offers, the deliverables list, the e-signed contract and the payment all live in one thread, instead of being spread across WhatsApp, email and a separate invoice. (https://influora.in/features/deal-room)
 
 **What does Influora cost?**
-Using the platform costs nothing to subscribe to. The Free tier includes auto-generated contracts and e-signature, payment protection on every deal, dispute resolution, TDS shown on payouts and an unlimited campaign dashboard, and charges a platform fee only when a deal completes. What a subscription buys is AI: Pro is ₹4,999 per month for 400 AI credits instead of Free's 100 (150 after a first funded campaign). Pro also raises the limits Free caps — 5 workspace seats instead of 1, unlimited tracked creators instead of 5, unlimited creator analytics deep-dives instead of 1 a month — and reduces the per-deal fee. Creators join and get paid for free — Influora takes a commission only when a deal actually pays out. (https://influora.in/pricing)
+Using the platform costs nothing to subscribe to. The Free tier includes auto-generated contracts and e-signature, payment protection on every deal, dispute resolution, invoices on every payout and an unlimited campaign dashboard, and charges a platform fee only when a deal completes. What a subscription buys is AI: Pro is ₹4,999 per month for 400 AI credits instead of Free's 100 (150 after a first funded campaign). Pro also raises the limits Free caps — 5 workspace seats instead of 1, unlimited tracked creators instead of 5, unlimited creator analytics deep-dives instead of 1 a month — and reduces the per-deal fee. Creators join and get paid for free — Influora takes a commission only when a deal actually pays out. (https://influora.in/pricing)
 
 **What is a Hype Campaign?**
 A Hype Campaign is Influora's multi-creator format: a brand posts one source reel at a single flat per-reel rate, caps the number of slots, and up to 100 creators accept with one tap and post inside a 72-hour window. Each accepted slot is funded up front and paid out automatically once the post is verified. (https://influora.in/features/hype)
@@ -31,12 +31,12 @@ Meera is Influora's built-in AI campaign co-pilot, included in every brand works
 
 ## Key facts
 
-- **Payment protection**: brand funds are secured with a licensed payment partner when a deal is created, and release to the creator only after deliverables are approved. If a creator does not deliver, the brand recovers the funds through dispute resolution.
+- **Payment protection**: brand funds are reserved in the brand's Influora wallet when a deal is funded (card and UPI payments are processed by Razorpay), and release to the creator only after deliverables are approved. If a creator does not deliver, the brand recovers the funds through dispute resolution.
 - **Deal Room**: Influora's term for the shared workspace where one brand and one creator negotiate scope, timelines and deliverables for a single collaboration, with the agreement and payment terms attached.
 - **Hype Campaigns**: Influora's UGC/multi-creator campaign format for running the same brief across many creators at once, at one flat rate, inside a fixed window.
 - **Contracts**: agreements are auto-generated from the agreed deal terms inside the Deal Room — no separate legal drafting for standard collaborations.
 - **KYC**: creator KYC (identity + payout verification) typically completes in 24-48 hours.
-- **TDS**: Where TDS (tax deducted at source) has been recorded on a payout, Influora shows the figure and reflects it on the invoice. Influora does not calculate or deduct tax on your behalf.
+- **TDS**: Influora does not calculate, deduct or file TDS (tax deducted at source) automatically, and its invoices carry no TDS line. Where TDS applies to a payment, it is handled as Indian tax law requires; check the details with your CA.
 - **Sales tracking**: each creator on a campaign gets a unique tracking link and coupon code, and the brand's store reports orders back over a signed webhook — so attribution is real transactions, not screenshots.
 - **Creators**: verified creators of all sizes, from nano to macro. No public minimum follower threshold.
 

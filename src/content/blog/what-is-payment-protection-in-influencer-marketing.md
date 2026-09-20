@@ -15,7 +15,7 @@ featuredImageAlt: "Diagram showing a brand's payment moving into a protected bal
 
 ## Quick Answer
 
-**Payment protection in influencer marketing is a payment arrangement where a brand's money is held by a neutral third party — not the brand, not the creator — from the moment a deal is signed until the creator delivers content the brand approves.** Once the brand approves the deliverable, the funds release to the creator automatically. If the content is never delivered, or doesn't match what was agreed, the payment stays locked instead of disappearing into either party's account. It's the same underlying concept used in real estate and freelance marketplaces, applied to brand-creator collaborations.
+**Payment protection in influencer marketing is a payment arrangement where a brand's money is set aside — out of reach of both the brand and the creator — from the moment a deal is signed until the creator delivers content the brand approves.** Once the brand approves the deliverable, the funds release to the creator automatically. If the content is never delivered, or doesn't match what was agreed, the payment stays locked instead of disappearing into either party's account. It's the same underlying concept used in real estate and freelance marketplaces, applied to brand-creator collaborations.
 
 ## How Payment Protection Differs From a Regular Influencer Payment
 
@@ -24,7 +24,7 @@ In a typical influencer deal without payment protection, money moves directly be
 | | Without payment protection | With payment protection |
 |---|---|---|
 | **When funds move** | Brand pays creator directly — before or after posting, at brand's discretion | Brand funds the deal when contract is signed, before work starts |
-| **Who holds the money mid-deal** | Whoever has been paid — brand (if not yet paid) or creator (if paid early) | A neutral third party holds it |
+| **Who holds the money mid-deal** | Whoever has been paid — brand (if not yet paid) or creator (if paid early) | Set aside on the platform, out of reach of either side |
 | **What triggers final payment** | Brand's decision, often informal | Brand's approval of the specific deliverable |
 | **Recourse if something goes wrong** | Limited — money has already changed hands | Funds stay held until the dispute resolves |
 
@@ -72,7 +72,7 @@ No — properly implemented the payment releases funds automatically upon approv
 No. Payment protection protects any deal size, from a single ₹2,000 nano-influencer reel to a 100-creator campaign, because the underlying risk — payment not matching delivery — exists at every price point.
 
 **Who holds the protected balance?**
-On a dedicated influencer marketing platform, the platform itself operates the payment protection mechanism as the neutral party, rather than either the brand or creator holding the funds directly.
+It depends on the platform, so ask. On Influora, the brand's funds sit as a reserved balance in the brand's Influora wallet, recorded against the deal on Influora's ledger, and card and UPI payments are processed by Razorpay. Neither the brand nor the creator can move reserved funds outside the approval or dispute process.
 
 **Does payment protection replace the need for a contract?**
 No — payment protection and a written contract work together. The contract defines what "approved delivery" means; payment protection enforces that payment only follows that definition.

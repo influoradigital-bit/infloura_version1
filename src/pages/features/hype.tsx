@@ -41,8 +41,8 @@ import {
   What was deliberately NOT carried over from the design, and why:
     - "escrow", "RBI-regulated Protected Settlement Vault", "Scheduled Bank
       Trustee", "RBI Licensed Escrow Partner". "escrow" is banned in user copy
-      (2026-09-02); our partner is a licensed, RBI-authorized Payment Aggregator,
-      Influora is not a trustee.
+      (2026-09-02); EV-007: no regulator or licensed PA holds brand
+      funds; they are a reserved balance on Influora's own ledger.
     - "Bank-Grade 256-Bit Rails". No security/certification claims about Influora.
     - "3.8x Velocity", "+340% GMV", "2.4M Views", "100% Payout Rate", "300%
       production quality spike", "120+ Hours Saved". None of this is measured —
@@ -96,7 +96,7 @@ const HOW_IT_WORKS = [
   {
     step: '04',
     title: 'Funding locks automatically per slot',
-    body: 'Each accepted slot is funded and payment-protected automatically, so every creator who accepts is guaranteed the rate if they deliver.',
+    body: 'Each accepted slot is funded from the brand\u2019s reserved budget automatically, so every creator who accepts knows the rate is set aside before they post.',
   },
   {
     step: '05',

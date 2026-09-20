@@ -14,15 +14,15 @@ export interface TrustBarItem {
 }
 
 export const BRAND_TRUST_ITEMS: TrustBarItem[] = [
-  { icon: Landmark, label: 'Payments held by a licensed gateway' },
+  { icon: Landmark, label: 'Payments processed securely by Razorpay' },
   { icon: FileCheck2, label: 'E-signed contracts on every deal' },
   { icon: BadgeCheck, label: 'Platform-verified creator stats' },
-  { icon: Receipt, label: 'TDS and invoices handled' },
+  { icon: Receipt, label: 'Invoices generated on every payout' },
 ];
 
 export const CREATOR_TRUST_ITEMS: TrustBarItem[] = [
   { icon: ShieldCheck, label: 'Brand funds locked before you shoot' },
   { icon: Timer, label: 'Payout typically inside 24 hours' },
-  { icon: Receipt, label: 'TDS invoice generated for you' },
+  { icon: Receipt, label: 'Invoice generated for you' },
   { icon: FileCheck2, label: 'Written contract, not a DM promise' },
 ];

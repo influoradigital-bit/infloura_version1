@@ -49,13 +49,13 @@ import {
       but drops this claim.
     - "RBI-Regulated Safety Vault", "RBI Licensed Escrow Partner", "Scheduled Bank
       Escrow Trustee", "protected payment vaults", "legally enforceable under the
-      Information Technology Act 2000" as a claim about Influora itself. Our
-      licensed partner is an RBI-authorized Payment Aggregator; Influora is not a
-      trustee and not RBI-licensed. "escrow" is banned in user copy (2026-09-02).
+      Information Technology Act 2000" as a claim about Influora itself. EV-007: Influora
+      is not a trustee and not RBI-licensed; brand funds are a reserved balance on
+      Influora's own wallet ledger, and Razorpay only processes card/UPI top-ups. "escrow" is banned in user copy (2026-09-02).
     - "ISO 27001 Certified" — we hold no such certification.
     - "Automated Section 194J & 194R TDS deductions", "real-time GST
-      reconciliation". TDS is recorded and shown on payouts; nothing is filed
-      for you (see /tds).
+      reconciliation". EV-007: no TDS is computed on the
+      automated rail and invoices carry no TDS line; nothing is filed (see /tds).
     - "Sovereign Creators" / "creators as sovereign business owners" — "sovereign"
       cut everywhere as a house adjective; it appears nowhere in our live voice.
     - "Integrated GMV Analytics" / direct Shopify+WooCommerce conversion
@@ -93,7 +93,7 @@ const PRINCIPLES = [
     n: '02',
     icon: ShieldCheck,
     title: 'Creators treated like businesses',
-    body: 'Funds are secured with a licensed, RBI-authorized Payment Aggregator before filming starts, and payout follows the milestone written into the contract — not a follow-up message.',
+    body: 'Brand funds are reserved in the Influora wallet before filming starts, and payout follows the milestone written into the contract — not a follow-up message.',
     tag: 'Payment-protected from day one',
     link: { label: 'How Secure Payments works', to: '/features/secure-payments' },
   },
@@ -109,8 +109,8 @@ const PRINCIPLES = [
     n: '04',
     icon: Landmark,
     title: 'Compliance you can actually see',
-    body: 'Every payout shows any recorded TDS deduction and generates an invoice automatically. Influora does not file your returns for you.',
-    tag: 'TDS recorded and shown, not filed',
+    body: 'Every payout generates an invoice automatically, so both sides have a clean record for their books. Influora does not calculate, deduct or file tax for you.',
+    tag: 'An invoice on every payout',
     link: { label: 'Read the TDS policy', to: '/tds' },
   },
 ] as const;
@@ -430,18 +430,18 @@ export default function AboutPage() {
                 F-0343: an eyebrow line here asserted a specific count of Indian
                 brands using the platform. No source produced that figure, so it
                 was removed. What replaced it is the mechanism the heading and
-                body already describe: verification and a licensed payment
-                partner are things the product does, checkable by using it.
+                body already describe: verification and Razorpay-processed
+                payments are things the product does, checkable by using it.
               */}
               <p className="text-sm font-medium text-accent-foreground">
-                Verified profiles · licensed payment partner
+                Verified profiles · payments processed by Razorpay
               </p>
               <h2 className="mt-2 text-2xl font-semibold">
                 Verified creators of all sizes, from nano to macro
               </h2>
               <p className="mt-3 text-muted-foreground">
                 Every creator profile is Instagram-verified before it's discoverable, and every
-                payout moves through Influora's licensed payment gateway partner — the same
+                payment is reserved and released through the Influora wallet — the same
                 protected payment rail whether it's a single reel or a 100-creator Hype Campaign.
               </p>
             </FadeUp>
@@ -453,7 +453,7 @@ export default function AboutPage() {
           sub="Free to start for brands and creators. Payment-protected from the first deal."
           primary={{ label: 'Start your first campaign', to: '/brand/register' }}
           secondary={{ label: 'See how a deal works first', to: '/how-it-works/brands' }}
-          reassurances={['Free to start', 'No subscription', 'Contracts and TDS included']}
+          reassurances={['Free to start', 'No subscription', 'Contracts and invoices included']}
           className="py-20"
         />
       </main>

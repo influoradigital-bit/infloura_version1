@@ -975,7 +975,7 @@ export default function CreatorWalletPage() {
                 <div>
                   <p className="font-medium text-blue-800">Tax Compliance</p>
                   <p className="text-sm text-blue-700 mt-1">
-                    TDS (1%) is deducted at source as per IT Act. Download Form 16A quarterly for filing.
+                    TDS isn&apos;t calculated automatically in the app, and Form 16A isn&apos;t available here yet. If tax is deducted at source on a payout, write to info@influora.in for the details, and speak to your CA about your filing.
                   </p>
                 </div>
               </div>

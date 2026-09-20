@@ -42,7 +42,7 @@ Campaign-specific disagreements (delivery, approval, payment protection release)
 | Acknowledgment of your grievance | Within **48 hours** |
 | Resolution or clear status update | Within **30 days** |
 
-If a grievance needs more time (for example, it requires input from a third party like our Payment Aggregator), we'll tell you why and give you a revised timeline.
+If a grievance needs more time (for example, it requires input from a third party like our payment processor), we'll tell you why and give you a revised timeline.
 
 ## 6. What happens after you file
 

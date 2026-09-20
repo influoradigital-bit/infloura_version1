@@ -21,7 +21,7 @@ You must be at least 18 years old, or the age of majority in your state, and leg
 Influora is a marketplace that connects brands and creators for influencer marketing **Campaigns**. We help you:
 
 - Find and agree on a Campaign
-- Fund the Campaign into **payment protection** through a licensed, RBI-authorized Payment Aggregator
+- Fund the Campaign into **payment protection** from your Influora wallet (wallet top-ups are processed by Razorpay)
 - Track and approve **Deliverables**
 - Release the **Payout** to the creator once the brand approves the work
 
@@ -42,7 +42,7 @@ Funds move only through payment protection release or a dispute-resolution outco
 
 ## 5. Fees and taxes
 
-Using Influora involves a Platform fee (charged to brands, described on our Pricing page) and a commission deducted from creator Payouts at payment protection release. We don't publish exact rates in this document — see `/pricing` for current numbers. Tax is deducted at source (TDS) from creator Payouts under Section 194-O of the Income Tax Act; see our TDS Policy for how this works.
+Using Influora involves a Platform fee (charged to brands, described on our Pricing page) and a commission deducted from creator Payouts at payment protection release. We don't publish exact rates in this document — see `/pricing` for current numbers. Where Indian tax law requires tax to be deducted at source (TDS) from a creator Payout, it is handled as that law requires; see our TDS Policy.
 
 ## 6. AI features — please read this carefully
 

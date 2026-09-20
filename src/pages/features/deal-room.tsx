@@ -43,8 +43,8 @@ import {
   What was deliberately NOT carried over from the design, and why:
     - "escrow", "RBI-regulated nodal vault/trustee", "Scheduled Bank Escrow Trustee",
       "RBI Licensed Escrow Partner". "escrow" is banned in user copy (2026-09-02);
-      our partner is a licensed, RBI-authorized Payment Aggregator, and Influora is
-      not a trustee.
+      EV-007: no regulator or licensed PA holds brand funds — they are a reserved
+      balance on Influora's own ledger; Razorpay only processes top-ups.
     - "IT Act 2000 Section 10A Compliant", "ISO 27001 Certified Security",
       "Bank-Grade 256-bit Encryption", "Validated Court Precedent". No regulatory or
       certification claims about Influora itself are permitted.
@@ -97,7 +97,7 @@ const ENGINES = [
   {
     icon: Wallet,
     title: 'Funds secured before filming',
-    body: 'The brand deposits the full deal amount with a licensed, RBI-authorized Payment Aggregator before the creator starts producing content.',
+    body: 'The brand reserves the full deal amount from its Influora wallet before the creator starts producing content. Wallet top-ups are processed securely by Razorpay.',
   },
   {
     icon: Lock,
@@ -112,7 +112,7 @@ const ENGINES = [
   {
     icon: Repeat,
     title: 'Payout on approval',
-    body: 'Approving the deliverable releases the payment and generates the invoice, with any recorded TDS shown on it.',
+    body: 'Approving the deliverable releases the payment and generates the invoice.',
   },
 ] as const;
 
@@ -448,12 +448,12 @@ export default function DealRoomFeaturePage() {
                       <dd className="text-right font-medium">₹45,000</dd>
                     </div>
                     <div className="flex justify-between gap-3">
-                      <dt className="text-muted-foreground">Recorded TDS (194J)</dt>
-                      <dd className="text-right">₹4,500</dd>
+                      <dt className="text-muted-foreground">Reserved before filming</dt>
+                      <dd className="text-right">₹45,000</dd>
                     </div>
                     <div className="flex justify-between gap-3 border-t border-border/60 pt-2">
-                      <dt className="text-muted-foreground">Net payout</dt>
-                      <dd className="text-right font-semibold">₹40,500</dd>
+                      <dt className="text-muted-foreground">Released to creator</dt>
+                      <dd className="text-right font-semibold">On approval</dd>
                     </div>
                   </dl>
                   <div className="mt-4 flex items-center gap-2 rounded-lg border border-border/60 p-3 text-sm">
@@ -461,7 +461,7 @@ export default function DealRoomFeaturePage() {
                     1 of 2 revisions used
                   </div>
                   <p className="mt-4 text-center text-xs text-muted-foreground">
-                    Illustrative terms — TDS is recorded and shown on the payout, not filed for
+                    Illustrative terms. Influora does not calculate, deduct or file TDS for
                     you. See the{' '}
                     <Link to="/tds" className="underline underline-offset-2 hover:text-foreground">
                       TDS policy
