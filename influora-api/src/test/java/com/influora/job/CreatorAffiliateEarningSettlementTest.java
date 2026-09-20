@@ -8,16 +8,18 @@ import static org.mockito.Mockito.when;
 
 import com.influora.domain.entity.AffiliateEarning;
 import com.influora.domain.entity.AffiliateSettlementBatch;
+import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Wallet;
-import com.influora.service.PlatformWalletService;
-import com.influora.service.WalletLedgerService;
-import com.influora.service.WalletService;
 import com.influora.repository.AffiliateEarningRepository;
 import com.influora.repository.AffiliateSettlementBatchRepository;
+import com.influora.repository.CreatorProfileRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.IdempotencyService;
+import com.influora.service.WalletLedgerService;
+import com.influora.service.WalletService;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -59,7 +61,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class CreatorAffiliateEarningSettlementTest {
 
+    /** A creator_profiles.id -- what AffiliateEarning.creatorId actually holds. */
     private static final String CREATOR_ID = "01HCREATORPROFILE1234";
+
+    /** [EV-025] The users.id behind that profile -- what wallets.owner_id holds. */
+    private static final String CREATOR_USER_ID = "01HCREATORUSER1234567";
+
+    private static final String WORKSPACE_ID = "01HWORKSPACE12345678A";
     private static final String PERIOD = "2026-06";
 
     @Mock private AffiliateEarningRepository affiliateEarningRepository;
@@ -68,7 +76,7 @@ class CreatorAffiliateEarningSettlementTest {
     @Mock private IdempotencyService idempotencyService;
     @Mock private WalletLedgerService walletLedgerService;
     @Mock private WalletService walletService;
-    @Mock private PlatformWalletService platformWalletService;
+    @Mock private CreatorProfileRepository creatorProfileRepository;
 
     private AffiliateSettlementJob job;
     private AffiliateSettlementWriter writer;
@@ -76,24 +84,26 @@ class CreatorAffiliateEarningSettlementTest {
     /** Idempotency keys the stubbed ledger has already posted, so a replay credits nothing. */
     private final java.util.Set<String> postedIdempotencyKeys = new java.util.HashSet<>();
 
+    /** [EV-033] The brand workspace wallet the commission is now debited from. */
+    private Wallet brandWallet;
+
     @BeforeEach
     void setUp() {
         // Real AffiliateSettlementWriter (not mocked) so @Transactional's proxy concern aside, the
         // actual production doSettleCreator body runs.
         //
-        // [F-0402] Deliberately the FOUR-ARG @Autowired constructor, not the legacy one-arg form
-        // AffiliateSettlementJobTest uses. The one-arg constructor leaves the three wallet
-        // collaborators null, and creditCreatorWallet returns early when any of them is null
-        // (AffiliateSettlementWriter#creditCreatorWallet) -- so a writer built that way can never
-        // credit a wallet no matter how correct the production code is, and a wallet assertion
-        // against it would fail forever, reporting a fixed defect as unfixed. Spring injects this
-        // four-arg constructor in production; the test must construct what production runs.
+        // [F-0402] Deliberately the @Autowired constructor -- the one Spring injects in
+        // production; the test must construct what production runs. [EV-033] It no longer takes
+        // PlatformWalletService: the debit leg is the BRAND's workspace wallet, not the platform
+        // clearing wallet. [EV-025] It now takes CreatorProfileRepository, because
+        // AffiliateEarning.creatorId is a creator_profiles.id and the wallet to credit is keyed by
+        // users.id.
         writer =
                 new AffiliateSettlementWriter(
                         affiliateEarningRepository,
                         walletLedgerService,
                         walletService,
-                        platformWalletService);
+                        creatorProfileRepository);
         job =
                 new AffiliateSettlementJob(
                         affiliateEarningRepository,
@@ -138,7 +148,10 @@ class CreatorAffiliateEarningSettlementTest {
      * been paid before this settlement.
      */
     private Wallet freshCreatorWallet() {
-        return Wallet.forUser("01HWALLETCREATOR123456", CREATOR_ID);
+        // [EV-025] Keyed by the creator's users.id, which is what WalletService#getBalanceForUser
+        // (and every other creator-facing wallet read) looks up. A wallet keyed by CREATOR_ID --
+        // the creator_profiles.id -- is exactly the invisible orphan this fix exists to prevent.
+        return Wallet.forUser("01HWALLETCREATOR123456", CREATOR_USER_ID);
     }
 
     /**
@@ -158,14 +171,25 @@ class CreatorAffiliateEarningSettlementTest {
      * the fix landed.
      */
     private void wireWalletLedger(Wallet creatorWallet) {
-        Wallet clearingWallet = Wallet.forUser("01HWALLETCLEARING12345", "01HPLATFORMCLEARING12");
-        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
-        when(walletService.requireOrCreateUserWallet(CREATOR_ID)).thenReturn(creatorWallet);
+        // [EV-033] The debit leg is the brand's workspace wallet, funded well above the
+        // commissions these tests settle so the funding check is satisfied and these tests stay
+        // about crediting; the refusal path is AffiliateSettlementMoneyPathTest's job.
+        brandWallet = Wallet.forWorkspace("01HWALLETBRAND1234567", WORKSPACE_ID);
+        brandWallet.applyBalanceDelta(new BigDecimal("100000.00"));
+        // [EV-025] creator_profiles.id -> users.id, the resolution the writer now performs before
+        // it touches a wallet at all.
+        when(creatorProfileRepository.findById(CREATOR_ID))
+                .thenReturn(
+                        Optional.of(
+                                CreatorProfile.newForUser(CREATOR_ID, CREATOR_USER_ID, "Test Creator")));
+        when(walletService.requireWorkspaceWallet(WORKSPACE_ID)).thenReturn(brandWallet);
+        when(walletService.requireOrCreateUserWallet(CREATOR_USER_ID)).thenReturn(creatorWallet);
         when(walletLedgerService.post(
                         anyString(), anyString(), any(), anyString(), any(), any(), anyString(),
                         anyString(), anyString(), any()))
                 .thenAnswer(
                         invocation -> {
+                            String fromWalletId = invocation.getArgument(0);
                             String toWalletId = invocation.getArgument(1);
                             BigDecimal amount = invocation.getArgument(2);
                             String idempotencyKey = invocation.getArgument(8);
@@ -177,6 +201,9 @@ class CreatorAffiliateEarningSettlementTest {
                             // cannot actually produce.
                             if (!postedIdempotencyKeys.add(idempotencyKey)) {
                                 return null;
+                            }
+                            if (brandWallet.getId().equals(fromWalletId)) {
+                                brandWallet.applyBalanceDelta(amount.negate());
                             }
                             if (creatorWallet.getId().equals(toWalletId)) {
                                 creatorWallet.applyBalanceDelta(amount);

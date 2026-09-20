@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -14,10 +15,16 @@ import static org.mockito.Mockito.when;
 
 import com.influora.domain.entity.AffiliateEarning;
 import com.influora.domain.entity.AffiliateSettlementBatch;
+import com.influora.domain.entity.CreatorProfile;
+import com.influora.domain.entity.Wallet;
 import com.influora.repository.AffiliateEarningRepository;
 import com.influora.repository.AffiliateSettlementBatchRepository;
+import com.influora.repository.CreatorProfileRepository;
 import com.influora.service.AuditLogService;
 import com.influora.service.IdempotencyService;
+import com.influora.service.WalletLedgerService;
+import com.influora.service.WalletService;
+import java.util.Optional;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -49,10 +56,23 @@ class AffiliateSettlementJobTest {
     private static final String OTHER_CREATOR_ID = "01HCREATORPROFILE5678";
     private static final String PERIOD = "2026-06";
 
+    /**
+     * [EV-025] {@code AffiliateEarning.creatorId} is a {@code creator_profiles.id}; the wallet it
+     * credits is keyed by {@code users.id}. These tests are about the job's control flow, not the
+     * money leg (that is {@code AffiliateSettlementMoneyPathTest}'s job), so the profile-to-user
+     * resolution is stubbed with this deterministic mapping.
+     */
+    private static String userIdOf(String creatorProfileId) {
+        return "01HUSER" + creatorProfileId.substring(creatorProfileId.length() - 14);
+    }
+
     @Mock private AffiliateEarningRepository affiliateEarningRepository;
     @Mock private AffiliateSettlementBatchRepository settlementBatchRepository;
     @Mock private AuditLogService auditLogService;
     @Mock private IdempotencyService idempotencyService;
+    @Mock private WalletLedgerService walletLedgerService;
+    @Mock private WalletService walletService;
+    @Mock private CreatorProfileRepository creatorProfileRepository;
 
     private AffiliateSettlementJob job;
 
@@ -63,8 +83,35 @@ class AffiliateSettlementJobTest {
         // AffiliateSettlementWriter instance (not mocked) sharing this test's same mocked
         // affiliateEarningRepository, so every existing assertion below continues to exercise the
         // actual business logic end-to-end exactly as before extraction.
+        // [EV-011/EV-025/EV-033] The writer now debits the brand's workspace wallet and credits
+        // the creator's USER wallet, so it has real collaborators; the narrower
+        // null-collaborator constructor that used to let it flip status without moving money is
+        // gone. Stubbed leniently because several tests below never reach the money leg at all
+        // (zero settleable earnings, key-derivation only, the overlap guard).
+        lenient()
+                .when(creatorProfileRepository.findById(anyString()))
+                .thenAnswer(
+                        inv -> {
+                            String profileId = inv.getArgument(0);
+                            return Optional.of(
+                                    CreatorProfile.newForUser(
+                                            profileId, userIdOf(profileId), "Test Creator"));
+                        });
+        lenient()
+                .when(walletService.requireWorkspaceWallet(anyString()))
+                .thenAnswer(
+                        inv ->
+                                Wallet.forWorkspace(
+                                        "01HWALLETBRAND0000001", inv.getArgument(0)));
+        lenient()
+                .when(walletService.requireOrCreateUserWallet(anyString()))
+                .thenAnswer(inv -> Wallet.forUser("01HWALLETCREATOR00001", inv.getArgument(0)));
         AffiliateSettlementWriter affiliateSettlementWriter =
-                new AffiliateSettlementWriter(affiliateEarningRepository);
+                new AffiliateSettlementWriter(
+                        affiliateEarningRepository,
+                        walletLedgerService,
+                        walletService,
+                        creatorProfileRepository);
         job =
                 new AffiliateSettlementJob(
                         affiliateEarningRepository,
