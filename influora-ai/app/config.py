@@ -546,13 +546,35 @@ class Settings:
     # Block C is the uncached suffix, so every replayed turn is billed at the
     # full input rate on every turn — twice on a turn that calls a tool. The
     # browser sends the whole visible thread and Spring serves up to
-    # `MeeraSessionService.DEFAULT_HISTORY_LIMIT` (100) messages, which is the
-    # difference between INR 1.31 and INR 5.39 for one chat message (rohan,
-    # T-CREATOR-CREDITS-SEARCH/PLAN.md §5). The newest turn is always kept.
-    # CREATOR only: the BRAND path's history behaviour is unchanged. `0`
-    # disables the window and replays everything Spring sent.
+    # `MeeraSessionService.DEFAULT_HISTORY_LIMIT` (100) messages.
+    #
+    # 40, not 20: ash's review (wiki/ai-review/creator-history-window-ai-review.md,
+    # P1-2) measured the mandated tool chain (get_brief -> check_deal_risks ->
+    # estimate_my_rate -> draft_reply, a creator turn between each) plus one
+    # revision at ~10-14 messages, and the onboarding greeting spends a slot, so
+    # 20 cut inside a single working arc. A pasted brief's id is unrecoverable
+    # once it leaves the window (there is no list-briefs tool), as is anything
+    # the creator only said conversationally. Replace 40 with the p95 of
+    # `conversation_len` (already logged at `routes/chat.py`) after a live week.
+    #
+    # CREATOR only: the BRAND path's history behaviour is unchanged. `0` disables
+    # the window and replays everything Spring sent. A positive value below
+    # `_CREATOR_HISTORY_TURNS_FLOOR` is raised to the floor — `1` would leave
+    # Meera with no history at all, and a typo (`2O`) silently becomes this
+    # default (`_get_int` swallows it), so neither can quietly lobotomise her.
     creator_history_turns: int = field(
-        default_factory=lambda: _get_int("CREATOR_HISTORY_TURNS", 20)
+        default_factory=lambda: _get_int("CREATOR_HISTORY_TURNS", 40)
+    )
+
+    # Companion ceiling in CHARACTERS, because a turn count cannot bound tokens:
+    # nothing validates the size of a replayed turn (ash P1-4), so one pasted
+    # 8,000-character brief sitting in the history can outweigh the whole turn
+    # budget the count is supposed to buy. The newest turn is always replayed
+    # whatever its size; older turns stop being added once the budget is spent.
+    # ~24,000 chars is roughly 6-7k tokens, which is a long real chat and still
+    # well under a single brief-sized blow-out. `0` disables the budget.
+    creator_history_char_budget: int = field(
+        default_factory=lambda: _get_int("CREATOR_HISTORY_CHAR_BUDGET", 24_000)
     )
 
     # --- Brief extraction's OWN monthly cap (SPEC §14.4.b) ---

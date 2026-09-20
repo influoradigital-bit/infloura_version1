@@ -6,7 +6,7 @@
 **Branch:** `feat/creator-credits-search`, cut from `release/0919` @ `9bfe7dc`, in the `influora-credits` worktree
 **Sources:** a code check of `release/0919` (section 6 lists every file read), `CREDITS-SPEC.md` in `T-MEERA-CREATOR-PHASE-B`, and provider pricing and terms pages read on 2026-09-19.
 
-**Progress, 2026-09-20 (branch `feat/creator-credits-search`, local, not pushed).** Step 0.2 DONE (`a4f233e`). Step 1 DONE (priya; the amended spec sits beside this file as `CREDITS-SPEC.md`, 1,320 lines, 56 dated notes, and the Phase B original is untouched). Step 2 DONE (`db3b837`), review running. Steps 0.1, 0.3, 0.4 and 3-8 not started.
+**Progress, 2026-09-20 (branch `feat/creator-credits-search`, local, not pushed).** Step 0.2 DONE (`a4f233e`). Step 1 DONE (priya; the amended spec sits beside this file as `CREDITS-SPEC.md`, 1,320 lines, 56 dated notes, and the Phase B original is untouched). Step 2 DONE (`db3b837`) and REVIEWED: ash returned SHIP WITH P1 FIXES and all four P1s plus three P2s are applied in a follow-up commit. Steps 0.1, 0.3, 0.4 and 3-8 not started.
 
 Nothing else here is built yet. This file sets the order, the owner, the proof required for each step ("done when"), and who checks it. Nothing closes on the builder's own word.
 
@@ -93,6 +93,50 @@ accounting too**, not only the model choice.
 
 **Five more decisions (O8-O12)** are logged in the amended spec. Under D2's default the D1 predicate is dead code, and
 priya recommends not building it until D2 is answered.
+
+### Step 2 review: what ash found, and what is still open
+
+Report: `wiki/ai-review/creator-history-window-ai-review.md`. Verdict **SHIP WITH P1 FIXES**. The window is
+mechanically sound (it cannot orphan a tool pair, and no creator tool turn is even persisted), and the cost claim
+reproduces within 7%. Four P1s were real and are now fixed:
+
+- **The tests were blind to the production shape (P1-3).** My fixture alternated *from* `user`, so it ended on an
+  assistant turn. Ash proved by mutation that a window which DELETED THE CREATOR'S LIVE QUESTION on every real request
+  passed all three tests. The fixture now builds a real thread (greeting first, live question last) and the six
+  mutants — including that one — are each caught. This is the same shape as the ledger's gates-that-greened-their-own
+  blind-spot records.
+- **20 turns cut inside one working arc (P1-2).** The mandated tool chain plus a revision is ~10-14 messages, and a
+  pasted brief's id is unrecoverable once it leaves the window. Default is now **40**, to be replaced by the p95 of
+  `conversation_len` after a live week.
+- **A turn count cannot bound tokens (P1-4).** Nothing bounds one turn, so one pasted brief in history outweighed the
+  whole budget. Added `CREATOR_HISTORY_CHAR_BUDGET` (24,000 chars); the newest turn is always replayed whatever its
+  size.
+- **P0-1, pre-existing and not caused by step 2: creator Block C started with an `assistant` message on every turn**,
+  because Spring's first persisted row is Meera's onboarding greeting, and the Messages API is documented to require a
+  `user` first message. Nothing normalised it and every route test sends a single user turn against a mocked provider,
+  so the suite could not see it. The window now drops leading assistant turns and a test pins `messages[0]`. **A live
+  call still owed** to confirm whether the API rejects it — that answer also tells us whether 100-message creator
+  threads were ever really being billed.
+- Also applied: one CREATOR branch instead of two (P2-1), a floor so a `1` or a typo cannot silently leave Meera with
+  no history (P2-2), and tests for `0`-disables and a non-default window via `get_settings.cache_clear()`.
+
+**Still open, each its own ticket:**
+
+| # | Item | Why it matters |
+|---|---|---|
+| P1-1 | **Cache Block C instead of trimming it.** Measured: 100 messages uncached over a 2-call turn ₹3.17, the
+40-turn window ₹0.63, the *same* 100 messages served from cache ₹0.36 — cheaper AND lossless. A *sliding* window
+changes the prefix every turn, so it forecloses that breakpoint. Break-even is ~83% of turns inside the 5-minute TTL. |
+The window is a ceiling on the smaller half of the bill; caching is the real lever, and it needs a live turn's
+`cache_read_input_tokens` to verify |
+| P0-1 | One real Sonnet call with an assistant-first message list | Settles a possible total-breakage risk on creator
+chat, and step 2's premise |
+| P2-6 | Creator chat runs on **Sonnet 4.5** while `CREATOR_COPILOT_MODEL` (Haiku) is only read by the daily
+suggestion route | A ~3x cost lever that dwarfs this change; needs an eval, not a config flip |
+| P2-5 | FX: this plan uses ₹88/$1, `pricing.py:145` uses ₹83 | One constant, two values |
+| — | After step 2 the dominant term is the **cache write** (₹1.56 of ₹2.65), and the true per-message ceiling is output:
+`meera_chat_max_tokens` 1536 × `tool_loop_max_iterations` 6 ≈ **₹12.2** | Section 5's worst case understates the
+ceiling; the next rupee is in cache hit rate and output bounds, not history length |
 
 ### Step 3: Credits core (`CREDITS-SPEC` K1, K2, K5, K7, K9)
 

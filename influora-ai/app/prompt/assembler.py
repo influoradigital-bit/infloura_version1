@@ -796,25 +796,95 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
 # `app/tools/loop.py`, in-process, for the live turn — that is the whole rule.
 
 
+# A positive `creator_history_turns` below this is raised to it: see that setting's comment.
+_CREATOR_HISTORY_TURNS_FLOOR = 4
+
+# `_wrap_untrusted` adds a fixed delimiter frame around every replayed message (measured at 51
+# characters). Counted per turn so the character budget bounds what is actually sent, not just the
+# text the client typed.
+_REPLAY_WRAPPER_CHARS = 51
+
+
+def _replayed_turn_chars(turn: Any) -> int:
+    """Characters one raw turn will cost once `build_block_c_messages` has wrapped it."""
+    if not isinstance(turn, dict):
+        return len(str(turn)) + _REPLAY_WRAPPER_CHARS
+    content = turn.get("content", "")
+    size = len(content) if isinstance(content, str) else len(str(content))
+    calls = turn.get("tool_calls")
+    if calls:
+        size += len(str(calls))
+    return size + _REPLAY_WRAPPER_CHARS
+
+
+def _renders_as_assistant(turn: Any) -> bool:
+    """True when `build_block_c_messages` will emit this turn with `role: "assistant"`.
+
+    Only a literal `assistant` role does; a `tool` turn and any unknown role are replayed as
+    labelled `user` data (see that function), so they are safe to lead Block C with.
+    """
+    if not isinstance(turn, dict):
+        return False
+    role = turn.get("role")
+    return isinstance(role, str) and role.lower() == "assistant"
+
+
 def _creator_history_window(conversation: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The newest `creator_history_turns` turns of a CREATOR conversation.
+    """The newest CREATOR turns that fit both the turn count and the character budget.
 
     Block C is never cached, so each replayed turn is billed at the full input rate on every turn,
     and twice on a turn that calls a tool. The client sends the whole visible thread and Spring
-    serves up to `MeeraSessionService.DEFAULT_HISTORY_LIMIT` (100) messages, which is the difference
-    between INR 1.31 and INR 5.39 for one chat message (T-CREATOR-CREDITS-SEARCH/PLAN.md §5).
+    serves up to `MeeraSessionService.DEFAULT_HISTORY_LIMIT` (100) messages
+    (T-CREATOR-CREDITS-SEARCH/PLAN.md §5).
+
+    Three rules, in this order:
+
+    1. **The newest turn is always replayed**, whatever its size. It is the creator's live question
+       (`MeeraCopilotChat.tsx` appends it last), so dropping it would answer the wrong thing — and a
+       window that dropped it passed the first version of this module's tests, which is why the
+       tests now assert on `messages[-1]` (ash P1-3).
+    2. **Older turns are added newest-first** until either the turn count or the character budget is
+       spent. The count alone cannot bound the bill, because nothing bounds the size of one turn
+       (ash P1-4).
+    3. **Leading turns that would render as `assistant` are dropped**, so Block C starts with a
+       `user` message. Spring's first persisted row is Meera's onboarding greeting, so every creator
+       turn was starting `assistant`, which the Messages API is documented to reject (ash P0-1).
+       Only done while a non-assistant turn remains to lead with; otherwise the turn is left alone
+       to fail loudly rather than silently emptying Block C.
 
     Slicing the RAW turns, before `build_block_c_messages` converts them, keeps the window
-    countable: one input turn is one replayed message. It is safe against the tool-call rule those
-    two findings in that function's comment closed — replayed history never carries a native
-    `tool_use`/`tool_result` pair, only a text summary, so a window can never orphan one.
+    countable: one input turn is AT MOST one replayed message (that function also drops blank
+    turns). It is safe against the tool-call rule those two findings in its comment closed — replayed
+    history never carries a native `tool_use`/`tool_result` pair, only a text summary, so a window
+    can never orphan one.
 
-    `0` (or any non-positive setting) replays everything. The newest turn is always kept.
+    `0` on either setting disables that ceiling.
     """
-    window = get_settings().creator_history_turns
-    if window <= 0 or len(conversation) <= window:
+    if not conversation:
         return conversation
-    return conversation[-window:]
+
+    settings = get_settings()
+    max_turns = settings.creator_history_turns
+    if max_turns > 0:
+        max_turns = max(max_turns, _CREATOR_HISTORY_TURNS_FLOOR)
+    budget = settings.creator_history_char_budget
+
+    kept: list[dict[str, Any]] = []
+    used = 0
+    for turn in reversed(conversation):
+        size = _replayed_turn_chars(turn)
+        if kept and max_turns > 0 and len(kept) >= max_turns:
+            break
+        if kept and budget > 0 and used + size > budget:
+            break
+        kept.append(turn)
+        used += size
+    kept.reverse()
+
+    for index, turn in enumerate(kept):
+        if not _renders_as_assistant(turn):
+            return kept[index:]
+    return kept
 
 
 def build_block_c_messages(conversation: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -996,13 +1066,14 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
         tools: list[dict[str, Any]] = get_creator_tool_schemas(enabled_names)
         block_a = build_block_a_creator([t["name"] for t in tools])
         block_b = build_block_b_creator(creator)
+        # One CREATOR branch, not two: a future audience added to the block builders but not to the
+        # windowing would otherwise lose the window with no test to notice (ash P2-1).
+        conversation = _creator_history_window(brand_context.get("conversation") or [])
     else:
         block_a = build_block_a()
         block_b = build_block_b(brand_context)
         tools = get_tool_schemas()
-    conversation = brand_context.get("conversation") or []
-    if audience == "CREATOR":
-        conversation = _creator_history_window(conversation)
+        conversation = brand_context.get("conversation") or []
     messages = build_block_c_messages(conversation)
 
     return AssembledPrompt(
