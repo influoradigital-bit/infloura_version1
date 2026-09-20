@@ -73,7 +73,8 @@ public class ShowCreatorsExecutor {
                                                 JsonLists.stringListFromJson(p.getCategoriesJson()),
                                                 p.getTotalFollowers(),
                                                 p.getEngagementRate(),
-                                                p.isVerified()))
+                                                p.isVerified(),
+                                                p.getFollowersSource()))
                         .toList();
 
         auditLogService.recordToolCall(

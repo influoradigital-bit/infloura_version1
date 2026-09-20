@@ -2037,6 +2037,8 @@ export interface SimilarCreator {
   engagementRate: number;
   matchScore: number;
   matchReasons: string[];
+  /** EV-008 — DiscoveryDtos.SimilarCreator.followersSource (see CreatorProfile.followersSource). */
+  followersSource?: 'VERIFIED' | 'IMPORTED' | 'NONE';
 }
 
 /**
@@ -2067,6 +2069,12 @@ export interface CreatorPublicProfile {
   completedCampaigns: number;
   avgRating: number | null;
   saved: boolean | null;
+  /**
+   * EV-008 — DiscoveryDtos.CreatorPublicProfileResponse.followersSource: what totalFollowers /
+   * engagementRate are made of. VERIFIED = Meta-synced platforms only; IMPORTED = Marketplace/admin
+   * import, must be labelled "imported, not verified"; NONE = nothing counted yet.
+   */
+  followersSource?: 'VERIFIED' | 'IMPORTED' | 'NONE';
 }
 
 export const creators = {

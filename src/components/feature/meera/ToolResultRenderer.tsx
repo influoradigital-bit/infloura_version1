@@ -71,6 +71,8 @@ export function ShowCreatorsResult({ data, className }: ShowCreatorsResultProps)
             <span className="truncate text-meera-text">{creator.displayName}</span>
             <span className="shrink-0 text-meera-text-muted">
               {(creator.totalFollowers / 1000).toFixed(0)}K
+              {/* EV-008 — an imported total must not read like a verified count. */}
+              {creator.followersSource === 'IMPORTED' && ' (imported, not verified)'}
               {creator.engagementRate !== undefined && (
                 <>
                   <span className="mx-1 text-meera-border-strong">|</span>

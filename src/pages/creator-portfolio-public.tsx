@@ -47,6 +47,11 @@ import {
 import { cn, formatINR, publicProfileLabel } from '@/lib/utils';
 import { cssVars } from '@/lib/css-vars';
 import {
+  formatFollowers,
+  metaDescription,
+  platformStatsFootnote,
+} from '@/lib/portfolio-provenance';
+import {
   api,
   ApiError,
   type PortfolioPage,
@@ -255,7 +260,7 @@ export default function CreatorPortfolioPublicPage() {
       Object.assign(document.createElement('meta'), { name: 'description' });
     metaDesc.setAttribute(
       'content',
-      `${page.displayName} is a ${page.verified ? 'verified ' : ''}${page.niches[0]?.toLowerCase() || 'content'} creator${page.city ? ' based in ' + page.city : ''} with ${formatFollowers(totalFollowers(page))} followers and ${page.stats.totalCollabs} brand collaborations.`,
+      metaDescription(page),
     );
     if (!metaDesc.parentElement) document.head.appendChild(metaDesc);
   }, [page]);
@@ -504,7 +509,7 @@ export default function CreatorPortfolioPublicPage() {
               ))}
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Numbers synced directly from each platform's API. Updated daily.
+              {platformStatsFootnote(page)}
             </p>
           </section>
         )}
@@ -1090,17 +1095,6 @@ function platformLabel(p: string) {
     case 'LINKEDIN': return 'LinkedIn';
     default: return p;
   }
-}
-
-function formatFollowers(n: number) {
-  if (n >= 10_000_000) return `${(n / 10_000_000).toFixed(1)}Cr`;
-  if (n >= 100_000)    return `${(n / 100_000).toFixed(1)}L`;
-  if (n >= 1_000)      return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
-  return String(n);
-}
-
-function totalFollowers(page: PortfolioPage) {
-  return page.platforms.reduce((sum, p) => sum + p.followers, 0);
 }
 
 function visibleCollabs(page: PortfolioPage) {

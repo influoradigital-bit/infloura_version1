@@ -33,9 +33,17 @@ function LiveCreatorRow({ creator }: { creator: ShowCreatorsPayload['creators'][
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
           <p className="truncate text-sm font-medium text-meera-text">{creator.displayName}</p>
-          {creator.verified && <VerifiedBadge tone="escrow" label="Instagram-verified stats" />}
+          {/* EV-008 — was gated on `creator.verified` (CreatorProfile.verified, an identity flag),
+              so an imported follower total could sit under an "Instagram-verified stats" badge.
+              Only a Meta-synced total earns the badge; an imported one says so. */}
+          {creator.followersSource === 'VERIFIED' && (
+            <VerifiedBadge tone="escrow" label="Instagram-verified stats" />
+          )}
         </div>
         {creator.city && <p className="truncate text-xs text-meera-text-muted">{creator.city}</p>}
+        {creator.followersSource === 'IMPORTED' && (
+          <p className="truncate text-xs text-meera-text-muted">Followers imported, not verified</p>
+        )}
       </div>
       <span className="shrink-0 text-xs font-medium tabular-nums text-meera-text-muted">
         {(creator.totalFollowers / 1000).toFixed(creator.totalFollowers % 1000 === 0 ? 0 : 1)}k

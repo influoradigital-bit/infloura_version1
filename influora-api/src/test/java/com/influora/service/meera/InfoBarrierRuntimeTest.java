@@ -252,7 +252,7 @@ class InfoBarrierRuntimeTest {
         when(prefs.isConsentAccepted()).thenReturn(false);
         when(creatorAgentPreferencesRepository.findByCreatorId(profileId)).thenReturn(Optional.of(prefs));
 
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(profileId), any())).thenReturn(List.of());
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq(profileId), eq("META_API"), any())).thenReturn(List.of());
         when(collaborationRepository.findByCreatorId(userId)).thenReturn(List.of());
     }
 

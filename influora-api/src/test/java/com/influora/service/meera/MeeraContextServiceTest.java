@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -29,6 +31,7 @@ import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -109,7 +112,7 @@ class MeeraContextServiceTest {
         when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
         when(profile.getTierOverride()).thenReturn(null);
         when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
                 .thenReturn(List.of());
         when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
 
@@ -158,7 +161,7 @@ class MeeraContextServiceTest {
         when(prefs.getWorkingDaysJson()).thenReturn("[\"1\",\"2\",\"3\",\"4\",\"5\"]");
         when(prefs.getWeeklySponsoredLimit()).thenReturn(3);
 
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
                 .thenReturn(List.of());
         when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
 
@@ -189,7 +192,7 @@ class MeeraContextServiceTest {
         when(profile.getGstin()).thenReturn(null);
         when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
         when(profile.getTierOverride()).thenReturn(null);
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
                 .thenReturn(List.of());
         when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
 
@@ -225,7 +228,7 @@ class MeeraContextServiceTest {
         when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
         when(profile.getTierOverride()).thenReturn(null);
         when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
                 .thenReturn(List.of());
         when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
 
@@ -252,7 +255,7 @@ class MeeraContextServiceTest {
         when(profile.getGstin()).thenReturn(null);
         when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.UNVERIFIED);
         when(profile.getTierOverride()).thenReturn(null);
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
                 .thenReturn(List.of());
         when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
 
@@ -309,7 +312,7 @@ class MeeraContextServiceTest {
         when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.UNVERIFIED);
         when(profile.getTierOverride()).thenReturn(null);
         when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
                 .thenReturn(List.of());
         when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
 
@@ -340,7 +343,7 @@ class MeeraContextServiceTest {
         when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.UNVERIFIED);
         when(profile.getTierOverride()).thenReturn(null);
         when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
-        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq("profile1"), any()))
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
                 .thenReturn(List.of());
         when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
 
@@ -350,6 +353,112 @@ class MeeraContextServiceTest {
         assertEquals(
                 "12,400 followers (self-reported, not verified)",
                 creatorContext.metricsSummary().get("followers"));
+    }
+
+    private com.influora.domain.entity.CreatorProfile ev008Profile(long total, String source, BigDecimal rate) {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(total);
+        when(profile.getFollowersSource()).thenReturn(source);
+        // lenient: read only when no Meta row exists (the fallback path).
+        org.mockito.Mockito.lenient().when(profile.getEngagementRate()).thenReturn(rate);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.UNVERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+        return profile;
+    }
+
+    private static com.influora.domain.entity.CreatorMetric ev008Metric(long followers, String dataSource) {
+        return com.influora.domain.entity.CreatorMetric.builder()
+                .id("01EV008METRIC0000000000000")
+                .time(java.time.Instant.parse("2026-09-18T00:00:00Z"))
+                .creatorProfileId("profile1")
+                .platform("YOUTUBE")
+                .username("priya")
+                .followers(followers)
+                .avgEngagementRate(new BigDecimal("9.9"))
+                .dataSource(dataSource)
+                .fetchedAt(java.time.Instant.parse("2026-09-18T00:00:00Z"))
+                .build();
+    }
+
+    @Test
+    @DisplayName(
+            "EV-008 -- Meera reads ONLY Meta-synced metric rows: the any-source finder (which let a"
+                    + " creator-declared 900,000 become a plain '900,000 followers') is never called")
+    void testCreatorAudienceNeverReadsAnySourceMetricRow() {
+        ev008Profile(0L, com.influora.service.FollowerTotals.NONE, null);
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
+                .thenReturn(List.of());
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse) service.assemble(WORKSPACE_ID, "CREATOR");
+
+        verify(creatorMetricsRepository, never()).findByCreatorProfileIdOrderByTimeDesc(any(), any());
+        assertFalse(creatorContext.metricsSummary().containsKey("followers"), creatorContext.metricsSummary().toString());
+        assertFalse(creatorContext.metricsSummary().containsKey("engagement_rate"), creatorContext.metricsSummary().toString());
+    }
+
+    @Test
+    @DisplayName("EV-008 -- a CREATOR_REPORTED row handed back by the source finder is still refused (second guard)")
+    void testCreatorAudienceDeclaredRowIsFilteredEvenIfReturned() {
+        ev008Profile(0L, com.influora.service.FollowerTotals.NONE, null);
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
+                .thenReturn(List.of(ev008Metric(900_000L, com.influora.domain.entity.CreatorMetric.DATA_SOURCE_CREATOR_REPORTED)));
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse) service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertFalse(creatorContext.metricsSummary().containsKey("followers"), creatorContext.metricsSummary().toString());
+        assertFalse(creatorContext.metricsSummary().containsKey("engagement_rate"), creatorContext.metricsSummary().toString());
+    }
+
+    @Test
+    @DisplayName("EV-008 -- a Meta-synced row is quoted plainly (no provenance suffix)")
+    void testCreatorAudienceMetaRowIsPlain() {
+        ev008Profile(0L, com.influora.service.FollowerTotals.NONE, null);
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
+                .thenReturn(List.of(ev008Metric(12_400L, com.influora.domain.entity.CreatorMetric.DATA_SOURCE_META_API)));
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse) service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertEquals("12,400 followers", creatorContext.metricsSummary().get("followers"));
+        assertEquals("9.9% engagement", creatorContext.metricsSummary().get("engagement_rate"));
+    }
+
+    @Test
+    @DisplayName("EV-008 -- IMPORTED profile totals (Marketplace/admin import) are labelled 'imported, not verified'")
+    void testCreatorAudienceImportedTotalsAreLabelled() {
+        ev008Profile(50_000L, com.influora.service.FollowerTotals.IMPORTED, new BigDecimal("3.2"));
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
+                .thenReturn(List.of());
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse) service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertEquals("50,000 followers (imported, not verified)", creatorContext.metricsSummary().get("followers"));
+        assertEquals("3.2% engagement (imported, not verified)", creatorContext.metricsSummary().get("engagement_rate"));
+    }
+
+    @Test
+    @DisplayName("EV-008 -- VERIFIED profile totals (sum of Meta-synced platforms) carry no 'not verified' suffix")
+    void testCreatorAudienceVerifiedTotalsArePlain() {
+        ev008Profile(30_000L, com.influora.service.FollowerTotals.VERIFIED, new BigDecimal("4.5"));
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
+                .thenReturn(List.of());
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse) service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertEquals("30,000 followers", creatorContext.metricsSummary().get("followers"));
+        assertEquals("4.5% engagement", creatorContext.metricsSummary().get("engagement_rate"));
     }
 
     @Test

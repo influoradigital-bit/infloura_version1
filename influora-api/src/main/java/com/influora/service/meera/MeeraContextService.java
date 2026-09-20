@@ -241,10 +241,16 @@ public class MeeraContextService {
             putIfPresent(floors, "post_floor", prefs.getPostFloor(), locale);
         }
 
+        // EV-008: only a Meta-synced row may be quoted unlabelled. The newest row of ANY source
+        // used to be read here, so a creator-declared platform (PortfolioService#declarePlatform,
+        // CREATOR_REPORTED) became Meera's plain "N followers" - a number the creator persona is
+        // told to quote verbatim, including into drafts a brand reads.
         Optional<CreatorMetric> latestMetric =
                 creatorMetricsRepository
-                        .findByCreatorProfileIdOrderByTimeDesc(profile.getId(), PageRequest.of(0, 1))
+                        .findByCreatorProfileIdAndDataSourceOrderByTimeDesc(
+                                profile.getId(), CreatorMetric.DATA_SOURCE_META_API, PageRequest.of(0, 1))
                         .stream()
+                        .filter(CreatorMetric::isPlatformVerified)
                         .findFirst();
         Map<String, String> metricsSummary = buildMetricsSummary(profile, latestMetric, locale);
 
@@ -353,6 +359,9 @@ public class MeeraContextService {
     private static Map<String, String> buildMetricsSummary(
             CreatorProfile profile, Optional<CreatorMetric> latestMetric, Locale locale) {
         Map<String, String> summary = new LinkedHashMap<>();
+        // EV-008: the profile totals are VERIFIED (Meta-synced platforms) or IMPORTED
+        // (Marketplace/admin import) since F-0965; anything else is a legacy self-reported figure.
+        String fallbackLabel = profileTotalsLabel(profile.getFollowersSource());
         if (latestMetric.isPresent()) {
             long followers = latestMetric.get().getFollowers();
             summary.put("followers", formatDecimal(BigDecimal.valueOf(followers), locale) + " followers");
@@ -360,7 +369,8 @@ public class MeeraContextService {
             summary.put(
                     "followers",
                     formatDecimal(BigDecimal.valueOf(profile.getTotalFollowers()), locale)
-                            + " followers (self-reported, not verified)");
+                            + " followers"
+                            + fallbackLabel);
         }
         // else: no verified metric and no self-reported total — omit the key so the "Instagram
         // not connected yet" honest-state branch fires downstream instead of a fabricated zero.
@@ -370,13 +380,29 @@ public class MeeraContextService {
             summary.put("reach_30d", formatDecimal(BigDecimal.valueOf(reach), locale) + " reach (30 days)");
         }
 
-        BigDecimal engagement = latestMetric.map(CreatorMetric::getAvgEngagementRate).orElse(profile.getEngagementRate());
+        BigDecimal engagement = latestMetric.map(CreatorMetric::getAvgEngagementRate).orElse(null);
+        String engagementLabel = "";
+        if (latestMetric.isEmpty() && profile.getEngagementRate() != null) {
+            engagement = profile.getEngagementRate();
+            engagementLabel = fallbackLabel;
+        }
         if (engagement != null) {
             NumberFormat pctFormat = NumberFormat.getNumberInstance(locale);
             pctFormat.setMaximumFractionDigits(1);
-            summary.put("engagement_rate", pctFormat.format(engagement) + "% engagement");
+            summary.put("engagement_rate", pctFormat.format(engagement) + "% engagement" + engagementLabel);
         }
         return summary;
+    }
+
+    /** EV-008 - the provenance suffix for a figure read from the CreatorProfile totals. */
+    private static String profileTotalsLabel(String followersSource) {
+        if (com.influora.service.FollowerTotals.VERIFIED.equals(followersSource)) {
+            return "";
+        }
+        if (com.influora.service.FollowerTotals.IMPORTED.equals(followersSource)) {
+            return " (imported, not verified)";
+        }
+        return " (self-reported, not verified)";
     }
 
     private static Map<String, Object> buildDealsSummary(List<Collaboration> collaborations, Locale locale) {

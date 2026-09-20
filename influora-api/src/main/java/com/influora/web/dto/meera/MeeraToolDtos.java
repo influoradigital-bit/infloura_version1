@@ -41,7 +41,12 @@ public final class MeeraToolDtos {
             List<String> categories,
             long totalFollowers,
             BigDecimal engagementRate,
-            boolean verified) {}
+            // CreatorProfile.verified - an admin-set identity flag, NOT follower provenance.
+            boolean verified,
+            // EV-008: VERIFIED (Meta-synced platforms) | IMPORTED (Marketplace/admin import, not
+            // verified) | NONE - what totalFollowers/engagementRate are made of (F-0965). The only
+            // field that may back a "verified stats" claim to a brand.
+            String followersSource) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record CalculateBudgetResult(
