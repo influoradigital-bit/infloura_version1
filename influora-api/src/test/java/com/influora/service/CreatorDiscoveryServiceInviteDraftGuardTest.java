@@ -19,7 +19,6 @@ import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DealMessageRepository;
 import com.influora.repository.FeaturedCreatorRepository;
-import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.ReviewRepository;
 import com.influora.repository.SavedCreatorRepository;
 import com.influora.security.AuthPrincipal;
@@ -60,7 +59,6 @@ class CreatorDiscoveryServiceInviteDraftGuardTest {
 
     @Mock private BrandContextService brandContext;
     @Mock private CreatorProfileRepository creatorProfileRepository;
-    @Mock private PlatformStatRepository platformStatRepository;
     @Mock private SavedCreatorRepository savedCreatorRepository;
     @Mock private CampaignRepository campaignRepository;
     @Mock private CollaborationRepository collaborationRepository;
@@ -83,7 +81,6 @@ class CreatorDiscoveryServiceInviteDraftGuardTest {
                 new CreatorDiscoveryService(
                         brandContext,
                         creatorProfileRepository,
-                        platformStatRepository,
                         savedCreatorRepository,
                         campaignRepository,
                         collaborationRepository,

@@ -49,6 +49,7 @@ import com.influora.repository.UserRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorContextService;
+import com.influora.service.CreatorMapper;
 import com.influora.service.CreatorProfileService;
 import com.influora.service.ExternalCreatorLinkService;
 import com.influora.web.dto.creator.CreatorDtos.PlatformStatResponse;
@@ -72,7 +73,9 @@ import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -900,9 +903,15 @@ public class PortfolioService {
                 // section while GET /portfolio/{username}, which is permitAll, kept shipping
                 // every handle, follower count, engagement rate and profile URL to any
                 // anonymous caller that read the JSON instead of the page.
-                restricted(mode) && !settings.getVisibility().platformStats()
-                        ? List.of()
-                        : platformStats.stream().map(this::toPlatform).toList(),
+                //
+                // F-0980 -- the decision used to be made INLINE right here, and that was the
+                // whole defect: it was a decision this method owned rather than a rule anyone
+                // else could reuse, so the five brand-facing producers in
+                // CreatorDiscoveryService walked straight past it with raw repository rows.
+                // It now routes through the same private helper the public projection uses.
+                // Do NOT restore an inline copy: a second copy is how the two projections
+                // drift apart (see the getForBrand javadoc above).
+                visiblePlatformStats(settings, mode, platformStats),
                 restricted(mode) && !settings.getVisibility().pastCollabs() ? List.of() : collabs,
                 restricted(mode) && !settings.getVisibility().contentPortfolio()
                         ? List.of()
@@ -1294,6 +1303,79 @@ public class PortfolioService {
         return settings.getVisibility().contentPortfolio() ? settings.getPinnedPosts() : List.of();
     }
 
+    /**
+     * F-0980 — the ONE place in {@code src/main} where the {@code platformStats} flag is
+     * consulted. {@link #assemble} and {@link #getVisiblePlatformStats} both route through it;
+     * neither makes the decision itself.
+     *
+     * <p>The flag was read exactly once before this existed — inside {@code assemble} — and one
+     * reader was enough to satisfy the visibility gate while five producers in
+     * {@code CreatorDiscoveryService} emitted the same rows straight from the repository onto
+     * the top-level {@code platforms} field of the brand DTOs. A creator who switched
+     * "Platform stats" off still had every handle, follower count, engagement rate and
+     * profileUrl served to every brand.
+     *
+     * <p>What this gates is the per-platform ROWS — which network, which handle, which
+     * profileUrl. It deliberately does NOT gate the profile-level {@code totalFollowers} /
+     * {@code engagementRate} rollup: those are the discovery ranking and filter key
+     * (CreatorProfileSpecifications#followersBetween), and nulling them would delist the
+     * creator from every search they would otherwise match — a consequence the editor's own
+     * switch never warns about. Hiding headline reach, if it is ever wanted, is a separate
+     * control with its own honest hint, not a silent side effect of this one.
+     */
+    private List<PlatformStatResponse> visiblePlatformStats(
+            PortfolioSettings settings, ViewerMode mode, List<PlatformStat> rows) {
+        if (restricted(mode) && !settings.getVisibility().platformStats()) {
+            return List.of();
+        }
+        return rows.stream().map(CreatorMapper::toPlatformResponse).toList();
+    }
+
+    /**
+     * F-0980 — the visibility-aware projection of a creator's platform rows, keyed by profile
+     * id. The sibling of {@link #getVisiblePinnedPosts} and the reason
+     * {@code CreatorDiscoveryService} no longer needs {@code PlatformStatRepository} at all.
+     *
+     * <p>Callers must not re-check {@code platformStats} against the result. If a rule is
+     * needed it belongs in {@link #visiblePlatformStats}, keyed on {@link ViewerMode}.
+     *
+     * <p>Costs no extra query at any caller: the settings blob is a plain eager column on the
+     * {@link CreatorProfile} the caller already holds (CreatorProfile.java:59-61), so
+     * {@code loadSettings} is a string parse against memory already paid for, and the rows come
+     * from the one {@code IN} query this method issues — the same query the batch call sites
+     * used to issue themselves.
+     */
+    @Transactional(readOnly = true)
+    public Map<String, List<PlatformStatResponse>> getVisiblePlatformStats(
+            Collection<CreatorProfile> profiles, ViewerMode mode) {
+        if (profiles.isEmpty()) {
+            return Map.of();
+        }
+        List<String> profileIds = profiles.stream().map(CreatorProfile::getId).toList();
+        Map<String, List<PlatformStat>> rowsByProfile =
+                CreatorMapper.groupPlatforms(platformStatRepository.findByCreatorProfileIdIn(profileIds));
+        Map<String, List<PlatformStatResponse>> out = new LinkedHashMap<>();
+        for (CreatorProfile profile : profiles) {
+            out.put(
+                    profile.getId(),
+                    visiblePlatformStats(
+                            loadSettings(profile),
+                            mode,
+                            rowsByProfile.getOrDefault(profile.getId(), List.of())));
+        }
+        return out;
+    }
+
+    /**
+     * F-0980 — single-profile convenience. Delegates to the batch overload rather than
+     * repeating its body: a second hand-written implementation is how the batch and single
+     * paths start disagreeing about what a creator chose to show.
+     */
+    @Transactional(readOnly = true)
+    public List<PlatformStatResponse> getVisiblePlatformStats(CreatorProfile profile, ViewerMode mode) {
+        return getVisiblePlatformStats(List.of(profile), mode).getOrDefault(profile.getId(), List.of());
+    }
+
     private PortfolioSettings loadSettings(CreatorProfile profile) {
         if (profile.getPortfolioSettingsJson() == null || profile.getPortfolioSettingsJson().isBlank()) {
             return new PortfolioSettings();
@@ -1433,15 +1515,10 @@ public class PortfolioService {
         return modes;
     }
 
-    private PlatformStatResponse toPlatform(PlatformStat ps) {
-        return new PlatformStatResponse(
-                ps.getPlatform(),
-                ps.getHandle() != null ? ps.getHandle() : "",
-                ps.getFollowers(),
-                ps.getEngagementRate(),
-                ps.isVerified(),
-                ps.getProfileUrl());
-    }
+    // F-0980 — a byte-identical private copy of CreatorMapper#toPlatform used to live here.
+    // Two copies of the same entity→DTO mapping, one in each of the two services that must
+    // agree about the shape, is how the shapes drift next. There is now one mapper:
+    // CreatorMapper#toPlatformResponse, called from visiblePlatformStats above.
 
     /**
      * F-0498 — the profile-level {@code rateMin} column feeds {@code CreatorDiscoveryService}'s
