@@ -182,7 +182,7 @@ const CREATOR_INCLUDED = [
   'Free to join and build your profile',
   'Free to accept deals and Hype Campaign slots',
   'Invoice generated on every payout',
-  'UPI or direct bank payout',
+  'Paid by bank transfer',
   'Payment protection before you start work',
 ];
 

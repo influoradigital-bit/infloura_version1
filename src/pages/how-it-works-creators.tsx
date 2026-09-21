@@ -108,7 +108,7 @@ const PAYOUT_FLOW = [
     n: '04',
     icon: ArrowRight,
     title: 'Payout releases to you',
-    body: 'Approval clears you to post. Once your post is live and you have submitted the link, the money moves to your Influora wallet and Influora transfers it to your UPI or bank account within 2 working days, with an invoice generated for you.',
+    body: 'Approval clears you to post. Once your post is live and you have submitted the link, the money moves to your Influora wallet and Influora transfers it to your bank account within 2 working days, with an invoice generated for you.',
     tag: '2 working days',
   },
 ] as const;

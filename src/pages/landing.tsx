@@ -131,7 +131,7 @@ const FEATURES = [
   {
     icon: Wallet,
     title: 'Clean payouts',
-    body: 'Invoices generated on every payout, paid out by bank transfer to UPI or a bank account.',
+    body: 'Invoices generated on every payout, paid out by bank transfer to your bank account.',
   },
   {
     icon: Zap,

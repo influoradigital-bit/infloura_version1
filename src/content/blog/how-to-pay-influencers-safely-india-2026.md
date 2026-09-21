@@ -66,7 +66,7 @@ For larger or multi-part campaigns (e.g., a content series, or a Hype-style camp
 - **Milestone 1**: Contract signed, payment protection funded
 - **Milestone 2**: Draft/content submitted for brand review
 - **Milestone 3**: Content approved and live
-- **Milestone 4**: The payment releases to the creator's UPI or bank account
+- **Milestone 4**: The payment releases to the creator's bank account
 
 Staging payment this way means neither side is ever fully exposed. The creator knows funds exist before starting work. The brand never releases money for content it hasn't approved.
 

@@ -393,7 +393,7 @@ export default function CreatorSettingsPage() {
         {
           icon: CreditCard,
           label: 'Payout Settings',
-          description: 'UPI, Bank Account',
+          description: 'Bank account',
           onClick: () => navigate('/creator/wallet'),
         },
         {

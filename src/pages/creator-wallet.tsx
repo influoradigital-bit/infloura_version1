@@ -359,7 +359,9 @@ export default function CreatorWalletPage() {
   const [payoutMethods, setPayoutMethods] = React.useState<PayoutMethod[]>([]);
   const [payoutMethodsUnavailable, setPayoutMethodsUnavailable] = React.useState(false);
   const [showAddMethod, setShowAddMethod] = React.useState(false);
-  const [newMethodType, setNewMethodType] = React.useState<'UPI' | 'BANK'>('UPI');
+  // Beta (Swapnil 2026-09-21): creators are paid by bank transfer only, so a new payout method is
+  // always a bank account. UPI is no longer offered here; an existing saved UPI row still lists.
+  const newMethodType: 'UPI' | 'BANK' = 'BANK';
   const [newMethodValue, setNewMethodValue] = React.useState('');
   const [newMethodIfsc, setNewMethodIfsc] = React.useState('');
   const [addingMethod, setAddingMethod] = React.useState(false);
@@ -369,7 +371,7 @@ export default function CreatorWalletPage() {
   // fabricated destination is ever shown as a real payout account). "Set Primary" still has to
   // be a real, visible action rather than a dead button, so it flips this local flag instead of
   // hitting the API.
-  const [mockPrimaryMethod, setMockPrimaryMethod] = React.useState<'upi' | 'bank'>('upi');
+  const [mockPrimaryMethod, setMockPrimaryMethod] = React.useState<'upi' | 'bank'>('bank');
 
   // Wallet balance + transactions — DISPLAY-only live data behind isApiLive(),
   // mock as fallback. This page has no money mutation at all (see notes above).
@@ -702,7 +704,7 @@ export default function CreatorWalletPage() {
               <div className="bg-white/10 rounded-lg p-3">
                 <WalletFigureLabel
                   label="Pending Payouts"
-                  definition="A transfer Influora has already started to your bank or UPI — already deducted from Available Balance, not yet confirmed as landed."
+                  definition="A transfer Influora has already started to your bank account — already deducted from Available Balance, not yet confirmed as landed."
                   labelClassName="text-xs text-white/80"
                   iconClassName="text-white/70 hover:text-white"
                 />
@@ -956,28 +958,6 @@ export default function CreatorWalletPage() {
                 {/* Mock mode — static demo cards, no facade call. "Set Primary" toggles
                     mockPrimaryMethod for real (see comment on that state above) rather than
                     doing nothing. */}
-                <Card className={mockPrimaryMethod === 'upi' ? 'border-violet-200 bg-violet-50' : undefined}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 rounded-full bg-stage-approved flex items-center justify-center">
-                          <span className="text-stage-approved-fg font-bold">₹</span>
-                        </div>
-                        <div>
-                          <p className="font-medium">UPI</p>
-                          <p className="text-sm text-muted-foreground">priya@okaxis</p>
-                        </div>
-                      </div>
-                      {mockPrimaryMethod === 'upi' ? (
-                        <Badge>Primary</Badge>
-                      ) : (
-                        <Button variant="outline" size="sm" onClick={() => setMockPrimaryMethod('upi')}>
-                          Set Primary
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
                 <Card className={mockPrimaryMethod === 'bank' ? 'border-violet-200 bg-violet-50' : undefined}>
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
@@ -1008,7 +988,7 @@ export default function CreatorWalletPage() {
               </div>
             ) : payoutMethods.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No payout account yet. Add the UPI ID or bank account Influora should send your
+                No payout account yet. Add the bank account Influora should send your
                 payments to.
               </p>
             ) : (
@@ -1059,25 +1039,14 @@ export default function CreatorWalletPage() {
             {liveApi && showAddMethod && (
               <Card>
                 <CardContent className="p-4 space-y-3">
+                  <p className="text-sm font-medium">Bank account</p>
                   <div className="space-y-2">
-                    <Label htmlFor="new-method-type">Type</Label>
-                    <Select value={newMethodType} onValueChange={(v) => setNewMethodType(v as 'UPI' | 'BANK')}>
-                      <SelectTrigger id="new-method-type">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="UPI">UPI</SelectItem>
-                        <SelectItem value="BANK">Bank Account</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="new-method-value">{newMethodType === 'UPI' ? 'UPI ID' : 'Account Number'}</Label>
+                    <Label htmlFor="new-method-value">Account Number</Label>
                     <Input
                       id="new-method-value"
                       value={newMethodValue}
                       onChange={(e) => setNewMethodValue(e.target.value)}
-                      placeholder={newMethodType === 'UPI' ? 'name@bank' : 'Account number'}
+                      placeholder="Account number"
                     />
                   </div>
                   {newMethodType === 'BANK' && (
