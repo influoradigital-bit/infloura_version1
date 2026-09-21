@@ -132,7 +132,7 @@ export const MEERA_STARTER_TEMPLATES: string[] = [
 /** Fee breakdown labels (T5) */
 export const MEERA_FEE_LABELS = {
   pool: 'Creator pool',
-  fee: 'Platform fee (15%)',
+  fee: 'Platform fee',
   total: 'Total',
 }
 

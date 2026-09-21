@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Check, X, MessageSquare } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface CounterProposalCardProps {
   amount: number;
@@ -30,12 +31,27 @@ export function CounterProposalCard({
   onDecline,
   onReply,
 }: CounterProposalCardProps) {
-  // Creator's net earnings — single 15% platform fee (feeBps 1500), net = 85% of
-  // gross. Consistent with api.wallet.platformFee, the counter-proposal form, and
-  // the actual escrow payout.
-  const calculateEarnings = (gross: number) => gross - gross * 0.15;
-
-  const netEarnings = calculateEarnings(amount);
+  // Creator's net earnings from the live platform fee (GET /creator/platform-fee via
+  // api.wallet.platformFee), same source as the counter-proposal form and the actual
+  // payout. Defaults to the 10% global default (1000 bps) while loading or on failure.
+  const [feeBps, setFeeBps] = React.useState(1000);
+  React.useEffect(() => {
+    let cancelled = false;
+    api.wallet
+      .platformFee()
+      .then((fee) => {
+        if (!cancelled && fee) setFeeBps(fee.feeBps);
+      })
+      .catch(() => {
+        /* keep the default — a failed fee read must not block the card */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const feeRate = feeBps / 10_000;
+  const feeAmount = amount * feeRate;
+  const netEarnings = amount - feeAmount;
 
   const getStatusColor = () => {
     switch (status) {
@@ -127,8 +143,8 @@ export function CounterProposalCard({
             <span>{formatINR(amount)}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Platform Fee (15%):</span>
-            <span className="text-stage-disputed-fg">-{formatINR(amount * 0.15)}</span>
+            <span className="text-muted-foreground">Platform Fee ({feeBps / 100}%):</span>
+            <span className="text-stage-disputed-fg">-{formatINR(feeAmount)}</span>
           </div>
           <div className="flex justify-between font-semibold border-t pt-1.5">
             <span>You Receive:</span>

@@ -66,7 +66,7 @@ describe('CreatorWalletPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText(/Platform fee:\s*15%/i)).toBeInTheDocument();
+      expect(screen.getByText(/Platform fee:\s*10%/i)).toBeInTheDocument();
     });
     expect(
       screen.getByText(/Deducted when campaign earnings are released from secured funds/i),

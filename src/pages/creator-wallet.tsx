@@ -384,7 +384,7 @@ export default function CreatorWalletPage() {
 
   // GET /creator/platform-fee — global fee shown for transparency (wallet.platformFee).
   // Unlike the balance/transaction effects, this runs in BOTH mock and live mode: the
-  // mock facade returns the GLOBAL_DEFAULT (15%), so a creator always sees the fee that
+  // mock facade returns the GLOBAL_DEFAULT (10%), so a creator always sees the fee that
   // will be deducted at escrow release, even in the demo build.
   const [platformFeePercent, setPlatformFeePercent] = React.useState<number | null>(null);
 

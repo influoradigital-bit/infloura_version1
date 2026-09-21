@@ -90,10 +90,10 @@ export function CounterProposalForm({
   const deadlineInPast = formData.deadline !== '' && formData.deadline < todayStr;
 
   // Live platform fee — GET /creator/platform-fee (api.wallet.platformFee). Defaults to the
-  // 15% global default (1500 bps) while loading so the breakdown never shows a stale 10%.
+  // 10% global default (1000 bps) while loading; the live rate replaces it.
   // Per Priya: only the platform-fee deduction is real/knowable client-side — the earlier
   // GST-on-fee and TDS lines were speculative and have been removed.
-  const [feeBps, setFeeBps] = React.useState(1500);
+  const [feeBps, setFeeBps] = React.useState(1000);
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -101,7 +101,7 @@ export function CounterProposalForm({
         const fee = await api.wallet.platformFee();
         if (!cancelled && fee) setFeeBps(fee.feeBps);
       } catch (err) {
-        // Non-blocking — keep the 15% default if the fetch fails.
+        // Non-blocking — keep the 10% default if the fetch fails.
         console.error('Failed to load platform fee', err);
       }
     })();

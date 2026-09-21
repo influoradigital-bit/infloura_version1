@@ -39,7 +39,7 @@ export const MOCK_CAMPAIGN_PLAN: MockCampaignPlan = {
   windowHours: 72,
   reach: 420000,
   pool: 15000,
-  feePercent: 15,
+  feePercent: 10,
 }
 
 export function computeFee(pool: number, feePercent: number) {

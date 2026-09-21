@@ -33,7 +33,7 @@ import {
 // exception" claim was incorrect. Platform fee is word-based only
 // ("Included" / "Reduced" per Nisha's stronger framing) in the cards AND the
 // comparison matrix. The only price digit on the page is ₹4,999 (Pro price).
-// Feature-count numbers (seats, creators, credits, analytics views, 15%
+// Feature-count numbers (seats, creators, credits, analytics views, 10%
 // creator commission) are unaffected and stay as-is.
 // "Export reports" and "Campaign templates" are Pro-tier roadmap items whose
 // endpoints don't exist yet — labeled "Coming soon" on the card and matrix,
@@ -95,7 +95,7 @@ import {
 // The CHOSEN file still contradicted itself: its hero stat tiles read
 // "0% Platform Fee — Creators take home 100% of agreed baseline rate", while
 // its OWN comparison-matrix rows two screens down read "Creator commission
-// 15% (unchanged)". The 15% is correct — it's the same figure already locked
+// 15% (unchanged)". Commission is now 10% (CEO, 2026-09-21) — the same figure locked
 // in MATRIX_GROUPS and the FAQ below. The 0%/100% tile was deleted outright,
 // not reworded; nothing on this page states or implies a 0% creator
 // commission.
@@ -173,7 +173,7 @@ const PRO_INCLUDED: IncludedItem[] = [
  */
 const HERO_FACTS = [
   { icon: Wallet, value: '₹0', label: 'To start — no subscription on Free' },
-  { icon: Percent, value: '15%', label: 'Creator commission, identical on every plan' },
+  { icon: Percent, value: '10%', label: 'Creator commission, identical on every plan' },
   { icon: Ban, value: 'None', label: 'Trial period, on either plan' },
   { icon: ShieldCheck, value: 'Every deal', label: 'Payment protection, Free and Pro' },
 ] as const;
@@ -287,8 +287,8 @@ const MATRIX_GROUPS: MatrixGroup[] = [
     rows: [
       {
         feature: 'Creator commission',
-        free: { kind: 'text', value: '15% (unchanged)' },
-        pro: { kind: 'text', value: '15% (unchanged)' },
+        free: { kind: 'text', value: '10% (unchanged)' },
+        pro: { kind: 'text', value: '10% (unchanged)' },
       },
       {
         feature: 'Trial period',
@@ -343,7 +343,7 @@ const FAQS = [
   {
     question: 'Does upgrading to Pro change what creators earn?',
     answer:
-      'No. The creator commission (15%) is the same on both tiers. Your plan choice only affects the brand-side fee — creators are paid identically whether you\'re on Free or Pro.',
+      'No. The creator commission (10%) is the same on both tiers. Your plan choice only affects the brand-side fee — creators are paid identically whether you\'re on Free or Pro.',
   },
   {
     question: 'Is there a trial for Pro?',

@@ -3766,7 +3766,7 @@ export const wallet = {
           'GET', '/creator/platform-fee', { role: 'creator' },
         )
       : mockOr<{ feeBps: number; feePercent: number; source: string }>({
-          feeBps: 1500, feePercent: 15, source: 'GLOBAL_DEFAULT',
+          feeBps: 1000, feePercent: 10, source: 'GLOBAL_DEFAULT',
         }),
 
   /**
@@ -3774,7 +3774,7 @@ export const wallet = {
    * which additionally returns `copy` (server-authored disclosure text).
    *
    * Added 2026-07-26: the endpoint had existed with no client, so the deal-room proposal form
-   * hardcoded "Platform Fee (10%)" while the real default is 15% (application.yml
+   * hardcoded "Platform Fee (10%)" while the default was then 15% (application.yml
    * PLATFORM_FEE_PERCENT). A brand budgeting off that number under-quoted its own cost.
    */
   brandPlatformFee: () =>
@@ -3783,7 +3783,7 @@ export const wallet = {
           'GET', '/brand/platform-fee',
         )
       : mockOr<{ feeBps: number; feePercent: number; source: string; copy: string }>({
-          feeBps: 1500, feePercent: 15, source: 'GLOBAL_DEFAULT', copy: '',
+          feeBps: 1000, feePercent: 10, source: 'GLOBAL_DEFAULT', copy: '',
         }),
 
   /**

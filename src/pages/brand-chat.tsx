@@ -689,11 +689,11 @@ export default function BrandChatPage() {
   const [demoProposalStatuses, setDemoProposalStatuses] = React.useState<Record<string, string>>({});
   /**
    * Real workspace platform fee for the proposal form's cost breakdown. The form used to
-   * hardcode 10%; the platform default is 15% (application.yml PLATFORM_FEE_PERCENT), so brands
+   * hardcode a rate; the Free-plan brand fee is 10% (brand_fee_bps; Pro differs), so brands
    * were quoted a total below what they'd actually be charged. 15 is the fallback if the fetch
    * fails, matching the server default rather than re-introducing a made-up number.
    */
-  const [platformFeePercent, setPlatformFeePercent] = React.useState(15);
+  const [platformFeePercent, setPlatformFeePercent] = React.useState(10);
 
   React.useEffect(() => {
     if (!isApiLive()) return;
@@ -704,7 +704,7 @@ export default function BrandChatPage() {
         if (!cancelled) setPlatformFeePercent(fee.feePercent);
       })
       .catch(() => {
-        /* keep the 15% default — a failed fee read must not block sending a proposal */
+        /* keep the 10% default — a failed fee read must not block sending a proposal */
       });
     return () => {
       cancelled = true;

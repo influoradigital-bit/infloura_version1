@@ -73,7 +73,7 @@ interface ProposalFormProps {
   /**
    * Real platform fee percent for this workspace (GET /brand/platform-fee). Defaults to the
    * platform's own default rather than the 10% this form used to hardcode — that number was
-   * simply wrong (application.yml PLATFORM_FEE_PERCENT is 15) and under-quoted the brand's cost.
+   * simply wrong for any workspace whose rate differs (Free 10%, Pro lower) - the live rate is fetched.
    */
   platformFeePercent?: number;
 }
@@ -133,7 +133,7 @@ export function ProposalForm({
   onSubmit,
   onClose,
   isSubmitting = false,
-  platformFeePercent = 15,
+  platformFeePercent = 10,
 }: ProposalFormProps) {
   const [step, setStep] = React.useState(1);
   const [formData, setFormData] = React.useState<ProposalFormData>({

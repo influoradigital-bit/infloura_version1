@@ -44,7 +44,7 @@ import {
       Creators". None are measured. Same class of invented traction figure that
       F-0342/F-0343 removed from this page previously — see PROOF_POINTS.
     - "creators keep 100% of what they earn" / "0% creator fee clawbacks" / "100%
-      Payout Retention". False — Influora charges creators a 15% commission on a
+      Payout Retention". False — Influora charges creators a 10% commission on a
       completed deal (see /pricing). The founder narrative below keeps its shape
       but drops this claim.
     - "RBI-Regulated Safety Vault", "RBI Licensed Escrow Partner", "Scheduled Bank

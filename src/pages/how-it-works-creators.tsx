@@ -36,7 +36,7 @@ import {
 
   Deliberately NOT carried over:
     - "₹0 Forever — zero platform cuts from your agreed brand fees". Flatly false.
-      Creator commission is 15%, identical on Free and Pro (see /pricing).
+      Creator commission is 10%, identical on Free and Pro (see /pricing).
     - "RBI-regulated trustee escrow", "RBI Nodal Protected", "Escrow Vault".
       EV-007: funds are a reserved balance on Influora's ledger; we are not a trustee.
       "escrow" is banned in user copy (2026-09-02).
@@ -486,7 +486,7 @@ export default function HowItWorksCreatorsPage() {
                     ))}
                   </ul>
                   <p className="mt-5 text-xs text-muted-foreground">
-                    Influora charges creators a 15% commission on a completed deal, the same on every
+                    Influora charges creators a 10% commission on a completed deal, the same on every
                     plan — see{' '}
                     <Link
                       to="/pricing"
