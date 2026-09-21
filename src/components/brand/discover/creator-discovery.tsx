@@ -29,6 +29,12 @@ import { cn } from '@/lib/utils';
 import { cssVars } from '@/lib/css-vars';
 import type { Platform, CreatorProfile } from '@/lib/types';
 import {
+  DEFAULT_DELIVERABLE_TYPE,
+  DELIVERABLE_TYPE_OPTIONS,
+  deliverableTypeLabel,
+  type DeliverableTypeValue,
+} from '@/lib/deliverable-slots';
+import {
   api,
   isApiLive,
   ApiError,
@@ -539,8 +545,17 @@ export function CreatorDiscovery() {
    * never accepted a revision cap at all. Live inputs wired to nothing are worse than absent
    * ones, because the brand believes it bought the term.
    */
-  const [proposalData, setProposalData] = React.useState({
-    deliverables: [{ type: 'REEL', count: 1 }],
+  const [proposalData, setProposalData] = React.useState<{
+    deliverables: Array<{ type: DeliverableTypeValue; count: number }>;
+    budget: number;
+    deadline: string;
+    usageRights: string;
+  }>({
+    // Wire names, not the short codes this modal used to send. "REEL"/"POST"/"STORY"/"VIDEO"/
+    // "SHORT" matched no DeliverableType, so the server's old fallback turned every one of them
+    // into an Instagram Reel — a brand ordering a YouTube Short got a reel. See
+    // src/lib/deliverable-slots.ts.
+    deliverables: [{ type: DEFAULT_DELIVERABLE_TYPE, count: 1 }],
     budget: 0,
     deadline: '',
     usageRights: '3_MONTHS',
@@ -553,7 +568,7 @@ export function CreatorDiscovery() {
     setSelectedCampaign('');
     setProposalStep('campaign');
     setProposalData({
-      deliverables: [{ type: 'REEL', count: 1 }],
+      deliverables: [{ type: DEFAULT_DELIVERABLE_TYPE, count: 1 }],
       // Was `|| 50000` — a fabricated default budget. This form already treats budget === 0
       // as "not priced" everywhere else (see `proposalData.budget > 0` / `priced` below), so
       // ?? 0 keeps that same honest "not set" convention instead of inventing a fake ₹50,000.
@@ -1781,7 +1796,7 @@ export function CreatorDiscovery() {
                             value={del.type}
                             onValueChange={(value) => {
                               const updated = [...proposalData.deliverables];
-                              updated[idx].type = value;
+                              updated[idx].type = value as DeliverableTypeValue;
                               setProposalData({ ...proposalData, deliverables: updated });
                             }}
                           >
@@ -1789,11 +1804,11 @@ export function CreatorDiscovery() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="REEL">Reel</SelectItem>
-                              <SelectItem value="POST">Post</SelectItem>
-                              <SelectItem value="STORY">Story</SelectItem>
-                              <SelectItem value="VIDEO">Video</SelectItem>
-                              <SelectItem value="SHORT">Short</SelectItem>
+                              {DELIVERABLE_TYPE_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                           <span className="text-muted-foreground">x</span>
@@ -1827,7 +1842,7 @@ export function CreatorDiscovery() {
                         size="sm"
                         onClick={() => setProposalData({
                           ...proposalData,
-                          deliverables: [...proposalData.deliverables, { type: 'POST', count: 1 }]
+                          deliverables: [...proposalData.deliverables, { type: DEFAULT_DELIVERABLE_TYPE, count: 1 }]
                         })}
                       >
                         <Plus className="h-4 w-4 mr-1" /> Add Deliverable
@@ -1922,7 +1937,7 @@ export function CreatorDiscovery() {
                       <div>
                         <p className="text-muted-foreground">Deliverables</p>
                         <p className="font-medium">
-                          {proposalData.deliverables.map(d => `${d.count} ${d.type}`).join(', ')}
+                          {proposalData.deliverables.map(d => `${d.count}x ${deliverableTypeLabel(d.type)}`).join(', ')}
                         </p>
                       </div>
                       <div>

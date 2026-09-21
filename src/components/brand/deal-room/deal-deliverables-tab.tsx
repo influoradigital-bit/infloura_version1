@@ -51,7 +51,7 @@ export function DealDeliverablesTab({
           </div>
           <Progress value={progress} className="h-2" />
           <p className="text-xs text-muted-foreground mt-2">
-            Approve the work here, then release {formatINR(dealValue)} to the creator from the Payments panel.
+            Approve the work here. Once the post is live, release {formatINR(dealValue)} from the Payments panel.
           </p>
         </div>
 

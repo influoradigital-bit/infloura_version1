@@ -387,7 +387,7 @@ export default function CreatorSettingsPage() {
         {
           icon: BadgeCheck,
           label: 'Identity Verification (KYC)',
-          description: 'PAN, Aadhaar & selfie — required before your first withdrawal',
+          description: 'PAN, Aadhaar & selfie — required before Influora can pay you',
           onClick: () => setShowKycDialog(true),
         },
         {

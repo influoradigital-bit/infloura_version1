@@ -62,14 +62,14 @@ const STAGES: Stage[] = [
   {
     phase: 'deliver',
     icon: BadgeCheck,
-    title: 'Deliverable approved',
-    detail: 'Reel submitted → approved',
+    title: 'Approved, then live',
+    detail: 'Reel approved → posted live',
   },
   {
     phase: 'pay',
     icon: Wallet,
     title: 'Payment released',
-    detail: 'Released to creator',
+    detail: 'Live link in → released',
     amount: '₹22,000',
   },
 ];
@@ -96,7 +96,7 @@ export function DealRoomHeroThread() {
     <div
       className="flex h-full w-full flex-col rounded-2xl border border-border/60 bg-card p-5 shadow-sm"
       role="group"
-      aria-label="Example Deal Room: proposal, counter-offer, contract signed, deliverable approved, payment released"
+      aria-label="Example Deal Room: proposal, counter-offer, contract signed, draft approved, post goes live, then payment"
     >
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold">Deal Room</p>

@@ -101,15 +101,15 @@ export function BrandFirstRunChecklist({
     {
       id: 'contract',
       title: 'Sign the contract and fund the deal',
-      subtitle: 'The contract generates itself. Your money is held safely until you approve the work.',
+      subtitle: 'The contract generates itself. Your money is held safely until the approved post is live and its link is in.',
       href: '/brand/contracts',
       cta: 'Contracts',
       done: contractedOrFunded(),
     },
     {
       id: 'approve',
-      title: 'Approve the work — the payment releases',
-      subtitle: 'Review what the creator submits. Approving releases the payment automatically.',
+      title: 'Approve the work, then the creator posts',
+      subtitle: 'Review what the creator submits. Approving clears the post to go live; the payment goes out after the live link is in.',
       href: '/brand/pipeline',
       cta: 'Pipeline',
       done: fromPipeline('Settled'),

@@ -1,6 +1,69 @@
 import type { DeliverableSlot } from '@/lib/types';
 
 /**
+ * The only deliverable types the platform can actually create a submission slot for — one for one
+ * with the backend `DeliverableType` enum
+ * (influora-api/src/main/java/com/influora/domain/enums/DeliverableType.java).
+ *
+ * Every offer form must send one of THESE strings as `DeliverableSlot.type`. Until 2026-09-21 the
+ * two brand offer forms sent their own vocabularies instead — `proposal-form.tsx` sent display
+ * labels ("TikTok Video", "YouTube Video", "Blog Post"), `creator-discovery.tsx` sent short codes
+ * ("REEL", "POST", "VIDEO", "SHORT") — and neither matched the enum. `ContractService` then fell
+ * back to `INSTAGRAM_REEL` for anything it could not parse, so a brand that ordered a YouTube
+ * video got a creator looking at an Instagram Reel slot. The fallback is gone; an unparseable
+ * type is now refused at the offer route, so this list is the contract, not a suggestion.
+ */
+export const DELIVERABLE_TYPES = [
+  'INSTAGRAM_REEL',
+  'INSTAGRAM_POST',
+  'INSTAGRAM_STORY',
+  'INSTAGRAM_CAROUSEL',
+  'YOUTUBE_VIDEO',
+  'YOUTUBE_SHORT',
+  'FACEBOOK_POST',
+  'FACEBOOK_REEL',
+  'TIKTOK_VIDEO',
+] as const;
+
+export type DeliverableTypeValue = (typeof DELIVERABLE_TYPES)[number];
+
+/** How each type is written for a human. Never sent on the wire — `DELIVERABLE_TYPES` is. */
+export const DELIVERABLE_TYPE_LABELS: Record<DeliverableTypeValue, string> = {
+  INSTAGRAM_REEL: 'Instagram Reel',
+  INSTAGRAM_POST: 'Instagram Post',
+  INSTAGRAM_STORY: 'Instagram Story',
+  INSTAGRAM_CAROUSEL: 'Instagram Carousel',
+  YOUTUBE_VIDEO: 'YouTube Video',
+  YOUTUBE_SHORT: 'YouTube Short',
+  FACEBOOK_POST: 'Facebook Post',
+  FACEBOOK_REEL: 'Facebook Reel',
+  TIKTOK_VIDEO: 'TikTok Video',
+};
+
+/** Ready-made `<SelectItem value={value}>{label}</SelectItem>` rows for every offer form. */
+export const DELIVERABLE_TYPE_OPTIONS: ReadonlyArray<{ value: DeliverableTypeValue; label: string }> =
+  DELIVERABLE_TYPES.map((value) => ({ value, label: DELIVERABLE_TYPE_LABELS[value] }));
+
+/** The type every form starts a fresh row on. */
+export const DEFAULT_DELIVERABLE_TYPE: DeliverableTypeValue = 'INSTAGRAM_REEL';
+
+export function isDeliverableTypeValue(value: unknown): value is DeliverableTypeValue {
+  return typeof value === 'string' && (DELIVERABLE_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * Display text for a type read back off the wire.
+ *
+ * Known values get their real label. Anything else is a row written before this vocabulary
+ * existed, and is shown as the raw stored value tidied up ("TIKTOK_VIDEO" → "TIKTOK VIDEO") rather
+ * than guessed at — the whole defect this module closes was code deciding, on its own, that an
+ * unrecognised type meant "Instagram Reel". Read-only: never feed this back into a request.
+ */
+export function deliverableTypeLabel(raw: string): string {
+  return isDeliverableTypeValue(raw) ? DELIVERABLE_TYPE_LABELS[raw] : raw.replace(/_/g, ' ');
+}
+
+/**
  * Loose view of a proposal/contract message's `metadata` — deliberately `unknown`-typed so this
  * works for both the typed `TimelineEventMetadata` and the `Record<string, unknown>` metadata the
  * chat pages carry, and so a shape change on the wire can never silently type-check its way into
@@ -64,13 +127,21 @@ export function deliverableCountLabel(
 }
 
 /**
- * `"2x REEL - 1x STORY"` — the per-type breakdown the slot shape exists to expose, or `null` when
- * the message only carries a count (every proposal written before 2026-07-26).
+ * `"2x Instagram Reel · 1x Instagram Story"` — the per-type breakdown the slot shape exists to
+ * expose, or `null` when the message only carries a count (every proposal written before
+ * 2026-07-26).
+ *
+ * Types are rendered through {@link deliverableTypeLabel}, so a card shows "Instagram Reel"
+ * rather than the raw `INSTAGRAM_REEL` the wire carries.
  */
 export function deliverableSlotsLabel(meta: ProposalMetadataLike): string | null {
   const slots = deliverableSlotsOf(meta);
   if (slots.length === 0) return null;
   return slots
-    .map((slot) => (typeof slot.qty === 'number' ? `${slot.qty}x ${slot.type}` : slot.type))
+    .map((slot) =>
+      typeof slot.qty === 'number'
+        ? `${slot.qty}x ${deliverableTypeLabel(slot.type)}`
+        : deliverableTypeLabel(slot.type),
+    )
     .join(' · ');
 }

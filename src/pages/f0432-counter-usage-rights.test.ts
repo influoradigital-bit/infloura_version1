@@ -41,24 +41,65 @@ import { buildCounterOfferBody as buildBrandCampaignCounterBody } from './brand-
 import { buildCounterOfferBody as buildCreatorCounterBody } from './creator-chat';
 import type { CounterProposalFormData } from '@/components/creator/deal-room/counter-proposal-form';
 
+/**
+ * Both builders gained a `deliverables` argument on 2026-09-21 (hirepath): a counter is a whole
+ * offer, and one that orders nothing produced a contract with no submission slots. `usageRights`
+ * is still absent for the reasons above — the two facts are independent, and the assertions below
+ * pin both at once.
+ */
+const REEL_X2 = [{ type: 'INSTAGRAM_REEL', count: 2 }] as const;
+
 describe('brand-campaign-detail.tsx — buildCounterOfferBody (F-0432)', () => {
   it('never sends usageRights — this dialog collects no usage-rights input', () => {
-    const body = buildBrandCampaignCounterBody(45000, 'Can we do 3 reels instead of 2?');
+    const body = buildBrandCampaignCounterBody(45000, 'Can we do 3 reels instead of 2?', [
+      ...REEL_X2,
+    ]);
     expect(body).not.toHaveProperty('usageRights');
-    expect(body).toEqual({ amount: 45000, message: 'Can we do 3 reels instead of 2?' });
+    expect(body).toEqual({
+      amount: 45000,
+      message: 'Can we do 3 reels instead of 2?',
+      deliverables: [{ type: 'INSTAGRAM_REEL', qty: 2 }],
+    });
   });
 
   it('does not repurpose the free-text message as usageRights even when it reads like a rights ask', () => {
     // The exact trap the fabrication would fall into: this message is ABOUT usage, but it is
     // still the brand's counter-offer note, not a usage-rights duration/term.
-    const body = buildBrandCampaignCounterBody(30000, 'Can we get exclusive usage rights for 12 months?');
+    const body = buildBrandCampaignCounterBody(
+      30000,
+      'Can we get exclusive usage rights for 12 months?',
+      [...REEL_X2],
+    );
     expect(body).not.toHaveProperty('usageRights');
     expect(body.message).toBe('Can we get exclusive usage rights for 12 months?');
   });
 
   it('omits message entirely when blank, rather than sending an empty string', () => {
-    const body = buildBrandCampaignCounterBody(45000, '   ');
-    expect(body).toEqual({ amount: 45000, message: undefined });
+    const body = buildBrandCampaignCounterBody(45000, '   ', [...REEL_X2]);
+    expect(body).toEqual({
+      amount: 45000,
+      message: undefined,
+      deliverables: [{ type: 'INSTAGRAM_REEL', qty: 2 }],
+    });
+  });
+
+  it('carries the ordered deliverables through to the request, mapping count -> qty', () => {
+    const body = buildBrandCampaignCounterBody(45000, '', [
+      { type: 'YOUTUBE_VIDEO', count: 1 },
+      { type: 'INSTAGRAM_STORY', count: 3 },
+    ]);
+    expect(body.deliverables).toEqual([
+      { type: 'YOUTUBE_VIDEO', qty: 1 },
+      { type: 'INSTAGRAM_STORY', qty: 3 },
+    ]);
+  });
+
+  it('drops rows the brand zeroed out rather than ordering zero of something', () => {
+    const body = buildBrandCampaignCounterBody(45000, '', [
+      { type: 'YOUTUBE_VIDEO', count: 0 },
+      { type: 'INSTAGRAM_REEL', count: 2 },
+    ]);
+    expect(body.deliverables).toEqual([{ type: 'INSTAGRAM_REEL', qty: 2 }]);
   });
 });
 
@@ -68,6 +109,7 @@ describe('creator-chat.tsx — buildCounterOfferBody (F-0432)', () => {
     deadline: '2026-10-01',
     terms: 'max 2 revisions, 30-day exclusive usage',
     message: 'Happy to take this on at this rate.',
+    deliverables: [{ type: 'INSTAGRAM_REEL', count: 2 }],
   };
 
   it('never sends usageRights, even when `terms` reads like a usage-rights ask', () => {
@@ -93,8 +135,28 @@ describe('creator-chat.tsx — buildCounterOfferBody (F-0432)', () => {
       deadline: '',
       terms: '',
       message: '',
+      deliverables: [{ type: 'INSTAGRAM_REEL', count: 2 }],
     });
-    expect(body).toEqual({ amount: 60000, message: undefined, deadline: undefined });
+    expect(body).toEqual({
+      amount: 60000,
+      message: undefined,
+      deadline: undefined,
+      deliverables: [{ type: 'INSTAGRAM_REEL', qty: 2 }],
+    });
     expect(body).not.toHaveProperty('usageRights');
+  });
+
+  it('carries what the creator offered to post, mapping count -> qty', () => {
+    const body = buildCreatorCounterBody({
+      ...baseData,
+      deliverables: [
+        { type: 'YOUTUBE_SHORT', count: 2 },
+        { type: 'TIKTOK_VIDEO', count: 1 },
+      ],
+    });
+    expect(body.deliverables).toEqual([
+      { type: 'YOUTUBE_SHORT', qty: 2 },
+      { type: 'TIKTOK_VIDEO', qty: 1 },
+    ]);
   });
 });

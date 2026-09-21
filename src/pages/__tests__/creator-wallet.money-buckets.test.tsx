@@ -12,7 +12,7 @@
  *   elsewhere on this page (Pending Payouts used to read this exact figure).
  *
  *   F-0281: `pendingPayouts` used to hold that same FUNDED-milestone figure under a label
- *   ("Pending Payouts") that reads as "a withdrawal is already on its way to my bank" — the
+ *   ("Pending Payouts") that reads as "a transfer is already on its way to my bank" — the
  *   opposite of what FUNDED-but-not-released money is. It now holds the sum of the creator's
  *   in-flight Payout rows (already debited from Available Balance, not yet gateway-confirmed).
  *
@@ -107,7 +107,7 @@ describe('CreatorWalletPage — F-0336 escrow figure is no longer a permanent ze
 });
 
 describe('CreatorWalletPage — F-0281 each label matches the bucket beside it', () => {
-  it('"Secured" is defined as brand-funded, not-yet-approved money — not a withdrawal in flight', async () => {
+  it('"Secured" is defined as brand-funded, not-yet-released money — not a transfer in flight', async () => {
     walletGetMock.mockResolvedValue({
       availableBalance: 5000,
       escrowLocked: 15000,
@@ -119,13 +119,13 @@ describe('CreatorWalletPage — F-0281 each label matches the bucket beside it',
 
     const tooltip = await openDefinition('Secured');
     expect(within(tooltip).getByText(/locked for a deal/i)).toBeInTheDocument();
-    expect(within(tooltip).getByText(/not withdrawable yet/i)).toBeInTheDocument();
-    // Must NOT describe the OTHER bucket (a withdrawal already headed to the bank) — the exact
+    expect(within(tooltip).getByText(/not yours yet/i)).toBeInTheDocument();
+    // Must NOT describe the OTHER bucket (a transfer already headed to the bank) — the exact
     // mislabeling F-0281 opened against this tile's neighbor.
-    expect(tooltip.textContent).not.toMatch(/on its way to your bank/i);
+    expect(tooltip.textContent).not.toMatch(/already started to your bank/i);
   });
 
-  it('"Pending Payouts" is defined as a withdrawal already requested and in flight — not escrowed money', async () => {
+  it('"Pending Payouts" is defined as a transfer Influora has already started — not escrowed money', async () => {
     walletGetMock.mockResolvedValue({
       availableBalance: 5000,
       escrowLocked: 15000,
@@ -136,14 +136,14 @@ describe('CreatorWalletPage — F-0281 each label matches the bucket beside it',
     await waitFor(() => expect(screen.getByLabelText('Pending payouts')).toHaveTextContent('₹2,500'));
 
     const tooltip = await openDefinition('Pending Payouts');
-    expect(within(tooltip).getByText(/on its way to your bank/i)).toBeInTheDocument();
+    expect(within(tooltip).getByText(/already started to your bank/i)).toBeInTheDocument();
     expect(within(tooltip).getByText(/already deducted from Available Balance/i)).toBeInTheDocument();
     // Must NOT describe the OTHER bucket (brand-funded, not-yet-released escrow) — the F-0281
     // defect verbatim: this tile used to carry exactly that definition over exactly that number.
     expect(tooltip.textContent).not.toMatch(/brand has committed but hasn't released/i);
   });
 
-  it('"Available Balance" is defined as already released and withdrawable now', async () => {
+  it('"Available Balance" is defined as released money Influora sends on, with nothing to request', async () => {
     walletGetMock.mockResolvedValue({
       availableBalance: 5000,
       escrowLocked: 15000,
@@ -154,8 +154,11 @@ describe('CreatorWalletPage — F-0281 each label matches the bucket beside it',
     await waitFor(() => expect(screen.getByLabelText('Available balance')).toHaveTextContent('₹5,000'));
 
     const tooltip = await openDefinition('Available Balance');
-    expect(within(tooltip).getByText(/already released to you/i)).toBeInTheDocument();
-    expect(within(tooltip).getByText(/right now/i)).toBeInTheDocument();
+    expect(within(tooltip).getByText(/released to you/i)).toBeInTheDocument();
+    // paytrigger — the old definition ended "Yours to withdraw ... right now", which is the
+    // single most misleading sentence on the page now that there is no withdraw control at all.
+    expect(within(tooltip).getByText(/you never have to request it/i)).toBeInTheDocument();
+    expect(tooltip.textContent).not.toMatch(/withdraw/i);
   });
 });
 

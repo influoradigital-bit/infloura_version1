@@ -16,9 +16,16 @@ export type { TrustBarItem } from '@/components/site/trust-items';
  * reaches the section that would have convinced them.
  *
  * WHY THESE CLAIMS AND NOT LOGOS/TESTIMONIALS: every item below is a *mechanism*
- * the product actually implements and that a reader can verify by using it — a
- * licensed gateway holds the money, contracts are e-signed, TDS invoices are
- * generated, payouts clear in ~24h. Customer logos and quotes convert harder,
+ * the product actually implements and that a reader can verify by using it —
+ * Razorpay processes the payment, contracts are e-signed, an invoice is generated
+ * on every payout, and the creator is paid within 2 working days of the live post
+ * link. This paragraph used to read "a licensed gateway holds the money, TDS
+ * invoices are generated, payouts clear in ~24h". All three are false and all three
+ * are now banned: no regulator or licensed PA holds brand funds, Influora withholds
+ * no tax and issues no TDS invoice, and payment follows the live link in working
+ * days. The rendered list in `trust-items.ts` was corrected; this rationale was not,
+ * and a stale rationale is how a corrected claim gets written back.
+ * Customer logos and quotes convert harder,
  * but we do not have signed permission to display any, and an invented one is
  * both a legal exposure and, once noticed, a worse trust signal than nothing.
  * Swap these for real logos the moment permission exists.

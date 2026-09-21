@@ -40,7 +40,10 @@ const STAGE_TITLES = [
   'Proposal sent',
   'Counter-offer',
   'Contract signed',
-  'Deliverable approved',
+  // paytrigger round 2 — was 'Deliverable approved'. The card is the homepage's picture of the
+  // whole flow, and going straight from approval to payment drew the wrong trigger. The stage
+  // now names the live post, which is what actually releases the money.
+  'Approved, then live',
   'Payment released',
 ];
 

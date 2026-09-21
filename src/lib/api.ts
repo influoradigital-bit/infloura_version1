@@ -3392,6 +3392,23 @@ export interface DeliverableDetail {
   canRequestRevision: boolean;
   /** D-9 (BrandF.md §25): same canReview gate as canApprove/canRequestRevision. */
   canReject: boolean;
+
+  /**
+   * The brand's review clock (owner's ruling, 2026-09-21; backend `ReviewSlaService.clockFor`).
+   * A brand has 3 working days to act on a submitted draft and 2 on each resubmission; after
+   * that the deliverable is handed to the Influora team. It is never auto-approved and never
+   * auto-paid.
+   *
+   * All four are null/0/false when no clock is running — i.e. whenever this deliverable is not
+   * waiting on a brand decision. Render nothing in that case rather than a zero.
+   */
+  /** ISO instant — end of the last working day the brand can act. */
+  reviewDueAt: string | null;
+  /** Working days remaining, NOT counting today. 0 means the deadline is the end of today. */
+  reviewWorkingDaysLeft: number | null;
+  reviewOverdue: boolean;
+  /** ISO instant the Influora team was asked to step in, or null. */
+  reviewEscalatedAt: string | null;
 }
 
 /**
@@ -3462,6 +3479,11 @@ export const deliverables = {
           canApprove: true,
           canRequestRevision: true,
           canReject: true,
+          // Mock clock: submitted today, two working days still to run, not escalated.
+          reviewDueAt: new Date(Date.now() + 3 * 86_400_000).toISOString(),
+          reviewWorkingDaysLeft: 2,
+          reviewOverdue: false,
+          reviewEscalatedAt: null,
         }),
 
   /**

@@ -35,10 +35,10 @@ import { normalizePhone, isValidPhone, filterPhoneInput } from '@/lib/phone';
  *   3. You're in (tour)  → api.onboarding.completeCreator
  *
  * Deferred (collected just-in-time):
- *   - PAN/Aadhaar KYC  → Settings › Identity Verification, and required before the
- *                        first withdrawal  (api.onboarding.submitCreatorKyc,
+ *   - PAN/Aadhaar KYC  → Settings › Identity Verification, and required before
+ *                        Influora can pay the creator (api.onboarding.submitCreatorKyc,
  *                        captured by KycIdentityForm)
- *   - Payout method    → first withdrawal, via the wallet
+ *   - Payout method    → Settings › Payout Settings, via the wallet
  *                        (GET/POST /wallet/payout-methods in creator-wallet.tsx)
  */
 
@@ -842,7 +842,7 @@ function YoureInStep({ onComplete, isLoading }: YoureInStepProps) {
         </h2>
         <p className="text-sm leading-relaxed text-muted-foreground">
           Your profile is live. Brands can now find and message you. We'll ask for KYC and
-          payout details when you make your first withdrawal — no need now.
+          payout details before we send your first payment — no need now.
         </p>
       </div>
 
@@ -869,7 +869,8 @@ function YoureInStep({ onComplete, isLoading }: YoureInStepProps) {
           <div className="min-w-0">
             <p className="text-sm font-medium">Wallet stays empty until you earn</p>
             <p className="text-xs text-muted-foreground">
-              Payouts land in your wallet after each completed deal. Add bank/UPI on first withdrawal.
+              Payouts land in your wallet after each completed deal. Add your bank account in Payout
+              Settings so Influora can transfer them to you.
             </p>
           </div>
         </div>

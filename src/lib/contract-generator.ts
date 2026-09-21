@@ -133,7 +133,7 @@ export function generateContractHTML(data: ContractData): string {
           </tr>
           <tr>
             <td>Payment Terms:</td>
-            <td>Release upon approval of final deliverables</td>
+            <td>Payment is released after the post is live and its link is submitted. Influora pays the creator within 2 working days of that link.</td>
           </tr>
           <tr>
             <td>Secure Payments:</td>
@@ -151,18 +151,20 @@ export function generateContractHTML(data: ContractData): string {
 
           <p>3. <strong>Exclusivity:</strong> ${formatOptionalTerm(data.exclusivity)}</p>
 
-          <p>4. <strong>Revisions:</strong> ${data.revisionCap != null ? `Brand may request up to ${data.revisionCap} revision rounds. Additional revisions may incur additional fees as agreed.` : 'Not specified.'}</p>
-          
-          <p>5. <strong>Quality Standards:</strong> Content must be of professional quality, free from watermarks (unless agreed), and comply with platform guidelines.</p>
-          
-          <p>6. <strong>Payment Release:</strong> Payment will be released from secured funds within 7 days of brand approval of final deliverables.</p>
-          
-          <p>7. <strong>Dispute Resolution:</strong> Any disputes shall be resolved through the platform's arbitration process before pursuing legal action.</p>
-          
+          <p>4. <strong>Revisions:</strong> ${data.revisionCap != null ? `Brand may request up to ${data.revisionCap} revision rounds. Each round gives the Brand 2 working days to re-review the resubmitted draft. Additional revisions may incur additional fees as agreed.` : 'Not specified.'}</p>
+
+          <p>5. <strong>Review Window:</strong> The Brand has 3 working days to approve, reject or request a revision on a submitted draft. If the Brand does not act within that window, the draft is escalated to the Influora team, who follow it up with the Brand. It is not approved automatically and no payment is triggered. Working days are Monday to Friday.</p>
+
+          <p>6. <strong>Quality Standards:</strong> Content must be of professional quality, free from watermarks (unless agreed), and comply with platform guidelines.</p>
+
+          <p>7. <strong>Payment Release:</strong> Payment is released after the Creator's post is live and its link has been submitted — approval of a draft does not release payment. Influora then pays the Creator by bank transfer (NEFT/IMPS) to the account on the Creator's profile within 2 working days of that link. The Creator does not have to request it.</p>
+
+          <p>8. <strong>Dispute Resolution:</strong> Any disputes shall be resolved through the platform's arbitration process before pursuing legal action.</p>
+
           ${
             data.customClauses.length > 0
               ? `${data.customClauses
-                  .map((clause, i) => `<p>${i + 8}. <strong>Custom Term:</strong> ${clause}</p>`)
+                  .map((clause, i) => `<p>${i + 9}. <strong>Custom Term:</strong> ${clause}</p>`)
                   .join('')}`
               : ''
           }

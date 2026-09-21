@@ -92,9 +92,17 @@ import {
 // CR-34 — the shared mirror of Collaboration.canAccept(), previously duplicated here and in
 // brand-chat.tsx. See lib/deal-stage.ts.
 import { allowsProposalResponse } from '@/lib/deal-stage';
-// Proposals written before 2026-07-26 store `metadata.deliverables` as a plain number, so the
-// old `(x as Array<…>)?.length || 0` rendered "0 items" for a real 3-deliverable offer.
-import { deliverableCountLabel } from '@/lib/deliverable-slots';
+// Proposals written before 2026-07-26 store `metadata.deliverables` as a plain number rather
+// than the slot list, so the card falls back from the per-type breakdown to that bare count
+// before it gives up and says "Not specified" — an old offer still says how many pieces it was
+// for, it just cannot say which platforms.
+import {
+  deliverableCountLabel,
+  deliverableSlotsLabel,
+  deliverableSlotsOf,
+  isDeliverableTypeValue,
+  type DeliverableTypeValue,
+} from '@/lib/deliverable-slots';
 import {
   dealHasContract,
   getAllContractStatuses,
@@ -576,11 +584,16 @@ const getStatusBadge = (status: DealRoom['status']) => {
   return <Badge className={config.className}>{config.label}</Badge>;
 };
 
-// Single platform fee of 15% (feeBps 1500) — matches api.wallet.platformFee, the
-// counter-proposal form, and the actual escrow payout (creator nets 85% of gross).
-const PLATFORM_FEE_RATE = 0.15;
-const calculateEarnings = (grossAmount: number) => {
-  const platformFee = grossAmount * PLATFORM_FEE_RATE;
+/*
+ * F-0669 round 4 (sibling of `creator-contract-panel.tsx`): this was
+ * `const PLATFORM_FEE_RATE = 0.15`, and the proposal card's "Your Earnings Breakdown" labelled
+ * the deduction "Platform Fee (15%)" from that constant. The rate is configurable —
+ * `api.wallet.platformFee` (GET /creator/platform-fee) serves it and the admin Fee Control
+ * panel writes it — so the breakdown now takes the real basis points, and the caller renders
+ * nothing at all when the endpoint has not answered.
+ */
+const calculateEarnings = (grossAmount: number, feeBps: number) => {
+  const platformFee = Math.round((grossAmount * feeBps) / 10000);
   const netEarnings = grossAmount - platformFee;
   return { platformFee, netEarnings };
 };
@@ -661,13 +674,13 @@ function describeProposalActionError(
           message: 'This invite has no agreed rate yet. Use Counter to propose one, then accept.',
           stale: false,
         };
-      // Same reasoning as AGREED_RATE_REQUIRED: a refresh re-fetches the same offer. The creator's
-      // counter form cannot add deliverables (only the brand's proposal form collects them), so
-      // point at the party who can fix it.
+      // Same reasoning as AGREED_RATE_REQUIRED: a refresh re-fetches the same offer. Since
+      // 2026-09-21 the creator's own counter form collects deliverables, so this now points at a
+      // control the creator has rather than telling them to wait on the brand.
       case 'DELIVERABLES_REQUIRED':
         return {
           message:
-            "This offer doesn't list any deliverables yet, so it can't be accepted. Ask the brand to send a proposal that lists what you'll deliver.",
+            'This offer does not say what you would be posting, so it cannot be accepted. Use Counter to list the content and quantities, and the brand can accept that.',
           stale: false,
         };
       default:
@@ -703,7 +716,12 @@ function describeProposalActionError(
  */
 export function buildCounterOfferBody(
   data: CounterProposalFormData,
-): { amount: number; message?: string; deadline?: string } {
+): {
+  amount: number;
+  message?: string;
+  deadline?: string;
+  deliverables: Array<{ type: string; qty: number }>;
+} {
   const message = [data.message, data.terms && `Terms: ${data.terms}`]
     .filter(Boolean)
     .join('\n\n');
@@ -711,6 +729,12 @@ export function buildCounterOfferBody(
     amount: data.proposedAmount,
     message: message || undefined,
     deadline: data.deadline || undefined,
+    // Local shape is {type, count}; the API contract is {type, qty} (DealDtos.DeliverableSlot).
+    // Always sent: a counter is a complete offer, and the server refuses one that orders nothing
+    // rather than letting it become a contract with no submission slots.
+    deliverables: data.deliverables
+      .filter((row) => row.count > 0)
+      .map((row) => ({ type: row.type, qty: row.count })),
   };
 }
 
@@ -724,6 +748,32 @@ export default function CreatorChatPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const dealId = searchParams.get('deal');
   const tabFromUrl = searchParams.get('tab');
+
+  /*
+   * The real platform fee in basis points (GET /creator/platform-fee). `null` until it answers,
+   * and it stays `null` if the call fails — the proposal card's earnings breakdown is then not
+   * rendered, rather than falling back to the 15% this page used to hardcode. See
+   * `calculateEarnings` above.
+   */
+  const [platformFeeBps, setPlatformFeeBps] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const fee = await api.wallet.platformFee();
+        if (!cancelled && fee && Number.isFinite(fee.feeBps)) setPlatformFeeBps(fee.feeBps);
+      } catch (err) {
+        console.error('Failed to load platform fee', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const platformFeePercentLabel =
+    platformFeeBps == null
+      ? null
+      : (platformFeeBps / 100).toFixed(platformFeeBps % 100 === 0 ? 0 : 2);
 
   // Deal/conversation list — GET /deals?role=creator (api.deals.list). Mock mode
   // keeps the original hardcoded mockDealRooms so the demo still works.
@@ -1855,6 +1905,35 @@ export default function CreatorChatPage() {
     }
   }, [events, openPanel]);
 
+  /**
+   * The order currently on the table, read off the newest offer card in this room.
+   *
+   * The counter form used to be handed a hardcoded `[Instagram Reel x2, Instagram Story x1]` — a
+   * fabrication shown to every creator on every deal, whatever the brand had actually offered
+   * (TECH-STACK.md rule 7). It now shows the real slots, and seeds the counter with them so a
+   * creator countering on price alone re-sends the same scope rather than silently changing it.
+   * Empty when there is no offer card yet (countering your own application), which the form
+   * renders as "Nothing specified yet" and treats as "you are the first to state the scope".
+   *
+   * Types that are not in the shared vocabulary are dropped rather than shown: they are rows
+   * written before the vocabulary existed, and the server would refuse them on the way back out,
+   * so offering them as an editable starting point would only set the creator up to fail.
+   */
+  const currentOfferDeliverables = React.useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const slots = deliverableSlotsOf(events[i].metadata);
+      if (slots.length === 0) continue;
+      const usable = slots
+        .filter((slot) => isDeliverableTypeValue(slot.type))
+        .map((slot) => ({
+          type: slot.type as DeliverableTypeValue,
+          count: typeof slot.qty === 'number' && slot.qty > 0 ? slot.qty : 1,
+        }));
+      if (usable.length > 0) return usable;
+    }
+    return [] as Array<{ type: DeliverableTypeValue; count: number }>;
+  }, [events]);
+
   // --- Guards (after all hooks, before dereferencing selectedDeal below) ---
   if (dealsLoading) {
     return (
@@ -2514,9 +2593,13 @@ export default function CreatorChatPage() {
                             <span className="text-muted-foreground">Amount</span>
                             <span className="font-semibold">{formatINR(Number(event.metadata?.amount))}</span>
                           </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Deliverables</span>
-                            <span>{deliverableCountLabel(event.metadata, 'item') ?? 'Not specified'}</span>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-muted-foreground">You post</span>
+                            <span className="text-right">
+                              {deliverableSlotsLabel(event.metadata)
+                                ?? deliverableCountLabel(event.metadata, 'piece')
+                                ?? 'Not specified'}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Usage Rights</span>
@@ -2545,21 +2628,29 @@ export default function CreatorChatPage() {
                           <div className="space-y-1 text-xs">
                             {(() => {
                               const gross = Number(event.metadata?.amount);
-                              const earnings = calculateEarnings(gross);
+                              // F-0669 round 4: the fee rows are rendered only once the real
+                              // rate is known. Gross is the brand's own offer and is always
+                              // shown; the deduction and the take-home are not guessed at.
+                              const earnings =
+                                platformFeeBps == null ? null : calculateEarnings(gross, platformFeeBps);
                               return (
                                 <>
                                   <div className="flex justify-between">
                                     <span className="text-muted-foreground">Gross Amount</span>
                                     <span>{formatINR(gross)}</span>
                                   </div>
-                                  <div className="flex justify-between text-stage-disputed-fg">
-                                    <span>Platform Fee (15%)</span>
-                                    <span>-{formatINR(earnings.platformFee)}</span>
-                                  </div>
-                                  <div className="flex justify-between font-semibold text-stage-approved-fg pt-1 border-t">
-                                    <span>You Receive</span>
-                                    <span>{formatINR(earnings.netEarnings)}</span>
-                                  </div>
+                                  {earnings && (
+                                    <>
+                                      <div className="flex justify-between text-stage-disputed-fg">
+                                        <span>Platform Fee ({platformFeePercentLabel}%)</span>
+                                        <span>-{formatINR(earnings.platformFee)}</span>
+                                      </div>
+                                      <div className="flex justify-between font-semibold text-stage-approved-fg pt-1 border-t">
+                                        <span>You Receive</span>
+                                        <span>{formatINR(earnings.netEarnings)}</span>
+                                      </div>
+                                    </>
+                                  )}
                                 </>
                               );
                             })()}
@@ -2725,9 +2816,13 @@ export default function CreatorChatPage() {
                             <span className="text-muted-foreground">Amount</span>
                             <span className="font-semibold">{formatINR(Number(event.metadata?.amount))}</span>
                           </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Deliverables</span>
-                            <span>{deliverableCountLabel(event.metadata, 'item') ?? 'Not specified'}</span>
+                          <div className="flex justify-between gap-4">
+                            <span className="text-muted-foreground">You post</span>
+                            <span className="text-right">
+                              {deliverableSlotsLabel(event.metadata)
+                                ?? deliverableCountLabel(event.metadata, 'piece')
+                                ?? 'Not specified'}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">Usage Rights</span>
@@ -2753,7 +2848,17 @@ export default function CreatorChatPage() {
                                 it, so on live data Number(undefined) was NaN and this line always
                                 rendered "—". Derive it from the real amount, exactly as the
                                 sibling proposal card above already does. */}
-                            <span>{formatINR(calculateEarnings(Number(event.metadata?.amount ?? 0)).netEarnings)}</span>
+                            {/* F-0669 round 4: computed from the REAL fee rate; `formatINR(null)`
+                                renders an honest "—" until the rate is known, rather than an
+                                85%-of-gross figure derived from a hardcoded 15%. */}
+                            <span>
+                              {formatINR(
+                                platformFeeBps == null
+                                  ? null
+                                  : calculateEarnings(Number(event.metadata?.amount ?? 0), platformFeeBps)
+                                      .netEarnings,
+                              )}
+                            </span>
                           </div>
                         </div>
                       </CardContent>
@@ -3104,9 +3209,14 @@ export default function CreatorChatPage() {
                   className="pl-9"
                 />
               </div>
-              {counterAmount && (
+              {/* F-0669 round 4: the estimate is offered only when the real fee rate is known.
+                  A "you will receive" figure derived from a hardcoded 15% is the number the
+                  creator counters on. */}
+              {counterAmount && platformFeeBps != null && (
                 <div className="text-xs text-muted-foreground">
-                  You will receive: {formatINR(calculateEarnings(Number(counterAmount)).netEarnings)} after deductions
+                  You will receive:{' '}
+                  {formatINR(calculateEarnings(Number(counterAmount), platformFeeBps).netEarnings)} after
+                  the {platformFeePercentLabel}% platform fee
                 </div>
               )}
             </div>
@@ -3244,10 +3354,7 @@ export default function CreatorChatPage() {
         <CounterProposalForm
           brandName={selectedDeal.brandName}
           originalAmount={selectedDeal.dealAmount}
-          deliverables={[
-            { title: 'Instagram Reel', quantity: 2 },
-            { title: 'Instagram Story', quantity: 1 },
-          ]}
+          deliverables={currentOfferDeliverables}
           onSubmit={handleSubmitCounterForm}
           onClose={() => setShowCounterForm(false)}
           isSubmitting={isSubmittingCounter}

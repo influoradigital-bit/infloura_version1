@@ -7,7 +7,7 @@ import {
   FileText, Download, AlertCircle, Sparkles, Filter, Search, FileSignature,
   BadgeCheck, Heart, Eye, BarChart2, Target, Award, RefreshCcw,
   ThumbsUp, Zap, TrendingDown, ChevronRight, Activity, Lock, DollarSign,
-  Loader2,
+  Loader2, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { cssVars } from '@/lib/css-vars';
@@ -41,6 +41,13 @@ import { CollaborationTimeline } from '@/components/brand/timeline/collaboration
 import { SecureAndPublishStep } from '@/components/brand/campaigns/secure-and-publish-step';
 import { api, isApiLive, ApiError, type Deal, type CampaignAnalytics } from '@/lib/api';
 import type { Campaign as ApiCampaign, Collaboration, ContractStatus } from '@/lib/types';
+import {
+  DEFAULT_DELIVERABLE_TYPE,
+  DELIVERABLE_TYPE_OPTIONS,
+  deliverableSlotsOf,
+  isDeliverableTypeValue,
+  type DeliverableTypeValue,
+} from '@/lib/deliverable-slots';
 import {
   DealContractGenerate,
   type MilestoneDraft,
@@ -538,12 +545,33 @@ export const contractStatusLabel = (status?: ContractStatus): string => {
  * which is worse than sending nothing (TECH-STACK.md rule 7 — never fabricate). `usageRights` is
  * therefore deliberately omitted, not dropped by oversight. Building a real usage-rights control
  * on this dialog is a product decision outside a call-site fix.
+ *
+ * `deliverables` IS sent, and is the fix for the biggest hole in the hire path. This dialog used
+ * to send amount and message only. A brand countering an APPLICATION — the common case on this
+ * tab, since an application arrives with no offer card of its own — left the server nothing to
+ * carry forward, so the resulting offer ordered nothing. The creator accepted it, a contract was
+ * generated, and `ContractService` materialised zero submission slots: no one could deliver, and
+ * the only message the brand ever saw was a 409 at accept telling them to "send a counter offer
+ * that lists the deliverables" from this very dialog, which had no such field. The field is here
+ * now, so the order travels with the price.
  */
 export function buildCounterOfferBody(
   amount: number,
   message: string,
-): { amount: number; message?: string } {
-  return { amount, message: message.trim() || undefined };
+  deliverables: Array<{ type: DeliverableTypeValue; count: number }>,
+): {
+  amount: number;
+  message?: string;
+  deliverables: Array<{ type: string; qty: number }>;
+} {
+  return {
+    amount,
+    message: message.trim() || undefined,
+    // Local shape is {type, count}; the API contract is {type, qty} (DealDtos.DeliverableSlot).
+    deliverables: deliverables
+      .filter((row) => row.count > 0)
+      .map((row) => ({ type: row.type, qty: row.count })),
+  };
 }
 
 const PlatformIcon = ({ platform, size = 'h-4 w-4' }: { platform: string; size?: string }) => {
@@ -712,6 +740,19 @@ export default function BrandCampaignDetailPage() {
   const [isCounterOpen, setIsCounterOpen] = React.useState(false);
   const [counterAmount, setCounterAmount] = React.useState('');
   const [counterMessage, setCounterMessage] = React.useState('');
+  /**
+   * What the counter offer actually ORDERS. Seeded from the offer currently on the table when
+   * there is one (see `openCounterDialog`), otherwise a single starter row the brand edits — an
+   * application carries a price and a pitch, never a structured order, so on this tab there is
+   * usually nothing to inherit and the brand is the first party to state the scope.
+   */
+  const [counterDeliverables, setCounterDeliverables] = React.useState<
+    Array<{ type: DeliverableTypeValue; count: number }>
+  >([{ type: DEFAULT_DELIVERABLE_TYPE, count: 1 }]);
+  /** True while the latest offer card is being read, so the dialog never invites an edit to a list it is about to replace. */
+  const [counterSlotsLoading, setCounterSlotsLoading] = React.useState(false);
+  /** Whether `counterDeliverables` came from the offer on the table or is a fresh order the brand is writing. */
+  const [counterSlotsFromOffer, setCounterSlotsFromOffer] = React.useState(false);
   const [rejectReason, setRejectReason] = React.useState('');
   const [bids, setBids] = React.useState(mockBids);
   const [timelineOpen, setTimelineOpen] = React.useState(false);
@@ -804,16 +845,77 @@ export default function BrandCampaignDetailPage() {
     setRejectReason('');
   };
 
+  /**
+   * Opens the Counter dialog and seeds it with the order currently on the table.
+   *
+   * The Bids tab's own row data cannot supply this: `dealToBidView` only ever knows how MANY
+   * deliverables a deal has (`deal.deliverablesTotal`), never their types, and an application has
+   * none at all. The structured slots live on the latest proposal message, so the dialog reads
+   * them once on open. A failure to read them is not fatal — the brand simply writes the order
+   * themselves, which is the normal path for an application anyway.
+   */
+  const openCounterDialog = async (bid: CampaignBid) => {
+    setSelectedBid(bid);
+    setCounterAmount(String(bid.amount));
+    setCounterDeliverables([{ type: DEFAULT_DELIVERABLE_TYPE, count: 1 }]);
+    setCounterSlotsFromOffer(false);
+    setIsCounterOpen(true);
+    if (!liveApi) return;
+    setCounterSlotsLoading(true);
+    try {
+      const thread = await api.messages.list('brand', bid.id);
+      const latestProposal = [...thread]
+        .reverse()
+        .find((m) => m.kind === 'proposal' && deliverableSlotsOf(m.metadata).length > 0);
+      const slots = deliverableSlotsOf(latestProposal?.metadata)
+        .filter((slot) => isDeliverableTypeValue(slot.type))
+        .map((slot) => ({
+          type: slot.type as DeliverableTypeValue,
+          count: typeof slot.qty === 'number' && slot.qty > 0 ? slot.qty : 1,
+        }));
+      if (slots.length > 0) {
+        setCounterDeliverables(slots);
+        setCounterSlotsFromOffer(true);
+      }
+    } catch (e) {
+      console.error('Could not read the deliverables on the current offer', e);
+    } finally {
+      setCounterSlotsLoading(false);
+    }
+  };
+
+  const updateCounterDeliverable = (
+    idx: number,
+    patch: Partial<{ type: DeliverableTypeValue; count: number }>,
+  ) => {
+    setCounterDeliverables((prev) =>
+      prev.map((row, i) => (i === idx ? { ...row, ...patch } : row)),
+    );
+  };
+
+  const orderedCounterDeliverables = counterDeliverables.filter((row) => row.count > 0);
+
   const handleCounter = async () => {
     if (!selectedBid) return;
     if (liveApi) {
       const amount = Number(counterAmount);
       if (!amount || Number.isNaN(amount)) return;
+      // A counter with nothing ordered cannot become a contract (the server refuses it, and the
+      // creator would have no slot to submit to), so say that here rather than let the round trip
+      // fail on a screen the brand has already left.
+      if (orderedCounterDeliverables.length === 0) {
+        toast({
+          title: 'Add at least one deliverable',
+          description: 'Say what the creator will post, and how many of each.',
+          variant: 'destructive',
+        });
+        return;
+      }
       setMutatingId(selectedBid.id);
       try {
         await api.deals.counter(
           selectedBid.id,
-          buildCounterOfferBody(amount, counterMessage),
+          buildCounterOfferBody(amount, counterMessage, orderedCounterDeliverables),
           'brand',
           // Fresh key per submit. Without one the server derives a key from dealId + amount
           // (DealService.counter:290), so a brand re-countering at the SAME figure collides with
@@ -839,6 +941,8 @@ export default function BrandCampaignDetailPage() {
     setSelectedBid(null);
     setCounterAmount('');
     setCounterMessage('');
+    setCounterDeliverables([{ type: DEFAULT_DELIVERABLE_TYPE, count: 1 }]);
+    setCounterSlotsFromOffer(false);
   };
 
   /**
@@ -1418,7 +1522,7 @@ export default function BrandCampaignDetailPage() {
                                     </Button>
                                     <Button size="sm" variant="outline" className="h-8"
                                       disabled={mutatingId === bid.id}
-                                      onClick={() => { setSelectedBid(bid); setCounterAmount(String(bid.amount)); setIsCounterOpen(true); }}>
+                                      onClick={() => openCounterDialog(bid)}>
                                       Counter
                                     </Button>
                                     <Button size="sm" variant="ghost" className="h-8 text-destructive-foreground hover:text-destructive-foreground"
@@ -2164,7 +2268,7 @@ export default function BrandCampaignDetailPage() {
               ))}
               <div className="flex items-center gap-2 mt-3 p-3 bg-primary/10 border border-primary/20 rounded-md text-xs text-primary">
                 <Lock className="h-3.5 w-3.5 shrink-0" />
-                {selectedBid && formatCurrency(selectedBid.amount)} will be held securely until deliverables are approved.
+                {selectedBid && formatCurrency(selectedBid.amount)} stays secured until the approved post is live and its link is in.
               </div>
             </div>
             <DialogFooter className="gap-2">
@@ -2183,20 +2287,98 @@ export default function BrandCampaignDetailPage() {
 
         {/* Counter */}
         <Dialog open={isCounterOpen} onOpenChange={setIsCounterOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Counter Proposal</DialogTitle>
-              <DialogDescription>Suggest a different amount to {selectedBid?.creator.name}.</DialogDescription>
+              <DialogTitle>Send a counter offer</DialogTitle>
+              <DialogDescription>
+                Set the work and the price you are offering {selectedBid?.creator.name}. They can
+                accept it, counter again, or decline.
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-3">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Original Bid</label>
+                <label className="text-sm font-medium">They asked for</label>
                 <div className="p-2 bg-muted rounded-md text-sm text-muted-foreground">
                   {selectedBid && formatCurrency(selectedBid.amount)}
                 </div>
               </div>
+              {/*
+                The order itself. Without this the counter carried a price and nothing else, the
+                accepted offer produced a contract with zero submission slots, and the creator had
+                nothing to deliver against — the single biggest hole in the hire path.
+              */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">Your Counter Amount (₹)</label>
+                <label className="text-sm font-medium">What they will post</label>
+                <p className="text-xs text-muted-foreground">
+                  {counterSlotsFromOffer
+                    ? 'Carried over from the offer on the table. Change it only if you are revising the work, not just the price.'
+                    : 'This becomes the list the creator submits against, so it has to be right.'}
+                </p>
+                <div className="space-y-2">
+                  {counterDeliverables.map((row, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <Select
+                        value={row.type}
+                        onValueChange={(value) =>
+                          updateCounterDeliverable(idx, { type: value as DeliverableTypeValue })
+                        }
+                        disabled={counterSlotsLoading}
+                      >
+                        <SelectTrigger className="flex-1">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DELIVERABLE_TYPE_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        type="number"
+                        min={1}
+                        className="w-20"
+                        aria-label="How many"
+                        value={row.count}
+                        disabled={counterSlotsLoading}
+                        onChange={(e) =>
+                          updateCounterDeliverable(idx, {
+                            count: Math.max(0, parseInt(e.target.value, 10) || 0),
+                          })
+                        }
+                      />
+                      {counterDeliverables.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label="Remove this deliverable"
+                          onClick={() =>
+                            setCounterDeliverables((prev) => prev.filter((_, i) => i !== idx))
+                          }
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={counterSlotsLoading}
+                  onClick={() =>
+                    setCounterDeliverables((prev) => [
+                      ...prev,
+                      { type: DEFAULT_DELIVERABLE_TYPE, count: 1 },
+                    ])
+                  }
+                >
+                  Add another
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Your offer (₹)</label>
                 <Input type="number" placeholder="e.g. 2500" value={counterAmount} onChange={(e) => setCounterAmount(e.target.value)} />
               </div>
               <div className="space-y-2">
@@ -2208,11 +2390,16 @@ export default function BrandCampaignDetailPage() {
               <Button variant="outline" onClick={() => setIsCounterOpen(false)}>Cancel</Button>
               <Button
                 onClick={handleCounter}
-                disabled={!counterAmount || (!!selectedBid && mutatingId === selectedBid.id)}
+                disabled={
+                  !counterAmount
+                  || counterSlotsLoading
+                  || orderedCounterDeliverables.length === 0
+                  || (!!selectedBid && mutatingId === selectedBid.id)
+                }
                 className="gap-2"
               >
                 {selectedBid && mutatingId === selectedBid.id && <Loader2 className="h-4 w-4 animate-spin" />}
-                Send Counter
+                Send counter offer
               </Button>
             </DialogFooter>
           </DialogContent>

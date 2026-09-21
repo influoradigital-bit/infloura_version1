@@ -110,7 +110,8 @@ export function DealPaymentsTab({
       await api.payments.releasePayout(milestoneId);
       toast({
         title: 'Payment released',
-        description: 'The funds are on their way to the creator.',
+        description:
+          'The amount has left your secured funds. Influora pays it out to the creator within 2 working days of their live post link.',
       });
       onFunded?.();
     } catch (err) {
@@ -177,7 +178,7 @@ export function DealPaymentsTab({
               </p>
               <p className="text-sm text-muted-foreground mt-1">
                 {escrowLocked
-                  ? `${formatINR(inEscrow)} is secured until deliverables are approved.`
+                  ? `${formatINR(inEscrow)} is secured. You release it once the creator's post is live and they have submitted the link.`
                   : fullySigned
                     ? 'Both parties have signed. Fund the milestone below to start the work — the creator cannot submit deliverables until the funds are secured.'
                     : 'Secure the funds after both parties sign the contract.'}
@@ -237,7 +238,21 @@ export function DealPaymentsTab({
         <Separator />
 
         <div>
-          <h3 className="font-semibold text-sm mb-3">Payment milestones</h3>
+          <h3 className="font-semibold text-sm mb-1">Payment milestones</h3>
+          {/* paytrigger — the Release control moves real money, and until now the only thing on
+              screen explaining WHEN it may be used was the word "Release". The server refuses a
+              release until every deliverable on the deal is POSTED (EscrowService
+              #assertReleaseConditionSatisfied, release condition ON_POSTED), so say that here
+              rather than let the brand discover it as an error toast. This is a statement of the
+              rule, not a re-derivation of the server's state — the button stays enabled and the
+              server's refusal is still surfaced verbatim. */}
+          {hasRealMilestones && (
+            <p className="text-xs text-muted-foreground mb-3">
+              You release a payment once the creator&rsquo;s post is live and they have submitted
+              the link. Approving a draft does not pay anyone. Influora pays the creator within 2
+              working days of that link.
+            </p>
+          )}
           <div className="space-y-2">
             {rows.map((m) => (
               <div
@@ -265,7 +280,7 @@ export function DealPaymentsTab({
                       disabled={releasingId === m.id}
                       onClick={() => void handleRelease(m.id)}
                     >
-                      {releasingId === m.id ? 'Releasing…' : 'Release'}
+                      {releasingId === m.id ? 'Releasing…' : 'Release payment'}
                     </Button>
                   )}
                   <span className="text-sm font-medium">{formatINR(m.amount)}</span>

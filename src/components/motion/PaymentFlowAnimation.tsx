@@ -24,8 +24,8 @@ const STAGES = [
   },
   {
     icon: CheckCircle2,
-    title: 'Released on approval',
-    body: 'Deliverable approved → payout releases automatically and an invoice is generated for the record.',
+    title: 'Released once the post is live',
+    body: 'Post live and its link submitted → the payment is released and an invoice is generated for the record.',
   },
 ] as const;
 

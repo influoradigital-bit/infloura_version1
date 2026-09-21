@@ -87,8 +87,8 @@ export function CreatorFirstRunChecklist({
     },
     {
       id: 'deliver',
-      title: 'Sign the contract, then submit your work',
-      subtitle: 'Your payment is locked before you start. Submit the deliverable and the brand approves.',
+      title: 'Sign the contract, deliver, then post',
+      subtitle: 'Your payment is secured before you start. Submit the draft, post once it is cleared, and send the live link — Influora pays you by bank transfer within 2 working days of that link.',
       href: '/creator/deals',
       cta: 'Open Deals',
       done: ready ? deals.some((d) => CONTRACTED_OR_BEYOND.has(d.status)) : null,

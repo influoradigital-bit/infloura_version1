@@ -147,8 +147,8 @@ export function KycIdentityForm({ onSubmitted }: KycIdentityFormProps) {
         aria-describedby={error ? 'kyc-status' : undefined}
       >
         <p className="text-sm text-muted-foreground">
-          Verify your identity so payouts can be released. We ask for your PAN, the last four
-          digits of your Aadhaar, and a selfie. This is required before your first withdrawal.
+          Verify your identity so we can pay you. We ask for your PAN, the last four digits of
+          your Aadhaar, and a selfie. This is required before Influora sends your first payment.
         </p>
 
         <FormField

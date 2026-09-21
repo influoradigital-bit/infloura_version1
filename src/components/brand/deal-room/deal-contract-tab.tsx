@@ -367,7 +367,7 @@ export function DealContractTab({
                     secures the funds, and later releases them, from the Payments panel. This used
                     to say the amount "is locked" the moment both parties signed, funded or not. */}
                 {isActive
-                  ? `Both parties have signed. Secure ${formatINR(dealValue)} from the Payments panel, then release it to the creator once the work is approved.`
+                  ? `Both parties have signed. Secure ${formatINR(dealValue)} from the Payments panel. You release it once the creator's post is live and its link is in.`
                   : `Once both parties have signed, you secure ${formatINR(dealValue)} from the Payments panel.`}
               </p>
             </div>

@@ -72,7 +72,7 @@ describe('FundEscrowButton', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(fundEscrowMock).not.toHaveBeenCalled();
-    expect(screen.getByText(/Money moves only when you approve\./i)).toBeInTheDocument();
+    expect(screen.getByText(/Money stays secured until the post is live\./i)).toBeInTheDocument();
   });
 
   it('human click initiates funding, disables the button while loading, and opens Checkout for the escrow order', async () => {
@@ -152,7 +152,7 @@ describe('FundEscrowButton', () => {
     // No verification/poll was ever started — no money-confirming call fired.
     expect(getEscrowStatusMock).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByRole('button')).toBeEnabled());
-    expect(screen.getByText(/Money moves only when you approve\./i)).toBeInTheDocument();
+    expect(screen.getByText(/Money stays secured until the post is live\./i)).toBeInTheDocument();
   });
 
   it('dismissing the TOP-UP Checkout (insufficient-funds leg) moves no money and returns to idle, not a stranded state', async () => {
@@ -190,7 +190,7 @@ describe('FundEscrowButton', () => {
     // No wallet-credit confirmation and no escrow-fund retry after a dismissed top-up.
     expect(fundEscrowMock).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.getByRole('button')).toBeEnabled());
-    expect(screen.getByText(/Money moves only when you approve\./i)).toBeInTheDocument();
+    expect(screen.getByText(/Money stays secured until the post is live\./i)).toBeInTheDocument();
   });
 
   it('shows an error and an accessible alert when the 402 has no server shortfall (no re-estimate, no top-up)', async () => {

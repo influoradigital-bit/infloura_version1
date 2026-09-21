@@ -23,7 +23,7 @@ export function PaymentEventCard({
       label: 'Funds Secured',
       color: 'bg-yellow-100 text-yellow-900',
       icon: <Lock className="h-4 w-4" />,
-      description: 'Funds secured pending content approval',
+      description: 'Funds secured until the post is live',
     },
     milestone_released: {
       label: 'Milestone Released',

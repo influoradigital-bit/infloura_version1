@@ -19,6 +19,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { UsageChannel, ExclusivityScope } from '@/lib/types';
+import {
+  DEFAULT_DELIVERABLE_TYPE,
+  DELIVERABLE_TYPE_OPTIONS,
+  type DeliverableTypeValue,
+} from '@/lib/deliverable-slots';
 
 /**
  * Terms the deal-room proposal collects. `exclusivity` and `revisionCap` were removed
@@ -38,7 +43,8 @@ import type { UsageChannel, ExclusivityScope } from '@/lib/types';
  */
 export interface ProposalFormData {
   // Step 1: Deliverables
-  deliverables: Array<{ id: string; type: string; count: number }>;
+  /** `type` is a `DeliverableTypeValue` wire name (INSTAGRAM_REEL), never a display label. */
+  deliverables: Array<{ id: string; type: DeliverableTypeValue; count: number }>;
   // Step 2: Budget — creator payout
   budget: number;
   // Step 3: Timeline
@@ -72,18 +78,18 @@ interface ProposalFormProps {
   platformFeePercent?: number;
 }
 
-const deliverableTypes = [
-  'Instagram Reel',
-  'TikTok Video',
-  'Instagram Story Set',
-  'Instagram Feed Post',
-  'YouTube Video',
-  'Blog Post',
-  'Product Review',
-  'Behind-the-scenes',
-  'Testimonial',
-  'Other',
-];
+/**
+ * The content types this form can order, from the one shared list the backend enum and every
+ * other offer form use (`src/lib/deliverable-slots.ts`).
+ *
+ * This used to be its own array of display labels — including "Blog Post", "Product Review",
+ * "Behind-the-scenes", "Testimonial" and "Other", none of which the platform can create a
+ * submission slot for. The server matched none of these strings and fell back to an Instagram
+ * Reel for all ten, so the whole dropdown was decorative: whatever the brand picked, the creator
+ * was handed a reel. Anything not on this list is now refused by the server, so nothing may be
+ * offered here that is not on it.
+ */
+const deliverableTypeOptions = DELIVERABLE_TYPE_OPTIONS;
 
 const usageRightsDurations = [
   { value: '3-months', label: '3 months' },
@@ -131,7 +137,7 @@ export function ProposalForm({
 }: ProposalFormProps) {
   const [step, setStep] = React.useState(1);
   const [formData, setFormData] = React.useState<ProposalFormData>({
-    deliverables: [{ id: uniqueId('del'), type: 'Instagram Reel', count: 1 }],
+    deliverables: [{ id: uniqueId('del'), type: DEFAULT_DELIVERABLE_TYPE, count: 1 }],
     budget: 50000,
     deadline: '',
     usageRightsDuration: '6-months',
@@ -240,7 +246,7 @@ export function ProposalForm({
                         value={del.type}
                         onValueChange={(val) => {
                           const newDeliverables = [...formData.deliverables];
-                          newDeliverables[idx].type = val;
+                          newDeliverables[idx].type = val as DeliverableTypeValue;
                           setFormData({ ...formData, deliverables: newDeliverables });
                         }}
                       >
@@ -248,9 +254,9 @@ export function ProposalForm({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {deliverableTypes.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {type}
+                          {deliverableTypeOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -296,7 +302,7 @@ export function ProposalForm({
                 onClick={() => {
                   setFormData({
                     ...formData,
-                    deliverables: [...formData.deliverables, { id: uniqueId('del'), type: 'Instagram Reel', count: 1 }],
+                    deliverables: [...formData.deliverables, { id: uniqueId('del'), type: DEFAULT_DELIVERABLE_TYPE, count: 1 }],
                   });
                 }}
                 className="w-full gap-2"
@@ -603,7 +609,7 @@ export function ProposalForm({
                     <span className="font-semibold">Total You Pay:</span>
                     <span className="text-xl font-bold text-primary">₹{Math.round(totalCost).toLocaleString('en-IN')}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">Funds will be held securely until you approve the work</p>
+                  <p className="text-xs text-muted-foreground mt-2">Funds stay secured until the approved post is live and its link has been submitted</p>
                 </CardContent>
               </Card>
             </div>

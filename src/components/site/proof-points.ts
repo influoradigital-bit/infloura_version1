@@ -49,8 +49,8 @@ export const PROOF_POINTS: ProofPoint[] = [
     label: 'To start — no subscription on the Free tier',
   },
   {
-    value: 'On approval',
-    label: 'Payment releases only after you approve the work',
+    value: 'On the live post',
+    label: 'Payment goes out once the post is live',
   },
   {
     value: 'Nano → macro',

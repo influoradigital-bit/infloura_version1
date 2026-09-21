@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useReducedMotion } from 'framer-motion';
-import { CheckCircle2, Pen, AlertCircle, Video as VideoIcon, Image as ImageIcon } from 'lucide-react';
+import { CheckCircle2, Pen, AlertCircle, Clock, Video as VideoIcon, Image as ImageIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { approvalOutcomeToast } from '@/lib/escrow-release-reason';
+import { reviewClockLabel } from '@/lib/review-clock';
 import { useDeliverableDetail } from '@/hooks/brand/useDeliverableDetail';
 import { useDeliverableSafetyReview } from '@/hooks/brand/useDeliverableSafetyReview';
 import { DeliverableSafetyReviewCard } from './DeliverableSafetyReviewCard';
@@ -382,6 +383,10 @@ export function DeliverableViewer({
   const currentFile = deliverable.files[currentFileIndex];
   const hasMultipleFiles = deliverable.files.length > 1;
 
+  // The brand's own review clock. Null whenever nothing is waiting on this brand, so an
+  // approved or revision-requested draft shows no countdown at all rather than a stale one.
+  const clock = reviewClockLabel(deliverable);
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -396,6 +401,19 @@ export function DeliverableViewer({
                   </Badge>
                   <span className="text-xs text-muted-foreground">Version {deliverable.versionNumber}</span>
                 </div>
+                {clock && (
+                  <p
+                    className={cn(
+                      'flex items-center gap-1.5 text-xs font-medium',
+                      clock.tone === 'overdue' && 'text-destructive-foreground',
+                      clock.tone === 'urgent' && 'text-warning',
+                      clock.tone === 'normal' && 'text-muted-foreground',
+                    )}
+                  >
+                    <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                    {clock.brand}
+                  </p>
+                )}
               </div>
             </div>
           </DialogHeader>

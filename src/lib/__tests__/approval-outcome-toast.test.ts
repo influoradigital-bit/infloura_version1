@@ -8,10 +8,14 @@ import { approvalOutcomeToast, isBrandActionable, paymentHeldMessage } from '../
  * and funded milestones, where the truth is "approved; now press Release".
  */
 describe('approvalOutcomeToast', () => {
-  it('a real release is plain success', () => {
+  // paytrigger round 2 — the description names WHY the money moved. `paymentReleased: true` can
+  // only happen once the deliverable is POSTED (EscrowService#assertReleaseConditionSatisfied),
+  // so 'Deliverable approved' beside a bare 'Payment has been released' read as approval being
+  // the thing that paid — the exact confusion this wave exists to remove.
+  it('a real release is plain success, and says the live post is why', () => {
     expect(approvalOutcomeToast({ paymentReleased: true })).toEqual({
       title: 'Deliverable approved',
-      description: 'Payment has been released to the creator.',
+      description: 'The post is already live, so the payment has gone to the creator.',
     });
   });
 
@@ -22,6 +26,22 @@ describe('approvalOutcomeToast', () => {
     expect(toast.description).toMatch(/Payments panel/);
     expect(toast.description).not.toMatch(/needs a contract/i);
     expect(isBrandActionable('MANUAL_RELEASE_REQUIRED')).toBe(true);
+  });
+
+  // paytrigger — the release-condition gate is now ON by default, and the payment trigger is the
+  // live post. So the expected outcome of approving a DRAFT is "approved, nobody paid yet". If
+  // that stayed in the red bucket, every correct approval in the product would be reported to the
+  // brand as a failure.
+  it('approved but not yet posted: the designed outcome, not an error', () => {
+    const toast = approvalOutcomeToast({
+      paymentReleased: false,
+      paymentHeldReason: 'RELEASE_CONDITION_NOT_MET',
+    });
+    expect(toast.variant).toBeUndefined();
+    expect(toast.title).toMatch(/live post/i);
+    expect(toast.description).toMatch(/after the post is live/i);
+    // The brand is not the one who unblocks this — the creator is.
+    expect(isBrandActionable('RELEASE_CONDITION_NOT_MET')).toBe(false);
   });
 
   it('already paid out: plain success, not a warning', () => {

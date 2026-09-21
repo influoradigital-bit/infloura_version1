@@ -43,6 +43,21 @@ interface DeliverableReviewPanelProps {
   onReviewSuccess?: (result: DeliverableReviewResult) => void;
 }
 
+/**
+ * F-0669 round 5 (sibling sweep) — the heading used to read
+ *   `Reel #{meta?.deliverableNumber || 1} — {meta?.platform?.toUpperCase() || 'INSTAGRAM'}`
+ * so an event carrying neither field was titled "Reel #1 — INSTAGRAM": a content type and a
+ * platform the app was never told. `platform` is optional on TimelineEventMetadata
+ * (src/lib/types.ts) and no live producer sets it, and the deliverable may be a Story, a
+ * carousel or a YouTube video. Render only what the event actually carries; "Deliverable"
+ * is a role label, not a claim about the medium.
+ */
+export function deliverableHeading(meta: TimelineEvent['metadata']): string {
+  const base =
+    meta?.deliverableNumber != null ? `Deliverable #${meta.deliverableNumber}` : 'Deliverable';
+  return meta?.platform ? `${base} — ${meta.platform.toUpperCase()}` : base;
+}
+
 export function DeliverableReviewPanel({
   open,
   onOpenChange,
@@ -155,7 +170,7 @@ export function DeliverableReviewPanel({
       <SheetContent side="right" className="w-full sm:w-[700px] overflow-y-auto">
         <SheetHeader className="mb-6">
           <SheetTitle className="flex items-center gap-2">
-            Reel #{meta?.deliverableNumber || 1} — {meta?.platform?.toUpperCase() || 'INSTAGRAM'}
+            {deliverableHeading(meta)}
           </SheetTitle>
         </SheetHeader>
 
@@ -200,17 +215,32 @@ export function DeliverableReviewPanel({
               <CardTitle className="text-base">Deliverable Info</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div>
-                <p className="text-xs text-muted-foreground">File</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <FileIcon className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">{meta?.submittedFilename || 'reel-1.mp4'}</span>
+              {/* F-0669 round 5: the fallback here was the literal 'reel-1.mp4' — a file name
+                  that does not exist, shown under a heading that says "File". An absent row
+                  makes no claim; an invented one does. */}
+              {meta?.submittedFilename && (
+                <div>
+                  <p className="text-xs text-muted-foreground">File</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <FileIcon className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm">{meta.submittedFilename}</span>
+                  </div>
                 </div>
-              </div>
+              )}
               <div>
                 <p className="text-xs text-muted-foreground">Revisions Used</p>
+                {/* F-0669 round 5: `|| 2` printed "0/2" on every deliverable, asserting a
+                    two-revision cap as a fact. A revision cap is a contract term —
+                    contract-generator.ts renders an absent `revisionCap` as "Not specified"
+                    rather than guessing — and nothing on this event carries one unless the
+                    server sent `revisionLimit`. The count used is still shown; only the
+                    invented denominator is gone. The `?? 2` in the action gates below is
+                    deliberately left alone: that is reachability, not a claim, and
+                    tightening it would silently remove the brand's revision controls. */}
                 <p className="text-sm font-semibold mt-1">
-                  {meta?.revisionCount || 0}/{meta?.revisionLimit || 2}
+                  {meta?.revisionLimit != null
+                    ? `${meta.revisionCount ?? 0}/${meta.revisionLimit}`
+                    : `${meta?.revisionCount ?? 0}`}
                 </p>
               </div>
               {meta?.revisionFeedback && (

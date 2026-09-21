@@ -17,6 +17,13 @@
  * BrandWalletPage never calls `api.*`, so this test only needs to fake `isApiLive`, not the
  * whole wallet API surface.
  *
+ * The Form 16A reason changed in paytrigger round 4 and this spec's subject did not. The
+ * control was disabled with the reason "not available yet — coming soon", which promised a
+ * TDS certificate that is not late but impossible: Influora withholds no tax, so there is
+ * nothing to certify, and /tds said so on another screen. The reason is now "nothing to
+ * certify". What this file asserts — disabled, plus an accessible name that states WHY — is
+ * unchanged.
+ *
  * Run: npx vitest run src/pages/__tests__/brand-wallet.dead-controls.test.tsx
  */
 
@@ -52,7 +59,7 @@ describe('BrandWalletPage — F-0264 dead money controls', () => {
         <BrandWalletPage />
       </MemoryRouter>,
     );
-    const form16aButton = screen.getByRole('button', { name: /form 16a.*not available/i });
+    const form16aButton = screen.getByRole('button', { name: /form 16a.*nothing to certify/i });
     expect(form16aButton).toBeDisabled();
   });
 
@@ -76,7 +83,7 @@ describe('BrandWalletPage — F-0264 dead money controls', () => {
         <BrandWalletPage />
       </MemoryRouter>,
     );
-    for (const name of [/export/i, /form 16a.*not available/i, /gst summary.*not available/i]) {
+    for (const name of [/export/i, /form 16a.*nothing to certify/i, /gst summary.*not available/i]) {
       const btn = screen.getByRole('button', { name });
       expect(btn).toHaveAttribute('aria-disabled', 'true');
     }

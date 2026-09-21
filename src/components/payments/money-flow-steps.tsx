@@ -3,7 +3,7 @@ import { Check, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 /**
- * The escrow lifecycle, rendered as an ordered list.
+ * How a deal is paid, rendered as an ordered list.
  *
  * <p>Shown wherever a money action is unavailable, so the answer to "is this thing actually
  * built?" is visible rather than asserted. The numbering is not decoration — these steps are a
@@ -18,9 +18,13 @@ export type MoneyFlowStepId = 'fund' | 'hold' | 'deliver' | 'approve' | 'payout'
 const STEPS: ReadonlyArray<{ id: MoneyFlowStepId; title: string; detail: string }> = [
   { id: 'fund', title: 'Brand funds the deal', detail: 'Payment is collected up front, before any work starts.' },
   { id: 'hold', title: 'Money is held securely', detail: 'Neither side can move it. The creator can see it is there.' },
-  { id: 'deliver', title: 'Creator delivers', detail: 'The post goes live and is verified against the brief.' },
-  { id: 'approve', title: 'Brand approves', detail: 'Secured funds release into the creator’s Influora balance.' },
-  { id: 'payout', title: 'Creator withdraws', detail: 'Balance is transferred to their bank account or UPI.' },
+  { id: 'deliver', title: 'Creator submits a draft', detail: 'The brand has 3 working days to review it.' },
+  { id: 'approve', title: 'Brand approves', detail: 'Approval clears the post to go live. It pays nobody yet.' },
+  {
+    id: 'payout',
+    title: 'Influora pays the creator',
+    detail: 'Once the post is live and its link is submitted, Influora transfers the fee by bank transfer within 2 working days.',
+  },
 ];
 
 interface MoneyFlowStepsProps {

@@ -157,7 +157,12 @@ describe('BrandChatPage — deal-room proposal', () => {
     expect(role).toBe('brand');
     expect(body.amount).toBe(50000);
     // Local shape is {id, type, count}; DealDtos.DeliverableSlot expects {type, qty}.
-    expect(body.deliverables).toEqual([{ type: 'Instagram Reel', qty: 1 }]);
+    //
+    // The type is the DeliverableType wire name, not the display label this wizard used to
+    // send. No label matched the enum, so ContractService's old fallback materialised an
+    // INSTAGRAM_REEL for every one of them — a brand ordering a YouTube video got a reel. The
+    // picker now sends the enum and the server refuses anything else (hirepath, 2026-09-21).
+    expect(body.deliverables).toEqual([{ type: 'INSTAGRAM_REEL', qty: 1 }]);
     // Since CounterRequest was aligned with CreateDealRequest, usage rights is a real field the
     // server persists onto the deal — not prose stuffed into the message where it can only be
     // read by a human.
@@ -215,7 +220,7 @@ function proposalMessage(overrides: Record<string, unknown> = {}) {
     content: 'Counter proposal — ₹50,000',
     metadata: {
       amount: 50000,
-      deliverables: [{ type: 'Instagram Reel', qty: 1 }],
+      deliverables: [{ type: 'INSTAGRAM_REEL', qty: 1 }],
       usageRights: '6 months',
       status: 'pending',
     },
@@ -324,7 +329,7 @@ describe('BrandChatPage — responding to a proposal', () => {
     const settled = proposalMessage({
       metadata: {
         amount: 50000,
-        deliverables: [{ type: 'Instagram Reel', qty: 1 }],
+        deliverables: [{ type: 'INSTAGRAM_REEL', qty: 1 }],
         usageRights: '6 months',
         status: 'accepted',
       },

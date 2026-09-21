@@ -22,7 +22,7 @@ export const BRAND_TRUST_ITEMS: TrustBarItem[] = [
 
 export const CREATOR_TRUST_ITEMS: TrustBarItem[] = [
   { icon: ShieldCheck, label: 'Brand funds locked before you shoot' },
-  { icon: Timer, label: 'Payout typically inside 24 hours' },
+  { icon: Timer, label: 'Paid within 2 working days of your live link' },
   { icon: Receipt, label: 'Invoice generated for you' },
   { icon: FileCheck2, label: 'Written contract, not a DM promise' },
 ];

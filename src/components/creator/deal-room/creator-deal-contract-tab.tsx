@@ -85,9 +85,34 @@ export function CreatorDealContractTab({
   // and to an honest "—" only when neither is available (rather than the
   // previous silent "₹0" from a null amount).
   const effectiveAmount = contractAmount ?? amount ?? null;
-  // 15% platform fee (feeBps 1500) — creator nets 85% of gross, consistent with
-  // api.wallet.platformFee, the counter-proposal form, and the actual payout.
-  const netEarnings = effectiveAmount != null ? Math.round(effectiveAmount * 0.85) : null;
+  /*
+   * F-0669 round 4 (sibling of `creator-contract-panel.tsx`): this line read
+   * `effectiveAmount * 0.85` under a comment asserting the fee "is" 15%. It is not fixed at 15
+   * — `api.wallet.platformFee` (GET /creator/platform-fee, api.ts:3755) serves the configured
+   * rate, the admin Fee Control panel writes `creatorFeePercent`, and the bundle already ships
+   * fee-change copy keyed on it. Read the real rate; when it is unavailable, render nothing
+   * rather than a take-home figure computed from a guess.
+   */
+  const [feeBps, setFeeBps] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const fee = await api.wallet.platformFee();
+        if (!cancelled && fee && Number.isFinite(fee.feeBps)) setFeeBps(fee.feeBps);
+      } catch (err) {
+        // Non-blocking, and deliberately no fallback rate — the row stays hidden.
+        console.error('Failed to load platform fee', err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const netEarnings =
+    effectiveAmount != null && feeBps != null
+      ? effectiveAmount - Math.round((effectiveAmount * feeBps) / 10000)
+      : null;
   const liveApi = isApiLive();
 
   // FE-6: live mode uses the real presigned R2 URL (GET /contracts/:id/pdf-download-url,

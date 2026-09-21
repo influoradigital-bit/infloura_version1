@@ -340,10 +340,10 @@ export function FundEscrowButton({
         </p>
       )}
 
-      {/* Trust copy - money moves only when you approve */}
+      {/* Trust copy - the money stays put until the creator's post is live */}
       {status === 'idle' && (
         <p className="text-center text-xs text-meera-text-muted">
-          Money moves only when you approve.
+          Money stays secured until the post is live.
         </p>
       )}
 
@@ -357,7 +357,7 @@ export function FundEscrowButton({
       */}
       {status === 'funded' && serverAmount && (
         <p className="text-center text-xs text-meera-text-muted">
-          {formatINR(serverAmount)} secured. Released only on your approval.
+          {formatINR(serverAmount)} secured. Released once the post is live and its link is in.
         </p>
       )}
     </div>

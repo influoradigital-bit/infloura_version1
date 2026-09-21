@@ -13,7 +13,11 @@ import { downloadContractPDF, signContract } from '@/lib/contract-generator';
 import { ApiError } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatINR } from '@/lib/utils';
-import { deliverableCountLabel } from '@/lib/deliverable-slots';
+import {
+  deliverableCountLabel,
+  deliverableSlotsOf,
+  deliverableTypeLabel,
+} from '@/lib/deliverable-slots';
 
 export function ContractPanel({
   open,
@@ -53,7 +57,7 @@ export function ContractPanel({
       return
     }
     const contractData = {
-      contractId: meta?.contractId || 'CONT-001',
+      contractId: meta?.contractId || 'Not available',
       // F-0669 round 3: use the real brand name from event metadata when the
       // app has it; 'Brand' is an honest generic role label — never an
       // invented company name like 'Influora Brand'.
@@ -62,12 +66,28 @@ export function ContractPanel({
       // creator name when the app actually has it (event metadata); otherwise
       // an honest role label — never an invented person like 'Priya Sharma'.
       creatorName: meta?.creatorName || 'Creator',
-      campaignName: meta?.campaignName || 'Summer Fashion',
+      // F-0669 round 5 (brand twin of the creator-side fix): 'Summer Fashion' was an
+      // invented campaign name written into a contract DOCUMENT. Nothing this panel
+      // receives carries a campaign title — DealService writes `deliverables` and
+      // `deliverableCount` onto the deal-message metadata (DealService.java:2052-2053)
+      // and never a campaign name — so the honest value is the same 'Not specified'
+      // contract-generator.ts already renders for the terms it was not given.
+      campaignName: meta?.campaignName || 'Not specified',
       amount,
-      deliverables: [
-        { title: 'Instagram Reel', description: 'High-quality reel', quantity: 2 },
-        { title: 'Instagram Story', description: 'Story series', quantity: 1 },
-      ],
+      /*
+       * F-0669 round 5: this was a fixed two-row table — 2x 'Instagram Reel', 1x
+       * 'Instagram Story' — written into the downloadable contract PDF of EVERY brand
+       * deal, whatever the brand had actually ordered. Build it from the message's real
+       * deliverable slots (`metadata.deliverables`, DealService.java:2052) through the
+       * shared helpers, exactly as the already-fixed creator-side panel does. An empty
+       * table makes no claim; an invented one asserts a deliverable schedule nobody
+       * agreed to, on the document the brand signs.
+       */
+      deliverables: deliverableSlotsOf(meta).map((slot) => ({
+        title: deliverableTypeLabel(slot.type),
+        description: '',
+        quantity: typeof slot.qty === 'number' ? slot.qty : 1,
+      })),
       // F-0669: this component never receives the real deadline, usage rights,
       // exclusivity, or revision cap from the server — leave them undefined
       // (ContractData makes them optional) rather than invent a past date or a
@@ -156,7 +176,7 @@ export function ContractPanel({
             <CardContent className="space-y-4">
               <div>
                 <p className="text-xs text-muted-foreground">Contract ID</p>
-                <p className="font-mono text-sm">{meta?.contractId || 'CONT-001'}</p>
+                <p className="font-mono text-sm">{meta?.contractId || 'Not available'}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -190,7 +210,7 @@ export function ContractPanel({
                         wording whether the brand reads the panel or the downloaded PDF. */}
                     <li>Content must be delivered by {meta?.deadline || 'Not specified'}</li>
                     <li>Usage rights: Not specified</li>
-                    <li>Payment will be released upon approval of final deliverables</li>
+                    <li>Payment is released once the post is live and its link has been submitted</li>
                     <li>Revisions: Not specified</li>
                     <li>Disputes will be resolved through platform arbitration</li>
                   </ol>
@@ -213,7 +233,7 @@ export function ContractPanel({
                   {hasAmount ? `${formatINR(amount)} secured` : 'Secured amount not yet available'}
                 </p>
                 <p className="text-xs text-muted-foreground mt-2">
-                  Funds will be released when all deliverables are approved
+                  Funds stay secured until the approved post is live and its link has been submitted
                 </p>
               </CardContent>
             </Card>

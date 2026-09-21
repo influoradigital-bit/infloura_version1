@@ -11,7 +11,8 @@ import { useMeeraStage } from '@/hooks/useMeeraStage'
 import { MEERA_MOBILE } from '@/data/meera-copy'
 import { MOCK_BRAND_SNAPSHOT } from '@/data/meera-mock'
 import { MEERA_HELP_PRESEED_PARAM } from '@/lib/meera-help'
-import api from '@/lib/api'
+import { liveBrandColorHex } from '@/lib/meera-brand-colour'
+import api, { isApiLive } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 /**
@@ -39,9 +40,27 @@ function derivePresenceState(phase: Phase, isSpeaking: boolean): MeeraPresenceSt
  */
 export function MeeraWorkspace() {
   const rootRef = useRef<HTMLDivElement>(null)
-  useBrandTheme(rootRef, MOCK_BRAND_SNAPSHOT.brandColorHex)
 
   const { stage, isPaid, advance, markPaid, stagePayloads } = useMeeraStage('snapshot')
+
+  /**
+   * Every real brand's workspace used to be tinted with a FICTIONAL company's
+   * colour: this passed `MOCK_BRAND_SNAPSHOT.brandColorHex` unconditionally,
+   * outside the `isApiLive()` gate the rest of the Meera mock data respects
+   * (StageSnapshot.tsx:187 renders its mock card only under `if (!live)`).
+   *
+   * Live mode now uses the brand's OWN detected colour when one has actually
+   * been loaded, and otherwise passes `undefined` so `useBrandTheme` keeps the
+   * default Meera indigo. No mock constant can reach the theme in live mode.
+   *
+   * Where that live colour comes from, and why there is no second source to fall
+   * back on, is documented on `liveBrandColorHex` (lib/meera-brand-colour.ts).
+   */
+  const brandColorHex = isApiLive()
+    ? liveBrandColorHex(stagePayloads.snapshot)
+    : MOCK_BRAND_SNAPSHOT.brandColorHex
+  useBrandTheme(rootRef, brandColorHex)
+
   const [sheetOpen, setSheetOpen] = useState(false)
 
   // "Ask Meera" help pre-seed: brand-help / the Help menu navigate here with

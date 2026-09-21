@@ -7,7 +7,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Play, MessageSquare, AlertCircle, CheckCircle2, Package } from 'lucide-react';
-import { DeliverableReviewPanel, type DeliverableReviewResult } from '../panels/deliverable-review-panel';
+import {
+  DeliverableReviewPanel,
+  deliverableHeading,
+  type DeliverableReviewResult,
+} from '../panels/deliverable-review-panel';
 
 export function DeliverableEventCard({
   event,
@@ -66,8 +70,14 @@ export function DeliverableEventCard({
             {/* Header */}
             <div className="flex items-start justify-between gap-2">
               <div>
+                {/* F-0669 round 5: this read `{platformEmojis[meta?.platform || 'instagram']}
+                    Reel #{meta?.deliverableNumber || 1}` — an Instagram icon, the word "Reel"
+                    and the number 1 on a deliverable whose type, platform and index the app
+                    had not been told. Shares the review sheet's helper so the card and the
+                    sheet can never disagree about what this deliverable is. */}
                 <p className="font-medium text-sm">
-                  {platformEmojis[meta?.platform || 'instagram'] || '📹'} Reel #{meta?.deliverableNumber || 1}
+                  {meta?.platform ? `${platformEmojis[meta.platform] || '📹'} ` : ''}
+                  {deliverableHeading(meta)}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   {meta?.platform ? meta.platform.charAt(0).toUpperCase() + meta.platform.slice(1) : 'Platform'}

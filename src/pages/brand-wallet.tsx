@@ -5,8 +5,6 @@ import {
   ArrowDownLeft,
   Plus,
   Download,
-  CreditCard,
-  Building2,
   TrendingUp,
   Clock,
   CheckCircle2,
@@ -21,7 +19,6 @@ import {
   EyeOff,
   Receipt,
   FileText,
-  Banknote,
   IndianRupee,
 } from 'lucide-react';
 
@@ -137,8 +134,10 @@ const mockWalletData = {
   runwayDays: 47,
   suggestedRecharge: 200000,
   pipelineCommitments: 320000, // Total committed but not yet locked
-  // Tax summary
-  totalTDSDeducted: 148500,
+  // Tax summary. TDS is 0 and not a placeholder: Influora withholds no tax from any payment,
+  // so the demo wallet must not show a figure the live product can never produce either
+  // (`totalTDSDeducted` is hard-coded `null` on the live branch below).
+  totalTDSDeducted: 0,
   totalGSTPaid: 267300,
 };
 
@@ -381,7 +380,6 @@ export default function BrandWalletPage() {
   const [isBalanceVisible, setIsBalanceVisible] = React.useState(true);
   const [isAddFundsOpen, setIsAddFundsOpen] = React.useState(false);
   const [addAmount, setAddAmount] = React.useState('');
-  const [paymentMethod, setPaymentMethod] = React.useState('upi');
   const [isAddingFunds, setIsAddingFunds] = React.useState(false);
   const [addFundsError, setAddFundsError] = React.useState<string | null>(null);
   // Minted once per logical top-up submission, reused across retries of that SAME submission
@@ -533,7 +531,8 @@ export default function BrandWalletPage() {
         await api.payments.releasePayout({ escrowHoldId });
         toast({
           title: 'Payment released',
-          description: 'The funds are on their way to the creator.',
+          description:
+            'The amount has left your secured funds. Influora pays it out to the creator within 2 working days.',
         });
         await Promise.all([loadWallet(), loadEscrow()]);
       } catch (err) {
@@ -827,7 +826,7 @@ export default function BrandWalletPage() {
                 <DialogHeader>
                   <DialogTitle>Add Funds to Wallet</DialogTitle>
                   <DialogDescription>
-                    Choose an amount and payment method to recharge your wallet.
+                    Choose an amount to add to your wallet.
                   </DialogDescription>
                 </DialogHeader>
                 {topUpOrder ? (
@@ -943,66 +942,14 @@ export default function BrandWalletPage() {
                       </div>
                     </div>
 
-                    {/* Payment Method */}
-                    <div className="space-y-3">
-                      <Label>Payment Method</Label>
-                      <div className="grid gap-2">
-                        <button
-                          onClick={() => setPaymentMethod('upi')}
-                          className={cn(
-                            'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-                            paymentMethod === 'upi' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-                          )}
-                        >
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-500/10">
-                            <Banknote className="h-5 w-5 text-green-500" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium">UPI</p>
-                            <p className="text-sm text-muted-foreground">Instant transfer, no fees</p>
-                          </div>
-                          {paymentMethod === 'upi' && (
-                            <CheckCircle2 className="h-5 w-5 text-primary" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => setPaymentMethod('card')}
-                          className={cn(
-                            'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-                            paymentMethod === 'card' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-                          )}
-                        >
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/10">
-                            <CreditCard className="h-5 w-5 text-blue-500" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium">Credit / Debit Card</p>
-                            <p className="text-sm text-muted-foreground">2% convenience fee</p>
-                          </div>
-                          {paymentMethod === 'card' && (
-                            <CheckCircle2 className="h-5 w-5 text-primary" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => setPaymentMethod('netbanking')}
-                          className={cn(
-                            'flex items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-                            paymentMethod === 'netbanking' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
-                          )}
-                        >
-                          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-500/10">
-                            <Building2 className="h-5 w-5 text-purple-500" />
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium">Net Banking</p>
-                            <p className="text-sm text-muted-foreground">Redirect to bank</p>
-                          </div>
-                          {paymentMethod === 'netbanking' && (
-                            <CheckCircle2 className="h-5 w-5 text-primary" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
+                    {/* No payment-method picker here: the brand chooses UPI, card or net banking inside
+                        Razorpay Checkout, which is the only thing that decides the method. A picker on this
+                        page never reached the order, and it carried a card-surcharge claim and a UPI
+                        zero-charge claim that nothing in the backend backs. If a surcharge ever becomes real it
+                        must come from the server's order response, never a literal in this file. */}
+                    <p className="text-sm text-muted-foreground">
+                      You’ll choose how to pay — UPI, card or net banking — in the secure Razorpay window that opens next.
+                    </p>
                     {addFundsError && (
                       <p className="text-sm text-destructive-foreground">{addFundsError}</p>
                     )}
@@ -1189,7 +1136,7 @@ export default function BrandWalletPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Total TDS Deducted (This FY)</CardDescription>
+              <CardDescription>Tax withheld by Influora (This FY) — none</CardDescription>
               <CardTitle className="text-xl flex items-center gap-2">
                 {formatCurrency(wallet.totalTDSDeducted)}
                 {/* F-0264: no Form 16A (TDS certificate) generation endpoint exists on the
@@ -1197,7 +1144,12 @@ export default function BrandWalletPage() {
                     GstSplitUtil path produces one either. Disabled + reason instead of a
                     silent no-op on a tax-compliance control; see the Export button above for
                     why the Tooltip wraps a `span` rather than sitting on the disabled Button
-                    directly. */}
+                    directly.
+
+                    The reason given used to be "coming soon", which promised a certificate
+                    that is not being built and cannot be: Influora withholds no tax, so there
+                    is nothing to certify. /tds says exactly that, and this tooltip contradicted
+                    it on the same screen as a ₹1,48,500 "TDS deducted" figure. */}
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span tabIndex={0} className="inline-flex">
@@ -1207,19 +1159,22 @@ export default function BrandWalletPage() {
                         className="h-6 w-6"
                         disabled
                         aria-disabled="true"
-                        aria-label="Download Form 16A — not available yet"
+                        aria-label="Form 16A — nothing to certify"
                       >
                         <FileText className="h-4 w-4" />
                       </Button>
                     </span>
                   </TooltipTrigger>
-                  <TooltipContent>Form 16A isn&apos;t available yet — coming soon.</TooltipContent>
+                  <TooltipContent>
+                    Influora withholds no tax, so there is no Form 16A to issue.
+                  </TooltipContent>
                 </Tooltip>
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-xs text-muted-foreground">
-                TDS isn&apos;t calculated automatically in the app yet — check with your CA.
+                Influora withholds no tax from your payments. Any TDS your business owes is yours
+                to deduct and file — check with your CA.
               </p>
             </CardContent>
           </Card>
@@ -1541,7 +1496,7 @@ export default function BrandWalletPage() {
                   Active Secured Funds
                 </CardTitle>
                 <CardDescription>
-                  Funds secured for ongoing campaigns. Released upon deliverable approval.
+                  Funds secured for ongoing campaigns. Released once the post is live and its link is in.
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -1707,7 +1662,8 @@ export default function BrandWalletPage() {
                   <p className="font-medium">How Secure Payments Work</p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     When you start a campaign, the amount is reserved from your wallet balance so creators know the money is set aside.
-                    Once you approve the deliverables, funds are automatically released to the creator.
+                    You approve the draft, then the creator posts. Once the live link is in, an Owner or Admin
+                    releases the payment and Influora pays the creator by bank transfer within 2 working days.
                     If there is a dispute, our team will mediate and ensure fair resolution.
                   </p>
                 </div>

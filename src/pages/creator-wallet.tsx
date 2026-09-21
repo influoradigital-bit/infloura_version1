@@ -22,8 +22,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  Clock,
-  IndianRupee,
   ArrowUpRight,
   ArrowDownRight,
   Building,
@@ -49,24 +47,9 @@ import {
   type WalletTransactionRow,
   type CreatorPayoutRow,
   type PayoutMethod,
-  isMoneyActionBlocked,
 } from '@/lib/api';
-import { PaymentsUnavailableNotice } from '@/components/payments/payments-unavailable-notice';
 import { useServiceInvoices } from '@/hooks/creator/useServiceInvoices';
 import { useToast } from '@/hooks/use-toast';
-
-/**
- * `crypto.randomUUID` only exists in secure contexts (https / localhost) — an http:// staging
- * host would throw. Idempotency keys just need per-submission uniqueness, not crypto strength,
- * so fall back to a timestamp+random id (mirrors the guarded pattern in brand-wallet.tsx /
- * src/lib/meera-api.ts).
- */
-function safeRandomUUID(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-  return `withdraw-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-}
 
 // ---------------------------------------------------------------------------
 // Live-wiring notes (ported from claude/api-connection-workflow-b62285):
@@ -74,11 +57,11 @@ function safeRandomUUID(): string {
 //   GET  /wallet/transactions → api.wallet.transactions('creator') (History tab)
 //   GET  /wallet/payouts      → api.wallet.payouts()               (Payouts tab — CR-77)
 //
-// Withdraw (POST /wallet/withdraw) and payout methods (GET/POST /wallet/payout-methods,
-// PUT /wallet/payout-methods/:id/primary) are wired to the live facade — see
-// handleWithdraw / loadPayoutMethods / handleAddMethod / handleSetPrimary below.
-// Withdraw sends a client-generated Idempotency-Key (B10 — WalletService rejects a
-// withdrawal with no key).
+// Payout methods (GET/POST /wallet/payout-methods, PUT /wallet/payout-methods/:id/primary)
+// are wired to the live facade — see loadPayoutMethods / handleAddMethod / handleSetPrimary
+// below. This page issues NO money mutation at all: POST /wallet/withdraw is deliberately not
+// called from anywhere in the creator UI, because Influora pays creators by bank transfer and
+// self-serve withdrawal is off (owner's ruling, 2026-09-21).
 //
 // No facade coverage yet (render a proper empty state, never fabricated figures):
 //   - detailed payout breakdown (TDS/platform-fee/GST split, brand/campaign name, UTR).
@@ -115,13 +98,6 @@ const EMPTY_EARNINGS: Earnings = {
 function formatEarning(amount: number | null): string {
   return amount === null ? '—' : formatINR(amount);
 }
-
-/**
- * Minimum withdrawal in INR. MUST mirror `WalletService.MIN_CREATOR_WITHDRAWAL`
- * (currently ₹500.00) on the backend — a lower client floor lets a withdraw pass
- * the UI only to be rejected server-side with `MINIMUM_WITHDRAWAL`.
- */
-const MIN_WITHDRAWAL_INR = 500;
 
 interface WalletTransaction {
   id: string;
@@ -377,16 +353,6 @@ export default function CreatorWalletPage() {
   const { toast } = useToast();
 
   const [showPayoutSettings, setShowPayoutSettings] = React.useState(false);
-  const [showWithdrawDialog, setShowWithdrawDialog] = React.useState(false);
-  const [withdrawAmount, setWithdrawAmount] = React.useState('');
-  const [isWithdrawing, setIsWithdrawing] = React.useState(false);
-  const [withdrawError, setWithdrawError] = React.useState<string | null>(null);
-  // Minted once per logical withdrawal submission, reused across retries of that SAME
-  // submission (network failure) so the server's idempotency dedupe isn't bypassed by a fresh
-  // key each click. Reset to null on success, on dialog close, and whenever the amount changes
-  // (a changed amount is a new submission, not a retry) — mirrors topUpIdempotencyKey in
-  // brand-wallet.tsx.
-  const [withdrawIdempotencyKey, setWithdrawIdempotencyKey] = React.useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = React.useState('this-month');
 
   // GET /wallet/payout-methods (creator) — UPI/bank instruments for the Payout Settings dialog.
@@ -399,14 +365,14 @@ export default function CreatorWalletPage() {
   const [addingMethod, setAddingMethod] = React.useState(false);
   const [addMethodError, setAddMethodError] = React.useState<string | null>(null);
   const [settingPrimaryId, setSettingPrimaryId] = React.useState<string | null>(null);
-  // F-0289 — mock mode's Payout Settings cards are static demo data (no facade call, so the
-  // Withdraw dialog never shows a fabricated destination for real money — see the
-  // "never a hardcoded VPA" comment below). "Set Primary" still has to be a real, visible
-  // action rather than a dead button, so it flips this local flag instead of hitting the API.
+  // F-0289 — mock mode's Payout Settings cards are static demo data (no facade call, so no
+  // fabricated destination is ever shown as a real payout account). "Set Primary" still has to
+  // be a real, visible action rather than a dead button, so it flips this local flag instead of
+  // hitting the API.
   const [mockPrimaryMethod, setMockPrimaryMethod] = React.useState<'upi' | 'bank'>('upi');
 
   // Wallet balance + transactions — DISPLAY-only live data behind isApiLive(),
-  // mock as fallback. Does not touch the withdraw mutation (see notes above).
+  // mock as fallback. This page has no money mutation at all (see notes above).
   const [earnings, setEarnings] = React.useState(EMPTY_EARNINGS);
   const [walletLoading, setWalletLoading] = React.useState(false);
   const [walletError, setWalletError] = React.useState<string | null>(null);
@@ -558,67 +524,6 @@ export default function CreatorWalletPage() {
     loadPayoutMethods();
   }, [loadPayoutMethods]);
 
-  // Changing the amount starts a new logical submission, not a retry of the last one — drop
-  // any held idempotency key so the next confirm mints a fresh one.
-  const changeWithdrawAmount = (value: string) => {
-    setWithdrawAmount(value);
-    setWithdrawIdempotencyKey(null);
-  };
-
-  const handleWithdrawDialogChange = (open: boolean) => {
-    setShowWithdrawDialog(open);
-    if (!open) {
-      setWithdrawAmount('');
-      setWithdrawError(null);
-      setWithdrawIdempotencyKey(null);
-    }
-  };
-
-  const handleWithdraw = async () => {
-    const amount = parseFloat(withdrawAmount);
-    if (!amount || amount < MIN_WITHDRAWAL_INR) return;
-    setIsWithdrawing(true);
-    setWithdrawError(null);
-    if (!liveApi) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      setIsWithdrawing(false);
-      setShowWithdrawDialog(false);
-      setWithdrawAmount('');
-      return;
-    }
-    // Client-generated Idempotency-Key (B10 — WalletService rejects a withdrawal with no key).
-    // Minted once per logical submission (kept in withdrawIdempotencyKey) and reused across
-    // retries of that same submission after a network failure — a fresh key per retry would let
-    // a client retry double-spend past the server's idempotency dedupe.
-    const idempotencyKey = withdrawIdempotencyKey ?? safeRandomUUID();
-    if (!withdrawIdempotencyKey) setWithdrawIdempotencyKey(idempotencyKey);
-    try {
-      await api.wallet.withdraw(amount, idempotencyKey);
-      // Success closes out this submission — the key must not be reused for a future one.
-      setWithdrawIdempotencyKey(null);
-      setShowWithdrawDialog(false);
-      setWithdrawAmount('');
-      // CR-73 — a successful withdrawal debits the balance and adds a transaction row
-      // server-side; without this the hero balance and History/Payouts tabs kept showing
-      // pre-withdrawal figures until a manual reload. Reuse the same loaders the mount
-      // effects use rather than duplicating the fetch logic. Refresh under the
-      // currently-selected period (CR-72) so History/Payouts stay consistent with what's
-      // on screen.
-      loadWalletBalance();
-      loadTransactions(selectedPeriod);
-      // CR-77 — the Payouts tab used to refresh for free because it was derived from
-      // `transactions`. It has its own source now, so it needs its own refresh: without this the
-      // payout the creator just queued is invisible until a remount, at exactly the moment
-      // they're most likely to open that tab to check on it.
-      void loadPayouts();
-    } catch (err) {
-      // Keep the same idempotency key held so a user-initiated retry of this submission reuses it.
-      setWithdrawError(err instanceof ApiError ? err.message : 'Withdrawal failed. Please try again.');
-    } finally {
-      setIsWithdrawing(false);
-    }
-  };
-
   const handleAddMethod = async () => {
     if (!newMethodValue.trim()) return;
     setAddingMethod(true);
@@ -656,9 +561,11 @@ export default function CreatorWalletPage() {
     }
   };
 
-  // Destination shown in the Withdraw dialog: the creator's real primary payout
+  // Destination shown in the "How you get paid" panel: the creator's real primary payout
   // method (falls back to the first on file). Never hardcode a demo VPA here — the
-  // creator must see exactly where their money is going.
+  // creator must see exactly where their money is going. This matters MORE now that they
+  // cannot start the transfer themselves: the account on file is the only thing they control,
+  // so a wrong or missing one has to be visible without opening a dialog to find it.
   const primaryPayoutMethod =
     payoutMethods.find((m) => m.isPrimary) ?? payoutMethods[0] ?? null;
 
@@ -672,30 +579,65 @@ export default function CreatorWalletPage() {
             <p className="text-muted-foreground">Track your earnings and payouts</p>
           </div>
           <div className="flex items-center gap-2">
-            {/* Disabled rather than hidden: the creator should still see that withdrawing is a
-                thing this product does. The dialog is the only route to POST /wallet/withdraw,
-                so blocking it here is what keeps the request from being issued at all — which
-                matters because the server debits the wallet BEFORE it calls the payout gateway
-                (WalletService.requestCreatorWithdrawal), so a failed attempt would leave the
-                balance reduced with no transfer made. */}
-            <Button
-              onClick={() => setShowWithdrawDialog(true)}
-              disabled={isMoneyActionBlocked('withdraw')}
-              title={isMoneyActionBlocked('withdraw') ? 'Bank transfers are being switched on' : undefined}
-            >
-              <ArrowUpRight className="h-4 w-4 mr-2" />
-              Withdraw
-            </Button>
+            {/* paytrigger — there is no Withdraw button because there is no self-serve
+                withdrawal: Influora pays creators itself. A disabled Withdraw button plus
+                "withdrawals open shortly" was a promise of a feature nobody is building, and it
+                left the creator waiting for a control instead of for a transfer. Payout details
+                is the only action that belongs here — it is where the creator tells us which
+                account to send the money to. */}
             <Button variant="outline" onClick={() => setShowPayoutSettings(true)}>
               <CreditCard className="h-4 w-4 mr-2" />
-              Settings
+              Payout details
             </Button>
           </div>
         </div>
 
-        {isMoneyActionBlocked('withdraw') && (
-          <PaymentsUnavailableNotice operation="withdraw" className="mb-4" />
-        )}
+        {/* paytrigger — the whole answer to "how do I get this money out", stated once, at the
+            top, before any balance. It names the trigger (the live post link, not draft
+            approval), the method (a bank transfer Influora makes) and the promise (2 working
+            days), because a balance with no control beside it is only reassuring if the screen
+            says who is acting and when. */}
+        <Card className="mb-6 border-primary/20 bg-primary/[0.03]">
+          <CardContent className="flex gap-3 p-5">
+            <span
+              aria-hidden="true"
+              className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+            >
+              <Banknote className="h-4 w-4" />
+            </span>
+            <div className="flex flex-col items-start gap-1">
+              <h2 className="text-sm font-semibold leading-6">How you get paid</h2>
+              <p className="max-w-prose text-sm leading-6 text-muted-foreground">
+                Influora pays you by bank transfer (NEFT/IMPS) to the account in your payout
+                details, within 2 working days of your post going live and the link being
+                submitted. There is nothing to request here — a brand approving your draft
+                does not pay you, the live link does. Working days are Monday to Friday.
+              </p>
+              <p className="text-sm leading-6">
+                {primaryPayoutMethod ? (
+                  <>
+                    <span className="text-muted-foreground">Paying to </span>
+                    <span className="font-medium">
+                      {primaryPayoutMethod.type === 'UPI' ? 'UPI' : 'Bank account'}{' '}
+                      {primaryPayoutMethod.displayMask}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">
+                    No payout account on file yet — add one so we can pay you.
+                  </span>
+                )}
+              </p>
+              <Button
+                variant="link"
+                className="h-auto p-0 text-sm"
+                onClick={() => setShowPayoutSettings(true)}
+              >
+                {primaryPayoutMethod ? 'Change payout account' : 'Add a payout account'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {walletError && (
           <div className="flex items-center gap-2 rounded-lg border border-stage-disputed-border bg-red-50 px-3 py-2 text-sm text-stage-disputed-fg mb-4">
@@ -735,7 +677,7 @@ export default function CreatorWalletPage() {
             <div className="flex items-center justify-between mb-4">
               <WalletFigureLabel
                 label="Available Balance"
-                definition="Already released to you. Yours to withdraw to your bank or UPI right now."
+                definition="Released to you. Influora transfers it to the account in your payout details — you never have to request it."
                 labelClassName="text-sm text-white/80"
                 iconClassName="text-white/70 hover:text-white"
               />
@@ -749,7 +691,7 @@ export default function CreatorWalletPage() {
               <div className="bg-white/10 rounded-lg p-3">
                 <WalletFigureLabel
                   label="Secured"
-                  definition="Funds a brand has locked for a deal that's still in progress. Not withdrawable yet — moves to Available Balance once you deliver and it's approved."
+                  definition="Funds a brand has locked for a deal that's still in progress. Not yours yet — it moves to Available Balance once your post is live and the brand releases it."
                   labelClassName="text-xs text-white/80"
                   iconClassName="text-white/70 hover:text-white"
                 />
@@ -760,7 +702,7 @@ export default function CreatorWalletPage() {
               <div className="bg-white/10 rounded-lg p-3">
                 <WalletFigureLabel
                   label="Pending Payouts"
-                  definition="A withdrawal you've already requested that's on its way to your bank or UPI — already deducted from Available Balance, not yet confirmed as landed."
+                  definition="A transfer Influora has already started to your bank or UPI — already deducted from Available Balance, not yet confirmed as landed."
                   labelClassName="text-xs text-white/80"
                   iconClassName="text-white/70 hover:text-white"
                 />
@@ -811,7 +753,7 @@ export default function CreatorWalletPage() {
                   <Banknote className="h-8 w-8 text-muted-foreground" />
                   <p className="font-medium">No payouts yet</p>
                   <p className="text-sm text-muted-foreground">
-                    Your payouts will appear here once a withdrawal is processed.
+                    Your payouts will appear here once Influora has sent one.
                   </p>
                 </CardContent>
               </Card>
@@ -973,9 +915,9 @@ export default function CreatorWalletPage() {
               <div className="flex items-start gap-3">
                 <FileText className="h-5 w-5 text-stage-outreach-fg flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-medium text-blue-800">Tax Compliance</p>
+                  <p className="font-medium text-blue-800">Tax on your payouts</p>
                   <p className="text-sm text-blue-700 mt-1">
-                    TDS isn&apos;t calculated automatically in the app, and Form 16A isn&apos;t available here yet. If tax is deducted at source on a payout, write to info@influora.in for the details, and speak to your CA about your filing.
+                    Influora doesn&apos;t take any tax out of your payouts, so there is no Form 16A to issue here. Your own filing is still yours to make — speak to your CA, and see our TDS Policy for the detail.
                   </p>
                 </div>
               </div>
@@ -986,9 +928,10 @@ export default function CreatorWalletPage() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center gap-2 p-8 text-center">
                 <Receipt className="h-8 w-8 text-muted-foreground" />
-                <p className="font-medium">No tax documents yet</p>
+                <p className="font-medium">Nothing to certify</p>
                 <p className="text-sm text-muted-foreground">
-                  Form 16A and annual statements will appear here once available.
+                  Influora withholds no tax from your payouts, so there is no Form 16A or annual
+                  TDS statement to issue. Your own filing is still yours to make.
                 </p>
               </CardContent>
             </Card>
@@ -1065,7 +1008,8 @@ export default function CreatorWalletPage() {
               </div>
             ) : payoutMethods.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No payout methods yet. Add a UPI ID or bank account to withdraw funds.
+                No payout account yet. Add the UPI ID or bank account Influora should send your
+                payments to.
               </p>
             ) : (
               payoutMethods.map((method) => (
@@ -1182,162 +1126,6 @@ export default function CreatorWalletPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Withdraw Dialog */}
-      <Dialog open={showWithdrawDialog} onOpenChange={handleWithdrawDialogChange}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Withdraw Funds</DialogTitle>
-            <DialogDescription>
-              Transfer your available balance to your payout account
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-4">
-            {/* Available Balance */}
-            <div className="bg-gradient-to-br from-violet-50 to-purple-50 border border-violet-200 rounded-lg p-4 text-center">
-              <p className="text-sm text-muted-foreground">Available to Withdraw</p>
-              <p className="text-3xl font-bold text-stage-contracted-fg">
-                {formatEarning(earnings.availableBalance)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {formatEarning(earnings.escrowLocked)} secured, not yet released
-              </p>
-            </div>
-
-            {withdrawError && (
-              <div className="flex items-center gap-2 rounded-lg border border-stage-disputed-border bg-red-50 px-3 py-2 text-sm text-stage-disputed-fg">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <span>{withdrawError}</span>
-              </div>
-            )}
-
-            {/* Amount Input */}
-            <div className="space-y-2">
-              <Label htmlFor="withdraw-amount">Amount to Withdraw</Label>
-              <div className="relative">
-                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="withdraw-amount"
-                  type="number"
-                  placeholder="Enter amount"
-                  value={withdrawAmount}
-                  onChange={(e) => changeWithdrawAmount(e.target.value)}
-                  className="pl-9"
-                  max={earnings.availableBalance ?? undefined}
-                />
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Min: {formatINR(MIN_WITHDRAWAL_INR)}</span>
-                <Button
-                  variant="link"
-                  className="h-auto p-0 text-xs"
-                  disabled={earnings.availableBalance === null}
-                  onClick={() =>
-                    changeWithdrawAmount((earnings.availableBalance ?? 0).toString())
-                  }
-                >
-                  Withdraw All
-                </Button>
-              </div>
-            </div>
-
-            {/* Payout Method — the creator's real primary method, never a hardcoded VPA */}
-            <div className="space-y-2">
-              <Label>Payout Method</Label>
-              {primaryPayoutMethod ? (
-                <Card
-                  className={
-                    primaryPayoutMethod.usable
-                      ? 'border-violet-200 bg-violet-50'
-                      : 'border-amber-200 bg-amber-50'
-                  }
-                >
-                  <CardContent className="p-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-8 w-8 rounded-full bg-stage-approved flex items-center justify-center">
-                        {primaryPayoutMethod.type === 'UPI' ? (
-                          <span className="text-stage-approved-fg font-bold text-sm">₹</span>
-                        ) : (
-                          <Building className="h-4 w-4 text-blue-700" />
-                        )}
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm">
-                          {primaryPayoutMethod.type === 'UPI' ? 'UPI' : 'Bank Account'}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{primaryPayoutMethod.displayMask}</p>
-                      </div>
-                    </div>
-                    {/* CR-74 — mirrors the server's 24h new-bank-account cool-down
-                        (RazorpayFundAccountService#resolveFundAccountId / CreatorBankAccount#isUsableAt)
-                        so the Withdraw button reflects it before the POST ever reaches the server. */}
-                    {!primaryPayoutMethod.usable && (
-                      <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-800">
-                        <Clock className="h-3 w-3 mt-0.5 flex-shrink-0" />
-                        This payout method was added recently and is in its 24-hour security
-                        verification window. You&apos;ll be able to withdraw to it once that
-                        window has passed.
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card className="border-dashed">
-                  <CardContent className="p-3">
-                    <p className="text-sm text-muted-foreground">
-                      No payout method on file. Add a bank account or UPI in Settings before withdrawing.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-
-            {/* Fees */}
-            {withdrawAmount && parseFloat(withdrawAmount) > 0 && (
-              <div className="bg-muted/50 rounded-lg p-3 space-y-1 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount</span>
-                  <span>{formatINR(parseFloat(withdrawAmount))}</span>
-                </div>
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Processing fee</span>
-                  <span>-₹0</span>
-                </div>
-                <div className="border-t pt-1 mt-1 flex justify-between font-medium">
-                  <span>You&apos;ll receive</span>
-                  <span className="text-stage-approved-fg">{formatINR(parseFloat(withdrawAmount))}</span>
-                </div>
-              </div>
-            )}
-
-            {/* Info */}
-            <div className="flex items-start gap-2 text-xs text-muted-foreground">
-              <Clock className="h-3 w-3 mt-0.5 flex-shrink-0" />
-              <span>Payouts are processed within 24-48 hours on business days</span>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => handleWithdrawDialogChange(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleWithdraw}
-              disabled={isWithdrawing || !withdrawAmount || earnings.availableBalance === null || parseFloat(withdrawAmount) < MIN_WITHDRAWAL_INR || parseFloat(withdrawAmount) > earnings.availableBalance || (liveApi && (!primaryPayoutMethod || !primaryPayoutMethod.usable))}
-              className="bg-primary hover:bg-primary/90"
-            >
-              {isWithdrawing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <ArrowUpRight className="h-4 w-4 mr-2" />
-                  Withdraw
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </CreatorLayout>
   );
 }

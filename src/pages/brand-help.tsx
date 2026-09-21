@@ -41,7 +41,7 @@ const SECTIONS = [
   {
     icon: Wallet,
     title: 'Payments & Protection',
-    body: `When a deal is signed, the agreed amount is held securely and released to the creator only after you approve their deliverables. You can top up your wallet, view transaction history, and track secured funds — all in one dashboard. Payment processing is powered by Razorpay.`,
+    body: `When a deal is signed, the agreed amount is held securely until the creator's post is live and its link is in. An Owner or Admin then releases it, and Influora pays the creator by bank transfer within 2 working days. You can top up your wallet, view transaction history, and track secured funds — all in one dashboard. Payment processing is powered by Razorpay.`,
   },
   {
     icon: Sparkles,

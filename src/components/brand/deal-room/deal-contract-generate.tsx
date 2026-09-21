@@ -25,8 +25,9 @@ interface DealContractGenerateProps {
 /**
  * FE-4 — the "Review & send contract" trigger. Shown once terms are agreed
  * and no contract exists yet (`deal.contractId == null`). Pre-fills a single
- * milestone at the full `deal.dealValue` ("Release on final approval",
- * architecture doc §2) the brand can edit or split into several; submits
+ * milestone at the full `deal.dealValue` ("Payment after the post is live" —
+ * the platform's payment trigger, and the ON_POSTED release condition every
+ * PaymentMilestone gets) the brand can edit or split into several; submits
  * `POST /contracts { collaborationId, milestones }`. The server re-sums
  * `totalAmount` from these milestones — the client total shown here is
  * cosmetic, never trusted.
@@ -39,7 +40,7 @@ export function DealContractGenerate({
   onGenerate,
 }: DealContractGenerateProps) {
   const [milestones, setMilestones] = React.useState<MilestoneDraft[]>([
-    { description: 'Release on final approval', amount: dealValue, dueDate: '' },
+    { description: 'Payment after the post is live', amount: dealValue, dueDate: '' },
   ]);
 
   const total = milestones.reduce((sum, m) => sum + (Number.isFinite(m.amount) ? m.amount : 0), 0);
@@ -101,7 +102,7 @@ export function DealContractGenerate({
                 </div>
                 <Input
                   id={`milestone-desc-${index}`}
-                  placeholder="Description (e.g. Release on final approval)"
+                  placeholder="Description (e.g. Payment after the post is live)"
                   value={milestone.description}
                   onChange={(e) => updateMilestone(index, { description: e.target.value })}
                   disabled={isGenerating}

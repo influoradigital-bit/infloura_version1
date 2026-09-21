@@ -510,7 +510,7 @@ export default function CreatorDashboardPage() {
                     <p className="mt-1 text-xs text-muted-foreground">
                       {wallet.escrowLocked > 0
                         ? `${formatINR(wallet.escrowLocked)} secured`
-                        : 'Ready to withdraw'}
+                        : 'Influora sends this to your payout account'}
                     </p>
                   </>
                 )}

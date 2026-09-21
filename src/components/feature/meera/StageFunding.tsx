@@ -99,7 +99,7 @@ export function StageFunding({ paid, onPay, onGoLive, paymentToolResult, budgetT
                 onClick={onGoLive}
                 className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-meera-accent px-6 text-sm font-semibold text-white transition-colors duration-150 ease-out hover:bg-meera-accent-hover active:scale-[0.97] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--meera-accent-glow)]"
               >
-                {MEERA_CTAS.approveAndRelease}
+                {MEERA_CTAS.goLive}
               </button>
             ) : (
               <motion.button
@@ -110,7 +110,7 @@ export function StageFunding({ paid, onPay, onGoLive, paymentToolResult, budgetT
                 transition={{ duration: 0.4, ease: MEERA_EASE_ENTRY }}
                 className="inline-flex h-11 w-full items-center justify-center rounded-lg bg-meera-accent px-6 text-sm font-semibold text-white transition-colors duration-150 ease-out hover:bg-meera-accent-hover active:scale-[0.97] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--meera-accent-glow)]"
               >
-                {MEERA_CTAS.approveAndRelease}
+                {MEERA_CTAS.goLive}
               </motion.button>
             ))}
         </div>

@@ -6,10 +6,15 @@ import { cn } from '@/lib/utils';
 import type { MoneyOperation } from '@/lib/api';
 
 /**
- * Shown in place of a money action that `isMoneyActionBlocked` refuses — collection actions when
- * `VITE_PAYMENTS_IN_ENABLED` is off, withdrawals when `VITE_PAYOUTS_ENABLED` is off. The two are
- * separate because standard Razorpay and RazorpayX are separately provisioned, so the intended
- * operating state is "collection live, payouts recorded manually by an admin".
+ * Shown in place of a money action that `isMoneyActionBlocked` refuses — the COLLECTION actions
+ * (wallet top-up, funding a deal) when `VITE_PAYMENTS_IN_ENABLED` is off.
+ *
+ * <p>Deliberately NOT usable for `withdraw`, which is why the prop excludes it. A creator
+ * withdrawal is not a feature that is switched off and coming back: Influora pays creators by
+ * bank transfer and self-serve withdrawal does not exist (owner's ruling, 2026-09-21). Telling a
+ * creator "withdrawals open shortly" promised a control nobody is building, and left them
+ * waiting for a button instead of for a transfer. The creator wallet now states who pays them
+ * and when, in its own words.
  *
  * <p>Replaces the generic 500 the server would otherwise return. That 500 is truthful but
  * useless: `RazorpayIntegrationException` has no dedicated handler, so it falls through to
@@ -23,7 +28,7 @@ import type { MoneyOperation } from '@/lib/api';
  */
 
 interface PaymentsUnavailableNoticeProps {
-  operation: MoneyOperation;
+  operation: Exclude<MoneyOperation, 'withdraw'>;
   className?: string;
 }
 
@@ -42,12 +47,6 @@ const COPY: Record<
     body:
       'Your workspace and balance are ready. Adding funds is being switched on — everything downstream of it, from securing funds to invoicing, is already in place.',
     waitingAt: 'fund',
-  },
-  withdraw: {
-    heading: 'Withdrawals open shortly',
-    body:
-      'Your balance is correct and safe — nothing has been deducted. Bank transfers are being switched on, and your full balance will be withdrawable the moment they are.',
-    waitingAt: 'payout',
   },
 };
 

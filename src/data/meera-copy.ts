@@ -15,15 +15,17 @@ export const MEERA_IDENTITY = {
 export const MEERA_CTAS = {
   fundAndGoLive: (amount: string) => `Fund & go live — ${amount}`,
   payAmount: (amount: string) => `Pay ${amount}`,
-  approveAndRelease: 'Approve & release',
+  // Wired to StageFunding's `onGoLive`. It was labelled 'Approve & release' and did neither:
+  // it takes the campaign live. Approving a draft releases no money anywhere in the product.
+  goLive: 'Go live',
   viewCampaign: 'View campaign',
   send: 'Send',
 }
 
-/** T7 — release-on-approval copy. Used once at the lock, then per payout. */
+/** T7 — live-post trust copy. Used once at the lock, then per payout. */
 export const MEERA_TRUST_COPY = {
-  lockCaption: (amount: string) => `${amount} secured. Released only on your approval.`,
-  releaseNote: 'Money moves only when you approve.',
+  lockCaption: (amount: string) => `${amount} secured. Released once the post is live and its link is in.`,
+  releaseNote: 'Money stays secured until the post is live.',
   escrowGuarantee: 'Reserved for this deal.',
 }
 
@@ -75,7 +77,7 @@ export const MEERA_STAGE_SUBTITLES: Record<string, string> = {
   snapshot: 'Analysing your business…',
   recommend: 'Assembling the plan piece by piece',
   matching: 'Verified creators only — Instagram-checked stats',
-  funding: 'Money moves only when you approve',
+  funding: 'Money stays secured until the post is live',
   live: 'Watch invites turn into acceptances',
   performance: 'Verified numbers, straight from the platform',
 }

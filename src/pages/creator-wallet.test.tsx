@@ -36,13 +36,30 @@ describe('CreatorWalletPage', () => {
     vi.clearAllMocks();
   });
 
-  it('renders wallet header and withdraw CTA', async () => {
+  it('renders the wallet header and offers payout details, not a withdraw CTA', async () => {
     renderPage();
 
     expect(screen.getByTestId('creator-layout')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Wallet' })).toBeInTheDocument();
     expect(screen.getByText(/Track your earnings and payouts/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Withdraw/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Payout details/i })).toBeInTheDocument();
+  });
+
+  it('offers no withdraw control at all, and says who pays instead', async () => {
+    renderPage();
+
+    // paytrigger — self-serve withdrawal does not exist (owner's ruling, 2026-09-21). A
+    // DISABLED Withdraw button would still pass a "does it move money?" check while promising a
+    // feature nobody is building, so the assertion is that no such control is rendered in any
+    // state, enabled or not.
+    expect(screen.queryByRole('button', { name: /withdraw/i })).toBeNull();
+
+    expect(await screen.findByRole('heading', { name: 'How you get paid' })).toBeInTheDocument();
+    const panel = (await screen.findByRole('heading', { name: 'How you get paid' })).closest('div');
+    expect(panel).toHaveTextContent(/bank transfer \(NEFT\/IMPS\)/i);
+    expect(panel).toHaveTextContent(/within 2 working days/i);
+    // The trigger is the live link, not the approval.
+    expect(panel).toHaveTextContent(/does not pay you, the live link does/i);
   });
 
   it('shows platform fee percent after mock fetch (G-Kv3-A3)', async () => {
@@ -72,7 +89,7 @@ describe('CreatorWalletPage', () => {
   // Focus (not just hover/click) opens Radix Tooltip content, so these assert on `focus`
   // directly — the same path a keyboard-only user relies on.
   describe('F-0281: wallet figure definitions', () => {
-    it('Available Balance defines itself as already-released, withdrawable-now money', async () => {
+    it('Available Balance defines itself as already-released money Influora sends on', async () => {
       renderPage();
 
       const trigger = await screen.findByRole('button', { name: 'What is Available Balance?' });
@@ -81,7 +98,9 @@ describe('CreatorWalletPage', () => {
       // Radix TooltipContent renders the visible bubble AND a visually-hidden
       // `role="tooltip"` mirror of the same text for screen readers — two real DOM nodes
       // by design, hence findAllByText rather than findByText.
-      const matches = await screen.findAllByText(/Already released to you\. Yours to withdraw/i);
+      const matches = await screen.findAllByText(
+        /Released to you\. Influora transfers it to the account in your payout details/i,
+      );
       expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
@@ -96,18 +115,18 @@ describe('CreatorWalletPage', () => {
       );
       expect(definition).toBeInTheDocument();
       // The whole point of F-0281: this must NOT read like the Available Balance figure —
-      // it must say the money is not yet the creator's to withdraw.
-      expect(definition.textContent).toMatch(/not withdrawable yet/i);
+      // it must say the money is not the creator's yet.
+      expect(definition.textContent).toMatch(/not yours yet/i);
     });
 
-    it('Pending Payouts explains itself as a withdrawal already in flight to the bank — distinct from Secured', async () => {
+    it('Pending Payouts explains itself as a transfer already in flight to the bank — distinct from Secured', async () => {
       renderPage();
 
       const trigger = await screen.findByRole('button', { name: 'What is Pending Payouts?' });
       fireEvent.focus(trigger);
 
       const [definition] = await screen.findAllByText(
-        /A withdrawal you've already requested that's on its way to your bank/i,
+        /A transfer Influora has already started to your bank/i,
       );
       expect(definition).toBeInTheDocument();
       // F-0281/F-0336 — this field previously held the SAME funded-milestone figure as

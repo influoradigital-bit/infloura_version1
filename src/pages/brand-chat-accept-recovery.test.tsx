@@ -108,7 +108,7 @@ function proposalMessage(overrides: Record<string, unknown> = {}) {
     content: 'Counter proposal — ₹50,000',
     metadata: {
       amount: 50000,
-      deliverables: [{ type: 'Instagram Reel', qty: 1 }],
+      deliverables: [{ type: 'INSTAGRAM_REEL', qty: 1 }],
       usageRights: '6 months',
       status: 'pending',
     },

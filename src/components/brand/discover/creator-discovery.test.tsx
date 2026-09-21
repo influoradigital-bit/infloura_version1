@@ -134,7 +134,13 @@ describe('CreatorDiscovery — invite vs priced offer', () => {
     expect(payload.creatorId).toBe(CREATOR.id);
     expect(payload.amount).toBe(40000);
     // Local state uses `count`; DealDtos.DeliverableSlot expects `qty`.
-    expect(payload.deliverables).toEqual([{ type: 'REEL', qty: 1 }]);
+    //
+    // The type is the DeliverableType wire name, not this modal's old short code. "REEL" named
+    // no constant on the server (Instagram reel? Facebook reel?), so ContractService's fallback
+    // silently materialised an INSTAGRAM_REEL for it — and for "VIDEO" and "SHORT" too, which is
+    // how a brand could order a YouTube Short and the creator be handed a reel. The dropdown now
+    // sends the enum, and the server refuses anything that is not one (hirepath, 2026-09-21).
+    expect(payload.deliverables).toEqual([{ type: 'INSTAGRAM_REEL', qty: 1 }]);
     expect(payload.usageRights).toBe('3_MONTHS');
     // Removed 2026-07-26 — the server discarded it, so we must not send or imply it.
     expect(payload).not.toHaveProperty('exclusivity');

@@ -175,7 +175,7 @@ const mockContracts: Contract[] = [
       {
         id: 'c3',
         title: 'Timeline',
-        content: 'All deliverables must be submitted within 14 days of contract signing. Brand shall review and provide feedback within 48 hours of submission.',
+        content: 'All deliverables must be submitted within 14 days of contract signing. Brand shall review and give feedback within 3 working days of submission. If the Brand does not act, the draft is escalated to the Influora team; it is not approved automatically.',
         comments: [],
       },
       {

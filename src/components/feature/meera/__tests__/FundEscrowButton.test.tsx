@@ -1,7 +1,7 @@
 /**
  * FundEscrowButton — F-0247 "premature success copy" regression spec
  * ----------------------------------------------------------------------------
- * LEDGER F-0247: the "₹X secured. Released only on your approval." string
+ * LEDGER F-0247: the "₹X secured. Released once the post is live and its link is in." string
  * must be reachable ONLY once the server confirms escrow status FUNDED
  * (see the component's header contract). Before this fix, it also rendered
  * during `initiating`, `awaiting_payment` (Razorpay modal open, nothing
@@ -60,8 +60,18 @@ const fundEscrowMock = vi.mocked(meeraApi.fundEscrow);
 const getEscrowStatusMock = vi.mocked(meeraApi.getEscrowStatus);
 const openCheckoutMock = vi.mocked(openRazorpayCheckout);
 
-/** The exact secured-money assertion this component may ONLY show once FUNDED. */
-const SECURED_COPY = /secured\. Released only on your approval\./i;
+/**
+ * The exact secured-money assertion this component may ONLY show once FUNDED.
+ *
+ * paytrigger round 4 — the copy used to end "Released after you approve and the post is live.",
+ * which still put the approval first and read as the trigger. Round 2 had already cut "Released
+ * only on your approval." from it. Approval clears the post to go live; the live link is what
+ * releases payment, and an Owner or Admin releases it. Named
+ * approval as the sole condition for the money moving. Approval clears the post to go live; the
+ * live link is what releases payment. F-0247's actual subject (this string must not appear before
+ * the server says FUNDED) is unchanged — only the sentence it is gating.
+ */
+const SECURED_COPY = /secured\. Released once the post is live and its link is in\./i;
 
 describe('FundEscrowButton — F-0247 secured-money copy gating', () => {
   beforeEach(() => {

@@ -140,16 +140,27 @@ describe('payments gate', () => {
 });
 
 describe('PaymentsUnavailableNotice', () => {
-  it('tells a creator their balance is untouched, and shows where the flow is waiting', () => {
-    render(<PaymentsUnavailableNotice operation="withdraw" />);
+  it('tells a brand their top-up is untouched, and shows where the flow is waiting', () => {
+    render(<PaymentsUnavailableNotice operation="topup" />);
 
-    expect(screen.getByText('Withdrawals open shortly')).toBeInTheDocument();
-    expect(screen.getByText(/nothing has been deducted/i)).toBeInTheDocument();
+    expect(screen.getByText('Wallet top-up opens shortly')).toBeInTheDocument();
     // The whole lifecycle is listed, so "not switched on yet" is legible as distinct
     // from "this product cannot do it".
     expect(screen.getByText('Money is held securely')).toBeInTheDocument();
-    expect(screen.getByText('Creator withdraws')).toBeInTheDocument();
     expect(screen.getByText('Waiting')).toBeInTheDocument();
+  });
+
+  it('describes the last step as Influora paying, never as the creator withdrawing', () => {
+    render(<PaymentsUnavailableNotice operation="topup" />);
+
+    // paytrigger — the flow diagram is the one place the whole lifecycle is spelled out, so
+    // it is also the place a stale "Creator withdraws" step would quietly re-teach the wrong
+    // model to every reader. Influora pays; the creator never withdraws.
+    expect(screen.getByText('Influora pays the creator')).toBeInTheDocument();
+    expect(screen.queryByText(/creator withdraws/i)).toBeNull();
+    expect(screen.getByText(/within 2 working days/i)).toBeInTheDocument();
+    // Approval is not payment — the live link is.
+    expect(screen.getByText(/It pays nobody yet/i)).toBeInTheDocument();
   });
 
   it('marks the funding step for a brand, not the payout step', () => {

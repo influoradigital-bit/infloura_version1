@@ -825,7 +825,7 @@ export default function App() {
           element={
             <LegalPage
               docSlug="tds-policy"
-              description="How tax deducted at source (TDS) is handled on creator payouts on Influora."
+              description="How Indian TDS rules relate to creator payouts on Influora. Influora does not deduct tax from your payout today."
               canonical="/tds"
             />
           }

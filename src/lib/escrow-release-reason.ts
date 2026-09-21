@@ -39,8 +39,12 @@ const REASONS: Record<PaymentHeldReason, string> = {
     'The payment milestone behind this deliverable could not be found, so nothing was paid out. Support needs to look at this deal.',
   COLLABORATION_NOT_FOUND:
     'The deal behind this deliverable could not be found, so nothing was paid out. Support needs to look at this deal.',
+  // paytrigger — approving a draft is not the payment trigger. The creator is paid after their
+  // post is live and they have submitted the link (EscrowService#assertReleaseConditionSatisfied,
+  // release condition ON_POSTED). The old copy — "this milestone still has a release condition
+  // outstanding" — named the column, not the rule, and left the brand nothing to do next.
   RELEASE_CONDITION_NOT_MET:
-    'The work is approved, but this milestone still has a release condition outstanding, so payment has not gone out yet.',
+    "The draft is approved, but payment goes out after the post is live. Once the creator posts and submits the link, release the payment from this deal's Payments panel.",
   // Deliberately ranked ABOVE the funded case in BrandDeliverableService#describeUnlinkedHold: a
   // release is refused outright while a dispute is open (EscrowService#assertEscrowNotBlockedByDispute),
   // so pointing the brand at the Release button here would send them to a call that throws.
@@ -53,8 +57,15 @@ const REASONS: Record<PaymentHeldReason, string> = {
   // Role-neutral on purpose: any workspace member can approve a deliverable, but releasing
   // secured funds is Owner/Admin only, so "release them" would send a Manager to a control they
   // cannot use.
+  //
+  // paytrigger — this is the code a brand actually gets when they approve a draft on a funded
+  // deal (BrandDeliverableService#describeUnlinkedHold), so it is the one sentence that sets
+  // their expectation of when payment happens. It used to read as "approved, now go press
+  // Release", which since the release gate was switched on sends them straight into a refusal:
+  // markPosted requires APPROVED, so at the moment of approval the post is never live yet. It
+  // now names the actual next event, and whose move it is.
   MANUAL_RELEASE_REQUIRED:
-    "The work is approved. The secured funds are still held — a workspace Owner or Admin releases them to the creator from this deal's Payments panel.",
+    "The work is approved and the funds stay secured. Payment goes out after the post is live — once the creator posts and submits the link, a workspace Owner or Admin releases it from this deal's Payments panel.",
   PAYMENT_REFUNDED:
     'The work is approved, but secured funds for this deal were refunded to your wallet, so nothing was paid out. Check the Payments panel for this deal.',
   ALREADY_RELEASED: 'The payment for this deal has already been released to the creator.',
@@ -102,7 +113,7 @@ export function approvalOutcomeToast(result: {
   paymentHeldReason?: string | null;
 }): { title: string; description: string; variant?: 'destructive' } {
   if (result.paymentReleased) {
-    return { title: 'Deliverable approved', description: 'Payment has been released to the creator.' };
+    return { title: 'Deliverable approved', description: 'The post is already live, so the payment has gone to the creator.' };
   }
   const reason = result.paymentHeldReason;
   if (reason === 'MANUAL_RELEASE_REQUIRED') {
@@ -110,6 +121,18 @@ export function approvalOutcomeToast(result: {
   }
   if (reason === 'ALREADY_RELEASED') {
     return { title: 'Deliverable approved', description: paymentHeldMessage(reason) };
+  }
+  // paytrigger — this one is NOT an error, and must not be styled as one. The payment trigger is
+  // the live post, so an approval that does not pay is the designed, expected outcome of approving
+  // a draft: the release gate (EscrowService#assertReleaseConditionSatisfied) refuses until every
+  // deliverable is POSTED. Before the gate was switched on this branch was unreachable in
+  // practice; with it on it is the common case, and leaving it in the red "payment was NOT
+  // released" bucket would report correct behaviour as a failure on every single approval.
+  if (reason === 'RELEASE_CONDITION_NOT_MET') {
+    return {
+      title: 'Draft approved — payment follows the live post',
+      description: paymentHeldMessage(reason),
+    };
   }
   return {
     title: 'Approved — but payment was NOT released',
