@@ -66,21 +66,23 @@ def _flat(text: str) -> str:
 # --- the committed file -----------------------------------------------------
 
 
-def test_committed_knowledge_file_loads_all_62_rows_by_type():
+def test_committed_knowledge_file_loads_every_row_by_type():
     rows = load_knowledge()
-    assert len(rows) == 62
+    assert len(rows) == 128  # 62 original + 26 go-live + 30 book-derived + 10 from dataset_2
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
     assert counts == {
-        "camera_angle": 18,
-        "storytelling_structure": 10,
+        "camera_angle": 28,
+        "storytelling_structure": 11,
         "persuasion_principle": 7,
-        "marketing_concept": 7,
-        "hook_template": 6,
-        "narrative_principle": 6,
-        "content_characteristic": 6,
-        "platform_strategy": 2,
+        "marketing_concept": 16,
+        "hook_template": 16,  # 6 Hinglish + 6 English versions + 4 from dataset_2
+        "narrative_principle": 18,
+        "content_characteristic": 10,
+        "platform_strategy": 4,
+        "brand_deal_practice": 5,
+        "category_playbook": 13,
     }
 
 
@@ -177,6 +179,8 @@ def test_every_row_reaches_the_knowledge_text():
             "narrative_principle": "principle",
             "content_characteristic": "characteristic",
             "platform_strategy": "platform",
+            "brand_deal_practice": "topic",
+            "category_playbook": "category",
         }[r["data_type"]]
         assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
 
@@ -250,3 +254,122 @@ def test_real_assembly_carries_fitness_category_alongside_knowledge_and_rules():
     # Knowledge block sits before the per-creator block (stable prefix first).
     idx = [i for i, b in enumerate(prompt.system_blocks) if KNOWLEDGE_BLOCK_HEADING in b["text"]][0]
     assert idx < len(prompt.system_blocks) - 1
+
+
+# --- go-live additions (2026-09-21): brand deals, category playbooks ----------
+
+
+def _playbook(**extra) -> dict:
+    row = {
+        "data_type": "category_playbook",
+        "category": "Test niche",
+        "formats": ["Tutorial"],
+        "hook_angle": "Name the pain.",
+        "structure": "Before-After-Bridge (BAB)",
+        "camera": ["Close-up"],
+        "never_say": "No medical claims.",
+        "confidence": "high",
+        "source": "test",
+    }
+    row.update(extra)
+    return row
+
+
+def _refs() -> list[dict]:
+    rows = load_knowledge()
+    return [
+        next(r for r in rows if r.get("framework") == "Before-After-Bridge (BAB)"),
+        next(r for r in rows if r.get("name") == "Close-up"),
+    ]
+
+
+def test_playbook_must_name_a_structure_and_shots_that_exist(tmp_path):
+    assert len(load_knowledge(_write(tmp_path, _refs() + [_playbook()]))) == 3
+    with pytest.raises(KnowledgeFileError, match="unknown structure"):
+        load_knowledge(_write(tmp_path, _refs() + [_playbook(structure="Hero's Journey")]))
+    with pytest.raises(KnowledgeFileError, match="unknown camera shot"):
+        load_knowledge(_write(tmp_path, _refs() + [_playbook(camera=["Drone shot"])]))
+    with pytest.raises(KnowledgeFileError, match="'formats'"):
+        load_knowledge(_write(tmp_path, _refs() + [_playbook(formats=[])]))
+
+
+def test_every_number_slot_template_carries_the_number_rule(tmp_path):
+    for t in (r["template"] for r in load_knowledge() if r["data_type"] == "hook_template"):
+        if "[number" in t.lower():
+            line = next(line for line in CREATOR_KNOWLEDGE_TEXT.splitlines() if t in line)
+            assert "NUMBER RULE" in line
+    # A NEW template with a [Number] slot gets the rule too, not only the two named ones.
+    from app.prompt.content_knowledge import render_knowledge_block
+
+    hook = {
+        "data_type": "hook_template",
+        "category": "social_proof",
+        "template": "Did you know [statistic]% of creators switched?",
+        "persuasion_principle": "social_proof",
+        "goal_fit": "conversion",
+        "confidence": "template",
+        "source": "test",
+    }
+    text = render_knowledge_block(load_knowledge(_write(tmp_path, [hook])))
+    assert "NUMBER RULE" in next(line for line in text.splitlines() if "creators switched" in line)
+
+
+def test_playbooks_and_brand_deals_render_before_the_general_entries():
+    text = CREATOR_KNOWLEDGE_TEXT
+    assert text.index("Category playbooks") < text.index("Brand deals on Influora") < text.index("Storytelling structures:")
+    for r in load_knowledge():
+        if r["data_type"] == "category_playbook":
+            assert f"- {r['category']}: " in text
+            assert r["never_say"] in text
+
+
+def test_brand_deal_entries_keep_the_payment_promise_and_never_say_escrow():
+    deals = " ".join(
+        _flat(r["guidance"] + " " + r["video_application"])
+        for r in load_knowledge()
+        if r["data_type"] == "brand_deal_practice"
+    ).lower()
+    assert "bank transfer" in deals
+    assert "2 working days" in deals
+    assert "3 working days" in deals
+    assert "escrow" not in _flat(CREATOR_KNOWLEDGE_TEXT).lower()
+
+
+def test_no_leftover_research_references_invented_numbers_or_competitor_names():
+    text = _flat(CREATOR_KNOWLEDGE_TEXT).lower()
+    for banned in ("earlier research", "1 million", "modash", "famekeeda", "confluencr", "metricool"):
+        assert banned not in text, banned
+
+
+def test_persona_states_the_playbook_and_brand_deal_rules():
+    text = _flat(MEERA_CREATOR_PERSONA)
+    assert "Use the category playbook." in text
+    assert '"Never say" line is a hard rule' in text
+    assert "ASCI asks for a clear, upfront label" in text
+    assert "every other template with a [Number], [statistic] or [percent] slot" in text
+
+
+# --- "ask first, only what's unknown" (Swapnil 2026-09-21) --------------------
+
+
+def test_persona_states_the_ask_first_rule():
+    text = _flat(MEERA_CREATOR_PERSONA)
+    assert "Ask first, only what's unknown." in text
+    # One goal question first, capped at three, one per message.
+    assert "ask ONE short question first" in text
+    assert "Ask at most three questions in total" in text
+    assert "one per message" in text
+    # Never re-ask what the context or conversation already holds.
+    assert "Never ask for anything already in your context" in text
+    assert "already answered in this conversation" in text
+    # A specific request is served first; questions never block help.
+    assert "never make them answer questions before they get help" in text
+
+
+def test_ask_first_rule_sits_before_knowledge_first_and_reaches_only_creators():
+    text = _flat(MEERA_CREATOR_PERSONA)
+    assert text.index("Ask first, only what's unknown.") < text.index("Knowledge first.")
+    creator = _flat("\n".join(b["text"] for b in _creator_prompt().system_blocks))
+    brand = _flat("\n".join(b["text"] for b in _brand_prompt().system_blocks))
+    assert "Ask first, only what's unknown." in creator
+    assert "Ask first, only what's unknown." not in brand

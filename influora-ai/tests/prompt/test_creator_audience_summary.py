@@ -115,4 +115,6 @@ def test_persona_audience_rule_reaches_the_creator_system_prompt():
 
 
 def test_prompt_version_bumped_for_audience_knowledge():
-    assert PROMPT_VERSION == "meera-2026.09.21.2"
+    # At least the audience-knowledge bump (.2); later bumps (.3 go-live knowledge) keep it true.
+    date, _, n = PROMPT_VERSION.removeprefix("meera-").rpartition(".")
+    assert (date, int(n)) >= ("2026.09.21", 2)

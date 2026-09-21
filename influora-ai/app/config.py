@@ -76,8 +76,28 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.21.2"
-# ^ bumped for creator audience knowledge (feature/creator-content-knowledge,
+PROMPT_VERSION = "meera-2026.09.21.3"
+# ^ bumped for the go-live creator knowledge additions (Swapnil 2026-09-21):
+# video_content_concepts.jsonl gained 5 brand_deal_practice rows (ad label,
+# endorse only what you used, the Influora draft-to-payment flow, disclosed
+# expertise for health/finance, disclosure even for genuine reviews), one
+# category_playbook per creator category, 2 current platform rows and English
+# versions of the 6 Hinglish hooks; rows 21, 22, 31 and 42 lost their invented
+# number examples and "earlier research" leftovers. content_knowledge.py renders
+# the playbooks and brand deals first and checks every playbook names a real
+# structure and camera shot; creator_persona.py gained the "Use the category
+# playbook" and "Brand-deal questions" rules. BRAND prompt text unchanged.
+# Same bump also carries 30 book-derived rows (ideas paraphrased by Influora from
+# Master Shots, The New Rules of Marketing & PR, Schroder's storytelling thesis
+# and the Breezy Content guide): 10 camera_angle, 6 marketing_concept,
+# 4 content_characteristic, 10 narrative_principle.
+# Also: the CREATOR Block B metrics line "Reach (30 days)" is now "Avg reach per post" --
+# the value was always CreatorMetric.avgReachPerPost, never a 30-day total (Priya 2026-09-21).
+# And creator_persona.py gained the "Ask first, only what's unknown" rule: before growth or
+# content advice, one goal question when the goal is not clear from the conversation, at most
+# three questions, never re-asking what the context already holds (Swapnil 2026-09-21).
+#
+# Previously (.2): bumped for creator audience knowledge (feature/creator-content-knowledge,
 # Swapnil 2026-09-21): the CREATOR Block B now renders a "Your audience" line
 # from the new `audience_summary` context field (the creator's OWN audience,
 # rendered by Java, or an explicit "not available"), and creator_persona.py
