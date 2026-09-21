@@ -158,7 +158,7 @@ public class BriefFallbackExtractor {
                         List.of(),
                         firstInt(REVISIONS, text, 0, 50),
                         paymentTermsIn(text),
-                        // F-0773 / K-2c (Priya, RULINGS-U-0917.md round 6, "New: F-0772"). FALLBACK used to
+                        // F-1773 / K-2c (Priya, RULINGS-U-0917.md round 6, "New: F-1772"). FALLBACK used to
                         // set both risk hints from its own patterns here, which predated and bypassed
                         // rounds 4, 5 and 6's fixes to OffPlatformPaymentRule and HideDisclosureRule
                         // entirely — a bare "upi" set this hint even on an ordinary payout-configuration
@@ -226,7 +226,7 @@ public class BriefFallbackExtractor {
         } else if (lines.size() < MAX_SUMMARY_LINES && e.exclusivityScope() != null) {
             lines.add("Mentions exclusivity without a clear duration");
         }
-        // F-0773 / K-2c (round 6): the two summary lines that used to read off_platform_payment_hint
+        // F-1773 / K-2c (round 6): the two summary lines that used to read off_platform_payment_hint
         // and disclosure_hidden_hint are dropped along with the hints themselves — both are always
         // false on this path now, so the lines would never have rendered anyway.
 

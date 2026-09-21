@@ -2,7 +2,7 @@
 """
 Generate nisha-compliance-r7.tsv from NISHA-COMPLIANCE-ROWS-0918.md, byte-for-byte.
 
-Round 7 / K-2c.2 (R7-A, F-0778, HIGH, priya): HIDE_DISCLOSURE fired on ASCI-compliance
+Round 7 / K-2c.2 (R7-A, F-1778, HIGH, priya): HIDE_DISCLOSURE fired on ASCI-compliance
 instructions -- a brand telling the creator to KEEP, add or place the disclosure label, e.g.
 "Please do not post without the paid partnership label." Nisha's 14 rows (NC-01..NC-14) are all
 NO_FLAG and were written blind: without opening HideDisclosureRule.java, RiskText.java,

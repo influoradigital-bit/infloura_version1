@@ -136,7 +136,7 @@ class RiskFlagCorpusTest {
     }
 
     // ------------------------------------------------------------------
-    // Round 7 / K-2c.2 (R7-A, F-0778, HIGH): Nisha's 14 blind ASCI-compliance rows (NC-01..NC-14),
+    // Round 7 / K-2c.2 (R7-A, F-1778, HIGH): Nisha's 14 blind ASCI-compliance rows (NC-01..NC-14),
     // loaded the same mechanical way as the 56 rows above -- via a generated TSV, never retyped as
     // Java literals -- so the same class of byte-level fidelity defect gen_nisha_blind_tsv.py exists
     // to prevent cannot creep in here either. All 14 are NO_FLAG (RULINGS-U-0917.md round 7, "New,
@@ -255,7 +255,7 @@ class RiskFlagCorpusTest {
         rows.add(row("TRIGGER_TEXT", HD, "en", TRIGGER_TEXT, true, "trigger_text"));
 
         // ------------------------------------------------------------------
-        // F-0769 / K-2c (RULINGS-U-0917.md round 6, Ruling 1). Rows tagged "round6" unless stated;
+        // F-1769 / K-2c (RULINGS-U-0917.md round 6, Ruling 1). Rows tagged "round6" unless stated;
         // texts are verbatim from F0769Probe.java `main` (Priya's probe, 2026-09-18).
         // ------------------------------------------------------------------
 
@@ -410,8 +410,8 @@ class RiskFlagCorpusTest {
         rows.add(row("VIK-GUARD-HD-F-nahi-devanagari", HD, "hi", "#ad नहीं डालना।", true, "round6"));
 
         // ------------------------------------------------------------------
-        // F-0776 (kabir, KABIR-K2C-CHECK-0918.md clause 5): a fresh enumeration of every HIDE_TEXT
-        // alternative -- not just the branches F-0766 named -- found 8 of 36 that RiskFlagCorpusTest
+        // F-1776 (kabir, KABIR-K2C-CHECK-0918.md clause 5): a fresh enumeration of every HIDE_TEXT
+        // alternative -- not just the branches F-1766 named -- found 8 of 36 that RiskFlagCorpusTest
         // stayed green without: without, put, #collab, ad\s*tag, sponsored\s+tag, this\s+is (the
         // don't-mention branch), it and ad (the don't-disclose branch). Round 7 (Ruling 1) resolved
         // the 8th, B3's bare `ad`: widened to an?, guarded below by the "an ad" row. The other 7
@@ -422,7 +422,7 @@ class RiskFlagCorpusTest {
         // it if ad\s*tag is deleted).
         // ------------------------------------------------------------------
         // VIK-GUARD2-HD-F-without ("Post it without #ad this time") moved OUT of the ratchet in
-        // round 7 / R7-A (F-0778): `without` is pruned from B1's negators entirely because its
+        // round 7 / R7-A (F-1778): `without` is pruned from B1's negators entirely because its
         // natural use in a brief is the ASCI-compliance instruction ("post without the paid
         // partnership label"), not a hide ask -- see HideDisclosureRule.HIDE_TEXT's javadoc. The
         // row itself is unchanged and stays in the corpus as a SHOULD_FLAG report-only known miss
@@ -437,13 +437,13 @@ class RiskFlagCorpusTest {
         rows.add(row("VIK-GUARD2-HD-F-it", HD, "en", "Don't disclose it as a paid partnership", true, "f0776"));
 
         // ------------------------------------------------------------------
-        // Round 7 (Ruling 1, F-0776): B3's bare `ad` widened to an?. Guard: this row goes red if
+        // Round 7 (Ruling 1, F-1776): B3's bare `ad` widened to an?. Guard: this row goes red if
         // (?:a\s+)? is restored (no longer admits "an") or if `ad` is deleted from the alternation.
         // ------------------------------------------------------------------
         rows.add(row("VIK-GUARD3-HD-F-an-ad", HD, "en", "Don't disclose this as an ad.", true, "round7"));
 
         // ------------------------------------------------------------------
-        // Round 7, R7-A / F-0778 (HIGH, priya): 13 of 15 lines telling the creator to KEEP, add or
+        // Round 7, R7-A / F-1778 (HIGH, priya): 13 of 15 lines telling the creator to KEEP, add or
         // place the disclosure label raised the non-dismissible HIDE_DISCLOSURE flag -- a false
         // accusation against the most compliant brands. C1-C12 are Priya's measured trigger lines
         // (RULINGS-U-0917.md round 7, "New, R7-A"); all NO_FLAG, all fed into
@@ -752,7 +752,7 @@ class RiskFlagCorpusTest {
      * instead: tight, mechanical sentences that genuinely depend on each of the same 7
      * alternatives, so the ratchet has a real (not vacuous) guard for each one.
      *
-     * <p><b>F-0776 (kabir, {@code KABIR-K2C-CHECK-0918.md} clause 5).</b> A fresh, exhaustive pass
+     * <p><b>F-1776 (kabir, {@code KABIR-K2C-CHECK-0918.md} clause 5).</b> A fresh, exhaustive pass
      * over every {@code HIDE_TEXT} alternative -- not sampled by branch, as the K-2c check that
      * closed the gap above was -- found 8 more with no dependent row: {@code without}, {@code put},
      * {@code #collab}, {@code ad\s*tag}, {@code sponsored\s+tag}, {@code this\s+is} (the
@@ -760,7 +760,7 @@ class RiskFlagCorpusTest {
      * {@code VIK-GUARD2-HD-F-*} rows guard 6 of the 8 in this ratchet; B3's {@code ad} is guarded by
      * {@code VIK-GUARD3-HD-F-an-ad} below (round 7, Ruling 1 widened it to {@code an?}).
      *
-     * <p><b>Round 7 / K-2c.2 (R7-A, F-0778, HIGH).</b> {@code without} is pruned from
+     * <p><b>Round 7 / K-2c.2 (R7-A, F-1778, HIGH).</b> {@code without} is pruned from
      * {@code HIDE_TEXT} entirely (its natural use in a brief is the ASCI-compliance instruction,
      * not a hide ask), so {@code VIK-GUARD2-HD-F-without} leaves this ratchet and stays only as a
      * {@code printFullReport} known miss. {@code VIK-GUARD-HD-F-na} is deleted outright (round 7,

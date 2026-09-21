@@ -32,7 +32,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * F-0773 / K-2c (Priya, {@code RULINGS-U-0917.md} round 6, "New: F-0772" and its Ruling
+ * F-1773 / K-2c (Priya, {@code RULINGS-U-0917.md} round 6, "New: F-1772" and its Ruling
  * "Acceptance"). The {@code CreatorBriefServiceRealRiskRulesTest} / {@code
  * DealRiskServiceEvaluateExtractionTest} shape, applied to the FALLBACK path specifically: a REAL
  * {@link BriefFallbackExtractor} produces the {@link BriefExtraction}, and a REAL {@link
@@ -114,7 +114,7 @@ class BriefFallbackExtractorRealRiskRulesTest {
 
     @Test
     @DisplayName(
-            "F-0773: an on-platform payout instruction (OPP-N-02) raises no OFF_PLATFORM_PAYMENT on"
+            "F-1773: an on-platform payout instruction (OPP-N-02) raises no OFF_PLATFORM_PAYMENT on"
                     + " the FALLBACK path -- falsify by restoring the extractor's own bare-'upi' pattern")
     void onPlatformPayoutInstructionDoesNotFlag() {
         assertThat(evaluateFallback(OPP_N_02))
@@ -124,7 +124,7 @@ class BriefFallbackExtractorRealRiskRulesTest {
 
     @Test
     @DisplayName(
-            "F-0773: an ordinary ad caption (KAB-HD-N-01) raises no HIDE_DISCLOSURE on the FALLBACK"
+            "F-1773: an ordinary ad caption (KAB-HD-N-01) raises no HIDE_DISCLOSURE on the FALLBACK"
                     + " path -- falsify by restoring the extractor's own DISCLOSURE_HIDDEN pattern")
     void ordinaryAdCaptionDoesNotFlag() {
         assertThat(evaluateFallback(KAB_HD_N_01))
@@ -134,7 +134,7 @@ class BriefFallbackExtractorRealRiskRulesTest {
 
     @Test
     @DisplayName(
-            "F-0773: a real off-platform ask (OPP-F-01) still raises OFF_PLATFORM_PAYMENT on the"
+            "F-1773: a real off-platform ask (OPP-F-01) still raises OFF_PLATFORM_PAYMENT on the"
                     + " FALLBACK path, with basis=BRIEF_TEXT -- the rule's own text check, not the hint")
     void realOffPlatformAskStillFlagsFromText() {
         List<RiskFlag> flags = evaluateFallback(OPP_F_01);
@@ -148,7 +148,7 @@ class BriefFallbackExtractorRealRiskRulesTest {
 
     @Test
     @DisplayName(
-            "F-0773: a real hide-the-ad ask (KAB-HD-F-01) still raises HIDE_DISCLOSURE on the"
+            "F-1773: a real hide-the-ad ask (KAB-HD-F-01) still raises HIDE_DISCLOSURE on the"
                     + " FALLBACK path, with basis=BRIEF_TEXT")
     void realHideDisclosureAskStillFlagsFromText() {
         List<RiskFlag> flags = evaluateFallback(KAB_HD_F_01);
@@ -161,7 +161,7 @@ class BriefFallbackExtractorRealRiskRulesTest {
     }
 
     @Test
-    @DisplayName("F-0773: TRIGGER_TEXT still raises both non-dismissible flags on the FALLBACK path")
+    @DisplayName("F-1773: TRIGGER_TEXT still raises both non-dismissible flags on the FALLBACK path")
     void triggerTextFiresBothFlags() {
         assertThat(evaluateFallback(TRIGGER_TEXT))
                 .extracting(RiskFlag::code)

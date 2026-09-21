@@ -1,4 +1,4 @@
-"""F-0771 (MEDIUM, latent -- Priya "Last call -- K-3" F2) -- Python<->Java drift check for
+"""F-1771 (MEDIUM, latent -- Priya "Last call -- K-3" F2) -- Python<->Java drift check for
 `_model_copy_of_tool_result`'s (`app/tools/loop.py`) brand-written/trusted classification.
 
 The allow-lists in `loop.py` only ever classified TOP-LEVEL and per-deal keys. `quote` sat
@@ -60,7 +60,7 @@ def _java_source() -> str:
         "CreatorToolDtos.java not found at any of "
         + ", ".join(str(c) for c in _JAVA_DTO_CANDIDATES)
         + " -- this drift check must run inside a full-repo checkout; a skip here is "
-        "exactly the vacuous pass that let a nested field go unclassified (F-0771)."
+        "exactly the vacuous pass that let a nested field go unclassified (F-1771)."
     )
 
 
@@ -84,7 +84,7 @@ def _assert_fully_classified(
     stale = sorted(accounted - java_fields)
     assert not unclassified, (
         f"{record_name}: Java field(s) {unclassified} are on NEITHER a Python TRUSTED list "
-        "nor declared brand-written/specially-handled here -- F-0771, name each one "
+        "nor declared brand-written/specially-handled here -- F-1771, name each one "
         "explicitly (trusted, because it is fixed vocabulary or Influora-computed; or "
         "brand-written, because it can carry brand text)."
     )
@@ -101,7 +101,7 @@ _BRAND_WRITTEN_GET_BRIEF = {"extraction", "flags"}
 _BRAND_WRITTEN_CHECK_DEAL_RISKS = {"flags"}
 # `deals` is neither trusted-whole nor wrapped-whole: `_model_copy_of_tool_result` splits it
 # per element, classifying each deal's OWN fields against `_TRUSTED_DEAL_FIELDS_GET_MY_DEALS`
-# (see the DealSummary case below) and, since F-0771(b), folding a non-list `deals` or a
+# (see the DealSummary case below) and, since F-1771(b), folding a non-list `deals` or a
 # non-dict element into the wrapper instead of leaking it trusted. Declared here so the
 # top-level GetMyDealsResult check does not flag it as unclassified.
 _SPECIALLY_HANDLED_GET_MY_DEALS = {"deals"}
@@ -165,11 +165,11 @@ def test_risk_flag_fields_are_fully_classified():
     _assert_fully_classified(java, set(), _BRAND_WRITTEN_RISK_FLAG, "RiskFlag")
 
 
-# ---- the nested, "trusted container" records (F-0771's actual gap) --------------------
+# ---- the nested, "trusted container" records (F-1771's actual gap) --------------------
 
 
 def test_package_quote_fields_are_fully_classified():
-    """The record at the heart of F-0771: `quote` is the one container
+    """The record at the heart of F-1771: `quote` is the one container
     `_model_copy_of_tool_result` ever places in `trusted` whole. If Java adds a field here
     this test goes red -- the runtime fail-closed check in `_is_fully_trusted_quote` means
     an unclassified field is still wrapped safely, but this test is what makes the drift

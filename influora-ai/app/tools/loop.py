@@ -747,7 +747,7 @@ _TRUSTED_DEAL_FIELDS_GET_MY_DEALS = (
     "brief_id",
 )
 
-# F-0771 (MEDIUM, latent -- Priya "Last call -- K-3" F2): the allow-lists above only
+# F-1771 (MEDIUM, latent -- Priya "Last call -- K-3" F2): the allow-lists above only
 # classify TOP-LEVEL and per-deal keys. `quote` sits in _TRUSTED_KEYS_GET_BRIEF as a
 # container trusted WHOLE, so an unknown key one level inside it (Kabir/Priya's probe:
 # `quote.brand_budget_note`) rode along outside the wrapper -- nobody had written a rule
@@ -812,7 +812,7 @@ def _is_json_scalar(value: Any) -> bool:
 
 
 def _is_fully_trusted_quote(quote: Any) -> bool:
-    """F-0771 (R2, Priya "Last call -- K-3 re-check" 0918): `quote` stays OUTSIDE the
+    """F-1771 (R2, Priya "Last call -- K-3 re-check" 0918): `quote` stays OUTSIDE the
     wrapper only if (a) every key inside it, and inside each `lines[]`/`add_ons[]` entry, is
     one PackageQuote/QuoteLine/AddOnLine is known to carry -- Influora-computed, never brand
     text (Priya's read of RateQuoteService; see the module docstring above) -- AND (b) every
@@ -833,7 +833,7 @@ def _is_fully_trusted_quote(quote: Any) -> bool:
     piecemeal, easy-to-get-wrong filtering KC-1 rejected at the top level; wrapping the whole
     container is that same allow-list default (unclassified defaults to wrapped) applied one
     level down, and it is safe by construction -- nothing Spring sends today trips it, which
-    is why F-0771 is latent, not live.
+    is why F-1771 is latent, not live.
     """
     if not isinstance(quote, dict) or not set(quote.keys()) <= set(_TRUSTED_KEYS_QUOTE):
         return False
@@ -868,7 +868,7 @@ def _split_trusted_scalar(
     trusted_keys: tuple[str, ...],
     container_keys: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """R2 (Priya "Last call -- K-3 re-check" 0918, F-0771 finding R2): extends KC-1's
+    """R2 (Priya "Last call -- K-3 re-check" 0918, F-1771 finding R2): extends KC-1's
     allow-list rule one level further down than a bare key-NAME check can reach. A trusted
     key's name is not enough -- G4-G8/C1/M3/M4/M6 all probed a recognised key (`quote.total`,
     top-level `status`, `target`, per-deal `next_action`, ...) holding a dict or a list
@@ -926,7 +926,7 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
         )
         quote = trusted.get("quote")
         if quote is not None and not _is_fully_trusted_quote(quote):
-            # F-0771: an unrecognised key, or a recognised key holding a non-scalar value
+            # F-1771: an unrecognised key, or a recognised key holding a non-scalar value
             # (G4-G6) -- the nested-container gap -- moves the WHOLE container into the
             # wrapper instead of leaking it, or part of it, trusted.
             brand["quote"] = trusted.pop("quote")
@@ -953,7 +953,7 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
         trusted_top, other_top_level = _split_trusted_scalar(
             data_without_deals, _TRUSTED_KEYS_GET_MY_DEALS
         )
-        # F-0771(b): GetMyDealsResult.deals is a Java List -- a "deals" value that IS
+        # F-1771(b): GetMyDealsResult.deals is a Java List -- a "deals" value that IS
         # present but is not a list (Kabir/Priya's probe: a dict) is not a shape Spring
         # ever sends, and the allow-list default applies to SHAPE too, not only to field
         # names. Fold it into the brand bucket instead of letting it ride along in
@@ -983,7 +983,7 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
         trusted_deals: list[Any] = []
         for i, deal in enumerate(deals):
             if not isinstance(deal, dict):
-                # F-0771(b): a non-dict element (Kabir/Priya's probe shape) is not a
+                # F-1771(b): a non-dict element (Kabir/Priya's probe shape) is not a
                 # DealSummary either -- wrap it whole, keyed by position like a dict
                 # deal's brand fields, with a placeholder left in `trusted_deals` so
                 # positions still line up for the model to match a wrapped entry back
