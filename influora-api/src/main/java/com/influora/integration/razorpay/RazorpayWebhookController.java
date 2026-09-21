@@ -11,6 +11,7 @@ import com.influora.service.EscrowService;
 import com.influora.service.IdempotencyService;
 import com.influora.service.PayoutReconciliationService;
 import com.influora.service.WalletTopUpService;
+import com.influora.service.credits.CreatorCreditOrderService;
 import com.influora.service.billing.InvoiceService;
 import com.influora.service.billing.SubscriptionBillingEmailPublisher;
 import com.influora.service.billing.SubscriptionService;
@@ -55,6 +56,7 @@ public class RazorpayWebhookController {
     private final EscrowService escrowService;
     private final PayoutReconciliationService payoutReconciliationService;
     private final WalletTopUpService walletTopUpService;
+    private final CreatorCreditOrderService creatorCreditOrderService;
     private final SubscriptionService subscriptionService;
     private final InvoiceService invoiceService;
     private final BrandContextService brandContextService;
@@ -67,6 +69,7 @@ public class RazorpayWebhookController {
             EscrowService escrowService,
             PayoutReconciliationService payoutReconciliationService,
             WalletTopUpService walletTopUpService,
+            CreatorCreditOrderService creatorCreditOrderService,
             SubscriptionService subscriptionService,
             InvoiceService invoiceService,
             BrandContextService brandContextService,
@@ -77,6 +80,7 @@ public class RazorpayWebhookController {
         this.escrowService = escrowService;
         this.payoutReconciliationService = payoutReconciliationService;
         this.walletTopUpService = walletTopUpService;
+        this.creatorCreditOrderService = creatorCreditOrderService;
         this.subscriptionService = subscriptionService;
         this.invoiceService = invoiceService;
         this.brandContextService = brandContextService;
@@ -189,6 +193,16 @@ public class RazorpayWebhookController {
     private void dispatchFundingEvent(WebhookEvent event) {
         String receipt = event.entityId();
         try {
+            // T-CREATOR-CREDITS-V2 (SPEC.md B15, K-07 CRITICAL) — checked BEFORE the escrow
+            // fallthrough, same reasoning as the topup: a creator-credit order's receipt is never
+            // a bare EscrowHold id, so routing it into escrowService.confirmFunded would 404 as
+            // ESCROW_NOT_FOUND (or, worse, on a colliding id space, confirm the wrong thing).
+            if (receipt != null && receipt.startsWith(CreatorCreditOrderService.RECEIPT_PREFIX)) {
+                String orderId = receipt.substring(CreatorCreditOrderService.RECEIPT_PREFIX.length());
+                creatorCreditOrderService.confirmPaid(
+                        orderId, event.paymentId(), event.razorpayOrderId(), event.amountInPaise(), event.currency());
+                return;
+            }
             if (receipt != null && receipt.startsWith(WalletTopUpService.RECEIPT_PREFIX)) {
                 String topUpId = receipt.substring(WalletTopUpService.RECEIPT_PREFIX.length());
                 walletTopUpService.confirmCredited(
@@ -218,11 +232,21 @@ public class RazorpayWebhookController {
 
     /**
      * F-0809 — whether this failure means "the order named by the receipt is not ours", as opposed
-     * to any other reason crediting failed. Only these two codes qualify; see the narrowness note
+     * to any other reason crediting failed. Only these codes qualify; see the narrowness note
      * on {@link #dispatchFundingEvent}.
+     *
+     * <p>T-CREATOR-CREDITS-V2 (SPEC.md B15, K-07 CRITICAL): {@code CREDIT_ORDER_NOT_FOUND} is
+     * ACKed for the SAME reason {@code TOPUP_NOT_FOUND}/{@code ESCROW_NOT_FOUND} are — retrying an
+     * order id that will never exist cannot ever succeed, and sustained non-2xx responses risk
+     * Razorpay disabling the whole webhook, which would take escrow/top-up crediting down with it.
+     * Deliberately NOT extended to {@code CREDIT_ORDER_MISMATCH}/{@code CREDIT_ORDER_AMOUNT_MISMATCH}/
+     * {@code CREDIT_ORDER_PAYMENT_REUSED} — those ARE genuine anomalies on an order that IS ours
+     * and must keep propagating as a non-2xx so they get retried and noticed.
      */
     private static boolean isUnknownToThisProduct(ApiException e) {
-        return "TOPUP_NOT_FOUND".equals(e.getCode()) || "ESCROW_NOT_FOUND".equals(e.getCode());
+        return "TOPUP_NOT_FOUND".equals(e.getCode())
+                || "ESCROW_NOT_FOUND".equals(e.getCode())
+                || "CREDIT_ORDER_NOT_FOUND".equals(e.getCode());
     }
 
     /**
@@ -474,7 +498,13 @@ public class RazorpayWebhookController {
      * keeps the module compiling without it while parsing the actual payload shape correctly.
      */
     record WebhookEvent(
-            String eventType, String entityId, String paymentId, Long amountInPaise, String currency) {
+            String eventType,
+            String entityId,
+            String paymentId,
+            Long amountInPaise,
+            String currency,
+            /** T-CREATOR-CREDITS-V2 (SPEC.md B15) — the order entity's OWN {@code id} (e.g. {@code "order_..."}), distinct from {@link #entityId} (its {@code receipt} field). */
+            String razorpayOrderId) {
 
         private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -498,6 +528,7 @@ public class RazorpayWebhookController {
 
             String paymentId = textOrNull(paymentEntity.path("id"));
             String receipt = textOrNull(orderEntity.path("receipt"));
+            String razorpayOrderId = textOrNull(orderEntity.path("id"));
 
             // [W1-6 incidental fix] NOT a ternary -- `cond ? primitiveLong : (cond2 ? primitiveLong2
             // : null)` silently compiles to primitive `long` per JLS 15.25's boxing-conditional rule
@@ -520,7 +551,7 @@ public class RazorpayWebhookController {
                             ? textOrNull(paymentEntity.path("currency"))
                             : textOrNull(orderEntity.path("currency"));
 
-            return new WebhookEvent(eventType, receipt, paymentId, amountInPaise, currency);
+            return new WebhookEvent(eventType, receipt, paymentId, amountInPaise, currency, razorpayOrderId);
         }
 
         private static String textOrNull(JsonNode node) {

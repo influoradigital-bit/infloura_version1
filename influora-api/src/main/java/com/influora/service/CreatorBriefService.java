@@ -147,6 +147,9 @@ public class CreatorBriefService {
      */
     private final CreatorSuggestionAiProperties aiProperties;
 
+    /** T-CREATOR-CREDITS-V2 (SPEC.md B12) — the 14th constructor argument. */
+    private final com.influora.service.credits.CreatorCreditService creatorCreditService;
+
     public CreatorBriefService(
             CreatorBriefRepository briefRepository,
             CreatorBriefWriter briefWriter,
@@ -160,7 +163,8 @@ public class CreatorBriefService {
             DealMessageRepository dealMessageRepository,
             CreatorProfileRepository creatorProfileRepository,
             ObjectMapper objectMapper,
-            CreatorSuggestionAiProperties aiProperties) {
+            CreatorSuggestionAiProperties aiProperties,
+            com.influora.service.credits.CreatorCreditService creatorCreditService) {
         this.briefRepository = briefRepository;
         this.briefWriter = briefWriter;
         this.preferencesService = preferencesService;
@@ -174,6 +178,7 @@ public class CreatorBriefService {
         this.creatorProfileRepository = creatorProfileRepository;
         this.objectMapper = objectMapper;
         this.aiProperties = aiProperties;
+        this.creatorCreditService = creatorCreditService;
     }
 
     /**
@@ -200,12 +205,47 @@ public class CreatorBriefService {
         CreatorProfile profile = preferencesService.requireCreatorProfile(creatorUserId);
         PreferencesResponse prefs = preferencesService.getOrCreatePreferences(creatorUserId);
 
-        // STEP 2 — BEFORE the AI call, and in its OWN COMMITTED transaction. See the class javadoc:
-        // the order alone made an outage a lost paste anyway, because a rollback later in the same
-        // transaction took this write with it.
-        CreatorBrief brief = briefWriter.saveRawPaste(profile.getId(), rawText);
+        // T-CREATOR-CREDITS-V2 (SPEC.md B12) — the id is minted UP FRONT and charged BEFORE
+        // anything is saved: a refused charge (402/429) leaves no row at all, so GET cannot
+        // re-analyse a never-paid-for brief for free (readOrReanalyse only ever sees rows that
+        // exist). Never flag-gated at this call site — CreatorCreditService#charge itself returns
+        // DISABLED (never refused) when CREATOR_CREDITS_ENABLED is off.
+        String briefId = com.influora.common.Ulids.newUlid();
+        var chargeResult = creatorCreditService.charge(creatorUserId, com.influora.domain.enums.ChargeKind.BRIEF, briefId);
+        if (chargeResult.refused()) {
+            throw com.influora.service.credits.CreatorCreditService.refusal(chargeResult, prefs.creatorLanguage());
+        }
+        boolean charged = chargeResult.charged();
 
-        return analyse(brief, profile, prefs);
+        // F-15/F-23: saveRawPaste used to run OUTSIDE this try/catch. A throw there (a DB blip, a
+        // lock-wait timeout — saveRawPaste is its own committed transaction, see the class
+        // javadoc) left the 3-credit charge above stuck with no brief row and no release,
+        // breaking the "errors cost 0" ruling. It is now covered by the SAME release-on-throw as
+        // the AI call below.
+        CreatorBrief brief;
+        BriefAnalysisResponse response;
+        try {
+            // STEP 2 — BEFORE the AI call, and in its OWN COMMITTED transaction. See the class
+            // javadoc: the order alone made an outage a lost paste anyway, because a rollback
+            // later in the same transaction took this write with it.
+            brief = briefWriter.saveRawPaste(briefId, profile.getId(), rawText);
+            response = analyse(brief, profile, prefs);
+        } catch (RuntimeException e) {
+            if (charged) {
+                creatorCreditService.release(
+                        creatorUserId, briefId, com.influora.service.credits.ReleaseScope.BRIEF);
+            }
+            throw e;
+        }
+
+        // B12 — a FALLBACK extraction (the AI never actually read the brief, whether because of an
+        // outage or the creator's own AI-spend cap) refunds the 3 credits: the creator paid for an
+        // AI reading and did not receive one.
+        if (charged && CreatorBrief.EXTRACTION_SOURCE_FALLBACK.equals(response.extractionSource())) {
+            creatorCreditService.release(creatorUserId, briefId, com.influora.service.credits.ReleaseScope.BRIEF);
+        }
+
+        return response;
     }
 
     /**
@@ -227,6 +267,11 @@ public class CreatorBriefService {
      * {@link #analyse}, so the same blocking AI call sits in the middle of it. Its two writes go
      * through {@link CreatorBriefWriter}, whose {@code REQUIRES_NEW} boundary also means a
      * transactional caller (a tool executor) cannot silently absorb the raw-text commit.
+     *
+     * <p><b>T-CREATOR-CREDITS-V2 (SPEC.md B12): NEVER CHARGED.</b> Only {@link #paste} spends the
+     * creator's 3-credit brief allowance — reading a deal already on the platform costs nothing.
+     * Do not add a charge here without a corresponding owner ruling; a future edit that does is
+     * exactly what this note exists to catch in review.
      */
     public CreatorBrief ensurePlatformBrief(String creatorProfileId, String collaborationId) {
         Optional<CreatorBrief> existing =
@@ -329,6 +374,9 @@ public class CreatorBriefService {
      *   <li>{@code GET /creator/briefs/{id}} (this method) now inherits both the re-analysis and
      *       the 409 — nothing under {@code src/} calls it today, so this is dormant, not live.
      * </ol>
+     *
+     * <p><b>T-CREATOR-CREDITS-V2 (SPEC.md B12): NEVER CHARGED</b>, including the re-analysis
+     * branch below — only the original {@link #paste} call spent credit for this brief.
      *
      * <p>Closing residuals 1 and 3 needs no migration — {@code updated_at} already exists and is
      * mapped ({@link CreatorBrief#getUpdatedAt()}) — a conditional

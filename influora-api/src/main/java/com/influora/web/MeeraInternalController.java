@@ -357,7 +357,9 @@ public class MeeraInternalController {
         AiConversation conversation = sessionService.resolveConversation(body.conversationId());
         onBehalfAuthResolver.resolveForWorkspace(onBehalfJwt, conversation.getWorkspaceId());
 
-        sessionService.releaseTurnCredit(conversation.getWorkspaceId(), body.turnId());
+        // T-CREATOR-CREDITS-V2 (SPEC.md B8) — routes by conversation.tenantType now, not a single
+        // brand-only path; see MeeraSessionService#releaseTurnCredit javadoc.
+        sessionService.releaseTurnCredit(conversation, body.turnId());
         return ResponseEntity.ok(ApiResponse.ok(null));
     }
 

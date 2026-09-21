@@ -32,9 +32,12 @@ import com.influora.repository.AiConversationRepository;
 import com.influora.repository.AiMessageRepository;
 import com.influora.repository.BrandProfileRepository;
 import com.influora.repository.WorkspaceRepository;
+import com.influora.domain.enums.ChargeKind;
 import com.influora.service.CreatorAgentConversationService;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.IdempotencyService;
+import com.influora.service.credits.ChargeResult;
+import com.influora.service.credits.CreatorCreditService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -87,6 +90,20 @@ class MeeraSessionServiceTest {
      */
     @Mock private CreatorAgentPreferencesService creatorAgentPreferencesService;
 
+    /** T-CREATOR-CREDITS-V2 (SPEC.md B7) — the 12th constructor argument. Defaulted to DISABLED below so every pre-existing BRAND-path test is unaffected. */
+    @Mock private CreatorCreditService creatorCreditService;
+
+    /**
+     * Review finding #10/#13 fix — the 13th constructor argument. {@code
+     * writebackTransactionTemplate} wraps it, and every test here reaches {@link
+     * MeeraSessionService#doPersistAssistantWriteback} through the real {@code executeOnce} stub
+     * above (which invokes the supplier directly), so this mock is genuinely exercised: {@link
+     * org.springframework.transaction.support.TransactionTemplate#execute} calls {@code
+     * getTransaction}/{@code commit} on it, both no-ops on an unstubbed mock, which is exactly the
+     * "no real transaction, but no NPE either" behavior these repository-mocked unit tests need.
+     */
+    @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
     private MeeraSessionService service;
 
     @BeforeEach
@@ -103,7 +120,15 @@ class MeeraSessionServiceTest {
                         onBehalfTokenService,
                         idempotencyService,
                         creatorAgentConversationService,
-                        creatorAgentPreferencesService);
+                        creatorAgentPreferencesService,
+                        creatorCreditService,
+                        transactionManager);
+        // Default: creator credits are DISABLED, so every existing creator-path test (written
+        // before T-CREATOR-CREDITS-V2) keeps its pre-existing, uncharged behavior. Tests that
+        // specifically exercise the charge/refusal/release wiring override this per-test.
+        lenient()
+                .when(creatorCreditService.charge(anyString(), org.mockito.ArgumentMatchers.any(ChargeKind.class), anyString()))
+                .thenReturn(new ChargeResult(ChargeResult.Outcome.DISABLED, ChargeKind.TURN, 1, 0, 0));
     }
 
     private BrandAiCredit creditStatus() {
@@ -543,7 +568,7 @@ class MeeraSessionServiceTest {
             "releaseTurnCredit: thin pass-through to creditService.release keyed on TURN_CREDIT_COST"
                     + " and the given turnId")
     void testReleaseTurnCreditDelegatesToCreditService() {
-        service.releaseTurnCredit(WORKSPACE_ID, "turn-server-minted-id");
+        service.releaseTurnCredit(conversation(), "turn-server-minted-id");
 
         verify(creditService, times(1)).release(WORKSPACE_ID, 1, "turn-server-minted-id");
     }

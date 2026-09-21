@@ -73,7 +73,16 @@ export interface MeeraTurnResponse {
   assistantMessageId?: string;
   streamToken: string;
   streamUrl: string;
-  creditsRemaining: number;
+  /**
+   * Review finding #6 — the server's `TurnResult.creditsRemaining` is a Java
+   * `Integer` (nullable): `CreatorMeeraController` coerces it to the literal
+   * `0` before sending today when creator credits are flag-disabled, so the
+   * wire currently always carries a number. `number | null` (not `number`)
+   * means a future server-side regression that starts sending a literal
+   * `null` under the flag is a type error here instead of an unnoticed
+   * runtime `NaN`/`undefined` downstream.
+   */
+  creditsRemaining: number | null;
   /**
    * The authoritative assistant reply, already generated AND persisted by
    * Spring's synchronous Java->Python turn (MeeraSessionService A4 flow).
@@ -818,11 +827,31 @@ export const meeraApi = {
   /**
    * POST /meera/sessions/{conversationId}/messages - Send a turn
    * Returns streamToken + streamUrl for SSE connection
+   *
+   * T-CREATOR-CREDITS-V2 (SPEC.md §9.2, F3/K-27) — `voiceReply` and `idempotencyKey` are new,
+   * optional, and additive:
+   *   - `voiceReply` becomes `SendTurnRequest.voiceReply` (`Boolean`, defaults to `false`
+   *     server-side when omitted/null) — true when the caller's voice-reply toggle is on, so a
+   *     creator turn charges 2 credits (`ChargeKind.VOICE_TURN`) instead of 1. The brand
+   *     controller ignores it entirely (SPEC.md §7.1), so brand callers passing nothing here is
+   *     correct, not an oversight.
+   *   - `idempotencyKey`: the retry-safety fix (K-27). This method used to mint a FRESH
+   *     `safeRandomUUID()` on every call under the stated assumption that a failed turn is never
+   *     re-POSTed. That assumption no longer holds once a turn can be refused for a business
+   *     reason (402/429) and the caller retries the exact same user message (e.g. after the
+   *     creator buys more credits and presses Send again) — a second key for the same logical
+   *     turn would double-charge credits for one message. Callers that may retry a message MUST
+   *     mint ONE key (`safeRandomUUID()`/`crypto.randomUUID()`) per user message and pass the SAME
+   *     key on every retry of it; a 409 response means the original attempt already landed and the
+   *     caller's existing recovery path applies (no further resend). Omitting it preserves the old
+   *     one-shot behaviour exactly (a fresh key is minted here), so every pre-existing call site is
+   *     unaffected.
    */
   sendTurn: async (
     conversationId: string,
     content: string,
-    role: MeeraRole = 'brand'
+    role: MeeraRole = 'brand',
+    options: { voiceReply?: boolean; idempotencyKey?: string } = {}
   ): Promise<MeeraTurnResponse> => {
     if (!isApiLive()) {
       await delay();
@@ -837,16 +866,13 @@ export const meeraApi = {
       };
     }
     // Spring's POST /meera/sessions/{id}/messages requires an Idempotency-Key
-    // header (MeeraController) and 400s without it. The panel never re-POSTs a
-    // failed turn (double-spend guard), so a fresh key per call is correct.
-    // (Kavya QA: if a retry path is ever added, the SAME key must be reused
-    // across retries of one logical turn or the backend dedupe is bypassed.)
+    // header (MeeraController) and 400s without it.
     return request<MeeraTurnResponse>(
       'POST',
       `${basePath(role)}/sessions/${conversationId}/messages`,
       {
-        body: { content },
-        idempotencyKey: safeRandomUUID(),
+        body: { content, voiceReply: options.voiceReply },
+        idempotencyKey: options.idempotencyKey ?? safeRandomUUID(),
         role,
       }
     );
@@ -1008,8 +1034,24 @@ export const meeraApi = {
    * available (e.g. the browser STT fallback never produced one), in which
    * case the backend's own default (`en-IN`, `voice.py`'s
    * `body.get("lang", "en-IN")`) applies.
+   *
+   * T-CREATOR-CREDITS-V2 (SPEC.md §7.2/§9.2, F3) — `turnId` is new, optional, and appended AFTER
+   * `role` (not inserted before it) so every existing 3-argument call
+   * (`speak(text, lang, role)`) keeps meaning exactly what it always has; only a caller that
+   * explicitly wants the credits-aware behaviour passes a 4th argument. With
+   * `CREATOR_CREDITS_ENABLED` on, `VoiceSpeakRequest.turnId` is how the server decides whether
+   * this reply is the paid `tts:` half of a voice turn (`hasVoiceCharge` + `claimVoiceSpeak`,
+   * ≤3 calls per turn) — omitting it, or passing a turnId the server can't match to an unrefunded
+   * voice charge, makes the server return `{"fallback":true}` (this method already treats a
+   * non-audio response as `null`) rather than ever calling Sarvam for free. With the flag off the
+   * server ignores `turnId` entirely, so passing it is always safe.
    */
-  speak: async (text: string, lang?: string, role: MeeraRole = 'brand'): Promise<Blob | null> => {
+  speak: async (
+    text: string,
+    lang?: string,
+    role: MeeraRole = 'brand',
+    turnId?: string
+  ): Promise<Blob | null> => {
     if (!isApiLive()) return null;
 
     try {
@@ -1025,7 +1067,7 @@ export const meeraApi = {
         method: 'POST',
         headers,
         credentials: 'include',
-        body: JSON.stringify(lang ? { text, lang } : { text }),
+        body: JSON.stringify({ text, ...(lang ? { lang } : {}), ...(turnId ? { turnId } : {}) }),
       });
 
       if (!res.ok) return null;

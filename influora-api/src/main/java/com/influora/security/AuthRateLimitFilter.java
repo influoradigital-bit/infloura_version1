@@ -354,6 +354,15 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private int creatorBriefGetLimit;
 
     /**
+     * T-CREATOR-CREDITS-V2 (SPEC.md B18, K-21) — requests per window, <b>per creator</b>, for
+     * {@code POST /creator/credits/orders}. USER-keyed, same reasoning as {@code
+     * creator-brief-paste}: this route mints a real Razorpay order, and the identity worth
+     * bounding is the creator's, not her network's.
+     */
+    @Value("${influora.meera.creator-credit-order-rate-limit-per-window:10}")
+    private int creatorCreditOrderLimit;
+
+    /**
      * [SEC: Kabir Wave 2, finding 1] How many ES256 verifications ONE source address is allowed to
      * <b>fail</b> per {@link #windowSeconds} before this filter stops verifying for that address
      * entirely and keys the bucket by IP instead. See {@link #extractOnBehalfSubject} for why a
@@ -636,6 +645,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         if ("POST".equalsIgnoreCase(request.getMethod()) && path.equals("/creator/briefs")) {
             return "creator-brief-paste";
         }
+        // T-CREATOR-CREDITS-V2 (SPEC.md B18, K-21) — exact-equality on the collection path, not a
+        // prefix, so /creator/credits/orders/{id}/verify (a different cost shape, no new Razorpay
+        // order minted) stays out of this bucket.
+        if ("POST".equalsIgnoreCase(request.getMethod()) && path.equals("/creator/credits/orders")) {
+            return "creator-credit-order";
+        }
 
         // Both LEGS, not just brand: /auth/creator/send-email-otp and /auth/creator/verify-email
         // are served by the identical BrandEmailOtpService.sendOtp/verifyOtp (AuthController:88,
@@ -722,6 +737,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "creator-tool" -> creatorToolLimit;
             case "creator-brief-paste" -> creatorBriefPasteLimit;
             case "creator-brief-get" -> creatorBriefGetLimit;
+            case "creator-credit-order" -> creatorCreditOrderLimit;
             default -> sensitiveLimit;
         };
     }
@@ -785,7 +801,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                     "creator-brief-paste",
                     // Kavya U-1 re-review, H2 — same reasoning as creator-brief-paste immediately
                     // above: the AI-spend identity to bound is the creator's.
-                    "creator-brief-get" ->
+                    "creator-brief-get",
+                    // T-CREATOR-CREDITS-V2 (SPEC.md B18, K-21) — same reasoning again.
+                    "creator-credit-order" ->
                     true;
             default -> false;
         };

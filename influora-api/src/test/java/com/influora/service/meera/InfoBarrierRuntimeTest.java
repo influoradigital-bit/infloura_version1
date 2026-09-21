@@ -130,7 +130,10 @@ class InfoBarrierRuntimeTest {
                         creatorAgentPreferencesRepository,
                         creatorMetricsRepository,
                         org.mockito.Mockito.mock(com.influora.service.analytics.AnalyticsService.class),
-                        org.mockito.Mockito.mock(com.influora.repository.MetaOAuthTokenRepository.class));
+                        org.mockito.Mockito.mock(com.influora.repository.MetaOAuthTokenRepository.class),
+                        new com.influora.config.CreatorCreditProperties(
+                                false, 1, 1, 3, 30, 40, 15, 90, "Asia/Kolkata",
+                                new java.math.BigDecimal("25.00"), new java.math.BigDecimal("12.00"), 3));
     }
 
     /**

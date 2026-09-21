@@ -13,12 +13,14 @@ import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.config.CreatorCreditProperties;
 import com.influora.config.MeeraCreatorFeatureProperties;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.CreatorBriefService;
 import com.influora.service.CreatorContextService;
+import com.influora.service.IdempotencyService;
 import com.influora.web.dto.brief.BriefDtos.BriefAnalysisResponse;
 import com.influora.web.dto.brief.BriefDtos.BriefListItem;
 import com.influora.web.dto.brief.BriefDtos.PasteBriefRequest;
@@ -55,6 +57,8 @@ class CreatorBriefControllerTest {
     @Mock private CreatorContextService creatorContext;
     @Mock private CreatorAgentPreferencesService preferencesService;
     @Mock private MeeraCreatorFeatureProperties featureProperties;
+    @Mock private CreatorCreditProperties creditProperties;
+    @Mock private IdempotencyService idempotencyService;
     @Mock private AuthPrincipal principal;
     @Mock private CreatorProfile profile;
 
@@ -64,7 +68,12 @@ class CreatorBriefControllerTest {
     void setUp() {
         controller =
                 new CreatorBriefController(
-                        briefService, creatorContext, preferencesService, featureProperties);
+                        briefService,
+                        creatorContext,
+                        preferencesService,
+                        featureProperties,
+                        creditProperties,
+                        idempotencyService);
         lenient().when(featureProperties.isCreatorEnabled()).thenReturn(true);
         lenient().when(creatorContext.requireCreatorProfile(principal)).thenReturn(profile);
         lenient().when(profile.getUserId()).thenReturn(CREATOR_USER_ID);
@@ -82,7 +91,7 @@ class CreatorBriefControllerTest {
         when(briefService.paste(CREATOR_USER_ID, "a brief")).thenReturn(analysis());
 
         ResponseEntity<ApiResponse<BriefAnalysisResponse>> response =
-                controller.paste(principal, new PasteBriefRequest("a brief"));
+                controller.paste(principal, null, new PasteBriefRequest("a brief"));
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertEquals(BRIEF_ID, response.getBody().data().briefId());
@@ -97,7 +106,7 @@ class CreatorBriefControllerTest {
         ApiException e =
                 assertThrows(
                         ApiException.class,
-                        () -> controller.paste(principal, new PasteBriefRequest("a brief")));
+                        () -> controller.paste(principal, null, new PasteBriefRequest("a brief")));
 
         assertEquals("FEATURE_DISABLED", e.getCode());
         assertEquals(HttpStatus.NOT_FOUND, e.getStatus());
@@ -113,7 +122,7 @@ class CreatorBriefControllerTest {
         ApiException e =
                 assertThrows(
                         ApiException.class,
-                        () -> controller.paste(principal, new PasteBriefRequest("a brief")));
+                        () -> controller.paste(principal, null, new PasteBriefRequest("a brief")));
 
         assertEquals("CONSENT_REQUIRED", e.getCode());
         assertEquals(HttpStatus.FORBIDDEN, e.getStatus());
@@ -176,7 +185,7 @@ class CreatorBriefControllerTest {
 
         for (Runnable call :
                 List.<Runnable>of(
-                        () -> controller.paste(principal, new PasteBriefRequest("a brief")),
+                        () -> controller.paste(principal, null, new PasteBriefRequest("a brief")),
                         () -> controller.list(principal, 20),
                         () -> controller.get(principal, BRIEF_ID),
                         () -> controller.dismiss(principal, BRIEF_ID))) {

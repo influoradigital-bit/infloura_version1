@@ -561,11 +561,19 @@ async def test_early_release_never_fires_on_a_client_supplied_turn_id():
 
 
 @pytest.mark.asyncio
-async def test_early_release_never_fires_on_a_creator_turn():
-    """P1-6 guard: a CREATOR turn is never charged against the brand AI-credit ledger at all
-    (`MeeraSessionService#doSendTurn`'s `isCreatorTurn` branch skips `tryConsumeForTurn`), so
-    there is nothing to give back and calling release would only log a spurious "never charged at
-    send" WARN on the Spring side for every blocked creator turn."""
+async def test_early_release_fires_on_a_creator_turn_too():
+    """T-CREATOR-CREDITS-V2 (SPEC.md B10, K-04) superseded the old P1-6 guard this test used to
+    assert the opposite of. Pre-round-2, a CREATOR turn was never charged against the brand
+    AI-credit ledger at all, so this path had nothing to give back and `release_early`
+    deliberately short-circuited on `_claimed_audience_is_creator()` to avoid a spurious "never
+    charged at send" WARN.
+
+    With CREATOR_CREDITS_ENABLED, a creator turn IS charged (against `CreatorCreditService`'s own
+    ledger, in Spring, before this route is ever called) and that short-circuit was removed —
+    `release_turn_credit` itself now routes by `conversation.tenantType` server-side, so it is
+    always safe to call. A creator turn blocked at OUR spend gate must release exactly like the
+    brand path in `test_spend_gate_block_releases_the_send_time_charge` above, or the creator's
+    credit is stranded on every kill-switch/soft-cap block."""
     request = _make_request(_body())
     spring = _mock_spring()
 
@@ -579,4 +587,7 @@ async def test_early_release_never_fires_on_a_creator_turn():
         response = await chat_route.chat(request, authorization="Bearer whatever")
 
     assert response.status_code == 503
-    spring.release_turn_credit.assert_not_awaited()
+    spring.release_turn_credit.assert_awaited_once()
+    _, kwargs = spring.release_turn_credit.call_args
+    assert kwargs["turn_id"] == STREAM_MESSAGE_ID
+    assert kwargs["conversation_id"] == CONVERSATION_ID

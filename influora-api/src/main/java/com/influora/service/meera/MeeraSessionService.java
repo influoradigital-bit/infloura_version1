@@ -7,6 +7,7 @@ import com.influora.domain.entity.AiConversation;
 import com.influora.domain.entity.AiMessage;
 import com.influora.domain.entity.BrandProfile;
 import com.influora.domain.entity.Workspace;
+import com.influora.domain.enums.ChargeKind;
 import com.influora.domain.enums.ConversationStatus;
 import com.influora.domain.enums.ConversationTenantType;
 import com.influora.domain.enums.MessageRole;
@@ -21,6 +22,9 @@ import com.influora.service.CreatorAgentConversationService;
 // and the floors on that row are exactly what the info barrier exists to contain.
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.IdempotencyService;
+import com.influora.service.credits.ChargeResult;
+import com.influora.service.credits.CreatorCreditService;
+import com.influora.service.credits.ReleaseScope;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,7 +36,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Session bookkeeping for Meera conversations — start/resume a conversation, persist turns.
@@ -130,7 +136,7 @@ public class MeeraSessionService {
      * means that turn's assistant reply already persisted, which is exactly the condition that
      * must make a release a no-op (never refund a turn whose reply already landed).
      */
-    static final String PERSIST_WRITEBACK_SCOPE = "meera.persist_writeback";
+    public static final String PERSIST_WRITEBACK_SCOPE = "meera.persist_writeback";
 
     private final AiConversationRepository conversationRepository;
     private final AiMessageRepository messageRepository;
@@ -143,6 +149,23 @@ public class MeeraSessionService {
     private final IdempotencyService idempotencyService;
     private final CreatorAgentConversationService creatorAgentConversationService;
     private final CreatorAgentPreferencesService creatorAgentPreferencesService;
+    private final CreatorCreditService creatorCreditService;
+
+    /**
+     * T-CREATOR-CREDITS-V2 fix (review findings #10/#13, K-15) — {@link #doPersistAssistantWriteback}
+     * is reached ONLY via {@code this.doPersistAssistantWriteback(...)} from the lambda passed to
+     * {@link IdempotencyService#executeOnce}, which is a self-invocation on this same bean: Spring's
+     * AOP proxy never sees that call, so a {@code @Transactional} annotation on that method is
+     * inert and was silently doing nothing (see that method's own javadoc for the account-lock race
+     * this created). {@code executeOnce} itself is not transactional either, so without this
+     * template the method's individual repository calls ran as their own independent
+     * auto-committing transactions rather than one atomic unit. A {@link TransactionTemplate} opens
+     * a REAL physical transaction directly against the {@link PlatformTransactionManager} — no
+     * proxy, so self-invocation cannot defeat it — around the ENTIRE write-back body, so the account
+     * lock {@code assertTurnNotReleased} takes at the top is held until the ASSISTANT row commits at
+     * the bottom, closing the gap a concurrent {@code release()} used to win.
+     */
+    private final TransactionTemplate writebackTransactionTemplate;
 
     public MeeraSessionService(
             AiConversationRepository conversationRepository,
@@ -155,7 +178,9 @@ public class MeeraSessionService {
             OnBehalfTokenService onBehalfTokenService,
             IdempotencyService idempotencyService,
             CreatorAgentConversationService creatorAgentConversationService,
-            CreatorAgentPreferencesService creatorAgentPreferencesService) {
+            CreatorAgentPreferencesService creatorAgentPreferencesService,
+            CreatorCreditService creatorCreditService,
+            PlatformTransactionManager transactionManager) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.workspaceRepository = workspaceRepository;
@@ -167,6 +192,8 @@ public class MeeraSessionService {
         this.idempotencyService = idempotencyService;
         this.creatorAgentConversationService = creatorAgentConversationService;
         this.creatorAgentPreferencesService = creatorAgentPreferencesService;
+        this.creatorCreditService = creatorCreditService;
+        this.writebackTransactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /** Reuses the workspace's ACTIVE conversation, or opens a new one. Tenant-scoped. */
@@ -338,6 +365,18 @@ public class MeeraSessionService {
             String conversationId,
             String content,
             String idempotencyKey) {
+        return sendTurn(workspaceId, userId, userType, conversationId, content, idempotencyKey, false);
+    }
+
+    /** T-CREATOR-CREDITS-V2 (SPEC.md B7) — {@code voiceReply} overload: a creator turn whose reply will be spoken costs 2 credits instead of 1. Ignored on the BRAND path. */
+    public TurnResult sendTurn(
+            String workspaceId,
+            String userId,
+            UserType userType,
+            String conversationId,
+            String content,
+            String idempotencyKey,
+            boolean voiceReply) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new ApiException(
                     "IDEMPOTENCY_KEY_REQUIRED",
@@ -349,7 +388,7 @@ public class MeeraSessionService {
                     idempotencyKey,
                     workspaceId,
                     SEND_TURN_SCOPE,
-                    () -> doSendTurn(workspaceId, userId, userType, conversationId, content));
+                    () -> doSendTurn(workspaceId, userId, userType, conversationId, content, voiceReply));
         } catch (IdempotencyService.AlreadyInProgressException
                 | IdempotencyService.AlreadyCompletedException raced) {
             throw new ApiException(
@@ -361,7 +400,12 @@ public class MeeraSessionService {
 
     @Transactional
     protected TurnResult doSendTurn(
-            String workspaceId, String userId, UserType userType, String conversationId, String content) {
+            String workspaceId,
+            String userId,
+            UserType userType,
+            String conversationId,
+            String content,
+            boolean voiceReply) {
         AiConversation conversation =
                 conversationRepository
                         .findByIdAndWorkspaceId(conversationId, workspaceId)
@@ -385,6 +429,15 @@ public class MeeraSessionService {
         // branch below is entirely unchanged.
         boolean isCreatorTurn = userType == UserType.CREATOR;
 
+        // T-CREATOR-CREDITS-V2 (SPEC.md B7) — fetched once, before the charge, so a refused charge
+        // can render its 402/429 template in the creator's own language and the same value is
+        // reused below for the on-behalf tool scope (no second read on the success path).
+        PreferencesResponse creatorPrefs =
+                isCreatorTurn ? creatorAgentPreferencesService.getOrCreatePreferences(userId) : null;
+
+        boolean creatorCharged = false;
+        Integer creatorCreditsRemaining = null;
+
         if (!isCreatorTurn) {
             // SECURITY FIX (Kabir FAILs #1/#2) — charge HERE, at send, keyed on messageId.
             // Replaces the old non-decrementing assertAvailable pre-check: this ACTUALLY
@@ -394,82 +447,104 @@ public class MeeraSessionService {
             // throws, nothing below runs: no USER message, no stream token, nothing to ever
             // appear "charged" and dangling.
             creditService.tryConsumeForTurn(workspaceId, TURN_CREDIT_COST, messageId);
-        }
-
-        AiMessage userMessage =
-                messageRepository.save(
-                        AiMessage.builder()
-                                .id(messageId)
-                                .conversationId(conversationId)
-                                .role(MessageRole.USER)
-                                .content(content)
-                                // The USER row itself is still never charged — the charge is
-                                // attributed to the ASSISTANT write-back row instead (see
-                                // doPersistAssistantWriteback) purely for display/audit purposes;
-                                // the actual decrement already happened above, at send.
-                                .creditsCharged(0)
-                                .build());
-
-        conversation.markMessageAt(Instant.now());
-        conversationRepository.save(conversation);
-
-        Map<String, Object> sanitizedContext;
-        if (isCreatorTurn) {
-            // T-MEERA-CREATOR-PHASE-A (fix round 2, item 2 — Priya Q4). Deliberately NOT calling
-            // CreatorAgentConversationService#recordTurnForUser here anymore. This method persists
-            // the USER message and returns before the browser has even opened its SSE connection
-            // to influora-ai — if Python (or the stream) never completes, recording the turn here
-            // left a dangling ai_messages row AND an inflated meera_creator_conversations
-            // message_count for a turn that produced no assistant reply. recordTurnForUser is now
-            // called exactly once, from doPersistAssistantWriteback, so message_count counts only
-            // COMPLETED turns. Block B for a CREATOR turn is sourced separately, via
-            // MeeraContextService#assembleCreatorContext (POST /internal/meera/context) — there is
-            // no BRAND-shaped sanitizedContext to assemble here.
-            sanitizedContext = Map.of();
         } else {
-            // Guardrail 3 — sanitized context assembly (not sent anywhere yet in this phase;
-            // Domain D is the actual consumer once the Python integration lands).
-            Workspace workspace =
-                    workspaceRepository
-                            .findById(workspaceId)
-                            .orElseThrow(
-                                    () ->
-                                            new ApiException(
-                                                    "WORKSPACE_NOT_FOUND", "Workspace not found", HttpStatus.NOT_FOUND));
-            BrandProfile brandProfile = brandProfileRepository.findByWorkspaceId(workspaceId).orElse(null);
-            sanitizedContext = contextAssembler.assemble(workspace, brandProfile);
+            // T-CREATOR-CREDITS-V2 (SPEC.md B7, owner rulings R1/R5/R6) — creator turns now spend
+            // creator credits (workspaceId here is the creator's own USER id, per the class
+            // javadoc). With CREATOR_CREDITS_ENABLED off, ChargeResult.Outcome.DISABLED is neither
+            // refused nor charged — this branch then behaves exactly as before this change.
+            ChargeKind kind = voiceReply ? ChargeKind.VOICE_TURN : ChargeKind.TURN;
+            ChargeResult chargeResult = creatorCreditService.charge(workspaceId, kind, messageId);
+            if (chargeResult.refused()) {
+                // Refused BEFORE the USER row, any token, or any prefs write below — nothing about
+                // this turn is ever persisted.
+                throw CreatorCreditService.refusal(chargeResult, creatorPrefs.creatorLanguage());
+            }
+            creatorCharged = chargeResult.charged();
+            creatorCreditsRemaining = chargeResult.balanceAfter();
         }
 
-        // Fix round 1 (BLOCKING): the verified principal type rides IN the stream token so
-        // influora-ai derives the Meera audience from a signature-checked claim, never from the
-        // (Python-unverifiable) on-behalf JWT a client can simply omit.
-        String streamToken =
-                streamTokenService.mint(workspaceId, conversationId, messageId, userId, userType);
-        // SECURITY FIX #1: mint the dedicated per-turn on-behalf token here, alongside the stream
-        // token — the browser forwards THIS as onbehalf_jwt, never the full access token.
-        //
-        // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.3): a CREATOR turn's tool scope is not a constant. It
-        // depends on that creator's approval level and whether an agency represents her, so it is
-        // resolved per turn, here, from her stored preferences. A BRAND turn keeps the five-argument
-        // mint and therefore OnBehalfTokenService.SCOPE_DEFAULT, byte-for-byte unchanged.
-        //
-        // getOrCreatePreferences (not a repository read) is deliberate: this class is scanned by
-        // InfoBarrierTest, and the preferences row holds the creator's rate floors. It also creates
-        // the row with computed defaults if the creator has never opened her settings, which is the
-        // common case on a first turn — a creator with no row must still get a scope, not a 404.
-        String onBehalfScope = OnBehalfTokenService.SCOPE_DEFAULT;
-        if (isCreatorTurn) {
-            PreferencesResponse prefs = creatorAgentPreferencesService.getOrCreatePreferences(userId);
-            onBehalfScope = CreatorToolScopes.scopeFor(prefs.approvalLevel(), prefs.represented());
-        }
-        String onBehalfToken =
-                onBehalfTokenService.mint(
-                        workspaceId, conversationId, messageId, userId, userType, onBehalfScope);
+        try {
+            AiMessage userMessage =
+                    messageRepository.save(
+                            AiMessage.builder()
+                                    .id(messageId)
+                                    .conversationId(conversationId)
+                                    .role(MessageRole.USER)
+                                    .content(content)
+                                    // The USER row itself is still never charged — the charge is
+                                    // attributed to the ASSISTANT write-back row instead (see
+                                    // doPersistAssistantWriteback) purely for display/audit purposes;
+                                    // the actual decrement already happened above, at send.
+                                    .creditsCharged(0)
+                                    .build());
 
-        // Streaming-first: no synchronous Python call here anymore. The browser opens its own SSE
-        // connection to influora-ai's /chat using this token (Priya's locked architecture) and
-        // influora-ai posts the finished turn back via persistAssistantWriteback.
-        return new TurnResult(userMessage.getId(), null, streamToken, onBehalfToken, sanitizedContext, null);
+            conversation.markMessageAt(Instant.now());
+            conversationRepository.save(conversation);
+
+            Map<String, Object> sanitizedContext;
+            if (isCreatorTurn) {
+                // T-MEERA-CREATOR-PHASE-A (fix round 2, item 2 — Priya Q4). Deliberately NOT calling
+                // CreatorAgentConversationService#recordTurnForUser here anymore. This method persists
+                // the USER message and returns before the browser has even opened its SSE connection
+                // to influora-ai — if Python (or the stream) never completes, recording the turn here
+                // left a dangling ai_messages row AND an inflated meera_creator_conversations
+                // message_count for a turn that produced no assistant reply. recordTurnForUser is now
+                // called exactly once, from doPersistAssistantWriteback, so message_count counts only
+                // COMPLETED turns. Block B for a CREATOR turn is sourced separately, via
+                // MeeraContextService#assembleCreatorContext (POST /internal/meera/context) — there is
+                // no BRAND-shaped sanitizedContext to assemble here.
+                sanitizedContext = Map.of();
+            } else {
+                // Guardrail 3 — sanitized context assembly (not sent anywhere yet in this phase;
+                // Domain D is the actual consumer once the Python integration lands).
+                Workspace workspace =
+                        workspaceRepository
+                                .findById(workspaceId)
+                                .orElseThrow(
+                                        () ->
+                                                new ApiException(
+                                                        "WORKSPACE_NOT_FOUND", "Workspace not found", HttpStatus.NOT_FOUND));
+                BrandProfile brandProfile = brandProfileRepository.findByWorkspaceId(workspaceId).orElse(null);
+                sanitizedContext = contextAssembler.assemble(workspace, brandProfile);
+            }
+
+            // Fix round 1 (BLOCKING): the verified principal type rides IN the stream token so
+            // influora-ai derives the Meera audience from a signature-checked claim, never from the
+            // (Python-unverifiable) on-behalf JWT a client can simply omit.
+            String streamToken =
+                    streamTokenService.mint(workspaceId, conversationId, messageId, userId, userType);
+            // SECURITY FIX #1: mint the dedicated per-turn on-behalf token here, alongside the stream
+            // token — the browser forwards THIS as onbehalf_jwt, never the full access token.
+            //
+            // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.3): a CREATOR turn's tool scope is not a constant. It
+            // depends on that creator's approval level and whether an agency represents her, so it is
+            // resolved per turn, from her stored preferences (fetched once, above). A BRAND turn keeps
+            // the five-argument mint and therefore OnBehalfTokenService.SCOPE_DEFAULT, byte-for-byte
+            // unchanged.
+            String onBehalfScope = OnBehalfTokenService.SCOPE_DEFAULT;
+            if (isCreatorTurn) {
+                onBehalfScope = CreatorToolScopes.scopeFor(creatorPrefs.approvalLevel(), creatorPrefs.represented());
+            }
+            String onBehalfToken =
+                    onBehalfTokenService.mint(
+                            workspaceId, conversationId, messageId, userId, userType, onBehalfScope);
+
+            // Streaming-first: no synchronous Python call here anymore. The browser opens its own SSE
+            // connection to influora-ai's /chat using this token (Priya's locked architecture) and
+            // influora-ai posts the finished turn back via persistAssistantWriteback.
+            return new TurnResult(
+                    userMessage.getId(), null, streamToken, onBehalfToken, sanitizedContext, null, creatorCreditsRemaining);
+        } catch (RuntimeException e) {
+            // T-CREATOR-CREDITS-V2 (SPEC.md B7, K-01, C7) — compensating release: everything after
+            // the charge can still throw (a save failure, token minting, etc). One real transaction
+            // was ruled out (it would also touch the unrelated BRAND path); this is Priya's
+            // documented (b) with Kabir's guard — release is idempotent and every throw site here is
+            // covered by this single catch.
+            if (creatorCharged) {
+                creatorCreditService.release(workspaceId, messageId, ReleaseScope.TURN);
+            }
+            throw e;
+        }
     }
 
     /**
@@ -587,9 +662,19 @@ public class MeeraSessionService {
                     idempotencyKey,
                     workspaceId,
                     PERSIST_WRITEBACK_SCOPE,
+                    // Findings #10/#13 — a real TransactionTemplate, not the (self-invocation-inert)
+                    // @Transactional below, is what actually makes this one atomic unit. See the
+                    // writebackTransactionTemplate field javadoc.
                     () ->
-                            doPersistAssistantWriteback(
-                                    workspaceId, conversationId, content, metadata, idempotencyKey, userType),
+                            writebackTransactionTemplate.execute(
+                                    status ->
+                                            doPersistAssistantWriteback(
+                                                    workspaceId,
+                                                    conversationId,
+                                                    content,
+                                                    metadata,
+                                                    idempotencyKey,
+                                                    userType)),
                     AiMessage::getId);
         } catch (IdempotencyService.AlreadyCompletedException replay) {
             AiMessage previous = replayPersistedMessage(workspaceId, conversationId, idempotencyKey);
@@ -627,7 +712,15 @@ public class MeeraSessionService {
         return messageRepository.findTopByConversationIdOrderByCreatedAtDesc(conversationId).orElse(null);
     }
 
-    @Transactional
+    /**
+     * Deliberately NOT {@code @Transactional} here — see the {@link #writebackTransactionTemplate}
+     * field javadoc (findings #10/#13). This method is reached only through {@code
+     * this.doPersistAssistantWriteback(...)}, a self-invocation the Spring AOP proxy never sees, so
+     * an annotation on THIS method would be silently inert; the real transaction boundary is the
+     * {@link TransactionTemplate#execute} call at {@link #persistAssistantWriteback}'s call site,
+     * which wraps this entire method body (assert-not-released through the ASSISTANT insert) in one
+     * physical transaction so the account lock stays held for all of it.
+     */
     protected AiMessage doPersistAssistantWriteback(
             String workspaceId,
             String conversationId,
@@ -643,6 +736,21 @@ public class MeeraSessionService {
         // return false and log a spurious WARN for every single creator turn).
         int creditsCharged;
         if (userType == UserType.CREATOR) {
+            // T-CREATOR-CREDITS-V2 (SPEC.md B9, K-15) — inside THIS (now genuinely real, see above)
+            // transaction, under the account lock: refuses the write-back (409 TURN_RELEASED) if
+            // this turn's credit was already released. A concurrent release() call takes the same
+            // account lock, so the two serialize — whichever commits first is authoritative.
+            // A no-op (flag off, or CreatorCreditService never charged this turn) never throws.
+            creatorCreditService.assertTurnNotReleased(workspaceId, turnId);
+            // K-15 fix (round 2) — writes a WRITEBACK_MARKER ledger row for this turn INSIDE this
+            // SAME physical transaction, atomically with the ASSISTANT insert below. release()
+            // reads for that marker (under the same account lock) instead of consulting
+            // IdempotencyService's separate, REQUIRES_NEW-committed PERSIST_WRITEBACK_SCOPE
+            // completion — closing the window where a release landing between this transaction's
+            // commit and that later completion write could refund a turn whose reply is already
+            // persisted. See CreatorCreditService#markWritebackPersisted and #release's K-15
+            // comment for the full race this closes.
+            creatorCreditService.markWritebackPersisted(workspaceId, turnId);
             creditsCharged = 0;
         } else {
             // SECURITY FIX (Wave 2 round 2): the charge already happened at send (doSendTurn ->
@@ -699,11 +807,32 @@ public class MeeraSessionService {
      *
      * <p>All of the actual idempotency/guard logic (double-release no-op, refuse to refund a turn
      * that was never charged, refuse to refund a turn whose reply already persisted) lives in
-     * {@link AICreditService#release} — this is a thin pass-through so the controller doesn't need
-     * to know {@link #TURN_CREDIT_COST} or reach into {@link AICreditService} directly.
+     * {@link AICreditService#release} (BRAND) / {@link CreatorCreditService#release} (CREATOR) —
+     * this is a thin pass-through so the controller doesn't need to know {@link #TURN_CREDIT_COST}
+     * or reach into either credit service directly.
+     *
+     * <p><b>T-CREATOR-CREDITS-V2 (SPEC.md B8, K-05, K-22):</b> routes by {@code
+     * conversation.tenantType} — the conversation row, not a client-supplied audience claim, is
+     * the source of truth. A CREATOR release also verifies the turn's USER row actually belongs to
+     * THIS conversation (a turn id from another conversation is a silent no-op, never a refund) —
+     * a creator id can never reach {@link AICreditService}, so a creator release can never create a
+     * {@code brand_ai_credits} row.
      */
-    public void releaseTurnCredit(String workspaceId, String turnId) {
-        creditService.release(workspaceId, TURN_CREDIT_COST, turnId);
+    public void releaseTurnCredit(AiConversation conversation, String turnId) {
+        if (conversation.getTenantType() == ConversationTenantType.CREATOR) {
+            boolean turnBelongsToConversation =
+                    messageRepository
+                            .findById(turnId)
+                            .filter(m -> m.getConversationId().equals(conversation.getId()))
+                            .filter(m -> m.getRole() == MessageRole.USER)
+                            .isPresent();
+            if (!turnBelongsToConversation) {
+                return;
+            }
+            creatorCreditService.release(conversation.getWorkspaceId(), turnId, ReleaseScope.TURN);
+            return;
+        }
+        creditService.release(conversation.getWorkspaceId(), TURN_CREDIT_COST, turnId);
     }
 
     /**
@@ -792,5 +921,12 @@ public class MeeraSessionService {
             String streamToken,
             String onBehalfToken,
             Map<String, Object> sanitizedContext,
-            String placeholderReply) {}
+            String placeholderReply,
+            /**
+             * T-CREATOR-CREDITS-V2 (SPEC.md B7) — the creator's real remaining balance after this
+             * charge, or {@code null} for a BRAND turn (no such concept there) and for a CREATOR
+             * turn with {@code CREATOR_CREDITS_ENABLED} off (byte-identical to before this field
+             * existed — the controller sends the literal {@code 0} in that case, never this null).
+             */
+            Integer creditsRemaining) {}
 }
