@@ -485,9 +485,9 @@ class MetricsPollingJobTest {
     void testAverageEngagementRateRoundsHalfUp() {
         List<MediaMetric> media =
                 List.of(mediaMetric(100L, 0L), mediaMetric(0L, 0L), mediaMetric(0L, 0L));
-        // mean 33.3333333333 * 100 / 7 = 476.190476... -> 476.1905 (DOWN would give 476.1904)
-        BigDecimal result = MetricsPollingJob.averageEngagementRate(media, 7L);
-        assertEquals(new BigDecimal("476.1905"), result);
+        // mean 33.3333333333 * 100 / 7000 = 0.476190476... -> 0.4762 (DOWN would give 0.4761)
+        BigDecimal result = MetricsPollingJob.averageEngagementRate(media, 7000L);
+        assertEquals(new BigDecimal("0.4762"), result);
     }
 
     @Test
@@ -573,6 +573,23 @@ class MetricsPollingJobTest {
         // mean(likes+comments) = 20000. followers=1: 20000/1*100 = 2,000,000 — far above 9999.9999.
         List<MediaMetric> media = List.of(mediaMetric(15000L, 5000L));
         assertEquals(null, MetricsPollingJob.averageEngagementRate(media, 1L));
+    }
+
+    @Test
+    @DisplayName(
+            "averageEngagementRate: above 100% is no reading (null); exactly 100% is kept -- the cap keeps"
+                    + " platform_stats/creator_profiles DECIMAL(5,2) from overflowing and freezing the rollup")
+    void testAverageEngagementRateAboveOneHundredPercentReturnsNull() {
+        // mean 1000 over 1000 followers = 100.0000 -> kept
+        assertEquals(
+                0,
+                new BigDecimal("100").compareTo(
+                        MetricsPollingJob.averageEngagementRate(List.of(mediaMetric(1000L, 0L)), 1000L)));
+        // mean 1001 over 1000 followers = 100.1 -> null (was stored before, then 999.99+ broke the rollup)
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(List.of(mediaMetric(1001L, 0L)), 1000L));
+        // 150% and the old 999.99..9999.99 overflow band -> null
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(List.of(mediaMetric(1500L, 0L)), 1000L));
+        assertEquals(null, MetricsPollingJob.averageEngagementRate(List.of(mediaMetric(50000L, 0L)), 1000L));
     }
 
     @Test

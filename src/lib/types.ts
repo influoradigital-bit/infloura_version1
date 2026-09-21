@@ -559,7 +559,7 @@ export interface CreatorProfile {
    * never count toward the total.
    */
   followersSource?: 'VERIFIED' | 'IMPORTED' | 'NONE';
-  engagementRate: number;
+  engagementRate: number | null;
   averageRate?: number;
   currency?: string;
   isVerified: boolean;
@@ -576,7 +576,7 @@ export interface PlatformStats {
   platform: Platform;
   handle: string;
   followers: number;
-  engagementRate: number;
+  engagementRate: number | null;
   isVerified: boolean;
   profileUrl?: string;
 }

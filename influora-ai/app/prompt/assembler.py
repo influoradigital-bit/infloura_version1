@@ -691,7 +691,7 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
     metrics = ctx.get("metrics_summary")
     if isinstance(metrics, dict) and metrics:
         lines.append("- Followers: " + _safe(metrics.get("followers") or "not connected"))
-        lines.append("- Reach (30 days): " + _safe(metrics.get("reach_30d") or "not available"))
+        lines.append("- Avg reach per post: " + _safe(metrics.get("reach_30d") or "not available"))
         lines.append("- Engagement: " + _safe(metrics.get("engagement_rate") or "not available"))
     else:
         lines.append("- Metrics: Instagram not connected yet (no verified numbers)")

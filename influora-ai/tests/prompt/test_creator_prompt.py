@@ -37,7 +37,7 @@ def _ctx(**extra) -> dict:
         "floors": {"reel_floor": "1,200", "story_set_floor": "800", "post_floor": "1,500"},
         "metrics_summary": {
             "followers": "12,400 followers",
-            "reach_30d": "45,600 reach (30 days)",
+            "reach_30d": "45,600 avg reach per post",
             "engagement_rate": "3.2% engagement",
         },
         "deals_summary": {"active_count": 2, "completed_count": 8, "total_earned_inr": "18,500"},
@@ -218,7 +218,9 @@ def test_block_b_creator_renders_every_documented_section_verbatim():
     assert "Categories: Fashion, Beauty" in text
     # Numbers are the pre-formatted Java strings, quoted verbatim
     assert "Followers: 12,400 followers" in text
-    assert "Reach (30 days): 45,600 reach (30 days)" in text
+    assert "Avg reach per post: 45,600 avg reach per post" in text
+    # The per-post average must never be called a 30-day total again (Priya, 2026-09-21).
+    assert "30 days" not in text
     assert "Engagement: 3.2% engagement" in text
     assert "Deals: 2 active, 8 completed" in text
     assert "Total earned on Influora: INR 18,500" in text

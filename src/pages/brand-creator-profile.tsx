@@ -69,7 +69,7 @@ interface CreatorPlatformView {
   icon: LucideIcon;
   handle: string;
   followers: number;
-  engagement: number;
+  engagement: number | null;
   verified: boolean;
   color: string;
 }
@@ -89,7 +89,7 @@ interface CreatorDisplayModel {
   categories: string[];
   stats: {
     totalFollowers: number;
-    avgEngagement: number;
+    avgEngagement: number | null;
     /** EV-008 — provenance of totalFollowers/avgEngagement (absent in mock mode). */
     followersSource?: 'VERIFIED' | 'IMPORTED' | 'NONE';
     /**
@@ -1015,7 +1015,7 @@ export default function BrandCreatorProfilePage() {
                 </div>
                 <div className="text-right">
                   <p className="font-semibold">{formatNumber(platform.followers)}</p>
-                  <p className="text-xs text-muted-foreground">{platform.engagement}% eng</p>
+                  <p className="text-xs text-muted-foreground">{platform.engagement != null ? `${platform.engagement}% eng` : '— eng'}</p>
                   <p
                     className={
                       platform.verified

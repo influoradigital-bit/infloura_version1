@@ -941,7 +941,12 @@ export function CreatorDiscovery() {
 
     // Engagement range filter
     result = result.filter(
-      (c) => c.engagementRate >= engagementRange[0] && c.engagementRate <= engagementRange[1]
+      // No reading yet is not 0% engagement: keep those creators only while the range starts at 0,
+      // exactly as before this field was typed nullable.
+      (c) =>
+        c.engagementRate == null
+          ? engagementRange[0] === 0
+          : c.engagementRate >= engagementRange[0] && c.engagementRate <= engagementRange[1]
     );
 
     // Verified filter
@@ -955,7 +960,7 @@ export function CreatorDiscovery() {
         result.sort((a, b) => b.totalFollowers - a.totalFollowers);
         break;
       case 'engagement':
-        result.sort((a, b) => b.engagementRate - a.engagementRate);
+        result.sort((a, b) => (b.engagementRate ?? -1) - (a.engagementRate ?? -1)); // no reading sorts last
         break;
       case 'price_low':
         result.sort((a, b) => (a.averageRate ?? 0) - (b.averageRate ?? 0));
@@ -1552,7 +1557,7 @@ export function CreatorDiscovery() {
                       <p className="text-xs text-muted-foreground">{followersCaption(creator.followersSource)}</p>
                     </div>
                     <div className="rounded-lg bg-muted/50 p-2">
-                      <p className="text-sm font-semibold">{creator.engagementRate}%</p>
+                      <p className="text-sm font-semibold">{creator.engagementRate != null ? `${creator.engagementRate}%` : '—'}</p>
                       <p className="text-xs text-muted-foreground">Engagement</p>
                     </div>
                     <div className="rounded-lg bg-muted/50 p-2">
@@ -1574,7 +1579,7 @@ export function CreatorDiscovery() {
                           </Badge>
                         </TooltipTrigger>
                         <TooltipContent>
-                          {p.platform}: {formatFollowers(p.followers)} followers, {p.engagementRate}% ER
+                          {p.platform}: {formatFollowers(p.followers)} followers{p.engagementRate != null ? `, ${p.engagementRate}% ER` : ''}
                         </TooltipContent>
                       </Tooltip>
                     ))}
@@ -1628,7 +1633,7 @@ export function CreatorDiscovery() {
                       <p className="text-xs text-muted-foreground">{followersCaption(creator.followersSource)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="font-semibold">{creator.engagementRate}%</p>
+                      <p className="font-semibold">{creator.engagementRate != null ? `${creator.engagementRate}%` : '—'}</p>
                       <p className="text-xs text-muted-foreground">ER</p>
                     </div>
                     <div className="text-center">

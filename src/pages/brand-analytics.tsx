@@ -171,7 +171,7 @@ interface RosterCreator {
   id: string;
   displayName: string;
   totalFollowers?: number;
-  engagementRate?: number;
+  engagementRate?: number | null;
 }
 
 function demoRoster(): RosterCreator[] {
@@ -491,7 +491,7 @@ export default function BrandAnalyticsPage() {
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{creator.displayName}</p>
                 <p className="text-sm text-muted-foreground">
-                  {creator.totalFollowers !== undefined && creator.engagementRate !== undefined
+                  {creator.totalFollowers !== undefined && creator.engagementRate != null
                     ? `${creator.totalFollowers.toLocaleString('en-IN')} followers · ${creator.engagementRate.toFixed(1)}% engagement`
                     : 'View full analytics'}
                 </p>

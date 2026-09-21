@@ -52,7 +52,7 @@ def _creator_context(**extra) -> dict:
         "floors": {"reel_floor": "1,200", "story_set_floor": "800", "post_floor": "1,500"},
         "metrics_summary": {
             "followers": "12,400 followers",
-            "reach_30d": "45,600 reach (30 days)",
+            "reach_30d": "45,600 avg reach per post",
             "engagement_rate": "3.2% engagement",
         },
         "deals_summary": {"active_count": 2, "completed_count": 8, "total_earned_inr": "18,500"},

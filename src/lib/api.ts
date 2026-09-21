@@ -2036,7 +2036,7 @@ export interface SimilarCreator {
   displayName: string;
   avatarUrl: string | null;
   totalFollowers: number;
-  engagementRate: number;
+  engagementRate: number | null;
   matchScore: number;
   matchReasons: string[];
   /** EV-008 — DiscoveryDtos.SimilarCreator.followersSource (see CreatorProfile.followersSource). */
@@ -2061,7 +2061,7 @@ export interface CreatorPublicProfile {
   city: string | null;
   platforms: PlatformStats[];
   totalFollowers: number;
-  engagementRate: number;
+  engagementRate: number | null;
   scores: CreatorScoresSummary | null;
   rateMin: number | null;
   rateMax: number | null;

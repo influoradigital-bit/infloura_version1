@@ -488,7 +488,11 @@ public class MetricsPollingJob {
      * DECIMAL(8,4) ceiling from V21__creator_metrics.sql. A computed rate above this returns null
      * rather than being clamped to it — see the overflow note above.
      */
-    private static final BigDecimal MAX_ENGAGEMENT_RATE = new BigDecimal("9999.9999");
+    // 100%: above that (likes + comments per post over followers) is not a real reading -- a tiny
+    // follower base or one viral reel. It also keeps the value inside platform_stats and
+    // creator_profiles.engagement_rate DECIMAL(5,2): the old 9999.9999 cap let 999.99-9999.99
+    // through, which then failed the discovery rollup and froze that creator's stats.
+    private static final BigDecimal MAX_ENGAGEMENT_RATE = new BigDecimal("100.0000");
 
     /**
      * Package-private for direct unit testing (see MetricsPollingJobTest).

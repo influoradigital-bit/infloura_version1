@@ -603,7 +603,7 @@ public class MeeraContextService {
 
         Long reach = latestMetric.map(CreatorMetric::getAvgReachPerPost).orElse(null);
         if (reach != null) {
-            summary.put("reach_30d", formatDecimal(BigDecimal.valueOf(reach), locale) + " reach (30 days)");
+            summary.put("reach_30d", formatDecimal(BigDecimal.valueOf(reach), locale) + " avg reach per post");
         }
 
         BigDecimal engagement = latestMetric.map(CreatorMetric::getAvgEngagementRate).orElse(null);
