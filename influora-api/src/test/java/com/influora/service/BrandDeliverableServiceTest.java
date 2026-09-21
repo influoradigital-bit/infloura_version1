@@ -68,7 +68,13 @@ class BrandDeliverableServiceTest {
                         collaborationLifecycleService,
                         meeraInteractionLogService,
                         collaborationRepository,
-                        applicationHistoryService);
+                        applicationHistoryService,
+                        new ReviewSlaService(
+                                new com.influora.config.ReviewSlaProperties(),
+                                deliverableRepository,
+                                collaborationRepository,
+                                org.mockito.Mockito.mock(com.influora.repository.CampaignRepository.class),
+                                org.mockito.Mockito.mock(com.influora.repository.SupportTicketRepository.class)));
         workspace = Workspace.newBrand(WORKSPACE_ID, "Acme Brand", "acme", "Fashion", "SMB");
     }
 

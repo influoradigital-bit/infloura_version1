@@ -159,7 +159,13 @@ class DealTrailCoverageTest {
                         collaborationLifecycleService,
                         meeraInteractionLogService,
                         collaborationRepository,
-                        applicationHistoryService);
+                        applicationHistoryService,
+                        new com.influora.service.ReviewSlaService(
+                                new com.influora.config.ReviewSlaProperties(),
+                                deliverableRepository,
+                                collaborationRepository,
+                                org.mockito.Mockito.mock(com.influora.repository.CampaignRepository.class),
+                                org.mockito.Mockito.mock(com.influora.repository.SupportTicketRepository.class)));
         // Mirrors the Spring container: the publisher arrives through
         // ApplicationEventPublisherAware, not the constructor.
         brandDeliverableService.setApplicationEventPublisher(reviewEventPublisher);

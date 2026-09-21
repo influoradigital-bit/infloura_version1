@@ -2,22 +2,25 @@ package com.influora.service;
 
 import com.influora.domain.entity.Campaign;
 import com.influora.domain.entity.Collaboration;
+import com.influora.domain.entity.Deliverable;
 import com.influora.domain.entity.PaymentMilestone;
 import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.MilestoneStatus;
 import com.influora.repository.CampaignRepository;
 import com.influora.repository.CollaborationRepository;
+import com.influora.repository.DeliverableRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.web.dto.dashboard.DashboardDtos.ActionItem;
 import com.influora.web.dto.dashboard.DashboardDtos.PipelineStage;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Comparator;
 import java.util.Map;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,8 +32,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class DashboardService {
 
-    /** Review SLA used as the deliverable-review deadline when no milestone due date applies. */
-    private static final int REVIEW_SLA_DAYS = 3;
 
     /**
      * Display order for the pipeline funnel. PL-2 (BrandF.md §69): this used to be its own,
@@ -55,14 +56,20 @@ public class DashboardService {
     private final CollaborationRepository collaborationRepository;
     private final PaymentMilestoneRepository milestoneRepository;
     private final CampaignRepository campaignRepository;
+    private final DeliverableRepository deliverableRepository;
+    private final ReviewSlaService reviewSlaService;
 
     public DashboardService(
             CollaborationRepository collaborationRepository,
             PaymentMilestoneRepository milestoneRepository,
-            CampaignRepository campaignRepository) {
+            CampaignRepository campaignRepository,
+            DeliverableRepository deliverableRepository,
+            ReviewSlaService reviewSlaService) {
         this.collaborationRepository = collaborationRepository;
         this.milestoneRepository = milestoneRepository;
         this.campaignRepository = campaignRepository;
+        this.deliverableRepository = deliverableRepository;
+        this.reviewSlaService = reviewSlaService;
     }
 
     @Transactional(readOnly = true)
@@ -84,29 +91,58 @@ public class DashboardService {
                 .toList();
     }
 
+    /**
+     * The soonest real review deadline across a deal's deliverables, or empty when none of them is
+     * waiting on the brand. Soonest, because a deal with two submitted drafts is due on the first
+     * of the two — a card that showed the later date would tell the brand it had longer than it
+     * does.
+     */
+    private Optional<Instant> earliestReviewDeadline(String collaborationId, Instant now) {
+        return deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(collaborationId)
+                .stream()
+                .map((Deliverable d) -> reviewSlaService.clockFor(d, now))
+                .filter(Optional::isPresent)
+                .map(clock -> clock.get().dueAt())
+                .min(Comparator.naturalOrder());
+    }
+
     @Transactional(readOnly = true)
     public List<ActionItem> actions(String workspaceId) {
         List<ActionItem> items = new ArrayList<>();
 
-        // Deliverables awaiting the brand's review.
+        // Drafts waiting on this brand's decision. The due date is the REAL review deadline
+        // (ReviewSlaService, owner's ruling 2026-09-21), not the invention it used to be: this
+        // card previously showed "the deal was created, plus 3 calendar days", which had nothing
+        // to do with when the creator actually submitted, counted weekends as review time, and
+        // went further into the past with every day the deal stayed open. Now the card, the brand
+        // review screen and the creator's own view all read the same clock.
+        Instant now = Instant.now();
         for (Collaboration c : collaborationRepository.findByWorkspaceId(workspaceId)) {
-            if (c.getStatus() == CollaborationStatus.REVIEW_PENDING) {
-                String campaignName =
-                        campaignRepository
-                                .findById(c.getCampaignId())
-                                .map(Campaign::getTitle)
-                                .orElse("Campaign");
-                items.add(
-                        new ActionItem(
-                                "act-rev-" + c.getId(),
-                                "deliverable_review",
-                                "Review pending deliverable",
-                                campaignName,
-                                c.getCreatedAt().plus(REVIEW_SLA_DAYS, ChronoUnit.DAYS),
-                                "high",
-                                BigDecimal.ZERO,
-                                "/brand/chat?deal=" + c.getId() + "&tab=deliverables"));
+            if (c.getStatus() != CollaborationStatus.REVIEW_PENDING) {
+                continue;
             }
+            Optional<Instant> dueAt = earliestReviewDeadline(c.getId(), now);
+            if (dueAt.isEmpty()) {
+                // REVIEW_PENDING with nothing actually awaiting a decision. Showing a card with a
+                // made-up deadline is what this code used to do; showing nothing is the honest
+                // answer when there is no deliverable to put a date on.
+                continue;
+            }
+            String campaignName =
+                    campaignRepository
+                            .findById(c.getCampaignId())
+                            .map(Campaign::getTitle)
+                            .orElse("Campaign");
+            items.add(
+                    new ActionItem(
+                            "act-rev-" + c.getId(),
+                            "deliverable_review",
+                            "Review a submitted draft",
+                            campaignName,
+                            dueAt.get(),
+                            "high",
+                            BigDecimal.ZERO,
+                            "/brand/chat?deal=" + c.getId() + "&tab=deliverables"));
         }
 
         // Funded milestones the brand can release once work is approved.

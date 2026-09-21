@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -15,9 +16,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
+import com.influora.config.PayoutProperties;
 import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.Payout;
@@ -36,6 +39,7 @@ import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.PayoutRepository;
 import com.influora.repository.WalletRepository;
 import com.influora.repository.WalletTransactionRepository;
+import com.influora.service.payout.PayoutKillSwitch;
 import com.influora.service.payout.RazorpayFundAccountService;
 import com.influora.web.dto.money.MoneyDtos.CreatorWithdrawResponse;
 import com.influora.web.dto.money.MoneyDtos.WalletBalanceResponse;
@@ -86,20 +90,41 @@ class WalletServiceTest {
 
     @BeforeEach
     void setUp() {
-        walletService =
-                new WalletService(
-                        walletRepository,
-                        ledgerService,
-                        walletTransactionRepository,
-                        paymentMilestoneRepository,
-                        platformWalletService,
-                        creatorBankAccountRepository,
-                        razorpayXClient,
-                        fundAccountService,
-                        payoutRepository,
-                        idempotencyService,
-                        escrowHoldRepository,
-                        creatorProfileRepository);
+        // [EV-014 / payoutswitch] enabled=true here on purpose: every pre-existing withdrawal
+        // test below exercises the path BEHIND the kill switch, which is only reachable once the
+        // switch lets the call through. The switch's own default (OFF) is asserted explicitly in
+        // testWithdrawalRefusedWhenPayoutsDisabledByDefault, against an untouched
+        // PayoutProperties instance rather than a stub of one.
+        walletService = newWalletService(payoutProperties(true));
+    }
+
+    /**
+     * [EV-014 / payoutswitch] Wires a REAL {@link PayoutKillSwitch} over a REAL {@link
+     * PayoutProperties} — deliberately not a mock, so the config default itself is under test.
+     * A mocked switch would answer whatever the test told it to and could never catch the
+     * failure mode that matters here (a default that silently binds to "enabled").
+     */
+    private WalletService newWalletService(PayoutProperties properties) {
+        return new WalletService(
+                walletRepository,
+                ledgerService,
+                walletTransactionRepository,
+                paymentMilestoneRepository,
+                platformWalletService,
+                creatorBankAccountRepository,
+                razorpayXClient,
+                fundAccountService,
+                payoutRepository,
+                idempotencyService,
+                escrowHoldRepository,
+                creatorProfileRepository,
+                new PayoutKillSwitch(properties));
+    }
+
+    private static PayoutProperties payoutProperties(boolean enabled) {
+        PayoutProperties properties = new PayoutProperties();
+        properties.setEnabled(enabled);
+        return properties;
     }
 
     /** [F-0390 D2] A creator who has submitted identity KYC (status PENDING) — the withdrawal gate passes. */
@@ -327,6 +352,110 @@ class WalletServiceTest {
                         ApiException.class,
                         () -> walletService.requestCreatorWithdrawal(USER_ID, new BigDecimal("1000.00"), "   "));
 
+        assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
+    }
+
+    // ------------------------------------------------------------------
+    // [EV-014 / payoutswitch] Server-side payout kill switch.
+    //
+    // "Creator withdrawals are off" used to be an ACCIDENT, not a decision:
+    // VITE_PAYOUTS_ENABLED is a FRONTEND build flag (src/lib/api.ts:109) that only decides
+    // whether the browser renders the Withdraw dialog, so POST /wallet/withdraw stayed
+    // reachable with any authenticated creator token and the only thing stopping it was an
+    // incidental IDEMPOTENCY_KEY_REQUIRED 400. These tests pin it as a decision instead.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "requestCreatorWithdrawal: refused PAYOUTS_DISABLED (403) on the DEFAULT config — a"
+                    + " missing env var can never enable payouts")
+    void testWithdrawalRefusedWhenPayoutsDisabledByDefault() {
+        // `new PayoutProperties()` with NOTHING set is exactly what Spring binds when
+        // influora.payouts.enabled / PAYOUTS_ENABLED is absent from the environment.
+        WalletService defaultConfigService = newWalletService(new PayoutProperties());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                defaultConfigService.requestCreatorWithdrawal(
+                                        USER_ID, new BigDecimal("1000.00"), IDEMPOTENCY_KEY));
+
+        assertEquals("PAYOUTS_DISABLED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+    }
+
+    @Test
+    @DisplayName("requestCreatorWithdrawal: a PAYOUTS_DISABLED refusal writes nothing at all")
+    void testWithdrawalRefusalWritesNoRows() {
+        WalletService disabledService = newWalletService(payoutProperties(false));
+
+        assertThrows(
+                ApiException.class,
+                () ->
+                        disabledService.requestCreatorWithdrawal(
+                                USER_ID, new BigDecimal("1000.00"), IDEMPOTENCY_KEY));
+
+        // No pessimistic wallet lock, no ledger posting, no idempotency key reserved, no Payout
+        // row, no RazorpayX call. The refusal lands before every one of them.
+        verifyNoInteractions(
+                walletRepository,
+                ledgerService,
+                walletTransactionRepository,
+                creatorBankAccountRepository,
+                creatorProfileRepository,
+                idempotencyService,
+                payoutRepository,
+                razorpayXClient,
+                fundAccountService,
+                platformWalletService);
+    }
+
+    @Test
+    @DisplayName(
+            "requestCreatorWithdrawal: the refusal is the kill switch, NOT the incidental"
+                    + " Idempotency-Key crash (EV-014)")
+    void testWithdrawalRefusalPrecedesIdempotencyKeyCrash() {
+        WalletService disabledService = newWalletService(payoutProperties(false));
+
+        // The header-less call is the one that used to produce IDEMPOTENCY_KEY_REQUIRED, i.e.
+        // the crash that was mistaken for a policy. If this assertion ever reads
+        // IDEMPOTENCY_KEY_REQUIRED again, the gate has drifted back below that check.
+        ApiException noKey =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                disabledService.requestCreatorWithdrawal(
+                                        USER_ID, new BigDecimal("1000.00"), null));
+        assertEquals("PAYOUTS_DISABLED", noKey.getCode());
+
+        // An amount below MIN_CREATOR_WITHDRAWAL would normally fail amount validation first —
+        // the switch must outrank that too, so the client is told the real reason.
+        ApiException tinyAmount =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                disabledService.requestCreatorWithdrawal(
+                                        USER_ID, new BigDecimal("1.00"), IDEMPOTENCY_KEY));
+        assertEquals("PAYOUTS_DISABLED", tinyAmount.getCode());
+    }
+
+    @Test
+    @DisplayName(
+            "requestCreatorWithdrawal: explicitly ENABLED lets the existing path run — the switch"
+                    + " is not a second, permanent gate")
+    void testWithdrawalPassesTheSwitchWhenExplicitlyEnabled() {
+        // walletService comes from setUp with enabled=true. With payouts on, the very next
+        // guard reached is the PRE-EXISTING one — proof the switch passed the call through
+        // rather than short-circuiting it. The full enabled happy path (ledger debit, fund
+        // account, RazorpayX, Payout row) is
+        // testWithdrawalInitiatesRealDisbursementAndPersistsPayout, immediately below.
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> walletService.requestCreatorWithdrawal(USER_ID, new BigDecimal("1000.00"), null));
+
+        assertNotEquals("PAYOUTS_DISABLED", ex.getCode());
         assertEquals("IDEMPOTENCY_KEY_REQUIRED", ex.getCode());
     }
 

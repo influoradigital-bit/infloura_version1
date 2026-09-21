@@ -1856,13 +1856,44 @@ class EscrowServiceTest {
         assertDoesNotThrow(() -> invokeAssertReleaseConditionSatisfied(milestone));
     }
 
+    /**
+     * [paytrigger, 2026-09-21] DELIBERATE INVERSION. This test previously asserted that an
+     * unparseable cutover "behaves as disabled (fails open)" — a money gate that, when
+     * misconfigured, silently became no gate at all. It now fails CLOSED at {@link Instant#EPOCH},
+     * so a typo in {@code influora.escrow.release-gate.cutover-instant} refuses releases (loudly,
+     * at ERROR) instead of permitting every one of them. Refusing a release is recoverable by
+     * fixing the config and pressing the button again; paying a creator before their post is live
+     * is not. To turn the gate off, {@code influora.escrow.release-gate.enabled=false} is now the
+     * only way, and it says so out loud.
+     */
     @Test
-    @DisplayName("CR-51 gate: an unparseable cutover value logs and behaves as disabled (fails open)")
-    void gateInvalidCutoverValueFailsOpen() {
+    @DisplayName("gate: an unparseable cutover value logs and fails CLOSED (gates every milestone)")
+    void gateInvalidCutoverValueFailsClosed() {
         setCutover("not-an-instant");
         PaymentMilestone milestone = milestoneCreatedAt(CUTOVER.plusSeconds(3600), ReleaseCondition.ON_POSTED);
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(anyString()))
+                .thenReturn(List.of());
 
-        assertDoesNotThrow(() -> invokeAssertReleaseConditionSatisfied(milestone));
-        verify(deliverableRepository, never()).findByCollaborationIdOrderBySlotIndexAsc(anyString());
+        ApiException ex =
+                assertThrows(ApiException.class, () -> invokeAssertReleaseConditionSatisfied(milestone));
+        assertEquals("RELEASE_CONDITION_NOT_MET", ex.getCode());
+        // The gate was genuinely consulted, not skipped: it reached the deliverable lookup.
+        verify(deliverableRepository).findByCollaborationIdOrderBySlotIndexAsc(anyString());
+    }
+
+    @Test
+    @DisplayName(
+            "gate: a milestone created BEFORE the EPOCH fallback is impossible, so fail-closed"
+                    + " really does cover every milestone")
+    void failClosedCutoverGatesEvenTheOldestMilestone() {
+        setCutover("");
+        PaymentMilestone milestone =
+                milestoneCreatedAt(Instant.EPOCH.plusMillis(1), ReleaseCondition.ON_POSTED);
+        when(deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(anyString()))
+                .thenReturn(List.of());
+
+        ApiException ex =
+                assertThrows(ApiException.class, () -> invokeAssertReleaseConditionSatisfied(milestone));
+        assertEquals("RELEASE_CONDITION_NOT_MET", ex.getCode());
     }
 }

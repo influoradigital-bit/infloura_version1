@@ -95,6 +95,21 @@ public class Deliverable {
     @Column(name = "reviewed_at")
     private Instant reviewedAt;
 
+    /**
+     * When the brand's review clock ran out and the Influora team was told (owner's ruling,
+     * 2026-09-21). Null while the brand is still inside its window, or has already acted.
+     *
+     * <p>This column is the once-and-only-once guard, not the record — the record is the support
+     * ticket {@code ReviewSlaService} opens. {@link #applySubmit} clears it, so each submission
+     * round (the first submission, then each resubmission after a revision) can escalate exactly
+     * once.
+     *
+     * <p>It carries no automatic consequence of any kind: it never approves, never rejects and
+     * never releases money. It means only that a person at Influora has been asked to look.
+     */
+    @Column(name = "review_escalated_at")
+    private Instant reviewEscalatedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -195,6 +210,10 @@ public class Deliverable {
         return reviewedAt;
     }
 
+    public Instant getReviewEscalatedAt() {
+        return reviewEscalatedAt;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -218,7 +237,15 @@ public class Deliverable {
         touch();
     }
 
-    /** Creator submits current draft for brand review (lean row — no version table). */
+    /**
+     * Creator submits current draft for brand review (lean row — no version table).
+     *
+     * <p>{@link #submittedAt} is the start of the brand's review clock, so a resubmission after a
+     * revision genuinely restarts it rather than leaving the creator waiting against the original
+     * submission time. {@link #reviewEscalatedAt} is cleared for the same reason: the new round is
+     * a new promise to the creator, and it is entitled to its own single escalation if the brand
+     * lets this one run out too.
+     */
     public void applySubmit(
             String finalCaption,
             String hashtagsJson,
@@ -235,6 +262,23 @@ public class Deliverable {
         }
         this.status = newStatus;
         this.submittedAt = Instant.now();
+        this.reviewEscalatedAt = null;
+        touch();
+    }
+
+    /**
+     * Records that the brand's review window elapsed and the Influora team was told (owner's
+     * ruling, 2026-09-21). Status is deliberately untouched — an escalation is a request for a
+     * human to look, not a lifecycle transition, and the deliverable stays exactly where it was:
+     * still awaiting the brand's decision, still unpaid.
+     *
+     * <p>Not idempotent by design. The caller ({@code ReviewSlaService}) must have established
+     * under a row lock that {@link #getReviewEscalatedAt()} was null before calling, so a second
+     * call would mean a second escalation was about to happen and the guard had failed — better
+     * that it fails loudly in the caller's test than that it silently re-stamps.
+     */
+    public void markReviewEscalated(Instant at) {
+        this.reviewEscalatedAt = at;
         touch();
     }
 

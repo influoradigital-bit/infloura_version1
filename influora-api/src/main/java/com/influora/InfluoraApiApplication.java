@@ -18,9 +18,11 @@ import com.influora.config.MeeraChatAiProperties;
 import com.influora.config.MeeraInteractionLogRetentionProperties;
 import com.influora.config.MeeraStreamProperties;
 import com.influora.config.MetaApiProperties;
+import com.influora.config.PayoutProperties;
 import com.influora.config.PiiEncryptionProperties;
 import com.influora.config.R2Properties;
 import com.influora.config.RazorpayProperties;
+import com.influora.config.ReviewSlaProperties;
 import com.influora.config.ShopifyProperties;
 import com.influora.config.TrendIngestProperties;
 import com.influora.config.TrendSparkAiProperties;
@@ -56,6 +58,10 @@ import org.springframework.scheduling.annotation.EnableAsync;
     // Wallet business limits (Kabir Option-1 audit P1 must-fix) — max-topup ceiling read by
     // WalletTopUpService#initiateTopUp.
     WalletProperties.class,
+    // [EV-014 / payoutswitch] Outbound-payout kill switch, injected by @Component
+    // PayoutKillSwitch (itself a live dependency of WalletService, PayoutService and
+    // PayoutReconciliationService) — unregistered, the context would not start.
+    PayoutProperties.class,
     // Creator AI Co-pilot Tier-1 — registered here explicitly (not left for the comment block
     // below to later discover missing) precisely BECAUSE that block documents how easy it is for
     // a @ConfigurationProperties class to go unregistered and silently break boot: CreatorNudgeService
@@ -72,6 +78,11 @@ import org.springframework.scheduling.annotation.EnableAsync;
     // injected by @Component MeeraInteractionLogRetentionPurgeJob, so it must be registered here
     // like every other properties class in this list.
     MeeraInteractionLogRetentionProperties.class,
+    // Brand review clock (owner's ruling, 2026-09-21) - injected by @Service ReviewSlaService,
+    // which @Component BrandReviewSlaEscalationJob depends on. Registered here for the same reason
+    // every entry above is: a @ConfigurationProperties class that nothing registers cannot be
+    // created, and a live bean asking for it takes the whole context down at startup.
+    ReviewSlaProperties.class,
     // ---------------------------------------------------------------------
     // Everything below was @ConfigurationProperties but registered NOWHERE: no
     // @EnableConfigurationProperties entry, no @ConfigurationPropertiesScan, no

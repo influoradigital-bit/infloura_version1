@@ -264,8 +264,8 @@ final class EmailTemplateRegistry {
                                 + "- You appear in brand search\n"
                                 + "- Campaign matches start arriving in your categories\n"
                                 + "- You can apply to campaigns and receive proposals directly\n"
-                                + "- Payment is secured before you start, and released when your"
-                                + " work is approved",
+                                + "- Payment is secured before you start, and paid out within 2"
+                                + " working days of your post going live",
                         "Connect Instagram",
                         "connect_url",
                         // Kept in step with bodyTemplate above, by hand. Styles are inline and
@@ -301,8 +301,8 @@ final class EmailTemplateRegistry {
                                 + " in your categories</li>"
                                 + "<li style=\"margin-bottom:6px;\">You can apply to campaigns and"
                                 + " receive proposals directly</li>"
-                                + "<li>Payment is secured before you start, and released when your"
-                                + " work is approved</li>"
+                                + "<li>Payment is secured before you start, and paid out within 2"
+                                + " working days of your post going live</li>"
                                 + "</ul>"));
 
         // Workspace
@@ -342,7 +342,7 @@ final class EmailTemplateRegistry {
                         "{{brand_name}} wants to work with you on Influora",
                         "A brand wants to work with you",
                         "A brand on Influora asked to collaborate with @{{ig_username}}. Join Influora"
-                                + " to see the opportunity, agree terms, and get paid once the brand approves your work.",
+                                + " to see the opportunity, agree terms, and get paid once your post is live.",
                         "Join Influora",
                         "signup_url"));
         SPECS.put(

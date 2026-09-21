@@ -88,24 +88,36 @@ import org.springframework.test.context.TestPropertySource;
             Campaign.class,
             Collaboration.class,
             Deliverable.class,
-            com.influora.domain.entity.ApplicationHistoryEvent.class
+            com.influora.domain.entity.ApplicationHistoryEvent.class,
+            // Pulled in with ReviewSlaService below: BrandDeliverableService now reads the
+            // brand's review clock when building a detail response, and that service writes the
+            // escalation ticket. Nothing in THIS test escalates anything - the entity and its
+            // repository are here so the real bean can be built at all.
+            com.influora.domain.entity.SupportTicket.class
         })
 @EnableJpaRepositories(
         basePackageClasses = {
             CampaignRepository.class,
             CollaborationRepository.class,
             DeliverableRepository.class,
-            ApplicationHistoryEventRepository.class
+            ApplicationHistoryEventRepository.class,
+            com.influora.repository.SupportTicketRepository.class
         },
         excludeFilters =
                 @ComponentScan.Filter(
                         type = FilterType.REGEX,
                         pattern =
-                                "com\\.influora\\.repository\\.(?!CampaignRepository$|CollaborationRepository$|DeliverableRepository$|ApplicationHistoryEventRepository$).*"))
+                                "com\\.influora\\.repository\\.(?!CampaignRepository$|CollaborationRepository$|DeliverableRepository$|ApplicationHistoryEventRepository$|SupportTicketRepository$).*"))
 @Import({
     BrandDeliverableService.class,
     ApplicationHistoryService.class,
-    CollaborationLifecycleService.class
+    CollaborationLifecycleService.class,
+    // Real, with its defaults (3/2 working days) - BrandDeliverableService takes it in its
+    // constructor now. ReviewSlaProperties is deliberately NOT imported here: @DataJpaTest
+    // bootstraps InfluoraApiApplication, whose @EnableConfigurationProperties already registers
+    // it, and importing it again gives two beans of the same type and a context that will not
+    // start (which is exactly what happened the first time this line was written).
+    com.influora.service.ReviewSlaService.class
 })
 @TestPropertySource(
         properties = {

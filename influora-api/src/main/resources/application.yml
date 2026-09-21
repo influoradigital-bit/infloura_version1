@@ -143,16 +143,51 @@ influora:
   # thing booting a real context. Defaulted the same way web-base-url is.
   api:
     public-url: ${INFLUORA_API_PUBLIC_URL:http://localhost:8080}
+  # Brand review clock (owner's ruling, 2026-09-21). A brand has 3 working days to approve,
+  # reject or ask for a revision on a submitted draft, and 2 working days on each resubmission.
+  # If it does none of those, BrandReviewSlaEscalationJob hands the deliverable to the Influora
+  # team as a support ticket. It is NEVER auto-approved and NEVER auto-paid - no value of these
+  # settings can make this feature move money.
+  #
+  # Working days are Monday to Friday (com.influora.common.WorkingDays - the one definition).
+  # The third number in the rule, "at most 2 revision rounds", is NOT here: it is a per-deal
+  # value on the collaboration (Collaboration.maxRevisions, default 2) already enforced by
+  # BrandDeliverableService#requestRevision.
+  review-sla:
+    escalation-enabled: ${INFLUORA_REVIEW_SLA_ESCALATION_ENABLED:true}
+    first-review-working-days: ${INFLUORA_REVIEW_SLA_FIRST_DAYS:3}
+    revision-review-working-days: ${INFLUORA_REVIEW_SLA_REVISION_DAYS:2}
+    # Bound per run, not a filter - the remainder is picked up by the next run. Keeps the first
+    # run after deploy (which sees every draft a brand has ever left sitting) from arriving in
+    # the team's queue all at once.
+    batch-limit: ${INFLUORA_REVIEW_SLA_BATCH_LIMIT:200}
+    # Hourly at :05, IST. A deadline expiring at midnight reaches the queue the same morning.
+    cron: ${INFLUORA_REVIEW_SLA_CRON:0 5 * * * *}
   escrow:
     release-gate:
-      # CR-51 step 2 — EscrowService#assertReleaseConditionSatisfied cutover. Blank/unset (the
-      # default) keeps the release-condition gate fully disabled (fail-open for every milestone),
-      # matching pre-CR-51 production behavior. Set to an ISO-8601 instant (e.g.
-      # 2026-07-30T12:00:00Z, normally "when step 1's fix deployed") to start gating milestones
-      # created after that instant; milestones created at/before it keep failing open
-      # unconditionally so deals already in flight are unaffected. Deliberately NOT derived from
-      # "has deliverables" — see the javadoc on assertReleaseConditionSatisfied.
-      cutover-instant: ${INFLUORA_ESCROW_RELEASE_GATE_CUTOVER_INSTANT:}
+      # EscrowService#assertReleaseConditionSatisfied — the gate that stops secured funds being
+      # released before the creator's post is live.
+      #
+      # ON by default since 2026-09-21. It was OFF by default before that, and not by a flag:
+      # cutover-instant shipped BLANK, and a blank cutover makes isPostCutover() answer false for
+      # every milestone, so the gate was never consulted and releases failed OPEN. Turning it off
+      # now requires setting `enabled: false` here (or INFLUORA_ESCROW_RELEASE_GATE_ENABLED=false),
+      # which logs a warning at boot naming what that permits.
+      enabled: ${INFLUORA_ESCROW_RELEASE_GATE_ENABLED:true}
+      # CR-51 step 2 cutover. Milestones created AFTER this instant are gated; milestones created
+      # at/before it keep failing open unconditionally, so deals already in flight when the gate
+      # was switched on are unaffected. Deliberately NOT derived from "has deliverables" — see the
+      # javadoc on assertReleaseConditionSatisfied. Blank or unparseable WHILE ENABLED no longer
+      # disables the gate: it fails CLOSED at 1970-01-01T00:00:00Z (every milestone gated) and
+      # logs an ERROR.
+      #
+      # The default below is the day the gate was switched on, expressed in UTC. It must stay in
+      # the PAST: a cutover in the future puts every milestone created today back on the fail-open
+      # side of isPostCutover(...), which is the inert state this whole change exists to end. The
+      # first value tried here, 2026-09-21T00:00:00Z, was still several hours in the future when
+      # the change was made from IST — EscrowReleaseAfterLivePostTest#shippedDefaultsLeaveTheGateOn
+      # catches exactly that.
+      cutover-instant: ${INFLUORA_ESCROW_RELEASE_GATE_CUTOVER_INSTANT:2026-09-20T00:00:00Z}
   auth:
     require-email-verification: true
     # ON by default since 2026-09-12. When true, register REFUSES an email that has not
@@ -512,6 +547,18 @@ influora:
   # NOT authoritative (bean validation can't read Spring config).
   wallet:
     max-topup-amount: ${WALLET_MAX_TOPUP_AMOUNT:1000000.00}
+  # [EV-014 / payoutswitch] Server-side kill switch on OUTBOUND creator payouts ->
+  # PayoutProperties / PayoutKillSwitch. OFF by default and it must stay that way until
+  # RazorpayX is actually provisioned and a human signs off: creators are paid MANUALLY by the
+  # team over NEFT/IMPS, recorded through POST /admin/finance/payouts/manual (that admin rail is
+  # NOT gated by this switch — it is the beta payout rail).
+  #
+  # Distinct from the frontend's VITE_PAYOUTS_ENABLED build flag (src/lib/api.ts:109), which only
+  # decides whether the browser renders the Withdraw dialog. That flag never protected the
+  # endpoint; this one does. Both layers default to false, so a missing env var can never enable
+  # payouts by omission.
+  payouts:
+    enabled: ${PAYOUTS_ENABLED:false}
   # Brand-safety scoring feature flag (Priya ruling). OFF by default: ScoreCalculationJob then never
   # calls BrandSafetyScoreService and leaves creator_scores.brand_safety_score / garm_flags /
   # content_sentiment NULL on every row (its pre-existing behaviour). When turned on, EACH scored

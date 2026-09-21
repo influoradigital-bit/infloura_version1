@@ -206,21 +206,26 @@ class EscrowReleaseGateIntegrationTest extends AbstractIntegrationTest {
     }
 
     // --------------------------------------------------------------------------------------
-    // Assert D2 — companion: same zero-deliverable seed, but with the gate DISABLED (blank
-    // cutover) — proves CR-51 step 3 ships disabled by default. A class-level @TestPropertySource
-    // can't vary per-test (and a second @SpringBootTest/Testcontainers context per test would be
-    // needlessly expensive here), so this reaches into the EscrowService bean via
-    // ReflectionTestUtils and nulls out the already-parsed `releaseGateCutoverInstant` field for
-    // the duration of the call — exactly what a blank/unset
-    // influora.escrow.release-gate.cutover-instant produces at boot (see the field's
-    // @PostConstruct parse in EscrowService), and exactly what isPostCutover(...) checks. Restored
-    // in a finally so later tests in this class keep the real (enabled) cutover.
+    // Assert D2 — companion: same zero-deliverable seed, but with the gate switched OFF. A
+    // class-level @TestPropertySource can't vary per-test (and a second
+    // @SpringBootTest/Testcontainers context per test would be needlessly expensive here), so this
+    // reaches into the EscrowService bean via ReflectionTestUtils and nulls out the already-parsed
+    // `releaseGateCutoverInstant` field for the duration of the call — exactly what
+    // influora.escrow.release-gate.enabled=false produces at boot (see the @PostConstruct in
+    // EscrowService), and exactly what isPostCutover(...) checks. Restored in a finally so later
+    // tests in this class keep the real (enabled) cutover.
+    //
+    // [paytrigger, 2026-09-21] This test used to be titled "proves CR-51 step 3 ships disabled by
+    // default", and it did — a blank cutover shipped as the default, and a blank cutover meant no
+    // gate at all. The default is now enabled=true with a real cutover instant, so this test
+    // proves only what the OFF switch does. What the DEFAULT is, is asserted against the shipped
+    // application.yml in EscrowReleaseAfterLivePostTest#shippedDefaultsLeaveTheGateOn.
     // --------------------------------------------------------------------------------------
 
     @Test
     @DisplayName(
-            "D2: gate DISABLED (blank cutover) — same zero-deliverable seed instead releases"
-                    + " (fail-open preserved) — proves CR-51 step 3 ships disabled by default")
+            "D2: gate switched OFF (influora.escrow.release-gate.enabled=false) — same"
+                    + " zero-deliverable seed instead releases (fail-open preserved)")
     void releaseSucceedsWhenGateDisabledEvenWithZeroDeliverables() {
         Fixture fx = seedFixture();
         PaymentMilestone milestone = seedFundedMilestone(fx, ReleaseCondition.ON_POSTED, null);

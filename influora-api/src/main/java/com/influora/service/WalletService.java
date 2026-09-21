@@ -22,6 +22,7 @@ import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.PayoutRepository;
 import com.influora.repository.WalletRepository;
 import com.influora.repository.WalletTransactionRepository;
+import com.influora.service.payout.PayoutKillSwitch;
 import com.influora.service.payout.RazorpayFundAccountService;
 import com.influora.web.dto.money.MoneyDtos.CreatorPayoutRowResponse;
 import com.influora.web.dto.money.MoneyDtos.CreatorWithdrawResponse;
@@ -83,6 +84,14 @@ public class WalletService {
     /** [F-0390 D2] KYC/tax-identity precondition on withdrawal — see {@link #requestCreatorWithdrawal}. */
     private final CreatorProfileRepository creatorProfileRepository;
 
+    /**
+     * [EV-014 / payoutswitch] Server-side kill switch on outbound payouts. Self-serve withdrawal
+     * being off used to be an accident — {@code VITE_PAYOUTS_ENABLED} is a FRONTEND build flag
+     * ({@code src/lib/api.ts:109}) that only hides the dialog, so {@code POST /wallet/withdraw}
+     * stayed reachable with any authenticated creator token. See {@link PayoutKillSwitch}.
+     */
+    private final PayoutKillSwitch payoutKillSwitch;
+
     public WalletService(
             WalletRepository walletRepository,
             WalletLedgerService ledgerService,
@@ -95,7 +104,8 @@ public class WalletService {
             PayoutRepository payoutRepository,
             IdempotencyService idempotencyService,
             EscrowHoldRepository escrowHoldRepository,
-            CreatorProfileRepository creatorProfileRepository) {
+            CreatorProfileRepository creatorProfileRepository,
+            PayoutKillSwitch payoutKillSwitch) {
         this.walletRepository = walletRepository;
         this.ledgerService = ledgerService;
         this.walletTransactionRepository = walletTransactionRepository;
@@ -108,6 +118,7 @@ public class WalletService {
         this.idempotencyService = idempotencyService;
         this.escrowHoldRepository = escrowHoldRepository;
         this.creatorProfileRepository = creatorProfileRepository;
+        this.payoutKillSwitch = payoutKillSwitch;
     }
 
     public record PagedWalletTransactions(List<WalletTransactionRowResponse> items, PageMeta meta) {}
@@ -249,6 +260,11 @@ public class WalletService {
     @Transactional
     public CreatorWithdrawResponse requestCreatorWithdrawal(
             String userId, BigDecimal amount, String idempotencyKey) {
+        // [EV-014 / payoutswitch] FIRST statement, before any validation, wallet lock, idempotency
+        // reservation or ledger write — a refusal must leave zero rows behind. Creators are paid
+        // manually by the team over NEFT/IMPS while this is off; see {@link PayoutKillSwitch}.
+        payoutKillSwitch.requireEnabled("wallet.withdraw");
+
         validateCreatorWithdrawalAmount(amount);
 
         if (idempotencyKey == null || idempotencyKey.isBlank()) {

@@ -66,5 +66,25 @@ public final class BrandDeliverableDtos {
             Instant submittedAt,
             boolean canApprove,
             boolean canRequestRevision,
-            boolean canReject) {}
+            boolean canReject,
+            /**
+             * The brand's own review clock (owner's ruling, 2026-09-21), computed fresh on every
+             * read by {@code ReviewSlaService#clockFor} - nothing here is persisted, so there is
+             * no stored countdown to go stale. All four are null/zero when no clock is running,
+             * i.e. whenever this deliverable is not waiting on a brand decision.
+             *
+             * <p>{@code reviewDueAt} is the deadline itself (the end of the last working day the
+             * brand can act). {@code reviewWorkingDaysLeft} is what the sentence "X working days
+             * left to review" should say: it does not count today, so {@code 0} means the
+             * deadline is the end of today, and it never goes negative. Past the deadline,
+             * {@code reviewOverdue} is what says so.
+             *
+             * <p>{@code reviewEscalatedAt} is set once Influora has been asked to step in. It is
+             * not a penalty and it changes nothing about the deliverable: the brand's decision is
+             * still the brand's to make, and no payment follows from it.
+             */
+            Instant reviewDueAt,
+            Integer reviewWorkingDaysLeft,
+            boolean reviewOverdue,
+            Instant reviewEscalatedAt) {}
 }

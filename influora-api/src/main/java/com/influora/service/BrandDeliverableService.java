@@ -69,6 +69,15 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
     private final ApplicationHistoryService applicationHistoryService;
 
     /**
+     * The brand's own review clock (owner's ruling, 2026-09-21). Constructor-injected, not
+     * setter-injected like {@link #milestoneRepository} below: a missing clock would silently
+     * blank the deadline on the very screen the deadline exists for, and "the brand was never
+     * shown how long it had" is precisely the failure this work removes. A hard dependency fails
+     * at startup instead.
+     */
+    private final ReviewSlaService reviewSlaService;
+
+    /**
      * F-0288-approval-event — publisher for {@link DeliverableApprovedEvent}. Injected through
      * {@link ApplicationEventPublisherAware} rather than the constructor on purpose: the
      * constructor is called directly by unit tests, and this dependency is not one any of them
@@ -102,7 +111,8 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
             CollaborationLifecycleService collaborationLifecycleService,
             MeeraInteractionLogService meeraInteractionLogService,
             CollaborationRepository collaborationRepository,
-            ApplicationHistoryService applicationHistoryService) {
+            ApplicationHistoryService applicationHistoryService,
+            ReviewSlaService reviewSlaService) {
         this.brandContext = brandContext;
         this.deliverableRepository = deliverableRepository;
         this.r2StorageService = r2StorageService;
@@ -112,6 +122,7 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
         this.meeraInteractionLogService = meeraInteractionLogService;
         this.collaborationRepository = collaborationRepository;
         this.applicationHistoryService = applicationHistoryService;
+        this.reviewSlaService = reviewSlaService;
     }
 
     @Override
@@ -143,7 +154,8 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
         if (!canReview(deliverable.getStatus())) {
             throw new ApiException(
                     "INVALID_STATE",
-                    "Cannot approve deliverable in current state",
+                    "Only a draft the creator has submitted can be approved. This one is not"
+                            + " waiting on your review.",
                     HttpStatus.CONFLICT);
         }
         // [CR-22a, Kabir finding #1] Approval fires tryReleaseOnApproval below — real money
@@ -393,7 +405,7 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
         if (!canReview(deliverable.getStatus())) {
             throw new ApiException(
                     "INVALID_STATE",
-                    "Cannot request revision in current state",
+                    "You can only ask for a revision on a draft the creator has submitted.",
                     HttpStatus.CONFLICT);
         }
         String feedback = request != null ? request.feedback() : null;
@@ -451,7 +463,8 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
         if (!canReview(deliverable.getStatus())) {
             throw new ApiException(
                     "INVALID_STATE",
-                    "Cannot reject deliverable in current state",
+                    "Only a draft the creator has submitted can be rejected. This one is not"
+                            + " waiting on your review.",
                     HttpStatus.CONFLICT);
         }
         String feedback = request != null ? request.feedback() : null;
@@ -538,6 +551,11 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
         List<StoredFile> files = readFilesJson(deliverable.getFilesJson());
         DeliverableStatus status = deliverable.getStatus();
         boolean canReview = canReview(status);
+        // Computed fresh on every read — there is no stored countdown that can go stale, and the
+        // creator's own view is built from the same call, so the two sides can never be shown
+        // different deadlines. Null whenever the brand is not the one being waited on.
+        ReviewSlaService.ReviewClock clock =
+                reviewSlaService.clockFor(deliverable, java.time.Instant.now()).orElse(null);
         return new DeliverableDetailResponse(
                 deliverable.getId(),
                 deliverable.getTitle(),
@@ -551,7 +569,11 @@ public class BrandDeliverableService implements ApplicationEventPublisherAware {
                 deliverable.getSubmittedAt(),
                 canReview,
                 canReview,
-                canReview);
+                canReview,
+                clock != null ? clock.dueAt() : null,
+                clock != null ? clock.workingDaysLeft() : null,
+                clock != null && clock.overdue(),
+                clock != null ? clock.escalatedAt() : null);
     }
 
     private DeliverableFileDetail toFileDetail(StoredFile file) {

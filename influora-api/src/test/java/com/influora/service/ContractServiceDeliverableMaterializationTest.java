@@ -209,7 +209,7 @@ class ContractServiceDeliverableMaterializationTest {
                         CAMPAIGN_ID,
                         CREATOR_PROFILE_ID,
                         new BigDecimal("15000"),
-                        List.of(new DeliverableSlot("REEL", 1)),
+                        List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)),
                         null,
                         null,
                         "Let's work together",
@@ -229,7 +229,9 @@ class ContractServiceDeliverableMaterializationTest {
         assertEquals(DealMessageKind.proposal, persistedProposal.getKind());
         String metadataJson = persistedProposal.getMetadataJson();
         assertTrue(
-                metadataJson != null && metadataJson.contains("\"deliverables\"") && metadataJson.contains("REEL"),
+                metadataJson != null
+                        && metadataJson.contains("\"deliverables\"")
+                        && metadataJson.contains("INSTAGRAM_REEL"),
                 "expected proposal metadata to carry the deliverables under the \"deliverables\" key: "
                         + metadataJson);
 

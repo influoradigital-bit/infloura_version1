@@ -8,6 +8,7 @@ import com.influora.domain.enums.WalletTransactionType;
 import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.repository.PayoutRepository;
 import com.influora.repository.WalletTransactionRepository;
+import com.influora.service.payout.PayoutKillSwitch;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -74,6 +75,14 @@ public class PayoutReconciliationService {
     private final RazorpayXClient razorpayXClient;
     private final IdempotencyService idempotencyService;
 
+    /**
+     * [EV-014 / payoutswitch] Every method here that can RESUME or RE-ATTEMPT a gateway payout
+     * consults this switch. {@link #confirmExecuted} deliberately does not: it only RECORDS the
+     * outcome of a payout that was already sent, and blocking it would strand real money in an
+     * unreconciled state rather than prevent anything.
+     */
+    private final PayoutKillSwitch payoutKillSwitch;
+
     public PayoutReconciliationService(
             PayoutRepository payoutRepository,
             WalletLedgerService ledgerService,
@@ -81,7 +90,8 @@ public class PayoutReconciliationService {
             WalletService walletService,
             WalletTransactionRepository walletTransactionRepository,
             RazorpayXClient razorpayXClient,
-            IdempotencyService idempotencyService) {
+            IdempotencyService idempotencyService,
+            PayoutKillSwitch payoutKillSwitch) {
         this.payoutRepository = payoutRepository;
         this.ledgerService = ledgerService;
         this.platformWalletService = platformWalletService;
@@ -89,6 +99,7 @@ public class PayoutReconciliationService {
         this.walletTransactionRepository = walletTransactionRepository;
         this.razorpayXClient = razorpayXClient;
         this.idempotencyService = idempotencyService;
+        this.payoutKillSwitch = payoutKillSwitch;
     }
 
     /** True for any RazorpayX status meaning the payout definitively did not reach the creator. */
@@ -185,6 +196,20 @@ public class PayoutReconciliationService {
      */
     @Transactional
     public void reconcileOrphanedPendingPayout(Payout payout) {
+        // [EV-014 / payoutswitch] Scheduled path — SKIP, never throw. This method funnels into
+        // attemptGatewayPayout, whose catch(Exception) reads any throwable as "the payout failed"
+        // and flips the row to REVERSED while re-crediting the creator; throwing the refusal from
+        // in there would have the kill switch silently rewriting payout state on every sweep tick.
+        // Returning here is a pure no-op: nothing read, nothing written, nothing reversed.
+        if (!payoutKillSwitch.isEnabled()) {
+            log.warn(
+                    "Payout kill switch: leaving PENDING payout {} (milestone {}) frozen — settle it"
+                            + " over the manual bank-transfer rail",
+                    payout.getId(),
+                    payout.getMilestoneId());
+            return;
+        }
+
         if (!Payout.STATUS_PENDING.equals(payout.getStatus())) {
             // Already progressed past PENDING between the sweep query running and this row being
             // processed (e.g. the original request finally completed, or a prior sweep run already
@@ -314,6 +339,11 @@ public class PayoutReconciliationService {
      * </ul>
      */
     public Payout retryFailedPayout(String payoutId) {
+        // [EV-014 / payoutswitch] FIRST statement — an admin-triggered retry is still a RazorpayX
+        // payout. The manual NEFT/IMPS rail (POST /admin/finance/payouts/manual) is unaffected and
+        // remains the way a stuck creator balance gets settled while this is off.
+        payoutKillSwitch.requireEnabled("admin.payout.retry");
+
         Payout payout =
                 payoutRepository
                         .findById(payoutId)
@@ -473,6 +503,17 @@ public class PayoutReconciliationService {
      */
     @Transactional
     public void reconcileFailedPayoutRetry(Payout payout) {
+        // [EV-014 / payoutswitch] Scheduled path — SKIP, never throw; same reasoning as
+        // reconcileOrphanedPendingPayout above (shared attemptGatewayPayout catch block).
+        if (!payoutKillSwitch.isEnabled()) {
+            log.warn(
+                    "Payout kill switch: leaving stuck retry for payout {} (milestone {}) frozen —"
+                            + " settle it over the manual bank-transfer rail",
+                    payout.getId(),
+                    payout.getMilestoneId());
+            return;
+        }
+
         if (!isFailureStatus(payout.getStatus())) {
             // Already progressed (the retry succeeded, or a later independent retry attempt is
             // itself in flight/resolved) — nothing stuck for THIS snapshot.

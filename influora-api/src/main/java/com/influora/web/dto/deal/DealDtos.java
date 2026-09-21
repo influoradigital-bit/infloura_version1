@@ -107,6 +107,26 @@ public final class DealDtos {
             /** T-MEERA-CREATOR-PHASE-A (SPEC.md 4.2, A2) — optional; null means "no structured terms set". */
             @Valid DealTermsDto dealTerms) {}
 
+    /**
+     * One line of an order: "2x Instagram Reel".
+     *
+     * <p><b>{@code type} is a {@link com.influora.domain.enums.DeliverableType} NAME, not a
+     * label.</b> The accepted values are exactly that enum's constants — {@code INSTAGRAM_POST},
+     * {@code INSTAGRAM_REEL}, {@code INSTAGRAM_STORY}, {@code INSTAGRAM_CAROUSEL}, {@code
+     * YOUTUBE_VIDEO}, {@code YOUTUBE_SHORT}, {@code FACEBOOK_POST}, {@code FACEBOOK_REEL}, {@code
+     * TIKTOK_VIDEO} — and the SPA sends them from one shared list ({@code
+     * src/lib/deliverable-slots.ts}). Bean validation cannot express "member of that enum" without
+     * a second copy of the list that would drift from it, so the membership check lives in {@code
+     * DealService#requireOrderedDeliverables}, which every route carrying this record runs through
+     * before writing anything. It answers with a 400 that names the offending value and lists the
+     * accepted ones, rather than the generic "Request validation failed" a field constraint would
+     * produce.
+     *
+     * <p>Until 2026-09-21 an unrecognised type was not an error at all: {@code ContractService}
+     * caught the parse failure and substituted {@code INSTAGRAM_REEL}, so a brand's YouTube video
+     * order reached the creator as a reel. Do not reintroduce a default here or anywhere
+     * downstream.
+     */
     public record DeliverableSlot(@NotBlank String type, @NotNull @Positive Integer qty) {}
 
     /**
@@ -125,9 +145,13 @@ public final class DealDtos {
     public record CounterRequest(
             @NotNull @DecimalMin("0.01") BigDecimal amount,
             @Size(max = 2000) String message,
-            // Nullable — a counter that only revises price/deadline need not re-specify deliverables.
-            // DealService.doCounter() carries them forward from the superseded proposal card when
-            // omitted, so the contract generator always sees a full set of terms.
+            // Nullable — a counter that only revises price/deadline need not re-specify
+            // deliverables, and DealService.doCounter() carries them forward from the superseded
+            // proposal card when omitted. That is a convenience, not a guarantee: a counter on a
+            // deal with NO earlier proposal card (a creator's first counter on their own
+            // application; a brand countering from the campaign page's Bids tab) has nothing to
+            // inherit, and doCounter refuses it rather than writing an offer that orders nothing.
+            // Send the list whenever the form has one.
             @Valid List<DeliverableSlot> deliverables,
             String deadline,
             String usageRights,

@@ -54,7 +54,77 @@ public final class CreatorDeliverableDtos {
              * True only past-deadline with nothing submitted yet; never true once submitted, even
              * late. Carries no auto-fail/penalty semantics — see the predicate's own javadoc.
              */
-            boolean overdue) {
+            boolean overdue,
+            /**
+             * The brand's review clock, from the creator's side (owner's ruling, 2026-09-21) -
+             * the same {@code ReviewSlaService#clockFor} values the brand sees, so neither party
+             * is told a different deadline. Null/zero when no clock is running.
+             *
+             * <p>The creator's question is not "how long do I have" but "when does someone do
+             * something about this": {@code submittedAt} above says when they handed it over,
+             * {@code reviewDueAt} says the last moment the brand can act, and {@code
+             * reviewEscalatedAt} says when Influora was asked to step in. {@code
+             * reviewWorkingDaysLeft} is the brand's remaining working days, not counting today.
+             *
+             * <p>None of these promise the creator an outcome. Escalation means a person at
+             * Influora is chasing the brand - it is not an approval, and it does not pay anyone.
+             */
+            Instant reviewDueAt,
+            Integer reviewWorkingDaysLeft,
+            boolean reviewOverdue,
+            Instant reviewEscalatedAt) {
+
+        /**
+         * Pre-review-clock arity, kept so call sites that predate the {@code review*} fields keep
+         * compiling unchanged; defaults them to "no clock running".
+         */
+        public DeliverableStatusResponse(
+                String id,
+                String collaborationId,
+                DeliverableType type,
+                String title,
+                DeliverableStatus status,
+                LocalDate deadline,
+                int versionNumber,
+                int revisionCount,
+                List<DeliverableFileResponse> files,
+                String caption,
+                List<String> hashtags,
+                String creatorNotes,
+                String reviewNotes,
+                Instant submittedAt,
+                Instant reviewedAt,
+                DeliverableActions actions,
+                String metricSource,
+                Instant lastVerifiedAt,
+                boolean metaConnected,
+                boolean overdue) {
+            this(
+                    id,
+                    collaborationId,
+                    type,
+                    title,
+                    status,
+                    deadline,
+                    versionNumber,
+                    revisionCount,
+                    files,
+                    caption,
+                    hashtags,
+                    creatorNotes,
+                    reviewNotes,
+                    submittedAt,
+                    reviewedAt,
+                    actions,
+                    metricSource,
+                    lastVerifiedAt,
+                    metaConnected,
+                    overdue,
+                    null,
+                    null,
+                    false,
+                    null);
+        }
 
         /**
          * Pre-F-0418 arity, kept so existing call sites that predate the {@code overdue} field

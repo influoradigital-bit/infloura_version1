@@ -8,9 +8,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
+import com.influora.config.PayoutProperties;
 import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorBankAccount;
 import com.influora.domain.entity.EscrowHold;
@@ -109,23 +111,75 @@ class PayoutServiceTest {
 
     @BeforeEach
     void setUp() {
-        service =
-                new PayoutService(
-                        milestoneRepository,
-                        escrowHoldRepository,
-                        collaborationRepository,
-                        payoutRepository,
-                        creatorProfileRepository,
-                        creatorBankAccountRepository,
-                        razorpayXClient,
-                        fundAccountService,
-                        brandContext,
-                        idempotencyService,
-                        walletTransactionRepository,
-                        walletLedgerService,
-                        platformWalletService,
-                        walletService,
-                        applicationHistoryService);
+        // [EV-014 / payoutswitch] enabled=true: the suite below exercises the path behind the
+        // kill switch. Its OFF default is asserted in testQueuePayoutRefusedWhenPayoutsDisabled.
+        service = newPayoutService(payoutProperties(true));
+    }
+
+    /** [EV-014 / payoutswitch] Real switch over real properties — never a mocked switch, so the
+     * bound default is what is actually under test. */
+    private PayoutService newPayoutService(PayoutProperties properties) {
+        return new PayoutService(
+                milestoneRepository,
+                escrowHoldRepository,
+                collaborationRepository,
+                payoutRepository,
+                creatorProfileRepository,
+                creatorBankAccountRepository,
+                razorpayXClient,
+                fundAccountService,
+                brandContext,
+                idempotencyService,
+                walletTransactionRepository,
+                walletLedgerService,
+                platformWalletService,
+                walletService,
+                applicationHistoryService,
+                new com.influora.service.payout.PayoutKillSwitch(properties));
+    }
+
+    private static PayoutProperties payoutProperties(boolean enabled) {
+        PayoutProperties properties = new PayoutProperties();
+        properties.setEnabled(enabled);
+        return properties;
+    }
+
+    // ------------------------------------------------------------------
+    // [EV-014 / payoutswitch] queuePayout pushes money to a creator's real bank account via
+    // RazorpayX, so it is held by the same server-side switch as POST /wallet/withdraw.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "queuePayout: refused PAYOUTS_DISABLED (403) on the DEFAULT config, before the role"
+                    + " check or any lookup — nothing is read, reserved or written")
+    void testQueuePayoutRefusedWhenPayoutsDisabled() {
+        PayoutService disabled = newPayoutService(new PayoutProperties());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> disabled.queuePayout(principal, WORKSPACE_ID, MILESTONE_ID));
+
+        assertEquals("PAYOUTS_DISABLED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        verifyNoInteractions(
+                principal,
+                brandContext,
+                milestoneRepository,
+                escrowHoldRepository,
+                collaborationRepository,
+                payoutRepository,
+                creatorProfileRepository,
+                creatorBankAccountRepository,
+                razorpayXClient,
+                fundAccountService,
+                idempotencyService,
+                walletTransactionRepository,
+                walletLedgerService,
+                platformWalletService,
+                walletService,
+                applicationHistoryService);
     }
 
     /**

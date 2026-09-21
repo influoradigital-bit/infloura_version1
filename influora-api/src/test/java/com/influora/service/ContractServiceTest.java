@@ -155,6 +155,37 @@ class ContractServiceTest {
                 .build();
     }
 
+    /**
+     * The accepted offer every real contract is generated from.
+     *
+     * {@code ContractService#generate} materializes the creator's submission slots from the newest
+     * proposal card, and since 2026-09-21 refuses to write a contract that would order nothing
+     * (hirepath: a zero-slot contract left the creator with nothing to submit and no control that
+     * could create one). None of the tests in this file is ABOUT deliverables -- they cover
+     * workspace scoping, row locking, terms, expiration dates and history events -- so this
+     * supplies the minimum honest precondition rather than restating it in each one.
+     */
+    private void stubAgreedDeliverables() {
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        COLLABORATION_ID, com.influora.domain.enums.DealMessageKind.proposal))
+                .thenReturn(
+                        Optional.of(
+                                com.influora.domain.entity.DealMessage.create(
+                                        "01HPROPOSALMSG1234567",
+                                        COLLABORATION_ID,
+                                        com.influora.domain.enums.DealMessageKind.proposal,
+                                        "01HBRANDUSER123456AB",
+                                        com.influora.domain.enums.DealSenderType.brand,
+                                        "Offer",
+                                        "{\"amount\":5000,\"status\":\"accepted\",\"deliverables\":"
+                                                + "[{\"type\":\"INSTAGRAM_REEL\",\"qty\":1}]}")));
+        when(creatorProfileRepository.findByUserId("01HCREATORUSER1234AB"))
+                .thenReturn(
+                        Optional.of(
+                                com.influora.domain.entity.CreatorProfile.newForUser(
+                                        "01HCREATORPROFILE12AB", "01HCREATORUSER1234AB", "Creator")));
+    }
+
     private Collaboration collaborationForCampaign(String campaignId) {
         return Collaboration.invite(COLLABORATION_ID, campaignId, "01HCREATORUSER1234AB", null, "INR");
     }
@@ -204,6 +235,7 @@ class ContractServiceTest {
             "generate: legitimate same-workspace collaboration still creates the Contract and"
                     + " PaymentMilestone rows normally")
     void testGenerateSucceedsForSameWorkspaceCollaboration() {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
@@ -220,6 +252,29 @@ class ContractServiceTest {
         assertEquals(WORKSPACE_ID, response.workspaceId());
         verify(contractRepository, times(1)).save(any(Contract.class));
         verify(milestoneRepository, times(1)).saveAll(any());
+
+        // [paytrigger, 2026-09-21] The payment trigger is the LIVE POST. #generate is one of only
+        // two places in main/ that construct a PaymentMilestone (the other is #amend, covered in
+        // ContractCancelAmendTest), and it deliberately does not call .releaseCondition(...) — it
+        // relies on PaymentMilestone.Builder#build()'s ON_POSTED default and the matching
+        // payment_milestones column default (V52). "Relies on a default" is exactly the kind of
+        // fact that silently changes, and with the release gate now ON, ON_APPROVAL slipping in
+        // here would mean a creator paid at draft approval. So assert what a real deal gets, on
+        // the rows this method actually saves.
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Iterable<PaymentMilestone>> savedMilestones =
+                ArgumentCaptor.forClass(Iterable.class);
+        verify(milestoneRepository).saveAll(savedMilestones.capture());
+        List<PaymentMilestone> generated = new java.util.ArrayList<>();
+        savedMilestones.getValue().forEach(generated::add);
+        org.junit.jupiter.api.Assertions.assertFalse(
+                generated.isEmpty(), "#generate must persist at least one milestone");
+        for (PaymentMilestone m : generated) {
+            assertEquals(
+                    com.influora.domain.enums.ReleaseCondition.ON_POSTED,
+                    m.getReleaseCondition(),
+                    "a milestone from ContractService#generate must pay on the live post, not on approval");
+        }
     }
 
     /** Persistent application-history requirement — wiring the 8 remaining event types. */
@@ -227,6 +282,7 @@ class ContractServiceTest {
     @DisplayName(
             "generate: records DEAL_ROOM_ACTIVATED and CONTRACT_GENERATED application-history events")
     void testGenerateRecordsApplicationHistoryEvents() {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         when(principal.getUserId()).thenReturn("brand_user_1");
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
@@ -348,6 +404,7 @@ class ContractServiceTest {
             "generate: a collaboration whose only prior contract is CANCELLED is NOT blocked — a new"
                     + " contract is created normally")
     void testGenerateAllowsNewContractWhenOnlyCancelledContractExists() {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
@@ -379,6 +436,7 @@ class ContractServiceTest {
     @Test
     @DisplayName("generate: supplied terms text survives to the persisted entity and the response")
     void testGenerateTermsSurviveToPersistedEntityAndResponse() {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
@@ -417,6 +475,7 @@ class ContractServiceTest {
     @Test
     @DisplayName("generate: omitted terms persist and return as null, never fabricated")
     void testGenerateWithNoTermsSuppliedReturnsNullTermsNotFabricated() {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
@@ -520,6 +579,7 @@ class ContractServiceTest {
             "generate: acquires the collaboration row lock BEFORE the duplicate-contract exists-check"
                     + " and the save (ordering that makes the guard race-safe)")
     void testGenerateAcquiresRowLockBeforeExistsCheckAndSave() {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
@@ -560,6 +620,7 @@ class ContractServiceTest {
             "generate: simulated concurrent creates for the same collaboration — the lock serializes"
                     + " them so only ONE contract is ever saved, the other is rejected")
     void testConcurrentGenerateCallsAreSerializedByCollaborationLock() throws Exception {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
@@ -724,6 +785,7 @@ class ContractServiceTest {
             "generate: a milestone total below the collaboration's agreedRate is allowed (bound is"
                     + " \"does not exceed\", not \"must equal\")")
     void testGenerateAllowsTotalBelowAgreedRate() {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
         collaboration.updateAgreedRate(BigDecimal.valueOf(10000)); // agreed rate = 10000, well above 5000

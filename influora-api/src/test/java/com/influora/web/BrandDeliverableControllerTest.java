@@ -97,7 +97,14 @@ class BrandDeliverableControllerTest {
                         null,
                         true,
                         true,
-                        true);
+                        true,
+                        // Review clock: a SUBMITTED draft with two working days left and no
+                        // escalation. Real values, not nulls, so this test would notice if the
+                        // controller ever dropped the clock on its way out.
+                        java.time.Instant.parse("2026-09-24T18:29:59.999999999Z"),
+                        2,
+                        false,
+                        null);
         when(brandDeliverableService.getDetail(eq(principal), eq(DELIVERABLE_ID)))
                 .thenReturn(detail);
 

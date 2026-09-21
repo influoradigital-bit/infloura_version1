@@ -24,6 +24,7 @@ import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.PayoutRepository;
 import com.influora.repository.WalletTransactionRepository;
 import com.influora.security.AuthPrincipal;
+import com.influora.service.payout.PayoutKillSwitch;
 import com.influora.service.payout.RazorpayFundAccountService;
 import com.influora.web.dto.money.MoneyDtos.PayoutResponse;
 import java.math.BigDecimal;
@@ -163,6 +164,15 @@ public class PayoutService {
     /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
     private final ApplicationHistoryService applicationHistoryService;
 
+    /**
+     * [EV-014 / payoutswitch] This rail pushes money to a creator's real bank account via
+     * RazorpayX, so it is gated by the same server-side kill switch as {@code
+     * POST /wallet/withdraw}. Gating it does NOT block the brand's escrow release — {@code
+     * EscrowService#release} has already credited the creator's Influora wallet by the time
+     * anything calls {@link #queuePayout}; only the outbound bank push is held.
+     */
+    private final PayoutKillSwitch payoutKillSwitch;
+
     public PayoutService(
             PaymentMilestoneRepository milestoneRepository,
             EscrowHoldRepository escrowHoldRepository,
@@ -178,7 +188,8 @@ public class PayoutService {
             WalletLedgerService walletLedgerService,
             PlatformWalletService platformWalletService,
             WalletService walletService,
-            ApplicationHistoryService applicationHistoryService) {
+            ApplicationHistoryService applicationHistoryService,
+            PayoutKillSwitch payoutKillSwitch) {
         this.milestoneRepository = milestoneRepository;
         this.escrowHoldRepository = escrowHoldRepository;
         this.collaborationRepository = collaborationRepository;
@@ -194,9 +205,14 @@ public class PayoutService {
         this.platformWalletService = platformWalletService;
         this.walletService = walletService;
         this.applicationHistoryService = applicationHistoryService;
+        this.payoutKillSwitch = payoutKillSwitch;
     }
 
     public PayoutResponse queuePayout(AuthPrincipal principal, String workspaceId, String milestoneId) {
+        // [EV-014 / payoutswitch] FIRST statement — before the role check, the replay lookup and
+        // any idempotency reservation, so a refusal writes nothing at all.
+        payoutKillSwitch.requireEnabled("escrow.payout");
+
         // [L-1] OWNER/ADMIN only — this triggers a real RazorpayX bank payout, the same
         // sensitivity as EscrowService#initiateFund's role gate, not a plain member action.
         var member = brandContext.requireMember(principal, workspaceId);

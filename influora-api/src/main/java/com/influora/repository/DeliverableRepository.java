@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -94,4 +95,36 @@ public interface DeliverableRepository extends JpaRepository<Deliverable, String
   /** DPF-8 — abandoned drafts cleanup (non-approved deliverables untouched for 90+ days). */
   List<Deliverable> findByStatusInAndUpdatedAtBefore(
       Set<DeliverableStatus> statuses, Instant cutoff);
+
+  /**
+   * Brand-review-clock sweep candidates ({@code BrandReviewSlaEscalationJob}): drafts still
+   * awaiting a brand decision that have never been escalated and were submitted before {@code
+   * submittedBefore}.
+   *
+   * <p>{@code submittedBefore} is only a cheap floor, NOT the deadline. The real deadline is a
+   * working-day count that depends on the submission's own weekday, so it cannot be expressed as
+   * a single SQL cutoff; the job re-checks every candidate against {@code ReviewSlaService} before
+   * escalating anything. The floor is set from the SHORTEST configured window, so it can never
+   * exclude a deliverable that is genuinely overdue — a window of N working days always spans at
+   * least N calendar days.
+   *
+   * <p>{@code Limit} bounds one run (see {@code ReviewSlaProperties.batchLimit}); ordering by
+   * {@code submittedAt} ascending means the creator who has been waiting longest is served first
+   * rather than whoever the storage engine happens to return.
+   */
+  List<Deliverable> findByStatusInAndReviewEscalatedAtIsNullAndSubmittedAtBeforeOrderBySubmittedAtAsc(
+      Set<DeliverableStatus> statuses, Instant submittedBefore, Limit limit);
+
+  /**
+   * Locking read used by {@code ReviewSlaService#escalate} to re-check {@code reviewEscalatedAt}
+   * and stamp it in one transaction.
+   *
+   * <p>{@code PESSIMISTIC_WRITE} for the same reason {@link #findByIdAndWorkspaceId} takes it
+   * (F-0580): {@code Deliverable} carries no {@code @Version}, and this is a read-modify-write on
+   * a row a brand may be approving at the same instant. Without the lock, two sweeps — or a sweep
+   * racing an approval — could both read {@code reviewEscalatedAt IS NULL} and both escalate.
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT d FROM Deliverable d WHERE d.id = :id")
+  Optional<Deliverable> findByIdForUpdate(@Param("id") String id);
 }

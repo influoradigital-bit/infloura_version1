@@ -135,6 +135,37 @@ class ContractCancelAmendTest {
                 .build();
     }
 
+    /**
+     * The accepted offer every real contract is generated from.
+     *
+     * {@code ContractService#generate} materializes the creator's submission slots from the newest
+     * proposal card, and since 2026-09-21 refuses to write a contract that would order nothing
+     * (hirepath: a zero-slot contract left the creator with nothing to submit and no control that
+     * could create one). None of the tests in this file is ABOUT deliverables -- they cover
+     * workspace scoping, row locking, terms, expiration dates and history events -- so this
+     * supplies the minimum honest precondition rather than restating it in each one.
+     */
+    private void stubAgreedDeliverables() {
+        when(dealMessageRepository.findFirstByCollaborationIdAndKindOrderByCreatedAtDesc(
+                        COLLABORATION_ID, com.influora.domain.enums.DealMessageKind.proposal))
+                .thenReturn(
+                        Optional.of(
+                                com.influora.domain.entity.DealMessage.create(
+                                        "01HPROPOSALMSG1234567",
+                                        COLLABORATION_ID,
+                                        com.influora.domain.enums.DealMessageKind.proposal,
+                                        "01HBRANDUSER123456AB",
+                                        com.influora.domain.enums.DealSenderType.brand,
+                                        "Offer",
+                                        "{\"amount\":5000,\"status\":\"accepted\",\"deliverables\":"
+                                                + "[{\"type\":\"INSTAGRAM_REEL\",\"qty\":1}]}")));
+        when(creatorProfileRepository.findByUserId(CREATOR_USER_ID))
+                .thenReturn(
+                        Optional.of(
+                                com.influora.domain.entity.CreatorProfile.newForUser(
+                                        "01HCREATORPROFILE12AB", CREATOR_USER_ID, "Creator")));
+    }
+
     private Collaboration collaborationForCampaign(String campaignId) {
         return Collaboration.invite(COLLABORATION_ID, campaignId, CREATOR_USER_ID, null, "INR");
     }
@@ -266,6 +297,7 @@ class ContractCancelAmendTest {
             "generate: expirationDate is populated with the LATEST supplied milestone due date,"
                     + " not left null")
     void testGeneratePopulatesExpirationDateFromLatestMilestoneDueDate() {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
@@ -300,6 +332,7 @@ class ContractCancelAmendTest {
     @Test
     @DisplayName("generate: no milestone due dates supplied leaves expirationDate null, never fabricated")
     void testGenerateWithNoMilestoneDueDatesLeavesExpirationDateNull() {
+        stubAgreedDeliverables();
         when(brandContext.requireMember(principal, WORKSPACE_ID)).thenReturn(member);
         Collaboration collaboration = collaborationForCampaign(CAMPAIGN_ID);
         when(collaborationRepository.findById(COLLABORATION_ID)).thenReturn(Optional.of(collaboration));
@@ -382,6 +415,25 @@ class ContractCancelAmendTest {
         verify(contractRepository).save(savedNew.capture());
         assertNotEquals(CONTRACT_ID, savedNew.getValue().getId());
         assertEquals(2, savedNew.getValue().getVersion());
+
+        // [paytrigger, 2026-09-21] #amend is the second (and last) place in main/ that constructs
+        // a PaymentMilestone. Like #generate it leaves releaseCondition unset and inherits
+        // ON_POSTED, so an amendment must not quietly re-key a live deal onto payment-at-approval.
+        // ContractServiceTest carries the matching assertion for #generate.
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Iterable<com.influora.domain.entity.PaymentMilestone>> savedMilestones =
+                ArgumentCaptor.forClass(Iterable.class);
+        verify(milestoneRepository).saveAll(savedMilestones.capture());
+        List<com.influora.domain.entity.PaymentMilestone> amended = new java.util.ArrayList<>();
+        savedMilestones.getValue().forEach(amended::add);
+        org.junit.jupiter.api.Assertions.assertFalse(
+                amended.isEmpty(), "#amend must persist the amended milestones");
+        for (com.influora.domain.entity.PaymentMilestone m : amended) {
+            assertEquals(
+                    com.influora.domain.enums.ReleaseCondition.ON_POSTED,
+                    m.getReleaseCondition(),
+                    "an amended milestone must still pay on the live post, not on approval");
+        }
     }
 
     /**

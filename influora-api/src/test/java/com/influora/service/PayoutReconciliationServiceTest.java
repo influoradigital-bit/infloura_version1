@@ -10,9 +10,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
+import com.influora.config.PayoutProperties;
 import com.influora.domain.entity.Payout;
 import com.influora.domain.entity.Wallet;
 import com.influora.domain.entity.WalletTransaction;
@@ -23,6 +25,7 @@ import com.influora.integration.razorpay.RazorpayXClient;
 import com.influora.integration.razorpay.RazorpayXClient.PayoutResult;
 import com.influora.repository.PayoutRepository;
 import com.influora.repository.WalletTransactionRepository;
+import com.influora.service.payout.PayoutKillSwitch;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
@@ -67,15 +70,29 @@ class PayoutReconciliationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service =
-                new PayoutReconciliationService(
-                        payoutRepository,
-                        ledgerService,
-                        platformWalletService,
-                        walletService,
-                        walletTransactionRepository,
-                        razorpayXClient,
-                        idempotencyService);
+        // [EV-014 / payoutswitch] enabled=true: the suite below exercises the gateway paths
+        // themselves, which only run once the kill switch allows them. The OFF behaviour of each
+        // entry point is asserted in the payout-kill-switch section at the end of this class.
+        service = newService(payoutProperties(true));
+    }
+
+    /** [EV-014 / payoutswitch] Real switch over real properties, never a mocked switch. */
+    private PayoutReconciliationService newService(PayoutProperties properties) {
+        return new PayoutReconciliationService(
+                payoutRepository,
+                ledgerService,
+                platformWalletService,
+                walletService,
+                walletTransactionRepository,
+                razorpayXClient,
+                idempotencyService,
+                new PayoutKillSwitch(properties));
+    }
+
+    private static PayoutProperties payoutProperties(boolean enabled) {
+        PayoutProperties properties = new PayoutProperties();
+        properties.setEnabled(enabled);
+        return properties;
     }
 
     /** Stubs {@link IdempotencyService#executeOnce} to actually run the supplied action — the real
@@ -632,6 +649,115 @@ class PayoutReconciliationServiceTest {
                         anyString(),
                         eq(PayoutReconciliationService.retryReversalKey(expectedAttemptKey)),
                         any());
+    }
+
+    // ------------------------------------------------------------------
+    // [EV-014 / payoutswitch] Kill switch across this service's THREE resumable payout entry
+    // points, plus the one method deliberately left ungated.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "retryFailedPayout: refused PAYOUTS_DISABLED (403) on the DEFAULT config — an"
+                    + " admin-triggered retry is still a RazorpayX payout")
+    void testRetryFailedPayoutRefusedWhenPayoutsDisabled() {
+        PayoutReconciliationService disabled = newService(new PayoutProperties());
+
+        ApiException ex = assertThrows(ApiException.class, () -> disabled.retryFailedPayout(PAYOUT_ID));
+
+        assertEquals("PAYOUTS_DISABLED", ex.getCode());
+        assertEquals(403, ex.getStatus().value());
+        // Refused before the row is even loaded: no debit, no idempotency reservation, no
+        // gateway call, no reversal.
+        verifyNoInteractions(
+                payoutRepository,
+                ledgerService,
+                platformWalletService,
+                walletService,
+                walletTransactionRepository,
+                razorpayXClient,
+                idempotencyService);
+    }
+
+    @Test
+    @DisplayName(
+            "reconcileOrphanedPendingPayout: with payouts disabled the sweep is a pure no-op — it"
+                    + " does NOT resume the gateway attempt and does NOT flip the row to REVERSED")
+    void testOrphanedSweepSkipsWhenPayoutsDisabled() {
+        PayoutReconciliationService disabled = newService(payoutProperties(false));
+        Payout payout = pendingPayout();
+
+        disabled.reconcileOrphanedPendingPayout(payout);
+
+        // The switch must SKIP, not throw: this method funnels into attemptGatewayPayout, whose
+        // catch(Exception) reads any throwable as "the payout failed" and would mark the row
+        // REVERSED + re-credit. A thrown refusal would therefore have the kill switch silently
+        // rewriting payout state on every sweep tick. Status unchanged is the proof.
+        assertEquals(Payout.STATUS_PENDING, payout.getStatus());
+        verifyNoInteractions(
+                payoutRepository,
+                ledgerService,
+                platformWalletService,
+                walletService,
+                walletTransactionRepository,
+                razorpayXClient,
+                idempotencyService);
+    }
+
+    @Test
+    @DisplayName(
+            "reconcileFailedPayoutRetry: with payouts disabled the sweep is a pure no-op — same"
+                    + " skip-never-throw contract as the orphaned-pending sweep")
+    void testFailedRetrySweepSkipsWhenPayoutsDisabled() {
+        PayoutReconciliationService disabled = newService(payoutProperties(false));
+        Payout payout = rejectedPayout();
+        String statusBefore = payout.getStatus();
+
+        disabled.reconcileFailedPayoutRetry(payout);
+
+        assertEquals(statusBefore, payout.getStatus());
+        verifyNoInteractions(
+                payoutRepository,
+                ledgerService,
+                platformWalletService,
+                walletService,
+                walletTransactionRepository,
+                razorpayXClient,
+                idempotencyService);
+    }
+
+    @Test
+    @DisplayName(
+            "confirmExecuted: DELIBERATELY ungated — a `reversed` webhook for a payout that was"
+                    + " already sent still re-credits the creator while payouts are off")
+    void testConfirmExecutedIsNotGatedByTheKillSwitch() {
+        // confirmExecuted RECORDS the outcome of money that already left; gating it would strand
+        // a real reversal in an unreconciled state rather than prevent anything. This is the one
+        // payout-touching method in this service that the switch must NOT hold.
+        PayoutReconciliationService disabled = newService(payoutProperties(false));
+        Payout payout = pendingPayout();
+        payout.markGatewayConfirmed("payout_xyz", "processing");
+        when(payoutRepository.findByRazorpayPayoutId("payout_xyz")).thenReturn(Optional.of(payout));
+        Wallet clearingWallet = Wallet.forWorkspace(CLEARING_WALLET_ID, "platform-clearing");
+        Wallet creatorWallet = Wallet.forUser(CREATOR_WALLET_ID, CREATOR_ID);
+        when(platformWalletService.requireClearingWallet()).thenReturn(clearingWallet);
+        when(walletService.requireOrCreateUserWallet(CREATOR_ID)).thenReturn(creatorWallet);
+
+        disabled.confirmExecuted("payout_xyz", "reversed", "{}");
+
+        assertEquals("reversed", payout.getStatus());
+        verify(ledgerService, times(1))
+                .post(
+                        eq(CLEARING_WALLET_ID),
+                        eq(CREATOR_WALLET_ID),
+                        eq(AMOUNT),
+                        eq("INR"),
+                        eq(WalletTransactionType.PAYOUT),
+                        eq(TxnReferenceType.MILESTONE),
+                        eq(MILESTONE_ID),
+                        anyString(),
+                        eq("payout-reversed:payout_xyz"),
+                        eq("payout_xyz"));
     }
 
     private WalletTransaction debitLeg() {

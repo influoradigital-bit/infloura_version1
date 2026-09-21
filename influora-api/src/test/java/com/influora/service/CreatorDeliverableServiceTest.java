@@ -105,7 +105,13 @@ class CreatorDeliverableServiceTest {
                         collaborationLifecycleService,
                         verificationService,
                         metaOAuthTokenRepository,
-                        applicationHistoryService);
+                        applicationHistoryService,
+                        new ReviewSlaService(
+                                new com.influora.config.ReviewSlaProperties(),
+                                deliverableRepository,
+                                collaborationRepository,
+                                org.mockito.Mockito.mock(com.influora.repository.CampaignRepository.class),
+                                org.mockito.Mockito.mock(com.influora.repository.SupportTicketRepository.class)));
         profile = CreatorProfile.newForUser("profile1", CREATOR_USER_ID, "Test Creator");
         lenient().when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
     }

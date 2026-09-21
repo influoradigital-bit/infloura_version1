@@ -139,34 +139,95 @@ public class EscrowService {
     @Autowired private IdempotencyService idempotencyService;
 
     /**
+     * [paytrigger, 2026-09-21] Master switch for the {@link #assertReleaseConditionSatisfied}
+     * gate. ON by default. This exists because the gate previously had no switch at all: its only
+     * control was {@link #releaseGateCutoverInstantRaw}, which shipped BLANK, and a blank cutover
+     * means {@link #isPostCutover} answers {@code false} for every milestone — so the gate that
+     * exists to stop money moving before the creator's post is live was, in the shipped
+     * configuration, never consulted. Releases failed OPEN.
+     *
+     * <p>Setting this to {@code false} turns the gate off again. That is now a deliberate,
+     * named act that logs a warning at boot, instead of the silent default.
+     *
+     * <p>The field initializer is NOT redundant with the {@code @Value} default. Several test
+     * classes construct this service with {@code new EscrowService(...)} outside any Spring
+     * context, wire {@link #releaseGateCutoverInstantRaw} by reflection and invoke {@link
+     * #initReleaseGateCutoverInstant} directly; without the initializer a primitive {@code
+     * boolean} would arrive {@code false} there and quietly disable the gate they exist to
+     * exercise. The initializer keeps "gate on" the default in both worlds, and Spring overwrites
+     * it from configuration in the one that has configuration.
+     */
+    @Value("${influora.escrow.release-gate.enabled:true}")
+    private boolean releaseGateEnabled = true;
+
+    /**
      * CR-51 step 2 — cutover for the {@link #assertReleaseConditionSatisfied} gate. ISO-8601
-     * instant (e.g. {@code 2026-07-30T00:00:00Z}), or blank/unset to keep the gate fully
-     * disabled (pre-CR-51 behavior: always fail open). Deliberately NOT derived from "has
+     * instant (e.g. {@code 2026-07-30T00:00:00Z}). Milestones created at or before it keep failing
+     * open (deals already in flight when the gate was switched on must not suddenly start refusing
+     * releases); milestones created after it are gated. Deliberately NOT derived from "has
      * deliverables" — that is the circular condition CR-51 exists to fix. Swapnil's ruling: the
-     * boundary is wall-clock time (milestone {@code created_at} vs. this deploy-time cutover),
-     * not the presence of deliverable rows.
+     * boundary is wall-clock time (milestone {@code created_at} vs. this deploy-time cutover), not
+     * the presence of deliverable rows.
+     *
+     * <p>The shipped default is a real instant (see {@code application.yml}), not blank. A blank
+     * or unparseable value while the gate is enabled no longer disables it — see {@link
+     * #initReleaseGateCutoverInstant}.
      */
     @Value("${influora.escrow.release-gate.cutover-instant:}")
     private String releaseGateCutoverInstantRaw;
 
     private Instant releaseGateCutoverInstant;
 
+    /**
+     * Resolves the single runtime source of truth for the gate, {@link
+     * #releaseGateCutoverInstant}: {@code null} means "gate off", any instant means "gate on for
+     * milestones created after it". {@link #isPostCutover} reads only this field, so there is
+     * exactly one way for the gate to be off and it is visible in one place.
+     *
+     * <ul>
+     *   <li>{@code enabled=false} — off. Logged at WARN, naming what that permits.
+     *   <li>{@code enabled=true}, cutover blank or unparseable — FAIL CLOSED at {@link
+     *       Instant#EPOCH}, i.e. every milestone is gated, and logged at ERROR. Refusing a
+     *       release the operator can retry after fixing the config is recoverable; paying a
+     *       creator before their post is live is not. This is the inversion the paytrigger fix
+     *       is about: a misconfigured money gate must not quietly become no gate.
+     *   <li>{@code enabled=true}, cutover parses — on, from that instant.
+     * </ul>
+     */
     @PostConstruct
     void initReleaseGateCutoverInstant() {
-        if (releaseGateCutoverInstantRaw == null || releaseGateCutoverInstantRaw.isBlank()) {
+        if (!releaseGateEnabled) {
             releaseGateCutoverInstant = null;
+            log.warn(
+                    "Escrow release-condition gate is OFF"
+                            + " (influora.escrow.release-gate.enabled=false). Secured funds can be"
+                            + " released for a milestone whose deliverables are not yet POSTED —"
+                            + " i.e. a creator can be paid before their post is live. Set"
+                            + " influora.escrow.release-gate.enabled=true to restore the gate.");
+            return;
+        }
+        if (releaseGateCutoverInstantRaw == null || releaseGateCutoverInstantRaw.isBlank()) {
+            releaseGateCutoverInstant = Instant.EPOCH;
+            log.error(
+                    "influora.escrow.release-gate.cutover-instant is blank while the release gate is"
+                            + " enabled. Failing CLOSED: every milestone is gated (cutover ={})."
+                            + " Set a real ISO-8601 cutover instant, or set"
+                            + " influora.escrow.release-gate.enabled=false to turn the gate off"
+                            + " deliberately.",
+                    Instant.EPOCH);
             return;
         }
         try {
             releaseGateCutoverInstant = Instant.parse(releaseGateCutoverInstantRaw.trim());
         } catch (RuntimeException e) {
+            releaseGateCutoverInstant = Instant.EPOCH;
             log.error(
                     "Invalid influora.escrow.release-gate.cutover-instant value '{}' — expected an"
-                            + " ISO-8601 instant (e.g. 2026-07-30T00:00:00Z). Gate stays disabled"
-                            + " (fail-open) until this is fixed.",
+                            + " ISO-8601 instant (e.g. 2026-07-30T00:00:00Z). Failing CLOSED: every"
+                            + " milestone is gated (cutover ={}) until this is fixed.",
                     releaseGateCutoverInstantRaw,
+                    Instant.EPOCH,
                     e);
-            releaseGateCutoverInstant = null;
         }
     }
 
@@ -1713,15 +1774,26 @@ public class EscrowService {
      *       #tryReleaseOnApproval(String, String)} still skips gracefully (approval succeeds, hold
      *       stays FUNDED) instead of the approve() transaction blowing up. {@code refund()} remains
      *       the recovery escape hatch — it does not go through this gate. Staying inside the
-     *       cutover guard above means this is unreachable for legacy pre-cutover milestones, and a
-     *       blank/unset cutover instant disables the whole gate, so this ships DISABLED BY DEFAULT.
+     *       cutover guard above means this is unreachable for legacy pre-cutover milestones.
      * </ul>
+     *
+     * <p>[paytrigger, 2026-09-21] This gate ships ENABLED. It used to ship disabled — the cutover
+     * instant defaulted to blank, and a blank cutover makes {@link #isPostCutover} answer {@code
+     * false} for every milestone, so nothing was ever gated. That is what made "the creator is
+     * paid after the post is live" untrue in practice: with the gate inert, a release could be
+     * made, and an approval could auto-release, while every deliverable was still a DRAFT. The
+     * default release condition is {@link ReleaseCondition#ON_POSTED} (set in {@code
+     * PaymentMilestone.Builder#build()} and left unoverridden by both {@code ContractService}
+     * milestone-creation paths), so with the gate on, the milestone a real deal gets cannot pay
+     * out until every deliverable in its collaboration is POSTED — which is precisely {@code
+     * CreatorDeliverableService#markPosted} recording a validated live post URL.
      */
     private void assertReleaseConditionSatisfied(PaymentMilestone milestone) {
         if (!isPostCutover(milestone)) {
-            // Legacy milestone (cutover unset, or created_at at/before the cutover): keep failing
-            // open unconditionally, even if the collaboration has deliverables — this is the
-            // pre-existing production behavior and must not change for deals already in flight.
+            // Legacy milestone (gate switched off, or created_at at/before the cutover): keep
+            // failing open unconditionally, even if the collaboration has deliverables — this is
+            // the pre-existing production behavior and must not change for deals already in
+            // flight when the gate was switched on.
             return;
         }
         List<Deliverable> deliverables =
@@ -1740,9 +1812,10 @@ public class EscrowService {
                     milestone.getCreatedAt());
             throw new ApiException(
                     "RELEASE_CONDITION_NOT_MET",
-                    "Secured funds cannot be released: collaboration "
-                            + milestone.getCollaborationId()
-                            + " has no deliverables to satisfy the release condition.",
+                    "This payment can't be released yet. The creator is paid once their post is"
+                            + " live, and this deal has no deliverables recorded — so there is"
+                            + " nothing to confirm as posted. Our team needs to look at this deal"
+                            + " before the payment can go out.",
                     HttpStatus.CONFLICT);
         }
         ReleaseCondition condition =
@@ -1750,14 +1823,49 @@ public class EscrowService {
                         ? milestone.getReleaseCondition()
                         : ReleaseCondition.ON_POSTED;
         Set<DeliverableStatus> satisfying = satisfyingStatusesFor(condition);
-        boolean allSatisfied =
-                deliverables.stream().map(Deliverable::getStatus).allMatch(satisfying::contains);
-        if (!allSatisfied) {
+        long outstanding =
+                deliverables.stream()
+                        .map(Deliverable::getStatus)
+                        .filter(status -> !satisfying.contains(status))
+                        .count();
+        if (outstanding > 0) {
             throw new ApiException(
                     "RELEASE_CONDITION_NOT_MET",
-                    "Milestone release_condition (" + condition + ") is not yet satisfied by its deliverable(s)",
+                    releaseRefusalMessage(condition, outstanding, deliverables.size()),
                     HttpStatus.CONFLICT);
         }
+    }
+
+    /**
+     * The refusal a brand actually reads when they press Release too early.
+     *
+     * <p>It used to be {@code "Milestone release_condition (ON_POSTED) is not yet satisfied by its
+     * deliverable(s)"} — the enum name and the column name, which tell a brand neither what the
+     * rule is nor what has to happen next. These say the rule ("the creator is paid once their
+     * post is live"), the current state (how many of how many items are outstanding) and who acts
+     * next (the creator). This string reaches the brand verbatim: {@code deal-payments-tab.tsx}
+     * surfaces the server's message in its failure toast rather than re-deriving the gate.
+     */
+    private static String releaseRefusalMessage(ReleaseCondition condition, long outstanding, int total) {
+        String counts = outstanding + " of " + total + (total == 1 ? " deliverable" : " deliverables");
+        return switch (condition) {
+            case ON_POSTED ->
+                    "This payment can't be released yet. The creator is paid once their post is"
+                            + " live — "
+                            + counts
+                            + " on this deal have no live post link yet. Once the creator posts and"
+                            + " submits the link, you can release the payment.";
+            case ON_APPROVAL ->
+                    "This payment can't be released yet. "
+                            + counts
+                            + " on this deal are still waiting on your review. Approve them and you"
+                            + " can release the payment.";
+            case ON_VERIFIED_METRICS ->
+                    "This payment can't be released yet. This deal pays once the post's metrics are"
+                            + " verified, and "
+                            + counts
+                            + " are not verified yet.";
+        };
     }
 
     /**

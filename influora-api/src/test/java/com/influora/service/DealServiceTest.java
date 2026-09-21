@@ -194,8 +194,18 @@ class DealServiceTest {
     // ---------------------------------------------------------------------
 
     private CreateDealRequest proposalRequest() {
+        // A real ordered slot, not null: since 2026-09-21 an offer that says nothing about what the
+        // creator will post is refused at the route (DELIVERABLES_REQUIRED), because it produces a
+        // contract with no submission slots. The DTO's own @NotEmpty said as much already.
         return new CreateDealRequest(
-                CAMPAIGN_ID, CREATOR_PROFILE_ID, new BigDecimal("25000"), null, null, null, "Work with us", null);
+                CAMPAIGN_ID,
+                CREATOR_PROFILE_ID,
+                new BigDecimal("25000"),
+                List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)),
+                null,
+                null,
+                "Work with us",
+                null);
     }
 
     /**
@@ -373,7 +383,14 @@ class DealServiceTest {
                         3);
         CreateDealRequest body =
                 new CreateDealRequest(
-                        CAMPAIGN_ID, CREATOR_PROFILE_ID, new BigDecimal("25000"), null, null, null, "Work with us", terms);
+                        CAMPAIGN_ID,
+                        CREATOR_PROFILE_ID,
+                        new BigDecimal("25000"),
+                        List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)),
+                        null,
+                        null,
+                        "Work with us",
+                        terms);
 
         service.createProposal(brandPrincipal, body);
 
@@ -614,7 +631,9 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null);
+        CounterRequest body =
+                new CounterRequest(
+                        new BigDecimal("25000"), "Counter offer", List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)), null, null, null);
         DealResponse response = service.counter(brandPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
@@ -657,7 +676,7 @@ class DealServiceTest {
                 new CounterRequest(
                         new BigDecimal("25000"),
                         "Revised terms",
-                        List.of(new DeliverableSlot("REEL", 2)),
+                        List.of(new DeliverableSlot("INSTAGRAM_REEL", 2)),
                         "2026-08-15",
                         "6 months",
                         null);
@@ -673,7 +692,8 @@ class DealServiceTest {
         // deadline used to be hardcoded null on the counter path, so it vanished on every
         // counter; and deliverables were persisted as a bare COUNT, losing type and quantity.
         assertTrue(metadata.contains("2026-08-15"), "deadline missing from proposal metadata");
-        assertTrue(metadata.contains("REEL"), "deliverable type missing from proposal metadata");
+        assertTrue(
+                metadata.contains("INSTAGRAM_REEL"), "deliverable type missing from proposal metadata");
     }
 
     // ------------------------------------------------------------------
@@ -717,7 +737,9 @@ class DealServiceTest {
                         });
 
         // activeCampaign()'s budgetMax is 50000. Pre-fix this 400'd with AMOUNT_EXCEEDS_BUDGET.
-        CounterRequest body = new CounterRequest(new BigDecimal("75000"), "Let's do 75k", null, null, null, null);
+        CounterRequest body =
+                new CounterRequest(
+                        new BigDecimal("75000"), "Let's do 75k", List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)), null, null, null);
         DealResponse response = service.counter(creatorPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
@@ -758,7 +780,9 @@ class DealServiceTest {
 
         // Above budgetMax(50000) but below the creator's hypothetical prior ask — a genuine
         // meet-in-the-middle compromise, which the symmetric fix must also allow.
-        CounterRequest body = new CounterRequest(new BigDecimal("60000"), "Let's meet at 60k", null, null, null, null);
+        CounterRequest body =
+                new CounterRequest(
+                        new BigDecimal("60000"), "Let's meet at 60k", List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)), null, null, null);
         DealResponse response = service.counter(brandPrincipal, DEAL_ID, body, null);
 
         assertEquals(CollaborationStatus.IN_NEGOTIATION, response.status());
@@ -1767,7 +1791,8 @@ class DealServiceTest {
         service.counter(
                 brandPrincipal,
                 DEAL_ID,
-                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null),
+                        new CounterRequest(
+                        new BigDecimal("25000"), "Counter offer", List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)), null, null, null),
                 null);
 
         ArgumentCaptor<DealMessageResponse> published =
@@ -2318,7 +2343,9 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null);
+        CounterRequest body =
+                new CounterRequest(
+                        new BigDecimal("25000"), "Counter offer", List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)), null, null, null);
         service.counter(brandPrincipal, DEAL_ID, body, null);
 
         // doCounter records no ApplicationHistoryEvent of its own (there is no COUNTER value in
@@ -2433,7 +2460,9 @@ class DealServiceTest {
                             return action.get();
                         });
 
-        CounterRequest body = new CounterRequest(new BigDecimal("25000"), "Let's do 25k", null, null, null, null);
+        CounterRequest body =
+                new CounterRequest(
+                        new BigDecimal("25000"), "Let's do 25k", List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)), null, null, null);
         service.counter(creatorPrincipal, DEAL_ID, body, null);
 
         verify(applicationHistoryService, never())

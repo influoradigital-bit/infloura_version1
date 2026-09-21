@@ -50,7 +50,6 @@ import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -722,10 +721,19 @@ public class ContractService {
      *
      * <p>Source of truth for "agreed slots": the {@code deliverables} metadata on the most
      * recent {@code proposal}-kind {@link DealMessage} for this collaboration — the last accepted
-     * offer. Best-effort / non-fatal: a collaboration whose last offer has no structured
-     * deliverables (e.g. a pre-fix proposal, or one negotiated without the deliverables field)
-     * materializes zero rows rather than failing contract generation — the contract/milestones are
-     * the load-bearing part of this method.
+     * offer.
+     *
+     * <p><b>Zero slots is now a refusal, not a shrug [hirepath, 2026-09-21].</b> This used to
+     * return quietly when the last offer carried no structured deliverables, on the reasoning that
+     * "the contract/milestones are the load-bearing part". They are not: a contract with no
+     * deliverable rows orders nothing. The creator opens the deal room with no slot to submit
+     * against and no control that can create one (slots exist only here), the brand sees a signed
+     * contract for work that was never specified, and the money milestone is attached to an empty
+     * order. Nothing downstream can recover it, because by then the offer has been accepted and
+     * the contract signed. So contract generation stops here instead, loudly, while the brand is
+     * still on a screen that can fix it — and every offer route now refuses to put a deliverable-
+     * less offer on the table in the first place ({@code DealService#requireOrderedDeliverables}),
+     * so in practice this fires only for rows that predate that guard.
      *
      * <p>Idempotent — skips entirely if this collaboration already has {@link Deliverable} rows
      * (e.g. a contract regenerated after renegotiation), so re-running {@link #generate} never
@@ -740,7 +748,12 @@ public class ContractService {
 
         List<Map<String, Object>> slots = latestAgreedDeliverableSlots(collaboration.getId());
         if (slots.isEmpty()) {
-            return;
+            throw new ApiException(
+                    "DELIVERABLES_REQUIRED",
+                    "This deal has no agreed deliverables, so there is nothing for the contract to"
+                            + " order. Send a new offer in the deal room listing what the creator"
+                            + " will post, get it accepted, then generate the contract.",
+                    HttpStatus.CONFLICT);
         }
 
         String creatorProfileId =
@@ -749,19 +762,23 @@ public class ContractService {
                         .map(CreatorProfile::getId)
                         .orElse(null);
         if (creatorProfileId == null) {
-            log.warn(
-                    "Skipping deliverable materialization for collaboration {} — no CreatorProfile"
-                            + " found for creator {}",
-                    collaboration.getId(),
-                    collaboration.getCreatorId());
-            return;
+            // Same reasoning as the empty-slot refusal above: without a creator profile there is
+            // no one to attach the slots to, so proceeding would write the contract and silently
+            // drop every ordered piece. Refused rather than logged — a warning in a server log is
+            // not something the brand on the other end of this request can act on.
+            throw new ApiException(
+                    "CREATOR_PROFILE_MISSING",
+                    "This creator does not have a profile yet, so the ordered deliverables cannot be"
+                            + " assigned to them. Ask them to finish setting up their profile, then"
+                            + " generate the contract.",
+                    HttpStatus.CONFLICT);
         }
 
         List<Deliverable> rows = new ArrayList<>();
         int slotIndex = 0;
         for (Map<String, Object> slot : slots) {
             int qty = slotQty(slot.get("qty"));
-            DeliverableType type = parseDeliverableType((String) slot.get("type"));
+            DeliverableType type = parseDeliverableType(slot.get("type"));
             for (int i = 0; i < qty; i++) {
                 rows.add(
                         Deliverable.builder()
@@ -770,13 +787,22 @@ public class ContractService {
                                 .creatorProfileId(creatorProfileId)
                                 .slotIndex(slotIndex++)
                                 .type(type)
-                                .title(humanizeType(type) + " #" + (i + 1))
+                                .title(type.displayLabel() + " #" + (i + 1))
                                 .build());
             }
         }
-        if (!rows.isEmpty()) {
-            deliverableRepository.saveAll(rows);
+        if (rows.isEmpty()) {
+            // Reachable only if every slot's qty was non-positive, which slotQty already floors at
+            // 1 — kept as a belt-and-braces refusal so no future change to slotQty can reintroduce
+            // a silently empty contract.
+            throw new ApiException(
+                    "DELIVERABLES_REQUIRED",
+                    "This deal has no agreed deliverables, so there is nothing for the contract to"
+                            + " order. Send a new offer in the deal room listing what the creator"
+                            + " will post, get it accepted, then generate the contract.",
+                    HttpStatus.CONFLICT);
         }
+        deliverableRepository.saveAll(rows);
     }
 
     /** Reads the {@code deliverables} array persisted by {@code DealService#persistProposalMessage}. */
@@ -813,19 +839,34 @@ public class ContractService {
         return 1;
     }
 
-    private static DeliverableType parseDeliverableType(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return DeliverableType.INSTAGRAM_REEL;
-        }
-        try {
-            return DeliverableType.valueOf(raw.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return DeliverableType.INSTAGRAM_REEL;
-        }
-    }
-
-    private static String humanizeType(DeliverableType type) {
-        return type.name().replace('_', ' ');
+    /**
+     * The {@link DeliverableType} this stored slot names — never a guess.
+     *
+     * <p>This used to be a {@code valueOf} wrapped in a {@code catch} that returned {@link
+     * DeliverableType#INSTAGRAM_REEL}, and a null/blank type took the same default. Every offer
+     * form was sending something the enum did not contain (display labels from the deal-room
+     * proposal form, short codes from the Discover modal), so the fallback was not an edge case —
+     * it was the normal path. A brand ordered a YouTube video, the contract materialized an
+     * Instagram Reel, and nothing anywhere said the order had been changed. It now refuses, and
+     * because contract generation is one transaction the whole contract fails with it rather than
+     * committing a rewritten order.
+     */
+    private static DeliverableType parseDeliverableType(Object raw) {
+        String value = raw instanceof String s ? s : null;
+        return DeliverableType.fromWireValue(value)
+                .orElseThrow(
+                        () ->
+                                new ApiException(
+                                        "DELIVERABLE_TYPE_UNKNOWN",
+                                        "This deal lists a deliverable type we cannot produce a"
+                                                + " submission slot for"
+                                                + (value == null || value.isBlank()
+                                                        ? " (the type is missing)"
+                                                        : " (\"" + value + "\")")
+                                                + ". Send a new offer in the deal room choosing"
+                                                + " from the listed content types, get it"
+                                                + " accepted, then generate the contract.",
+                                        HttpStatus.BAD_REQUEST));
     }
 
     /**
@@ -901,6 +942,30 @@ public class ContractService {
             String role,
             String signerName) {
         WorkspaceMember member = brandContext.requireMember(principal, workspaceId);
+        // [contractsign] Membership alone is not enough to sign. Every other legal or
+        // money-bearing transition on this contract is role-gated -- generate
+        // (ContractService.java:148), amend (:444) and cancel (:1057) all call requireRole --
+        // while the act the e-sign UI itself calls legally binding under the IT Act 2000 was
+        // gated on workspace membership only. A VIEWER or MEMBER could therefore bind the
+        // workspace to the contract's milestone amounts, and the unused `member` local above
+        // was the only trace left of the gate that belonged here.
+        //
+        // The gate matched is the MONEY gate -- OWNER/ADMIN, the same pair EscrowService (:236
+        // fund, :743/:775 release, :1106..:1217), PayoutService:219 and WalletTopUpService:103
+        // use -- because a brand signature is precisely what makes those amounts payable.
+        //
+        // DIVERGENCE, FLAGGED RATHER THAN CHOSEN SILENTLY: contract generate/amend/cancel allow
+        // MANAGER too (OWNER, ADMIN, MANAGER); this gate does not. Consequence: a MANAGER can
+        // draft, amend and cancel a contract but cannot sign one. That is consistent with a
+        // MANAGER already being unable to fund escrow or release a payout, but it IS narrower
+        // than the drafting gate and needs a ruling if MANAGERs are meant to commit the
+        // workspace. Widening here, or narrowing generate/amend/cancel, are both one-line
+        // changes; neither was taken without that ruling.
+        //
+        // This is also the gate the AI helper inherits: Meera drafts and explains, then the
+        // signature goes through this same method, so an assistant acting for a VIEWER is
+        // refused exactly as the VIEWER clicking the button is.
+        brandContext.requireRole(member, MemberRole.OWNER, MemberRole.ADMIN);
         Contract contract = requireContract(contractId, workspaceId);
 
         // [Swapnil ruling 2026-08-20] This method records the BRAND signature and nothing else.

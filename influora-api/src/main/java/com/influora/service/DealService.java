@@ -24,6 +24,7 @@ import com.influora.domain.enums.CollaborationStatus;
 import com.influora.domain.enums.DealMessageKind;
 import com.influora.domain.enums.DealSenderType;
 import com.influora.domain.enums.DeliverableStatus;
+import com.influora.domain.enums.DeliverableType;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.ExclusivityScope;
 import com.influora.domain.enums.MemberRole;
@@ -53,6 +54,7 @@ import com.influora.web.dto.deal.DealDtos.CreateDealRequest;
 import com.influora.web.dto.deal.DealDtos.DealMessageResponse;
 import com.influora.web.dto.deal.DealDtos.DealResponse;
 import com.influora.web.dto.deal.DealDtos.DealTermsDto;
+import com.influora.web.dto.deal.DealDtos.DeliverableSlot;
 import com.influora.web.dto.deal.DealDtos.OkResponse;
 import com.influora.web.dto.deal.DealDtos.RejectRequest;
 import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
@@ -253,6 +255,11 @@ public class DealService {
         Campaign campaign = requireWorkspaceCampaign(workspace.getId(), body.campaignId());
         CreatorProfile creator = requireOfferableProfile(body.creatorId());
         validateProposalAmount(campaign, body.amount());
+        // Canonicalised BEFORE anything is written, so a missing list or an unrecognised type can
+        // never leave a half-made Collaboration behind — and so the proposal metadata persisted at
+        // the bottom of this method always holds enum names the contract generator can read back.
+        // See requireOrderedDeliverables for what it refuses and why.
+        List<DeliverableSlot> orderedDeliverables = requireOrderedDeliverables(body.deliverables());
 
         // F-0225 — was a status-blind existsBy..., so a withdrawn deal blocked the brand from ever
         // re-offering on this campaign. Shares the decision with apply/invite rather than keeping a
@@ -312,7 +319,7 @@ public class DealService {
                 DealSenderType.brand,
                 body.amount(),
                 body.message(),
-                body.deliverables(),
+                orderedDeliverables,
                 body.deadline());
 
         // W3-1 — #3 "brand sends proposal/bid" (07-NOTIFICATION-SYSTEM-SPEC.md §3.1).
@@ -1326,11 +1333,17 @@ public class DealService {
                 settleLatestProposal(collaboration.getId(), "countered");
 
         // Carry forward deliverables from the superseded proposal when the counter does not
-        // revise them (e.g. a creator countering on price/deadline only). Without this, a counter
-        // with no deliverables field produces a proposal card with an empty deliverables list,
-        // which breaks the contract generator even though the parties never renegotiated scope.
+        // revise them (e.g. a creator countering on price/deadline only), so a party who only
+        // moved the price is not made to re-type the scope both sides already agreed.
         // Slots are stored as List<LinkedHashMap> after JSON round-trip (Jackson deserialises
         // them as Map, not DeliverableSlot records), so we rehydrate them here.
+        //
+        // The carry-forward is a CONVENIENCE, never the guarantee — that is
+        // requireOrderedDeliverables below. A counter on a deal that has no earlier proposal card
+        // (a creator's first counter on their own application; a brand countering an application
+        // from the campaign page's Bids tab) has nothing to inherit, which is exactly how the
+        // ordered work used to disappear: an empty list sailed through to a proposal card, the
+        // card was accepted, and the contract materialised no slots at all.
         var effectiveDeliverables = body.deliverables();
         if ((effectiveDeliverables == null || effectiveDeliverables.isEmpty())
                 && supersededCard.isPresent()) {
@@ -1345,12 +1358,17 @@ public class DealService {
                             Map<String, Object> m = (Map<String, Object>) item;
                             String type = String.valueOf(m.getOrDefault("type", ""));
                             int qty = ((Number) m.getOrDefault("qty", 1)).intValue();
-                            return new com.influora.web.dto.deal.DealDtos.DeliverableSlot(type, qty);
+                            return new DeliverableSlot(type, qty);
                         })
                         .filter(slot -> !slot.type().isBlank())
                         .toList();
             }
         }
+        // Whatever the counter supplied or inherited, it has to be a real, orderable list before
+        // it goes on the table. This method is @Transactional, so a refusal here rolls back the
+        // rate update and the "countered" settle above — the deal is left exactly as it was and
+        // the caller gets a message naming the field to fill in.
+        List<DeliverableSlot> orderedDeliverables = requireOrderedDeliverables(effectiveDeliverables);
 
         DealMessage newProposal =
                 persistProposalMessage(
@@ -1359,7 +1377,7 @@ public class DealService {
                         senderType,
                         body.amount(),
                         body.message(),
-                        effectiveDeliverables,
+                        orderedDeliverables,
                         body.deadline());
 
         // CR-08 — publish the superseded card BEFORE the new one. This mirrors the [H1] persistence
@@ -1848,9 +1866,78 @@ public class DealService {
         }
         throw new ApiException(
                 "DELIVERABLES_REQUIRED",
-                "This offer does not list any deliverables, so there would be nothing to deliver or"
-                        + " approve. Send a counter offer that lists the deliverables, then accept that.",
+                "This offer does not say what the creator will post, so there would be nothing to"
+                        + " deliver, review or pay for. Send a counter offer listing the content"
+                        + " and quantities, then accept that one.",
                 HttpStatus.CONFLICT);
+    }
+
+    /**
+     * The ordered deliverables for an offer about to go on the table — canonicalised, or a loud
+     * refusal. Every route that writes a proposal card runs through this: {@link #createProposal}
+     * (the Discover offer modal) and {@link #doCounter} (the deal-room proposal form, the
+     * campaign-page Bids counter, the creator's counter form), which between them are the only
+     * writers of {@code DealMessageKind.proposal} metadata, which is in turn the only source
+     * {@code ContractService#materializeDeliverables} reads.
+     *
+     * <p><b>Two things it refuses, both of which used to pass.</b>
+     *
+     * <ol>
+     *   <li><b>An empty list.</b> Two of the four offer forms sent no deliverables at all, so the
+     *       ordered work was lost at the first counter. The brand only found out at accept, where
+     *       the 409 told them to "send a counter offer that lists the deliverables" from a dialog
+     *       that had no deliverables control on it. The refusal now lands on submit of the form
+     *       that owns the field, in the same request the brand is already making.
+     *   <li><b>A type that names no {@link DeliverableType}.</b> Forms sent display labels
+     *       ("TikTok Video") and short codes ("REEL", "VIDEO"); the contract generator's
+     *       {@code catch} turned all of them into an Instagram Reel. Rewriting a brand's order
+     *       into a different platform's format is worse than refusing it, so this refuses it.
+     *       Values that merely SPELL a real constant differently ("YouTube Short") are normalised
+     *       onto it — see {@link DeliverableType#fromWireValue}.
+     * </ol>
+     *
+     * @return the same slots with every {@code type} rewritten to its canonical enum name, so the
+     *     metadata this gets persisted into is always readable by the contract generator
+     */
+    private List<DeliverableSlot> requireOrderedDeliverables(List<DeliverableSlot> slots) {
+        if (slots == null || slots.isEmpty()) {
+            throw new ApiException(
+                    "DELIVERABLES_REQUIRED",
+                    "Say what the creator will post before sending this offer — pick the content"
+                            + " type and how many of each. The creator's submission slots are built"
+                            + " from this list, so an offer without it orders nothing.",
+                    HttpStatus.BAD_REQUEST);
+        }
+        List<DeliverableSlot> canonical = new ArrayList<>(slots.size());
+        for (DeliverableSlot slot : slots) {
+            String raw = slot == null ? null : slot.type();
+            DeliverableType type =
+                    DeliverableType.fromWireValue(raw)
+                            .orElseThrow(
+                                    () ->
+                                            new ApiException(
+                                                    "DELIVERABLE_TYPE_UNKNOWN",
+                                                    "We cannot create a submission slot for \""
+                                                            + (raw == null ? "" : raw)
+                                                            + "\". Choose one of the listed content"
+                                                            + " types: "
+                                                            + DeliverableType.acceptedValues()
+                                                            + ".",
+                                                    HttpStatus.BAD_REQUEST));
+            int qty = slot.qty() == null ? 0 : slot.qty();
+            if (qty < 1) {
+                throw new ApiException(
+                        "DELIVERABLE_QTY_INVALID",
+                        "Every deliverable needs a quantity of at least 1 — "
+                                + type.name()
+                                + " was sent with "
+                                + qty
+                                + ".",
+                        HttpStatus.BAD_REQUEST);
+            }
+            canonical.add(new DeliverableSlot(type.name(), qty));
+        }
+        return canonical;
     }
 
     private void requireAgreedRateForCommitment(Collaboration collaboration) {

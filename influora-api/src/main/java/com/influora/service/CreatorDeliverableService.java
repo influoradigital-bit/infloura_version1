@@ -119,6 +119,13 @@ public class CreatorDeliverableService {
     /** Persistent application-history timeline — see {@link ApplicationHistoryService}'s javadoc. */
     private final ApplicationHistoryService applicationHistoryService;
 
+    /**
+     * The brand's review clock (owner's ruling, 2026-09-21), shown to the creator so they can see
+     * when their submission is due a decision and when Influora steps in. Same call the brand's
+     * own screen makes, so the two sides are never shown different dates.
+     */
+    private final ReviewSlaService reviewSlaService;
+
     public CreatorDeliverableService(
             CreatorContextService creatorContext,
             CollaborationRepository collaborationRepository,
@@ -133,7 +140,8 @@ public class CreatorDeliverableService {
             CollaborationLifecycleService collaborationLifecycleService,
             DeliverableVerificationService verificationService,
             MetaOAuthTokenRepository metaOAuthTokenRepository,
-            ApplicationHistoryService applicationHistoryService) {
+            ApplicationHistoryService applicationHistoryService,
+            ReviewSlaService reviewSlaService) {
         this.creatorContext = creatorContext;
         this.collaborationRepository = collaborationRepository;
         this.deliverableRepository = deliverableRepository;
@@ -148,6 +156,7 @@ public class CreatorDeliverableService {
         this.verificationService = verificationService;
         this.metaOAuthTokenRepository = metaOAuthTokenRepository;
         this.applicationHistoryService = applicationHistoryService;
+        this.reviewSlaService = reviewSlaService;
     }
 
     /**
@@ -333,7 +342,8 @@ public class CreatorDeliverableService {
         if (!canSubmit(deliverable.getStatus())) {
             throw new ApiException(
                     "INVALID_STATE",
-                    "Cannot submit deliverable in current state",
+                    "Only a draft can be sent for review. This one has already been submitted"
+                            + " or the brand has already decided on it.",
                     HttpStatus.CONFLICT);
         }
         // [CR-22a, Kabir finding #1] Deliverable submit had zero CollaborationStatus awareness —
@@ -1201,6 +1211,11 @@ public class CreatorDeliverableService {
     private DeliverableStatusResponse toStatusResponse(Deliverable deliverable) {
         List<StoredFile> files = readFilesJson(deliverable.getFilesJson());
         DeliverableStatus status = deliverable.getStatus();
+        // Owner's ruling, 2026-09-21 — the brand's review clock, from the waiting side. Null
+        // whenever nothing is waiting on the brand, so an approved or revision-requested
+        // deliverable shows no countdown at all rather than a stale one.
+        ReviewSlaService.ReviewClock reviewClock =
+                reviewSlaService.clockFor(deliverable, Instant.now()).orElse(null);
         // verified-analytics-0804 — cached verification state (no live Meta call here; the batch
         // job / verifyNow write it). Lets the UI render "verified" vs "pending" without a fetch.
         String milestoneId = deliverable.getMilestoneId();
@@ -1233,7 +1248,11 @@ public class CreatorDeliverableService {
                 isMetaConnected(deliverable.getCreatorProfileId()),
                 // F-0418 (CEO ruling) — the one derived fact isOverdue exists for, finally reaching
                 // the response instead of only the submitForReview log line.
-                isOverdue(deliverable, LocalDate.now()));
+                isOverdue(deliverable, LocalDate.now()),
+                reviewClock != null ? reviewClock.dueAt() : null,
+                reviewClock != null ? reviewClock.workingDaysLeft() : null,
+                reviewClock != null && reviewClock.overdue(),
+                reviewClock != null ? reviewClock.escalatedAt() : null);
     }
 
     /**
