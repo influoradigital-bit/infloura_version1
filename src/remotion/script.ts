@@ -119,7 +119,7 @@ export const SCENES: Scene[] = [
             { label: 'Reel floor', value: '₹3,000' },
             { label: 'Story set floor', value: '₹1,500' },
             { label: 'Bhasha', value: 'Hinglish' },
-            { label: 'Level 0', value: 'Main likhungi, bhejenge aap' },
+            { label: 'Level 0', value: 'Main batati hoon, decide aap' },
           ],
         },
         hold: 80,
@@ -176,32 +176,18 @@ export const SCENES: Scene[] = [
         },
         hold: 120,
       },
-      { kind: 'meera', text: 'Reply draft kar rahi hoon. Aap dekh ke hi bhejna.',
-        say: 'Reply draft कर रही हूँ। आप देख के ही भेजना।' },
+      { kind: 'meera', text: 'Yeh raha mera read. Brand ko kya kehna hai, aap decide karo.',
+        say: 'ये रहा मेरा read। Brand को क्या कहना है, आप decide करो।' },
     ],
     tail: 24,
   },
   {
     id: 'send',
-    chapter: 'Aap approve karo · tab hi jaata hai',
+    chapter: 'Paisa secure · tab kaam shuru',
     header: 'Meera',
-    headerSub: 'Draft taiyaar',
+    headerSub: 'Paisa secure ho gaya',
     surface: 'chat',
     beats: [
-      {
-        kind: 'card',
-        card: {
-          type: 'draft',
-          to: 'Brand ko reply',
-          body: 'Hi! Thanks for reaching out 🙌 For 1 reel with 60-day exclusivity and ad usage, my rate is ₹4,300. The #ad label stays: it is required. I work through Influora Secure Payments: funds are secured before I start, contract and invoice come automatically. Link below to confirm.',
-          footer: 'Drafted with Meera · approved by Riya',
-          actions: ['Approve', 'Edit', 'Discard'],
-        },
-        hold: 130,
-      },
-      { kind: 'tap', label: 'Approve', hold: 50 },
-      { kind: 'meera', text: 'Bhej diya ✅ Brand link kholega, funds secure karega, tab deal pakki.',
-        say: 'भेज दिया! Brand link खोलेगा, funds secure करेगा, तब deal पक्की।' },
       { kind: 'system', text: '2 din baad', hold: 40 },
       {
         kind: 'card',
@@ -226,8 +212,8 @@ export const SCENES: Scene[] = [
     headerSub: 'WhatsApp par · sirf zaroori updates',
     surface: 'wa',
     beats: [
-      { kind: 'wa', text: 'Reel live hai. 24 ghante ka snapshot save kar liya, proof ke liye. 72 ghante ka reach brand ko bhej dungi.',
-        say: 'Reel live है। चौबीस घंटे का snapshot save कर लिया, proof के लिए। बहत्तर घंटे का reach brand को भेज दूँगी।' },
+      { kind: 'wa', text: 'Reel live hai. 24 ghante ka snapshot save kar liya, proof ke liye.',
+        say: 'Reel live है। चौबीस घंटे का snapshot save कर लिया, proof के लिए।' },
       {
         kind: 'card',
         card: {
@@ -303,7 +289,7 @@ export const SCENES: Scene[] = [
   },
   {
     id: 'find',
-    chapter: 'Naye brand dhoondhna · list Meera ki, shabd aapke',
+    chapter: 'Naye brand dhoondhna · list Meera ki, faisla aapka',
     header: 'Meera',
     headerSub: 'Brands dhundh rahi hoon…',
     surface: 'chat',
@@ -324,34 +310,6 @@ export const SCENES: Scene[] = [
         },
         hold: 110,
       },
-      { kind: 'meera', text: 'Do line apne shabdon mein likho: yeh brand kyun, aap kyun. Uske bina main bhej nahi sakti.',
-        say: 'दो line अपने शब्दों में लिखो: ये brand क्यों, आप क्यों। उसके बिना मैं भेज नहीं सकती।' },
-      {
-        kind: 'card',
-        card: {
-          type: 'hook',
-          title: 'Aapki do lines',
-          sub: 'Ye line brand ko aapki lagegi, Meera ki nahi',
-          placeholder: 'Yeh brand kyun, aap kyun…',
-          value: 'Aapki rain-proof serum wali Reel Pune ki baarish mein bilkul sahi baithi. Main roz 18K logon ko skincare samjhaati hoon.',
-        },
-        hold: 100,
-      },
-      {
-        kind: 'card',
-        card: {
-          type: 'draft',
-          to: 'Nimbu Naturals · email',
-          subject: 'Aapke monsoon launch ke liye ek idea',
-          body: 'Hi! Aapki rain-proof serum wali Reel Pune ki baarish mein bilkul sahi baithi… Main Riya hoon, skincare creator, 7.4K followers. Ek chhota sa idea share karna chahti hoon.',
-          footer: 'Reply rate abhi: 4 mein se 1 · cold email mein yeh normal hai',
-          actions: ['Approve', 'Edit'],
-        },
-        hold: 110,
-      },
-      { kind: 'tap', label: 'Approve', hold: 44 },
-      { kind: 'meera', text: 'Bhej diya. Reply aaya to yahin bataungi. Na aaye to bhi normal hai.',
-        say: 'भेज दिया। Reply आया तो यहीं बताऊँगी। ना आए तो भी normal है।' },
     ],
     tail: 30,
   },
@@ -361,8 +319,8 @@ export const INTRO = {
   eyebrow: 'Jald aa rahi hai',
   title: 'Meera',
   sub: 'Aapka apna PR manager. Aapki taraf se.',
-  line: 'Aap decide karte ho. Main likhti aur yaad rakhti hoon.',
-  say: 'आपका अपना PR manager। आपकी तरफ़ से। आप decide करते हो। मैं लिखती हूँ, और याद रखती हूँ।',
+  line: 'Main padhti aur yaad rakhti hoon.',
+  say: 'आपका अपना PR manager। आपकी तरफ़ से। मैं पढ़ती और याद रखती हूँ।',
 };
 
 export const OUTRO = {
@@ -370,11 +328,11 @@ export const OUTRO = {
   sub: 'Abhi ban rahi hai. Jald aa rahi hai.',
   bullets: [
     'Brief paste, seedha jawab',
-    'Aap approve karo, tab hi jaata hai',
+    'Aapka floor, aapka faisla',
     'Paisa, proof, aur har Somvaar ek note',
   ],
   cta: 'Waitlist me naam likhwao',
-  say: 'Meera for Creators। अभी बन रही है, जल्द आ रही है। Brief paste, सीधा जवाब। आप approve करो, तब ही जाता है। पैसा, proof, और हर सोमवार एक note।',
+  say: 'Meera for Creators। अभी बन रही है, जल्द आ रही है। Brief paste, सीधा जवाब। आपका floor, आपका फैसला। पैसा, proof, और हर सोमवार एक note।',
 };
 
 /** Hinglish: Roman on screen, Devanagari for the voice. */

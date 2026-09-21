@@ -28,7 +28,7 @@ class AuthRateLimitFilterShopifyBucketTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        filter = new AuthRateLimitFilter(null);
+        filter = new AuthRateLimitFilter(null, null);
         setField("enabled", true);
         setField("sensitiveLimit", 10);
         setField("otpLimit", 5);

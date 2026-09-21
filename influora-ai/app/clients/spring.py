@@ -135,12 +135,22 @@ class SpringInternalClient:
         onbehalf_jwt: str,
         idempotency_key: str | None,
         allow_retry: bool = False,
+        read_timeout_override: float | None = None,
     ) -> SpringResponse:
         """POSTs a tool-call forward to Spring. `allow_retry` must only ever be
         True for read-tier tools — money/state (draft+commit tier) forwards are
         NEVER retried here (Spring owns dedupe via Idempotency-Key, but we still
         avoid blind retries entirely for those to keep the invariant obvious and
         testable at this layer too).
+
+        `read_timeout_override` (F1 HIGH fix, RULINGS-U-0917.md Addition B):
+        seconds to use for THIS call's read/write timeout in place of the
+        client-wide `settings.timeouts.spring_read` — currently only
+        `get_brief` needs this (see `app/tools/loop.py`, `ProviderTimeouts.
+        get_brief_read`). `None` (every other caller) keeps the client's
+        constructor-time default untouched. Connect/pool timeouts are never
+        overridden — only the read/write side, which is what a slow Spring
+        analysis call actually needs more of.
 
         The `X-Meera-Service-Token` is minted fresh per attempt (including
         retries) by `_build_signed_headers` — callers never supply one.
@@ -153,6 +163,17 @@ class SpringInternalClient:
         attempts = settings.retry.max_retries + 1 if allow_retry else 1
         last_exc: Exception | None = None
 
+        request_timeout = (
+            httpx.Timeout(
+                connect=settings.timeouts.spring_connect,
+                read=read_timeout_override,
+                write=read_timeout_override,
+                pool=settings.timeouts.spring_connect,
+            )
+            if read_timeout_override is not None
+            else None
+        )
+
         for attempt in range(attempts):
             headers = self._build_signed_headers(
                 method="POST",
@@ -162,7 +183,10 @@ class SpringInternalClient:
                 idempotency_key=idempotency_key,
             )
             try:
-                response = await self._client.post(path, content=body_bytes, headers=headers)
+                post_kwargs: dict[str, Any] = {"content": body_bytes, "headers": headers}
+                if request_timeout is not None:
+                    post_kwargs["timeout"] = request_timeout
+                response = await self._client.post(path, **post_kwargs)
             except httpx.HTTPError as exc:
                 last_exc = exc
                 if attempt < attempts - 1:

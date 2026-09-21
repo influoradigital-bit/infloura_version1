@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { ApiError, isApiLive } from '@/lib/api';
-import { meeraApi } from '@/lib/meera-api';
+import { isCreatorToolName, meeraApi, type CreatorToolName } from '@/lib/meera-api';
+import { CreatorToolResultRenderer } from '@/components/creator/meera/CreatorToolResultRenderer';
 import { uniqueId } from '@/lib/unique-id';
 import { useMeeraStream } from '@/hooks/useMeeraStream';
 import { useVoiceOutput } from '@/hooks/useVoiceOutput';
@@ -25,10 +26,58 @@ import { useVoiceInput } from '@/hooks/useVoiceInput';
  * just passes `role: 'creator'` everywhere (see meera-api.ts's MeeraRole threading).
  */
 
+/**
+ * T-MEERA-CREATOR-PHASE-B (SPEC.md §8.3) — one of Meera's tool calls, captured against the
+ * assistant turn it belongs to so it renders inline right after that message.
+ *
+ * `'pending'` is the loading state `onToolStart` appends; `onToolResult` REPLACES that same entry
+ * in place rather than appending a second one. Only `'ok'`/`'error'` entries are handed to
+ * {@link CreatorToolResultRenderer}, whose `status` prop is that two-value union.
+ */
+interface CreatorToolResult {
+  id: string;
+  name: CreatorToolName;
+  status: 'pending' | 'ok' | 'error';
+  data?: unknown;
+  errorMessage?: string;
+}
+
 interface ChatMessage {
   id: string;
   role: 'meera' | 'creator';
   text: string;
+  /** LIVE-only — never set in mock mode, which opens no stream and so sees no tool events. */
+  toolResults?: CreatorToolResult[];
+}
+
+/**
+ * What to say while a tool is still running. Typed `Record<CreatorToolName, string>` on purpose:
+ * adding a seventh name to `CREATOR_TOOL_NAMES` (Phase B1/B7 add `send_routine_reply`,
+ * `rank_open_campaigns`, `draft_application`) becomes a compile error here until it has a label,
+ * rather than silently falling back to something vague.
+ */
+const TOOL_PENDING_LABELS: Record<CreatorToolName, string> = {
+  get_my_deals: 'Looking up your deals…',
+  get_brief: 'Reading that brief…',
+  estimate_my_rate: 'Working out a rate…',
+  get_my_metrics: 'Pulling your metrics…',
+  check_deal_risks: 'Checking this deal…',
+  draft_reply: 'Drafting a reply…',
+};
+
+/**
+ * The human-readable reason out of an ERROR `tool_result` payload. The Python loop yields
+ * `{error: <code>, message: <text>}` on a Spring/mesh failure, and without this the card can only
+ * show its own generic sentence — masking the actual cause (auth/mesh/scope) exactly the way the
+ * brand panel's `toolErrorMessage` was written to stop doing.
+ */
+function toolErrorMessage(data: unknown): string | undefined {
+  if (data && typeof data === 'object') {
+    const d = data as { message?: unknown; error?: unknown };
+    if (typeof d.message === 'string' && d.message) return d.message;
+    if (typeof d.error === 'string' && d.error) return d.error;
+  }
+  return undefined;
 }
 
 const CONSENT_ERROR_CODE = 'CONSENT_REQUIRED';
@@ -81,9 +130,31 @@ export interface MeeraCopilotChatProps {
   /** Bubbles a CONSENT_REQUIRED failure up so the caller can re-show the consent screen
    *  (e.g. consent was revoked/expired mid-session). */
   onConsentRequired: () => void;
+  /**
+   * U-5 (RULINGS-U-0917.md R-U1) — a message to FILL the composer with, never to send. Priya's
+   * ruling changed SPEC §8.5's "Open in Meera" from auto-send to prefill-only: an automatic send
+   * needs a send-once guard that survives an async connect, StrictMode's double effect and a
+   * consent screen in between, and prefill has none of those failure modes.
+   *
+   * `token` must change on every request, even when `text` repeats (e.g. the creator clicks "Ask
+   * Meera about this brief" twice), so a genuinely new request is never ignored just because its
+   * text matches the last one. It is compared against the last APPLIED token, not the last SEEN
+   * one, so an unrelated re-render of the caller never re-fires it. If the creator already typed
+   * something, that text stays and the message is appended — never overwritten. A second request
+   * that resolves before the first one's own effect ran (a fast double-click) still carries a
+   * DIFFERENT token, so token equality alone would append twice; the composer text itself is also
+   * checked (see the effect below) so the prompt is never appended back-to-back with itself.
+   */
+  prefillMessage?: { text: string; token: number } | null;
 }
 
-export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequired }: MeeraCopilotChatProps) {
+export function MeeraCopilotChat({
+  firstName,
+  language,
+  onClose,
+  onConsentRequired,
+  prefillMessage,
+}: MeeraCopilotChatProps) {
   const [live] = React.useState(() => isApiLive());
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
@@ -175,6 +246,28 @@ export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequir
     connectToMeera({ current: false });
   }, [connectToMeera]);
 
+  // U-5 — fill the composer, never send. The TOKEN guard below stops an unrelated re-render of
+  // the caller (new `prefillMessage` object, same token) from re-firing; it does NOT by itself
+  // stop two DIFFERENT tokens carrying the same text from both appending (a fast double-click on
+  // "Ask Meera" resolves as two distinct requests) — the effect's own text-suffix check (PRIYA-
+  // LASTCALL-U3-U5-0917.md, U-5 LOW (c)) is what makes a back-to-back repeat of the same prompt a
+  // no-op instead of appending it twice.
+  const appliedPrefillTokenRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (!prefillMessage || prefillMessage.token === appliedPrefillTokenRef.current) return;
+    appliedPrefillTokenRef.current = prefillMessage.token;
+    setDraft((prev) => {
+      // PRIYA-LASTCALL-U3-U5-0917.md, U-5 LOW (c) — the page's own consent re-probe is async, so
+      // a fast double-click on "Ask Meera" produces two DISTINCT tokens (each request increments
+      // the counter) before the first click's own effect has run, and both carry the same
+      // prompt text. Token equality alone (the check above) does not catch that, since the two
+      // tokens are genuinely different. Skip re-appending when the composer already ends with
+      // this exact text, rather than doubling it up.
+      if (prev.endsWith(prefillMessage.text)) return prev;
+      return prev.trim() ? `${prev} ${prefillMessage.text}` : prefillMessage.text;
+    });
+  }, [prefillMessage]);
+
   React.useEffect(() => {
     const el = scrollRef.current;
     // Feature-detect rather than assume `scrollTo` exists — jsdom (this repo's test DOM) has no
@@ -214,6 +307,33 @@ export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequir
     let assistantText = '';
     let bubbleAdded = false;
 
+    /**
+     * §8.3 — edit this turn's tool-result list, creating the assistant bubble FIRST if the stream
+     * has not produced a token yet.
+     *
+     * The lazy create is the whole point: a `tool_start`/`tool_result` can legitimately arrive
+     * before any token (the model calls a tool before it narrates anything), and the bubble is
+     * only born in `onToken`. Without this the card would have no message to attach to and would
+     * be dropped silently. Pattern copied from the brand panel's `onToolResult`
+     * (`components/feature/meera/MeeraChatPanel.tsx`), which solves exactly this — formatting
+     * deliberately not copied, see the fork note at the top of this file.
+     *
+     * `bubbleAdded` is assigned inside the updater because `exists` is only knowable there. The
+     * assignment is idempotent, so a double-invoked updater (StrictMode) is harmless.
+     */
+    const editToolResults = (edit: (current: CreatorToolResult[]) => CreatorToolResult[]) => {
+      setMessages((prev) => {
+        const exists = prev.some((m) => m.id === assistantId);
+        const base = exists
+          ? prev
+          : [...prev, { id: assistantId, role: 'meera' as const, text: assistantText }];
+        if (!exists) bubbleAdded = true;
+        return base.map((m) =>
+          m.id === assistantId ? { ...m, toolResults: edit(m.toolResults ?? []) } : m,
+        );
+      });
+    };
+
     meeraApi
       .sendTurn(conversationId, text, 'creator')
       .then((turnRes) => {
@@ -240,6 +360,63 @@ export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequir
                 return prev.map((m) => (m.id === assistantId ? { ...m, text: rendered } : m));
               });
             },
+            /**
+             * §8.3 — append a loading card. An unknown name is IGNORED with a dev-only warn: it
+             * is a tool this build has no card for (a newer AI-service build, or a brand tool
+             * leaking onto a creator stream), and a spinner for it would promise a card that can
+             * never arrive. Never thrown on — a stray tool name must not take the chat down.
+             *
+             * A KNOWN name whose card has not been built yet (`draft_reply`, B0-49 — `get_brief`,
+             * B0-44, is wired up as of U-4) deliberately DOES get its spinner, which then resolves
+             * to nothing. The gate here is `isCreatorToolName` and nothing narrower on purpose: a second,
+             * hand-maintained "names that have a card" list would silently stop rendering a card
+             * the day someone added one to the renderer's switch and forgot this file — the exact
+             * failure mode this ticket exists to fix.
+             */
+            onToolStart: (event) => {
+              if (!isCreatorToolName(event.name)) {
+                if (import.meta.env.DEV) {
+                  console.warn('[MeeraCopilotChat] ignoring unknown tool name:', event.name);
+                }
+                return;
+              }
+              const name = event.name;
+              const pending: CreatorToolResult = { id: uniqueId('tool'), name, status: 'pending' };
+              editToolResults((current) => [...current, pending]);
+            },
+
+            /**
+             * §8.3 — REPLACE this tool's loading card rather than appending beside it. Matched on
+             * the first still-`pending` entry with the same name, so a turn that calls the same
+             * tool twice resolves the older spinner first and never leaves one spinning forever.
+             * With no pending entry to replace (a `tool_result` with no preceding `tool_start`)
+             * the result is appended, so it is still shown.
+             */
+            onToolResult: (event) => {
+              if (!isCreatorToolName(event.name)) {
+                if (import.meta.env.DEV) {
+                  console.warn('[MeeraCopilotChat] ignoring unknown tool name:', event.name);
+                }
+                return;
+              }
+              const name = event.name;
+              const resolved: CreatorToolResult = {
+                id: uniqueId('tool'),
+                name,
+                status: event.status,
+                data: event.data,
+                errorMessage: event.status === 'error' ? toolErrorMessage(event.data) : undefined,
+              };
+              editToolResults((current) => {
+                const at = current.findIndex((t) => t.name === name && t.status === 'pending');
+                if (at === -1) return [...current, resolved];
+                const next = [...current];
+                // Keep the pending entry's id so React reconciles in place instead of remounting.
+                next[at] = { ...resolved, id: current[at].id };
+                return next;
+              });
+            },
+
             onDone: () => {
               setSending(false);
               if (assistantText.trim() === '') {
@@ -355,15 +532,49 @@ export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequir
           </div>
         )}
         {messages.map((m) => (
-          <div key={m.id} className={cn('flex', m.role === 'creator' ? 'justify-end' : 'justify-start')}>
-            <div
-              className={cn(
-                'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
-                m.role === 'creator' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
-              )}
-            >
-              {m.text}
-            </div>
+          <div key={m.id} data-testid="chat-turn" className="space-y-1.5">
+            {/* A bubble is skipped while its text is empty rather than rendered as a blank pill.
+                That window is real and only exists because of the lazy create above: a tool card
+                can attach to this turn before the first token arrives. `onToken`/`onDone` fill the
+                text in, and the bubble appears then. */}
+            {m.text ? (
+              <div className={cn('flex', m.role === 'creator' ? 'justify-end' : 'justify-start')}>
+                <div
+                  className={cn(
+                    'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
+                    m.role === 'creator' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
+                  )}
+                >
+                  {m.text}
+                </div>
+              </div>
+            ) : null}
+
+            {/* §8.3 — tool cards render AFTER the bubble they belong to. No `onPrefillCounter` or
+                `onOpenDeal` is passed: this panel has no counter form and no deal navigation to
+                hand them to (both live on the deal pages, §8.6), and every card hides the matching
+                control when the callback is absent. A visible button wired to nothing would be
+                worse than no button. */}
+            {m.toolResults?.map((tool) =>
+              tool.status === 'pending' ? (
+                <div
+                  key={tool.id}
+                  data-testid="creator-tool-pending"
+                  className="flex items-center gap-2 text-xs text-muted-foreground"
+                >
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {TOOL_PENDING_LABELS[tool.name]}
+                </div>
+              ) : (
+                <CreatorToolResultRenderer
+                  key={tool.id}
+                  toolName={tool.name}
+                  status={tool.status}
+                  data={tool.data}
+                  errorMessage={tool.errorMessage}
+                />
+              ),
+            )}
           </div>
         ))}
         {sending && (
@@ -409,6 +620,7 @@ export function MeeraCopilotChat({ firstName, language, onClose, onConsentRequir
             className="h-9 w-9 shrink-0"
             onClick={handleSend}
             disabled={connecting || sending || !draft.trim()}
+            aria-label="Send message"
           >
             <Send className="h-4 w-4" />
           </Button>

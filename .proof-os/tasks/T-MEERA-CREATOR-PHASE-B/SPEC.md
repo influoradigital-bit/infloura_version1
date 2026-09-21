@@ -1,6 +1,17 @@
 # T-MEERA-CREATOR-PHASE-B — Build Spec: Deal PR and Paste-and-Secure
 
 **Status:** ready to build **Phase B0 (Paste and Read) only** — see §14.5; Phase B1 (Secure and Send) is gated on B0's live numbers. **Baseline commit:** branch from HEAD `143ca1e` on a clean tree (was `8c7b18b`; see `PRIYA-COMPAT-0904.md` §6). **Date:** 2026-09-04. **Amendments:** §14 (product-risk pass, 2026-09-04) supersedes the sections it names; pointers marked `<!-- AMEND-0904 -->`.
+<!-- PRIYA 2026-09-08 (B0-05, re-anchor): **BASELINE MOVED. `143ca1e` → `7f48e8d`, 29 commits.** Every line number in §2-§8 was re-measured against `7f48e8d` today and the ones that moved are corrected in place; each correction carries its own `PRIYA 0908` note. Read the numbers below as anchors at **7f48e8d**, not at 143ca1e.
+     What moved most, and why:
+       - **`src/lib/api.ts` +~490 to +545 lines.** Every §8.1 anchor is wrong at 143ca1e. `export const api = {` L6313 → **L6858**.
+       - **`src/pages/creator-chat.tsx` +~40 to +95**, `src/App.tsx` +~75, `src/pages/brand-chat.tsx` +18, `src/lib/meera-api.ts` +4.
+       - **`DealService.java`**: the top of the file barely moved (±1) but everything past ~L1900 moved +76 to +98 (`toMessageResponse` L2214 → **L2290**).
+       - **`RateEstimationService.java`**: L35-L76 unchanged; everything after the engagement block moved **+17/+18** (commit `278c1b8`, "a creator with no engagement reading is unknown, not low"). This re-anchors §14.1's inline citations — see the note at §14.1.
+       - **`MeeraSessionService.java`** +8 past L330 (commit `7f48e8d`).
+       - **The whole Python service (`influora-ai/**`) is unmoved**: every §7 anchor re-measured OK except three (`build_block_b` L394→388, `loop.py` L453→454, `main.py` L74→79). Its tests are unmoved too.
+     Anchors this pass could not verify against a file are marked **"(unverified at 7f48e8d)"** inline rather than left standing as fact.
+     Two references drifted in *substance*, not only in line number — read them before building: §8.6's counter-form payload (now an extracted helper) and §3.6's `findByCollaborationIdAndStatus`. -->
+
 **Plan reference:** Meera for Creators plan rev 2, Part 7 Phase B (weeks 2 to 4).
 **Fact sheets (read before touching a file):** `facts/backend.md`, `facts/ai-service.md`, `facts/frontend.md` in this folder. Every signature quoted below was verified against HEAD; if a fact sheet and this spec disagree, the fact sheet wins and this spec has a bug to report.
 
@@ -57,7 +68,7 @@ ALTER TABLE creator_agent_preferences
     ADD COLUMN level_up_prompted_at TIMESTAMP NULL;
 ```
 
-Entity `CreatorAgentPreferences` (`influora-api/src/main/java/com/influora/domain/entity/CreatorAgentPreferences.java`): append six fields after `aiMonthlyCapUsd` (L138-139), each with explicit `@Column(name = ...)`:
+Entity `CreatorAgentPreferences` (`influora-api/src/main/java/com/influora/domain/entity/CreatorAgentPreferences.java`): append six fields after `aiMonthlyCapUsd` (**L139** at `7f48e8d`; was L138-139 at 143ca1e), each with explicit `@Column(name = ...)`:
 
 ```java
 @Column(name = "rate_card_shareable", nullable = false)
@@ -142,7 +153,7 @@ CREATE TABLE creator_secure_links (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-Entity `CreatorSecureLink`, enum `SecureLinkStatus {ACTIVE, REDEEMED, EXPIRED, REVOKED}`. Token: 32 random bytes, base64url, hashed with SHA-256 (reuse `JwtService.hashToken(String raw)` — verified `public static`, `security/JwtService.java` L61). TTL 30 days. Repository: `Optional<CreatorSecureLink> findByTokenHash(String tokenHash)`, `List<CreatorSecureLink> findByCreatorProfileIdOrderByCreatedAtDesc(String)`.
+Entity `CreatorSecureLink`, enum `SecureLinkStatus {ACTIVE, REDEEMED, EXPIRED, REVOKED}`. Token: 32 random bytes, base64url, hashed with SHA-256 (reuse `JwtService.hashToken(String raw)` — verified `public static`, `security/JwtService.java` **L71** at `7f48e8d`; was L61). TTL 30 days. Repository: `Optional<CreatorSecureLink> findByTokenHash(String tokenHash)`, `List<CreatorSecureLink> findByCreatorProfileIdOrderByCreatedAtDesc(String)`.
 
 <!-- PRIYA: `token_hash` was CHAR(64) — changed to VARCHAR(64). ddl-auto=validate boots against `@Column(name="token_hash", nullable=false, length=64) private String tokenHash;` and rejects a char column outright. This is the exact class of boot break V20260718150000 was written to repair. -->
 **`token_hash` is `VARCHAR(64)`, never `CHAR(64)`** — Hibernate maps `@Column(length = 64)` to `VARCHAR(64)` and `ddl-auto=validate` fails with "wrong column type ... found [char]" on a `CHAR` column. Precedent: `workspace_member_invites.invite_token_hash VARCHAR(64)`.
@@ -162,7 +173,8 @@ CREATE TABLE meera_drafts (
     text                 TEXT         NOT NULL,
     proposed_amount      DECIMAL(12,2) NULL,
     deal_terms_json      TEXT         NULL,
-    status               VARCHAR(16)  NOT NULL,               -- PENDING | APPROVED | EDITED | DISCARDED | SENT
+    status               VARCHAR(16)  NOT NULL,               -- PENDING | APPROVED | EDITED | DISCARDED | SENT (only PENDING, SENT and DISCARDED are ever written — see below)
+    edited               TINYINT(1)   NOT NULL DEFAULT 0,     -- set by 3.7 approve: 1 when the creator changed the text before sending
     approved_at          TIMESTAMP    NULL,
     sent_message_id      VARCHAR(26)  NULL,
     created_at           TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -172,7 +184,12 @@ CREATE TABLE meera_drafts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-Entity `MeeraDraft`, enums `DraftKind {REPLY, COUNTER, DECLINE, APPLICATION, ROUTINE}`, `DraftStatus {PENDING, APPROVED, EDITED, DISCARDED, SENT}`. Repository: `findByIdAndCreatorProfileId`, `findByCreatorProfileIdAndStatusOrderByCreatedAtDesc(String, DraftStatus)`.
+<!-- PRIYA 2026-09-08 (B0-04 item 1, from §14.6 W21/W22): `edited` ADDED to this DDL. Reason, stated here rather than only in §14.6's findings list so an engineer building from §2.4 alone gets it right:
+     - `DraftStatus` declares five values but only THREE are ever written. §3.7's approve sets **SENT**; discard sets **DISCARDED**; creation sets **PENDING**. Nothing anywhere writes APPROVED or EDITED. Do not add a code path that writes them — restate the measurement instead (done, §14.5.c metric 3).
+     - §3.7 computes `edited` as a LOCAL boolean (`edited = !text.equals(draft.text)`) and, before this change, threw it away. Gate metric 3's second threshold (">= 25% approved unedited") therefore had no backing column and could never be computed.
+     - Doing this now is free: 2.4 is an unapplied B0 day-1 migration. Doing it after B0 ships costs a second migration in the middle of the 14-day measurement window.
+     Entity field: `@Column(name = "edited", nullable = false) private boolean edited;` — explicit `@Column(name=...)` per rule 0.5. -->
+Entity `MeeraDraft`, enums `DraftKind {REPLY, COUNTER, DECLINE, APPLICATION, ROUTINE}`, `DraftStatus {PENDING, APPROVED, EDITED, DISCARDED, SENT}`. **The `edited` column is a real field on the entity** (`@Column(name = "edited", nullable = false) private boolean edited;`) — it is what gate metric 3 (§14.5.c) is measured against, because `DraftStatus.APPROVED` and `DraftStatus.EDITED` are declared but never written by any code path in this spec. Repository: `findByIdAndCreatorProfileId`, `findByCreatorProfileIdAndStatusOrderByCreatedAtDesc(String, DraftStatus)`.
 
 ### 2.5 Migration `V20260910100400__meera_send_log.sql` (create)
 
@@ -219,14 +236,25 @@ CREATE TABLE deal_offer_history (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 ```
 
-Entity `DealOfferHistory`, enums `OfferActor {BRAND, CREATOR, SYSTEM}`, `OfferEvent {OFFER, COUNTER, MEERA_COUNTER, ACCEPT, REJECT}`. Repository: `List<DealOfferHistory> findByCollaborationIdOrderBySequenceNoAsc(String)`, `int countByCollaborationId(String)`.
+Entity `DealOfferHistory`, enums `OfferActor {BRAND, CREATOR, SYSTEM}`, `OfferEvent {OFFER, COUNTER, MEERA_COUNTER, ACCEPT, REJECT}`. Repository: `List<DealOfferHistory> findByCollaborationIdOrderBySequenceNoAsc(String)`, `int countByCollaborationId(String)`, and **the distinct-collaboration query §14.1.d's `meeraAnchoredShare` depends on**:
+
+```java
+@Query("select distinct h.collaborationId from DealOfferHistory h "
+     + "where h.collaborationId in :ids and h.event = :event")
+List<String> findDistinctCollaborationIdsByEvent(
+        @Param("ids") Collection<String> ids, @Param("event") OfferEvent event);
+```
+
+<!-- PRIYA 2026-09-08 (B0-04 item 4, W4): stated HERE, in the section that owns the repository, because §14.1.d alone is not where an engineer writing this repository looks. This table's uniqueness key is `(collaboration_id, sequence_no)` — §13.2 risk 6's `uk_doh_collab_seq`, added in B0-09 — and NOT `(collaboration_id, event)`. Several `MEERA_COUNTER` rows on one collaboration are therefore legal and expected on any negotiation with more than one Meera-drafted counter. A row COUNT over this table is not a collaboration count, and using one for §14.1.d's share produces values above 1.0. Do not add `countByCollaborationIdInAndEvent`. -->
+`sequence_no` is derived under the existing `DealService` row lock (see the four write points below), never with a separate `max(sequence_no)` read — that is `PRIYA-COMPAT-0904` §7 condition 3 and it is load-bearing for the unique key.
 
 `DealService` writes rows in four places (all inside the existing transactions):
 <!-- PRIYA: line numbers re-verified against HEAD. createProposal is L243 (spec said 242); doCounter L1268 and doAccept L1103 and doReject L436 are correct. `updateAgreedRate` inside doCounter is at L1299. -->
-- `createProposal` (**L243**) after the collaboration is saved: `OFFER`, actor BRAND, `body.amount()`.
-- `doCounter` (L1268) after `updateAgreedRate` (L1299): `COUNTER` (or `MEERA_COUNTER` when `body.meeraDraftId()` is non-null, see 3.4), actor from `senderType`.
-- `doAccept` (L1103): `ACCEPT`, actor from role, amount = `collaboration.getAgreedRate()`.
-- `doReject` (L436): `REJECT`.
+<!-- PRIYA 2026-09-08 (B0-05, re-anchored to 7f48e8d): all five moved. createProposal L243 -> **L242** (back to the spec's original number), doCounter L1268 -> **L1274**, updateAgreedRate L1299 -> **L1305**, doAccept L1103 -> **L1102**, doReject L436 -> **L435**. -->
+- `createProposal` (**L242**) after the collaboration is saved: `OFFER`, actor BRAND, `body.amount()`.
+- `doCounter` (**L1274**) after `updateAgreedRate` (**L1305**): `COUNTER` (or `MEERA_COUNTER` when `body.meeraDraftId()` is non-null, see 3.4), actor from `senderType`.
+- `doAccept` (**L1102**): `ACCEPT`, actor from role, amount = `collaboration.getAgreedRate()`.
+- `doReject` (**L435**): `REJECT`.
 Add a private helper `recordOffer(Collaboration c, OfferActor actor, OfferEvent event, BigDecimal amount, boolean meeraDrafted)` and inject `DealOfferHistoryRepository`.
 
 ### 2.7 Migration `V20260910100600__collaborations_calendar_hint.sql` (alter)
@@ -244,9 +272,11 @@ Meera-sent or Meera-drafted messages carry `metadataJson` keys:
 ```
 
 <!-- PRIYA: `toDealMessageResponse` does not exist. The real private mapper is `toMessageResponse`, and it takes only the DealMessage — it has no principal in scope, so the strip cannot be written as described. Line numbers were also off by one. -->
-The private mapper is **`DealService.toMessageResponse(DealMessage)`**, called from `listMessages` (**L611**, inside the loop; method at L602) and `sendMessage` (**L664**; method at L619). There is no `toDealMessageResponse`.
+<!-- PRIYA 2026-09-08 (B0-05, re-anchored to 7f48e8d): DealService's top barely moved but everything past ~L1900 moved +76 to +98. Declaration `toMessageResponse` L2214 -> **L2290**. `listMessages` decl L602 -> **L601**, its inner call L611 -> **L612**. `sendMessage` decl L619 -> **L618**, its call L664 -> **L658**. `publishToStream` L~666 -> **L662**. `seedNotesMessage` L2181 -> **L2269**, its `new DealMessageResponse(...)` L2194 -> **L2278**.
+     RE-COUNTED and CONFIRMED at 7f48e8d: `toMessageResponse(` occurs at L470, L471, L612, L658, L1032, L1167, L1168, L1371, L1372 (**nine call sites**) plus the declaration at L2290. PRIYA-COMPAT-0904's BROKEN-B1 finding — nine call sites, not two, so implement the strip as a separate helper rather than a signature change — still holds exactly. -->
+The private mapper is **`DealService.toMessageResponse(DealMessage)`** (declared **L2290**), called from `listMessages` (**L612**, inside the loop; method at **L601**) and `sendMessage` (**L658**; method at **L618**). There is no `toDealMessageResponse`.
 
-`toMessageResponse` **has no `principal` parameter**, so the strip cannot be done inside it as written. Change its signature to `toMessageResponse(DealMessage message, boolean isBrandViewer)` and update both call sites (`principal.getUserType() == UserType.BRAND`) plus **`seedNotesMessage`** (the second `new DealMessageResponse(...)` site, L2181/L2194 — one of the two is the mapper, the other the seed row; seed rows carry no metadata, so pass `false`). Also update `publishToStream` (L~666): the SSE fan-out reuses the same DTO and would otherwise push unstripped metadata to a brand's open stream. Publish the **brand-stripped** shape to the stream and let the creator's client refetch, or publish per-subscriber; the simplest correct choice for Phase B is to strip on the stream too and have the creator's `DraftCard` carry the ids it already holds locally.
+`toMessageResponse` **has no `principal` parameter**, so the strip cannot be done inside it as written — and there are **nine** call sites (L470, L471, L612, L658, L1032, L1167, L1168, L1371, L1372), not two, which is why `PRIYA-COMPAT-0904` BROKEN-B1 requires a **separate helper** (`brandVisibleMetadata(Map)`, §14.3.e) applied at `listMessages` / `sendMessage` / `publishToStream` rather than a signature change threaded through all nine. Whichever shape is chosen, cover **`seedNotesMessage`** too (the second `new DealMessageResponse(...)` site, **L2269** / **L2278** — the other, L2291, is inside the mapper; seed rows carry no metadata, so they are trivially safe). Also update `publishToStream` (**L662**): the SSE fan-out reuses the same DTO and would otherwise push unstripped metadata to a brand's open stream. Publish the **brand-stripped** shape to the stream and let the creator's client refetch, or publish per-subscriber; the simplest correct choice for Phase B is to strip on the stream too and have the creator's `DraftCard` carry the ids it already holds locally.
 
 <!-- PRIYA: SUPERSEDED by §14.3.a and contradicts the AMEND pointer at the top of this section, which the product pass left standing. Corrected: strip `intent`, `send_log_id`, `draft_id`, `edited` for a brand viewer; KEEP `agent` and the new `auto_sent`. Recommendation 4 (no brand-facing stamp) is NO LONGER the default (§12 item 1) — the flip is the property `influora.meera.brand-facing-stamp=false`, not the removal of the strip. Add `auto_sent` to the metadata JSON example above; it is written on the draft-approve path in B0 as `false`. -->
 Strip `agent`, `intent`, `send_log_id`, `draft_id`, `edited` from `metadata` when the viewer is a brand. Creators see them. Recommendation 4 in the plan (no brand-facing stamp) is implemented this way and can be flipped by removing the strip.
@@ -254,7 +284,8 @@ Strip `agent`, `intent`, `send_log_id`, `draft_id`, `edited` from `metadata` whe
 ### 2.9 Holdout assignment (B6)
 
 <!-- PRIYA: WRONG SITE. `getOrCreatePreferences` (L77) does not call `newWithDefaults` — it calls the private `createWithComputedDefaults(profile)` (L103-110), which is ALSO called from `updatePreferences` (L154), `recordConsent` (L227) and `adminSetMonthlyCapOverride` (L279). In the real flow the row is usually created by `recordConsent` (consent precedes the first prefs read), so putting the assignment in `getOrCreatePreferences` would leave most Phase-B creators with holdout=false. Put it in `createWithComputedDefaults`, before the save. -->
-In `CreatorAgentPreferencesService.createWithComputedDefaults` (**L103-110** — the single private factory; `getOrCreatePreferences` at L77 does *not* call `newWithDefaults` directly, and three other methods — `updatePreferences` L154, `recordConsent` L227, `adminSetMonthlyCapOverride` L279 — also create the row through it), between `newWithDefaults(...)` and `preferencesRepository.save(prefs)`:
+<!-- PRIYA 2026-09-08 (B0-05, re-anchored to 7f48e8d): `createWithComputedDefaults` L103 and `getOrCreatePreferences` L77 are UNCHANGED. The three other callers moved: `updatePreferences` L154 -> **L150**, `recordConsent` L227 -> **L228**, `adminSetMonthlyCapOverride` L279 -> **L266**. -->
+In `CreatorAgentPreferencesService.createWithComputedDefaults` (**L103-110**, unchanged at `7f48e8d` — the single private factory; `getOrCreatePreferences` at **L77** does *not* call `newWithDefaults` directly, and three other methods — `updatePreferences` **L150**, `recordConsent` **L228**, `adminSetMonthlyCapOverride` **L266** — also create the row through it), between `newWithDefaults(...)` and `preferencesRepository.save(prefs)`:
 
 ```java
 CreatorAgentPreferences prefs =
@@ -272,7 +303,8 @@ Holdout means: `estimate_my_rate` and `check_deal_risks` still work, but `draft_
 ### 2.10 `CreatorContextResponse` additions (3.6) and drift test
 
 <!-- PRIYA: this section said FOUR new components (27 -> 31), but 7.2 separately adds `holdout_until` as "component 32" and the build-order table on day 1 says "+5". Reconciled to FIVE here so there is one number. Record is at L166-215 and has exactly 27 components today; the only construction site in main is MeeraContextService L274-301. -->
-Append **five** components to `MeeraContextDtos.CreatorContextResponse` (**L166-215**, 27 components today) after `ai_monthly_cap_usd`:
+<!-- PRIYA 2026-09-08 (B0-05): re-measured at 7f48e8d. `CreatorContextResponse` is still **L166-215** with exactly **27** components (last is `ai_monthly_cap_usd` at L215), and `MeeraContextService`'s single construction site is still **L274-301**. Both UNCHANGED. -->
+Append **five** components to `MeeraContextDtos.CreatorContextResponse` (**L166-215** at `7f48e8d`, 27 components today) after `ai_monthly_cap_usd`:
 
 | # | `@JsonProperty` | Java type | source |
 |---|---|---|---|
@@ -289,7 +321,7 @@ Python side: add the five snake_case names to `CREATOR_CONTEXT_PAYLOAD_FIELDS` (
 <!-- PRIYA: resolved the drift-test coupling by reading tests/prompt/test_creator_context_drift.py. It is stricter than the spec implied — four separate assertions break, not one, and it parses the real Java file. -->
 **`tests/prompt/test_creator_context_drift.py` breaks in four places, not one.** It parses the real `MeeraContextDtos.java` and `pytest.fail`s (never skips) if the file is missing, so the Java record and the Python tuple **must land in the same commit**:
 1. **L67** `test_creator_context_payload_fields_match_the_java_record_exactly` — exact set equality against the Java `@JsonProperty` names, failing in both directions.
-2. **L82** — asserts `list(CREATOR_CONTEXT_PAYLOAD_FIELDS) == sorted(set(...))`; insert the five names alphabetically.
+2. **L84** *(was L82; the only drift-test line that moved between 143ca1e and 7f48e8d — L67, L87, L103, L44, L157-159 and L170 are all unchanged)* — asserts `list(CREATOR_CONTEXT_PAYLOAD_FIELDS) == sorted(set(...))`; insert the five names alphabetically.
 3. **L87** `test_every_allow_listed_field_is_actually_read_by_the_creator_block_builder` — for every allow-listed name not in `CREATOR_CONTEXT_FIELDS_NOT_RENDERED`, the regex `ctx(?:\.get\(|, )['"]<name>['"]` must match somewhere in `assembler.py`. **The local variable must literally be named `ctx`** (`build_block_b_creator`'s parameter is `context`; it is narrowed to `ctx` at L557). Write the new renders as `ctx.get("negotiation_holdout")` / `_creator_str(ctx, "holdout_until")`, not `context.get(...)`.
 4. **L103** `test_every_java_field_changes_the_rendered_creator_block` — each new Java field needs a `distinctive` value (local dict, L119-143) **and** a render line that measurably changes Block B output, plus a `_PREREQUISITES` entry (L157-159) if its render is conditional. `holdout_until` renders only when `negotiation_holdout` is true → it needs `_PREREQUISITES["holdout_until"] = {"negotiation_holdout": True}`.
 
@@ -399,7 +431,8 @@ public String mint(String workspaceId, String conversationId, String turnId, Str
 The existing five-arg `mint` (L82) delegates with `SCOPE_DEFAULT` (L68-69). Verified: today's five-arg body hardcodes `.claim("scope", SCOPE_DEFAULT)` at L105, so the overload is a clean extraction.
 
 <!-- PRIYA: doSendTurn is L309 (not 308) and the mint call is L397 (not 396); isCreatorTurn is L332. -->
-`MeeraSessionService.doSendTurn` (**L309**; `isCreatorTurn` at L332): for `isCreatorTurn`, resolve the scope before the mint at **L397**:
+<!-- PRIYA 2026-09-08 (B0-05, re-anchored to 7f48e8d): commit 7f48e8d ("let a creator conversation actually persist", F-0751) edits this file. `doSendTurn` L309 -> **L306**; `isCreatorTurn` L332 -> **L340**; the mint call L397 -> **L405**. `OnBehalfTokenService` is untouched: the 5-arg `mint` is still L82, `SCOPE_DEFAULT` L68, the `.claim("scope", ...)` L105. -->
+`MeeraSessionService.doSendTurn` (**L306**; `isCreatorTurn` at **L340**): for `isCreatorTurn`, resolve the scope before the mint at **L405**:
 
 ```java
 PreferencesResponse prefs = creatorAgentPreferencesService.getOrCreatePreferences(userId);
@@ -408,7 +441,8 @@ String onBehalfToken = onBehalfTokenService.mint(workspaceId, conversationId, me
 ```
 
 <!-- PRIYA: resolved. MeeraSessionService's ctor has 10 params (L102-112) and there is exactly ONE construction site in tests: MeeraSessionServiceTest:81. CreatorMeeraControllerTest constructs CreatorMeeraController (L70) and mocks MeeraSessionService — it needs no change unless the CONTROLLER ctor changes, which it does not. -->
-Inject `CreatorAgentPreferencesService` into `MeeraSessionService` (ctor at **L102-112** grows from 10 to 11 params). **The only construction site is `MeeraSessionServiceTest:81`** — add one mock there. `CreatorMeeraControllerTest` constructs `CreatorMeeraController`, not `MeeraSessionService`, and needs no change. `MeeraSessionService` is under `service/meera` and imports the **service**, not the repository, so `InfoBarrierTest` stays green.
+<!-- PRIYA 2026-09-08 (B0-05, re-anchored to 7f48e8d): the ctor is **L103-113** (still exactly 10 params; the 10th is `CreatorAgentConversationService`, added by 7f48e8d) and the single test construction site is **MeeraSessionServiceTest:82**. Re-verified today: `new MeeraSessionService(` occurs at exactly one line in the whole test tree. -->
+Inject `CreatorAgentPreferencesService` into `MeeraSessionService` (ctor at **L103-113** grows from 10 to 11 params). **The only construction site is `MeeraSessionServiceTest:82`** — add one mock there. `CreatorMeeraControllerTest` constructs `CreatorMeeraController`, not `MeeraSessionService`, and needs no change. `MeeraSessionService` is under `service/meera` and imports the **service**, not the repository, so `InfoBarrierTest` stays green.
 
 `OnBehalfAuthResolver.requireScope` (L178) already checks the scope list; no change. The class lives at **`com.influora.security.OnBehalfAuthResolver`**, not under `service/meera`. `resolveForWorkspaceRequiringScope(onBehalfJwt, bodyWorkspaceId, requiredTool)` is L150 and `OnBehalfContext(userId, workspaceId, userType, conversationId)` is L78; `resolveForWorkspace` (L86) is audience-agnostic — it only equality-checks the token's `workspaceId` claim against the body, so a CREATOR turn carrying the creator's `users.id` as `workspace_id` resolves correctly with no change.
 
@@ -448,7 +482,7 @@ Feature flag: `CreatorMeeraController.requireFeatureEnabled()` is **private** (L
 <!-- PRIYA: the IP key is a real defect, not a nit. Python calls these routes server-to-server from ONE process, so an IP-keyed 60/window bucket is a platform-wide cap shared by every creator — the first busy creator starves the rest. -->
 Rate limiting (`AuthRateLimitFilter`): add pattern `^/internal/meera/creator/[^/]+$`, POST only, property `influora.meera.creator-tool-rate-limit-per-window` (matches the existing `influora.meera.turn-rate-limit-per-window:20` naming). Five edits per facts/backend.md 5.3.
 
-**Do not key this bucket on IP.** Every call arrives server-to-server from the single influora-ai process, so one IP-keyed bucket is a *platform-wide* cap that the busiest creator starves for everyone. Either (a) key on the on-behalf JWT's `sub` — the filter can read the `X-Onbehalf-Authorization` header and take the JWT's subject without verifying it, since verification happens downstream and the key only needs to be *stable*, not *trusted* — or (b) drop the filter-level bucket entirely and cap per-creator in `CreatorToolCallValidator` (which already has `creatorUserId`) alongside the audit write. **(a) is the default.** The real per-turn ceiling is already enforced upstream by the `meera-turn` bucket on `^(/creator)?/meera/sessions/[^/]+/messages$` (L106) plus the AI spend gate; this bucket is defence-in-depth, so 60/window per creator is right and 60/window per platform is not.
+**Do not key this bucket on IP.** Every call arrives server-to-server from the single influora-ai process, so one IP-keyed bucket is a *platform-wide* cap that the busiest creator starves for everyone. Either (a) key on the on-behalf JWT's `sub` — the filter can read the `X-Onbehalf-Authorization` header and take the JWT's subject without verifying it, since verification happens downstream and the key only needs to be *stable*, not *trusted* — or (b) drop the filter-level bucket entirely and cap per-creator in `CreatorToolCallValidator` (which already has `creatorUserId`) alongside the audit write. **(a) is the default.** The real per-turn ceiling is already enforced upstream by the `meera-turn` bucket on `^(/creator)?/meera/sessions/[^/]+/messages$` (**L105** at `7f48e8d`; was L106) plus the AI spend gate; this bucket is defence-in-depth, so 60/window per creator is right and 60/window per platform is not.
 
 ### 3.5 Result DTOs: `com.influora.web.dto.meera.CreatorToolDtos`
 
@@ -551,7 +585,10 @@ Locale: `Locale.forLanguageTag(prefs.creatorLanguage())` with a fallback to `Loc
 public PreferencesResponse getByProfileId(String creatorProfileId)   // 404 CREATOR_PROFILE_NOT_FOUND; creates the row with computed defaults if absent, same as getOrCreatePreferences
 ```
 
-Every new class outside `CreatorAgentPreferencesService`/`MeeraContextService` reads floors and preferences through this or `getOrCreatePreferences` and **never** injects `CreatorAgentPreferencesRepository`. Note `InfoBarrierTest` only scans `service/meera/**` and `web/**` — `RateQuoteService` (`service/rates`), `DealRiskService` (`service/risk`), `CreatorBriefService`, `MediaKitService`, `CampaignFitService`, `RoutineReplyService` (`service/`) and `MeeraDelayedSendJob` (`job/`) are **outside the scanned tree**, so the barrier test will not catch a violation there. Either widen `ALLOWED_IMPORTERS`' scan roots to include `service/**` and `job/**` in this phase, or accept that rule 0.3 is enforced by review alone for those seven classes. **Widening the scan is the default** — one line in `InfoBarrierTest.candidateDirs`.
+Every new class outside `CreatorAgentPreferencesService`/`MeeraContextService` reads floors and preferences through this or `getOrCreatePreferences` and **never** injects `CreatorAgentPreferencesRepository`. Note `InfoBarrierTest` only scans `service/meera/**` and `web/**` — `RateQuoteService` (`service/rates`), `DealRiskService` (`service/risk`), `CreatorBriefService`, `MediaKitService`, `CampaignFitService`, `RoutineReplyService` (`service/`) and `MeeraDelayedSendJob` (`job/`) are **outside the scanned tree**, so the barrier test will not catch a violation there. Either widen the scan roots to include `service/**` and `job/**` in this phase, or accept that rule 0.3 is enforced by review alone for those seven classes. **Widening the scan is the default.**
+
+<!-- PRIYA 2026-09-08 (B0-05, and correcting a path this spec had wrong in both §3.6 and §9): the file is **`influora-api/src/test/java/com/influora/architecture/InfoBarrierTest.java`** — package `architecture`, NOT `service/meera` (`service/meera` holds `InfoBarrierRuntimeTest`, a different test). Re-measured at 7f48e8d: `candidateDirs` is declared **L69-70** and consumed **by index** at L71-72 inside a two-resource try-with-resources (`walkIfExists(candidateDirs.get(0))`, `walkIfExists(candidateDirs.get(1))`), with the `Stream.concat` of exactly two streams at L73-79. -->
+**This is NOT a one-line edit** (`PRIYA-COMPAT-0904` §7 condition 2). `candidateDirs` (**L69-70**) is consumed **by index** — `walkIfExists(candidateDirs.get(0))` and `.get(1)` in a two-resource try-with-resources, feeding a two-argument `Stream.concat`. Adding a third and fourth root means restructuring roughly L69-79 into a loop or a flat-mapped stream, ~8 lines, not appending to a list literal.
 
 **Accessor names are Java camelCase.** `PreferencesResponse` is a record with accessors `reelFloor()`, `storySetFloor()`, `postFloor()`, `approvalLevel()`, `represented()`, `creatorLanguage()`, `excludedCategories()`, `blockedBrands()`, `weeklySponsoredLimit()` — the snake_case forms used in 4.3/5.2 (`prefs.reel_floor`, `prefs.negotiation_holdout()`) are the **wire** names, not callable Java.
 
@@ -560,10 +597,15 @@ Every new class outside `CreatorAgentPreferencesService`/`MeeraContextService` r
 <!-- PRIYA: MeeraContextService.ACTIVE_DEAL_STATUSES is `private static final` (L93) and the executors sit in a DIFFERENT package (service.meera.tool.creator vs service.meera), so even package-private would not reach it. Promote it to a shared public constant. -->
 - Query `collaborationRepository.findByCreatorId(creatorUserId)` (L101, keyed on `users.id` ✓) and filter by the active-status set for active, `COMPLETED` for completed. **`MeeraContextService.ACTIVE_DEAL_STATUSES` is `private static final` (L93) and the executors are in a different package** — move it to a new `public final class CreatorDealStatuses { public static final Set<CollaborationStatus> ACTIVE = ...; }` in `com.influora.domain.enums` (or make the existing field `public static final`) and have `MeeraContextService` L384 read the shared constant. Do not duplicate the set.
 - For each: campaign via `campaignRepository.findById`, brand name via `workspaceRepository` and `brandProfileRepository` the way `DealService.resolveCounterparty` does (copy the lookup, do not call the private method). `nextAction` from status: INVITED or APPLIED → "accept or counter"; IN_NEGOTIATION with last message from brand → "reply to brand"; IN_NEGOTIATION with last message from creator → "waiting for brand"; CONTRACT_PENDING → "sign the contract"; CONTRACTED with `escrowFunded` → "funds secured, start work"; CONTRACTED without → "waiting for brand to secure funds"; IN_PROGRESS → "deliver by {date}"; REVIEW_PENDING → "waiting for brand review"; REVISION_REQUESTED → "revise and resubmit"; DISPUTED → "in dispute, Meera is in draft-only mode". <!-- PRIYA: WRONG FINDER — this would reintroduce CR-49. findByCollaborationIdAndStatus DOES exist (EscrowHoldRepository L157) but reads the DIRECT collaboration_id column, which is NULL on every ordinary brand-funded hold; DealService L2018-2026 documents this and deliberately uses the milestone-aware query instead. Using the direct finder makes `secured` silently false on genuinely funded deals. -->
-`secured`: use **`escrowHoldRepository.hasEscrowForCollaboration(collaborationId, Set.of(EscrowStatus.FUNDED))`** (L153), the same milestone-aware query `DealService` uses to compute `escrowFunded` at **L2024-2026**. Do **not** use `findByCollaborationIdAndStatus` (L157) — it exists, but it reads the direct `collaboration_id` column, which is `NULL` on every ordinary brand-funded hold; CR-49/CR-50 fixed exactly this and the comment at L2019-2023 says so. Note `escrowFunded` is **not** a `Collaboration` column (L1478).
+<!-- PRIYA 2026-09-08 (B0-05, re-anchored to 7f48e8d — one of the two references that drifted in SUBSTANCE, not only in line number):
+     - `hasEscrowForCollaboration` is still **L153** in EscrowHoldRepository. UNCHANGED.
+     - `findByCollaborationIdAndStatus` moved **L157 -> L193** — a 36-line move, so anyone checking "is L157 still the wrong finder?" at 7f48e8d looks at an unrelated method and may conclude the warning is stale. It is not stale; the method still reads the direct column.
+     - The `DealService` site moved **L2018-2026 -> L2113-2123**, and its SHAPE changed: it is now a TERNARY — `hasEscrowForContract(collaborationId, latest.getId(), FUNDED)` when a contract exists, `hasEscrowForCollaboration(collaborationId, FUNDED)` when it does not (comment L2113-2115 explains why: a hold funded before any contract was drafted is still real money held). So it is no longer true that DealService "uses" `hasEscrowForCollaboration` unconditionally. The executor still wants the plain collaboration-wide form — a creator asking "is this deal secured?" is not asking about one contract version — but do not copy the ternary and do not cite DealService as if it were a single call.
+     - `escrowFunded` first appears at **L1484** (was L1478). -->
+`secured`: use **`escrowHoldRepository.hasEscrowForCollaboration(collaborationId, Set.of(EscrowStatus.FUNDED))`** (**L153**, unchanged), the milestone-aware query. `DealService` computes its own `escrowFunded` at **L2116-2123** as a ternary (`hasEscrowForContract` when a contract exists, `hasEscrowForCollaboration` otherwise) — the executor wants the plain collaboration-wide branch, not the ternary. Do **not** use `findByCollaborationIdAndStatus` (**L193**, moved from L157) — it exists, but it reads the direct `collaboration_id` column, which is `NULL` on every ordinary brand-funded hold; CR-49/CR-50 fixed exactly this and the comment above the ternary says so. Note `escrowFunded` is **not** a `Collaboration` column (**L1484**).
 
 `briefId` = the PLATFORM `CreatorBrief` for this collaboration if one exists.
-- Unread count: `DealService`'s computation is inline at **L2002-2007** (`dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(...)` filtered by `!parseReadBy(m.getReadByJson()).contains(userId)`). Extract it to a `public static int unreadCountFor(List<DealMessage>, String userId)` in `DealService` (`parseReadBy` must become static too, or move both to a small helper) and call it from L2002. **Package-visible is not enough** — the executor is in `com.influora.service.meera.tool.creator`, `DealService` is in `com.influora.service`.
+- Unread count: `DealService`'s computation is inline at **L2074-2080** at `7f48e8d` (was L2002-2007) — `dealMessageRepository.findByCollaborationIdOrderByCreatedAtAsc(...)` filtered by `!parseReadBy(m.getReadByJson()).contains(userId)` (the filter line is **L2079**). Extract it to a `public static int unreadCountFor(List<DealMessage>, String userId)` in `DealService` (`parseReadBy` must become static too, or move both to a small helper) and call it from **L2074**. **Package-visible is not enough** — the executor is in `com.influora.service.meera.tool.creator`, `DealService` is in `com.influora.service`.
 
 **`GetBriefExecutor.execute(String creatorUserId, Map<String,Object> input)`**
 - Input: exactly one of `brief_id` or `deal_id`. With `deal_id`: find or create the PLATFORM brief for that collaboration (`CreatorBriefService.ensurePlatformBrief(profileId, collaborationId)`, 3.8), which analyses it if not yet ANALYZED.
@@ -607,25 +649,27 @@ Every new class outside `CreatorAgentPreferencesService`/`MeeraContextService` r
 | Route | Signature | Behaviour |
 |---|---|---|
 | `GET /creator/meera/drafts?status=PENDING` | `list(@AuthenticationPrincipal AuthPrincipal p, @RequestParam(defaultValue="PENDING") String status)` | `List<DraftItem>` |
-| `POST /creator/meera/drafts/{id}/approve` | `approve(p, @PathVariable String id, @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody ApproveDraftRequest body)` | body `{text, proposed_amount?, deal_terms?}`; `edited = !text.equals(draft.text)`; sends through the right path (below); sets SENT with `sentMessageId`; `prefs.recordApprovedDraft()`; returns `ApproveDraftResponse{draft_id, sent_message_id, deal_id, approved_draft_count, level_up_eligible}` |
+| `POST /creator/meera/drafts/{id}/approve` | `approve(p, @PathVariable String id, @RequestHeader("Idempotency-Key") String key, @Valid @RequestBody ApproveDraftRequest body)` | body `{text, proposed_amount?, deal_terms?}`; **`draft.markSent(sentMessageId, !text.equals(draft.getText()))` — the boolean is PERSISTED to the `edited` column (§2.4), not just computed**; sends through the right path (below); sets status SENT with `sentMessageId`; `prefs.recordApprovedDraft()`; returns `ApproveDraftResponse{draft_id, sent_message_id, deal_id, approved_draft_count, level_up_eligible}` |
 | `POST /creator/meera/drafts/{id}/discard` | `discard(p, id)` | DISCARDED |
 
+<!-- PRIYA 2026-09-08 (B0-04 item 1): the approve row above now PERSISTS `edited`. Before this change it computed the boolean and dropped it, so §14.5.c metric 3's ">= 25% approved unedited" threshold — one Swapnil is being asked to sign off on — could not be computed from the database at all. The mutator is `markSent(String sentMessageId, boolean edited)` on `MeeraDraft`; it sets status SENT, `approvedAt`, `sentMessageId` and `edited` in one call, so no path can set three of the four and forget the fourth. Note the status it sets is SENT, NOT `DraftStatus.APPROVED` or `EDITED` — those two enum values are declared in §2.4 and written by nothing. -->
 Send paths inside `approve`, all via existing public service methods so business rules stay in one place. **Every signature below was re-verified against HEAD:**
 
 <!-- PRIYA: sendMessage takes THREE params, not four — there is no idempotencyKey. DealService.java L619-620: sendMessage(AuthPrincipal principal, String dealId, SendMessageRequest body). Passing `key` will not compile. -->
-- **REPLY** → `dealService.sendMessage(principal, dealId, new SendMessageRequest(text, DealMessageKind.text))` — **three arguments, no idempotency key** (`DealService` L619-620). The method ignores `body.kind()` and hardcodes `DealMessageKind.text` internally (Kabir M-1), so the second constructor argument is inert but still required. Because there is no idempotency key on this path, `approve` must be idempotent itself: guard on `draft.status == PENDING` inside the transaction and return the stored `sentMessageId` on replay. Then patch metadata via a new `public void DealService.tagMessageMetadata(String messageId, Map<String,Object>)` (public, not package-visible — the caller is in `com.influora.web`).
+<!-- PRIYA 2026-09-08 (B0-05, re-anchored to 7f48e8d): `sendMessage` L619-620 -> **L618-619**, `counter` L558-559 -> **L557-558**, `reject` L399-400 -> **L398-399**. All three signatures are otherwise unchanged; the three-arg `sendMessage` finding still holds. -->
+- **REPLY** → `dealService.sendMessage(principal, dealId, new SendMessageRequest(text, DealMessageKind.text))` — **three arguments, no idempotency key** (`DealService` **L618-619**). The method ignores `body.kind()` and hardcodes `DealMessageKind.text` internally (Kabir M-1), so the second constructor argument is inert but still required. Because there is no idempotency key on this path, `approve` must be idempotent itself: guard on `draft.status == PENDING` inside the transaction and return the stored `sentMessageId` on replay. Then patch metadata via a new `public void DealService.tagMessageMetadata(String messageId, Map<String,Object>)` (public, not package-visible — the caller is in `com.influora.web`).
 
 <!-- PRIYA: "three existing construction sites ... so only tests" is wrong by an order of magnitude. There are FOURTEEN `new CounterRequest(...)` sites, all in two test files. Enumerated below so nobody discovers them at compile time. -->
-- **COUNTER** → `dealService.counter(principal, dealId, new CounterRequest(amount, text, null, null, null, dealTerms, draftId), key)` — `counter(AuthPrincipal, String, CounterRequest, String idempotencyKey)` at L558-559, four args ✓. Adding the trailing `String meeraDraftId` component takes `CounterRequest` from 6 to 7 components and breaks **14 construction sites**, not three:
-  - `DealServiceTest` — L605, L645, L708, L749, L768, L982, L1654, L2203, L2316 (**9**)
-  - `DealControllerTest` — L142, L143, L153, L165, L284 (**5**)
+- **COUNTER** → `dealService.counter(principal, dealId, new CounterRequest(amount, text, null, null, null, dealTerms, draftId), key)` — `counter(AuthPrincipal, String, CounterRequest, String idempotencyKey)` at **L557-558**, four args ✓. Adding the trailing `String meeraDraftId` component takes `CounterRequest` from 6 to 7 components and breaks **14 construction sites**, not three. Re-enumerated at `7f48e8d` (B0-05 — every `DealServiceTest` line moved by +9 to +23; the `DealControllerTest` lines did not move at all):
+  - `DealServiceTest` — **L615, L655, L718, L759, L778, L997, L1673, L2224, L2339** (**9**) *(were L605, L645, L708, L749, L768, L982, L1654, L2203, L2316)*
+  - `DealControllerTest` — L142, L143, L153, L165, L284 (**5**, unchanged)
   - `DealService` and `DealController` only *reference* the type (`DealController` L109 binds it from JSON); neither constructs one, so no main-source construction site exists.
   Frontend sends `meeraDraftId` optionally. `doCounter` records `MEERA_COUNTER` in offer history when non-null.
 
 <!-- PRIYA: RejectRequest.reason is @Size(max = 500) but a DECLINE draft is allowed up to 2000 chars. Calling the service directly bypasses bean validation, so this ships a 2000-char reason into a column sized for 500 and only fails at the DB. -->
-- **DECLINE** → `dealService.reject(principal, dealId, new RejectRequest(text), key)` — `reject(AuthPrincipal, String, RejectRequest, String idempotencyKey)` at L399-400, four args ✓. **But `RejectRequest` is `record RejectRequest(@Size(max = 500) String reason)`** while `ApproveDraftRequest.text` allows 2000. Calling the service directly bypasses `@Valid`, so a long decline reaches the column unchecked. Cap DECLINE draft text at 500 chars in `DraftReplyExecutor` (reject with 422 `DECLINE_TEXT_TOO_LONG`) and in the `draft_reply` tool description, rather than truncating silently at send.
+- **DECLINE** → `dealService.reject(principal, dealId, new RejectRequest(text), key)` — `reject(AuthPrincipal, String, RejectRequest, String idempotencyKey)` at **L398-399**, four args ✓. **But `RejectRequest` is `record RejectRequest(@Size(max = 500) String reason)`** while `ApproveDraftRequest.text` allows 2000. Calling the service directly bypasses `@Valid`, so a long decline reaches the column unchecked. Cap DECLINE draft text at 500 chars in `DraftReplyExecutor` (reject with 422 `DECLINE_TEXT_TOO_LONG`) and in the `draft_reply` tool description, rather than truncating silently at send.
 
-- **APPLICATION** → `creatorCampaignService.apply(principal, campaignId, new ApplyRequest(text))` — **verified**: `CreatorCampaignService.apply(AuthPrincipal principal, String campaignId, ApplyRequest req)` returns `ApplyResponse` (L208), and `ApplyRequest` is `record ApplyRequest(@Size(max = 2000) String message)` (`CreatorCampaignDtos` L70). Same method `CreatorCampaignController.apply` calls (L61-64). No fact-sheet lookup needed.
+- **APPLICATION** → `creatorCampaignService.apply(principal, campaignId, new ApplyRequest(text))` — **re-verified at `7f48e8d`, all three anchors unchanged**: `CreatorCampaignService.apply(AuthPrincipal principal, String campaignId, ApplyRequest req)` returns `ApplyResponse` (**L208**), and `ApplyRequest` is `record ApplyRequest(@Size(max = 2000) String message)` at **L70** of **`influora-api/src/main/java/com/influora/web/dto/creatorcampaign/CreatorCampaignDtos.java`** *(the path, not just the class name — there are several `*Dtos` files and this one is under `dto/creatorcampaign/`)*. Same method `CreatorCampaignController.apply` calls (**L61-64**). No fact-sheet lookup needed.
 
 `level_up_eligible` = `approvedDraftCount >= 10 && consentAcceptedAt <= now - 7 days && approvalLevel == 0 && levelUpPromptedAt == null`. The frontend shows the prompt once; `PUT /creator/agent-preferences` with `approval_level: 1` is the existing path; `POST /creator/meera/drafts/level-up-seen` sets `levelUpPromptedAt`.
 
@@ -633,14 +677,18 @@ DTOs in `CreatorToolDtos`: `DraftItem(draft_id, kind, intent, text, proposed_amo
 
 ### 3.8 Briefs: `CreatorBriefService` and `CreatorBriefController` (B1)
 
+<!-- PRIYA 2026-09-08 (B0-07, F-0764): the "(B1)" in this heading is the JOB id from §1's scope table, not the phase. Phase-wise this section is SPLIT: `paste`, `ensurePlatformBrief`, `get`, `list`, `dismiss` and the four non-link controller routes are **Phase B0** (they are what "Paste and Read" means, and `get_brief`'s executor calls `ensurePlatformBrief`); `createSecureLink`, the three secure-link routes and the two public/redeem routes in §8.1 are **Phase B1**. Build the B0 half without any secure-link method — nothing in it depends on `creator_secure_links` (§2.3), which is a B1 migration. -->
 `CreatorBriefService` (`com.influora.service`):
 
 ```java
+// --- Phase B0 ---
 @Transactional public BriefAnalysisResponse paste(String creatorUserId, String rawText)
 @Transactional public CreatorBrief ensurePlatformBrief(String creatorProfileId, String collaborationId)
 @Transactional(readOnly = true) public BriefAnalysisResponse get(String creatorUserId, String briefId)
 @Transactional(readOnly = true) public List<BriefListItem> list(String creatorUserId, int limit)
 @Transactional public void dismiss(String creatorUserId, String briefId)
+
+// --- Phase B1 (do NOT build in B0) ---
 @Transactional public SecureLinkResponse createSecureLink(String creatorUserId, String briefId, CreateSecureLinkRequest req)
 ```
 
@@ -752,7 +800,7 @@ Prefs API: `UpdatePreferencesRequest` gains `rate_card_shareable` (Boolean) and 
 ### 4.1 Deliverable taxonomy: `com.influora.service.rates.QuoteDeliverableType`
 
 <!-- PRIYA: NAME COLLISION — com.influora.domain.enums.DeliverableType ALREADY EXISTS with a completely different, platform-shaped taxonomy (INSTAGRAM_POST, INSTAGRAM_REEL, INSTAGRAM_STORY, INSTAGRAM_CAROUSEL, YOUTUBE_VIDEO, YOUTUBE_SHORT, FACEBOOK_POST, FACEBOOK_REEL, TIKTOK_VIDEO). It is persisted on the Deliverable entity, parsed by ContractService.valueOf at L512, referenced by CreatorDeliverableDtos and 12 test classes. Adding REEL/STATIC_POST/... to it pollutes the deliverables spec, changes ContractService's valueOf behaviour, and (if @Enumerated(STRING)) touches a persisted column. Use a different name in a different package. -->
-**Resolved: `com.influora.domain.enums.DeliverableType` already exists and must not be touched.** Its values are `INSTAGRAM_POST, INSTAGRAM_REEL, INSTAGRAM_STORY, INSTAGRAM_CAROUSEL, YOUTUBE_VIDEO, YOUTUBE_SHORT, FACEBOOK_POST, FACEBOOK_REEL, TIKTOK_VIDEO` — a platform taxonomy, persisted on the `Deliverable` entity, parsed by `ContractService` L509-514 via `valueOf`, and asserted in 12 test classes. Adding the pricing values to it would change `ContractService`'s parse behaviour and pollute a persisted column.
+**Resolved: `com.influora.domain.enums.DeliverableType` already exists and must not be touched.** Its values are `INSTAGRAM_POST, INSTAGRAM_REEL, INSTAGRAM_STORY, INSTAGRAM_CAROUSEL, YOUTUBE_VIDEO, YOUTUBE_SHORT, FACEBOOK_POST, FACEBOOK_REEL, TIKTOK_VIDEO` — a platform taxonomy, persisted on the `Deliverable` entity, parsed by `ContractService.parseDeliverableType` (**L816-825** at `7f48e8d`, the `valueOf` at **L821**; was L509-514/L512 — a +307 move, the largest single drift in the backend), and asserted in 12 test classes. Adding the pricing values to it would change `ContractService`'s parse behaviour and pollute a persisted column.
 
 Create a **new, separately named** enum instead — `com.influora.service.rates.QuoteDeliverableType`:
 
@@ -800,7 +848,12 @@ Algorithm:
 3. **Bundle discount**: when total qty ≥ 3, 10% off the lines subtotal, shown as the creator's concession.
 4. **Add-ons** per 4.2, computed on the discounted subtotal.
 5. **Total** = subtotal − discount + add-ons. **Floor total** = Σ floor(type) × qty.
-6. **Anchor** = the 60th to 75th percentile figure: `min(total × 1.15, rangeMax)` when a range exists, else `total × 1.10`. Null when **`prefs.negotiationHoldout()`** (Java accessor; `negotiation_holdout` is the wire name).
+<!-- PRIYA 2026-09-08 (B0-04 item 3, W5 APPLIED IN PLACE): step 6 is rewritten to branch on PROVENANCE, not on "when a range exists". §14.1.e as written assigned the CLAMPED formula (`min(total x 1.15, rangeMax)`) to own-history and tier-band and the UNCLAMPED one to benchmark — exactly backwards. Steps 1a and 1b each produce a single MEDIAN and carry no `rangeMax` to clamp against; benchmark (1c) is the only branch with a range, because it is the only branch that comes from `RateEstimationService.estimate()`'s `min`/`max` pair. An engineer following the old wording either dereferences a null bound or silently drops the clamp. The corrected split keeps the clamp where a range actually exists and still delivers §14.1.e's smaller benchmark lift. -->
+6. **Anchor** = the 60th to 75th percentile figure, **branched on provenance**:
+   - own history (step 1a) or tier band (step 1b): `anchor = total × 1.15`, **no clamp** — these branches produce a single median and there is no `rangeMax`.
+   - benchmark (step 1c): `anchor = min(total × 1.10, rangeMax)`, where `rangeMax` is `estimate().max()` scaled the same way `total` was. Benchmark is the only branch that has a range.
+
+   Null when **`prefs.negotiationHoldout()`** (Java accessor; `negotiation_holdout` is the wire name), unchanged.
 7. **Recommended move** when `brandBudgetInr` is given: budget ≥ total → `ACCEPT`; budget ≥ floorTotal and tier is NANO or MICRO → `SCOPE_DOWN` with `scope_down_offer` built by removing the lowest-weight lines until the package fits the budget; budget ≥ floorTotal and tier MID **, MACRO or MEGA** → `COUNTER_AT_FLOOR`; budget < floorTotal → `DECLINE` unless a barter or strategic context applies (the model decides wording, the code decides the move). <!-- PRIYA: "MID or above" was ambiguous — deriveTier returns the string "MEGA" for >=1M followers, which is not a CreatorTier enum value. Enumerate the tiers explicitly and branch on the String, never CreatorTier.valueOf. --> Branch on the tier **String**, never `CreatorTier.valueOf(tier)` — `"MEGA"` is not a `CreatorTier` constant and would throw.
 8. `payment_schedule` fixed string `"50% on securing funds, 50% on delivery"`, `revision_rounds` = `prefs` has no field, use 2.
 9. All money strings via `Rendered.money(value, locale)`.
@@ -819,7 +872,8 @@ public List<RiskFlag> evaluateBrief(String creatorProfileId, String briefId)
 public List<RiskFlag> evaluateExtraction(CreatorProfile profile, PreferencesResponse prefs, BriefExtraction extraction, Collaboration collaborationOrNull)
 ```
 
-`evaluateDeal` builds an extraction-like view from the collaboration and calls `evaluateExtraction`. Fields verified on HEAD: `Collaboration.getUsageMonths()` (L210), `isUsagePerpetual()` (L214), **`getUsageChannels()` — returns a JSON `String`, not a `List`; parse with `JsonLists.stringListFromJson`** (L218), `getExclusivityDays()` (L222), `getExclusivityScope()` → `ExclusivityScope {NONE, NAMED_BRANDS, CATEGORY}` (L226), **`getExclusivityBrands()` — also a JSON `String`** (L230), `getMaxRevisions()` (L234), `getAppliedAt()` (L180), `getAgreedRate()` (L188). Campaign: `getEndBrandName()` (L238), `getEndBrandCategory()` (L242), `startDate`/`endDate` are `LocalDate` (L48/L51), budget is **`budgetMin`/`budgetMax`** — there is no single `budget` column. `UsageChannel` has exactly five values (`ORGANIC, PAID_ADS, WHITELISTING, WEBSITE, OFFLINE`), which is what 5.2's `USAGE_PERPETUAL` "contains all five" rule counts against. Take `prefs` via `CreatorAgentPreferencesService.getByProfileId(creatorProfileId)` (see 3.6). Rules are pure functions in `com.influora.service.risk.rules`, one class per rule implementing:
+<!-- PRIYA 2026-09-08 (B0-05, re-anchored to 7f48e8d): every `Collaboration` getter below moved by exactly **-1**, and both `Campaign` getters by **-1**. Types, names and semantics are all unchanged — this is a one-line insertion above them, not a refactor. `Campaign.startDate` L48 / `endDate` L51 unchanged. -->
+`evaluateDeal` builds an extraction-like view from the collaboration and calls `evaluateExtraction`. Fields verified at `7f48e8d`: `Collaboration.getUsageMonths()` (**L209**), `isUsagePerpetual()` (**L213**), **`getUsageChannels()` — returns a JSON `String`, not a `List`; parse with `JsonLists.stringListFromJson`** (**L217**), `getExclusivityDays()` (**L221**), `getExclusivityScope()` → `ExclusivityScope {NONE, NAMED_BRANDS, CATEGORY}` (**L225**), **`getExclusivityBrands()` — also a JSON `String`** (**L229**), `getMaxRevisions()` (**L233**), `getAppliedAt()` (**L179**), `getAgreedRate()` (**L187**). Campaign: `getEndBrandName()` (**L237**), `getEndBrandCategory()` (**L241**), `startDate`/`endDate` are `LocalDate` (L48/L51, unchanged), budget is **`budgetMin`/`budgetMax`** — there is no single `budget` column. `UsageChannel` has exactly five values (`ORGANIC, PAID_ADS, WHITELISTING, WEBSITE, OFFLINE`), which is what 5.2's `USAGE_PERPETUAL` "contains all five" rule counts against. Take `prefs` via `CreatorAgentPreferencesService.getByProfileId(creatorProfileId)` (see 3.6). Rules are pure functions in `com.influora.service.risk.rules`, one class per rule implementing:
 
 ```java
 interface RiskRule { Optional<RiskFlag> apply(RiskContext ctx); }
@@ -828,6 +882,97 @@ interface RiskRule { Optional<RiskFlag> apply(RiskContext ctx); }
 `RiskContext` carries: profile, prefs, extraction, collaboration (nullable), the creator's active collaborations with campaign end-brand and category and exclusivity dates, the package quote (for floor and value scaling), locale, `now`.
 
 ### 5.2 The rules and their codes
+
+<!-- AMEND-0917 / VIKRAM 2026-09-17 (K-2b, KABIR-CONSENT-0917.md "Last call - K-2"; Priya,
+     RULINGS-U-0917.md round 4 section 4): the OFF_PLATFORM_PAYMENT and HIDE_DISCLOSURE "Fires
+     when" cells below no longer give a verbatim regex. Kabir's real-Java-21 measurement found the
+     original patterns false-flagged on ordinary text (a brand name ending in "no" plus a hashtag;
+     "don't disclose the launch date"; "payment after delivery" read as a route, not a timing,
+     word) and missed routine evasions (a non-breaking space or a zero-width character inside the
+     trigger word; Hinglish and Devanagari phrasing). The two cells now state intent in words; the
+     actual pattern's contract is RiskFlagCorpusTest (influora-api/src/test/java/com/influora/
+     service/risk/rules/RiskFlagCorpusTest.java), which asserts against a corpus that includes 56
+     rows Nisha wrote blind, without seeing either pattern. -->
+
+<!-- AMEND-0917-R5 / VIKRAM 2026-09-17 (K-2b round 5, RULINGS-U-0917.md round 5 "Ruling 1"): the
+     OFF_PLATFORM_PAYMENT cell's payment-method half is narrowed again. Priya, reading
+     `creator-wallet.tsx` L1068/L1131 ("Add a UPI ID or bank account to withdraw funds"): a bare
+     method name is Influora's own payout vocabulary, so on its own it is a structural
+     false-positive source, not corpus noise (measured on OPP-N-02, OPP-N-09 and Kabir's own
+     KAB-OP-N-03, every one an on-platform payout instruction). It now counts only together with a
+     request to send or pay money TO the creator ("bhej"/"send"/"pay"/"transfer" and similar,
+     English or Devanagari); route phrases are unaffected and still count alone. Constraint,
+     load-bearing: no exclusion list keyed on "Influora", "payout" or "withdraw" — that would let
+     brand text switch the check off. See `OffPlatformPaymentRule.WALLET_NAME` / `.SEND_REQUEST` /
+     `.ROUTE_PHRASES`'s javadoc. -->
+
+<!-- AMEND-0917-KB5 / VIKRAM 2026-09-17 (KB5-1, KABIR-CONSENT-0917.md "Last call - K-2b round 5"):
+     "TOGETHER WITH" in the OFF_PLATFORM_PAYMENT cell meant anywhere in up to 8,000 characters,
+     which re-admitted a payout-instruction false positive through an unrelated "send" in a
+     different sentence -- measured non-dismissible on two ordinary on-platform briefs ("Please
+     send the draft for approval by Friday. Your fee is released to the UPI ID saved in your
+     Influora payout settings."; "Send us the raw files on Drive. Make sure your bank account or
+     UPI is added in Influora for withdrawal."). The wallet name and the request word must now be
+     within 6 tokens of each other. Two false flags remain by design and are not corpus rows:
+     "Influora will pay you via UPI once the reel is approved." and "You'll get paid to the UPI ID
+     in your Influora wallet after approval." -- only the sentence's subject differs from a real
+     off-platform ask, and no exclusion keyed on "Influora" is permitted (Constraint A). Left to
+     the live 50-brief sample's `basis` split. See `OffPlatformPaymentRule.PAIRING_WINDOW`'s
+     javadoc. -->
+
+<!-- AMEND-0918 / VIKRAM 2026-09-18 (F-1769, K-2c, RULINGS-U-0917.md round 6 "Ruling 1"): the
+     6-token window in AMEND-0917-KB5 still counted straight through a sentence end, so short,
+     ordinary on-platform briefs such as "Send the draft by Monday. UPI payouts go through
+     Influora as usual." still paired a wallet name in one sentence with an unrelated "send" in
+     the next and raised a non-dismissible flag against an honest brand (measured non-dismissible
+     on six such briefs, English, Hinglish and Devanagari alike). The pairing now counts only
+     within one sentence. A sentence ends at a run of `.` `!` `?` `…` `।` `॥` `|` followed by
+     whitespace or end of text, at a blank line, or at a line break that starts a list item
+     (the `|` pipe added in AMEND-0918-R7, round 7 Ruling 4 -- a brand or agency sometimes types
+     an ASCII pipe in place of a danda, and the un-cut pipe let an unrelated wallet name and
+     request word either side of it pair up). A
+     single `.` is NOT an end when the next non-space character on the same line is a digit or a
+     currency symbol ("Rs. 5,000", "No. 12", "रु. 5000"), or when the word immediately before it is
+     on a short, reviewed abbreviation list ("rs", "amt", "e.g" and similar -- see
+     `OffPlatformPaymentRule.SENTENCE_DOT_ABBREVIATIONS`'s javadoc for the full list and how it may
+     grow). A line break on its own is NOT an end -- plain-text and PDF pastes routinely hard-wrap a
+     real ask mid-sentence, and cutting at every line break lost two real off-platform asks
+     measured against this corpus. Route phrases are unaffected (Constraint B): they still fire on
+     the whole text regardless of sentence boundaries. The price: a real off-platform ask written
+     as two sentences ("Share your UPI. We'll send it tonight.") stops flagging -- the same class of
+     evasion as putting a seventh word in between, which the window already concedes; the regex
+     half is a tripwire, not a control against a motivated brand. See
+     `OffPlatformPaymentRule.sentences`, `.SENTENCE_TERMINATOR`, `.SENTENCE_BLANK_LINE`,
+     `.SENTENCE_LIST_ITEM_LINE` and `.isProtectedDot`'s javadoc. -->
+
+<!-- AMEND-0918-FALLBACK / VIKRAM 2026-09-18 (F-1772 / F-1773, K-2c, RULINGS-U-0917.md round 6
+     "New: F-1772"): on the FALLBACK path (`BriefFallbackExtractor`, used when AI extraction is
+     skipped), `off_platform_payment_hint` and `disclosure_hidden_hint` are now always `false` and
+     never derived from the extractor's own patterns -- those patterns predated and bypassed
+     AMEND-0917, AMEND-0917-R5, AMEND-0917-KB5 and AMEND-0918 entirely (a bare "upi" flagged an
+     on-platform payout instruction; the hide-disclosure pattern flagged an ordinary "#ad"
+     caption). Nothing the old patterns caught is lost: `evaluateExtraction` passes the same raw
+     text to the rules regardless of extractor, so both flags still fire from the text itself,
+     honestly labelled `basis=BRIEF_TEXT` rather than a regex hit disguised as `STATED`. See
+     `BriefFallbackExtractor.extract`'s javadoc and `BriefFallbackExtractorRealRiskRulesTest`. -->
+
+<!-- AMEND-0918-R7 / VIKRAM 2026-09-18 (K-2c.2, RULINGS-U-0917.md round 7): two independent fixes.
+     (1) R7-A / F-1778 (HIGH, priya): HIDE_DISCLOSURE fired on ASCI-compliance instructions -- a
+     brand or agency telling the creator to KEEP, add or place the disclosure label, worse than the
+     round-4 TECNO case because it accused the most compliant brands ("Please do not post without
+     the paid partnership label."). Four independent changes clear 12 measured trigger lines with
+     0 corpus false flags and 0 ratchet rows lost: `without` is pruned from the negator list
+     entirely (its natural use in a brief is this compliance form, not a hide ask -- the accepted
+     cost is that the text half no longer catches "Post it without the #ad tag." on its own); a bare
+     `no` no longer fires when preceded by "with"; a label occurrence followed by a placement
+     instruction ("...at the end", "...in the comments", "...only", "...in place of...") does not
+     fire; and the Hinglish/Devanagari short forms' conditional-compliance shape ("...nahi likha toh
+     ...", "...नहीं लगाया तो...") does not fire. See `HideDisclosureRule.HIDE_TEXT`'s javadoc for the
+     full falsify map and residuals. (2) Round 7 Ruling 1 (F-1776): B3's bare `ad` alternative, dead
+     in grammatical English ("as an ad" never matched), is widened to `an?` rather than pruned, so
+     "Don't disclose this as an ad." now flags. Round 7 Ruling 3 (Nisha's yes/no,
+     NISHA-COMPLIANCE-ROWS-0918.md): the Hinglish `na` short form ("ad na likhna") is pruned --
+     brands do not send it as a direct negator that way -- while the other six short forms stay. -->
 
 Severity scales with deal value: `value = extraction.budget_inr` or `collaboration.agreedRate` or `quote.total_value`. Thresholds: small < 10,000; mid 10,000 to 25,000; large > 25,000.
 
@@ -838,17 +983,21 @@ Severity scales with deal value: `value = extraction.budget_inr` or `collaborati
 | `USAGE_LONG` | INFO ≤ 6 months, WARN > 12 months | `usage_months` set | "Usage window {n} months." Action: price REPOST or PAID_ADS |
 | `EXCLUDED_CATEGORY` | CRITICAL | `extraction.category` or `endBrandCategory` in `prefs.excluded_categories` | Action: polite decline draft |
 | `BLOCKED_BRAND` | CRITICAL | brand name (case-insensitive, trimmed) in `prefs.blocked_brands` | Action: decline |
-| `OFF_PLATFORM_PAYMENT` | WARN (shadow mode: logged, never blocks) | `off_platform_payment_hint` or text matches `\b(upi|gpay|phonepe|paytm|bank transfer|neft|imps|pay(ment)? after)\b` | "Paying outside Secure Payments loses dispute cover." Action: steer-back draft; the creator has the report button; write an `OFF_PLATFORM_HINT` audit row with brand id only, never the creator's name or the message text |
+| `OFF_PLATFORM_PAYMENT` | WARN (shadow mode: logged, never blocks) | `off_platform_payment_hint`, or a route outside the platform on its own (English, Hinglish or Devanagari — "pay you directly", "outside/off the platform", "platform ke bahar"), or a payment method's name (UPI, GPay, PhonePe, Paytm, bank transfer, NEFT, IMPS, RTGS, Google Pay) WITHIN 6 TOKENS OF a request to send or pay money to the creator (English or Devanagari — "bhej"/"send"/"pay"/"transfer") IN THE SAME SENTENCE — not merely both present anywhere in the brief (AMEND-0917-KB5), and not paired across a sentence end (AMEND-0918). A method's name alone is not a signal (AMEND-0917-R5) — it is Influora's own payout vocabulary. Timing words ("payment after delivery") and payout-configuration wording ("add your UPI ID in your Influora payout settings") are NOT signals — see `OffPlatformPaymentRule.WALLET_NAME` / `.SEND_REQUEST` / `.ROUTE_PHRASES` / `.PAIRING_WINDOW`'s javadoc (AMEND-0917, AMEND-0917-R5, AMEND-0917-KB5, AMEND-0918) | "Paying outside Secure Payments loses dispute cover." Action: steer-back draft; the creator has the report button; write an `OFF_PLATFORM_HINT` audit row with brand id only, never the creator's name or the message text |
 | `COMPETITOR_CONFLICT` | WARN | an active collaboration (CONTRACTED, IN_PROGRESS, REVIEW_PENDING, REVISION_REQUESTED, COMPLETED within its exclusivity window) has `exclusivityScope == NAMED_BRANDS` containing this brand, or `CATEGORY` matching this category, and `appliedAt + exclusivityDays > now` | "Conflicts with {brand} until {date}." Action: propose a start date after the window |
 | `EXCLUSIVITY_LONG` | INFO at 30 days; WARN at ≥ 60 days or CATEGORY scope with ≥ 1 deal in that category in 90 days | `exclusivity_days` set | "{n} days exclusivity ≈ {lost income} at your usual rate." Action: price EXCLUSIVITY add-on |
 | `VAGUE_DELIVERABLES` | WARN | `vague_deliverables`, or no deliverables with qty, or text matches `a few|some posts|until (we're|we are) happy|unlimited revisions` | Action: ask the brand for the count; after 48 hours of no answer the assumption quote (Phase C job) |
-| `HIDE_DISCLOSURE` | WARN, not dismissible | `disclosure_hidden_hint` or text matches `(no|don'?t|without)\s+(#ad|#collab|#sponsored|disclos|paid partnership)` | "Breaks ASCI guidelines." Action: refuse to draft that; explain in one line |
+| `HIDE_DISCLOSURE` | WARN, not dismissible | `disclosure_hidden_hint`, or text asks to omit or hide the paid-partnership/ad label (English, Hinglish or Devanagari). Confidentiality or embargo words ("don't disclose the fee") are NOT a signal — see `HideDisclosureRule.HIDE_TEXT`'s javadoc (AMEND-0917). Instructions to keep, add or place the label ("do not post without the paid partnership label", "don't put #ad at the end") are NOT a signal (AMEND-0918-R7) | "Breaks ASCI guidelines." Action: refuse to draft that; explain in one line |
 | `BARTER` | WARN | `barter_only` or (budget absent and `barter_mrp_inr` present) | "Product worth {mrp}, about {40% mrp} real value; cash gap {gap}." Keyed on followers and engagement, so it fires for unconnected creators. Action: option draft "1 reel plus 1 story on product; 3 reels is {quote}" |
 | `REGULATED_CATEGORY` | WARN, not dismissible | `regulated_category` in FINANCE, HEALTH, RMG, CRYPTO, ALCOHOL, TOBACCO, or `claims` non-empty | Codes in `data.sub_code`: `SEBI_DISCLOSURE`, `ASCI_HEALTH`, `RMG_DISCLAIMER`, `CRYPTO_DISCLAIMER`, `CLAIMS_SUBSTANTIATION`. Action: ask the brand for evidence in-thread |
 | `CALENDAR_OVERLOAD` | INFO | the deadline week already holds ≥ `prefs.weekly_sponsored_limit` deliverables (count IN_PROGRESS and CONTRACTED collaborations with `endDate` in that ISO week) | Action: propose a later date |
 | `PARTNERSHIP_ADS_REQUEST` | WARN | only in `evaluateDeal`: status ≥ CONTRACTED and the last brand message matches `partnership ad|boost|promote (this|the) (post|reel)|whitelist` and `usageChannels` lacks PAID_ADS and WHITELISTING | "Do not approve the partnership-ads request until the paid-ads add-on is paid." |
 
+AMEND-0918-FALLBACK. On the FALLBACK path (`BriefFallbackExtractor`), `off_platform_payment_hint` and `disclosure_hidden_hint` are always `false`; `OFF_PLATFORM_PAYMENT` and `HIDE_DISCLOSURE` fire from the text checks in this table alone on that path, labelled `basis=BRIEF_TEXT` (F-1772 / F-1773).
+
 Every flag: `title` ≤ 60 chars, `detail` one sentence with rendered numbers, `action` one sentence, `data` rendered strings only. `dismissible = false` for `HIDE_DISCLOSURE`, `OFF_PLATFORM_PAYMENT`, `REGULATED_CATEGORY`.
+
+**AMEND-0917.** `OFF_PLATFORM_PAYMENT` and `HIDE_DISCLOSURE` text is matched after `RiskText.norm`, which does NFC normalisation, non-ASCII-space mapping, zero-width-character stripping, apostrophe folding and lower-casing, in that order. Devanagari alternatives in both patterns never use `\b` — on the JDK this build targets, a plain word boundary does not fire next to Devanagari text under the default (non-`UNICODE_CHARACTER_CLASS`) regex flags, so they are bounded with letter-and-mark lookarounds instead.
 
 ### 5.3 Deal risk endpoint
 
@@ -882,8 +1031,14 @@ Excluded categories and blocked brands are filtered out entirely. `fit_reasons` 
 
 ## 7. AI service (influora-ai)
 
+<!-- PRIYA 2026-09-08 (B0-05, re-anchor sweep of the whole of §7 against 7f48e8d): **the Python service has not moved.** Re-measured OK and unchanged: schemas.py `get_tool_schemas` L425, `is_known_tool` L455-456, `get_analyze_creator_content_schema` L596, `ANALYZE_CREATOR_CONTENT_SCHEMA` L508; assembler.py `assemble_prompt` L809, the CREATOR branch's `tools ... = []` L832 and `get_tool_schemas()` L836, `build_block_a_creator` L435, "none in this phase" L444, `build_block_b_creator` L541, the `ctx` narrowing L557, `CREATOR_CONTEXT_PAYLOAD_FIELDS` L122, `CREATOR_CONTEXT_FIELDS_NOT_RENDERED` L169, `_FORBIDDEN_BRAND_FIELDS` L70, `_strip_forbidden_fields` L204; config.py `PROMPT_VERSION` L69, `CREATOR_COPILOT_MODEL` L149, `TRENDSPARK_MODEL` L132, `ai_creator_monthly_cap_usd` L455; loop.py L327, L452, L472, L474; creator_persona.py L86; service_token.py `ENDPOINT_SCOPES` L53, `verify_creator_token` L420; claude.py L362, L83; untrusted.py L47; spend_tracker.py L85, L142, L151, L514, L535; chat.py L253, L263; ci/stale-comment-check.py L270. Every §7 and §9 Python TEST anchor is unchanged too (test_tool_schema_anthropic_valid L59/64/77/90, test_prompt_injection L568-573/L576, test_creator_prompt L60/L90/L192, test_creator_settings_in_prompt L86, test_info_barrier L219/L222/L228/L242, test_creator_context_drift L44/L67/L87/L103/L157/L170).
+     **Only three §7 anchors moved**, each corrected in place below: `build_block_b` L394 -> **L388**, `loop.py`'s `in IDEMPOTENT_REQUIRED_TOOLS` L453 -> **L454**, `main.py`'s optional-router block L74 -> **L79**. Two more in cited neighbours: `creator_suggestion.py`'s verify wrapper L216-226 -> **L215-225**, `pricing.py` L120 -> **L121**. -->
+
+
 ### 7.1 Creator tool schemas: `app/tools/creator_schemas.py` (new)
 
+<!-- AMEND-0904 / PRIYA 2026-09-08 (B0-07, closing a B0-column gap this section had no pointer for): §14.5.a puts **six** creator tools in B0 and §7.4's persona lists six, but the module below declares **nine** names and nine schemas with no phase note — so §7.1 and the B0 column disagreed on the page an engineer actually builds from. In **B0** build `CREATOR_TOOL_NAMES` and `CREATOR_TOOL_SCHEMAS` with the six B0 tools only (`get_my_deals`, `get_brief`, `estimate_my_rate`, `get_my_metrics`, `check_deal_risks`, `draft_reply`); B1 appends `send_routine_reply`, `rank_open_campaigns`, `draft_application`. `CREATOR_IDEMPOTENT_REQUIRED_TOOLS` is therefore **empty in B0** — its only member is `send_routine_reply` — but declare the constant anyway so §7.3's `loop.py` edit lands once and does not need revisiting in B1.
+     This is safe in both directions and it was checked: `get_creator_tool_schemas(None)` returning six is fine for `tests/tools/test_tool_schema_anthropic_valid.py` (it parametrises over whatever the helper returns), and `CreatorContextResponse.tools_enabled` listing six is fine for `test_creator_context_drift.py`, which asserts nothing about that list's length or contents. Java's `CreatorToolName` ships six in B0 for the same reason (§3.2). The one thing that must NOT shrink is `CreatorToolScopes.SCOPE_LEVEL_0` — ship its 8-name string verbatim (§14.6 W20: scope is a ceiling, dispatch is the gate, and unbacked names are inert). -->
 Do not add to `TOOL_SCHEMAS`, `TOOL_NAMES`, or `TOOL_TO_SPRING_PATH` (the brand set, diffed by CI). New module:
 
 ```python
@@ -928,7 +1083,7 @@ Extend `tests/tools/test_tool_schema_anthropic_valid.py` by editing the single m
 - `build_block_b_creator` (L541): render `- Negotiation coaching: withheld for this deal until {holdout_until}` when `negotiation_holdout` is true, and `- Tools you may call now: a, b, c`.
   **Write the reads as `ctx.get("negotiation_holdout")` / `_creator_str(ctx, "holdout_until")`.** The function's parameter is named `context` and is narrowed to `ctx` at L557; `test_creator_context_drift.py:98` greps `assembler.py` for the literal regex `ctx(?:\.get\(|, )['"]<name>['"]`, so a read written against `context` fails that test. `holdout_until` is context component **29** (see 2.10 — it is a full component of the Java record, not an afterthought).
 - `CREATOR_CONTEXT_PAYLOAD_FIELDS` (L122-165, a 27-entry sorted `tuple[str, ...]`): add `approved_draft_count`, `holdout_until`, `negotiation_holdout`, `rate_card_shareable`, `tools_enabled` in sorted position. `CREATOR_CONTEXT_FIELDS_NOT_RENDERED` (L169-171, a `frozenset`): add `approved_draft_count`, `rate_card_shareable`.
-- `_FORBIDDEN_BRAND_FIELDS` (L70-103, a plain `set` used by `_strip_forbidden_fields` L204-205, called only from `build_block_b` L394): add `tools_enabled`, `negotiation_holdout`, `holdout_until`, `rate_card_shareable`, `approved_draft_count`, `rate_card`. None of the six collide with the 25 entries already there. `tests/prompt/test_creator_context_drift.py:170` asserts against this set.
+- `_FORBIDDEN_BRAND_FIELDS` (L70-103, a plain `set` used by `_strip_forbidden_fields` L204-205, called only from `build_block_b` **L388** at `7f48e8d`; was L394): add `tools_enabled`, `negotiation_holdout`, `holdout_until`, `rate_card_shareable`, `approved_draft_count`, `rate_card`. None of the six collide with the 25 entries already there. `tests/prompt/test_creator_context_drift.py:170` asserts against this set.
 - Bump `PROMPT_VERSION` in `app/config.py` **L69** from its current value `"meera-2026.08.10.1"` to `"meera-2026.09.10.1"`. Verified: **no test, Java file, YAML or env file pins the literal**, so the bump breaks nothing. `ci/stale-comment-check.py:270` *requires* a `^\+\s*PROMPT_VERSION\s*=` line in the diff whenever prompt content changes (F-0150), so the bump is mandatory, not optional. (`CREATOR_COPILOT_PROMPT_VERSION` in `application.yml` L479 is an unrelated constant.)
 
 ### 7.3 Loop dispatch: `app/tools/loop.py`
@@ -937,7 +1092,7 @@ Extend `tests/tools/test_tool_schema_anthropic_valid.py` by editing the single m
   <!-- PRIYA: this is the single highest-risk line in the AI-service change. loop.py L452 is `TOOL_TO_SPRING_PATH[tool_name]` — a bracket subscript that sits OUTSIDE the try block (which starts at L465). Widening is_known_tool without widening the path lookup in the SAME edit produces an unhandled KeyError mid-stream, and no existing test covers it. -->
   **These two edits must land together.** `loop.py` L452 is a bracket subscript `path = TOOL_TO_SPRING_PATH[tool_name]` that sits **outside** the `try` (which opens at L465), so widening `is_known_tool` alone raises an unhandled `KeyError` in the middle of a stream. Add a `test_loop_creator_dispatch.py` case that asserts a creator tool name resolves to its Spring path, and one that asserts a name known-but-unmapped degrades to an error tool_result rather than raising.
 - Path lookup at **L452**: `path = TOOL_TO_SPRING_PATH.get(tool_name) or CREATOR_TOOL_TO_SPRING_PATH[tool_name]`.
-- Idempotency: `loop.py` L453-455 (`if tool_name in IDEMPOTENT_REQUIRED_TOOLS:`) **and** L472 (`allow_retry=tool_name not in IDEMPOTENT_REQUIRED_TOOLS`) — **both** become `... in IDEMPOTENT_REQUIRED_TOOLS or ... in CREATOR_IDEMPOTENT_REQUIRED_TOOLS`. Missing L472 makes `send_routine_reply` silently retryable.
+- Idempotency: `loop.py` **L454-456** at `7f48e8d` (`if tool_name in IDEMPOTENT_REQUIRED_TOOLS:`; was L453-455) **and** L472 (`allow_retry=tool_name not in IDEMPOTENT_REQUIRED_TOOLS`, unchanged) — **both** become `... in IDEMPOTENT_REQUIRED_TOOLS or ... in CREATOR_IDEMPOTENT_REQUIRED_TOOLS`. Missing L472 makes `send_routine_reply` silently retryable.
 - Scope refusal for `send_routine_reply`: add beside the money decline, which is at **L494-509** (inside `except SpringCallError as exc:`, which opens at L474 — the original spec cited the `except` line, not the decline):
 
 ```python
@@ -1015,14 +1170,17 @@ Never add a creator tool to `get_tool_schemas()`: `test_info_barrier.py:223-224`
 
 ### 7.5 Brief extraction route: `app/routes/brief_extract.py` (new)
 
-`POST /internal/brief-extract`, authenticated like `creator_suggestion`. Body `{creator_profile_id, raw_text, creator_language}` — **drop `workspace_id`**; the spend gate is keyed on `creator_profile_id` passed into the `workspace_id` slot, exactly as `creator_suggestion.py` L264-270 does (the keys are opaque strings).
+`POST /internal/brief-extract`, authenticated like `creator_suggestion`. Body `{creator_profile_id, raw_text, creator_language}` — **drop `workspace_id`**.
+
+<!-- PRIYA 2026-09-08 (B0-04 item 2, W14+W15): this paragraph previously said "the spend gate is keyed on creator_profile_id passed into the workspace_id slot, exactly as creator_suggestion.py L264-270 does". That is the WRONG GATE and it is the same error §14.4.b carried. `creator_suggestion.py` L264-270 calls `check_spend_gate(workspace_id=…)` from `app/costs/gate.py` — the DAILY workspace/global ceiling, which has no cap-override parameter. Following it here makes `BRIEF_EXTRACT_MONTHLY_CAP_USD` bind to nothing and the route enforces no monthly cap at all, with no error. Corrected instruction below; full mechanism, the two traps and the required test in §14.4.b. -->
+**Spend gate: `check_creator_spend_gate(f"{creator_profile_id}:brief", "CREATOR", reserve_usd=…, cap_usd=get_settings().brief_extract_monthly_cap_usd)`** from `app/costs/spend_tracker.py` (**L535-542**), inside `try/except SpendCapExceeded`. This is the per-creator **monthly** gate and the only one that accepts a cap override. **Do not call `check_spend_gate(workspace_id=…)`** — that is `app/costs/gate.py`'s daily workspace ceiling, it takes no `cap_usd`, and the separate brief cap this route exists to have would enforce nothing. `audience` must be the literal `"CREATOR"` and `cap_usd` must be `> 0` or the gate no-ops silently; see §14.4.b.
 
 <!-- PRIYA: three concrete errors here, all resolved against source. (1) ENDPOINT_SCOPES has no "brief_extract" entry — verify_creator_token would reject every call. (2) verify_creator_token also REQUIRES body_creator_profile_id and is SYNCHRONOUS; creator_suggestion offloads it via anyio.to_thread.run_sync (F-09) because a JWKS kid-miss blocks the event loop. (3) complete_with_forced_tool is async and keyword-ONLY, and the parsed result is on .tool_input, not .text. -->
 **Three fixes to the auth line:**
 
 1. **Register the endpoint scope.** `app/auth/service_token.py` `ENDPOINT_SCOPES` (L53-69) has no `brief_extract` key, so `verify_creator_token(endpoint="brief_extract")` rejects every call. Add `"brief_extract": (SCOPE_CREATOR,)` beside `"creator_suggestion": (SCOPE_CREATOR,)`. This is why 3.8's Java client must mint a **creator**-scoped token, not a service token.
 2. **The exact signature is `verify_creator_token(token, *, endpoint: str, body_creator_profile_id: str) -> VerifiedCreatorToken`** (`service_token.py` L420-425) — `body_creator_profile_id` is keyword-only and **required**; the spec's call omitted it.
-3. **It is synchronous.** Copy `creator_suggestion.py` L216-226 verbatim, including the `await anyio.to_thread.run_sync(lambda: verify_creator_token(...))` wrapper — F-09: an unknown-`kid` JWKS miss blocks the event loop otherwise. Wrap in `except AuthError as exc: raise auth_error_to_http(exc) from exc`.
+3. **It is synchronous.** Copy `creator_suggestion.py` **L215-225** at `7f48e8d` (was L216-226) verbatim, including the `await anyio.to_thread.run_sync(lambda: verify_creator_token(...))` wrapper — F-09: an unknown-`kid` JWKS miss blocks the event loop otherwise. Wrap in `except AuthError as exc: raise auth_error_to_http(exc) from exc`.
 
 Then:
 
@@ -1038,7 +1196,7 @@ result = await claude.complete_with_forced_tool(
 
 **`complete_with_forced_tool` is `async` and every parameter is keyword-only** (`app/providers/claude.py` L362-370, bare `*` at L364) — it must be `await`ed and can never be called positionally. It returns `ClaudeToolResult(ok, tool_input, error, usage)` (L83-93): **the parsed payload is `result.tool_input`, not `result.text`** — that field does not exist on this type. It never raises; on `no_tool_use_in_response` it returns `ok=False` **with `usage` populated** (L428-430, the F-06 fix), which is why billing on `result.usage` regardless of `ok` is correct.
 
-`BRIEF_EXTRACT_MODEL = os.getenv("BRIEF_EXTRACT_MODEL", TRENDSPARK_MODEL)` — define it in **`app/config.py`** beside `CREATOR_COPILOT_MODEL` (L149), which follows exactly this pattern, not in the route file. `TRENDSPARK_MODEL` (config L132, `claude-haiku-4-5-20251001`) is one of the three models `app/costs/pricing.py:120` pins into `PRICING_TABLE`, so defaulting to it inherits a priced row; a **new model literal would fail the pricing tests**.
+`BRIEF_EXTRACT_MODEL = os.getenv("BRIEF_EXTRACT_MODEL", TRENDSPARK_MODEL)` — define it in **`app/config.py`** beside `CREATOR_COPILOT_MODEL` (L149), which follows exactly this pattern, not in the route file. `TRENDSPARK_MODEL` (config L132, `claude-haiku-4-5-20251001`) is one of the three models **`app/costs/pricing.py:121`** at `7f48e8d` (was :120) pins into `PRICING_TABLE`, so defaulting to it inherits a priced row; a **new model literal would fail the pricing tests**.
 
 `wrap_untrusted(label, content)` is positional (`app/prompt/untrusted.py` L47) ✓.
 
@@ -1046,14 +1204,14 @@ Validate the tool input with `parse_and_validate_extraction` (never raises): enu
 
 `get_brief_extraction_schema()` in `app/tools/schemas.py` follows the `get_analyze_creator_content_schema` pattern (**L596-602**: a zero-arg function returning the module-level `ANALYZE_CREATOR_CONTENT_SCHEMA` dict at L508, deliberately outside `TOOL_SCHEMAS` — see the rationale comment at L469-485). Note it returns a **single dict**, not a list. One flat object mirroring 2.11 with single types (`budget_inr` number, `barter_mrp_inr` number, `deadline` string, `usage_months` integer, `max_revisions` integer; absent means null).
 
-Register the router in `app/main.py` inside the defensive try/except block like the other optional routers (**L74-107**, four identical blocks): import **inside** the `try`, bare `except Exception`, `logger.exception` naming the exact dead path.
+Register the router in `app/main.py` inside the defensive try/except block like the other optional routers (**L79-107** at `7f48e8d`; the four identical `try:` blocks now open at L79, L86, L93, L100 — was L74-107): import **inside** the `try`, bare `except Exception`, `logger.exception` naming the exact dead path.
 
 Tests: `tests/routes/test_brief_extract.py` (auth failure, gate blocked → error envelope, happy path with a mocked provider returning a valid tool input, malformed output → `extraction_failed`, banned word stripped), `tests/tools/test_brief_extraction_schema_valid.py` (combinator-free).
 
 ### 7.6 Spend and holds
 
 <!-- AMEND-0904: §14.4 supersedes the "no change" below. Brief extraction gets its OWN cap key and cap value, separate from the chat cap; cap exhaustion degrades the chat to a message that names the three surfaces that still work; the creator cap default is raised to $2.00 (ruling 3, §12). -->
-~~No change to the cap logic.~~ `send_routine_reply` and `draft_reply` cost nothing extra. The brief extraction route is billed through the existing gate but under its **own** key and cap — see §14.4.b — so a chatty creator never loses paste-and-read.
+~~No change to the cap logic.~~ `send_routine_reply` and `draft_reply` cost nothing extra. The brief extraction route is billed under its **own** key and cap through **`check_creator_spend_gate`**, the per-creator monthly gate — **not** `check_spend_gate`, the daily workspace gate, which accepts no cap override (§14.4.b) — so a chatty creator never loses paste-and-read.
 
 ---
 
@@ -1067,16 +1225,31 @@ Add types (snake_case, mirroring the Java records exactly; every field the Java 
 
 `BriefExtraction`, `RiskFlag`, `QuoteLine`, `AddOnLine`, `PackageQuote`, `BriefAnalysisResponse`, `BriefListItem`, `SecureLinkResponse`, `SecureLinkItem`, `CreateSecureLinkRequest`, `DealRisksResponse` (= `CheckDealRisksResult`), `DraftItem`, `ApproveDraftRequest`, `ApproveDraftResponse`, `SendLogItem`, `MediaKitResponse`, `PublicMediaKitResponse`, `CampaignFit`, `SecureLinkPreview`. **Verified: all 19 names, and all 6 namespace names below, are unused anywhere in `src/` — no collisions.**
 
-Extend `CreatorAgentPreferences` (`api.ts` **L6019-6052**, snake_case throughout) with `rate_card_shareable: boolean`, `rate_card: { reel: string | null; story_set: string | null; post: string | null } | null`, `negotiation_holdout: boolean`, `approved_draft_count: number`, `level_up_eligible: boolean`.
+<!-- PRIYA 2026-09-08 (B0-05 — **§8.1 IS THE HIGHEST-RISK SECTION IN THIS RE-ANCHOR**): `src/lib/api.ts` grew by roughly +490 to +545 lines between 143ca1e and 7f48e8d, so EVERY line number this section carried was wrong. Re-measured today, all corrected in place below:
+       `export const api = {`            L6313      -> **L6858** (keys L6859-6905, closing brace L6906)
+       `CreatorAgentPreferences`         L6019-6052 -> **L6507-6540**
+       `CreatorAgentPreferencesUpdate`   L6059-6062 -> **L6547-6550**
+       `creatorAgentPrefs` namespace     L6108-6122 -> **L6596-6610**
+       `publicCreators.getVerifiedMetrics` L6196-6202 -> **L6684-6690**
+       `deals` namespace                 L2106-2216 -> **L2448-2558**
+       `deals.counter`                   L2158-2180 -> **L2500-2522**, its `dealTerms?: DealTerms` L2173 -> **L2515**
+       `deals.create`'s `dealTerms`      L2211      -> **L2553**
+       `DealMessage` interface           L2368-2378 -> **L2573-2583** (`metadata?: Record<string, unknown>` at L2580)
+       `HttpClient.request<T>`           L536-545   -> **L697-706**, and its `const { role = 'brand', ... }` default L546 -> **L707**
+         (NOTE: three methods on `HttpClient` carry that same `role = 'brand'` default — L707, L791, L847. L707 is `request<T>`.)
+       `mockOr`                          L775-778   -> **L959-962**;  `isLive` L780 -> **L964**
+       `export type { DeliverableStatus, ContractStatus }` L47 -> **L51**
+     `src/lib/types.ts`'s `DealTerms` at L31-39 is UNCHANGED, and so are `MeeraSettingsSection.tsx`'s `type Draft` L125 and `toDraft` L127. -->
+Extend `CreatorAgentPreferences` (`api.ts` **L6507-6540** at `7f48e8d`, snake_case throughout) with `rate_card_shareable: boolean`, `rate_card: { reel: string | null; story_set: string | null; post: string | null } | null`, `negotiation_holdout: boolean`, `approved_draft_count: number`, `level_up_eligible: boolean`.
 
 <!-- PRIYA: CreatorAgentPreferencesUpdate is ALREADY an Omit (api.ts L6059-6062, omitting consent_accepted | consent_version) — this is an edit, not a new declaration. And MeeraSettingsSection.tsx:125 aliases it as `Draft`, so every field added to CreatorAgentPreferences that is NOT omitted lands in the settings form's draft type and must be produced by toDraft() (L127) or the file stops compiling. -->
-`CreatorAgentPreferencesUpdate` **already exists** at `api.ts` L6059-6062 as `Omit<CreatorAgentPreferences, 'consent_accepted' | 'consent_version'>` — widen that union to also omit `'negotiation_holdout' | 'approved_draft_count' | 'level_up_eligible'`.
+`CreatorAgentPreferencesUpdate` **already exists** at `api.ts` **L6547-6550** as `Omit<CreatorAgentPreferences, 'consent_accepted' | 'consent_version'>` — widen that union to also omit `'negotiation_holdout' | 'approved_draft_count' | 'level_up_eligible'`.
 
 **Knock-on:** `MeeraSettingsSection.tsx:125` does `type Draft = CreatorAgentPreferencesUpdate`, so the two *non-omitted* new fields (`rate_card_shareable`, `rate_card`) land in the settings draft type automatically and **must be produced by `toDraft()` (L127) or the file fails `tsc`**. The three omitted fields must not appear there — `MeeraSettingsSection.ratecard.test.tsx` asserts the PUT never carries `negotiation_holdout`.
 
-Add namespaces (each method `isLive() ? http.request(...) : mockOr(MOCK)`), and register them in the `api` object literal at **L6313** (verified: `export const api = {` is exactly L6313, keys run L6314-6359).
+Add namespaces (each method `isLive() ? http.request(...) : mockOr(MOCK)`), and register them in the `api` object literal at **L6858** (verified at `7f48e8d`: `export const api = {` is exactly L6858, keys run L6859-6905, closing brace L6906).
 
-`http.request` (L536-545) defaults `role` to `'brand'` (L546), so **every creator method must pass `{ role: 'creator' }` explicitly** — copy the `creatorAgentPrefs` idiom at L6108-6122. `publicMediaKit.get` and `secureLinks.preview` are unauthenticated and pass **no `opts` at all** — copy `publicCreators.getVerifiedMetrics` at L6196-6202. `isLive` (L780) and `mockOr` (L775-778) are module-private; both are in scope inside `api.ts`.
+`HttpClient.request<T>` (**L697-706**) defaults `role` to `'brand'` (**L707**), so **every creator method must pass `{ role: 'creator' }` explicitly** — copy the `creatorAgentPrefs` idiom at **L6596-6610**. `publicMediaKit.get` and `secureLinks.preview` are unauthenticated and pass **no `opts` at all** — copy `publicCreators.getVerifiedMetrics` at **L6684-6690**. `isLive` (**L964**) and `mockOr` (**L959-962**) are module-private; both are in scope inside `api.ts`.
 
 ```ts
 export const creatorBriefs = {
@@ -1106,27 +1279,28 @@ export const secureLinks = {
 };
 ```
 
-`api.deals` (L2106-2216) gains `risks: (id: string) => Promise<DealRisksResponse>` (`GET /deals/:id/risks`, `{ role: 'creator' }`) — verified absent today. `counter` (L2158-2180) gains **`meeraDraftId?: string`** only.
+`api.deals` (**L2448-2558**) gains `risks: (id: string) => Promise<DealRisksResponse>` (`GET /deals/:id/risks`, `{ role: 'creator' }`) — verified absent today. `counter` (**L2500-2522**) gains **`meeraDraftId?: string`** only.
 
 <!-- PRIYA: the spec elsewhere implies dealTerms must be added to counter's payload. It is ALREADY there — api.ts:2173 `dealTerms?: DealTerms` (added in Phase A, A2), and deals.create has it at :2211. Only meeraDraftId is new. -->
-**`dealTerms?: DealTerms` is already on `counter`'s payload (`api.ts:2173`, added in Phase A A2)** and on `deals.create` (L2211). Do not re-add it. What is missing is not the type but the *wiring* — `handleSubmitCounterForm` (8.6) never passes it.
+<!-- PRIYA 2026-09-08 (B0-05): re-verified at 7f48e8d and still true; the line numbers moved. `dealTerms?: DealTerms` on counter L2173 -> **L2515**; on deals.create L2211 -> **L2553**. -->
+**`dealTerms?: DealTerms` is already on `counter`'s payload (`api.ts:2515`, added in Phase A A2)** and on `deals.create` (**L2553**). Do not re-add it. What is missing is not the type but the *wiring* — `handleSubmitCounterForm` (8.6) never passes it.
 
-`DealTerms` is defined in `src/lib/types.ts:31-39` and is **not** re-exported from `@/lib/api` (L47 re-exports only `DeliverableStatus, ContractStatus`), so import it from `@/lib/types`.
+`DealTerms` is defined in `src/lib/types.ts:31-39` (unchanged at `7f48e8d`) and is **not** re-exported from `@/lib/api` (**L51** re-exports only `DeliverableStatus, ContractStatus`; was L47), so import it from `@/lib/types`.
 
 Backend routes for secure links (add to 3.8): `GET /public/secure-links/{token}` (permitAll GET, feature flag, rate bucket `public-secure-link`, IP-keyed 30) and `POST /secure-links/{token}/redeem` (brand principal; requires an Owner or Admin workspace; creates a DIRECT `Campaign` via `CampaignService.create` with `endBrandName` from the link, `budget = total`, `title = "{creator display name} × {end brand}"`, then `Collaboration.propose(...)` with `agreedRate = total`, applies deal terms via `applyDealTermsIfPresent`, persists a `proposal` `DealMessage` with the package as metadata the same way `createProposal` does, marks the link REDEEMED and the brief SECURED, records `OFFER` in offer history with actor BRAND). Funding then follows the existing contract and milestone flow; nothing new touches money.
 
 ### 8.2 `src/lib/meera-api.ts`
 
-- `export type MeeraRole = 'brand' | 'creator';` — verified: the alias is at **L399** and is declared `type`, **not `export type`**, and is not exported anywhere in `src/`. Add the `export` keyword; nine internal uses (L401, 413, 424, 500, 520, 649, 666, 707, 755) are unaffected.
+- `export type MeeraRole = 'brand' | 'creator';` — re-verified at `7f48e8d`: the alias is at **L403** (was L399, +4) and is declared `type`, **not `export type`**, and is not exported anywhere in `src/`. Add the `export` keyword; the internal uses (**L405, 432, 443, 519, 539, …**, each +4 from the numbers this spec carried) are unaffected. `MeeraToolStartEvent` **L169** and `MeeraToolResultEvent` **L174** (were L165 / L170).
 - Creator tool payload types and guards, mirroring the Java records: `GetMyDealsPayload`, `GetBriefPayload`, `EstimateMyRatePayload`, `GetMyMetricsPayload`, `CheckDealRisksPayload`, `DraftReplyPayload`, `SendRoutineReplyPayload`, `RankOpenCampaignsPayload`, `DraftApplicationPayload`, with `isXPayload(data: unknown)` guards that check the discriminating keys (`deals`, `brief_id` + `extraction`, `quote`, `metrics`, `flags`, `draft_id` + `kind`, `send_log_id`, `campaigns`, `draft_id` + `campaign_id`).
 - `CREATOR_TOOL_NAMES` constant (the nine) and `isCreatorToolName(name: string)`.
 
 ### 8.3 `src/components/creator/MeeraCopilotChat.tsx`
 
 - Widen `ChatMessage` (a local, non-exported interface at **L28-32**: `{ id, role: 'meera' | 'creator', text }`) with `toolResults?: CreatorToolResult[]` where `CreatorToolResult = { id: string; name: string; status: 'ok' | 'error'; data?: unknown; errorMessage?: string }`.
-- In the `stream.open(...)` handlers (**L231-288** ✓ — today only `onToken` L232, `onDone` L243, `onError` L255, `onHeartbeatTimeout` L275) add `onToolStart` (append a loading card) and `onToolResult` (replace the loading card; only names in `CREATOR_TOOL_NAMES` are rendered; unknown names are ignored with a dev-only warn).
+- In the `stream.open(...)` handlers (**L228-288** at `7f48e8d` — the `.open(` call moved L231 → **L228**; the four handler keys did **not** move: `onToken` L232, `onDone` L243, `onError` L255, `onHeartbeatTimeout` L275. `ChatMessage` L28-32 and the `messages.map` at L357 are unchanged too) add `onToolStart` (append a loading card) and `onToolResult` (replace the loading card; only names in `CREATOR_TOOL_NAMES` are rendered; unknown names are ignored with a dev-only warn).
   <!-- PRIYA: two path corrections. The stream client is NOT in meera-api.ts — `open()` and the `MeeraStreamHandlers` interface live in src/hooks/useMeeraStream.ts (L47-57, L117-122), and it ALREADY declares onToolStart/onToolResult and already dispatches tool_start/tool_result at L184-193. No hook change is needed. And MeeraChatPanel.tsx is at src/components/feature/meera/, not src/components/creator/. -->
-  **No hook change is needed.** `MeeraStreamHandlers` (`src/hooks/useMeeraStream.ts` **L47-57**) already declares `onToolStart`/`onToolResult`, and the SSE dispatcher already routes `tool_start`/`tool_result` to them at **L184-193**. `MeeraToolStartEvent` / `MeeraToolResultEvent` are exported from `meera-api.ts` (L165, L170). `MeeraCopilotChat` simply stops ignoring them. (`open()` is on the hook, **not** on `meera-api.ts`.)
+  **No hook change is needed.** `MeeraStreamHandlers` (`src/hooks/useMeeraStream.ts` **L47-57**, unchanged at `7f48e8d`) already declares `onToolStart` (L50) / `onToolResult` (L51), and the SSE dispatcher already routes `tool_start`/`tool_result` to them at **L184-193** (unchanged; the two `handlers.on…?.(data)` calls are L186 and L191). `MeeraToolStartEvent` / `MeeraToolResultEvent` are exported from `meera-api.ts` (**L169, L174**). `MeeraCopilotChat` simply stops ignoring them. (`open()` is on the hook, **not** on `meera-api.ts`.)
   If a result arrives before the first token, create the assistant bubble lazily the way **`src/components/feature/meera/MeeraChatPanel.tsx:538-570`** does — that file is under `components/feature/meera/`, **not** `components/creator/`. Note it is written without semicolons; `MeeraCopilotChat.tsx` uses them and its L18-25 comment documents the fork as deliberate. Copy the *pattern*, not the formatting.
 - Render after the bubble inside the `messages.map` (L357-368): `<CreatorToolResultRenderer toolName status data onApproveDraft onDiscardDraft onCancelSend onPrefillCounter />`.
 - New prop `onDealMutated?: (dealId: string) => void` so the deal page can refresh after an approve.
@@ -1154,23 +1328,28 @@ Card library for the nine tools, styled with the creator tokens (`border-border`
 
 - `src/components/creator/copilot/PasteBriefCard.tsx`: a `Textarea` (max 8000, counter), "Analyse with Meera" → `api.creatorBriefs.paste(text)`; renders `BriefCard` from 8.4 with the result, plus "Open in Meera" (opens the chat with the first message "Look at brief {brief_id}") and "Create secure link" which opens `SecureLinkDialog`.
 - `src/components/creator/briefs/SecureLinkDialog.tsx`: shows the package the brand will see (no floors), end-brand name input (prefilled from `extraction.brand_name`), confirm → `createSecureLink`; result shows the URL with a copy button and the expiry.
-- `src/pages/creator-copilot.tsx`: mount `<PasteBriefCard />` between the Meera card and `<ConsentScreen>` (imported L10 from `@/components/meera/ConsentScreen`, rendered L184), gated on `featureDisabled !== true` and consent (reuse `openMeera`'s probe at **L87**, which calls `api.creatorAgentPrefs.getPreferences()`, branches on `consent_accepted`, and catches `ApiError` code `FEATURE_DISABLED` → `setFeatureDisabled(true)` at L99-102; the static fallback card is L129-142). Remove the Phase A wording at **L125-128** (a JSX comment, four lines — not user-visible) and replace the CardDescription at **L150** (currently "Your AI manager — ask about deals, earnings, and metrics."; the card title at L148 is "Talk to Meera") with: "Your manager for briefs, prices and replies."
+- `src/pages/creator-copilot.tsx`: mount `<PasteBriefCard />` between the Meera card and `<ConsentScreen>` (imported L10 from `@/components/meera/ConsentScreen`, rendered L184), gated on `featureDisabled !== true` and consent (reuse `openMeera`'s probe at **L91** at `7f48e8d` — was L87 — which calls `api.creatorAgentPrefs.getPreferences()`, branches on `consent_accepted`, and catches `ApiError` code `FEATURE_DISABLED` → `setFeatureDisabled(true)` at **L99-102**, unchanged; the static fallback card is **L129-142**, unchanged). Remove the Phase A wording at **L125-128** (a JSX comment, four lines — not user-visible; unchanged) and replace the CardDescription at **L150** (unchanged; the card title "Talk to Meera" is L148) (currently "Your AI manager — ask about deals, earnings, and metrics."; the card title at L148 is "Talk to Meera") with: "Your manager for briefs, prices and replies."
 - `src/pages/secure-link.tsx` (new public route `/secure/:token`, above `/:handle` in `App.tsx`): fetches `secureLinks.preview(token)`; shows the creator's public card and the package; if a brand token exists, "Accept and open the deal" → `secureLinks.redeem(token)` → navigate to `/brand/chat?deal={deal_id}`; else "Sign in as a brand to continue" linking to `/brand/login?next=/secure/{token}`. Expired or redeemed links show a calm state.
   <!-- AMEND-0904: §14.2.c replaces the "Sign in as a brand" dead-end with an on-page "Continue with work email" flow (existing OTP + register routes, company name and industry prefilled from the link) and adds the brand-benefit copy block. Phase B1. -->
 
 ### 8.6 Deal pages
 
-- `src/pages/creator-chat.tsx`: after `DealTermsSummary` in the Brand Proposal card (**L2434-2439**, element at L2437 ✓) and the Counter Proposal card (**L2639-2644**, element at L2642 ✓), render `<DealRiskCard flags={risks.flags} />` where `risks` comes from `api.deals.risks(selectedDeal.id)` loaded in `refreshDeal` (**L728-770** ✓ — note its supersede-token guard at L731-738; follow it for the risks fetch too, and note `afterDealMutation` at L885 already fans out to `refreshDeal` + `loadMessages`). Only when `liveApi`; ignore 403. Add a "Ask Meera" button on the proposal card that opens `MeeraCopilotChat` in a `Sheet` with the first message "Look at deal {id}" (import the chat; pass `onDealMutated={afterDealMutation}`).
-- `handleSubmitCounterForm` (**L1466** ✓): send `dealTerms` and `meeraDraftId` when present. Today it passes only `{amount, message, deadline}` at L1480-1490 even though `api.deals.counter` has accepted `dealTerms` since Phase A — that gap is the actual work.
+- `src/pages/creator-chat.tsx`: after `DealTermsSummary` in the Brand Proposal card (element at **L2529**; was L2437) and the Counter Proposal card (element at **L2734**; was L2642 — the card's own comment is at L2693), render `<DealRiskCard flags={risks.flags} />` where `risks` comes from `api.deals.risks(selectedDeal.id)` loaded in `refreshDeal` (**L768-…**; was L728-770 — note its supersede-token guard at **L771-775** and follow it for the risks fetch too, and note `afterDealMutation` at **L923** — was L885 — already fans out to `refreshDeal` + `loadMessages`). Only when `liveApi`; ignore 403. Add a "Ask Meera" button on the proposal card that opens `MeeraCopilotChat` in a `Sheet` with the first message "Look at deal {id}" (import the chat; pass `onDealMutated={afterDealMutation}`).
+- `handleSubmitCounterForm` (**L1506** at `7f48e8d`; was L1466): send `dealTerms` and `meeraDraftId` when present.
+
+  <!-- PRIYA 2026-09-08 (B0-05 — the second reference that drifted in SUBSTANCE, not only in line number): this bullet used to say the handler "passes only `{amount, message, deadline}` at L1480-1490", i.e. an inline object literal at the call site. That is no longer where the body is built. At 7f48e8d the call site is `await api.deals.counter(selectedDeal.id, buildCounterOfferBody(data), 'creator', <fresh idempotency key>)` at **L1512-1518**, and the body comes from an EXPORTED helper `buildCounterOfferBody(data)` declared at **L695-706** of the same file, whose return type is literally `{ amount: number; message?: string; deadline?: string }`. So the claim's substance still holds — the payload really is only those three fields — but an engineer editing L1480-1490 at 7f48e8d edits an unrelated decline handler.
+       The edit is therefore in TWO places: widen `buildCounterOfferBody`'s return type and body (L695-706), and pass the new values in at the call site (L1512-1518). Do not inline the body back into the handler.
+       READ THE HELPER'S JAVADOC FIRST (L~680-694): it records a deliberate decision that `usageRights` is omitted because the form collects no dedicated usage-rights input and mapping the free-text `terms` field onto it would overwrite the deal's real rights with whatever the creator typed (TECH-STACK.md rule 7, never fabricate). Adding `dealTerms` must not quietly reintroduce that. -->
+  At `7f48e8d` the body is built by an exported helper — `buildCounterOfferBody(data)` at **L695-706**, returning `{ amount, message?, deadline? }` — and passed at the call site **L1512-1518**. `api.deals.counter` has accepted `dealTerms` since Phase A, so the gap is the helper's return type plus the call site, not the API. **Do not inline the body back into the handler, and read the helper's javadoc before widening it** — it records a deliberate refusal to map the free-text `terms` field onto `usageRights`.
   <!-- PRIYA: CounterProposalFormData is NOT in creator-chat.tsx. It is exported from src/components/creator/deal-room/counter-proposal-form.tsx:14-19. And there is NO zod / react-hook-form / resolver in that file (grep returns zero hits) — it is plain React.useState at L38-44, so extending the interface needs no schema change, only an initializer update. -->
   **`CounterProposalFormData` lives in `src/components/creator/deal-room/counter-proposal-form.tsx:14-19`**, not in `creator-chat.tsx`. It is `{ proposedAmount: number; deadline: string; terms: string; message: string }`. Add `dealTerms?: DealTerms` and `meeraDraftId?: string`.
   **There is no zod schema and no react-hook-form resolver** in that file — state is plain `React.useState<CounterProposalFormData>` (L38-44) with hand-rolled validation. Extending the interface therefore requires only the interface edit plus the `useState` initializer; no schema change exists to make.
-  `CounterProposalForm` gains an optional `initial?: Partial<CounterProposalFormData>` prop (props interface L21-28) used by "Use in counter"; it is wired at `creator-chat.tsx:3144`.
-- `src/pages/creator-deals.tsx`: in `DealRow` after `DealTermsSummary` (L652) render the highest-severity flag as a single line with a link to the deal room; fetch risks lazily on row expand.
+  `CounterProposalForm` gains an optional `initial?: Partial<CounterProposalFormData>` prop (props interface L21-28, unchanged) used by "Use in counter"; it is wired at **`creator-chat.tsx:3235`** (was :3144). `CounterProposalFormData` L14-19 and the `useState` initializer L38-44 in `counter-proposal-form.tsx` are both unchanged at `7f48e8d`.
+- `src/pages/creator-deals.tsx`: in `DealRow` after `DealTermsSummary` (**L677** at `7f48e8d`; was L652) render the highest-severity flag as a single line with a link to the deal room; fetch risks lazily on row expand.
 
 ### 8.7 Settings and level-up
 
-- `src/components/creator/MeeraSettingsSection.tsx`: delete the Phase A disclaimer at **L454-456** (`<p>` opens L454, text on L455: "Phase A is conversational only — Meera does not send or decline anything on your behalf yet, regardless of this setting.", sitting under the approval-level RadioGroup that closes at L453) and rewrite the represented note at **L603-605** (text on L604: "Represented mode: Meera warns you only — she never drafts or sends anything to brands.") to "Meera warns you only and never drafts anything addressed to a brand." The save error at L608 already uses `text-destructive-foreground` — keep it. Add a "Rate card" block: `rate_card_shareable` switch and three text inputs (reel, story set of 3, post) with the hint "Shown on your media kit and sent by Meera as a routine reply when on. Your floors stay private." Add a "Sent by Meera" section listing `creatorMeeraSends.list()` with status, countdown, cancel.
+- `src/components/creator/MeeraSettingsSection.tsx`: delete the Phase A disclaimer at **L454-456** (the text "Phase A is conversational only — Meera does not send or decline anything on your behalf yet, regardless of this setting." is on **L455** at `7f48e8d`, unchanged, sitting under the approval-level RadioGroup) and rewrite the represented note at **L603-605** (text "Represented mode: Meera warns you only — she never drafts or sends anything to brands." on **L604**, unchanged) to "Meera warns you only and never drafts anything addressed to a brand." The save error at L608 already uses `text-destructive-foreground` — keep it. Add a "Rate card" block: `rate_card_shareable` switch and three text inputs (reel, story set of 3, post) with the hint "Shown on your media kit and sent by Meera as a routine reply when on. Your floors stay private." Add a "Sent by Meera" section listing `creatorMeeraSends.list()` with status, countdown, cancel.
 - Level-up prompt: `src/components/creator/meera/LevelUpPrompt.tsx`, shown on the co-pilot page when `prefs.level_up_eligible`; "Turn on routine replies" → `updatePreferences({...draft, approval_level: 1})`; "Not now" → `levelUpSeen()`.
 
 ### 8.8 Media kit page
@@ -1183,13 +1362,13 @@ Card library for the nine tools, styled with the creator tokens (`border-border`
 Add imports and routes: `/secure/:token` (public), `/c/:username/kit` (public), both above `/:handle`.
 
 <!-- PRIYA: verified against App.tsx. `/:handle` is L825 (the deliberate last-wins catch-all, comment L821-824); `/c/:username/verified` is L818 and is the only /c/ route. No existing /secure* route (only /features/secure-payments L652). Both insertions are conflict-free. -->
-**Verified conflict-free.** `/:handle` is at **L825** and is deliberately last (comment L821-824: React Router 7 cannot match `/@:username`, so the whole first segment is captured). `/c/:username/verified` is **L818** and is the only `/c/` route — `/c/:username/kit` is a 3-segment sibling, no ambiguity. There is **no existing `/secure*` route** (`/features/secure-payments` L652 and the `/features/escrow` redirect L662 are unrelated), and `/secure/:token` is 2 segments so it outranks the 1-segment catch-all. Insert both between L818 and L825. `src/App.tsx` and `src/pages/admin-console.tsx` (nested under `/admin/*`) are the only `<Routes>` declarations in non-test code.
+**Verified conflict-free — re-measured at `7f48e8d`, all four anchors moved by ~+75.** `/:handle` is at **L900** (was L825) and is deliberately last (comment **L896-899**: React Router 7 cannot match `/@:username`, so the whole first segment is captured; `<Route path="*">` follows at L901). `/c/:username/verified` is **L893** (was L818) and is the only `/c/` route — `/c/:username/kit` is a 3-segment sibling, no ambiguity. There is **no existing `/secure*` route** (`/features/secure-payments` **L727** and the `/features/escrow` redirect **L737** are unrelated; were L652 / L662), and `/secure/:token` is 2 segments so it outranks the 1-segment catch-all. Insert both between **L893 and L900**. `src/App.tsx` and `src/pages/admin-console.tsx` (nested under `/admin/*`) are the only `<Routes>` declarations in non-test code.
 
 No new guarded creator pages are needed; everything creator-side lives on existing pages.
 
 ### 8.10 Frontend tests (Vitest 3.2.7, `vi.hoisted` + `vi.mock('@/lib/api')`)
 
-Pattern confirmed. Copy `src/pages/creator-copilot-feature-disabled.test.tsx:33-53` — `vi.hoisted()` for the mock fns, then `vi.mock('@/lib/api', async () => { const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api'); return { ...actual, api: { ...actual.api, <ns>: { ...actual.api.<ns>, method: (...a) => mockFn(...a) } } }; })`. Prefer the `importActual` spread form over the full-replacement form used in `MeeraCopilotChat.test.tsx:27-36`.
+Pattern confirmed. Copy `src/pages/creator-copilot-feature-disabled.test.tsx:34-54` (was :33-53; `vi.hoisted` is at **L34** at `7f48e8d`. `MeeraCopilotChat.test.tsx`'s `vi.mock` at L27 is unchanged) — `vi.hoisted()` for the mock fns, then `vi.mock('@/lib/api', async () => { const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api'); return { ...actual, api: { ...actual.api, <ns>: { ...actual.api.<ns>, method: (...a) => mockFn(...a) } } }; })`. Prefer the `importActual` spread form over the full-replacement form used in `MeeraCopilotChat.test.tsx:27-36`.
 
 - `PasteBriefCard.test.tsx`: paste → renders summary, flags, quote; error → inline message, no toast.
 - `CreatorToolResultRenderer.test.tsx`: one render per tool payload; unknown tool renders nothing; `DraftCard` send calls approve with edited text.
@@ -1223,7 +1402,7 @@ Pattern confirmed. Copy `src/pages/creator-copilot-feature-disabled.test.tsx:33-
 | `DealServiceOfferHistoryTest` | four write points |
 <!-- AMEND-0904: §14.3.a INVERTS the row below. A brand viewer now KEEPS `agent` and the new `auto_sent`; only `send_log_id`, `draft_id`, `intent`, `edited` are stripped. -->
 <!-- PRIYA: this pointer was MISSING from §14's pointer set, and this is the sharpest case of the three — an engineer writing this test from §9 writes the exact assertion §14.3 forbids. Corrected cell: "brand keeps `agent` + `auto_sent`, never sees `send_log_id`/`draft_id`/`intent`/`edited`; creator sees all". -->
-| `DealMessageMetadataStripTest` | brand never sees `agent` keys |
+| `DealMessageMetadataStripTest` | **brand viewer KEEPS `agent` and `auto_sent`, and never sees `send_log_id` / `draft_id` / `intent` / `edited`; creator sees all six.** (Corrected 2026-09-08 — B0-04 item 8, W13. New file; does not exist in the tree today.) |
 <!-- PRIYA: "unchanged" is stale. §13.3 condition 2 and PRIYA-COMPAT-0904 §7 condition 2 both REQUIRE widening this test's scan roots to `service/**` and `job/**` (an ~8-line restructure of L68-76, not a one-line edit). §14.5.a repeats the requirement. Read this cell as "widened allow-list still passes". -->
 | `InfoBarrierTest` | unchanged allow-list must still pass: no new class imports the repository |
 | `InfoBarrierRuntimeTest` | extend: `CreatorToolDtos.PackageQuote` on a secure link never contains floor values; brand context never contains `tools_enabled` |
@@ -1236,7 +1415,9 @@ Python: `tests/tools/test_creator_schemas.py`, `tests/tools/test_loop_creator_di
 
 ## 10. Build order and dependencies
 
-<!-- AMEND-0904: §14.5 splits this table into Phase B0 (days 1-3 plus the draft_reply slice of day 5) and Phase B1 (the rest), with a live-metrics gate between them. The day numbers below still hold inside each phase; the B0/B1 column assignment is in §14.5's table. Phase A must be DEPLOYED before B0 day 8, or B0 cannot be measured. -->
+<!-- AMEND-0904, CORRECTED 2026-09-08 (B0-07, ledger F-0764): §14.5 splits this table into Phase B0 and Phase B1 with a live-metrics gate between them. **B0 = days 1-3, the PASTE HALF of day 4, and the draft_reply slice of day 5.** B1 = the secure-link half of day 4, plus days 6 and 7. The day numbers below still hold inside each phase; the authoritative column assignment is §14.5.a's table.
+     The previous wording of this pointer — "B0 (days 1-3 plus the draft_reply slice of day 5)" — excluded day 4 entirely, which contradicted §14.5.a's own B0 column (paste job, `PasteBriefCard`, migration 2.2 `creator_briefs`, the brief-extraction route, `get_brief`). Day 4's row is split below.
+     Phase A must be DEPLOYED before B0 day 8, or B0 cannot be measured. -->
 
 Work in this order so each engineer always compiles against something that exists:
 
@@ -1245,7 +1426,8 @@ Work in this order so each engineer always compiles against something that exist
 | 1 | Migrations 2.1 to 2.6, entities, repositories, `BriefDtos`, `CreatorToolDtos`, `CreatorContextResponse` +5 (27→32) and its **one** call site, `CreatorAgentPreferencesService.getByProfileId`, `PreferencesResponse` +5 and its **4** sites, `UpdatePreferencesRequest` +2 and its **9** sites, `InfoBarrierTest` scan-root widening, boot test | `creator_schemas.py`, schema tests, `PROMPT_VERSION` bump, `ENDPOINT_SCOPES["brief_extract"]`, drift test update (4 assertions) | TS types in `api.ts`, namespaces with mocks, `meera-api.ts` payload types and `MeeraRole` **export keyword** |
 | 2 | `CreatorToolScopes`, `OnBehalfTokenService` overload, `MeeraSessionService` scope, `CreatorToolCallValidator`, `CreatorMeeraToolController` skeleton with the five read executors, rate bucket | `assembler.py` tool selection and Block A/B, persona, `loop.py` dispatch, test updates | `CreatorToolResultRenderer` with the read cards, `MeeraCopilotChat` tool events |
 | 3 | `RateQuoteService`, `RateAddOns`, `DeliverableType`, `DealRiskService` and rules, `/deals/{id}/risks` | brief extraction route and schema | `DealRiskCard`, `PackageQuoteCard`, deal page integration, counter prefill |
-| 4 | `CreatorBriefService`, `MeeraBriefAiClient`, fallback extractor, `CreatorBriefController`, secure links and redemption, offer history | | `PasteBriefCard`, `SecureLinkDialog`, `/secure/:token` page |
+| 4a **(B0)** | `CreatorBriefService` (`paste`, `ensurePlatformBrief`, `get`, `list`, `dismiss` — **no secure-link methods**), `MeeraBriefAiClient`, `BriefFallbackExtractor`, `CreatorBriefController` (the four non-link routes) + the `creator-brief-paste` bucket, offer-history writes at the four `DealService` points | | `PasteBriefCard`, `BriefCard` |
+| 4b **(B1)** | `CreatorBriefService.createSecureLink`, the three secure-link routes, `GET /public/secure-links/{token}`, `POST /secure-links/{token}/redeem` | | `SecureLinkDialog`, `/secure/:token` page |
 | 5 | `MeeraDraft`, `DraftReplyExecutor`, `CreatorMeeraDraftController`, approvals, level-up eligibility | | `DraftCard`, approve flow, `LevelUpPrompt` |
 | 6 | `RoutineReplyService`, `MeeraSendLog`, `MeeraDelayedSendJob`, sends routes, metadata strip, DPDP export extension | routine-reply scope decline | Sends section, `SendQueuedCard`, settings copy changes |
 | 7 | `MediaKitService`, media kit routes, prefs rate card, `CampaignFitService`, rank and application executors | | Media kit page, rate card settings, campaign fit and application cards |
@@ -1410,6 +1592,14 @@ Everything else in 13.2 is a risk to carry, not a blocker. The two items in §12
 
 **Origin:** an owner-requested honest critique after Priya's compatibility pass (`PRIYA-COMPAT-0904.md`). Five product-level worries, each resolved here with a mechanism, a test, and where needed a ruling. Each subsection names the sections it supersedes; the `<!-- AMEND-0904 -->` pointers in those sections lead back here. Every symbol and line cited below was read from the working tree on 2026-09-04.
 
+<!-- PRIYA 2026-09-08 (B0-05, partial re-anchor of §14 — B0-05's mandate was §2-§8, but B0-31 / B0-33 / B0-37 build directly from §14, so the anchors those tasks touch were swept too. Anything NOT listed here is unverified at 7f48e8d and should be treated as a 143ca1e number.):
+     **`RateEstimationService.java` — the biggest §14 drift.** Commit `278c1b8` ("a creator with no engagement reading is unknown, not low") inserted a null guard and ~30 lines of comment inside `estimate()`. Everything BEFORE the engagement block is unmoved; everything after it moved **+17/+18**:
+       UNCHANGED: `TIER_BASE_RATES` L35(-42) - source comment L34 - per-tier follower bands L37-41 - `CATEGORY_MULTIPLIERS` L45(-55) - `estimate()` decl L76 - `metric.isEmpty()` -> min=max=0, tier "UNKNOWN" **L79-82**.
+       MOVED: engagement thresholds L96-98 -> **L113-115** (`>5` 1.3, `>3` 1.15, `<1` 0.7) - the category max-over-categories L104-108 -> **L122-126** - quality multiplier L118-122 -> **L136-141**, applied L124-125 -> **L142-143** - confidence 50/80/100 L129-135 -> **L147-…** - `Math.round` on both bounds L145-146 -> **L163-164** - hard-coded `"INR"` L147 -> **L165** - `determineTier` L153-159 -> **L171-…**.
+       BEHAVIOUR CHANGE worth knowing for §14.1's worked example: a NULL `avgEngagementRate` now yields multiplier **1.0**, not the old 0.7 penalty. The worked example supplies an explicit engagement figure (2.4% / 5.5%), so **its arithmetic is unaffected** — 1,250/6,250 and 1,625/8,125 still recompute exactly. Every other figure in the recomputed table below still holds.
+     Other §14 anchors re-measured: `AuditLogService.recordAuthRejection` L70-82 -> **L71-83**, `recordAdminAction` L94-106 -> **L95-107**, `OUTCOME_ALLOWED` L32 unchanged. `AuthService` `PHONE_REQUIRED` L134 -> **L136**; `normalizeAndValidate` L147 and the `require-email-otp-before-register` default L69 unchanged. `AuthController` L35/L51/L57/L64 all unchanged. `application.yml`: `creator-enabled` L199 -> **L202**, `flyway out-of-order` L61 unchanged, `web-base-url` L133 unchanged, the copilot prompt-version key L479 -> **L500**. `CreatorAgentBaselinesPage.tsx` `TIER_ORDER` L33 unchanged. `brand-chat.tsx`'s `const isOwn = m.senderType === 'brand'` L2323 -> **L2341** (+18). `MeeraCopilotChat.tsx`: `CAP_REACHED_ERROR_CODE` L38 unchanged, the stream-path cap text L266-267 -> **L265-268**, the `.catch` path L307-311 -> **L308-311**. `BrandRegisterRequest` lives at **`influora-api/src/main/java/com/influora/web/dto/auth/BrandRegisterRequest.java`** (its own file, record at L30) — NOT inside `AuthDtos.java`, which is what §14.6 W8/W10's "`BrandRegisterRequest.java` L28-37 / L36" cell implied but never spelled out. -->
+
+
 ### 14.1 Cold-start pricing is a formula, not data
 
 **The worry, made concrete.** Until a creator has 3 priced deals (4.3 step 1a) or their tier has 5 closed deals in 90 days (1b), every quote comes from `RateEstimationService` (1c), <!-- PRIYA: three line refs wrong and one factual claim wrong. Verified against RateEstimationService.java at HEAD:
@@ -1428,10 +1618,11 @@ whose inputs are hard-coded constants with no source comment and no calibration:
 <!-- PRIYA: the min/max and unit columns are CORRECT - recomputed from the code, not from the table (NANO base 1,000/5,000 x engagement 1.0 x BEAUTY 1.25 x quality 1.0 = 1,250/6,250; 1,250 + 0.65 x 5,000 = 4,500. At 5.5% engagement the multiplier is 1.3: 1,625/8,125, unit 5,850).
      The ANCHOR column is WRONG for a table labelled "as written". 4.3 step 6 as written is `min(total x 1.15, rangeMax)` when a range exists - and benchmark mode is the ONLY branch that HAS a range. So the anchors today are 4,950 -> **5,175** (min(4,500 x 1.15, 6,250)) and 6,435 -> **6,727.50** (min(5,850 x 1.15, 8,125)). The x1.10 in this header is what 14.1.e INTRODUCES; applying it to the baseline makes the amendment look like it changes nothing about the anchor when in fact it cuts it by ~4.3%.
      Corrected header: "Anchor for 1 reel (`min(total x 1.15, rangeMax)`, 4.3 step 6 as written)" with 5,175 and 6,727.50 in the cells. -->
-| Creator | min / max | 4.3 step 1c unit (`min + 0.65 × (max − min)`) | Anchor for 1 reel (`× 1.10`) |
+<!-- PRIYA 2026-09-08 (B0-04 item 8, W3 APPLIED IN PLACE): the anchor column is corrected. It was labelled "§4.3 as written" but computed with x1.10 — 14.1.e's NEW lift — giving 4,950 and 6,435. §4.3 step 6 as written is `min(total x 1.15, rangeMax)` when a range exists, and benchmark mode is the only branch that has one, so the real baseline anchors are 5,175 and 6,727.50. Using the amendment's own rule in the baseline row made 14.1.e look like it changed nothing about the anchor when in fact it cuts it by ~4.3%. min/max and unit columns were already correct and are unchanged. -->
+| Creator | min / max | 4.3 step 1c unit (`min + 0.65 × (max − min)`) | Anchor for 1 reel, **§4.3 step 6 as written** (`min(total × 1.15, rangeMax)`) |
 |---|---|---|---|
-| NANO, 3,000 followers, 2.4% engagement, BEAUTY, no quality score | 1,250 / 6,250 | **4,500** | **4,950** |
-| Same creator at 5.5% engagement | 1,625 / 8,125 | **5,850** | **6,435** |
+| NANO, 3,000 followers, 2.4% engagement, BEAUTY, no quality score | 1,250 / 6,250 | **4,500** | **5,175** |
+| Same creator at 5.5% engagement | 1,625 / 8,125 | **5,850** | **6,727.50** |
 
 Nobody on this team has evidence that a 3,000-follower creator closes a reel at 4,950. There are zero completed deals with an `agreed_rate` in any seed migration, and the constants were written for the brand-side estimate card, never checked against a close. If they are high, Meera tells every nano creator to open high, brands walk, and the creator blames Meera. If they are low, Meera anchors the whole cohort under market and the platform-band branch (1b) later "confirms" it from Meera's own deals. Either way the number is confident and the provenance line is small.
 
@@ -1451,7 +1642,16 @@ b. **In benchmark mode the persona must say so before any number.** Add to the "
 <!-- PRIYA: recomputed and CORRECT. n=1, ownMedian 2,000, benchmarkUnit 3,750 -> (1 x 2,000 + 3,750) / 2 = 2,875. Add the rounding rule: RateEstimationService rounds both bounds to whole rupees (L145-146) and this blend does not, so `unit` must be rounded the same way or a quote and its own recomputation differ by paise. -->
 c. **Shrinkage for 1-2 own deals instead of a hard 3-deal threshold.** Step 1a: with `n` own priced deals in 180 days, `n ≥ 3` → own median (unchanged). `n ∈ {1, 2}` → `unit = (n × ownMedian + benchmarkUnit) / (n + 1)`, provenance `"your last N priced deals, blended with benchmark"`, sample `n`. One real deal at 2,000 moves the NANO example from 3,750 to 2,875; the creator's own data matters from deal one. `n = 0` → step 1b/1c.
 
-d. **Tier band (step 1b) gets two honesty guards.** Besides the `≥ 5` k-anonymity floor: (i) the 5 deals must come from **≥ 3 distinct `workspaceId`s**, else fall through to 1c; (ii) compute `meeraAnchoredShare` = fraction of those deals whose `deal_offer_history` holds a `MEERA_COUNTER` row. When `> 0.5`, provenance becomes `"N closed deals in your tier in 90 days, mostly Meera-quoted"`. This is the feedback-loop label: it does not stop the loop, it stops the loop from being invisible. Needs the projection widening Priya already required (§4.3 1b: add `co.updated_at AS updatedAt`) plus `co.id AS collaborationId` so the share can be counted with `DealOfferHistoryRepository.countByCollaborationIdInAndEvent(Collection<String>, OfferEvent)` (new derived query)
+d. **Tier band (step 1b) gets two honesty guards.** Besides the `≥ 5` k-anonymity floor: (i) the 5 deals must come from **≥ 3 distinct `workspaceId`s**, else fall through to 1c; (ii) compute `meeraAnchoredShare` = **the count of DISTINCT collaboration ids in the band that hold at least one `MEERA_COUNTER` row, divided by the band size**. When `> 0.5`, provenance becomes `"N closed deals in your tier in 90 days, mostly Meera-quoted"`. This is the feedback-loop label: it does not stop the loop, it stops the loop from being invisible. Needs the projection widening Priya already required (§4.3 1b: add `co.updated_at AS updatedAt`) plus `co.id AS collaborationId`, and the **distinct** query below
+
+   <!-- PRIYA 2026-09-08 (B0-04 item 4, W4 APPLIED IN PLACE): the wording above now says DISTINCT COLLABORATIONS, and the query below is the distinct one. What it replaced — `countByCollaborationIdInAndEvent(Collection<String>, OfferEvent)` — is valid Spring Data for §2.6's entity shape but counts ROWS. §2.6 permits several MEERA_COUNTER rows on one collaboration at different `sequence_no` values: the uniqueness key §13.2 risk 6 adds is on `(collaboration_id, sequence_no)`, NOT on `(collaboration_id, event)`. A two-counter negotiation therefore pushes the share above 1.0 and fires the "mostly Meera-quoted" label off a single deal — the exact opposite of an honesty guard. -->
+   ```java
+   @Query("select distinct h.collaborationId from DealOfferHistory h "
+        + "where h.collaborationId in :ids and h.event = :event")
+   List<String> findDistinctCollaborationIdsByEvent(
+           @Param("ids") Collection<String> ids, @Param("event") OfferEvent event);
+   ```
+   `meeraAnchoredShare = findDistinctCollaborationIdsByEvent(bandIds, OfferEvent.MEERA_COUNTER).size() / (double) bandIds.size()`. **Never `countByCollaborationIdInAndEvent`** — it counts rows, not collaborations, and can exceed the band size. `RateQuoteServiceTest` must include a two-`MEERA_COUNTER`-rows-on-one-collaboration case asserting the share stays ≤ 1.0
    <!-- PRIYA: the derived-query NAME is valid Spring Data for 2.6's entity shape (`collaborationId` String, `event` OfferEvent) - but the query is WRONG for what 14.1.d wants. It counts ROWS, not distinct collaborations, and 2.6 permits several MEERA_COUNTER rows on one collaboration at different `sequence_no` values (the uniqueness constraint 13.2 risk 6 adds is on (collaboration_id, sequence_no), NOT on (collaboration_id, event)). A two-counter negotiation pushes `meeraAnchoredShare` above 1.0 and fires the > 0.5 label off a single deal. Use instead:
        @Query("select distinct h.collaborationId from DealOfferHistory h where h.collaborationId in :ids and h.event = :event")
        List<String> findDistinctCollaborationIdsByEvent(@Param("ids") Collection<String> ids, @Param("event") OfferEvent event);
@@ -1464,12 +1664,28 @@ d. **Tier band (step 1b) gets two honesty guards.** Besides the `≥ 5` k-anonym
        own history (1a) or tier band (1b): anchor = total x 1.15, no clamp (there is no range).
        benchmark (1c):                     anchor = min(total x 1.10, rangeMax).
      That keeps the clamp where a range actually exists and still delivers the smaller benchmark lift 14.1.e is asking for. Null under holdout, unchanged. -->
-e. **Anchor lift is smaller in benchmark mode.** Step 6: `min(total × 1.15, rangeMax)` when provenance is own-history or tier band; `total × 1.10` in benchmark mode. Null under holdout, unchanged.
+e. **Anchor lift is smaller in benchmark mode.** Step 6, **corrected 2026-09-08 (B0-04 item 3, W5) and now written this way in §4.3 itself**:
+   - own history (1a) or tier band (1b): `anchor = total × 1.15`, **uncapped** — no range exists on these branches.
+   - benchmark (1c): `anchor = min(total × 1.10, rangeMax)` — the only branch that has a range.
+
+   Null under holdout, unchanged. *(What this replaced: "`min(total × 1.15, rangeMax)` when provenance is own-history or tier band; `total × 1.10` in benchmark mode" — which put the clamp on the two branches that have nothing to clamp against and removed it from the one that does.)*
 
 <!-- PRIYA: WRONG MODEL. `recordAuthRejection` (AuditLogService L70-82) takes NO detail map and hard-codes actorType=ACTOR_SERVICE and outcome=OUTCOME_REJECTED. Copying it gives you a method that cannot carry the detail map this item is entirely about. The right model is `recordAdminAction(String actorId, String eventType, String outcome, Map<String,Object> detail)` at L94-106 - it already does exactly this shape, leaves workspaceId null, and calls JsonLists.toJsonObject(detail).
      So `recordCreatorEvent` is a ~12-line copy of L94-106 with actorType ACTOR_HUMAN (or a new ACTOR_CREATOR constant) and outcome hard-coded to OUTCOME_ALLOWED - `outcome` is NOT NULL on the table and the proposed 3-arg signature supplies none.
      SCHEMA: confirmed NOT a schema change. audit_log.detail_json is `JSON NULL` (V15__audit_log.sql), mapped as @Column(name="detail_json", columnDefinition="json") on AuditLogEntry L69-70 - not VARCHAR, no practical size ceiling for this payload. event_type is VARCHAR(64) NOT NULL and accepts any string: RATE_QUOTE_ISSUED (17), SECURE_LINK_CREATED (19), SECURE_LINK_OPENED (18), SECURE_LINK_REDEEMED (20) all fit. actor_id is VARCHAR(64), a ULID is 26. workspace_id is VARCHAR(26) NULL with the migration's own comment "NULL for pre-auth rejections", so a creator-scoped or link-scoped row with no workspace is already precedented. -->
-f. **Every quote leaves an audit trail.** `AuditLogService` gains `recordCreatorEvent(String creatorUserId, String eventType, Map<String, Object> detail)` modelled on `recordAuthRejection` (L71). `RateQuoteService.quote(...)` writes `RATE_QUOTE_ISSUED` with `{tier, provenance, sample, total, anchor, currency, deliverable_count, context: "chat"|"brief"|"deal"}`. **No floors, no floor_total, no range_min in the detail map** — `InfoBarrierRuntimeTest` asserts the detail keys against an allow-list. This is what makes quoted-vs-realised measurable after launch (§14.5.c metric 4).
+<!-- PRIYA 2026-09-08 (B0-04 item 5, W6+W11 APPLIED IN PLACE): the model below is now `recordAdminAction`. What it replaced — "modelled on `recordAuthRejection` (L71)" — was unbuildable and dangerous: `recordAuthRejection` (`AuditLogService.java` **L71-83** at 7f48e8d) takes NO detail map, which is the entire point of this item, and it HARD-CODES `actorType = ACTOR_SERVICE` and `outcome = OUTCOME_REJECTED` with no parameter for either. Every quote and every secure-link funnel row would have landed in an append-only audit table as a rejected service-auth event, poisoning any query or alert built on auth rejections. The proposed 3-arg signature also supplied no `outcome`, which is `NOT NULL` on the table. -->
+f. **Every quote leaves an audit trail.** `AuditLogService` gains
+
+```java
+public void recordCreatorEvent(String creatorUserId, String eventType, String outcome,
+                               Map<String, Object> detail)
+```
+
+**modelled on `recordAdminAction(String actorId, String eventType, String outcome, Map<String,Object> detail)` (`AuditLogService.java` L95-107 at `7f48e8d`), NOT on `recordAuthRejection` (L71-83).** `recordAdminAction` already has exactly this shape: it leaves `workspaceId` null and passes the map through `JsonLists.toJsonObject(detail)`. `recordCreatorEvent` is a ~12-line copy of it with `actorType = ACTOR_HUMAN` (or a new `ACTOR_CREATOR` constant) and **an explicit `outcome` argument** — normally `OUTCOME_ALLOWED` (L32). Never `recordAuthRejection`: it hard-codes `ACTOR_SERVICE` / `OUTCOME_REJECTED` and would write false rejection rows.
+
+**Confirmed not a schema change.** `audit_log.detail_json` is `JSON NULL` (`V15__audit_log.sql`), mapped `@Column(name="detail_json", columnDefinition="json")` on `AuditLogEntry` — not VARCHAR, no practical size ceiling for this payload. `event_type` is `VARCHAR(64) NOT NULL` and accepts any string (`RATE_QUOTE_ISSUED` 17, `SECURE_LINK_CREATED` 19, `SECURE_LINK_OPENED` 18, `SECURE_LINK_REDEEMED` 20). `actor_id` is `VARCHAR(64)`, a ULID is 26. `workspace_id` is `VARCHAR(26) NULL` with the migration's own comment "NULL for pre-auth rejections", so a creator-scoped or link-scoped row with no workspace is already precedented.
+
+`RateQuoteService.quote(...)` writes `RATE_QUOTE_ISSUED` with `{tier, provenance, sample, total, anchor, currency, deliverable_count, context: "chat"|"brief"|"deal"}`. **No floors, no floor_total, no range_min in the detail map** — `InfoBarrierRuntimeTest` asserts the detail keys against an allow-list. This is what makes quoted-vs-realised measurable after launch (§14.5.c metric 4).
 
 <!-- PRIYA: the backend half is CORRECT and verified - AdminCreatorAgentController @RequestMapping("/admin/creator-agent") L27, @GetMapping("/baselines") L39, CreatorAgentBaselineService.getBaselines() L62 returning BaselinesResponse (a bare DTO, and the controller's own javadoc L23-24 states the deliberate no-ApiResponse deviation, so the "per the Phase E finding" attribution is unnecessary - it is documented on this file). PUT /creators/{creatorId}/monthly-cap L52 also correct.
      The FRONTEND half has two errors:
@@ -1518,7 +1734,33 @@ b. **Meera drafts the ask; the creator does not compose it.** `SecureLinkRespons
      4. Verification state is DB-backed, keyed on the email itself: BrandEmailOtpService uses EmailOtpChallengeRepository (not Redis), and `VerifyEmailOtpResponse` is `(boolean emailVerified, String message)` - it returns NO token for register to echo. So the SPA can genuinely drive send -> verify -> register with only these three routes. Good.
      5. Rate limit worth designing around: `influora.auth.otp-send-per-email-per-hour` defaults to 3 (BrandEmailOtpService L39). A brand who mistypes their address twice is locked out of a one-shot conversion page for an hour. Show the remaining attempts.
      6. CONFIRMED and load-bearing for the "redeem in the same page" claim: register returns 201 with ApiResponse<TokenPair> plus a refresh cookie (AuthController L64-71), i.e. it LOGS THE BRAND IN, and AuthService L183-200 creates the Workspace and a WorkspaceMember.owner row in the same transaction. So the 8.1 redeem route's Owner/Admin requirement is satisfied immediately after register with no extra call. -->
-c. **Lower the brand's first step to one screen.** `/secure/:token` (§8.5) replaces "Sign in as a brand" with an on-page **"Continue with work email"** flow that uses only routes that exist today: `POST /auth/brand/send-email-otp` (`AuthController` L51) → `POST /auth/brand/verify-email` (L57) → `POST /auth/brand/register` (L64) with `BrandRegisterRequest` (`firstName, lastName, email, password, companyName, industry`) where `companyName` is prefilled from the link's `end_brand_name` and `industry` from `extraction.category`, then `secureLinks.redeem(token)` in the same page. The brand types a name, an email, an OTP and a password; nothing else. Existing brands see "Sign in" as the secondary action. The page's top block is written for the brand, not the creator: the package, the total, "secured now, released on approved delivery", "GST invoice included", "dispute cover included". No "escrow".
+<!-- PRIYA 2026-09-08 (B0-04 item 6, W8+W9+W10 APPLIED IN PLACE): the description below is rewritten honestly. What it replaced claimed `BrandRegisterRequest` had six components and that "the brand types a name, an email, an OTP and a password; nothing else" — four fields. The real form is EIGHT, and two of the extra four are hard blockers, not detail. This matters because reducing form size is the entire point of the item, and the old text made the work look done. -->
+c. **Lower the brand's first step to one screen — and be honest about how big that screen is.** `/secure/:token` (§8.5) replaces "Sign in as a brand" with an on-page **"Continue with work email"** flow over three routes that exist today: `POST /auth/brand/send-email-otp` (`AuthController` L51) → `POST /auth/brand/verify-email` (L57) → `POST /auth/brand/register` (L64), then `secureLinks.redeem(token)` in the same page. Existing brands see "Sign in" as the secondary action.
+
+**`BrandRegisterRequest` has NINE components** (`influora-api/src/main/java/com/influora/web/dto/auth/BrandRegisterRequest.java`), not six:
+
+```java
+@NotBlank @Size(max=50)  firstName      @NotBlank @Size(max=50)   lastName
+@NotBlank @Email         email          @NotBlank @Size(min=8,max=128) password
+@NotBlank @Size(max=200) companyName    @Size(max=100)            industry
+@Size(max=50)            companySize    @AssertTrue Boolean       acceptedTerms
+@Size(max=20)            phone
+```
+
+**The honest minimum form is eight fields:** first name, last name, work email, OTP, password (≥ 8), company name, **Indian mobile**, **terms checkbox**. `industry` and `companySize` are the only genuinely optional ones — `industry` carries no `@NotBlank`, so prefilling it from `extraction.category` is fine, and `companyName` is prefilled from the link's `end_brand_name`.
+
+Two mandatory steps the old text hid:
+
+1. **Phone is required, and it must be an Indian mobile.** `AuthService.brandRegister` throws 400 `PHONE_REQUIRED` on null/blank (L136 at `7f48e8d`), then runs `userPhoneService.normalizeAndValidate` (L147) — a strict Indian-mobile rule — and throws 409 `PHONE_ALREADY_EXISTS` on a duplicate (L148-158, unverified end line at 7f48e8d).
+2. **Terms acceptance needs a real checkbox.** `@AssertTrue Boolean acceptedTerms`. **Trap:** Jakarta `@AssertTrue` treats `null` as VALID, so omitting the field passes validation. Do not use that to skip the checkbox — shipping brand registration that silently records no terms consent is a legal problem, not a shortcut.
+
+**Open question for Swapnil (not one of §12's four rulings — raise it separately):** the Indian-mobile rule means **a brand outside India cannot complete this flow at all**, so every non-Indian brand a creator brings through a secure link dead-ends on the page whose only job is brand acquisition. That is a product constraint on the funnel, and it was invisible until this review.
+
+Two more things to design around, both verified: **the OTP step is currently decorative for register** — `influora.auth.require-email-otp-before-register` defaults to **false** (`AuthService.java` L69), and only when true does the register path call `brandEmailOtpService.requireVerifiedEmail`; turn the property on for the environment or stop claiming a verified email. And **`influora.auth.otp-send-per-email-per-hour` defaults to 3**, so a brand who mistypes their address twice is locked out of a one-shot conversion page for an hour — show the remaining attempts.
+
+Load-bearing and confirmed: register returns 201 with `ApiResponse<TokenPair>` plus a refresh cookie (`AuthController` L64-71), i.e. **it logs the brand in**, and `AuthService` creates the `Workspace` and the `WorkspaceMember` owner row in the same transaction — so §8.1's redeem route's Owner/Admin requirement is satisfied immediately after register with no extra call.
+
+The page's top block is written for the brand, not the creator: the package, the total, "secured now, released on approved delivery", "GST invoice included", "dispute cover included". No "escrow".
 
 <!-- PRIYA: CONFIRMED. `Campaign` has no introduced_by field of any kind, and the entity's convention is an explicit `@Column(name = "snake_case")` on every column (Campaign.java L25-131), so the proposed annotation matches. Version placement is correct: V20260910100700 is later than every existing migration and later than every B0 migration in section 2 (100000-100600). The most recent migration touching the `campaigns` TABLE today is V20260718190000__campaign_hype_config.sql - the later-dated V20260903*__admin_email_campaigns*.sql files target a different table. -->
 d. **Record the referral now, rule on the reward later.** Reverses §12's original item 2. Migration `V20260910100700__campaigns_introduced_by.sql`: `ALTER TABLE campaigns ADD COLUMN introduced_by_creator_profile_id VARCHAR(26) NULL, ADD INDEX idx_campaigns_introduced_by (introduced_by_creator_profile_id);` plus the matching `@Column(name = "introduced_by_creator_profile_id")` on `Campaign` with a single mutator `markIntroducedBy(String creatorProfileId)` called only from the secure-link redeem path. Read by nothing until Swapnil rules (§12 item 2). Without the column, no early creator can ever be credited; with it, any ruling applies retroactively.
@@ -1529,7 +1771,8 @@ d. **Record the referral now, rule on the reward later.** Reverses §12's origin
      2. N+1 CONFIRMED. `hasEscrowForCollaboration` (EscrowHoldRepository L145-153) is a per-collaboration boolean @Query with a correlated subquery over PaymentMilestone - there is NO bulk form anywhere in that repository. Calling it once per redeemed link makes the funnel endpoint O(redeemed links) queries, each with a subquery. Add one bulk query beside it and use that:
           @Query("select distinct e.collaborationId from EscrowHold e where e.status in :statuses and e.collaborationId in :ids")  -- plus the milestone leg, same UNION shape as L145-152
         Or, if the funnel is accepted as a small admin report, bound it explicitly to the last 90 days and say so. Do not leave it unstated. -->
-e. **The link funnel is instrumented from day one.** `recordCreatorEvent` rows `SECURE_LINK_CREATED` (creator id, brief id), and brand-side `recordAuthRejection`-style rows `SECURE_LINK_OPENED` and `SECURE_LINK_REDEEMED` keyed on link id and, after redeem, brand workspace id — never the creator's name or floor. `GET /admin/creator-agent/rate-calibration` (14.1.g) gains a sibling `GET /admin/creator-agent/secure-link-funnel` → `{created, opened, redeemed, funded, by_week: [...]}` where `funded` counts redeemed links whose collaboration reached `escrowFunded` via `hasEscrowForCollaboration`.
+<!-- PRIYA 2026-09-08 (B0-04 item 5, W11 APPLIED IN PLACE): "brand-side `recordAuthRejection`-style rows" is gone from the text below. Writing funnel rows through that helper stamps every one of them `actorType=ACTOR_SERVICE`, `outcome=OUTCOME_REJECTED` (both hard-coded, no parameter) into an append-only audit table — false data that poisons every auth-rejection query and alert. All four link events go through 14.1.f's `recordCreatorEvent` with an EXPLICIT outcome. A null `workspaceId` on the pre-auth `SECURE_LINK_OPENED` row is legal and precedented (`audit_log.workspace_id` is `VARCHAR(26) NULL`, migration comment "NULL for pre-auth rejections"). -->
+e. **The link funnel is instrumented from day one.** All four events are written through **14.1.f's `recordCreatorEvent(actorId, eventType, outcome, detail)` with an explicit outcome — never `recordAuthRejection`**: `SECURE_LINK_CREATED` (creator id, brief id), `SECURE_LINK_OPENED` (link id, **`workspaceId` null** — the brand has no workspace yet; backfill nothing), `SECURE_LINK_REDEEMED` (link id plus the brand workspace id, which exists by then). Never the creator's name or floor on any of them. `GET /admin/creator-agent/rate-calibration` (14.1.g) gains a sibling `GET /admin/creator-agent/secure-link-funnel` → `{created, opened, redeemed, funded, by_week: [...]}` where `funded` counts redeemed links whose collaboration reached `escrowFunded`. **N+1 warning:** `hasEscrowForCollaboration` (`EscrowHoldRepository.java` L145-153) is a per-collaboration boolean with a correlated subquery over `PaymentMilestone` and has **no bulk form** in that repository; add one bulk query beside it (`select distinct e.collaborationId from EscrowHold e where e.status in :statuses and e.collaborationId in :ids`, plus the milestone leg in the same UNION shape) or bound the funnel explicitly to the last 90 days and say so. Do not leave it unstated. *(All of 14.2.e is B1.)*
 
 **Phase:** all of 14.2 is **B1** (§14.5) except 14.2.a's persona line, which ships in B0 because the persona is written once.
 
@@ -1589,7 +1832,35 @@ a. **Cap exhaustion degrades to deterministic mode, not a wall.** The determinis
        - the gate returns None immediately unless `audience.upper() == "CREATOR"` (L570). Pass audience explicitly.
        - `cap <= 0` DISABLES the cap (L573-574). 0.25 is fine; a mis-set empty env var is not.
      The cost basis is correct: the credit sheet has extraction at INR 0.294/call on Haiku (L70). -->
-b. **Brief extraction has its own small cap.** It costs ≈ ₹0.29 per call on Haiku and is already rate-limited to 10 per window by the `creator-brief-paste` bucket. Give it a separate spend key so chat never starves it: the route passes `workspace_id = f"{creator_profile_id}:brief"` to the gate (the keys are opaque strings, `creator_suggestion.py` L265 precedent) and reads its cap from a new `BRIEF_EXTRACT_MONTHLY_CAP_USD` (`config.py`, beside `ai_creator_monthly_cap_usd`, default **0.25** ≈ 70 extractions). Test in `tests/routes/test_brief_extract.py`: a creator at the chat cap still extracts; a creator at the brief cap gets the `cap` body.
+<!-- PRIYA 2026-09-08 (B0-04 item 2, W14+W15 APPLIED IN PLACE): the instruction below is the corrected one. What it replaced — `workspace_id = f"{creator_profile_id}:brief"` passed to `check_spend_gate`, citing `creator_suggestion.py` as precedent — named the wrong gate. `check_spend_gate` (`app/costs/gate.py`) is the DAILY workspace/global ceiling and takes NO cap override, so `BRIEF_EXTRACT_MONTHLY_CAP_USD` would have bound to nothing and the separate brief cap would have enforced nothing, silently. Same fix applied to §7.5, which carried the identical wrong instruction. -->
+b. **Brief extraction has its own small cap.** It costs ≈ ₹0.29 per call on Haiku and is already rate-limited to 10 per window by the `creator-brief-paste` bucket. Give it a separate spend key so chat never starves it. **Use the per-creator MONTHLY gate, `check_creator_spend_gate` — not `check_spend_gate`:**
+
+```python
+from app.costs.spend_tracker import check_creator_spend_gate, SpendCapExceeded
+try:
+    await check_creator_spend_gate(
+        f"{creator_profile_id}:brief",          # creator_id, positional — NOT workspace_id
+        "CREATOR",                              # audience, positional
+        reserve_usd=...,
+        cap_usd=get_settings().brief_extract_monthly_cap_usd,
+    )
+except SpendCapExceeded:
+    ...  # 200 + deterministic body + degraded_reason="cap" (14.4.a)
+```
+
+The two gates and why only one of them works here:
+
+| Gate | Module | Scope | Cap override? |
+|---|---|---|---|
+| `check_spend_gate(workspace_id=…, reserve_usd=…)` | `app/costs/gate.py` | **daily** workspace + global ceiling | **no** — nothing to bind `BRIEF_EXTRACT_MONTHLY_CAP_USD` to |
+| `check_creator_spend_gate(creator_id, audience, *, reserve_usd, reserve_ttl_seconds, cap_usd)` | `app/costs/spend_tracker.py` **L535-542** | **monthly**, per creator | **yes**, `cap_usd` |
+
+Three traps, each of which silently no-ops the cap rather than failing loudly:
+1. **`audience` must be the literal `"CREATOR"`.** The gate returns `None` immediately unless `audience.upper() == "CREATOR"` (`spend_tracker.py` **L570**). Pass it explicitly; do not let it default.
+2. **`cap <= 0` DISABLES the cap** (`spend_tracker.py` **L573-574**). `0.25` is fine; a mis-set or empty `BRIEF_EXTRACT_MONTHLY_CAP_USD` env var is a disabled cost control that looks configured.
+3. **The `:brief` suffix is what makes it a separate bucket.** Confirmed safe: the key is built by `_creator_month_key` (**L151-152**) as an f-string, so a suffixed creator id is a distinct bucket with no plumbing change and no schema change.
+
+Cap value: new `BRIEF_EXTRACT_MONTHLY_CAP_USD` in `config.py`, beside `ai_creator_monthly_cap_usd` (**L455**), default **0.25** ≈ 70 extractions at the credit sheet's ₹0.294/call on Haiku. Test in `tests/routes/test_brief_extract.py`: a creator at the chat cap still extracts; a creator at the brief cap gets the `cap` body; **and one test that asserts the gate is actually called with `cap_usd` set** — a `check_spend_gate` regression is invisible to every other assertion in that file.
 
 <!-- PRIYA: the line refs are right and the instruction is incomplete in two ways that matter.
      1. RESET DATE - resolve the "if it does not" hedge: it does not. The only reset information today is prose inside CREATOR_CAP_MESSAGE (spend_tracker.py L85-88, "It resets on the 1st of next month"); there is no machine-readable field anywhere in the 429 body (chat.py L269-273). So `resets_on` MUST be added - an ISO date for the 1st of the next UTC month, derived from `_current_month_utc()` (spend_tracker.py L142-144), which is where the month boundary is computed. Add it to the payload dict in `_creator_cap_response`.
@@ -1614,18 +1885,25 @@ e. **Not in Phase B.** A per-creator usage meter (`GET /creator/meera/usage`) ne
      4. SCOPE_LEVEL_* NEEDS NO B1 EDIT. Section 3.3's SCOPE_LEVEL_0 string (L383) already lists all EIGHT level-0 names; SCOPE_LEVEL_1 appends send_routine_reply. `OnBehalfAuthResolver.requireScope` (L178-182) only asserts that the REQUIRED tool is present in the space-delimited claim - it never validates scope entries against a tool registry, so extra names with no backing executor are inert (a call would fail at dispatch, and scope is a ceiling, not the gate). So B0 ships the 8-name string verbatim and B1 appends nothing to SCOPE_LEVEL_*. Correct the B1 cell to "append to `CreatorToolName`, `CREATOR_TOOL_NAMES`, `tools_enabled`" only. -->
 **a. The split.**
 
+<!-- PRIYA 2026-09-08 (B0-07, ledger F-0764 — FINDING-1 of TASKS-B0 §1.3): the Backend and Migrations cells below are CORRECTED. The Backend cell said "§10 days 1-3, plus day 5", handing build-order day 4 entirely to B1. But §10's day-4 backend row is `CreatorBriefService`, `MeeraBriefAiClient`, fallback extractor, `CreatorBriefController`, secure links and redemption, offer history — i.e. the ENTIRE paste backend — while this same table puts in B0: the paste job, `PasteBriefCard` as B0 frontend, migration 2.2 `creator_briefs`, the brief-extraction route, and `get_brief`, whose executor calls `CreatorBriefService.ensurePlatformBrief` (§3.6). Read literally, B0 shipped a paste card with no endpoint, a `creator_briefs` table nothing writes to, a Python route no client calls, and a `get_brief` tool that cannot compile. A phase named "Paste and Read" that cannot paste.
+     RESOLUTION: **day 4 is SPLIT.** Its paste half (`CreatorBriefService` minus the secure-link methods, `MeeraBriefAiClient`, `BriefFallbackExtractor`, `CreatorBriefController` minus the three secure-link routes) and offer history are **B0**. Secure links, redemption and the `/secure/:token` page stay **B1**. §10's AMEND-0904 pointer is corrected to match.
+     ALSO (W19): **§2.7 is assigned.** It appeared in neither column. It is calendar/scheduling support and nothing in the B0 read half needs it, so it is **B1** — and note §2.7 as written creates no column and instructs that the file be SKIPPED, so B1's real obligation there is a decision, not a migration.
+     ALSO (B0-04 item 7 / W18): the Flyway renumbering MANDATE is dropped — see the Migrations cell. -->
 | | **Phase B0 — Paste and Read** | **Phase B1 — Secure and Send** |
 |---|---|---|
 | Jobs (§1) | B1 read half (paste → summary, flags, quote, draft), B2 reads + `draft_reply`, B3, B4 | B1 secure-link half, B5, B6, B7 |
-| Migrations | 2.1 prefs, 2.2 briefs, 2.4 drafts, 2.6 offer history (+ its unique key) | 2.3 secure links, 2.5 send log, 14.2.d `introduced_by` — **renumbered to timestamps later than every B0 migration** (Flyway `outOfOrder=false` rejects a lower version applied after a higher one) |
-| Creator tools | 6: `get_my_deals`, `get_brief`, `estimate_my_rate`, `get_my_metrics`, `check_deal_risks`, `draft_reply` | +3: `send_routine_reply`, `rank_open_campaigns`, `draft_application` (append to `CreatorToolName`, `CREATOR_TOOL_NAMES`, `SCOPE_LEVEL_*`, `tools_enabled`) |
+| Migrations | 2.1 prefs, 2.2 briefs, 2.4 drafts (**+ `edited`**), 2.6 offer history (+ its unique key) | 2.3 secure links, 2.5 send log, **2.7 calendar hint (W19 — assigned here; as written §2.7 adds no column and says skip the file, so settle that first)**, 14.2.d `introduced_by`. **No renumbering is required** — see the note below. |
+| Creator tools | 6: `get_my_deals`, `get_brief`, `estimate_my_rate`, `get_my_metrics`, `check_deal_risks`, `draft_reply` | +3: `send_routine_reply`, `rank_open_campaigns`, `draft_application` (append to `CreatorToolName`, `CREATOR_TOOL_NAMES`, `tools_enabled` — **not** `SCOPE_LEVEL_*`, see W20) |
 | Risk rules | all 14 | — |
-| Backend | §10 days 1-3, plus day 5's `MeeraDraft`, `DraftReplyExecutor`, `CreatorMeeraDraftController` (approve REPLY / COUNTER / DECLINE via the existing `sendMessage` / `counter` / `reject` paths), §14.1, §14.3.a-d (drafts), §14.4 | §10 days 4, 6, 7; secure links + redeem; `RoutineReplyService`, send log, `MeeraDelayedSendJob`; media kit; `CampaignFitService`; level-up; §14.2; §14.3 `auto_sent` path |
+| Backend | §10 days 1-3, **plus day 4's PASTE HALF** (`CreatorBriefService` `paste`/`ensurePlatformBrief`/`get`/`list`/`dismiss`, `MeeraBriefAiClient`, `BriefFallbackExtractor`, `CreatorBriefController`'s four non-link routes, the `creator-brief-paste` bucket, **and offer-history writes at the four `DealService` points**), plus day 5's `MeeraDraft`, `DraftReplyExecutor`, `CreatorMeeraDraftController` (approve REPLY / COUNTER / DECLINE via the existing `sendMessage` / `counter` / `reject` paths), §14.1, §14.3.a-d (drafts), §14.4 | **day 4's SECURE-LINK HALF** (`CreatorBriefService.createSecureLink` and the three link routes, `/public/secure-links/{token}`, `/secure-links/{token}/redeem`); §10 days 6, 7; `RoutineReplyService`, send log, `MeeraDelayedSendJob`; media kit; `CampaignFitService`; level-up; §14.2; §14.3 `auto_sent` path |
 | AI service | `creator_schemas.py` with six schemas; assembler, persona (six-tool list + 14.1.b + 14.3.c rails), loop dispatch; brief extraction route + own cap | three more schemas; routine-reply scope decline |
 | Frontend | `PasteBriefCard`, `BriefCard`, `DealRiskCard`, `PackageQuoteCard`, `MetricsCard`, `MyDealsCard`, `DraftCard`, tool events in `MeeraCopilotChat`, deal-page risks, counter prefill, brand-chat stamp, cap-message block | `SecureLinkDialog`, `/secure/:token` with the email-claim flow, `SendQueuedCard`, sends section, `LevelUpPrompt`, media kit page, campaign fit cards, rate-card settings |
 | Size | ≈ 10-12 engineer-days | ≈ 12-14 engineer-days |
 
-Everything Priya's §13.3 and `PRIYA-COMPAT-0904` §7 require still applies to B0 (day-1 block as one commit; `InfoBarrierTest` widening; offer-history unique key; `stripAgentMetadata` helper; `sent_message_id` REPLY-only; `schema-check.yml` awk repair first). `CreatorContextResponse.tools_enabled` lists six names in B0; the drift test does not care how many.
+<!-- PRIYA 2026-09-08 (B0-04 item 7, W18 APPLIED IN PLACE): the Migrations cell above no longer mandates renumbering. Its stated premise was false. -->
+**On Flyway ordering (the renumbering mandate is DROPPED).** The B1 cell used to require 2.3 and 2.5 be "renumbered to timestamps later than every B0 migration", justified as "Flyway `outOfOrder=false` rejects a lower version applied after a higher one". **That premise is false in this repo: `spring.flyway.out-of-order: true` is set at `influora-api/src/main/resources/application.yml:61`**, with a comment at L55-60 explaining exactly why (the numeric `V41`-`V64` files sort below the timestamped ones). B1 can ship 2.3 (`V20260910100200`) and 2.5 (`V20260910100400`) **at their original versions** after B0's 2.6 (`V20260910100500`) has already been applied. The real constraint is FK order and it is already satisfied: 2.3's `fk_csl_brief` references `creator_briefs`, which B0's 2.2 creates. Renumbering is **optional hygiene at most** — and a B1 engineer who renumbers under time pressure risks a checksum mismatch on an environment that already holds the file. Confirmed alongside it: **2.4 `meera_drafts` has exactly one foreign key**, `fk_meera_drafts_creator → creator_profiles(id)`; no FK to send log or secure links, so B0's migration set (2.1, 2.2, 2.4, 2.6) is self-contained.
+
+Everything Priya's §13.3 and `PRIYA-COMPAT-0904` §7 require still applies to B0 (day-1 block as one commit; `InfoBarrierTest` widening — **an ~8-line restructure of the indexed two-resource try-with-resources, not a one-line list edit**; offer-history unique key — **and §2.6 must also state that `sequence_no` is derived under the existing row lock**; the metadata strip helper, renamed `brandVisibleMetadata` since under §14.3.a it *keeps* `agent`; `sent_message_id` REPLY-only; `schema-check.yml` awk repair first). `CreatorContextResponse.tools_enabled` lists six names in B0; the drift test does not care how many.
 <!-- PRIYA: CONFIRMED, and worth stating precisely because it is the one place a careless edit re-arms a red gate. tests/prompt/test_creator_context_drift.py contains NO assertion on len(tools_enabled) and pins none of the nine names - so a six-name list in B0 is safe. What the test DOES do is parse every @JsonProperty("...") off the CreatorContextResponse record (L61-63) and assert Java == Python CREATOR_CONTEXT_PAYLOAD_FIELDS in BOTH directions (L67-77), plus sorted/no-dupes (L82-84), plus every allow-listed field is read by build_block_b_creator (L87-100), plus every field changes the rendered block (L103-153). So any NEW @JsonProperty on that record is a four-assertion cascade. Section 14 adds none - verified - and `tools_enabled` already exists per 2.10. The other 14.6 arity check: SecureLinkResponse (+share_text), BriefAnalysisResponse (+degraded_reason) and RateCalibrationResponse are all records this spec introduces, zero existing construction sites; and section 14 adds no value to any existing enum. -->
 <!-- PRIYA: the six carried conditions are all correctly named here. Two qualifiers were dropped in the shorthand and both are load-bearing - PRIYA-COMPAT-0904 section 7 condition 2 says the InfoBarrierTest widening is "an ~8-line restructure of L68-76, not a one-line list edit", and condition 3 requires that 2.6 ALSO state that `sequence_no` is derived under the existing row lock. Carry both wordings, not just the headings. -->
 
@@ -1644,10 +1922,14 @@ Everything Priya's §13.3 and `PRIYA-COMPAT-0904` §7 require still applies to B
 |---|---|---|---|
 | 1 | Distinct creators who pasted ≥ 1 brief | ≥ 40 | distribution and onboarding, not features — do not build B1, fix the entry point |
 | 2 | Flag precision on a hand-reviewed sample of the first 50 briefs with ≥ 1 flag | ≥ 80% of CRITICAL flags judged correct; `HIDE_DISCLOSURE` and `OFF_PLATFORM_PAYMENT` false-positive rate < 10% | the rules — fix them before automating anything that acts on them |
-| 3 | Draft acceptance | ≥ 50% of drafts APPROVED or EDITED (not DISCARDED); ≥ 25% approved unedited | the persona and draft quality — prompt work before send automation |
+| 3 | Draft acceptance | **`status = SENT` ≥ 50% of non-PENDING `meera_drafts` rows; `status = SENT AND edited = 0` ≥ 25% of non-PENDING rows.** (Corrected 2026-09-08 — see the note below.) | the persona and draft quality — prompt work before send automation |
 | 4 | Quote sanity | for briefs with `budget_stated`, report per tier the median of `|quote.total − budget| / budget` and the benchmark-mode share. **No threshold**; must be shown, with the calibration report from 14.1.g | pricing constants — recalibrate (14.1.h) before B1's secure links freeze a package total |
 | 5 | Floor leaks | 0 in `InfoBarrierRuntimeTest` and 0 in a manual sample of 30 brand-visible payloads | the barrier — stop everything |
 
+<!-- PRIYA 2026-09-08 (B0-04 item 1, W21+W22 applied): metric 3 above was "≥ 50% of drafts APPROVED or EDITED (not DISCARDED); ≥ 25% approved unedited". Both halves were unmeasurable and it is restated, not merely annotated:
+     - `DraftStatus.APPROVED` and `DraftStatus.EDITED` are declared in §2.4 and written by NOTHING. §3.7's approve sets SENT; discard sets DISCARDED. Read literally, the first threshold returned 0% forever.
+     - The second threshold had no backing column at all: §3.7 computed `edited` as a local boolean and threw it away. §2.4 now carries `edited TINYINT(1) NOT NULL DEFAULT 0` and §3.7's approve persists it through `markSent(sentMessageId, edited)`.
+     The denominator is non-PENDING rows (SENT + DISCARDED), so a draft still sitting in the creator's queue neither helps nor hurts the ratio. Tara computes both from `meera_drafts` directly; no audit row is needed for this metric. -->
 Thresholds are Swapnil's to move (§12 item 4). The measurement is not.
 
 **d. What B0 deliberately leaves out, and why that is fine.** No message leaves the platform without the creator's tap, so B0 carries none of B1's send-side risk. The creator still gets the thing the plan promised first: paste a brief, know what it is worth, know what is wrong with it, and have the reply written.
@@ -1821,3 +2103,6 @@ Items 9-15 (W1, W2, W7, W12, W16, W17, W19, W20 and the fifteen DRIFTED entries)
 ## 15. Credits sub-track (2026-09-05)
 
 The credit model for creator Meera (turn 1 / voice 2 / brief 3, 30 signup + 40 monthly, packs ₹149/₹249/₹649) is specified separately in **`CREDITS-SPEC.md`** in this folder, grounded in `facts/credits-billing.md`. It touches `MeeraSessionService.doSendTurn` (creator branch, L332–344), `doPersistAssistantWriteback` (L575), `releaseTurnCredit` (L635), `MeeraInternalController.releaseTurnCredit` (L354–360), `CreatorMeeraController` (session/turn responses, transcribe), `RazorpayWebhookController.dispatchFundingEvent`, and `AdminCreatorAgentController`, and reserves migrations `V20260912100000`–`V20260912100300` (outside this spec's `V20260910*` block). The only hook inside this spec is §3.8 `paste` step 2→3: the brief charge and its fallback refund (`CREDITS-SPEC.md` §4.3). §14.4's USD cap stays as the cost fuse under the credit gate (`CREDITS-SPEC.md` R4). Ships dark behind `CREATOR_CREDITS_ENABLED=false`.
+
+<!-- PRIYA 2026-09-08 (B0-08): scope confirmation for the B0 branch. Written here rather than only on the board so it survives the board being archived. -->
+**Confirmed for Phase B0: the credits sub-track stays DARK.** `CREATOR_CREDITS_ENABLED=false` in every environment for the whole of B0, and **no `V20260912*` migration ships in the `feat/meera-creator-phase-b0` branch** — that reserved block (`V20260912100000`–`V20260912100300`) belongs to `CREDITS-SPEC.md` and is out of B0's diff entirely. No credit balance, charge, refund or pack-purchase code is written, reviewed or gated in B0; the §3.8 `paste` hook named above (the brief charge and its fallback refund, `CREDITS-SPEC.md` §4.3) is **not** implemented in B0 — `paste` in B0 is metered only by §14.4.b's `BRIEF_EXTRACT_MONTHLY_CAP_USD` and the `creator-brief-paste` rate bucket. If a credits symbol, migration or flag appears in the B0 diff, that is a scope break, not a head start. This paragraph designs nothing about credits; it only fixes what B0 must not contain.

@@ -320,6 +320,46 @@ class SecurityConfigMatcherTest {
                 isGranted(ANONYMOUS, request(HttpMethod.GET, "/public/creators/priyacreates/verified")));
     }
 
+    // ---- T-MEERA-CREATOR-PHASE-B 14.1.g (B0-35): the rate calibration report ---------------
+    //
+    // The route carries no per-method authorization check of its own: it inherits the /admin/**
+    // hasRole("ADMIN") matcher, and AdminCreatorAgentController's javadoc says so deliberately.
+    // That inheritance is the ONLY thing standing between a non-admin and a cross-tenant pricing
+    // aggregate, so it is pinned here on the real matcher rather than assumed from the prefix.
+
+    @Test
+    @DisplayName("B0-35: anonymous GET /admin/creator-agent/rate-calibration is DENIED")
+    void rateCalibrationDeniedAnonymous() {
+        assertTrue(!isGranted(ANONYMOUS, request(HttpMethod.GET, "/admin/creator-agent/rate-calibration")));
+    }
+
+    @Test
+    @DisplayName("B0-35: BRAND-authenticated GET /admin/creator-agent/rate-calibration is DENIED (403)")
+    void rateCalibrationDeniedForBrand() {
+        assertTrue(
+                !isGranted(
+                        authenticatedAs(UserType.BRAND),
+                        request(HttpMethod.GET, "/admin/creator-agent/rate-calibration")));
+    }
+
+    @Test
+    @DisplayName("B0-35: CREATOR-authenticated GET /admin/creator-agent/rate-calibration is DENIED (403) - a creator may not read the cross-tenant band")
+    void rateCalibrationDeniedForCreator() {
+        assertTrue(
+                !isGranted(
+                        authenticatedAs(UserType.CREATOR),
+                        request(HttpMethod.GET, "/admin/creator-agent/rate-calibration")));
+    }
+
+    @Test
+    @DisplayName("B0-35: ADMIN-authenticated GET /admin/creator-agent/rate-calibration is permitted")
+    void rateCalibrationPermittedForAdmin() {
+        assertTrue(
+                isGranted(
+                        authenticatedAs(UserType.ADMIN),
+                        request(HttpMethod.GET, "/admin/creator-agent/rate-calibration")));
+    }
+
     // ---- Pre-existing behavior must be unchanged -------------------------------------------
 
     @Test

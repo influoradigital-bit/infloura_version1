@@ -2,6 +2,7 @@ package com.influora.service.meera;
 
 import com.influora.common.ApiException;
 import com.influora.common.JsonLists;
+import com.influora.common.Rendered;
 import com.influora.domain.entity.BrandAiCredit;
 import com.influora.domain.entity.BrandProfile;
 import com.influora.domain.entity.Campaign;
@@ -11,11 +12,13 @@ import com.influora.domain.entity.CreatorAgentPreferences;
 import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DeliverableMetric;
+import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.domain.entity.UtmCampaign;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignStatus;
 import com.influora.domain.enums.CampaignTemplateScope;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.CreatorDealStatuses;
 import com.influora.domain.enums.EscrowStatus;
 import com.influora.domain.enums.VerificationStatus;
 import com.influora.repository.BrandProfileRepository;
@@ -28,8 +31,12 @@ import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DeliverableMetricRepository;
 import com.influora.repository.EscrowHoldRepository;
+import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
+import com.influora.service.analytics.AnalyticsService;
+import com.influora.service.scoring.CreatorTiers;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.OutcomeDigest;
@@ -46,6 +53,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -66,6 +76,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MeeraContextService {
 
+    private static final Logger log = LoggerFactory.getLogger(MeeraContextService.class);
+
     /** Last-N campaigns fed into {@code past_campaign_summary} — keeps the digest ~2-3 lines (Ash's cost note). */
     private static final int PAST_CAMPAIGN_LIMIT = 5;
 
@@ -84,16 +96,11 @@ public class MeeraContextService {
     private static final Set<CampaignStatus> FUNDED_STATUSES =
             EnumSet.of(CampaignStatus.ACTIVE, CampaignStatus.PAUSED, CampaignStatus.COMPLETED);
 
-    /**
-     * T-MEERA-CREATOR-PHASE-A (SPEC.md 2.9, A4) — {@code deals_summary.active_count}: every
-     * non-terminal collaboration status. Terminal = {@code COMPLETED}/{@code CANCELLED}/{@code
-     * DISPUTED}; everything else is still an open negotiation or in-flight deal from the
-     * creator's point of view.
-     */
-    private static final Set<CollaborationStatus> ACTIVE_DEAL_STATUSES =
-            EnumSet.complementOf(
-                    EnumSet.of(
-                            CollaborationStatus.COMPLETED, CollaborationStatus.CANCELLED, CollaborationStatus.DISPUTED));
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.6, B0-11): ACTIVE_DEAL_STATUSES was `private static final`
+    // here, and the Phase-B creator tool executors sit in com.influora.service.meera.tool.creator —
+    // a different package, so even package-private would not have reached it. Moved verbatim to
+    // CreatorDealStatuses.ACTIVE rather than copied, so `deals_summary.active_count` below and
+    // `get_my_deals` in the tool surface cannot drift apart in front of the creator.
 
     private final WorkspaceRepository workspaceRepository;
     private final BrandProfileRepository brandProfileRepository;
@@ -108,6 +115,24 @@ public class MeeraContextService {
     private final CreatorProfileRepository creatorProfileRepository;
     private final CreatorAgentPreferencesRepository creatorAgentPreferencesRepository;
     private final CreatorMetricsRepository creatorMetricsRepository;
+    private final AnalyticsService analyticsService;
+    private final MetaOAuthTokenRepository metaOAuthTokenRepository;
+
+    /**
+     * Creator Meera audience knowledge (Swapnil 2026-09-21) - the explicit value {@code
+     * audience_summary} carries when this creator has no audience snapshot (Instagram not
+     * connected, or the weekly demographics job has not produced one yet). Never zeros, never a
+     * category-based guess: the creator persona is told to say this plainly and suggest connecting.
+     */
+    public static final String AUDIENCE_NOT_AVAILABLE =
+            "not available (Instagram not connected, or no audience snapshot yet)";
+
+    private static final int AUDIENCE_TOP_AGE_BANDS = 2;
+    private static final int AUDIENCE_TOP_CITIES = 3;
+
+    /** LOW-3 fix (post-554c347 review): control characters in a Meta city label must never be able
+     * to inject a line break (or other control byte) into the creator's prompt block. */
+    private static final Pattern CONTROL_CHARS = Pattern.compile("\\p{Cntrl}+");
 
     public MeeraContextService(
             WorkspaceRepository workspaceRepository,
@@ -122,7 +147,9 @@ public class MeeraContextService {
             BrandContextAssembler contextAssembler,
             CreatorProfileRepository creatorProfileRepository,
             CreatorAgentPreferencesRepository creatorAgentPreferencesRepository,
-            CreatorMetricsRepository creatorMetricsRepository) {
+            CreatorMetricsRepository creatorMetricsRepository,
+            AnalyticsService analyticsService,
+            MetaOAuthTokenRepository metaOAuthTokenRepository) {
         this.workspaceRepository = workspaceRepository;
         this.brandProfileRepository = brandProfileRepository;
         this.templateRepository = templateRepository;
@@ -136,6 +163,8 @@ public class MeeraContextService {
         this.creatorProfileRepository = creatorProfileRepository;
         this.creatorAgentPreferencesRepository = creatorAgentPreferencesRepository;
         this.creatorMetricsRepository = creatorMetricsRepository;
+        this.analyticsService = analyticsService;
+        this.metaOAuthTokenRepository = metaOAuthTokenRepository;
     }
 
     /**
@@ -253,6 +282,9 @@ public class MeeraContextService {
                         .filter(CreatorMetric::isPlatformVerified)
                         .findFirst();
         Map<String, String> metricsSummary = buildMetricsSummary(profile, latestMetric, locale);
+        // Keyed off THIS creator's own resolved profile id only - the same id every other read in
+        // this method uses, never a caller-supplied creator id. The BRAND path never calls this.
+        String audienceSummary = buildAudienceSummary(profile.getId(), locale);
 
         List<Collaboration> collaborations = collaborationRepository.findByCreatorId(creatorUserId);
         Map<String, Object> dealsSummary = buildDealsSummary(collaborations, locale);
@@ -261,7 +293,7 @@ public class MeeraContextService {
         identity.put("kyc_done", profile.getIdentityKycStatus() == VerificationStatus.VERIFIED);
         identity.put("gstin_present", profile.getGstin() != null && !profile.getGstin().isBlank());
 
-        String tier = profile.getTierOverride() != null ? profile.getTierOverride().name() : deriveTier(profile.getTotalFollowers());
+        String tier = profile.getTierOverride() != null ? profile.getTierOverride().name() : CreatorTiers.derive(profile.getTotalFollowers());
 
         // Fix round 2, item 3 (Priya Q8) — these were persisted correctly on the settings row but
         // never reached this response, so Meera never actually saw them. JsonLists.stringListFromJson
@@ -277,6 +309,17 @@ public class MeeraContextService {
                                 .toList()
                         : List.of();
 
+        // T-MEERA-CREATOR-PHASE-B (B0-20) — hoisted out of the constructor call below because
+        // tools_enabled is DERIVED from these three, and an inline ternary cannot be reused. The
+        // three values that decide the tool offer and the three the wire carries are now provably
+        // the same values, not two independent readings of the same row.
+        int approvalLevel =
+                prefs != null
+                        ? prefs.getApprovalLevel()
+                        : CreatorAgentPreferences.APPROVAL_LEVEL_DRAFT_ONLY;
+        boolean represented = prefs != null && prefs.isRepresented();
+        boolean negotiationHoldout = prefs != null && prefs.isNegotiationHoldout();
+
         return new CreatorContextResponse(
                 creatorUserId,
                 CREATOR_AUDIENCE,
@@ -289,9 +332,10 @@ public class MeeraContextService {
                 prefs != null && prefs.getBrandTone() != null ? prefs.getBrandTone() : CreatorAgentPreferences.TONE_FRIENDLY,
                 floors,
                 metricsSummary,
+                audienceSummary,
                 dealsSummary,
-                prefs != null ? prefs.getApprovalLevel() : CreatorAgentPreferences.APPROVAL_LEVEL_DRAFT_ONLY,
-                prefs != null && prefs.isRepresented(),
+                approvalLevel,
+                represented,
                 prefs != null ? prefs.getAgencyName() : null,
                 excludedCategories,
                 blockedBrands,
@@ -304,7 +348,189 @@ public class MeeraContextService {
                 identity,
                 prefs != null && prefs.isConsentAccepted(),
                 prefs != null ? prefs.getConsentVersion() : null,
-                prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null);
+                prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null,
+                negotiationHoldout,
+                // Rendered by Java, never by Python (SPEC.md §3.6). Rendered.date returns null for
+                // a null date, and the record is @JsonInclude(NON_NULL), so a creator who is not
+                // held out simply has no holdout_until key on the wire.
+                prefs != null ? Rendered.date(prefs.getHoldoutUntil(), locale) : null,
+                prefs != null && prefs.isRateCardShareable(),
+                prefs != null ? prefs.getApprovedDraftCount() : 0,
+                // T-MEERA-CREATOR-PHASE-B (B0-20, SPEC.md §3.3/§7.2) — the Wave-1 empty-list TODO
+                // is discharged here. This is the ONLY production caller of toolNamesForLevel, and
+                // therefore the only thing that makes the whole Wave-2 creator tool surface
+                // reachable: an empty tools_enabled degrades to `tools = []` on the Python side, so
+                // leaving it hardcoded meant the controller, both executors, the validator and the
+                // creator scope mint could never be entered in production while every test on both
+                // sides still passed. Asserted end-to-end (not on this method in isolation) by
+                // MeeraContextServiceTest#testCreatorContextCarriesWiredToolNames — reverting this
+                // argument to List.of() must turn that test red.
+                CreatorToolScopes.toolNamesForLevel(approvalLevel, represented, negotiationHoldout));
+    }
+
+    /**
+     * Creator Meera audience knowledge (Swapnil 2026-09-21) - a compact, text-only summary of this
+     * creator's own audience, reusing {@link AnalyticsService#getCreatorDemographicsForProfile}
+     * (the read behind the creator's own GET /creator/analytics/demographics). Shape: {@code "Age:
+     * 18-24 41%, 25-34 33%. Gender: women 58%, men 40%. Top cities: Mumbai / Pune / Delhi. As of 12
+     * Sep 2026."} Percentages are of the age/gender total; cities are names only (Meta's own city
+     * labels can contain a comma, hence the slash separator). No raw breakdown map leaves this
+     * method, and Meta's aggregate breakdowns carry no follower identities to leak.
+     *
+     * <p>Returns {@link #AUDIENCE_NOT_AVAILABLE} when there is no snapshot, or when the snapshot
+     * has neither a usable age/gender breakdown nor any city - never zeros and never a guess.
+     *
+     * <p>LOW-2 fix (post-554c347 review): a stored snapshot is never surfaced once the creator has
+     * no live Meta connection — our published Meta data policy promises data is not used once no
+     * longer needed, and revoking the connection means it is no longer needed for Meera. "Live" is
+     * checked the same way {@code MetricsPollingJob#onCreatorConnected} decides it for this exact
+     * creator-owned key-space (workspace_id IS NULL): a non-revoked {@link MetaOAuthToken} row that
+     * is either not expiring or not yet expired. This class never re-derives that definition.
+     *
+     * <p>LOW-1 fix (post-554c347 review): the demographics read itself is guarded so a failure
+     * there (e.g. a JSON decode error on a stored breakdown, per this class's own comment on {@code
+     * ageGender} below) degrades to the not-available summary instead of failing the whole CREATOR
+     * context — logged with the creator profile id only, never any breakdown data.
+     */
+    private String buildAudienceSummary(String creatorProfileId, Locale locale) {
+        if (!hasLiveMetaConnection(creatorProfileId)) {
+            return AUDIENCE_NOT_AVAILABLE;
+        }
+
+        CreatorDemographicsResponse demographics;
+        try {
+            demographics = analyticsService.getCreatorDemographicsForProfile(creatorProfileId);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "MeeraContextService: audience demographics read failed for creator profile {};"
+                            + " falling back to the not-available summary",
+                    creatorProfileId,
+                    e);
+            return AUDIENCE_NOT_AVAILABLE;
+        }
+        if (demographics == null || !demographics.hasData()) {
+            return AUDIENCE_NOT_AVAILABLE;
+        }
+
+        // Map<String, ?> on purpose: the breakdowns are decoded from JSON with a raw Map.class, so
+        // at runtime a value is usually an Integer despite the declared Long. Reading it as Object
+        // avoids the implicit (Long) cast that would throw ClassCastException.
+        Map<String, Long> ageTotals = new LinkedHashMap<>();
+        Map<String, Long> genderTotals = new LinkedHashMap<>();
+        long ageGenderTotal = 0;
+        Map<String, ?> ageGender = demographics.ageGenderBreakdown();
+        if (ageGender != null) {
+            for (Map.Entry<String, ?> entry : ageGender.entrySet()) {
+                long count = countOf(entry.getValue());
+                String key = entry.getKey();
+                int dot = key == null ? -1 : key.indexOf('.');
+                // Meta's audience_gender_age keys are "F.25-34" / "M.18-24" / "U.35-44".
+                if (count <= 0 || dot <= 0 || dot == key.length() - 1) {
+                    continue;
+                }
+                genderTotals.merge(key.substring(0, dot), count, Long::sum);
+                ageTotals.merge(key.substring(dot + 1), count, Long::sum);
+                ageGenderTotal += count;
+            }
+        }
+
+        List<String> parts = new ArrayList<>();
+        NumberFormat pct = NumberFormat.getIntegerInstance(locale);
+        if (ageGenderTotal > 0) {
+            final long total = ageGenderTotal;
+            parts.add(
+                    "Age: "
+                            + String.join(
+                                    ", ",
+                                    topEntries(ageTotals, AUDIENCE_TOP_AGE_BANDS).stream()
+                                            .map(e -> e.getKey() + " " + pct.format(Math.round(e.getValue() * 100.0 / total)) + "%")
+                                            .toList()));
+            parts.add(
+                    "Gender: "
+                            + String.join(
+                                    ", ",
+                                    topEntries(genderTotals, genderTotals.size()).stream()
+                                            .map(e -> genderLabel(e.getKey()) + " " + pct.format(Math.round(e.getValue() * 100.0 / total)) + "%")
+                                            .toList()));
+        }
+
+        Map<String, Long> cityCounts = new LinkedHashMap<>();
+        Map<String, ?> cities = demographics.cityBreakdown();
+        if (cities != null) {
+            for (Map.Entry<String, ?> entry : cities.entrySet()) {
+                long count = countOf(entry.getValue());
+                if (count > 0 && entry.getKey() != null && !entry.getKey().isBlank()) {
+                    // LOW-3 fix (post-554c347 review): a raw Meta city label can carry \r/\n/\t (or
+                    // other control bytes) that would otherwise start a new line inside the
+                    // creator's single-line prompt block. Sanitize before it ever joins parts/asOf
+                    // below. merge (not put): two distinct raw labels can collapse onto the same
+                    // sanitized one, and their counts must combine rather than one silently winning.
+                    String sanitizedCity = sanitizeLabel(entry.getKey());
+                    if (!sanitizedCity.isBlank()) {
+                        cityCounts.merge(sanitizedCity, count, Long::sum);
+                    }
+                }
+            }
+        }
+        if (!cityCounts.isEmpty()) {
+            parts.add(
+                    "Top cities: "
+                            + String.join(
+                                    " / ",
+                                    topEntries(cityCounts, AUDIENCE_TOP_CITIES).stream().map(Map.Entry::getKey).toList()));
+        }
+
+        if (parts.isEmpty()) {
+            return AUDIENCE_NOT_AVAILABLE;
+        }
+        String asOf = Rendered.date(demographics.fetchedAt(), locale);
+        if (asOf != null) {
+            parts.add("As of " + asOf);
+        }
+        return String.join(". ", parts) + ".";
+    }
+
+    private static long countOf(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    /** LOW-3 fix (post-554c347 review): strips/replaces control characters (\r, \n, \t, and any
+     * other {@code \p{Cntrl}} byte) with a space, then trims. Used on every raw Meta city label
+     * before it can reach the single-line audience summary. */
+    private static String sanitizeLabel(String raw) {
+        return CONTROL_CHARS.matcher(raw).replaceAll(" ").strip();
+    }
+
+    /**
+     * LOW-2 fix (post-554c347 review): reuses the exact "live creator-owned Meta connection" check
+     * {@code MetricsPollingJob#onCreatorConnected} already uses for this same creator-owned
+     * key-space (workspace_id IS NULL) — a non-revoked {@link MetaOAuthToken} row whose {@code
+     * expiresAt} is either absent or still in the future. Read-only; this class does not decide or
+     * change connection state, only asks the same repository the rest of the codebase already asks.
+     */
+    private boolean hasLiveMetaConnection(String creatorProfileId) {
+        return metaOAuthTokenRepository
+                .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
+                .filter(t -> t.getExpiresAt() == null || t.getExpiresAt().isAfter(Instant.now()))
+                .isPresent();
+    }
+
+    /** Largest first; ties broken by key so the same snapshot always renders the same text. */
+    private static List<Map.Entry<String, Long>> topEntries(Map<String, Long> counts, int limit) {
+        return counts.entrySet().stream()
+                .sorted(
+                        Map.Entry.<String, Long>comparingByValue(Comparator.reverseOrder())
+                                .thenComparing(Map.Entry.comparingByKey()))
+                .limit(limit)
+                .toList();
+    }
+
+    private static String genderLabel(String metaCode) {
+        return switch (metaCode) {
+            case "F" -> "women";
+            case "M" -> "men";
+            default -> "unspecified";
+        };
     }
 
     /**
@@ -407,7 +633,7 @@ public class MeeraContextService {
 
     private static Map<String, Object> buildDealsSummary(List<Collaboration> collaborations, Locale locale) {
         long activeCount =
-                collaborations.stream().filter(c -> ACTIVE_DEAL_STATUSES.contains(c.getStatus())).count();
+                collaborations.stream().filter(c -> CreatorDealStatuses.ACTIVE.contains(c.getStatus())).count();
         long completedCount =
                 collaborations.stream().filter(c -> c.getStatus() == CollaborationStatus.COMPLETED).count();
         BigDecimal totalEarned =
@@ -437,14 +663,10 @@ public class MeeraContextService {
         return spaceIndex > 0 ? trimmed.substring(0, spaceIndex) : trimmed;
     }
 
-    /** Mirrors {@code CreatorAgentBaselineService.deriveTier} — kept as a private copy rather than a shared util for one three-line method. */
-    private static String deriveTier(long followers) {
-        if (followers >= 1_000_000) return "MEGA";
-        if (followers >= 500_000) return "MACRO";
-        if (followers >= 50_000) return "MID";
-        if (followers >= 10_000) return "MICRO";
-        return "NANO";
-    }
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.6, B0-11): the private `deriveTier` copy that used to sit
+    // here — and whose own javadoc already flagged it as a duplicate of
+    // CreatorAgentBaselineService.deriveTier — is now CreatorTiers.derive. The three copies were
+    // byte-identical, MEGA branch included, so this changed no output.
 
     /** Last N campaigns for this workspace: type, distinct creator count (collaborations), funded y/n. */
     private List<PastCampaignEntry> buildPastCampaignSummary(

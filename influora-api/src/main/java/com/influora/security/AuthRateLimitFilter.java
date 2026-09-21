@@ -6,6 +6,10 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -125,10 +129,77 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private static final Pattern PORTFOLIO_CONTACT =
             Pattern.compile("^/portfolio/[^/]+/contact$");
 
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.4) — the creator Meera tool surface, {@code POST}
+     * only. Every route under it runs a real query fan-out on behalf of one creator, so it is the
+     * same class of per-call cost as {@link #MEERA_TURN}; this bucket is defence-in-depth behind the
+     * turn bucket and the AI spend gate, not the primary ceiling.
+     *
+     * <p><b>Keyed on the on-behalf JWT subject, never on IP</b> — see
+     * {@link #extractOnBehalfSubject}.
+     */
+    private static final Pattern CREATOR_TOOL = Pattern.compile("^/internal/meera/creator/[^/]+$");
+
+    /**
+     * Kavya U-1 re-review, H2 — {@code GET /creator/briefs/{id}} can now trigger a stale-NEW
+     * re-analysis ({@code CreatorBriefService#readOrReanalyse}, F1 HIGH fix), a ~30s blocking AI
+     * call, whenever the brief is NEW and past {@code analysisBudget()}. Before that fix this route
+     * was a pure snapshot read and correctly unthrottled (see the {@code creator-brief-paste}
+     * comment below, which explains the exact-path carve-out this pattern now narrows). The monthly
+     * brief allowance (SPEC.md &sect;7.5) still bounds total AI spend, but nothing bounded REQUEST
+     * VOLUME: a creator (or a buggy client polling/retrying) hammering GET on one stale brief could
+     * pin request threads on back-to-back ~30s calls until the allowance ran out, which is a
+     * thread-pool/latency problem even though the dollar cost stays capped.
+     *
+     * <p>Matches the {@code {id}} path only, not the collection ({@code GET /creator/briefs}, the
+     * cheap list query) and not the paste ({@code POST /creator/briefs}, already its own bucket).
+     */
+    private static final Pattern CREATOR_BRIEF_GET = Pattern.compile("^/creator/briefs/[^/]+$");
+
+    /**
+     * Mirrors {@code InternalServiceTokenFilter#INTERNAL_PREFIX} — the paths behind the
+     * service-mesh gate. Used only to decide whether the {@code X-RateLimit-*} headers may be
+     * written; see {@link #doFilterInternal}.
+     */
+    private static final String INTERNAL_PREFIX = "/internal/";
+
+    /**
+     * [SEC: Kabir Wave 2, finding 1] Anything longer than this is not a token this service minted
+     * (a real on-behalf JWT is ~540 characters) and is rejected before it reaches the JWT parser,
+     * so a multi-megabyte body in a header cannot be turned into parser work.
+     */
+    private static final int MAX_ON_BEHALF_TOKEN_CHARS = 4096;
+
+    /**
+     * Bound on {@link #onBehalfSubjectMemo}. Sized for the concurrent-turn count this surface can
+     * physically have: each entry is one live on-behalf token, and those expire in 120 seconds
+     * ({@code OnBehalfTokenService#MAX_TTL_SECONDS}). It is a hard ceiling, not a target — the map
+     * is purged of dead entries and, failing that, dropped wholesale before it can exceed this.
+     */
+    private static final int ON_BEHALF_MEMO_MAX_ENTRIES = 512;
+
+    /**
+     * Ceiling on how long a memoised subject may be reused, independent of the token's own
+     * {@code exp}. The entry dies at whichever comes first, so a token minted with an
+     * unexpectedly long TTL cannot pin a subject in this map.
+     */
+    private static final long ON_BEHALF_MEMO_MAX_TTL_MILLIS = 60_000L;
+
     private final JwtService jwtService;
 
-    public AuthRateLimitFilter(JwtService jwtService) {
+    /**
+     * Used ONLY to read the {@code sub} of the forwarded on-behalf token for the
+     * {@code creator-tool} bucket key. Nullable, exactly like {@link #jwtService}: the unit tests
+     * for other buckets construct this filter with nulls, and a null here simply degrades that one
+     * bucket to IP-keying.
+     */
+    private final com.influora.service.meera.OnBehalfTokenService onBehalfTokenService;
+
+    public AuthRateLimitFilter(
+            JwtService jwtService,
+            com.influora.service.meera.OnBehalfTokenService onBehalfTokenService) {
         this.jwtService = jwtService;
+        this.onBehalfTokenService = onBehalfTokenService;
     }
 
     @Value("${influora.auth.rate-limit.enabled:true}")
@@ -237,6 +308,72 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     @Value("${influora.meera.voice-rate-limit-per-window:30}")
     private int meeraVoiceLimit;
 
+    /**
+     * Requests per window, <b>per creator</b>, for the creator Meera tool surface
+     * ({@code POST /internal/meera/creator/*}). 60 per creator per window, not 60 per platform —
+     * see {@link #extractOnBehalfSubject} for why that distinction is the whole point of this
+     * bucket.
+     */
+    @Value("${influora.meera.creator-tool-rate-limit-per-window:60}")
+    private int creatorToolLimit;
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.8) — requests per window, <b>per creator</b>, for
+     * {@code POST /creator/briefs}.
+     *
+     * <p>10 rather than the generic limit because this is the one creator route that spends real money
+     * on every call: each paste is an AI extraction billed against the creator's own monthly brief
+     * allowance. The window bound and that allowance are two different controls doing two different
+     * jobs — the allowance stops a month of cost, this stops a minute of it, and neither substitutes
+     * for the other.
+     *
+     * <p>USER-keyed (see {@link #isUserKeyedBucket}), not IP-keyed. An IP key on a creator route is
+     * wrong in both directions: creators behind one mobile carrier NAT would starve each other, and a
+     * single creator could reset her own window by changing network.
+     */
+    @Value("${influora.meera.creator-brief-paste-rate-limit-per-window:10}")
+    private int creatorBriefPasteLimit;
+
+    /**
+     * Kavya U-1 re-review, H2 — requests per window, <b>per creator</b>, for
+     * {@code GET /creator/briefs/{id}}.
+     *
+     * <p>20, not 10 like {@code creator-brief-paste}: a GET is only OCCASIONALLY an AI call (a
+     * stale-NEW brief being re-analysed), not on every request like a paste, so it does not need as
+     * tight a ceiling — a creator legitimately opening several of her own briefs from a list in one
+     * minute must not be throttled. It is also not left at the generic {@code sensitive} default
+     * (5): 20 is chosen to sit well under the "hammer one stale brief" abuse shape (Kavya's example:
+     * 10 refreshes x 25 stale briefs = 250 attempts/window) while still being restrictive enough that
+     * a spam loop against ONE brief id burns at most 20 ~30s AI calls per window per creator, not an
+     * unbounded number gated only by the monthly allowance.
+     *
+     * <p>USER-keyed (see {@link #isUserKeyedBucket}), for the same reason as
+     * {@code creator-brief-paste}: the AI-spend identity to bound is the creator's, not her network's.
+     */
+    @Value("${influora.meera.creator-brief-get-rate-limit-per-window:20}")
+    private int creatorBriefGetLimit;
+
+    /**
+     * [SEC: Kabir Wave 2, finding 1] How many ES256 verifications ONE source address is allowed to
+     * <b>fail</b> per {@link #windowSeconds} before this filter stops verifying for that address
+     * entirely and keys the bucket by IP instead. See {@link #extractOnBehalfSubject} for why a
+     * budget is needed at all and why it is charged on failure rather than on every call.
+     *
+     * <p>20 is chosen to be unreachable in normal operation. The one legitimate caller
+     * (influora-ai) presents tokens this service minted seconds earlier, so its steady-state
+     * failure count is zero; 20 leaves room for the brief overlap during a JWKS key rotation
+     * without tripping. Setting it to 0 shuts signature verification off on this surface entirely,
+     * degrading the bucket to IP-keying rather than taking the API down — the lever to pull during
+     * an active flood.
+     *
+     * <p>Overridable as a Spring property only. Like its sibling
+     * {@link #creatorToolLimit} there is deliberately no {@code ${...}} placeholder for it in
+     * {@code application.yml}, so there is no environment variable that sets it — do not add one to
+     * a compose file and expect it to bind.
+     */
+    @Value("${influora.meera.creator-tool-verify-failure-budget:20}")
+    private int creatorToolVerifyFailureBudget;
+
     /** Requests per {@link #withdrawWindowSeconds}, per creator, for wallet withdrawal (M-K6-4). */
     @Value("${influora.wallet.withdraw-rate-limit-per-window:5}")
     private int creatorWithdrawLimit;
@@ -278,6 +415,20 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     private final Map<String, Window> windows = new ConcurrentHashMap<>();
 
+    /**
+     * [SEC: Kabir Wave 2, finding 1] Token hash &rarr; the subject a completed verification
+     * returned. Keyed on {@link #sha256Hex} of the token bytes and <b>never</b> on the token's own
+     * unverified {@code sub}: a key derived from an attacker-chosen claim would let a forged token
+     * name any creator and read a hit that a real verification put there. The hash is of the exact
+     * bytes that were verified, so a hit can only ever return the subject those bytes proved.
+     *
+     * <p>A miss always verifies. This collapses the repeat cost within one turn (Python calls
+     * several tools with the SAME 120-second token) — it is not, and cannot be, the load-shedding
+     * mechanism: an attacker sends a different token every request and misses every time. That is
+     * what {@link #creatorToolVerifyFailureBudget} is for.
+     */
+    private final Map<String, SubjectMemo> onBehalfSubjectMemo = new ConcurrentHashMap<>();
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -311,8 +462,19 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
         int used = window.count.incrementAndGet();
         int remaining = Math.max(0, limit - used);
-        response.setHeader("X-RateLimit-Limit", String.valueOf(limit));
-        response.setHeader("X-RateLimit-Remaining", String.valueOf(remaining));
+
+        // [SEC: Kabir Wave 2, finding 6] Not on /internal/**. This filter runs BEFORE
+        // InternalServiceTokenFilter, so on those paths the headers are written to a caller who
+        // has not yet presented a service token — and the creator-tool bucket is keyed on a named
+        // creator, so they would report HER remaining quota to whoever holds a copy of her
+        // on-behalf token. Withholding them costs the one legitimate caller nothing: influora-ai
+        // reads the 429 and the Retry-After, not the running count. Retry-After is deliberately
+        // still sent below; it appears only on a response that has already been refused, and the
+        // legitimate mesh client needs it to back off.
+        if (!isInternalPath(request)) {
+            response.setHeader("X-RateLimit-Limit", String.valueOf(limit));
+            response.setHeader("X-RateLimit-Remaining", String.valueOf(remaining));
+        }
 
         if (used > limit) {
             long retryAfter = Math.max(1, windowSecondsForBucket - (nowSeconds - window.startSecond));
@@ -363,6 +525,12 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             }
             if (PUBLIC_CREATOR_VERIFIED.matcher(path).matches()) {
                 return "public-creator-verified";
+            }
+            // Kavya U-1 re-review, H2 — see CREATOR_BRIEF_GET's javadoc. Checked AFTER
+            // PUBLIC_CREATOR_VERIFIED (no overlap, order is not load-bearing) and BEFORE the
+            // early `return null` that left this route unthrottled.
+            if (CREATOR_BRIEF_GET.matcher(path).matches()) {
+                return "creator-brief-get";
             }
             return null;
         }
@@ -455,6 +623,19 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         if (MEERA_TURN.matcher(path).matches()) {
             return "meera-turn";
         }
+        if (CREATOR_TOOL.matcher(path).matches()) {
+            return "creator-tool";
+        }
+        // SPEC.md 3.8 — POST /creator/briefs ONLY. The exact-equality check, rather than a prefix,
+        // keeps the dismiss route (POST /creator/briefs/{id}/dismiss, a plain status write, no AI
+        // call) out of the paste bucket. It also keeps GET /creator/briefs/{id} out of THIS bucket
+        // specifically -- not because the GET is unthrottled (see CREATOR_BRIEF_GET above, added by
+        // Kavya U-1 re-review H2: a stale-NEW brief re-analyses on read and is a real ~30s AI call),
+        // but because it is a DIFFERENT cost shape (occasional, not guaranteed on every call) that
+        // gets its own, more generous limit rather than sharing this stricter one.
+        if ("POST".equalsIgnoreCase(request.getMethod()) && path.equals("/creator/briefs")) {
+            return "creator-brief-paste";
+        }
 
         // Both LEGS, not just brand: /auth/creator/send-email-otp and /auth/creator/verify-email
         // are served by the identical BrandEmailOtpService.sendOtp/verifyOtp (AuthController:88,
@@ -538,6 +719,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "admin-coupon-issue" -> adminCouponIssueLimit;
             case "meera-turn" -> meeraTurnLimit;
             case "meera-voice" -> meeraVoiceLimit;
+            case "creator-tool" -> creatorToolLimit;
+            case "creator-brief-paste" -> creatorBriefPasteLimit;
+            case "creator-brief-get" -> creatorBriefGetLimit;
             default -> sensitiveLimit;
         };
     }
@@ -560,6 +744,16 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
      * Every other bucket (sensitive/otp/refresh/meta-oauth/tracking) stays IP-keyed, unchanged.
      */
     private String rateLimitKey(HttpServletRequest request, String bucket) {
+        // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.4). This bucket needs its OWN key derivation, not an
+        // entry in isUserKeyedBucket below, because that path reads the ordinary `Authorization`
+        // header — and on /internal/** that header carries the SERVICE token, not the creator. The
+        // creator's identity is only in the forwarded on-behalf JWT.
+        if ("creator-tool".equals(bucket)) {
+            String creatorId = extractOnBehalfSubject(request);
+            if (creatorId != null) {
+                return "creator:" + creatorId + "|" + bucket;
+            }
+        }
         if (isUserKeyedBucket(bucket)) {
             String userId = extractUserId(request);
             if (userId != null) {
@@ -583,7 +777,15 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                     "creator-withdraw",
                     "admin-coupon-issue",
                     "meera-turn",
-                    "meera-voice" ->
+                    "meera-voice",
+                    // SPEC.md 3.8 — AI cost, so the identity that must be bounded is the creator's,
+                    // not her network's. Reachable from the ordinary `Authorization` header (unlike
+                    // "creator-tool" above, which sits on /internal/** where that header carries the
+                    // SERVICE token), so it needs no special case beyond this entry.
+                    "creator-brief-paste",
+                    // Kavya U-1 re-review, H2 — same reasoning as creator-brief-paste immediately
+                    // above: the AI-spend identity to bound is the creator's.
+                    "creator-brief-get" ->
                     true;
             default -> false;
         };
@@ -595,6 +797,200 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
      * caller falls back to IP-keying); the real authorization decision is still made downstream by
      * the actual auth filter/{@code AuthPrincipal} resolution, not here.
      */
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.4) — the {@code sub} of the forwarded
+     * {@code X-Onbehalf-Authorization} token, or null.
+     *
+     * <p><b>Why this exists rather than an IP key.</b> Every call to
+     * {@code /internal/meera/creator/*} arrives server-to-server from the single influora-ai
+     * process, so all of them share one source address. An IP-keyed bucket there is not a per-caller
+     * cap at all — it is a platform-wide cap, and the first busy creator of the window starves every
+     * other creator on the platform. The identity that must bound this surface is the creator's, and
+     * on {@code /internal/**} the only place it appears is this header.
+     *
+     * <p><b>Why it VERIFIES rather than just decoding.</b> SPEC.md &sect;3.4 allows reading the
+     * subject unverified, on the grounds that a bucket key needs to be stable rather than trusted.
+     * That is true of the key but not of the consequences: this filter runs BEFORE
+     * {@code InternalServiceTokenFilter} in the chain, so an unverified subject is attacker-chosen,
+     * and anyone who learned a creator's user id could forge a header and burn that creator's window
+     * from outside. Verification is an in-memory EC signature check with no I/O, and it removes the
+     * whole class — a forged or expired token yields null here and the request falls back to
+     * IP-keying, which is the correct treatment for a caller who has proven nothing.
+     *
+     * <p>Never throws: a missing service (the unit-test construction path), an absent header, or any
+     * parse/verify failure all yield null. The real authorisation decision is made downstream by
+     * {@code OnBehalfAuthResolver}, not here.
+     *
+     * <p><b>[SEC: Kabir Wave 2, finding 1] Why verifying is not enough on its own.</b> The
+     * reasoning above is about correctness and it still holds; the defect was the cost of being
+     * correct. Measured here, an ES256 verification of a well-formed wrong-signature token costs
+     * ~1.2 ms against ~0.005 ms for a request with no header — a ~240x amplifier that an
+     * unauthenticated caller could reach, because this filter runs ahead of the mesh gate and the
+     * key was derived before the counter was consulted, so a 429 never shed the work. Two bounds
+     * now sit in front of the crypto, in this order:
+     *
+     * <ol>
+     *   <li><b>Structural rejects</b> — no header, blank, or longer than
+     *       {@link #MAX_ON_BEHALF_TOKEN_CHARS} — never reach the parser at all.
+     *   <li><b>{@link #onBehalfSubjectMemo}</b> answers a token this filter has already verified.
+     *       This is what makes the legitimate path cheap (one turn reuses one 120-second token
+     *       across its tool calls); it does nothing against a flood of distinct tokens.
+     *   <li><b>{@link #creatorToolVerifyFailureBudget}</b> is what sheds the flood. Every
+     *       verification that FAILS is charged to the calling address; once an address has spent
+     *       its budget for the window, this method stops verifying for it and returns null, so its
+     *       requests fall to IP-keying and its own {@code creator-tool} window 429s it — at the
+     *       cost of a map lookup, not a curve operation.
+     * </ol>
+     *
+     * <p>Charging failures rather than every call is deliberate. A budget on all verifications
+     * would be spent by the one legitimate caller — influora-ai is a single address carrying the
+     * whole platform's creator traffic — and exhausting it there would drop every creator into a
+     * shared IP-keyed window, which is the platform-wide starvation this bucket exists to prevent.
+     * A legitimate caller presents tokens this service minted and fails none.
+     *
+     * <p>What this does not bound: an attacker spread across many source addresses still buys
+     * {@link #creatorToolVerifyFailureBudget} verifications per address per window. Per-address
+     * shedding is the correct layer here — a global cap would be exhaustible by an attacker
+     * precisely to force the legitimate caller onto the IP-keyed fallback — and volumetric
+     * distribution is the edge proxy's problem, not this filter's.
+     */
+    private String extractOnBehalfSubject(HttpServletRequest request) {
+        if (onBehalfTokenService == null) {
+            return null;
+        }
+        String header = request.getHeader("X-Onbehalf-Authorization");
+        if (header == null || header.isBlank()) {
+            return null;
+        }
+        String token = header.regionMatches(true, 0, "Bearer ", 0, 7) ? header.substring(7) : header;
+        token = token.trim();
+        if (token.isEmpty() || token.length() > MAX_ON_BEHALF_TOKEN_CHARS) {
+            return null;
+        }
+
+        String tokenHash = sha256Hex(token);
+        if (tokenHash == null) {
+            return null;
+        }
+        long nowMillis = System.currentTimeMillis();
+        SubjectMemo memoised = onBehalfSubjectMemo.get(tokenHash);
+        if (memoised != null) {
+            if (memoised.expiresAtMillis > nowMillis) {
+                return memoised.subject;
+            }
+            onBehalfSubjectMemo.remove(tokenHash, memoised);
+        }
+
+        // A verification is about to happen, so the budget is checked HERE — after the memo (a hit
+        // costs nothing and must not be gated) and before the curve operation.
+        if (verifyBudgetExhausted(request)) {
+            return null;
+        }
+
+        try {
+            Claims claims = onBehalfTokenService.verify(token);
+            String subject = claims == null ? null : claims.getSubject();
+            if (subject == null) {
+                chargeVerifyFailure(request);
+                return null;
+            }
+            rememberSubject(tokenHash, subject, claims.getExpiration(), nowMillis);
+            return subject;
+        } catch (RuntimeException e) {
+            chargeVerifyFailure(request);
+            return null;
+        }
+    }
+
+    /**
+     * True once this address has failed {@link #creatorToolVerifyFailureBudget} verifications
+     * inside the current window. Read-only — a stale window reads as "not exhausted" and is
+     * replaced by the next {@link #chargeVerifyFailure}, which is what rolls the budget over.
+     */
+    private boolean verifyBudgetExhausted(HttpServletRequest request) {
+        Window window = windows.get(verifyFailureKey(request));
+        if (window == null) {
+            return false;
+        }
+        if (System.currentTimeMillis() / 1000L - window.startSecond >= windowSeconds) {
+            return false;
+        }
+        return window.count.get() >= creatorToolVerifyFailureBudget;
+    }
+
+    /** Charges one failed verification to the calling address's budget for this window. */
+    private void chargeVerifyFailure(HttpServletRequest request) {
+        long nowSeconds = System.currentTimeMillis() / 1000L;
+        windows
+                .compute(
+                        verifyFailureKey(request),
+                        (k, existing) ->
+                                existing == null || nowSeconds - existing.startSecond >= windowSeconds
+                                        ? new Window(nowSeconds)
+                                        : existing)
+                .count
+                .incrementAndGet();
+    }
+
+    /**
+     * Namespaced into the same {@link #windows} map as the request buckets rather than a second
+     * map: identical fixed-window semantics, identical per-address growth, one thing to reason
+     * about. The suffix is not a bucket name returned by {@link #bucketFor}, so it cannot collide
+     * with a real bucket's key.
+     */
+    private String verifyFailureKey(HttpServletRequest request) {
+        return clientIp(request) + "|onbehalf-verify-fail";
+    }
+
+    /**
+     * Stores a verified subject, bounded two ways: the entry dies at the earlier of the token's own
+     * {@code exp} and {@link #ON_BEHALF_MEMO_MAX_TTL_MILLIS}, and the map is purged of dead entries
+     * — then cleared outright if that was not enough — before it can pass
+     * {@link #ON_BEHALF_MEMO_MAX_ENTRIES}. Clearing is safe: the next request re-verifies.
+     */
+    private void rememberSubject(
+            String tokenHash, String subject, java.util.Date tokenExpiry, long nowMillis) {
+        long expiresAt = nowMillis + ON_BEHALF_MEMO_MAX_TTL_MILLIS;
+        if (tokenExpiry != null) {
+            expiresAt = Math.min(expiresAt, tokenExpiry.getTime());
+        }
+        if (expiresAt <= nowMillis) {
+            return;
+        }
+        if (onBehalfSubjectMemo.size() >= ON_BEHALF_MEMO_MAX_ENTRIES) {
+            onBehalfSubjectMemo.values().removeIf(entry -> entry.expiresAtMillis <= nowMillis);
+            if (onBehalfSubjectMemo.size() >= ON_BEHALF_MEMO_MAX_ENTRIES) {
+                onBehalfSubjectMemo.clear();
+            }
+        }
+        onBehalfSubjectMemo.put(tokenHash, new SubjectMemo(subject, expiresAt));
+    }
+
+    /**
+     * True for the paths behind {@code InternalServiceTokenFilter}'s service-mesh gate. Goes
+     * through the same shared normaliser as {@link #bucketFor} (EV-004: {@link RequestPaths}), so
+     * an encoded or matrix-param'd {@code /internal/**} cannot be dressed up as a public path to
+     * get the quota headers back. Fails CLOSED (treated as internal) on an unnormalisable path,
+     * same as {@link RequestPaths#isUnder} always does — the header-withholding this guards is the
+     * safe direction to fail in.
+     */
+    private static boolean isInternalPath(HttpServletRequest request) {
+        return RequestPaths.isUnder(request, INTERNAL_PREFIX);
+    }
+
+    /** SHA-256 of the token bytes, hex. Null only if the JRE has no SHA-256, which cannot happen. */
+    private static String sha256Hex(String token) {
+        try {
+            byte[] hash =
+                    MessageDigest.getInstance("SHA-256")
+                            .digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            return null;
+        }
+    }
+
+
     private String extractUserId(HttpServletRequest request) {
         if (jwtService == null) {
             return null;
@@ -659,4 +1055,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             this.startSecond = startSecond;
         }
     }
+
+    /**
+     * One memoised on-behalf verification: the subject the signature check proved, and the instant
+     * past which it must be proved again. See {@link #onBehalfSubjectMemo}.
+     */
+    private record SubjectMemo(String subject, long expiresAtMillis) {}
 }

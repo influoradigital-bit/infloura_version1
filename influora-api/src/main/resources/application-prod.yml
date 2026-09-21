@@ -98,6 +98,10 @@ influora:
     base-url: ${ANALYZE_SITE_AI_BASE_URL}
   creator-copilot-ai:
     base-url: ${CREATOR_COPILOT_AI_BASE_URL}
+    # Release 0919 merge [arjun]: phase-e's no-default base-url kept (prod must fail loudly, never call a
+    # guessed host); B0's timeouts kept. Same env vars as application.yml.
+    connect-timeout-seconds: ${CREATOR_COPILOT_AI_CONNECT_TIMEOUT_SECONDS:5}
+    request-timeout-seconds: ${CREATOR_COPILOT_AI_REQUEST_TIMEOUT_SECONDS:15}
   # Deploy blocker 2 — MeeraStreamProperties#publicChatUrl (Java field default) is
   # http://localhost:8000/chat and no profile previously overrode it, so a prod boot
   # would hand browsers a localhost URL for the browser-direct Meera SSE connection

@@ -44,6 +44,10 @@ vi.mock('@/lib/api', async () => {
     accept: vi.fn().mockResolvedValue({ id: 'deal_1' }),
     reject: vi.fn().mockResolvedValue({ id: 'deal_1' }),
     counter: vi.fn().mockResolvedValue({ id: 'deal_1' }),
+    // B0-37 (SPEC.md §8.6) — the deal room now reads GET /deals/:id/risks on
+    // select and on every refresh. An omitted member throws on property access
+    // and the failure looks unrelated to whatever the test is about.
+    risks: vi.fn().mockResolvedValue({ flags: [], target: 'DEAL', target_id: 'deal_1' }),
   };
   const messages = {
     list: (...a: unknown[]) => creatorMessagesList(...a),

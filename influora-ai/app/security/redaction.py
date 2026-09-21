@@ -89,6 +89,17 @@ _REDACT_KEYS = {
     "caption",
     "captions",
     "ig_handle",
+    # K-5 (Kabir, KABIR-CONSENT-0917.md, LOW -- last call Kabir). `raw_text` is
+    # the FULL pasted brief (T-MEERA-CREATOR-PHASE-B, CreatorBrief.rawText) --
+    # it can hold third-party names, emails, phone numbers and UPI ids of
+    # people who never consented. `summary_lines` is the AI's summary of that
+    # same brief and can repeat them. Every call site today only logs shapes
+    # (`shape_of(raw_text)`, `brief_extract.py`), so nothing leaks through this
+    # path currently -- this is defence in depth against a future direct log
+    # line, redacting by key rather than relying solely on the regex backstop
+    # above, which does not catch names.
+    "raw_text",
+    "summary_lines",
 }
 
 

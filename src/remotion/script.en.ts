@@ -34,7 +34,7 @@ const SCENES: Scene[] = [
             { label: 'Reel floor', value: '₹3,000' },
             { label: 'Story set floor', value: '₹1,500' },
             { label: 'Language', value: 'English' },
-            { label: 'Level 0', value: 'I draft, you send' },
+            { label: 'Level 0', value: 'I advise, you decide' },
           ],
         },
         hold: 80,
@@ -93,33 +93,17 @@ const SCENES: Scene[] = [
         },
         hold: 120,
       },
-      { kind: 'meera', text: 'I am drafting the reply now. Please read it before anything is sent.' },
+      { kind: 'meera', text: 'Here is my read on it. What you say to the brand is up to you.' },
     ],
     tail: 24,
   },
   {
     id: 'send',
-    chapter: 'You approve · only then it goes',
+    chapter: 'Money secured · then work begins',
     header: 'Meera',
-    headerSub: 'Draft ready',
+    headerSub: 'Funds secured',
     surface: 'chat',
     beats: [
-      {
-        kind: 'card',
-        card: {
-          type: 'draft',
-          to: 'Reply to the brand',
-          body: 'Hi! Thanks for reaching out 🙌 For 1 reel with 60-day exclusivity and ad usage, my rate is ₹4,300. The #ad label stays: it is required. I work through Influora Secure Payments: funds are secured before I start, contract and invoice come automatically. Link below to confirm.',
-          footer: 'Drafted with Meera · approved by Riya',
-          actions: ['Approve', 'Edit', 'Discard'],
-        },
-        hold: 130,
-      },
-      { kind: 'tap', label: 'Approve', hold: 50 },
-      {
-        kind: 'meera',
-        text: 'Sent. Once the brand opens the link and secures the funds, the deal is confirmed.',
-      },
       { kind: 'system', text: '2 days later', hold: 40 },
       {
         kind: 'card',
@@ -146,7 +130,7 @@ const SCENES: Scene[] = [
     beats: [
       {
         kind: 'wa',
-        text: 'Your reel is live. I have saved the 24-hour snapshot as proof, and I will send the 72-hour reach to the brand.',
+        text: 'Your reel is live. I have saved the 24-hour snapshot as proof.',
       },
       {
         kind: 'card',
@@ -225,7 +209,7 @@ const SCENES: Scene[] = [
   },
   {
     id: 'find',
-    chapter: 'Finding new brands · the list is mine, the words are yours',
+    chapter: 'Finding new brands · the list is mine, the decision is yours',
     header: 'Meera',
     headerSub: 'Searching for brands…',
     surface: 'chat',
@@ -246,38 +230,6 @@ const SCENES: Scene[] = [
         },
         hold: 110,
       },
-      {
-        kind: 'meera',
-        text: 'Write two lines in your own words: why this brand, and why you. Without them, I cannot send anything.',
-      },
-      {
-        kind: 'card',
-        card: {
-          type: 'hook',
-          title: 'Your two lines',
-          sub: 'The brand will read these as yours, not mine',
-          placeholder: 'Why this brand, why you…',
-          value: 'Your rain-proof serum Reel was spot on for the Pune monsoon. I explain skincare to 18K people every day.',
-        },
-        hold: 100,
-      },
-      {
-        kind: 'card',
-        card: {
-          type: 'draft',
-          to: 'Nimbu Naturals · email',
-          subject: 'An idea for your monsoon launch',
-          body: 'Hi! Your rain-proof serum Reel was spot on for the Pune monsoon… I am Riya, a skincare creator with 7.4K followers, and I would love to share a small idea.',
-          footer: 'Current reply rate: 1 in 4 · that is normal for cold email',
-          actions: ['Approve', 'Edit'],
-        },
-        hold: 110,
-      },
-      { kind: 'tap', label: 'Approve', hold: 44 },
-      {
-        kind: 'meera',
-        text: 'Sent. If they reply, I will tell you right here. If they do not, that is normal too.',
-      },
     ],
     tail: 30,
   },
@@ -292,14 +244,14 @@ export const EN_LOCALE: Locale = {
     eyebrow: 'Coming soon',
     title: 'Meera',
     sub: 'Your own PR manager. On your side.',
-    line: 'You decide. I write, and I remember.',
-    say: 'Your own PR manager, on your side. You decide. I write, and I remember.',
+    line: 'I read, and I remember.',
+    say: 'Your own PR manager, on your side. I read, and I remember.',
   },
   outro: {
     title: 'Meera for Creators',
     sub: 'In the works. Coming soon.',
-    bullets: ['Paste a brief, get a straight answer', 'You approve, only then it goes', 'Money, proof, and a note every Monday'],
+    bullets: ['Paste a brief, get a straight answer', 'Your floor, your decision', 'Money, proof, and a note every Monday'],
     cta: 'Join the waitlist',
-    say: 'Meera for Creators. In the works, and coming soon. Paste a brief and get a straight answer. You approve, and only then it goes. Money, proof, and a note every Monday.',
+    say: 'Meera for Creators. In the works, and coming soon. Paste a brief and get a straight answer. Your floor, your decision. Money, proof, and a note every Monday.',
   },
 };

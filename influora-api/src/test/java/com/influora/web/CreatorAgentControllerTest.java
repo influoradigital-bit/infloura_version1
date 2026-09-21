@@ -65,7 +65,9 @@ class CreatorAgentControllerTest {
                 new PreferencesResponse(
                         new BigDecimal("500"), new BigDecimal("500"), new BigDecimal("500"), "INR",
                         List.of(), List.of(), 0, "hi-IN", "FRIENDLY", null, null, "Asia/Kolkata", List.of(),
-                        null, false, null, false, "v1");
+                        null, false, null, false, "v1",
+                        // Phase B (§3.10) — the five new read-side components.
+                        false, null, false, 0, false);
         when(preferencesService.getOrCreatePreferences(USER_ID)).thenReturn(response);
 
         ResponseEntity<ApiResponse<PreferencesResponse>> result = controller.getPreferences(principal);
@@ -81,11 +83,12 @@ class CreatorAgentControllerTest {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
                         new BigDecimal("1000"), null, null, null, List.of(), List.of(), 1, "en-IN", "FORMAL",
-                        null, null, null, List.of(), null, false, null);
+                        null, null, null, List.of(), null, false, null, null, null);
         PreferencesResponse response =
                 new PreferencesResponse(
                         new BigDecimal("1000"), null, null, "INR", List.of(), List.of(), 1, "en-IN", "FORMAL",
-                        null, null, "Asia/Kolkata", List.of(), null, false, null, false, "v1");
+                        null, null, "Asia/Kolkata", List.of(), null, false, null, false, "v1",
+                        false, null, false, 0, false);
         when(preferencesService.updatePreferences(USER_ID, req)).thenReturn(response);
 
         ResponseEntity<ApiResponse<PreferencesResponse>> result = controller.updatePreferences(principal, req);
@@ -130,7 +133,7 @@ class CreatorAgentControllerTest {
         UpdatePreferencesRequest req =
                 new UpdatePreferencesRequest(
                         null, null, null, null, List.of(), List.of(), 0, null, null, null, null, null, List.of(),
-                        null, false, null);
+                        null, false, null, null, null);
 
         ApiException ex =
                 assertThrows(ApiException.class, () -> controller.updatePreferences(principal, req));

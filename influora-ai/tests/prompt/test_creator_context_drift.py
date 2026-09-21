@@ -126,6 +126,7 @@ def test_every_java_field_changes_the_rendered_creator_block():
         "brand_tone": "FORMAL",
         "floors": {"reel_floor": "7,777"},
         "metrics_summary": {"followers": "77,777 followers"},
+        "audience_summary": "Age: 18-24 77%. Top cities: Drift-Audience-City.",
         "deals_summary": {"active_count": "77", "completed_count": "78"},
         "approval_level": 2,
         "represented": True,
@@ -140,6 +141,12 @@ def test_every_java_field_changes_the_rendered_creator_block():
         "working_hours_timezone": "Asia/Dubai",
         # Gate fix round 3 (Priya): the represented-by-agency NAME.
         "agency_name": "Drift Agency Talent",
+        # Phase B (§2.10). `rate_card_shareable` and `approved_draft_count` need
+        # no entry: both are in CREATOR_CONTEXT_FIELDS_NOT_RENDERED, so `java`
+        # above has already subtracted them.
+        "negotiation_holdout": True,
+        "holdout_until": "5 Dec 2026-Drift",
+        "tools_enabled": ["drift_tool_alpha", "drift_tool_beta"],
     }
     missing_fixture = sorted(java - set(distinctive))
     assert not missing_fixture, (
@@ -156,6 +163,10 @@ def test_every_java_field_changes_the_rendered_creator_block():
 # Fields whose render line is gated on another field being set.
 _PREREQUISITES: dict[str, dict] = {
     "agency_name": {"represented": True},
+    # Phase B (§2.10): the holdout DATE only renders inside the holdout line, so
+    # without this both sides of its comparison would render no line at all and
+    # the assertion would fail on a field that is in fact wired correctly.
+    "holdout_until": {"negotiation_holdout": True},
 }
 
 

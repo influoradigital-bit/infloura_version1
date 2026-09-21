@@ -86,7 +86,9 @@ class MeeraContextServiceTest {
                         new BrandContextAssembler(),
                         creatorProfileRepository,
                         creatorAgentPreferencesRepository,
-                        creatorMetricsRepository);
+                        creatorMetricsRepository,
+                        org.mockito.Mockito.mock(com.influora.service.analytics.AnalyticsService.class),
+                        org.mockito.Mockito.mock(com.influora.repository.MetaOAuthTokenRepository.class));
     }
 
     @Test
@@ -286,6 +288,159 @@ class MeeraContextServiceTest {
                 (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
                         service.assemble(WORKSPACE_ID, "CREATOR");
         assertEquals(null, withoutCap.aiMonthlyCapUsd());
+    }
+
+    /**
+     * SPEC.md &sect;3.1 catalogue order, and the five tools that have a route TODAY. Declared here
+     * as a literal rather than read from {@code CreatorToolScopes} -- a test that imported the
+     * production list would agree with it no matter what it said.
+     */
+    private static final List<String> WIRED_CREATOR_TOOLS =
+            List.of(
+                    "get_my_deals",
+                    "get_brief",
+                    "estimate_my_rate",
+                    "get_my_metrics",
+                    "check_deal_risks");
+
+    @Test
+    @DisplayName(
+            "[QA Wave 2 blocker] the ASSEMBLED CREATOR context carries a non-empty tools_enabled"
+                    + " naming exactly the five wired creator tools -- CreatorToolScopes"
+                    + ".toolNamesForLevel was green in isolation while this seam still shipped"
+                    + " List.of(), which made the controller, every executor, the validator and the"
+                    + " creator scope mint unreachable in production with every test on both sides"
+                    + " passing")
+    void testCreatorContextCarriesWiredToolNames() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(12_400L);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        // EV-008: the assembler now reads the Meta-verified row via
+        // findByCreatorProfileIdAndDataSourceOrderByTimeDesc(id, DATA_SOURCE_META_API, ...), not the
+        // unfiltered findByCreatorProfileIdOrderByTimeDesc this stub used to target pre-merge (that
+        // overload is asserted NEVER called at line ~547's
+        // `verify(creatorMetricsRepository, never()).findByCreatorProfileIdOrderByTimeDesc(...)`).
+        // Stubbing the no-longer-called overload here left this the one test in the file still
+        // pointed at the old collaborator, which is exactly what Mockito's strict-stub
+        // UnnecessaryStubbingException flagged after the EV-008/B0 merge.
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(
+                        eq("profile1"), eq("META_API"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+
+        com.influora.domain.entity.CreatorAgentPreferences prefs =
+                mock(com.influora.domain.entity.CreatorAgentPreferences.class);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.of(prefs));
+        when(prefs.getBrandTone()).thenReturn("FRIENDLY");
+        when(prefs.getApprovalLevel()).thenReturn(0);
+        when(prefs.isRepresented()).thenReturn(false);
+        when(prefs.isConsentAccepted()).thenReturn(true);
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+
+        // The bidirectional tripwire, and the actual lesson of Wave 2: a class and its call site
+        // are one change. Compared against the WIDEST scope (level 2, not represented), whose
+        // toolNamesForLevel is CreatorToolScopes.WIRED_TOOL_NAMES in full -- so this is a set
+        // equality between "what the assembler can ever offer" and "what the controller can
+        // answer", and it fails from either side alone:
+        //   - a name added to WIRED_TOOL_NAMES with no @PostMapping -> left side bigger;
+        //   - a @PostMapping added without the name -> right side bigger, dead code that no
+        //     production traffic can reach, which is exactly how Wave 2 shipped.
+        // Both were run against this assertion before it was committed, and again when get_brief
+        // made it five.
+        //
+        // Deliberately FIRST, ahead of the WIRED_CREATOR_TOOLS literal below. With the literal
+        // first, a route added without its name was reported as "the list is the wrong length" --
+        // true, but it named neither half of the seam, and it meant this reflective check was never
+        // the assertion that fired for that half. Now it is the one that fires for both.
+        assertEquals(
+                new java.util.TreeSet<>(CreatorToolScopes.toolNamesForLevel(2, false, false)),
+                creatorMeeraToolRoutes(),
+                "the tools the assembler can offer and the routes the controller serves have"
+                        + " diverged -- one of them was changed without the other");
+
+        // The assertion that would have caught the gap. An empty list here degrades to `tools = []`
+        // on the Python side, so the model is never offered a creator tool and nothing downstream
+        // of this response can ever be entered.
+        assertFalse(
+                creatorContext.toolsEnabled().isEmpty(),
+                "tools_enabled is empty: the model is offered no creator tool and the entire Wave 2"
+                        + " surface is dead in production");
+        assertEquals(WIRED_CREATOR_TOOLS, creatorContext.toolsEnabled());
+
+        // Every offered name must be a declared CreatorToolName. Necessary but NOT sufficient --
+        // all nine of SPEC.md 3.1's tools will eventually be constants, so this alone cannot tell
+        // a wired tool from a planned one. The route assertion above is the one that can.
+        for (String name : creatorContext.toolsEnabled()) {
+            assertTrue(
+                    com.influora.domain.enums.CreatorToolName.parse(name).isPresent(),
+                    "tools_enabled offers a name with no route: " + name);
+        }
+
+        // The three flags the wire carries and the three that decided the offer are the same
+        // reading of the same row -- what the hoisted locals at the call site exist to guarantee.
+        assertEquals(
+                CreatorToolScopes.toolNamesForLevel(
+                        creatorContext.approvalLevel(),
+                        creatorContext.represented(),
+                        creatorContext.negotiationHoldout()),
+                creatorContext.toolsEnabled(),
+                "tools_enabled disagrees with the approval_level/represented/holdout it ships beside");
+
+        // An agency-represented creator is on the reads-only scope, and all five wired tools are
+        // reads (get_brief included), so she is still offered all five -- representation must not
+        // silently blank or shorten the tool list.
+        com.influora.domain.entity.CreatorAgentPreferences representedPrefs =
+                mock(com.influora.domain.entity.CreatorAgentPreferences.class);
+        when(representedPrefs.getBrandTone()).thenReturn("FRIENDLY");
+        when(representedPrefs.getApprovalLevel()).thenReturn(0);
+        when(representedPrefs.isRepresented()).thenReturn(true);
+        when(representedPrefs.isConsentAccepted()).thenReturn(true);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1"))
+                .thenReturn(Optional.of(representedPrefs));
+
+        var representedContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+        assertTrue(representedContext.represented());
+        assertEquals(WIRED_CREATOR_TOOLS, representedContext.toolsEnabled());
+    }
+
+    /**
+     * The {@code /internal/meera/creator/*} tool names {@link CreatorMeeraToolController} actually
+     * serves, read off its {@code @PostMapping} annotations.
+     *
+     * <p>Reflection rather than a hand-kept list, because a hand-kept list is the same defect one
+     * level up: it would have to be edited by the same person who forgot to edit
+     * {@code WIRED_TOOL_NAMES}.
+     */
+    private static java.util.TreeSet<String> creatorMeeraToolRoutes() {
+        java.util.TreeSet<String> routes = new java.util.TreeSet<>();
+        for (java.lang.reflect.Method method :
+                com.influora.web.CreatorMeeraToolController.class.getDeclaredMethods()) {
+            org.springframework.web.bind.annotation.PostMapping mapping =
+                    method.getAnnotation(org.springframework.web.bind.annotation.PostMapping.class);
+            if (mapping == null) {
+                continue;
+            }
+            for (String path : mapping.value()) {
+                routes.add(path.startsWith("/") ? path.substring(1) : path);
+            }
+        }
+        assertFalse(
+                routes.isEmpty(),
+                "no @PostMapping found on CreatorMeeraToolController -- this assertion cannot pass"
+                        + " vacuously");
+        return routes;
     }
 
     @Test

@@ -33,7 +33,9 @@ import com.influora.repository.AiMessageRepository;
 import com.influora.repository.BrandProfileRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.CreatorAgentConversationService;
+import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.IdempotencyService;
+import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -78,6 +80,13 @@ class MeeraSessionServiceTest {
     @Mock private IdempotencyService idempotencyService;
     @Mock private CreatorAgentConversationService creatorAgentConversationService;
 
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.3) — the 11th constructor argument. Only a CREATOR
+     * turn touches it (to resolve that creator's on-behalf tool scope), so it stays an unstubbed
+     * mock for every BRAND-path test in this class.
+     */
+    @Mock private CreatorAgentPreferencesService creatorAgentPreferencesService;
+
     private MeeraSessionService service;
 
     @BeforeEach
@@ -93,7 +102,8 @@ class MeeraSessionServiceTest {
                         streamTokenService,
                         onBehalfTokenService,
                         idempotencyService,
-                        creatorAgentConversationService);
+                        creatorAgentConversationService,
+                        creatorAgentPreferencesService);
     }
 
     private BrandAiCredit creditStatus() {
@@ -442,7 +452,17 @@ class MeeraSessionServiceTest {
         when(contextAssembler.assemble(any(), any())).thenReturn(Map.of());
         when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.BRAND)))
                 .thenReturn("stream-token-1");
-        when(onBehalfTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.BRAND)))
+        // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.3): every mint now goes through the six-argument
+        // overload. A BRAND turn must still pass SCOPE_DEFAULT -- asserted here rather than with
+        // anyString(), because "the brand scope silently changed" is exactly the regression the
+        // scope-carrying overload could introduce.
+        when(onBehalfTokenService.mint(
+                        anyString(),
+                        anyString(),
+                        anyString(),
+                        anyString(),
+                        eq(UserType.BRAND),
+                        eq(OnBehalfTokenService.SCOPE_DEFAULT)))
                 .thenReturn("onbehalf-token-1");
         mockIdempotencyExecuteOnceWithResultRef();
 
@@ -476,7 +496,17 @@ class MeeraSessionServiceTest {
         assertEquals(messageId, saved.getId());
         verify(streamTokenService, times(1)).mint(WORKSPACE_ID, CONVERSATION_ID, messageId, USER_ID, UserType.BRAND);
         verify(onBehalfTokenService, times(1))
-                .mint(WORKSPACE_ID, CONVERSATION_ID, messageId, USER_ID, UserType.BRAND);
+                .mint(
+                        WORKSPACE_ID,
+                        CONVERSATION_ID,
+                        messageId,
+                        USER_ID,
+                        UserType.BRAND,
+                        OnBehalfTokenService.SCOPE_DEFAULT);
+        // The five-argument overload is never reached from doSendTurn any more; if a future edit
+        // put it back, a BRAND turn would still pass but this assertion would catch the drift.
+        verify(onBehalfTokenService, never())
+                .mint(anyString(), anyString(), anyString(), anyString(), any(UserType.class));
     }
 
     @Test
@@ -671,8 +701,18 @@ class MeeraSessionServiceTest {
         when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
         when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.CREATOR)))
                 .thenReturn("creator-stream-token-1");
-        when(onBehalfTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.CREATOR)))
+        when(onBehalfTokenService.mint(
+                        anyString(),
+                        anyString(),
+                        anyString(),
+                        anyString(),
+                        eq(UserType.CREATOR),
+                        anyString()))
                 .thenReturn("creator-onbehalf-token-1");
+        // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.3) — a CREATOR turn resolves its tool scope from the
+        // creator's own preferences before minting; level 0, not represented.
+        when(creatorAgentPreferencesService.getOrCreatePreferences(CREATOR_USER_ID))
+                .thenReturn(preferences(0, false));
         mockIdempotencyExecuteOnceWithResultRef();
 
         MeeraSessionService.TurnResult result =
@@ -693,7 +733,13 @@ class MeeraSessionServiceTest {
         verify(streamTokenService)
                 .mint(eq(CREATOR_USER_ID), eq(CONVERSATION_ID), anyString(), eq(CREATOR_USER_ID), eq(UserType.CREATOR));
         verify(onBehalfTokenService)
-                .mint(eq(CREATOR_USER_ID), eq(CONVERSATION_ID), anyString(), eq(CREATOR_USER_ID), eq(UserType.CREATOR));
+                .mint(
+                        eq(CREATOR_USER_ID),
+                        eq(CONVERSATION_ID),
+                        anyString(),
+                        eq(CREATOR_USER_ID),
+                        eq(UserType.CREATOR),
+                        eq(CreatorToolScopes.SCOPE_LEVEL_0));
 
         // Fix round 2, item 2 -- the USER-message-persist step (doSendTurn) must NOT record the
         // turn any more; a turn whose provider call never completes would otherwise leave a
@@ -701,6 +747,101 @@ class MeeraSessionServiceTest {
         // happens exclusively from persistAssistantWriteback (see the next test).
         verify(creatorAgentConversationService, never())
                 .recordTurnForUser(any(), any(), any());
+    }
+
+    /**
+     * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.3) — only {@code approvalLevel} and
+     * {@code represented} matter to the scope resolution under test.
+     */
+    private static PreferencesResponse preferences(int approvalLevel, boolean represented) {
+        return new PreferencesResponse(
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                List.of(),
+                approvalLevel,
+                "en-IN",
+                null,
+                null,
+                null,
+                null,
+                List.of(),
+                null,
+                represented,
+                null,
+                true,
+                null,
+                false,
+                null,
+                false,
+                0,
+                false);
+    }
+
+    @Test
+    @DisplayName(
+            "T-MEERA-CREATOR-PHASE-B (SPEC.md 3.3): an agency-REPRESENTED creator's on-behalf token"
+                    + " is minted with the read-only represented scope -- no draft_reply, no"
+                    + " draft_application -- regardless of her approval level")
+    void testSendTurnRepresentedCreatorMintsReadOnlyScope() {
+        when(conversationRepository.findByIdAndWorkspaceId(CONVERSATION_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(creatorConversation()));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.CREATOR)))
+                .thenReturn("creator-stream-token-2");
+        when(onBehalfTokenService.mint(
+                        anyString(), anyString(), anyString(), anyString(), eq(UserType.CREATOR), anyString()))
+                .thenReturn("creator-onbehalf-token-2");
+        // Level 1 AND represented: representation must win, or raising a represented creator's
+        // approval level would hand her agency's deals a send capability she never agreed to.
+        when(creatorAgentPreferencesService.getOrCreatePreferences(CREATOR_USER_ID))
+                .thenReturn(preferences(1, true));
+        mockIdempotencyExecuteOnceWithResultRef();
+
+        service.sendTurn(
+                CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY);
+
+        verify(onBehalfTokenService)
+                .mint(
+                        eq(CREATOR_USER_ID),
+                        eq(CONVERSATION_ID),
+                        anyString(),
+                        eq(CREATOR_USER_ID),
+                        eq(UserType.CREATOR),
+                        eq(CreatorToolScopes.SCOPE_REPRESENTED));
+    }
+
+    @Test
+    @DisplayName(
+            "T-MEERA-CREATOR-PHASE-B (SPEC.md 3.3): an approval-level-1 creator's on-behalf token"
+                    + " carries the level-1 scope, which is the only one that includes"
+                    + " send_routine_reply")
+    void testSendTurnLevelOneCreatorMintsLevelOneScope() {
+        when(conversationRepository.findByIdAndWorkspaceId(CONVERSATION_ID, CREATOR_USER_ID))
+                .thenReturn(Optional.of(creatorConversation()));
+        when(messageRepository.save(any(AiMessage.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(streamTokenService.mint(anyString(), anyString(), anyString(), anyString(), eq(UserType.CREATOR)))
+                .thenReturn("creator-stream-token-3");
+        when(onBehalfTokenService.mint(
+                        anyString(), anyString(), anyString(), anyString(), eq(UserType.CREATOR), anyString()))
+                .thenReturn("creator-onbehalf-token-3");
+        when(creatorAgentPreferencesService.getOrCreatePreferences(CREATOR_USER_ID))
+                .thenReturn(preferences(1, false));
+        mockIdempotencyExecuteOnceWithResultRef();
+
+        service.sendTurn(
+                CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID, CONTENT, IDEMPOTENCY_KEY);
+
+        verify(onBehalfTokenService)
+                .mint(
+                        eq(CREATOR_USER_ID),
+                        eq(CONVERSATION_ID),
+                        anyString(),
+                        eq(CREATOR_USER_ID),
+                        eq(UserType.CREATOR),
+                        eq(CreatorToolScopes.SCOPE_LEVEL_1));
     }
 
     @Test

@@ -205,7 +205,13 @@ class CreatorMeeraControllerTest {
                 false,
                 null,
                 true,
-                null);
+                null,
+                // Phase B (§3.10) — the five new read-side components; none matter to these tests.
+                false,
+                null,
+                false,
+                0,
+                false);
     }
 
     @Test

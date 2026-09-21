@@ -31,7 +31,7 @@ class AuthRateLimitFilterPortfolioContactBucketTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        filter = new AuthRateLimitFilter(null);
+        filter = new AuthRateLimitFilter(null, null);
         setField("enabled", true);
         setField("portfolioContactLimit", 2);
         setField("windowSeconds", 60L);

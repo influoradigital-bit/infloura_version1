@@ -11,7 +11,7 @@
  */
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeeraCopilotChat } from './MeeraCopilotChat';
 import type { MeeraStreamHandlers } from '@/hooks/useMeeraStream';
@@ -165,5 +165,151 @@ describe('MeeraCopilotChat outage recovery', () => {
 
     await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByText("Couldn't reach Meera.")).not.toBeInTheDocument());
+  });
+});
+
+describe('MeeraCopilotChat — prefillMessage (U-5, R-U1)', () => {
+  // Explicit setup rather than relying on leftover state from earlier tests in this file —
+  // `vi.clearAllMocks()` (the file's own `afterEach`) clears call history but not implementations
+  // set by `mockResolvedValue`, so these must not depend on execution order.
+  beforeEach(() => {
+    startSessionMock.mockResolvedValue({ conversationId: 'conv_prefill' });
+    getHistoryMock.mockResolvedValue([]);
+  });
+
+  it('fills an empty composer with the prefill text and calls sendTurn zero times', async () => {
+    render(
+      <MeeraCopilotChat
+        firstName="Asha"
+        language="en-IN"
+        onClose={vi.fn()}
+        onConsentRequired={vi.fn()}
+        prefillMessage={{ text: 'Look at brief b_1.', token: 1 }}
+      />,
+    );
+
+    const textbox = await screen.findByPlaceholderText(/Ask Meera/i);
+    expect(textbox).toHaveValue('Look at brief b_1.');
+    // UF5-2 (PRIYA-LASTCALL-U3-U5-0917.md) — without waiting for connect to actually finish
+    // (startSession -> getHistory both resolve, `connecting` goes false), this assertion runs
+    // before a DELAYED auto-send (e.g. an effect gated on `connecting`) would have had any chance
+    // to fire, and stays green regardless of what such a mutation does. Waiting for the real
+    // connect sequence to complete first makes this assertion catch that class of bug on its own.
+    await waitFor(() => expect(getHistoryMock).toHaveBeenCalled());
+    expect(sendTurnMock).not.toHaveBeenCalled();
+  });
+
+  it('appends to whatever the creator already typed, never overwriting it', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <MeeraCopilotChat
+        firstName="Asha"
+        language="en-IN"
+        onClose={vi.fn()}
+        onConsentRequired={vi.fn()}
+        prefillMessage={null}
+      />,
+    );
+
+    const textbox = await screen.findByPlaceholderText(/Ask Meera/i);
+    await user.type(textbox, 'How much did Nykaa pay?');
+
+    rerender(
+      <MeeraCopilotChat
+        firstName="Asha"
+        language="en-IN"
+        onClose={vi.fn()}
+        onConsentRequired={vi.fn()}
+        prefillMessage={{ text: 'Look at brief b_2.', token: 1 }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(textbox).toHaveValue('How much did Nykaa pay? Look at brief b_2.'),
+    );
+    expect(sendTurnMock).not.toHaveBeenCalled();
+  });
+
+  it('re-fires on a new token even with the same text, but never on a re-render with the same token', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <MeeraCopilotChat
+        firstName="Asha"
+        language="en-IN"
+        onClose={vi.fn()}
+        onConsentRequired={vi.fn()}
+        prefillMessage={{ text: 'Look at brief b_1.', token: 1 }}
+      />,
+    );
+    const textbox = await screen.findByPlaceholderText(/Ask Meera/i);
+    expect(textbox).toHaveValue('Look at brief b_1.');
+
+    // Same token, new object identity — must NOT append again.
+    rerender(
+      <MeeraCopilotChat
+        firstName="Asha"
+        language="en-IN"
+        onClose={vi.fn()}
+        onConsentRequired={vi.fn()}
+        prefillMessage={{ text: 'Look at brief b_1.', token: 1 }}
+      />,
+    );
+    expect(textbox).toHaveValue('Look at brief b_1.');
+
+    // The creator clears the box herself, then a genuinely NEW ask (new token) re-fills it.
+    await user.clear(textbox);
+    rerender(
+      <MeeraCopilotChat
+        firstName="Asha"
+        language="en-IN"
+        onClose={vi.fn()}
+        onConsentRequired={vi.fn()}
+        prefillMessage={{ text: 'Look at brief b_1.', token: 2 }}
+      />,
+    );
+    await waitFor(() => expect(textbox).toHaveValue('Look at brief b_1.'));
+  });
+
+  it('U-5 LOW (c): a fast double-click on "Ask Meera" — two distinct tokens, same text — does not append the prompt twice', async () => {
+    // The page's consent re-probe is async, so a double-click produces two DIFFERENT tokens
+    // (unlike the "same token" case above) carrying the SAME prompt text, both arriving before
+    // the creator has typed anything new.
+    const { rerender } = render(
+      <MeeraCopilotChat
+        firstName="Asha"
+        language="en-IN"
+        onClose={vi.fn()}
+        onConsentRequired={vi.fn()}
+        prefillMessage={{ text: 'Look at brief b_1.', token: 1 }}
+      />,
+    );
+    const textbox = await screen.findByPlaceholderText(/Ask Meera/i);
+    expect(textbox).toHaveValue('Look at brief b_1.');
+
+    rerender(
+      <MeeraCopilotChat
+        firstName="Asha"
+        language="en-IN"
+        onClose={vi.fn()}
+        onConsentRequired={vi.fn()}
+        prefillMessage={{ text: 'Look at brief b_1.', token: 2 }}
+      />,
+    );
+    expect(textbox).toHaveValue('Look at brief b_1.');
+  });
+});
+
+describe('MeeraCopilotChat — accessibility (N3, PRIYA-LASTCALL-U3-U5-0917.md re-check)', () => {
+  it('the Send button has an accessible name (WCAG 4.1.2) findable by role and name', async () => {
+    startSessionMock.mockResolvedValue({ conversationId: 'conv_a11y' });
+    getHistoryMock.mockResolvedValue([]);
+
+    render(
+      <MeeraCopilotChat firstName="Asha" language="en-IN" onClose={vi.fn()} onConsentRequired={vi.fn()} />,
+    );
+
+    // Icon-only button — `getByRole` with a `name` only succeeds if it has a real accessible
+    // name (aria-label, aria-labelledby, or text content), not just an icon.
+    expect(await screen.findByRole('button', { name: 'Send message' })).toBeInTheDocument();
   });
 });

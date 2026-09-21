@@ -156,7 +156,29 @@ public final class DealDtos {
             String deadline,
             String usageRights,
             /** T-MEERA-CREATOR-PHASE-A (SPEC.md 4.2, A2) — same shape/semantics as {@link CreateDealRequest#dealTerms}. */
-            @Valid DealTermsDto dealTerms) {}
+            @Valid DealTermsDto dealTerms,
+            /**
+             * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;2.6 / &sect;3.4) — the Meera draft this counter was
+             * approved from, when there was one. Nullable: most counters are typed by hand.
+             *
+             * <p><b>Its only job in Phase B0 is authorship.</b> It is an INPUT to that decision and not
+             * the decision itself: {@code DealService.meeraDraftedAuthorship} resolves it against
+             * {@code meera_drafts} and only then writes {@code MEERA_COUNTER} with
+             * {@code meera_drafted = true}. That stamp is what SPEC.md &sect;14.1.d's
+             * {@code meeraAnchoredShare} — the number the B0-to-B1 decision turns on — is computed
+             * from, and it is not recoverable later without being captured at write time, so the field
+             * has to exist before the rest of the drafts flow does.
+             *
+             * <p><b>A non-blank string is not evidence, and this field is not trusted.</b> An earlier
+             * revision of this javadoc said the id was deliberately unvalidated and that the claim
+             * recorded was "the creator says Meera drafted this". It was not: {@code counter} is a
+             * MUTUAL route, so a BRAND client sets this field too, and any brand could inflate the
+             * Meera-anchored share — the honesty label creators read on a price — by sending an
+             * arbitrary string. The id is now resolved server-side to a draft owned by the acting
+             * creator on this collaboration, and an id that does not resolve is recorded as a
+             * hand-typed counter rather than rejected, so a stale id cannot block a negotiation.
+             */
+            String meeraDraftId) {}
 
     public record RejectRequest(@Size(max = 500) String reason) {}
 

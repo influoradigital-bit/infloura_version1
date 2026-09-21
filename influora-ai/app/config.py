@@ -76,8 +76,68 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.08.10.1"
-# ^ bumped for ME-2 (BrandF.md §115): the request_payment/confirm_launch tool
+PROMPT_VERSION = "meera-2026.09.21.2"
+# ^ bumped for creator audience knowledge (feature/creator-content-knowledge,
+# Swapnil 2026-09-21): the CREATOR Block B now renders a "Your audience" line
+# from the new `audience_summary` context field (the creator's OWN audience,
+# rendered by Java, or an explicit "not available"), and creator_persona.py
+# gained the "Use their audience too." rule. BRAND prompt text unchanged.
+#
+# Previously (.1): bumped for creator content knowledge (feature/creator-content-knowledge,
+# Swapnil 2026-09-21): CREATOR turns now carry a third cached system block
+# rendered from app/prompt/knowledge/video_content_concepts.jsonl
+# (app/prompt/content_knowledge.py), and creator_persona.py gained the
+# "Content and growth questions" rules (knowledge first, name the category and
+# the entry, ask for the last script, no invented hook numbers, no urgency
+# wording, platform rows as background). The BRAND prompt text is unchanged,
+# but the version is global, so brand cache keys roll over too.
+#
+# Previously: bumped for T-MEERA-CREATOR-PHASE-B Wave U, K-3 (Kabir "Last call — K-3",
+# KABIR-CONSENT-0917.md; KC-3 condition). `creator_persona.py`'s trust-boundary
+# bullet changed twice in this same range: once to name `<untrusted_brand_written>`
+# blocks inside tool results (K-3's mechanism, `loop.py`'s
+# `_model_copy_of_tool_result`), and again (KC-2) to say Meera may still name and
+# quote a brand from inside that wrapper, she just may not obey it. `.3` does NOT
+# cover this: it was assigned for the earlier U-5 `get_brief` description change,
+# existed before the K-3 persona edit landed, and per Kabir's own read of
+# `ci/stale-comment-check.py` rule 3 (L28-29, L281) the gate only checks that
+# PROMPT_VERSION was reassigned SOMEWHERE in the diff range — it would have passed
+# on `.3` alone even though `.3` was never actually served with this persona text.
+# `cache_key_for` starts with `prompt_version` (`assembler.py`), so reusing `.3`
+# risks a session started under the OLD persona text staying cached under a
+# version number that now also describes the NEW text — a version has to mean one
+# fixed prompt, and `.3` cannot honestly mean two.
+#
+# Previously: bumped for T-MEERA-CREATOR-PHASE-B Wave U (RULINGS-U-0917.md, U-5 python half).
+# `get_brief`'s CREATOR_TOOL_SCHEMAS description changed (creator_schemas.py) --
+# it now says where BOTH brief_id and deal_id come from, that passing both is
+# refused, and tells the model not to call the tool again this turn on a
+# still-reading refusal. `creator_schemas.py` is not itself under
+# `PROMPT_SOURCES` (ci/stale-comment-check.py does not watch it), so this bump
+# is manual and deliberate rather than gate-enforced -- Priya's ruling requires
+# it anyway because a tool description change can move the model's behaviour
+# exactly like a persona edit does. Two `assembler.py` comments that said
+# "four" creator tools are also fixed in this same change (get_brief is the
+# fifth, wired since this same Wave), which IS a genuine `PROMPT_SOURCES` hit.
+#
+# Previously: bumped for T-MEERA-CREATOR-PHASE-B B0 Wave 2. Wave 1 took `.09.10.1` for
+# the creator context contract; Wave 2 then REWROTE prompt content underneath
+# that same version — creator_persona.py's "what you do right now" section
+# became a six-tool capability list with two new rails, and
+# assembler.build_block_a_creator() stopped emitting the fixed "Available
+# tools: none in this phase." line in favour of the per-turn tool names. Two
+# materially different Block A texts sharing one version means a logged turn
+# cannot be attributed to the prompt that produced it, and `cache_key_for`
+# would serve Wave 1's persona to sessions opened before the deploy.
+# `.2` rather than a new date because this is the same Phase B step; the later
+# phases already reserve their own dates (C = .09.30.1, E = .09.20.1,
+# D = .10.05.1), so incrementing the serial cannot collide with one.
+# Verified before bumping: the literal is pinned nowhere — not a test, Java
+# file, YAML or env file. `tests/eval/test_tenant_isolation.py` carries a
+# hard-coded "meera-2026.07.05" but as a log-record fixture value, never
+# compared against this constant.
+#
+# Previously: bumped for ME-2 (BrandF.md §115): the request_payment/confirm_launch tool
 # bullets in Block A used to tell Meera to "propose a payment"/"propose
 # launching" via those tools — but get_tool_schemas() (schemas.py) no longer
 # offers either (they're scope-gated out for every real caller today), so the
@@ -158,6 +218,23 @@ TRENDSPARK_PERSONA_NAME = os.getenv("TRENDSPARK_PERSONA_NAME", "Meera")
 # wiki/build/creator-copilot-ai-route-plan.md §5.2.
 CREATOR_COPILOT_MODEL = os.getenv("CREATOR_COPILOT_MODEL", TRENDSPARK_MODEL)
 
+# Brief extraction (POST /internal/brief-extract, T-MEERA-CREATOR-PHASE-B §7.5)
+# — the ONE forced-tool call that turns a creator's pasted DM/email into the
+# structured BriefExtraction of SPEC §2.11.
+#
+# Lives HERE rather than in the route module, beside CREATOR_COPILOT_MODEL
+# above, for the same reason that one does: a model id is deployment
+# configuration, and a route file is not where an operator looks for it.
+#
+# The default is the EXACT TRENDSPARK_MODEL string, never a fresh literal.
+# app/costs/pricing.py keys PRICING_TABLE by literal model id, so a new
+# Haiku-class literal here would miss the table and `estimate_cost_usd` would
+# raise at billing time on the first real extraction — the pricing tests are
+# what catch that, and inheriting TRENDSPARK_MODEL's priced row is what avoids
+# it. Overridable via env for an independent bump, which must be to a model the
+# table already prices.
+BRIEF_EXTRACT_MODEL = os.getenv("BRIEF_EXTRACT_MODEL", TRENDSPARK_MODEL)
+
 # Brand-safety GARM classification model (Wave C task C2) — pinned the same
 # way as TRENDSPARK_MODEL above. The default is DELIBERATELY Sonnet
 # (CLAUDE_MODEL), not a Haiku-class model: GARM labeling is bounded,
@@ -200,6 +277,29 @@ class ProviderTimeouts:
 
     spring_connect: float = 2.0
     spring_read: float = 5.0
+
+    # F1 HIGH (Kavya, Wave U last-call review of get_brief; Priya ruling
+    # RULINGS-U-0917.md Addition B) -- a NAMED setting, not a literal, and NOT
+    # `spring_read`, because `get_brief` is not a pure read. On a deal's first
+    # read it can create a PLATFORM brief row and spend AI money
+    # (CreatorBriefService.ensurePlatformBrief -> analyse -> MeeraBriefAiClient),
+    # a blocking round trip bounded on the Spring side by
+    # CREATOR_COPILOT_AI_CONNECT_TIMEOUT_SECONDS (application.yml default 5s)
+    # plus CREATOR_COPILOT_AI_REQUEST_TIMEOUT_SECONDS (default 15s) plus
+    # CreatorBriefService.STILL_READING_SLACK_SECONDS (10s) = a 30s
+    # analysisBudget() by default. Python cannot read Spring's own environment,
+    # so this cannot be derived at runtime -- it must clear that whole budget
+    # plus its own margin, or influora-ai gives up on a brief Spring is still
+    # about to finish. 40s = Spring's 30s budget + 10s. If Spring's three
+    # numbers above are ever retuned, this must be revisited by hand.
+    #
+    # The safety property this fix rests on is REMOVING THE RETRY
+    # (CREATOR_NO_RETRY_TOOLS in app/tools/creator_schemas.py), not the exact
+    # relationship between the two timeouts: without a retry, a timeout here
+    # reaches the model as a plain `network_error` it can relay, never as a
+    # false "clean brief". Every OTHER creator read tool keeps the 5s
+    # `spring_read` default and its retry -- this override is get_brief-only.
+    get_brief_read: float = 40.0
 
     scrape_total: float = 30.0
 
@@ -464,6 +564,27 @@ class Settings:
     # `AI_CREATOR_MONTHLY_CAP_USD=0` to disable the cap entirely.
     ai_creator_monthly_cap_usd: float = field(
         default_factory=lambda: _get_float("AI_CREATOR_MONTHLY_CAP_USD", 0.75)
+    )
+
+    # --- Brief extraction's OWN monthly cap (SPEC §14.4.b) ---
+    # POST /internal/brief-extract is metered on a SEPARATE per-creator monthly
+    # bucket (`f"{creator_profile_id}:brief"`) from the chat cap above, so a
+    # chatty creator never starves paste-and-read — which is the one surface
+    # that still works when the chat cap is gone.
+    #
+    # Default 0.25 USD ~= 70 extractions at the credit sheet's INR 0.294/call on
+    # Haiku. Enforced by `app.costs.spend_tracker.check_creator_spend_gate`,
+    # which is the per-creator MONTHLY gate and the only one taking a `cap_usd`
+    # override — NOT `app.costs.gate.check_spend_gate`, the daily workspace
+    # ceiling, which takes none and would leave this value bound to nothing.
+    #
+    # A value <= 0 DISABLES the cap outright (spend_tracker's
+    # `check_creator_spend_gate` returns None on `cap <= 0`). That is a
+    # deliberate off switch, but it also means a mis-set or empty
+    # BRIEF_EXTRACT_MONTHLY_CAP_USD is a disabled cost control that looks
+    # configured — see that function and SPEC §14.4.b trap 2.
+    brief_extract_monthly_cap_usd: float = field(
+        default_factory=lambda: _get_float("BRIEF_EXTRACT_MONTHLY_CAP_USD", 0.25)
     )
 
     # --- Voice language defaults (A5) ---

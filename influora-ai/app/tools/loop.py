@@ -26,9 +26,18 @@ from app.clients.spring import (
     SpringInternalClient,
     idempotency_key_for,
 )
-from app.config import PROMPT_VERSION
+from app.config import PROMPT_VERSION, get_settings
+from app.prompt.untrusted import wrap_untrusted
 from app.providers.claude import ClaudeProvider
 from app.routes.analyze_site import perform_site_analysis
+from app.tools.creator_schemas import (
+    CHECK_DEAL_RISKS,
+    CREATOR_IDEMPOTENT_REQUIRED_TOOLS,
+    CREATOR_NO_RETRY_TOOLS,
+    CREATOR_TOOL_TO_SPRING_PATH,
+    GET_BRIEF,
+    GET_MY_DEALS,
+)
 from app.tools.schemas import (
     IDEMPOTENT_REQUIRED_TOOLS,
     PRESENT_OPTIONS,
@@ -154,14 +163,37 @@ async def run_tool_loop(
     """Runs the full function-calling loop for one /chat turn, yielding
     normalized LoopEvents as they occur (text tokens, tool lifecycle, done/error).
 
-    `tools` (Meera for Creators Phase A, A4): the tool schemas offered to
-    Claude for this turn. `None` (every pre-existing caller) means the full
-    BRAND set from `get_tool_schemas()`. CREATOR turns pass `[]` -- no money
-    tools, no brand tools -- and `assemble_prompt` is the single place that
-    decides which; the route only forwards `prompt.tools`.
+    `tools` (Meera for Creators, A4 / SPEC.md §7.2): the tool schemas offered
+    to Claude for this turn. `None` (every pre-existing caller) means the full
+    BRAND set from `get_tool_schemas()`. CREATOR turns pass the creator set the
+    creator's `tools_enabled` grants -- never a money tool, never a brand tool,
+    and `[]` when nothing is granted. `assemble_prompt` is the single place
+    that decides which; the route only forwards `prompt.tools`.
     """
     messages = list(initial_messages)
     tools = get_tool_schemas() if tools is None else list(tools)
+    # SPEC.md §7.3 / Kabir LOW 4 — the PER-TURN gate.
+    #
+    # `is_known_tool` is a GLOBAL allowlist: since B0 widened it, all six
+    # creator names pass it on every turn, brand turns included. Without this
+    # set the loop never compares an emitted name against what was actually
+    # offered, so a brand turn that emits `draft_reply` (a brief or a pasted
+    # DM is untrusted text; getting the model to name a tool is cheap) is
+    # forwarded to `/internal/meera/creator/draft_reply` carrying the BRAND's
+    # on-behalf JWT. That request fails closed at Spring — a brand's
+    # SCOPE_DEFAULT names no creator tool, so `CreatorMeeraToolController`
+    # 403s it and nothing leaks — but the boundary then exists only remotely,
+    # and the round trip is a free amplifier for whoever controls the injected
+    # text. Refuse locally instead: no socket, no JWT on the wire.
+    #
+    # Built from `tools` because that IS the offer: `assemble_prompt` derives
+    # it from the creator's `tools_enabled`, so a creator whose scope grants
+    # three tools cannot dispatch the other three either. Empty offer set =
+    # nothing dispatchable, which is the correct reading of an empty offer and
+    # the direction a missing context must fail in.
+    offered_tool_names = {
+        t["name"] for t in tools if isinstance(t, dict) and isinstance(t.get("name"), str)
+    }
     iterations = 0
     final_usage: dict[str, Any] | None = None
     # P1 BLANK TURN fix (F2): bounded to ONE retry across the entire loop call
@@ -340,6 +372,48 @@ async def run_tool_loop(
                 yield LoopEvent(type="tool_result", tool_name=tool_name, tool_status="error", tool_result_data=result_payload)
                 continue
 
+            # The per-turn half of the gate (see `offered_tool_names` above).
+            # Runs AFTER `is_known_tool` so an invented name still reports as
+            # `unknown_tool`, and BEFORE the local-tool branch so it also
+            # covers `analyze_site` / `present_options` — brand-only surface a
+            # CREATOR turn must not be able to reach either.
+            #
+            # THE ONE EXEMPTION is a money tool. `get_tool_schemas()` stopped
+            # offering request_payment/confirm_launch (ME-2), yet the loop
+            # deliberately keeps forwarding them so Spring's on-behalf
+            # rejection can drive MONEY_TOOL_SCOPE_DECLINE below — a shipped,
+            # tested behaviour, not an oversight. It is not a hole of the kind
+            # this gate closes: a money tool routes to the caller's OWN
+            # `/internal/meera/<name>` prefix under the caller's own JWT, so
+            # no audience boundary is crossed, and the far end refuses on
+            # scope. DO NOT add any other name here — every addition
+            # re-opens exactly the cross-audience forward described above.
+            if tool_name not in offered_tool_names and not is_money_tool(tool_name):
+                logger.warning(
+                    "rejected tool call not offered this turn: %s (offered=%s)",
+                    tool_name,
+                    sorted(offered_tool_names),
+                )
+                result_payload = {
+                    "error": "tool_not_offered",
+                    "message": f"tool {tool_name!r} was not offered on this turn",
+                }
+                tool_result_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": _safe_json(result_payload),
+                        "is_error": True,
+                    }
+                )
+                yield LoopEvent(
+                    type="tool_result",
+                    tool_name=tool_name,
+                    tool_status="error",
+                    tool_result_data=result_payload,
+                )
+                continue
+
             # Local (Python-native) tools run in-process, NOT forwarded to Spring.
             # analyze_site: SSRF-guarded page fetch + Gemini classify so Meera
             # reads the brand's REAL product/price from a pasted URL instead of
@@ -449,9 +523,47 @@ async def run_tool_loop(
                 )
                 continue
 
-            path = TOOL_TO_SPRING_PATH[tool_name]
+            # SPEC.md §7.3. This lookup and `is_known_tool` are ONE edit: the
+            # brand map alone would KeyError on a creator tool that
+            # `is_known_tool` had just accepted, and this line sits OUTSIDE the
+            # `try` below, so that KeyError is unhandled and kills a live
+            # stream mid-turn. `.get(...)` then a `.get(...)` (never a bracket
+            # subscript on either map) also covers the third case: a name that
+            # is known but has no route in either map — a schema shipped ahead
+            # of its endpoint — which degrades to an error tool_result the
+            # model can narrate instead of a 500.
+            path = TOOL_TO_SPRING_PATH.get(tool_name) or CREATOR_TOOL_TO_SPRING_PATH.get(tool_name)
+            if not path:
+                logger.error("no Spring route for known tool %s — degrading to an error result", tool_name)
+                result_payload = {
+                    "error": "tool_not_routable",
+                    "message": f"tool {tool_name!r} has no endpoint in this deployment",
+                }
+                tool_result_blocks.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": _safe_json(result_payload),
+                        "is_error": True,
+                    }
+                )
+                yield LoopEvent(
+                    type="tool_result",
+                    tool_name=tool_name,
+                    tool_status="error",
+                    tool_result_data=result_payload,
+                )
+                continue
+
             idempotency_key = None
-            if tool_name in IDEMPOTENT_REQUIRED_TOOLS:
+            # Both idempotency sites consider the creator set — this one and
+            # `allow_retry=` below. They are a pair: requiring the key without
+            # disabling retry leaves a commit-like creator tool silently
+            # retryable, which is the failure this comment exists to prevent.
+            if (
+                tool_name in IDEMPOTENT_REQUIRED_TOOLS
+                or tool_name in CREATOR_IDEMPOTENT_REQUIRED_TOOLS
+            ):
                 idempotency_key = idempotency_key_for(tool_use_id, ctx.workspace_id)
 
             # Forward the tool input AS-PROPOSED. Never treat any amount-shaped
@@ -462,6 +574,19 @@ async def run_tool_loop(
             forward_payload = dict(tool_input)
             forward_payload["workspace_id"] = ctx.workspace_id
 
+            # F1 HIGH fix (RULINGS-U-0917.md Addition B): get_brief is not a pure
+            # read (see CREATOR_NO_RETRY_TOOLS's own comment) and needs both a
+            # longer read timeout AND no retry -- widening the timeout alone
+            # would not have fixed the wrong-answer bug, only made it rarer.
+            # A single conditional expression, keyed on the one tool that needs
+            # an override today (Kavya U-1 re-review, H1: this used to describe
+            # a dict-keyed-by-tool_name design that was never written). If a
+            # second tool ever needs its own override, replace this with a
+            # dict keyed by tool_name rather than stacking a second ternary.
+            read_timeout_override = (
+                get_settings().timeouts.get_brief_read if tool_name == GET_BRIEF else None
+            )
+
             try:
                 response = await spring.call_tool_endpoint(
                     tool_name=tool_name,
@@ -469,7 +594,12 @@ async def run_tool_loop(
                     payload=forward_payload,
                     onbehalf_jwt=ctx.onbehalf_jwt,
                     idempotency_key=idempotency_key,
-                    allow_retry=tool_name not in IDEMPOTENT_REQUIRED_TOOLS,
+                    allow_retry=(
+                        tool_name not in IDEMPOTENT_REQUIRED_TOOLS
+                        and tool_name not in CREATOR_IDEMPOTENT_REQUIRED_TOOLS
+                        and tool_name not in CREATOR_NO_RETRY_TOOLS
+                    ),
+                    read_timeout_override=read_timeout_override,
                 )
             except SpringCallError as exc:
                 # ME-2 (BrandF.md §115): a money tool rejected on the on-behalf
@@ -525,6 +655,14 @@ async def run_tool_loop(
                 )
                 continue
 
+            # §7.3: the BROWSER's copy of `data` (the `tool_result_data` yielded
+            # below) is never reshaped, for brand or creator tools -- the creator
+            # cards (`CreatorToolResultRenderer`, §8.4) render straight off this
+            # payload, so a field dropped or renamed here is a card that silently
+            # renders empty rather than an error anyone sees. Since K-3 the
+            # MODEL's copy is a separate value and may be split into a trusted
+            # part plus an `<untrusted_brand_written>` wrapper for get_brief,
+            # check_deal_risks and get_my_deals -- see `_model_copy_of_tool_result`.
             data = response.data or {}
             action = data.get("action") if isinstance(data, dict) else None
             if action == "AWAIT_HUMAN_CONFIRM" or data.get("status") == "PENDING_CONFIRM":
@@ -535,7 +673,11 @@ async def run_tool_loop(
                 {
                     "type": "tool_result",
                     "tool_use_id": tool_use_id,
-                    "content": _safe_json(data),
+                    # K-3: the MODEL's copy only -- may wrap brand-written fields in
+                    # <untrusted_brand_written> for get_brief/check_deal_risks/get_my_deals.
+                    # `data` itself is never touched (see _model_copy_of_tool_result's own
+                    # docstring) -- the LoopEvent below still carries the original object.
+                    "content": _model_copy_of_tool_result(tool_name, data),
                 }
             )
             yield LoopEvent(type="tool_result", tool_name=tool_name, tool_status="ok", tool_result_data=data)
@@ -560,3 +702,318 @@ def _safe_json(data: Any) -> str:
     import json as _json
 
     return _json.dumps(data, default=str)
+
+
+# K-3 KC-1 (Kabir, "Last call — K-3" §Conditions, KABIR-CONSENT-0917.md): TRUSTED allow-lists,
+# not brand-written deny-lists. The first version of this named the brand-written keys and
+# trusted everything else by default -- Kabir's adversarial probe added an unlisted top-level
+# `last_brand_message` to a get_brief payload and an unlisted per-deal `last_message_preview` to
+# a get_my_deals payload, and BOTH landed OUTSIDE the wrapper, because a deny-list trusts an
+# unknown key by construction. Wave D adds exactly this kind of field. Naming what IS trusted and
+# wrapping everything else -- including any future, unrecognised key -- means a field nobody has
+# written a rule for yet still defaults to wrapped, not defaults to trusted.
+#
+# get_brief: `quote` is the only container kept trusted, because it is computed entirely by
+# Influora (RateQuoteService.java L330-351: Rendered.money values, the creator's own currency
+# preference, fixed constants, a provenance built from a count) -- no brand budget label reaches
+# it, only a BigDecimal. Everything else not named here (starting with `extraction` and `flags`,
+# but also any field Wave D adds) is wrapped.
+_TRUSTED_KEYS_GET_BRIEF = ("brief_id", "source", "status", "deal_id", "quote", "extraction_source")
+# check_deal_risks: `highest_severity` (a severity name), `target` (DEAL/BRIEF) and `target_id`
+# (an id) are the only fields that are not the `flags` array a rule wrote text into.
+_TRUSTED_KEYS_CHECK_DEAL_RISKS = ("highest_severity", "target", "target_id")
+# get_my_deals: two allow-lists -- top-level result fields, and per-deal fields. `deals` itself
+# is handled specially below (split per deal), not listed as trusted or wrapped whole.
+_TRUSTED_KEYS_GET_MY_DEALS = ("active_count", "completed_count")
+# Every field CreatorToolDtos.DealSummary carries (influora-api .../CreatorToolDtos.java L29-43)
+# EXCEPT brand_name (workspace.getName(), GetMyDealsExecutor.java L138-143) and campaign_title
+# (campaign.getTitle(), L182) -- both confirmed brand-authored by Kabir's read of the executor.
+# status/status_label/next_action are Influora's own fixed vocabulary (statusLabel L247-262,
+# nextAction L202-223, itself only interpolating a Rendered.date); amount/next_deadline are
+# Rendered.money/Rendered.date; currency is a 3-char column (Collaboration.java L44-45) that
+# cannot carry an instruction; the rest are ids, a count and two booleans.
+_TRUSTED_DEAL_FIELDS_GET_MY_DEALS = (
+    "deal_id",
+    "status",
+    "status_label",
+    "amount",
+    "amount_value",
+    "currency",
+    "next_action",
+    "next_deadline",
+    "secured",
+    "unread_count",
+    "has_pending_offer",
+    "brief_id",
+)
+
+# F-0771 (MEDIUM, latent -- Priya "Last call -- K-3" F2): the allow-lists above only
+# classify TOP-LEVEL and per-deal keys. `quote` sits in _TRUSTED_KEYS_GET_BRIEF as a
+# container trusted WHOLE, so an unknown key one level inside it (Kabir/Priya's probe:
+# `quote.brand_budget_note`) rode along outside the wrapper -- nobody had written a rule
+# for it, and a container trusted whole trusts everything inside it by construction,
+# which is the same deny-list shape KC-1 removed at the top level, one level down. These
+# three pin PackageQuote/QuoteLine/AddOnLine (CreatorToolDtos.java) field-for-field; see
+# _is_fully_trusted_quote below and the drift test in
+# test_k3_dto_field_classification_drift.py -- which goes red if Java adds a field here
+# that isn't named on either side, but ONLY for a component with a snake_case
+# @JsonProperty name (an unannotated or camelCase field is invisible to its regex parse --
+# R5, Priya "Last call -- K-3 re-check" 0918). ai-tests.yml's path filter runs this file on
+# a PR whose diff touches influora-ai/** OR
+# influora-api/src/main/java/com/influora/web/dto/meera/** (added K-3 round 4, Priya
+# "Last call -- K-3 round 4" 0918, so a Java-only PR that only edits CreatorToolDtos.java
+# still runs the drift test).
+_TRUSTED_KEYS_QUOTE = (
+    "lines",
+    "add_ons",
+    "bundle_discount",
+    "bundle_discount_value",
+    "total",
+    "total_value",
+    "anchor",
+    "anchor_value",
+    "floor_total",
+    "floor_total_value",
+    "range_min",
+    "range_max",
+    "currency",
+    "payment_schedule",
+    "revision_rounds",
+    "provenance",
+    "provenance_sample_size",
+    "recommended_move",
+    "scope_down_offer",
+    "withheld",
+    "withheld_reason",
+)
+_TRUSTED_KEYS_QUOTE_LINE = (
+    "type",
+    "qty",
+    "unit_price",
+    "unit_price_value",
+    "line_total",
+    "line_total_value",
+    "below_floor",
+)
+_TRUSTED_KEYS_ADD_ON = ("code", "label", "amount", "amount_value", "basis")
+
+
+_JSON_SCALAR_TYPES = (str, int, float, bool, type(None))
+
+
+def _is_json_scalar(value: Any) -> bool:
+    """A JSON leaf value with nowhere left to hide a dict or a list. Every trusted key's
+    value must be one of these (R2, see `_split_trusted_scalar` below) -- the handful of
+    containers Influora's own DTOs are known to send (`quote`, `lines`, `add_ons`, `deals`)
+    are the only exemptions, and each of those is validated structurally in its own right
+    instead of by this scalar check.
+    """
+    return isinstance(value, _JSON_SCALAR_TYPES)
+
+
+def _is_fully_trusted_quote(quote: Any) -> bool:
+    """F-0771 (R2, Priya "Last call -- K-3 re-check" 0918): `quote` stays OUTSIDE the
+    wrapper only if (a) every key inside it, and inside each `lines[]`/`add_ons[]` entry, is
+    one PackageQuote/QuoteLine/AddOnLine is known to carry -- Influora-computed, never brand
+    text (Priya's read of RateQuoteService; see the module docstring above) -- AND (b) every
+    one of those keys' values is itself a JSON scalar (`_is_json_scalar`), except `lines` and
+    `add_ons` themselves, which are containers validated structurally by (a)+(b) applied to
+    their own elements one level down, not scalar-checked directly. That combination is what
+    makes this "every key, every depth this container ever has" rather than depth in the
+    abstract: once every non-container key's value is confirmed scalar, there is no further
+    depth left for anything to hide in. Before R2 this function only checked (a) -- a dict
+    slipped under a recognised key's name (Kabir/Priya's probe: `quote.total` holding a dict,
+    or `quote.lines[0].type` holding one) passed the key-set check and rode along trusted; R2
+    closes exactly that gap.
+
+    Either failure -- an unrecognised key, OR a recognised key holding a non-scalar,
+    non-container value -- pulls the ENTIRE quote container into the wrapper, rather than
+    reconstructing a partial, still-shaped quote with just the offending leaf spliced out.
+    Rebuilding a partial nested structure per unknown/non-scalar field is exactly the
+    piecemeal, easy-to-get-wrong filtering KC-1 rejected at the top level; wrapping the whole
+    container is that same allow-list default (unclassified defaults to wrapped) applied one
+    level down, and it is safe by construction -- nothing Spring sends today trips it, which
+    is why F-0771 is latent, not live.
+    """
+    if not isinstance(quote, dict) or not set(quote.keys()) <= set(_TRUSTED_KEYS_QUOTE):
+        return False
+    for key, value in quote.items():
+        if key in ("lines", "add_ons"):
+            continue
+        if not _is_json_scalar(value):
+            return False
+    lines = quote.get("lines")
+    if lines is not None:
+        if not isinstance(lines, list):
+            return False
+        for line in lines:
+            if not isinstance(line, dict) or not set(line.keys()) <= set(_TRUSTED_KEYS_QUOTE_LINE):
+                return False
+            if not all(_is_json_scalar(v) for v in line.values()):
+                return False
+    add_ons = quote.get("add_ons")
+    if add_ons is not None:
+        if not isinstance(add_ons, list):
+            return False
+        for add_on in add_ons:
+            if not isinstance(add_on, dict) or not set(add_on.keys()) <= set(_TRUSTED_KEYS_ADD_ON):
+                return False
+            if not all(_is_json_scalar(v) for v in add_on.values()):
+                return False
+    return True
+
+
+def _split_trusted_scalar(
+    data: dict[str, Any],
+    trusted_keys: tuple[str, ...],
+    container_keys: frozenset[str] = frozenset(),
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """R2 (Priya "Last call -- K-3 re-check" 0918, F-0771 finding R2): extends KC-1's
+    allow-list rule one level further down than a bare key-NAME check can reach. A trusted
+    key's name is not enough -- G4-G8/C1/M3/M4/M6 all probed a recognised key (`quote.total`,
+    top-level `status`, `target`, per-deal `next_action`, ...) holding a dict or a list
+    instead of the scalar every Java DTO field of that name actually is. Every field a
+    `_TRUSTED_*` tuple names is a `String`/`BigDecimal`/`int`/`boolean` (never a nested record
+    or a collection) EXCEPT the handful of known containers passed in `container_keys`
+    (`quote`, for get_brief -- `deals` never reaches this helper; it has its own dedicated
+    per-element split below) -- those are validated structurally by their own dedicated
+    check instead of by `_is_json_scalar` here. Anything else -- an unrecognised key, or a
+    recognised one holding a non-scalar, non-container value -- moves to the untrusted
+    bucket: the allow-list default is "wrapped", not "trusted because the name matched and
+    nobody checked the shape."
+    """
+    trusted: dict[str, Any] = {}
+    brand: dict[str, Any] = {}
+    for key, value in data.items():
+        if key not in trusted_keys:
+            brand[key] = value
+        elif key in container_keys or _is_json_scalar(value):
+            trusted[key] = value
+        else:
+            brand[key] = value
+    return trusted, brand
+
+
+def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
+    """The JSON string the MODEL reads for a creator tool's result. The ONLY thing this may
+    change — `LoopEvent.tool_result_data` (what the browser card renders) must stay the exact
+    `data` object passed in, at every call site, so the card never sees escaped or restructured
+    text. This function never mutates `data`; every dict it returns is a new one.
+
+    K-3: `neutralize_angle_brackets` alone (which is all the original get_brief mechanism did)
+    does not address this threat — a JSON string inside a `tool_result` block has no delimiter
+    for escaping to protect, so "ignore previous instructions" reaches the model exactly as
+    written whether or not its angle brackets are escaped. `wrap_untrusted` supplies BOTH the
+    delimiter (which the persona now names explicitly, `creator_persona.py`) and the
+    neutralisation (so the brand's text cannot forge its OWN closing tag and escape the wrapper)
+    together, which escaping alone cannot do.
+
+    Scoped to get_brief, check_deal_risks and get_my_deals — the three creator tools whose
+    result carries brand-authored free text today (Priya's audit, round 3 §5 point 4;
+    estimate_my_rate's `PackageQuote` carries none, and Block A/B context fields are a separate
+    surface this item does not touch). Every other tool, and a non-dict payload (an error shape,
+    or `None`), passes through as plain `_safe_json` — unchanged from before this fix.
+    """
+    if not isinstance(data, dict):
+        return _safe_json(data)
+
+    if tool_name == GET_BRIEF:
+        # R2: `quote` is the one known container among this tool's trusted keys -- every
+        # OTHER trusted key (brief_id, source, status, deal_id, extraction_source) must be
+        # a scalar (G7, G8) or it moves to `brand` here, same as an unrecognised key.
+        trusted, brand = _split_trusted_scalar(
+            data, _TRUSTED_KEYS_GET_BRIEF, container_keys=frozenset({"quote"})
+        )
+        quote = trusted.get("quote")
+        if quote is not None and not _is_fully_trusted_quote(quote):
+            # F-0771: an unrecognised key, or a recognised key holding a non-scalar value
+            # (G4-G6) -- the nested-container gap -- moves the WHOLE container into the
+            # wrapper instead of leaking it, or part of it, trusted.
+            brand["quote"] = trusted.pop("quote")
+        if not brand:
+            return _safe_json(data)
+        return _safe_json(trusted) + "\n" + wrap_untrusted("brand_written", _safe_json(brand))
+
+    if tool_name == CHECK_DEAL_RISKS:
+        # R2: none of this tool's trusted keys is a known container -- `target` holding a
+        # dict (C1) is exactly as untrusted as an unrecognised key.
+        trusted, brand = _split_trusted_scalar(data, _TRUSTED_KEYS_CHECK_DEAL_RISKS)
+        if not brand:
+            return _safe_json(data)
+        return _safe_json(trusted) + "\n" + wrap_untrusted("brand_written", _safe_json(brand))
+
+    if tool_name == GET_MY_DEALS:
+        deals = data.get("deals")
+        data_without_deals = {k: v for k, v in data.items() if k != "deals"}
+        # Unknown TOP-LEVEL keys (not "deals", not in the trusted set) are brand-written by
+        # default too -- KC-1's allow-list applies at both levels, not only per-deal. R2:
+        # neither `active_count` nor `completed_count` is a known container, so
+        # `_split_trusted_scalar` (no `container_keys`) folds a non-scalar value under
+        # either name (M4) into `other_top_level` the same way it folds an unrecognised key.
+        trusted_top, other_top_level = _split_trusted_scalar(
+            data_without_deals, _TRUSTED_KEYS_GET_MY_DEALS
+        )
+        # F-0771(b): GetMyDealsResult.deals is a Java List -- a "deals" value that IS
+        # present but is not a list (Kabir/Priya's probe: a dict) is not a shape Spring
+        # ever sends, and the allow-list default applies to SHAPE too, not only to field
+        # names. Fold it into the brand bucket instead of letting it ride along in
+        # `trusted` untouched.
+        if "deals" in data and deals is not None and not isinstance(deals, list):
+            brand_other = dict(other_top_level)
+            brand_other["deals"] = deals
+            return (
+                _safe_json(trusted_top)
+                + "\n"
+                + wrap_untrusted("brand_written", _safe_json({"_other": brand_other}))
+            )
+
+        if not deals:
+            if not other_top_level:
+                return _safe_json(data)
+            trusted = dict(trusted_top)
+            if "deals" in data:
+                trusted["deals"] = deals
+            return (
+                _safe_json(trusted)
+                + "\n"
+                + wrap_untrusted("brand_written", _safe_json({"_other": other_top_level}))
+            )
+
+        brand_by_deal: dict[str, Any] = {}
+        trusted_deals: list[Any] = []
+        for i, deal in enumerate(deals):
+            if not isinstance(deal, dict):
+                # F-0771(b): a non-dict element (Kabir/Priya's probe shape) is not a
+                # DealSummary either -- wrap it whole, keyed by position like a dict
+                # deal's brand fields, with a placeholder left in `trusted_deals` so
+                # positions still line up for the model to match a wrapped entry back
+                # to its slot.
+                brand_by_deal[str(i)] = {"_value": deal}
+                trusted_deals.append(None)
+                continue
+            # R2: a recognised per-deal key holding a non-scalar value (M3: `next_action` a
+            # dict; M6: `status` a list) is exactly as untrusted as an unlisted per-deal key
+            # -- none of DealSummary's trusted fields is itself a container.
+            trusted_deal, brand_fields = _split_trusted_scalar(
+                deal, _TRUSTED_DEAL_FIELDS_GET_MY_DEALS
+            )
+            if brand_fields:
+                # Keyed by POSITION, not `deal_id` (Kabir, "Re-check — K-3 conditions" LOW #4):
+                # two deals sharing an id, or a deal with none, collided under a deal_id key and
+                # one deal's brand fields were silently overwritten -- lost from the model's copy
+                # entirely, not merely leaked. `trusted_deals` is the same list in the same order,
+                # so the model matches a wrapped entry back to its trusted deal by position in the
+                # (unchanged-order) `deals` array, and every deal's brand fields survive.
+                brand_by_deal[str(i)] = brand_fields
+            trusted_deals.append(trusted_deal)
+
+        brand: dict[str, Any] = dict(brand_by_deal)
+        if other_top_level:
+            brand["_other"] = other_top_level
+        if not brand:
+            return _safe_json(data)
+        trusted = dict(trusted_top)
+        trusted["deals"] = trusted_deals
+        return _safe_json(trusted) + "\n" + wrap_untrusted("brand_written", _safe_json(brand))
+
+    return _safe_json(data)

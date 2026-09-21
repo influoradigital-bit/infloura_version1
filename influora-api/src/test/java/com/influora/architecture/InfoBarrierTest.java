@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.file.FileVisitOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -27,8 +28,8 @@ import org.junit.jupiter.api.Test;
  * {@code MeeraContextService}'s own callers) is mostly not Brand-named and was never checked — a
  * future {@code ShowCreatorsExecutor} importing {@link
  * com.influora.repository.CreatorAgentPreferencesRepository} would have passed the old gate. This
- * version instead scans EVERY {@code .java} file under {@code service/meera/**} and {@code
- * web/**} and asserts the repository is imported ONLY by the small set of classes that are
+ * version instead scans EVERY {@code .java} file under {@code service/**}, {@code web/**} and
+ * {@code job/**} and asserts the repository is imported ONLY by the small set of classes that are
  * actually allowed to touch it: {@code MeeraContextService} (the one shared class the spec
  * explicitly wires to both {@code assembleBrandContext} and {@code assembleCreatorContext}, and
  * which never lets a floor value cross from one to the other — asserted at runtime by {@code
@@ -39,6 +40,15 @@ import org.junit.jupiter.api.Test;
  * line, via a word-boundary regex — not a bare substring {@code contains} — so a javadoc/comment
  * mention (e.g. {@code PublicCreatorService}, which is outside the scanned directories anyway)
  * can never false-positive this gate.
+ *
+ * <p><b>SPEC.md T-MEERA-CREATOR-PHASE-B, 3.6 — scan widened to {@code service/**} and {@code
+ * job/**}.</b> Phase B puts seven new creator-floor-handling classes outside the old {@code
+ * service/meera/**}+{@code web/**} scan ({@code RateQuoteService} under {@code service/rates},
+ * {@code DealRiskService} under {@code service/risk}, {@code CreatorBriefService}, {@code
+ * MediaKitService}, {@code CampaignFitService}, {@code RoutineReplyService} directly under {@code
+ * service}, and {@code MeeraDelayedSendJob} under {@code job}) — without widening, the barrier was
+ * decorative for exactly the classes that matter. {@code service/meera/**} is now a subset of the
+ * wider {@code service/**} root, so it is folded in rather than scanned twice.
  */
 class InfoBarrierTest {
 
@@ -51,32 +61,42 @@ class InfoBarrierTest {
     /**
      * The ONLY simple class names allowed to import {@link
      * com.influora.repository.CreatorAgentPreferencesRepository} within the scanned directories.
-     * {@code CreatorAgentPreferencesService} and the repository interface itself do not currently
-     * live under {@code service/meera/**} or {@code web/**} (so today's scan can never actually
-     * find them) — kept in the allow-list anyway so this test does not need to change if either
-     * is ever relocated under a scanned directory.
+     * {@code CreatorAgentPreferencesService} lives directly under {@code service/} (not {@code
+     * service/meera/}), so the pre-widening scan could never actually reach it; now that the scan
+     * root is the broader {@code service/**}, this entry is genuinely enforced rather than a
+     * dead placeholder. The repository interface itself still lives under {@code repository/**},
+     * outside every scanned root — kept in the allow-list anyway so this test does not need to
+     * change if it is ever relocated under a scanned directory.
      */
     private static final Set<String> ALLOWED_IMPORTERS =
             Set.of("MeeraContextService", "CreatorAgentPreferencesService", FORBIDDEN_IMPORT);
 
+    /**
+     * Repo-relative scan roots (SPEC.md 3.6): {@code service/**} (superset of the old {@code
+     * service/meera/**}), {@code web/**} and {@code job/**}.
+     */
+    private static final List<String> CANDIDATE_RELATIVE_DIRS =
+            List.of("com/influora/service", "com/influora/web", "com/influora/job");
+
     @Test
     @DisplayName(
-            "A7(a) — within service/meera/** and web/**, only the allow-listed classes may import"
+            "A7(a) — within service/**, web/** and job/**, only the allow-listed classes may import"
                     + " CreatorAgentPreferencesRepository")
     void onlyAllowListedClassesImportCreatorAgentPreferencesRepository() throws IOException {
         Path mainRoot = mainSourceRoot();
-        List<Path> candidateDirs =
-                List.of(mainRoot.resolve("com/influora/service/meera"), mainRoot.resolve("com/influora/web"));
+        List<Path> candidateDirs = CANDIDATE_RELATIVE_DIRS.stream().map(mainRoot::resolve).toList();
 
-        List<Path> offendingFiles;
-        try (Stream<Path> serviceMeera = walkIfExists(candidateDirs.get(0));
-                Stream<Path> web = walkIfExists(candidateDirs.get(1))) {
-            offendingFiles =
-                    Stream.concat(serviceMeera, web)
-                            .filter(p -> p.toString().endsWith(".java"))
-                            .filter(InfoBarrierTest::importsForbiddenRepository)
-                            .filter(p -> !ALLOWED_IMPORTERS.contains(simpleClassName(p)))
-                            .toList();
+        // Each directory's stream is opened and closed in its own try-with-resources before the
+        // next is opened — Stream.flatMap does not propagate close() to substreams it flattens,
+        // so a single flat-mapped expression here would leak file handles across N roots.
+        List<Path> offendingFiles = new ArrayList<>();
+        for (Path dir : candidateDirs) {
+            try (Stream<Path> files = walkIfExists(dir)) {
+                files.filter(p -> p.toString().endsWith(".java"))
+                        .filter(InfoBarrierTest::importsForbiddenRepository)
+                        .filter(p -> !ALLOWED_IMPORTERS.contains(simpleClassName(p)))
+                        .forEach(offendingFiles::add);
+            }
         }
 
         assertThat(offendingFiles)

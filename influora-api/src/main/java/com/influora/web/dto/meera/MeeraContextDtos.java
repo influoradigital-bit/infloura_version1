@@ -202,6 +202,18 @@ public final class MeeraContextDtos {
             @JsonProperty("brand_tone") String brandTone,
             @JsonProperty("floors") Map<String, String> floors,
             @JsonProperty("metrics_summary") Map<String, String> metricsSummary,
+            /**
+             * Creator Meera audience knowledge (Swapnil 2026-09-21) - a compact, TEXT-ONLY summary of
+             * THIS creator's own Instagram audience: the top two age bands and the gender split as
+             * percentages, the top three cities, and the snapshot date. Built by {@code
+             * MeeraContextService#buildAudienceSummary} from the same read the creator's own
+             * analytics page uses; never a raw breakdown map and never anything about an individual
+             * follower. When there is no snapshot it carries the explicit {@code
+             * MeeraContextService.AUDIENCE_NOT_AVAILABLE} text, never zeros or a guess. CREATOR
+             * audience only: the BRAND context never carries it (see {@code
+             * MeeraCreatorAudienceContextTest}).
+             */
+            @JsonProperty("audience_summary") String audienceSummary,
             @JsonProperty("deals_summary") Map<String, Object> dealsSummary,
             @JsonProperty("approval_level") int approvalLevel,
             @JsonProperty("represented") boolean represented,
@@ -239,5 +251,51 @@ public final class MeeraContextDtos {
              * numeric type, same "every number leaves this class as a string" discipline as
              * {@code floors} (A8), even though the Python reader also accepts a bare number.
              */
-            @JsonProperty("ai_monthly_cap_usd") String aiMonthlyCapUsd) {}
+            @JsonProperty("ai_monthly_cap_usd") String aiMonthlyCapUsd,
+            /**
+             * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;2.10, B6) — this creator is in the negotiation
+             * holdout, the control arm that proves the coaching is what moves outcomes. Python's
+             * {@code build_block_b_creator} renders a withheld-coaching line when true.
+             */
+            @JsonProperty("negotiation_holdout") boolean negotiationHoldout,
+            /**
+             * SPEC.md &sect;2.10 — the calendar day {@code negotiation_holdout} lapses, already
+             * rendered by Java via {@link com.influora.common.Rendered#date(java.time.LocalDate,
+             * java.util.Locale)} so Python never formats a date. Null when the creator is not held
+             * out, and therefore omitted entirely by this class's {@code NON_NULL} include.
+             */
+            @JsonProperty("holdout_until") String holdoutUntil,
+            /**
+             * SPEC.md &sect;3.10 (B6) — whether the creator opted her rate card in to the public
+             * media kit. Carried for the drift contract; deliberately NOT rendered into Block B
+             * (see {@code CREATOR_CONTEXT_FIELDS_NOT_RENDERED} in {@code assembler.py}) — it is a
+             * sharing switch, not something Meera should reason about mid-negotiation.
+             */
+            @JsonProperty("rate_card_shareable") boolean rateCardShareable,
+            /**
+             * SPEC.md &sect;3.7 — how many Meera drafts this creator has approved, the numerator of
+             * the level-up eligibility rule. Not rendered into Block B for the same reason as
+             * {@code rate_card_shareable}.
+             */
+            @JsonProperty("approved_draft_count") int approvedDraftCount,
+            /**
+             * SPEC.md &sect;3.3/&sect;7.2 — the creator tool names this turn may call, which
+             * Python turns into the actual tool schema list.
+             *
+             * <p>Populated by {@code MeeraContextService#assembleCreatorContext} from {@code
+             * CreatorToolScopes.toolNamesForLevel(approvalLevel, represented, negotiationHoldout)}.
+             * The Wave-1 TODO that used to sit here (task B0-20, "send an empty list until {@code
+             * CreatorToolScopes} lands") is discharged — that class landed in Wave 2 and the call
+             * site now reads it.
+             *
+             * <p>An empty list is still a legitimate value rather than a bug to work around:
+             * &sect;7.2's degrade rule maps it to {@code tools = []}, i.e. Phase-A warn-only
+             * behaviour. It is what a creator whose scope intersects no wired tool must get. It is
+             * <b>not</b> what a consenting creator gets, and {@code
+             * MeeraContextServiceTest#testCreatorContextCarriesWiredToolNames} holds that line: an
+             * always-empty {@code tools_enabled} makes the entire creator tool surface — routes,
+             * executors, validator, scope mint — unreachable in production while every unit test on
+             * both sides still passes.
+             */
+            @JsonProperty("tools_enabled") List<String> toolsEnabled) {}
 }

@@ -27,6 +27,8 @@ import com.influora.web.dto.deal.DealDtos.DealResponse;
 import com.influora.web.dto.deal.DealDtos.DeliverableSlot;
 import com.influora.web.dto.deal.DealDtos.OkResponse;
 import com.influora.web.dto.deal.DealDtos.SendMessageRequest;
+import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
+import com.influora.web.dto.meera.CreatorToolDtos.RiskFlag;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -34,6 +36,7 @@ import jakarta.validation.ValidatorFactory;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -139,8 +142,8 @@ class DealControllerTest {
             "CounterRequest: omitted deliverables (null or empty) pass validation — DealService.doCounter()"
                     + " carries them forward from the superseded proposal card")
     void counterRequest_omittedDeliverables_passesValidation() {
-        CounterRequest emptyList = new CounterRequest(new BigDecimal("100"), null, List.of(), null, null, null);
-        CounterRequest nullList = new CounterRequest(new BigDecimal("100"), null, null, null, null, null);
+        CounterRequest emptyList = new CounterRequest(new BigDecimal("100"), null, List.of(), null, null, null, null);
+        CounterRequest nullList = new CounterRequest(new BigDecimal("100"), null, null, null, null, null, null);
 
         assertTrue(validator.validate(emptyList).isEmpty());
         assertTrue(validator.validate(nullList).isEmpty());
@@ -151,7 +154,7 @@ class DealControllerTest {
     void counterRequest_zeroQtySlot_failsValidation() {
         CounterRequest request =
                 new CounterRequest(
-                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 0)), null, null, null);
+                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 0)), null, null, null, null);
 
         Set<ConstraintViolation<CounterRequest>> violations = validator.validate(request);
 
@@ -163,7 +166,7 @@ class DealControllerTest {
     void counterRequest_validDeliverables_passesValidation() {
         CounterRequest request =
                 new CounterRequest(
-                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 2)), null, null, null);
+                        new BigDecimal("100"), null, List.of(new DeliverableSlot("story", 2)), null, null, null, null);
 
         assertTrue(validator.validate(request).isEmpty());
     }
@@ -281,7 +284,7 @@ class DealControllerTest {
     @Test
     @DisplayName("POST /deals/{id}/counter delegates with body and idempotency key")
     void testCounter() {
-        CounterRequest body = new CounterRequest(new BigDecimal("30000"), "How about this?", null, null, null, null);
+        CounterRequest body = new CounterRequest(new BigDecimal("30000"), "How about this?", null, null, null, null, null);
         DealResponse deal =
                 new DealResponse(
                         "deal1",
@@ -377,5 +380,45 @@ class DealControllerTest {
                 ApiException.class, () -> controller.streamMessages(principal, "deal1", null));
 
         verifyNoInteractions(messageStreamRegistry);
+    }
+
+    // ------------------------------------------------------------------
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 5.3, B4) — GET /deals/{id}/risks
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("GET /deals/{id}/risks delegates to the service and returns the flags")
+    void testRisksDelegates() {
+        CheckDealRisksResult expected =
+                new CheckDealRisksResult(
+                        List.of(
+                                new RiskFlag(
+                                        "BELOW_FLOOR", "CRITICAL", "Offer is below your floor",
+                                        "Offer is 8,000 against your floor of 10,000.", null,
+                                        "Counter at your floor of 10,000.", Map.of(), true)),
+                        "CRITICAL",
+                        "DEAL",
+                        "deal1");
+        when(dealService.risksForCreator(principal, "deal1")).thenReturn(expected);
+
+        ResponseEntity<ApiResponse<CheckDealRisksResult>> response = controller.risks(principal, "deal1");
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals(expected, response.getBody().data());
+    }
+
+    @Test
+    @DisplayName("GET /deals/{id}/risks: a brand principal's 403 CREATOR_ONLY reaches the caller intact")
+    void testRisksPropagatesCreatorOnly403() {
+        doThrow(new ApiException("CREATOR_ONLY", "Creator only", HttpStatus.FORBIDDEN))
+                .when(dealService)
+                .risksForCreator(principal, "deal1");
+
+        ApiException thrown =
+                assertThrows(ApiException.class, () -> controller.risks(principal, "deal1"));
+
+        assertEquals("CREATOR_ONLY", thrown.getCode());
+        assertEquals(HttpStatus.FORBIDDEN, thrown.getStatus());
     }
 }

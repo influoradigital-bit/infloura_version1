@@ -90,6 +90,37 @@
 2. **BRAND LIFECYCLE FILM** — built, needs CEO sign-off before it goes on the site
 3. FIX-WAVE-0828 ✅ DONE (awaiting Swapnil commit decision)
 4. FESTIVAL BOX CMO REVIEW — marketing strategy assessment complete, needs CEO approval
+**Current tasks:**
+1. **MEERA PHASE B0 — Wave 0** — 5 of 8 DONE, 3 blocked on Swapnil (see entry below) ← ACTIVE
+2. **STITCH PORT — about + blog** — READY FOR QA (see entry below)
+3. **BRAND LIFECYCLE FILM** — built, needs CEO sign-off before it goes on the site
+4. FIX-WAVE-0828 ✅ DONE (awaiting Swapnil commit decision)
+5. FESTIVAL BOX CMO REVIEW — marketing strategy assessment complete, needs CEO approval
+
+---
+
+## ⚙️ MEERA PHASE B0 — WAVE 0 PRE-FLIGHT (2026-09-08)
+
+**FROM:** Arjun (Engineering Lead) **TO:** Swapnil (CEO)
+**TASK:** T-MEERA-CREATOR-PHASE-B, Wave 0. Board: `.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/TASKS-B0.md` (70 tasks, 9 waves, divided by Priya).
+**STATUS:** Wave 0 is 5 of 8 done. Wave 1 cannot open until B0-03 is resolved.
+
+| ID | Owner | Status | Note |
+|---|---|---|---|
+| B0-01 CI gate repair | Meera | ✅ **DONE**, QA PASS | `schema-check.yml` now extracts 15, was 42. Falsified on a scratch copy: exits 1 on drift. Ledger **F-0763** ready for promotion. |
+| B0-04 eight §14.6 fixes | Priya | ✅ DONE | all eight applied in the sections that own them, not only in the review list |
+| B0-05 re-anchor to HEAD | Priya | ✅ DONE | ~115 references corrected, 1 marked unverified |
+| B0-07 day-4 split | Priya | ✅ DONE | ledger **F-0764**; B0 can now paste |
+| B0-08 credits stay dark | Priya | ✅ DONE | `CREATOR_CREDITS_ENABLED=false` recorded in §15 |
+| B0-02 Phase A deploy + smoke | Meera | ⛔ **BLOCKED** | needs Docker or the VPS. Oldest open item on this feature; gates the whole measurement wave, not the build |
+| B0-03 clean branch | Arjun | ⛔ **BLOCKED** | working tree carries a concurrent session's uncommitted work (Shopify/Woo controllers + tests, Festival Box). Will not branch over someone else's edits |
+| B0-06 four rulings | Swapnil | ⛔ **AWAITING** | brand-facing Meera label · referral attribution · cap $2.00 · B0→B1 gate thresholds. Defaults ship if silent. See `DECISIONS-0904.md` |
+
+**FILES CHANGED THIS RUN:** `.github/workflows/schema-check.yml` (1 step, 6 insertions), `.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/SPEC.md`, `.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/TASKS-B0.md`. Nothing committed. No application code touched.
+
+**PIPELINE STAGES SKIPPED, DECLARED:** Kabir's OWASP audit — a CI workflow awk range has no attack surface and no application code changed. Rohan's cost log — folded into this entry: ~544k subagent tokens across three agents.
+
+**NEXT:** Swapnil answers B0-06 and rules on how to clear the working tree for B0-03. Then Wave 1 (foundation, one merged commit across all three services) opens with Vikram and Ananya.
 
 ---
 

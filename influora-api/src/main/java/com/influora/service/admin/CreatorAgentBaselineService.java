@@ -7,6 +7,7 @@ import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DealMessageRepository;
 import com.influora.repository.DealMessageRepository.FirstMessageBySenderRow;
 import com.influora.repository.MetaOAuthTokenRepository;
+import com.influora.service.scoring.CreatorTiers;
 import com.influora.web.dto.admin.AdminCreatorAgentDtos.BaselinesResponse;
 import com.influora.web.dto.admin.AdminCreatorAgentDtos.BriefsPerCreatorPerMonth;
 import com.influora.web.dto.admin.AdminCreatorAgentDtos.SampleLabelCompliance;
@@ -75,19 +76,18 @@ public class CreatorAgentBaselineService {
     private static Map<String, Long> creatorsByTier(List<CreatorProfile> creators) {
         Map<String, Long> byTier = new TreeMap<>();
         for (CreatorProfile c : creators) {
-            String tier = c.getTierOverride() != null ? c.getTierOverride().name() : deriveTier(c.getTotalFollowers());
+            String tier = c.getTierOverride() != null ? c.getTierOverride().name() : CreatorTiers.derive(c.getTotalFollowers());
             byTier.merge(tier, 1L, Long::sum);
         }
         return byTier;
     }
 
-    private static String deriveTier(long followers) {
-        if (followers >= 1_000_000) return "MEGA";
-        if (followers >= 500_000) return "MACRO";
-        if (followers >= 50_000) return "MID";
-        if (followers >= 10_000) return "MICRO";
-        return "NANO";
-    }
+    // T-MEERA-CREATOR-PHASE-B (SPEC.md 3.6, B0-11): `deriveTier` moved to
+    // com.influora.service.scoring.CreatorTiers.derive. It was byte-identical to
+    // MeeraContextService.deriveTier (which named this class as its source) and to
+    // RateEstimationService.determineTier, MEGA branch included, so this changed no output.
+    // NOTE this is NOT the same method as AdminCreatorService.deriveTier, which deliberately omits
+    // the MEGA branch to fit the admin frontend's four-bucket tier union and stays separate.
 
     /** Distinct creators with >=1 collaboration (invite or application) opened in the last {@link #WINDOW_DAYS}. */
     private BriefsPerCreatorPerMonth briefsPerCreatorPerMonth() {

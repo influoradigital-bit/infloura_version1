@@ -1117,3 +1117,53 @@ export interface CreatorAgentBaselines {
   };
   computed_at: string;
 }
+
+/**
+ * `GET /admin/creator-agent/rate-calibration` — one tier's row, matching
+ * `AdminCreatorAgentDtos.RateCalibrationTier` field-for-field. Bare DTO like `/baselines`
+ * above, not the `{ success, data }` envelope.
+ *
+ * T-MEERA-CREATOR-PHASE-B (SPEC.md §14.1.g, B0-35). Three groups of columns that should agree:
+ * `benchmark_*` is what the pricing formula says, `realised_*` is what creators in that tier
+ * actually closed at, `quoted_*` is what Meera has been telling them.
+ */
+export interface CreatorAgentRateCalibrationTier {
+  tier: string;
+  benchmark_min: number | null;
+  benchmark_max: number | null;
+  benchmark_unit: number | null;
+  /** `"yml override"` or `"compiled default"` — whether B0-36's override is actually in force. */
+  benchmark_source: string;
+  /**
+   * NULL — never 0, never a partial figure — when `realised_n` is below `sample_floor`. The
+   * backend suppresses it behind a k-anonymity floor, and the UI must render that as UNKNOWN,
+   * not as a zero or a bare dash: a median over four deals is a statement about four
+   * identifiable brands, and it is also the number that gets copied into a pricing constant.
+   */
+  realised_median: number | null;
+  realised_n: number;
+  /** A COUNT of workspaces behind the sample. The ids themselves never leave the backend. */
+  distinct_workspaces: number;
+  /** Share of the realised sample carrying a Meera counter-offer. NULL under the same floor. */
+  meera_anchored_share: number | null;
+  /**
+   * Deliberately NOT behind the k-anonymity floor — these are Meera's own emissions
+   * (`RATE_QUOTE_ISSUED` audit rows), not third-party deal data. Null only when `quoted_n_90d`
+   * is 0, so read it next to that count.
+   */
+  quoted_median_90d: number | null;
+  quoted_n_90d: number;
+}
+
+/** `GET /admin/creator-agent/rate-calibration` — `AdminCreatorAgentDtos.RateCalibrationResponse`. */
+export interface CreatorAgentRateCalibration {
+  tiers: CreatorAgentRateCalibrationTier[];
+  /**
+   * `RateQuoteService.BAND_MIN_DEALS`, on the wire so the page can say "fewer than N deals"
+   * without owning a second copy of the number.
+   */
+  sample_floor: number;
+  /** `RateQuoteService.BAND_WINDOW_DAYS`. */
+  window_days: number;
+  computed_at: string;
+}

@@ -43,6 +43,7 @@ from app.costs.spend_tracker import CREATOR_CAP_MESSAGE
 from app.prompt.creator_persona import MEERA_CREATOR_PERSONA
 from app.prompt.persona import MEERA_PERSONA
 from app.routes import chat as chat_route
+from app.tools.creator_schemas import CREATOR_TOOL_NAMES
 from app.tools.loop import LoopEvent
 
 CREATOR_ID = "creator-user-chat-001"
@@ -399,11 +400,21 @@ async def test_missing_consent_key_fails_closed():
     mock_claude.assert_not_called()
 
 
-def test_consent_accepted_reads_bool_or_timestamp_only():
+def test_consent_accepted_reads_the_version_aware_boolean_only():
+    """K-4 (Kabir, KABIR-CONSENT-0917.md, LOW -- last call Priya):
+    `consent_accepted_at` alone used to count as consent whatever the DPDP
+    notice version it was recorded against, which becomes a bypass the day a
+    v1-consented creator's `consent_accepted_at` survives a v2 re-consent
+    bump into a context payload. The ONLY accepted signal is Spring's
+    version-aware `consent_accepted: true`."""
     assert chat_route.consent_accepted({"consent_accepted": True})
-    assert chat_route.consent_accepted({"consent_accepted_at": "2026-09-03T14:30:00Z"})
     assert not chat_route.consent_accepted({"consent_accepted": "true"})  # a string is not consent
     assert not chat_route.consent_accepted({"consent_accepted": False})
+    # A non-empty consent_accepted_at, alone or alongside an explicit false, is refused.
+    assert not chat_route.consent_accepted({"consent_accepted_at": "2026-09-03T14:30:00Z"})
+    assert not chat_route.consent_accepted(
+        {"consent_accepted": False, "consent_accepted_at": "2026-09-03T14:30:00Z"}
+    )
     assert not chat_route.consent_accepted({"consent_accepted_at": None})
     assert not chat_route.consent_accepted({"consent_accepted_at": "  "})
     assert not chat_route.consent_accepted({})
@@ -579,7 +590,10 @@ async def test_consented_creator_turn_uses_creator_persona_and_empty_tool_set():
     assert recorded["tools"] == []
     system_text = json.dumps(recorded["system_blocks"])
     assert MEERA_CREATOR_PERSONA.splitlines()[0] in recorded["system_blocks"][0]["text"]
-    assert "You work for Priya here" in recorded["system_blocks"][1]["text"]
+    # Block B (per-creator) is the last system block; the cached content
+    # knowledge block sits between A and B on the creator path.
+    assert "You work for Priya here" in recorded["system_blocks"][-1]["text"]
+    assert "Influora content knowledge" in recorded["system_blocks"][1]["text"]
     assert "12,400 followers" in system_text
     assert "9,999" in system_text  # the creator's OWN floor is in the CREATOR prompt (not a leak)
     # The brand persona and brand tools are nowhere in a creator turn.
@@ -592,6 +606,32 @@ async def test_consented_creator_turn_uses_creator_persona_and_empty_tool_set():
     # A8: the creator's monthly ledger moved (and the daily one too).
     assert await spend_tracker.get_creator_month_total(CREATOR_ID) > 0
     assert await spend_tracker.get_workspace_total_today(CREATOR_ID) > 0
+
+
+@pytest.mark.asyncio
+async def test_creator_turn_forwards_the_creator_tools_spring_enabled():
+    """The route half of §7.2. The assembler picking the right schemas is
+    tested in tests/security/test_info_barrier.py; this pins that `chat.py`
+    actually hands them to the loop (`tools=prompt.tools`) instead of dropping
+    them, which no assembler-level test can see.
+
+    Its sibling above (`..._uses_creator_persona_and_empty_tool_set`) keeps the
+    degrade case: a context with no `tools_enabled` still forwards `[]`.
+    """
+    spring = _spring(_creator_context(tools_enabled=list(CREATOR_TOOL_NAMES)))
+    recorded: dict = {}
+
+    with patch.object(chat_route, "verify_token_async", AsyncMock(return_value=_verified())), \
+         patch.object(chat_route, "_get_spring", return_value=spring), \
+         patch.object(chat_route, "_get_claude", return_value=MagicMock()), \
+         patch.object(chat_route, "run_tool_loop", _fake_tool_loop(recorded)):
+        response = await chat_route.chat(_make_request(_body()), authorization=None)
+        assert response.status_code == 200
+        await _drain(response)
+
+    assert [t["name"] for t in recorded["tools"]] == list(CREATOR_TOOL_NAMES)
+    # Still a creator turn: no brand tool crossed over.
+    assert "calculate_budget" not in json.dumps(recorded["tools"])
 
 
 @pytest.mark.asyncio

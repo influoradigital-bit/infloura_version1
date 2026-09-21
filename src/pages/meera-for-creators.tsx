@@ -111,7 +111,7 @@ export default function MeeraForCreatorsPage() {
                 Someone in your corner. Before you reply.
               </h1>
               <p className="mt-4 text-lg text-muted-foreground">
-                Paste a brand brief. Meera reads it, tells you what to charge, and flags what's off.
+                Paste a brand brief. Meera reads it, suggests what to charge, and flags what's off.
                 What you say back is yours to write.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
@@ -177,7 +177,7 @@ export default function MeeraForCreatorsPage() {
             <FadeUp>
               <h2 className="text-center text-3xl font-bold tracking-tight">What Meera will do for you</h2>
               <p className="mx-auto mt-3 max-w-2xl text-center text-muted-foreground">
-                Five jobs, all with your approval. Meera never sends anything on her own.
+                Five jobs. Meera advises; you decide.
               </p>
             </FadeUp>
             <StaggerContainer className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
