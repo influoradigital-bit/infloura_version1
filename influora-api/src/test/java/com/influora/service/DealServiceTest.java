@@ -2889,7 +2889,7 @@ class DealServiceTest {
         service.counter(
                 brandPrincipal,
                 DEAL_ID,
-                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null, null),
+                new CounterRequest(new BigDecimal("25000"), "Counter offer", List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)), null, null, null, null),
                 null);
 
         DealOfferHistory row = capturedOfferRow();
@@ -2927,7 +2927,7 @@ class DealServiceTest {
                 new CounterRequest(
                         new BigDecimal("31000"),
                         "Meera drafted this",
-                        null,
+                        List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)),
                         null,
                         null,
                         null,
@@ -2966,7 +2966,7 @@ class DealServiceTest {
                 new CounterRequest(
                         new BigDecimal("31000"),
                         "Meera drafted this, honestly",
-                        null,
+                        List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)),
                         null,
                         null,
                         null,
@@ -3003,7 +3003,7 @@ class DealServiceTest {
                 creatorPrincipal,
                 DEAL_ID,
                 new CounterRequest(
-                        new BigDecimal("31000"), "reused draft", null, null, null, null, MEERA_DRAFT_ID),
+                        new BigDecimal("31000"), "reused draft", List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)), null, null, null, MEERA_DRAFT_ID),
                 null);
 
         DealOfferHistory row = capturedOfferRow();
@@ -3095,7 +3095,7 @@ class DealServiceTest {
         service.counter(
                 brandPrincipal,
                 DEAL_ID,
-                new CounterRequest(new BigDecimal("25000"), "Counter offer", null, null, null, null, null),
+                new CounterRequest(new BigDecimal("25000"), "Counter offer", List.of(new DeliverableSlot("INSTAGRAM_REEL", 1)), null, null, null, null),
                 null);
 
         assertEquals(4, capturedOfferRow().getSequenceNo());

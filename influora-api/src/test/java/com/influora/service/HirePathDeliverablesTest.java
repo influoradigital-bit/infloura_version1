@@ -29,8 +29,10 @@ import com.influora.repository.CollaborationRepository;
 import com.influora.repository.ContractRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DealMessageRepository;
+import com.influora.repository.DealOfferHistoryRepository;
 import com.influora.repository.DeliverableRepository;
 import com.influora.repository.EscrowHoldRepository;
+import com.influora.repository.MeeraDraftRepository;
 import com.influora.repository.PaymentMilestoneRepository;
 import com.influora.repository.UserRepository;
 import com.influora.repository.WorkspaceMemberRepository;
@@ -143,6 +145,8 @@ class HirePathDeliverablesTest {
     @Mock private CollaborationLifecycleService collaborationLifecycleService;
     @Mock private ApplicationHistoryService applicationHistoryService;
     @Mock private com.influora.repository.ShipmentRepository shipmentRepository;
+    @Mock private DealOfferHistoryRepository dealOfferHistoryRepository;
+    @Mock private MeeraDraftRepository meeraDraftRepository;
 
     @Mock private AuthPrincipal brandPrincipal;
     @Mock private WorkspaceMember workspaceMember;
@@ -172,7 +176,14 @@ class HirePathDeliverablesTest {
                                 contractRepository,
                                 escrowHoldRepository,
                                 shipmentRepository),
-                        applicationHistoryService);
+                        applicationHistoryService,
+                        // Phase B0 dependencies: this suite never calls risksForCreator (DealRiskService).
+                        null,
+                        dealOfferHistoryRepository,
+                        meeraDraftRepository);
+
+        // B0-43: recordOffer locks and checks the collaboration row on every write path.
+        DealOfferLedgerFixture.stubOfferLedgerRowLock(collaborationRepository);
 
         contractService =
                 new ContractService(
@@ -487,7 +498,7 @@ class HirePathDeliverablesTest {
                                 new DeliverableSlot("INSTAGRAM_REEL", 2)),
                         null,
                         null,
-                        null),
+                        null, null),
                 null);
 
         ArgumentCaptor<DealMessage> cardCaptor = ArgumentCaptor.forClass(DealMessage.class);
@@ -515,7 +526,7 @@ class HirePathDeliverablesTest {
                                         brandPrincipal,
                                         DEAL_ID,
                                         new CounterRequest(
-                                                new BigDecimal("25000"), "Counter offer", null, null, null, null),
+                                                new BigDecimal("25000"), "Counter offer", null, null, null, null, null),
                                         null));
 
         assertEquals("DELIVERABLES_REQUIRED", ex.getCode());
@@ -540,7 +551,7 @@ class HirePathDeliverablesTest {
         dealService.counter(
                 brandPrincipal,
                 DEAL_ID,
-                new CounterRequest(new BigDecimal("25000"), "Same work, lower price", null, null, null, null),
+                new CounterRequest(new BigDecimal("25000"), "Same work, lower price", null, null, null, null, null),
                 null);
 
         // Two saves: the superseded card (settled to "countered") and the new offer. The new one
