@@ -504,4 +504,82 @@ class PortfolioServiceVisibilityMatrixTest {
                 service.getForBrand(profile).stats(),
                 "trust stats must be withheld from a brand when the creator hid the trust bar");
     }
+
+    /**
+     * F-0980 — the batch projection must resolve EACH creator's own settings.
+     *
+     * <p>The independent re-audit of the F-0980 fix found that every other test in this repo
+     * builds a SINGLE-creator page, so the correct per-creator form and the broken
+     * "hoist loadSettings out of the loop" form are indistinguishable: with one creator they
+     * produce identical output, and the 13 discovery cases, the reflective matrix above and the
+     * producer gate all stay green either way. Hoisting would apply one creator's privacy choice
+     * to an entire page of search results — a wider leak than the one F-0980 closed.
+     *
+     * <p>Two creators, opposite settings, one call, asserted in both orders. This is the only
+     * assertion in the suite that can tell the two implementations apart.
+     */
+    @Test
+    @DisplayName(
+            "F-0980: a batch page applies EACH creator's own platformStats flag, not the page"
+                    + " head's, in either order")
+    void batchProjectionAppliesPerCreatorSettingsNotThePageHead() {
+        String shownId = "01HCREATORSHOWN00001A";
+        String hiddenId = "01HCREATORHIDDEN0001A";
+
+        CreatorProfile shown = CreatorProfile.newForUser(shownId, "01HUSERSHOWN000001AB", "Shown");
+        CreatorProfile hidden = CreatorProfile.newForUser(hiddenId, "01HUSERHIDDEN00001AB", "Hidden");
+        shown.applyPortfolioSettingsJson(settingsJsonWithPlatformStats(true));
+        hidden.applyPortfolioSettingsJson(settingsJsonWithPlatformStats(false));
+
+        lenient()
+                .when(platformStatRepository.findByCreatorProfileIdIn(List.of(shownId, hiddenId)))
+                .thenReturn(List.of(platformRow(shownId), platformRow(hiddenId)));
+        lenient()
+                .when(platformStatRepository.findByCreatorProfileIdIn(List.of(hiddenId, shownId)))
+                .thenReturn(List.of(platformRow(hiddenId), platformRow(shownId)));
+
+        var byProfile =
+                service.getVisiblePlatformStats(
+                        List.of(shown, hidden), PortfolioService.ViewerMode.BRAND);
+        assertFalse(
+                byProfile.get(shownId).isEmpty(),
+                "the creator who left platform stats ON lost their rows — the batch projection is"
+                        + " applying another creator's setting, or over-blocking");
+        assertTrue(
+                byProfile.get(hiddenId).isEmpty(),
+                "the creator who switched platform stats OFF had their handle and follower count"
+                        + " served to a brand anyway, because the batch projection resolved"
+                        + " settings once for the page instead of once per creator (F-0980)");
+
+        // Page order must not decide the outcome: same two creators, head swapped.
+        var reversed =
+                service.getVisiblePlatformStats(
+                        List.of(hidden, shown), PortfolioService.ViewerMode.BRAND);
+        assertTrue(
+                reversed.get(hiddenId).isEmpty(),
+                "the hidden creator leaked when listed FIRST — page order must not affect the flag");
+        assertFalse(
+                reversed.get(shownId).isEmpty(),
+                "the shown creator was blocked when listed SECOND — page order must not affect the"
+                        + " flag");
+    }
+
+    private static String settingsJsonWithPlatformStats(boolean on) {
+        return "{\"visibility\":{\"trustBar\":true,\"badges\":true,\"platformStats\":"
+                + on
+                + ",\"pastCollabs\":true,\"contentPortfolio\":true,\"customLinks\":true,"
+                + "\"rateCard\":\"public\",\"languages\":true,\"contactForm\":true}}";
+    }
+
+    private static PlatformStat platformRow(String creatorProfileId) {
+        return PlatformStat.builder()
+                .id("01HSTAT" + creatorProfileId.substring(7))
+                .creatorProfileId(creatorProfileId)
+                .platform("INSTAGRAM")
+                .handle("handle_" + creatorProfileId.substring(7, 12).toLowerCase())
+                .followers(50_000L)
+                .engagementRate(new BigDecimal("3.10"))
+                .verified(true)
+                .build();
+    }
 }

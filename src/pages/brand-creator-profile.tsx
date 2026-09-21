@@ -963,6 +963,22 @@ export default function BrandCreatorProfilePage() {
           <h2 className="mb-4 text-sm font-medium text-muted-foreground uppercase tracking-wider">
             Platforms
           </h2>
+          {/* F-0980 — the server now honours the creator's "Platform stats" switch, so this list
+              can legitimately be empty for a creator who has real platforms. An empty grid
+              renders NOTHING, and a brand reads a missing section as "this creator has no
+              platforms" rather than "this creator chose not to publish their handles yet" —
+              the fabricated-absence failure F-0589/F-0972 exist to prevent. State it instead.
+              Headline reach and the verified/self-reported provenance above are deliberately
+              unaffected: only the per-platform handles are withheld. */}
+          {creator.platforms.length === 0 ? (
+            <div className="rounded-lg border bg-card p-4">
+              <p className="text-sm font-medium">This creator has hidden their platform handles</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Their total reach and engagement above are unchanged. Handles and profile links
+                are typically shared once a deal is agreed.
+              </p>
+            </div>
+          ) : (
           <div className="grid gap-3 sm:grid-cols-3">
             {creator.platforms.map((platform) => (
               <div
@@ -1013,6 +1029,7 @@ export default function BrandCreatorProfilePage() {
               </div>
             ))}
           </div>
+          )}
         </div>
 
         <Separator className="my-8" />

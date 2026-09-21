@@ -16,7 +16,6 @@ import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.CreatorScore;
 import com.influora.domain.entity.FeaturedCreator;
 import com.influora.domain.entity.Plan;
-import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.entity.Review;
 import com.influora.domain.entity.SavedCreator;
 import com.influora.domain.entity.Workspace;
@@ -31,13 +30,14 @@ import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.CreatorScoreRepository;
 import com.influora.repository.FeaturedCreatorRepository;
-import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.ReviewRepository;
 import com.influora.repository.SavedCreatorRepository;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.portfolio.PortfolioService;
+import com.influora.service.portfolio.PortfolioService.ViewerMode;
 import com.influora.web.dto.creator.CreatorDtos.CreatorResponse;
 import com.influora.web.dto.creator.CreatorDtos.InviteResponse;
+import com.influora.web.dto.creator.CreatorDtos.PlatformStatResponse;
 import com.influora.web.dto.creator.CreatorDtos.SaveResponse;
 import com.influora.web.dto.creator.DiscoveryDtos.AvailableFiltersMeta;
 import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioBrandView;
@@ -103,7 +103,12 @@ public class CreatorDiscoveryService {
 
     private final BrandContextService brandContext;
     private final CreatorProfileRepository creatorProfileRepository;
-    private final PlatformStatRepository platformStatRepository;
+    // F-0980 — this service deliberately holds NO PlatformStatRepository. Every brand-facing
+    // shape it builds takes its platform rows from PortfolioService#getVisiblePlatformStats,
+    // which is the single place the `platformStats` visibility flag is applied. Five call sites
+    // here used to read the repository directly and emit the rows ungated, so a creator who had
+    // switched "Platform stats" off still shipped every handle and profileUrl to every brand.
+    // Re-adding the dependency re-opens the defect.
     private final SavedCreatorRepository savedCreatorRepository;
     private final CampaignRepository campaignRepository;
     private final CollaborationRepository collaborationRepository;
@@ -126,7 +131,6 @@ public class CreatorDiscoveryService {
     public CreatorDiscoveryService(
             BrandContextService brandContext,
             CreatorProfileRepository creatorProfileRepository,
-            PlatformStatRepository platformStatRepository,
             SavedCreatorRepository savedCreatorRepository,
             CampaignRepository campaignRepository,
             CollaborationRepository collaborationRepository,
@@ -139,7 +143,6 @@ public class CreatorDiscoveryService {
             SubscriptionService subscriptionService) {
         this.brandContext = brandContext;
         this.creatorProfileRepository = creatorProfileRepository;
-        this.platformStatRepository = platformStatRepository;
         this.savedCreatorRepository = savedCreatorRepository;
         this.campaignRepository = campaignRepository;
         this.collaborationRepository = collaborationRepository;
@@ -201,8 +204,11 @@ public class CreatorDiscoveryService {
 
         List<CreatorProfile> profiles = result.getContent();
         List<String> profileIds = profiles.stream().map(CreatorProfile::getId).toList();
-        Map<String, List<PlatformStat>> platformsByCreator =
-                CreatorMapper.groupPlatforms(platformStatRepository.findByCreatorProfileIdIn(profileIds));
+        // F-0980 — one batch call, one visibility decision, before the .map() below. This used
+        // to be a raw platformStatRepository.findByCreatorProfileIdIn, so every search card
+        // carried the handles of creators who had hidden them. Same query count as before.
+        Map<String, List<PlatformStatResponse>> platformsByCreator =
+                portfolioService.getVisiblePlatformStats(profiles, ViewerMode.BRAND);
 
         Set<String> savedIds =
                 new HashSet<>(
@@ -264,7 +270,11 @@ public class CreatorDiscoveryService {
     public CreatorPublicProfileResponse getPublicProfile(AuthPrincipal principal, String usernameOrId) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
         CreatorProfile profile = resolveDiscoverableProfile(usernameOrId);
-        List<PlatformStat> platforms = platformStatRepository.findByCreatorProfileId(profile.getId());
+        // F-0980 — was a raw platformStatRepository read emitted ungated onto the top-level
+        // `platforms` field below. PortfolioBrandView has no platforms component, so the gated
+        // list assemble() builds never reached this response at all.
+        List<PlatformStatResponse> platforms =
+                portfolioService.getVisiblePlatformStats(profile, ViewerMode.BRAND);
         boolean saved =
                 savedCreatorRepository
                         .findByWorkspaceIdAndCreatorProfileId(workspace.getId(), profile.getId())
@@ -300,7 +310,7 @@ public class CreatorDiscoveryService {
                 JsonLists.stringListFromJson(profile.getCategoriesJson()),
                 JsonLists.stringListFromJson(profile.getLanguagesJson()),
                 profile.getCity(),
-                platforms.stream().map(CreatorMapper::toPlatformResponse).toList(),
+                platforms,
                 profile.getTotalFollowers(),
                 profile.getEngagementRate(),
                 buildScores(score),
@@ -443,13 +453,24 @@ public class CreatorDiscoveryService {
 
         Map<String, CreatorScores> scoresByCreator =
                 loadScoresByCreator(candidates.stream().map(CreatorProfile::getId).toList());
+        // F-0980 — hoisted here beside loadScoresByCreator for exactly the reason that one is
+        // hoisted: toSuggestionItem runs once per candidate (up to 30). It used to call
+        // platformStatRepository.findByCreatorProfileId inside that loop, so this change removes
+        // an existing N+1 as well as closing the visibility bypass.
+        Map<String, List<PlatformStatResponse>> platformsByCreator =
+                portfolioService.getVisiblePlatformStats(candidates, ViewerMode.BRAND);
 
         List<CreatorSuggestionItem> suggestions =
                 candidates.stream()
                         .map(
                                 profile ->
                                         toSuggestionItem(
-                                                principal, profile, inferredCategories, budget, scoresByCreator))
+                                                principal,
+                                                profile,
+                                                inferredCategories,
+                                                budget,
+                                                scoresByCreator,
+                                                platformsByCreator))
                         .sorted(Comparator.comparingDouble(CreatorSuggestionItem::matchScore).reversed())
                         .limit(10)
                         .toList();
@@ -645,7 +666,11 @@ public class CreatorDiscoveryService {
     }
 
     private CreatorResponse toResponseForWorkspace(Workspace workspace, CreatorProfile profile) {
-        List<PlatformStat> platforms = platformStatRepository.findByCreatorProfileId(profile.getId());
+        // F-0980 — beside getVisiblePinnedPosts below, and for the same reason: a section the
+        // creator switched off must not leak into the brand card because a different caller
+        // reads it.
+        List<PlatformStatResponse> platforms =
+                portfolioService.getVisiblePlatformStats(profile, ViewerMode.BRAND);
         boolean saved =
                 savedCreatorRepository
                         .findByWorkspaceIdAndCreatorProfileId(workspace.getId(), profile.getId())
@@ -662,8 +687,9 @@ public class CreatorDiscoveryService {
     private List<CreatorResponse> mapResponses(AuthPrincipal principal, List<CreatorProfile> profiles) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
         List<String> profileIds = profiles.stream().map(CreatorProfile::getId).toList();
-        Map<String, List<PlatformStat>> platformsByCreator =
-                CreatorMapper.groupPlatforms(platformStatRepository.findByCreatorProfileIdIn(profileIds));
+        // F-0980 — batch projection, one visibility decision per profile, same query count.
+        Map<String, List<PlatformStatResponse>> platformsByCreator =
+                portfolioService.getVisiblePlatformStats(profiles, ViewerMode.BRAND);
         Set<String> savedIds =
                 new HashSet<>(
                         savedCreatorRepository
@@ -791,9 +817,13 @@ public class CreatorDiscoveryService {
             CreatorProfile profile,
             List<String> inferredCategories,
             int budget,
-            Map<String, CreatorScores> scoresByCreator) {
+            Map<String, CreatorScores> scoresByCreator,
+            Map<String, List<PlatformStatResponse>> platformsByCreator) {
         Workspace workspace = brandContext.requireBrandWorkspace(principal);
-        List<PlatformStat> platforms = platformStatRepository.findByCreatorProfileId(profile.getId());
+        // F-0980 — projected once for the whole candidate set by the caller; never read from
+        // the repository per candidate.
+        List<PlatformStatResponse> platforms =
+                platformsByCreator.getOrDefault(profile.getId(), List.of());
         boolean saved =
                 savedCreatorRepository
                         .findByWorkspaceIdAndCreatorProfileId(workspace.getId(), profile.getId())

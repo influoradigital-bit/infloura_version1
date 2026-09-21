@@ -26,10 +26,19 @@ public final class CreatorMapper {
      * {@link Collections#emptyList()} deliberately — a full portfolio isn't shown on a search
      * card, and hydrating it per-row would be an N+1 across the results page — only the
      * single-profile read path (CreatorDiscoveryService#toResponseForWorkspace) passes real data.
+     *
+     * <p>F-0980: {@code platforms} is the already-projected {@link PlatformStatResponse} list,
+     * NOT {@code List<PlatformStat>}. It was the entity list until every brand-facing caller
+     * handed it rows straight out of {@code PlatformStatRepository}, walking past the
+     * {@code platformStats} visibility flag that only {@code PortfolioService#assemble}
+     * consulted. Taking the DTO makes that mistake a COMPILE error rather than something a
+     * grep has to notice: the only supported way to obtain this list is
+     * {@code PortfolioService#getVisiblePlatformStats}, which applies the flag. Do not widen
+     * this parameter back to the entity type.
      */
     public static CreatorResponse toResponse(
             CreatorProfile profile,
-            List<PlatformStat> platforms,
+            List<PlatformStatResponse> platforms,
             Boolean saved,
             DiscoveryDtos.CreatorScores scores) {
         return toResponse(profile, platforms, saved, scores, Collections.emptyList());
@@ -37,13 +46,12 @@ public final class CreatorMapper {
 
     public static CreatorResponse toResponse(
             CreatorProfile profile,
-            List<PlatformStat> platforms,
+            List<PlatformStatResponse> platforms,
             Boolean saved,
             DiscoveryDtos.CreatorScores scores,
             List<PortfolioPinnedPost> pinnedPosts) {
         BigDecimal avgRate = averageRate(profile.getRateMin(), profile.getRateMax());
-        List<PlatformStatResponse> platformDtos =
-                platforms.stream().map(CreatorMapper::toPlatform).toList();
+        List<PlatformStatResponse> platformDtos = List.copyOf(platforms);
         List<PortfolioItemResponse> portfolioItems =
                 pinnedPosts.stream().map(CreatorMapper::toPortfolioItem).toList();
         return new CreatorResponse(
@@ -85,6 +93,16 @@ public final class CreatorMapper {
         return all.stream().collect(Collectors.groupingBy(PlatformStat::getCreatorProfileId));
     }
 
+    /**
+     * F-0980 — the ONE entity→DTO mapping for a platform row in {@code src/main}. Its only
+     * caller is {@code PortfolioService#visiblePlatformStats}, which applies the
+     * {@code platformStats} visibility flag first. A byte-identical private copy of this
+     * mapping used to sit in PortfolioService as well; two copies across the two services that
+     * must agree about the shape is how the shapes drift.
+     *
+     * <p>Calling this outside the projection re-opens F-0980: it converts rows the creator may
+     * have hidden into the exact DTO the brand renders.
+     */
     public static CreatorDtos.PlatformStatResponse toPlatformResponse(PlatformStat ps) {
         return toPlatform(ps);
     }

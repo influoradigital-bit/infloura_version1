@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -22,7 +23,6 @@ import com.influora.domain.entity.Collaboration;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.CreatorScore;
 import com.influora.domain.entity.Plan;
-import com.influora.domain.entity.PlatformStat;
 import com.influora.domain.entity.SavedCreator;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CollaborationStatus;
@@ -31,7 +31,6 @@ import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.CreatorScoreRepository;
 import com.influora.repository.FeaturedCreatorRepository;
-import com.influora.repository.PlatformStatRepository;
 import com.influora.repository.ReviewRepository;
 import com.influora.repository.SavedCreatorRepository;
 import com.influora.security.AuthPrincipal;
@@ -43,6 +42,7 @@ import com.influora.web.dto.portfolio.PortfolioDtos.PortfolioPinnedPost;
 import com.influora.web.dto.creator.DiscoveryDtos.CreatorSuggestionRequest;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -70,7 +70,6 @@ class CreatorDiscoveryServiceTest {
 
     @Mock private BrandContextService brandContext;
     @Mock private CreatorProfileRepository creatorProfileRepository;
-    @Mock private PlatformStatRepository platformStatRepository;
     @Mock private SavedCreatorRepository savedCreatorRepository;
     @Mock private CampaignRepository campaignRepository;
     @Mock private CollaborationRepository collaborationRepository;
@@ -107,11 +106,19 @@ class CreatorDiscoveryServiceTest {
                                 List.of(), List.of(), List.of(), List.of(), List.of(), null,
                                 List.of(), null));
         lenient().when(portfolioService.rateCardVisibilityOf(any())).thenReturn("brands_only");
+        // F-0980 — platform rows no longer come from PlatformStatRepository here; every
+        // brand-facing shape takes them from the one visibility-aware projection. Both overloads
+        // are stubbed empty by default; a test that cares about platform content stubs its own.
+        lenient()
+                .when(portfolioService.getVisiblePlatformStats(any(CreatorProfile.class), any()))
+                .thenReturn(List.of());
+        lenient()
+                .when(portfolioService.getVisiblePlatformStats(anyCollection(), any()))
+                .thenReturn(Map.of());
         service =
                 new CreatorDiscoveryService(
                         brandContext,
                         creatorProfileRepository,
-                        platformStatRepository,
                         savedCreatorRepository,
                         campaignRepository,
                         collaborationRepository,
@@ -310,7 +317,6 @@ class CreatorDiscoveryServiceTest {
         stubWorkspace();
         CreatorProfile profile = stubDiscoverableProfile();
         when(creatorProfileRepository.findByUsernameIgnoreCase(USERNAME)).thenReturn(Optional.of(profile));
-        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
         when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
                 .thenReturn(Optional.empty());
         when(collaborationRepository.findByCreatorIdAndStatus(CREATOR_USER_ID, CollaborationStatus.COMPLETED))
@@ -342,7 +348,6 @@ class CreatorDiscoveryServiceTest {
         CreatorProfile profile = stubDiscoverableProfile();
         when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(profile));
-        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
         when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
                 .thenReturn(Optional.empty());
         when(collaborationRepository.findByCreatorIdAndStatus(CREATOR_USER_ID, CollaborationStatus.COMPLETED))
@@ -386,7 +391,6 @@ class CreatorDiscoveryServiceTest {
         // either of those calls here, so if the fix regresses to the old branch order/set, Mockito's
         // default empty Optional makes this call 404 rather than silently mis-resolving.
         when(creatorProfileRepository.findByUserId(CREATOR_USER_ID)).thenReturn(Optional.of(profile));
-        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
         when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
                 .thenReturn(Optional.empty());
         when(collaborationRepository.findByCreatorIdAndStatus(CREATOR_USER_ID, CollaborationStatus.COMPLETED))
@@ -434,7 +438,6 @@ class CreatorDiscoveryServiceTest {
     private void stubSingleCreatorLookup(CreatorProfile profile) {
         when(creatorProfileRepository.findByIdAndDiscoverableTrue(CREATOR_PROFILE_ID))
                 .thenReturn(Optional.of(profile));
-        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
         when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
                 .thenReturn(Optional.empty());
     }
@@ -600,7 +603,6 @@ class CreatorDiscoveryServiceTest {
         Page<CreatorProfile> page = new PageImpl<>(List.of(profile));
         when(creatorProfileRepository.findAll(any(Specification.class), any(Pageable.class)))
                 .thenReturn(page);
-        when(platformStatRepository.findByCreatorProfileId(CREATOR_PROFILE_ID)).thenReturn(List.of());
         when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileId(WORKSPACE_ID, CREATOR_PROFILE_ID))
                 .thenReturn(Optional.empty());
 
@@ -628,7 +630,6 @@ class CreatorDiscoveryServiceTest {
                 .thenReturn(new PageImpl<>(List.of(profile), Pageable.ofSize(20), 1));
         when(creatorProfileRepository.findAll(any(Specification.class), eq(Pageable.ofSize(5000))))
                 .thenReturn(new PageImpl<>(List.of(profile)));
-        when(platformStatRepository.findByCreatorProfileIdIn(any())).thenReturn(List.of());
         when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileIdInAndSavedTrue(any(), any()))
                 .thenReturn(List.of());
 
@@ -719,7 +720,6 @@ class CreatorDiscoveryServiceTest {
                 .thenReturn(new PageImpl<>(List.of(profile), Pageable.ofSize(20), 1));
         when(creatorProfileRepository.findAll(any(Specification.class), eq(Pageable.ofSize(5000))))
                 .thenReturn(new PageImpl<>(List.of(profile)));
-        when(platformStatRepository.findByCreatorProfileIdIn(any())).thenReturn(List.of());
         when(savedCreatorRepository.findByWorkspaceIdAndCreatorProfileIdInAndSavedTrue(any(), any()))
                 .thenReturn(List.of());
 
