@@ -391,3 +391,34 @@ describe('CreatorCopilotPage — "Ask Meera about this brief" (U-5, R-U1)', () =
     expect(sendTurnMock).not.toHaveBeenCalled();
   });
 });
+
+describe('CreatorCopilotPage — Meera hero "Ask Meera" bar (R-U1, prefill-only)', () => {
+  beforeEach(() => {
+    getPreferences.mockReset();
+    recordConsent.mockReset();
+    sendTurnMock.mockReset();
+  });
+
+  it('consent known: opens the chat with the question FILLED IN, never sent', async () => {
+    getPreferences.mockResolvedValue({ ...PREFS, consent_accepted: true });
+    renderPage();
+    const bar = await screen.findByLabelText('Ask Meera');
+    fireEvent.change(bar, { target: { value: 'Hook ideas for my next reel' } });
+    fireEvent.keyDown(bar, { key: 'Enter' });
+    const composer = await screen.findByPlaceholderText(/ask meera about your deals/i);
+    await expectPromptUnsent(composer, 'Hook ideas for my next reel');
+  });
+
+  it('consent missing: shows the consent screen first and sends nothing', async () => {
+    getPreferences.mockResolvedValue({ ...PREFS, consent_accepted: false });
+    renderPage();
+    const bar = await screen.findByLabelText('Ask Meera');
+    fireEvent.change(bar, { target: { value: 'Hook ideas' } });
+    fireEvent.keyDown(bar, { key: 'Enter' });
+    // The consent screen (its heading is an h2 "Talk to Meera") opens instead of the chat.
+    expect(await screen.findByText('Talk to Meera', { selector: 'h2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/ask meera about your deals/i)).not.toBeInTheDocument();
+    expect(sendTurnMock).not.toHaveBeenCalled();
+  });
+});

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useReducedMotion } from 'framer-motion';
-import { Send, Mic, MicOff, Volume2, VolumeX, X, Loader2 } from 'lucide-react';
+import { Send, Mic, MicOff, Volume2, VolumeX, X, Loader2, AudioLines } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,6 +12,8 @@ import { uniqueId } from '@/lib/unique-id';
 import { useMeeraStream } from '@/hooks/useMeeraStream';
 import { useVoiceOutput } from '@/hooks/useVoiceOutput';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
+import { VoicePoweredOrb } from '@/components/ui/voice-powered-orb';
+import { MeeraVoiceMode, type MeeraVoiceStatus } from '@/components/creator/meera/MeeraVoiceMode';
 
 /**
  * T-MEERA-CREATOR-PHASE-A (A4/A5/A10, SPEC.md §4.7) — the CREATOR-side Meera chat.
@@ -170,6 +172,7 @@ export function MeeraCopilotChat({
     supported: voiceOutputSupported,
     enabled: voiceEnabled,
     setEnabled: setVoiceEnabled,
+    isSpeaking,
     speak,
     stop: stopSpeaking,
   } = useVoiceOutput('creator');
@@ -180,6 +183,24 @@ export function MeeraCopilotChat({
 
   const { supported: voiceInputSupported, isListening, start: startListening, stop: stopListening } =
     useVoiceInput({ onResult: handleVoiceResult, lang: language, role: 'creator' });
+
+  // Voice mode: a full-screen stage over the same chat. It reuses the composer (the mic writes into
+  // `draft`) and the same handleSend, so nothing is sent without the creator pressing Send. Voice
+  // replies are switched on while it is open and put back to the creator's own choice on close.
+  const [voiceModeOpen, setVoiceModeOpen] = React.useState(false);
+  const voiceEnabledBeforeModeRef = React.useRef<boolean | null>(null);
+  const openVoiceMode = () => {
+    voiceEnabledBeforeModeRef.current = voiceEnabled;
+    if (!voiceEnabled) setVoiceEnabled(true);
+    setVoiceModeOpen(true);
+  };
+  const handleVoiceModeChange = (open: boolean) => {
+    if (open) return;
+    if (isListening) stopListening();
+    if (voiceEnabledBeforeModeRef.current === false) setVoiceEnabled(false);
+    voiceEnabledBeforeModeRef.current = null;
+    setVoiceModeOpen(false);
+  };
 
   /**
    * Fix round 1, Q4 item (2): pulled out of the mount effect so the `connectError` retry button
@@ -490,14 +511,44 @@ export function MeeraCopilotChat({
       });
   };
 
+  const voiceStatus: MeeraVoiceStatus = isListening ? 'listening' : isSpeaking ? 'speaking' : sending ? 'thinking' : 'idle';
+  const lastMeeraReply = [...messages].reverse().find((m) => m.role === 'meera' && m.text.trim() !== '')?.text;
+
   return (
     <div className="flex h-[32rem] max-h-[75vh] flex-col rounded-xl border border-border bg-card shadow-sm">
       <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-        <div>
-          <p className="text-sm font-semibold">Meera</p>
-          <p className="text-xs text-muted-foreground">Your AI manager</p>
+        <div className="flex items-center gap-3">
+          {/* Meera's presence: follows her REAL state. The mic is opened by the orb only while the
+              creator is already recording (useVoiceInput has the permission by then). */}
+          <div className="h-10 w-10 shrink-0" aria-hidden="true">
+            <VoicePoweredOrb
+              enableVoiceControl={isListening}
+              activity={isSpeaking ? 0.7 : sending ? 0.35 : 0.08}
+            />
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Meera</p>
+            <p className="text-xs text-muted-foreground" aria-live="polite">
+              {/* Thinking already has its own indicator in the message list; the orb shows it here. */}
+              {isListening ? 'Listening…' : isSpeaking ? 'Speaking…' : 'Your AI manager'}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-1">
+          {voiceInputSupported && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              aria-label="Voice mode"
+              title="Voice mode"
+              onClick={openVoiceMode}
+              disabled={connecting}
+            >
+              <AudioLines className="h-4 w-4" />
+            </Button>
+          )}
           {voiceOutputSupported && (
             <Button
               type="button"
@@ -626,6 +677,23 @@ export function MeeraCopilotChat({
           </Button>
         </div>
       </div>
+
+      <MeeraVoiceMode
+        open={voiceModeOpen}
+        onOpenChange={handleVoiceModeChange}
+        status={voiceStatus}
+        transcript={draft}
+        lastReply={lastMeeraReply}
+        micSupported={voiceInputSupported}
+        onMicToggle={isListening ? stopListening : startListening}
+        onSend={handleSend}
+        onSpeakAgain={() => {
+          setDraft('');
+          startListening();
+        }}
+        sendDisabled={connecting || sending}
+        language={language}
+      />
     </div>
   );
 }

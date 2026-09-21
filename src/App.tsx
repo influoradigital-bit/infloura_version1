@@ -81,6 +81,7 @@ import CreatorDashboardPage from '@/pages/creator-dashboard';
 import CreatorCampaignsPage from '@/pages/creator-campaigns';
 import CreatorApplicationsPage from '@/pages/creator-applications';
 import CreatorCopilotPage from '@/pages/creator-copilot';
+import DevMeeraPresencePage from '@/pages/dev-meera-presence';
 import CreatorCampaignDetailPage from '@/pages/creator-campaign-detail';
 import CreatorDisputesPage from '@/pages/creator-disputes';
 import CreatorReviewsPage from '@/pages/creator-reviews';
@@ -880,6 +881,8 @@ export default function App() {
             so we capture the whole first segment as :handle and strip the leading "@"
             inside the page. Placed last so all known routes win on specificity. */}
         <Route path="/:handle" element={<CreatorPortfolioPublicPage />} />
+        {/* Dev-only visual preview of Meera's presence (orb + voice screen). Never in a production build. */}
+        {import.meta.env.DEV && <Route path="/dev/meera-presence" element={<DevMeeraPresencePage />} />}
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       {/* App-wide toast outlet — previously the <Toaster> was never mounted, so

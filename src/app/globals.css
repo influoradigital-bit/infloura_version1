@@ -125,6 +125,10 @@
   --meera-info: #2C7BE5;
   /* Brand theming input — default falls back to accent */
   --brand: #6D5AE6;
+  /* Meera presence, 60-30-10: the 30% stage is the brand's deep ink, the 10% accent is --primary.
+     Same in light and dark so the stage always reads as Meera's space. */
+  --meera-stage: #221e35;
+  --meera-stage-2: #2f2852;
 }
 
 /* Optional deeper mist (not black) if dark class is applied */

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
 import { CopilotPreviewCard } from '@/components/creator/copilot/CopilotPreviewCard';
@@ -7,9 +7,9 @@ import { DailySuggestionSection } from '@/components/creator/copilot/DailySugges
 import { PasteBriefCard } from '@/components/creator/copilot/PasteBriefCard';
 import { useDailySuggestion } from '@/hooks/useDailySuggestion';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { ConsentScreen } from '@/components/meera/ConsentScreen';
 import { MeeraCopilotChat } from '@/components/creator/MeeraCopilotChat';
+import { MeeraHero } from '@/components/creator/meera/MeeraHero';
 import { api, ApiError } from '@/lib/api';
 import { getCreatorSession } from '@/lib/auth-session';
 
@@ -165,7 +165,14 @@ export default function CreatorCopilotPage() {
    * once consent is (or becomes) true, through `prefillMessage`, and that component only fills
    * the composer — see its own doc comment for why an automatic send was rejected.
    */
-  const askMeeraAboutBrief = async (briefId: string) => {
+  const askMeeraAboutBrief = (briefId: string) =>
+    openMeeraWithPrompt((lang) => (lang.startsWith('hi') ? `Brief ${briefId} dekh lo.` : `Look at brief ${briefId}.`));
+
+  /**
+   * Same consent-checked, PREFILL-ONLY path as "Ask Meera about this brief" (R-U1), shared by that
+   * button and the hero's "Ask Meera" bar: the text only ever fills the composer, never sends.
+   */
+  const openMeeraWithPrompt = async (prompt: string | ((lang: string) => string)) => {
     setConsentLoadError(null);
     setCheckingConsent(true);
     try {
@@ -173,7 +180,7 @@ export default function CreatorCopilotPage() {
       const lang = prefs.creator_language || 'hi-IN';
       setLanguage(lang);
       setConsentAccepted(prefs.consent_accepted);
-      const text = lang.startsWith('hi') ? `Brief ${briefId} dekh lo.` : `Look at brief ${briefId}.`;
+      const text = typeof prompt === 'function' ? prompt(lang) : prompt;
       if (prefs.consent_accepted) {
         prefillTokenRef.current += 1;
         setPrefillMessage({ text, token: prefillTokenRef.current });
@@ -246,21 +253,13 @@ export default function CreatorCopilotPage() {
                   }}
                 />
               ) : (
-                <>
-                  <Button onClick={openMeera} disabled={checkingConsent}>
-                    {checkingConsent ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Connecting…
-                      </>
-                    ) : (
-                      'Open Meera'
-                    )}
-                  </Button>
-                  {consentLoadError && (
-                    <p className="mt-2 text-sm text-destructive-foreground">{consentLoadError}</p>
-                  )}
-                </>
+                <MeeraHero
+                  firstName={firstName}
+                  onAsk={(question) => void openMeeraWithPrompt(question)}
+                  onOpen={openMeera}
+                  busy={checkingConsent}
+                  error={consentLoadError}
+                />
               )}
             </CardContent>
           </Card>
