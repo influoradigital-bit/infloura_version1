@@ -20,8 +20,8 @@ public class RazorpayProperties {
     private String apiBaseUrl = "https://api.razorpay.com/v1";
     private String payoutApiBaseUrl = "https://api.razorpay.com/v1";
 
-    /** Platform fee applied on escrow fund, as a percentage (e.g. 15.00 = 15%). */
-    private java.math.BigDecimal platformFeePercent = new java.math.BigDecimal("15.00");
+    /** Platform fee applied on escrow fund, as a percentage (e.g. 10.00 = 10%). */
+    private java.math.BigDecimal platformFeePercent = new java.math.BigDecimal("10.00");
 
     public boolean isConfigured() {
         return keyId != null && !keyId.isBlank() && keySecret != null && !keySecret.isBlank();

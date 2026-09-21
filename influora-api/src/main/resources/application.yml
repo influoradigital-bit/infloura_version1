@@ -439,7 +439,7 @@ influora:
     payout-account-number: ${RAZORPAYX_ACCOUNT_NUMBER:REPLACE_WITH_YOUR_RAZORPAYX_ACCOUNT}
     api-base-url: ${RAZORPAY_API_BASE_URL:https://api.razorpay.com/v1}
     payout-api-base-url: ${RAZORPAYX_API_BASE_URL:https://api.razorpay.com/v1}
-    platform-fee-percent: ${PLATFORM_FEE_PERCENT:15.00}
+    platform-fee-percent: ${PLATFORM_FEE_PERCENT:10.00}
   # Meta Graph API (Instagram/Facebook) OAuth + insights credentials -> MetaApiProperties
   # (@ConfigurationProperties prefix "influora.meta"). One platform-wide Meta app, same for every
   # brand/creator; the per-user OAuth access tokens obtained after connecting are stored ENCRYPTED
