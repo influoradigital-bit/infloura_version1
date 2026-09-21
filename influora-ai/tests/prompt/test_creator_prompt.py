@@ -304,7 +304,9 @@ def test_assemble_prompt_routes_creator_audience_case_insensitively():
     assert prompt.audience == "CREATOR"
     assert prompt.system_blocks[0]["text"].startswith(MEERA_CREATOR_PERSONA)
     # Spring's payload owns workspace_id; the route's value is only the fallback.
-    assert "Creator context for creator-user-001" in prompt.system_blocks[1]["text"]
+    # Block B is the LAST system block (the content-knowledge block sits
+    # between A and B on the creator path).
+    assert "Creator context for creator-user-001" in prompt.system_blocks[-1]["text"]
     assert prompt.tools == []
 
 

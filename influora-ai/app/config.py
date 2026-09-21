@@ -76,8 +76,17 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.10.4"
-# ^ bumped for T-MEERA-CREATOR-PHASE-B Wave U, K-3 (Kabir "Last call — K-3",
+PROMPT_VERSION = "meera-2026.09.21.1"
+# ^ bumped for creator content knowledge (feature/creator-content-knowledge,
+# Swapnil 2026-09-21): CREATOR turns now carry a third cached system block
+# rendered from app/prompt/knowledge/video_content_concepts.jsonl
+# (app/prompt/content_knowledge.py), and creator_persona.py gained the
+# "Content and growth questions" rules (knowledge first, name the category and
+# the entry, ask for the last script, no invented hook numbers, no urgency
+# wording, platform rows as background). The BRAND prompt text is unchanged,
+# but the version is global, so brand cache keys roll over too.
+#
+# Previously: bumped for T-MEERA-CREATOR-PHASE-B Wave U, K-3 (Kabir "Last call — K-3",
 # KABIR-CONSENT-0917.md; KC-3 condition). `creator_persona.py`'s trust-boundary
 # bullet changed twice in this same range: once to name `<untrusted_brand_written>`
 # blocks inside tool results (K-3's mechanism, `loop.py`'s

@@ -590,7 +590,10 @@ async def test_consented_creator_turn_uses_creator_persona_and_empty_tool_set():
     assert recorded["tools"] == []
     system_text = json.dumps(recorded["system_blocks"])
     assert MEERA_CREATOR_PERSONA.splitlines()[0] in recorded["system_blocks"][0]["text"]
-    assert "You work for Priya here" in recorded["system_blocks"][1]["text"]
+    # Block B (per-creator) is the last system block; the cached content
+    # knowledge block sits between A and B on the creator path.
+    assert "You work for Priya here" in recorded["system_blocks"][-1]["text"]
+    assert "Influora content knowledge" in recorded["system_blocks"][1]["text"]
     assert "12,400 followers" in system_text
     assert "9,999" in system_text  # the creator's OWN floor is in the CREATOR prompt (not a leak)
     # The brand persona and brand tools are nowhere in a creator turn.

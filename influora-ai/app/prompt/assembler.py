@@ -30,6 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.prompt.content_knowledge import build_creator_knowledge_block
 from app.prompt.creator_persona import (
     get_creator_directives,
     get_creator_persona_block,
@@ -974,14 +975,22 @@ def assemble_prompt(brand_context: dict[str, Any], session_id: str | None = None
         tools: list[dict[str, Any]] = get_creator_tool_schemas(enabled_names)
         block_a = build_block_a_creator([t["name"] for t in tools])
         block_b = build_block_b_creator(creator)
+        # Influora content knowledge (2026-09-21): a third cached system
+        # block, CREATOR only. Tenant-agnostic like Block A, so it sits
+        # between A and the per-creator Block B -- the stable text stays in
+        # the cached prefix and B remains the last system block. That is 3
+        # cache breakpoints on this path (Anthropic allows 4); the brand path
+        # is untouched at 2.
+        system_blocks = [block_a, build_creator_knowledge_block(), block_b]
     else:
         block_a = build_block_a()
         block_b = build_block_b(brand_context)
         tools = get_tool_schemas()
+        system_blocks = [block_a, block_b]
     messages = build_block_c_messages(brand_context.get("conversation") or [])
 
     return AssembledPrompt(
-        system_blocks=[block_a, block_b],
+        system_blocks=system_blocks,
         messages=messages,
         prompt_version=prompt_version,
         cache_key=cache_key_for(prompt_version, audience, workspace_id, session_id),
