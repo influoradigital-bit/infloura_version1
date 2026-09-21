@@ -7,8 +7,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -125,6 +127,47 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OptimisticLockingFailureException.class)
     public ResponseEntity<ApiResponse<Void>> handleOptimisticLockingFailure(OptimisticLockingFailureException ex) {
         log.error("Optimistic locking failure", ex);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.fail(ApiErrorBody.of("CONCURRENT_MODIFICATION", "This record was modified by another request; please retry")));
+    }
+
+    /**
+     * [EV-181] Pessimistic-lock failures — the {@code SELECT ... FOR UPDATE} side of the same story
+     * the handler above covers for {@code @Version} — surfaced as a clean 409 instead of a bare 500.
+     *
+     * <p>Every money path in this codebase serializes writers with real row locks, not optimistic
+     * versions: {@code EscrowService#lockCollaborationEscrowForApproval}, {@code
+     * CollaborationRepository#findByIdForUpdate}, {@code EscrowHoldRepository#findByIdForUpdate},
+     * {@code DeliverableRepository#findByIdAndWorkspaceId} (F-0580), {@code
+     * WalletRepository#findByIdForUpdate}. When a waiter gives up, Hibernate's MySQL dialect maps
+     * error 1205 ({@code ER_LOCK_WAIT_TIMEOUT}) to {@code jakarta.persistence.LockTimeoutException}
+     * and Spring translates that to {@link CannotAcquireLockException}, a subclass of {@link
+     * PessimisticLockingFailureException}; a deadlock victim (1213) arrives the same way. Neither
+     * had a handler, so both fell through to the generic {@code Exception} handler below and the
+     * caller got a 500 — for a situation that is purely "another request is mid-write on this row",
+     * not a server fault.
+     *
+     * <p>Meera measured that live: the loser of two concurrent deliverable approvals got a 500
+     * {@code PessimisticLockingFailureException} rather than the intended 409, because the WINNING
+     * approval was itself stalled ~101s behind the FK self-block that {@link AfterCommit} now
+     * removes. With that stall gone the loser waits milliseconds, then reads the already-committed
+     * APPROVED row and is refused deterministically by {@code BrandDeliverableService#approve}'s
+     * own {@code canReview} guard — 409 {@code INVALID_STATE}, the intended answer. This handler is
+     * the backstop for the residual case (a genuinely long-running holder, or a deadlock victim):
+     * it makes that answer 409 {@code CONCURRENT_MODIFICATION} — retryable, documented, never a 500
+     * — on every locking path at once, an approve racing a refund included.
+     *
+     * <p>{@code CONCURRENT_MODIFICATION} rather than {@code INVALID_STATE} for that residual case
+     * on purpose: a lock timeout means we never got to READ the row, so we do not know its state
+     * and must not claim one. Both are 409; the two codes are distinguishable by the client, and
+     * only this one is safe to auto-retry.
+     *
+     * <p>Registering the base class covers {@link CannotAcquireLockException} already; it is listed
+     * explicitly so the intent survives any future reshuffle of the Spring DAO hierarchy.
+     */
+    @ExceptionHandler({PessimisticLockingFailureException.class, CannotAcquireLockException.class})
+    public ResponseEntity<ApiResponse<Void>> handlePessimisticLockingFailure(PessimisticLockingFailureException ex) {
+        log.error("Pessimistic locking failure (row-lock timeout or deadlock victim)", ex);
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.fail(ApiErrorBody.of("CONCURRENT_MODIFICATION", "This record was modified by another request; please retry")));
     }
