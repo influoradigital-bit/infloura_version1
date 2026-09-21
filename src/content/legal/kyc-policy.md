@@ -10,7 +10,7 @@ We verify who you are before releasing any Payout — this protects you, other u
 
 ## 1. Why we require KYC
 
-**KYC ("Know Your Customer")** verification is required under the Prevention of Money Laundering Act, 2002 (PMLA) and RBI's KYC Master Directions, which apply to payment flows like the payment protection Payouts on Influora. We also use KYC to confirm your identity for TDS reporting and to reduce fraud on the platform.
+**KYC ("Know Your Customer")** verification is required under the Prevention of Money Laundering Act, 2002 (PMLA) and RBI's KYC Master Directions, which apply to payment flows like the payment protection Payouts on Influora. We also use KYC to confirm your identity before we send money to a bank account, and to reduce fraud on the platform. Influora files no TDS return, so none of this is collected for TDS reporting.
 
 You cannot fund a Campaign or receive a Payout until your KYC is verified.
 
@@ -18,7 +18,7 @@ You cannot fund a Campaign or receive a Payout until your KYC is verified.
 
 **Creators (individuals):**
 
-- PAN (Permanent Account Number) — required for tax compliance and payout processing
+- PAN (Permanent Account Number) — required before Influora can send you a Payout
 - Aadhaar or another government-issued photo ID — for identity verification
 - Bank account or UPI details — to receive Payouts
 

@@ -40,7 +40,8 @@ import {
     - "RBI-regulated trustee escrow", "RBI Nodal Protected", "Escrow Vault".
       EV-007: funds are a reserved balance on Influora's ledger; we are not a trustee.
       "escrow" is banned in user copy (2026-09-02).
-    - "< 3 Seconds" instant payout. Live copy says payout typically inside 24 hours.
+    - "< 3 Seconds" instant payout. Live copy says Influora pays within 2 working days of
+      the live post link (owner's ruling, 2026-09-21) — and that a creator never withdraws.
     - "99.2% on-time completion score", "78% Tier-1 presence", "Industry Avg 1.8%",
       "auto-generated 194J TDS certificates". None are measured or built.
     - The named creator "Tanvi Shah" and, more seriously, the real third-party brands
@@ -51,7 +52,7 @@ import {
 const HERO_STATS = [
   { value: 'Free', label: 'To join, list a rate card and pitch' },
   { value: 'Before you film', label: 'The brand’s payment is secured first' },
-  { value: '~24 hours', label: 'Typical payout time after approval' },
+  { value: '2 working days', label: 'To be paid, once your post is live' },
   { value: 'Nano → macro', label: 'No minimum follower count' },
 ] as const;
 
@@ -107,8 +108,8 @@ const PAYOUT_FLOW = [
     n: '04',
     icon: ArrowRight,
     title: 'Payout releases to you',
-    body: 'Approval releases the money to your Influora wallet, typically inside 24 hours, ready to withdraw to your UPI or bank account, with an invoice generated for you.',
-    tag: '~24 hours',
+    body: 'Approval clears you to post. Once your post is live and you have submitted the link, the money moves to your Influora wallet and Influora transfers it to your UPI or bank account within 2 working days, with an invoice generated for you.',
+    tag: '2 working days',
   },
 ] as const;
 
@@ -131,7 +132,7 @@ export default function HowItWorksCreatorsPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="How It Works for Creators"
-        description="Build a verified profile, get invited to Deal Rooms, agree scope in a contract, and get paid through Secure Payments after approval. How creators earn on Influora."
+        description="Build a verified profile, get invited to Deal Rooms, agree scope in a contract, and get paid within 2 working days of your post going live. How creators earn on Influora."
         canonical="/how-it-works/creators"
       />
       {/*
@@ -144,7 +145,7 @@ export default function HowItWorksCreatorsPage() {
         data={getHowToSchema({
           name: 'How to get paid brand deals as a creator in India',
           description:
-            'The six steps a creator takes on Influora, from building a verified profile to the payout releasing after the brand approves the work.',
+            'The six steps a creator takes on Influora, from building a verified profile to the payout landing in your bank account after your post goes live.',
           url: '/how-it-works/creators',
           steps: STEPS.map((s) => ({ name: s.title, text: s.body })),
         })}
@@ -153,7 +154,7 @@ export default function HowItWorksCreatorsPage() {
         data={getWebPageSchema({
           name: 'How It Works for Creators',
           description:
-            'A creator builds a verified profile with a rate card, receives or applies to campaigns, agrees scope in a Deal Room, e-signs a contract, delivers the work, and is paid automatically once the brand approves.',
+            'A creator builds a verified profile with a rate card, receives or applies to campaigns, agrees scope in a Deal Room, e-signs a contract, delivers the work, posts it, and is paid by bank transfer within 2 working days of submitting the live link.',
           url: '/how-it-works/creators',
         })}
       />
@@ -317,7 +318,7 @@ export default function HowItWorksCreatorsPage() {
                   <p className="text-xs text-muted-foreground">Secured for this deal</p>
                   <p className="mt-1 text-2xl font-bold tracking-tight">₹35,000</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Held before filming · releases on approval
+                    Held before filming · released after your post goes live
                   </p>
                 </div>
 
@@ -421,11 +422,11 @@ export default function HowItWorksCreatorsPage() {
                   Chapter 04 — Getting paid
                 </p>
                 <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-                  Approved means paid, not invoiced
+                  Posted means paid, not invoiced
                 </h2>
                 <p className="mt-4 text-muted-foreground">
-                  You do not raise an invoice and wait. Approval releases the payout and the invoice
-                  is generated for you.
+                  You do not raise an invoice and wait. Once your post is live and the link is in,
+                  the payout is released and the invoice is generated for you.
                 </p>
               </div>
             </FadeUp>
@@ -514,7 +515,7 @@ export default function HowItWorksCreatorsPage() {
               <p className="mt-4 text-muted-foreground">
                 A Hype Campaign is a brand dropping one source reel at a fixed per-reel rate with a
                 capped number of slots. You accept with one tap — no negotiation — post inside the
-                window, and the payout releases automatically once the post is verified.
+                window, and the payment is released once the post is live and its link is in.
               </p>
               <div className="mt-8">
                 <Button size="lg" variant="outline" asChild>
@@ -550,7 +551,7 @@ export default function HowItWorksCreatorsPage() {
             label: 'First, show me how my payment is protected',
             to: '/features/secure-payments',
           }}
-          reassurances={['Free to join', 'Paid after approval', 'Invoices generated for you']}
+          reassurances={['Free to join', 'Paid after your post goes live', 'Invoices generated for you']}
           className="py-20"
         />
       </main>

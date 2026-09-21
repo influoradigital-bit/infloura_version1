@@ -618,7 +618,7 @@ export const CREATOR_FAQ: { question: string; answer: string }[] = [
   {
     question: 'When do I get paid?',
     answer:
-      'Your fee and its release conditions are set out in the agreement you e-sign before the shoot. The brand funds the deal up front on Influora, so the money is secured before the day rather than invoiced for afterwards.',
+      'Your fee and its release conditions are set out in the agreement you e-sign before the shoot. The brand funds the deal up front on Influora, so the money is secured before the day rather than invoiced for afterwards. Once your post is live and you have submitted the link, Influora pays you by bank transfer (NEFT/IMPS) within 2 working days.',
   },
   {
     question: 'Who owns the content I shoot?',

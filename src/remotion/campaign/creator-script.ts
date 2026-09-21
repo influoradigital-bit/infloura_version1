@@ -93,13 +93,18 @@ export const CREATOR_SCRIPT: CreatorScene[] = [
     kicker: 'Stage 6 — Money secured',
     caption: 'Paid in before you start',
     /**
-     * ACCURACY: the "Secured" tooltip in `creator-wallet.tsx:752` reads
-     * "Funds a brand has locked for a deal that's still in progress. Not
-     * withdrawable yet — moves to Available Balance once you deliver and it's
-     * approved." The line below is that sentence, said out loud.
+     * ACCURACY: the "Secured" tooltip in `creator-wallet.tsx` reads "Funds a
+     * brand has locked for a deal that's still in progress. Not yours yet — it
+     * moves to Available Balance once your post is live and the brand releases
+     * it." The line below is that sentence, said out loud.
+     *
+     * ROUND 4b: this comment used to quote the tooltip's PREVIOUS wording, which
+     * ended the creator's money at approval and offered a withdrawal. The tooltip
+     * had already been corrected; the quote had not, and the film's on-screen copy
+     * was written from the quote. A stale citation is how a fixed claim comes back.
      */
     voice:
-      'Now the part that matters. Before you shoot anything, the brand puts the money in and it shows in your wallet as Secured. You cannot withdraw it yet, but you can see it is there.',
+      'Now the part that matters. Before you shoot anything, the brand puts the money in and it shows in your wallet as Secured. It is not yours yet, but you can see it is there.',
     seconds: 15,
   },
   {
@@ -113,16 +118,19 @@ export const CREATOR_SCRIPT: CreatorScene[] = [
   {
     id: 'paid',
     kicker: 'Stage 8 — Get paid',
-    caption: 'Approved becomes withdrawable',
+    caption: 'Posted becomes paid',
     /**
-     * ACCURACY: two distinct steps. `EscrowService.release` moves money into the
-     * creator's Influora wallet (Available Balance); `PayoutService` is the
-     * separate out-of-band RazorpayX push to a real bank/UPI account and is only
-     * ever QUEUED here, becoming PROCESSED asynchronously by webhook. Hence
-     * "on its way", never "instant".
+     * ACCURACY: the trigger is the LIVE POST, not the approval (owner's ruling,
+     * 2026-09-21; PaymentMilestone's ON_POSTED default). Approval clears the post
+     * to go live and pays nobody. Once the post is live and its link is submitted,
+     * `EscrowService.release` moves money into the creator's Influora wallet
+     * (Available Balance) and Influora then pays it out by bank transfer — a
+     * separate, out-of-band step that is QUEUED here and confirmed later. Hence
+     * "within 2 working days", never "instant", and never "withdraw": the creator
+     * does not move this money, we do.
      */
     voice:
-      'When a deliverable is approved, that payment moves from Secured to Available Balance, and it is yours. Withdraw it to your bank or UPI, and it sits in Pending Payouts until it lands.',
+      'Once your post is live and you have submitted the link, that payment moves from Secured to Available Balance. Influora then sends it to your bank or UPI, and it sits in Pending Payouts until it lands, usually within two working days.',
     seconds: 16,
   },
   {

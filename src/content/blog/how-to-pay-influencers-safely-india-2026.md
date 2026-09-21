@@ -15,7 +15,7 @@ featuredImageAlt: "A brand marketer reviewing an influencer payment dashboard sh
 
 ## Quick Answer
 
-The safest way to pay an influencer in India is through **payment protection**: the brand sets the agreed amount aside upfront, out of reach of either side, and the money releases to the creator only after the brand approves the delivered content. This removes the two most common failure points in influencer payments — brands who don't pay after the post goes live, and creators who take an advance and never deliver. Pair payment protection with a written contract, a staged payment schedule, and UPI or bank transfer with a proper invoice, and you've closed almost every gap that leads to disputes.
+The safest way to pay an influencer in India is through **payment protection**: the brand sets the agreed amount aside upfront, out of reach of either side. The money is released to the creator once the post is live and its link has been submitted — the brand approves the draft first, but approval alone pays nobody. This removes the two most common failure points in influencer payments — brands who don't pay after the post goes live, and creators who take an advance and never deliver. Pair payment protection with a written contract, a staged payment schedule, and UPI or bank transfer with a proper invoice, and you've closed almost every gap that leads to disputes.
 
 This guide walks through the full process, step by step, with the specific risks each step protects against.
 
@@ -49,15 +49,15 @@ A simple written agreement — even a short one — turns a verbal understanding
 
 This is the step that actually removes risk, rather than just documenting it.
 
-**Payment protection sets the brand's payment aside until the creator delivers approved content.** The brand pays into a protected balance when the contract is signed — before the creator starts work. The creator can see the funds are already secured, so there's no reason to distrust the brand's ability or intent to pay. The brand's money stays locked and refundable until the deliverable is approved, so there's no risk of paying for content that never arrives or doesn't match the brief.
+**Payment protection sets the brand's payment aside until the creator's approved post is live and its link is in.** The brand pays into a protected balance when the contract is signed — before the creator starts work. The creator can see the funds are already secured, so there's no reason to distrust the brand's ability or intent to pay. The brand's money stays locked and refundable until the approved post is live and its link is in, so there's no risk of paying for content that never arrives or doesn't match the brief.
 
 This single change eliminates the two most common disputes:
 
 | Risk | Without payment protection | With payment protection |
 |---|---|---|
-| Creator takes advance, doesn't deliver | Brand loses money, no recourse | Funds stay in payment protection until content is approved |
-| Brand delays or skips payment after posting | Creator has no leverage, chases for weeks | Funds are already reserved and release automatically on approval |
-| Content doesn't match the brief | Payment already sent, dispute after the fact | Payment held until brand approves; issue resolved before funds move |
+| Creator takes advance, doesn't deliver | Brand loses money, no recourse | Funds stay in payment protection until the agreed post is live |
+| Brand delays or skips payment after posting | Creator has no leverage, chases for weeks | Funds are already reserved, and go out once the live post link is in |
+| Content doesn't match the brief | Payment already sent, dispute after the fact | Payment held until the brief is met; issue resolved before funds move |
 
 ## Step 3: Use a Staged or Milestone-Based Release
 
@@ -94,9 +94,9 @@ Keeping the proposal, counter-offers, contract, content submission, and approval
 - [ ] Deliverables, usage rights, and revision limits are written down and agreed
 - [ ] Payment amount and release conditions are specified in advance
 - [ ] Funds are held securely before the creator starts work
-- [ ] Payment releases only after the brand approves the delivered content
+- [ ] Payment releases once the post is live and its link has been submitted
 - [ ] Payment is made via UPI/bank transfer with an invoice, not an untracked personal transfer
-- [ ] TDS is deducted and documented where applicable
+- [ ] You have deducted and documented any TDS your tax advisor says you owe — no platform does this for you
 - [ ] All communication and approvals live in one traceable thread
 
 ## The Bottom Line
@@ -105,6 +105,6 @@ Paying influencers safely in India isn't about finding "trustworthy" creators or
 
 ## Pay Every Influencer Deal With Payment protection
 
-Influora funds every campaign through payment protection from the moment a contract is signed, with auto-generated contracts, an invoice on every payout, and UPI withdrawals built in — so neither side is ever left waiting or exposed.
+Influora funds every campaign through payment protection from the moment a contract is signed, with auto-generated contracts and an invoice on every payout. Creators are paid by bank transfer within 2 working days of submitting their live post link — so neither side is ever left waiting or exposed.
 
 **[Launch a campaign →](/get-started)**

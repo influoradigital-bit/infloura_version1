@@ -249,7 +249,7 @@ export const SCENES: Scene[] = [
           title: 'Payout · ₹4,300',
           steps: [
             { label: 'Secured', state: 'done' },
-            { label: 'Released', state: 'done', sub: 'Brand ne approve kiya' },
+            { label: 'Released', state: 'done', sub: 'Live link submit kiya' },
             { label: 'Payout in flight', state: 'now', sub: 'Bank tak 1–2 din' },
             { label: 'Paid', state: 'next' },
           ],

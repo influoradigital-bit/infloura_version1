@@ -68,8 +68,8 @@ export const BRAND_STEPS: readonly HowItWorksStep[] = [
   {
     icon: ShieldCheck,
     step: '06',
-    title: 'The payment releases, creator posts',
-    body: 'On approval, the payment releases to the creator automatically. They post within the campaign window and you track performance from your dashboard.',
+    title: 'Creator posts, then the payment releases',
+    body: 'Approval clears the post to go live. The creator posts within the campaign window and submits the link — that link is what releases the payment, and you track performance from your dashboard.',
   },
 ] as const;
 
@@ -108,7 +108,7 @@ export const CREATOR_STEPS: readonly HowItWorksStep[] = [
   {
     icon: Wallet,
     step: '06',
-    title: 'Get paid, then post',
-    body: 'Once the brand approves, the payment releases to you automatically and an invoice is generated for you. Post within the campaign window and see the payment land, usually within 24 hours.',
+    title: 'Post, then get paid',
+    body: 'The brand has 3 working days to review your draft. Once it approves, post within the campaign window and submit the live link \u2014 that link is what triggers payment, not the approval. Influora then pays you by bank transfer (NEFT/IMPS) to the account on your profile within 2 working days, and an invoice is generated for you.',
   },
 ] as const;

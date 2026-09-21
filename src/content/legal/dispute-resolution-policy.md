@@ -31,7 +31,7 @@ Either a brand or a creator can open a dispute on a Campaign when:
 A dispute resolves in one of these ways:
 
 - **Creator failed to deliver, or the brand's rejection is upheld** → the brand's protected funds are **returned to the brand**. This is the dispute-resolution path that replaces an on-demand refund — it only happens through this process, not by request.
-- **Creator's delivery is upheld as meeting the agreed brief** → payment protection **releases the Payout to the creator**, minus the creator commission and any tax that must be deducted by law, even if the brand remains unsatisfied for reasons outside the brief.
+- **Creator's delivery is upheld as meeting the agreed brief** → payment protection **releases the Payout to the creator**, minus the creator commission, even if the brand remains unsatisfied for reasons outside the brief.
 - **Partial delivery or shared fault** → we may propose a **partial release** — part of the protected amount released to the creator, the remainder returned to the brand — where the evidence supports a split outcome.
 - **Mutual resolution** → the brand and creator agree on an outcome themselves (for example, a revised Deliverable or a mutually agreed split), and we execute the agreed release.
 

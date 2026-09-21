@@ -88,7 +88,7 @@ const FAQS = [
   {
     question: 'How do I pay an influencer safely?',
     answer:
-      'The safe pattern is to never pay in full up front and never expect a creator to work with nothing secured. On Influora the brand reserves the deal amount in its Influora wallet when the contract is e-signed, the creator delivers, the brand approves, and only then does the payment release \u2014 so neither side is ever exposed to the other.',
+      'The safe pattern is to never pay in full up front and never expect a creator to work with nothing secured. On Influora the brand reserves the deal amount in its Influora wallet when the contract is e-signed, the creator delivers, the brand approves the draft, and the creator posts. The payment goes out after the live link is submitted \u2014 so neither side is ever exposed to the other.',
   },
   {
     question: 'What is a Deal Room?',
@@ -126,12 +126,12 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: 'Protection on every deal',
-    body: 'Funds lock before work starts and release on approval. Nobody chases payments.',
+    body: 'Funds lock before work starts and release once the post is live. Nobody chases payments.',
   },
   {
     icon: Wallet,
     title: 'Clean payouts',
-    body: 'Invoices generated on every payout, and withdrawals to UPI or a bank account.',
+    body: 'Invoices generated on every payout, paid out by bank transfer to UPI or a bank account.',
   },
   {
     icon: Zap,
@@ -160,7 +160,7 @@ const HYPE_STEPS = [
   { step: '1', text: 'Drop one source reel and set a flat per-reel rate' },
   { step: '2', text: 'Creators accept slots with one tap — no negotiation' },
   { step: '3', text: 'Funding locks automatically each slot as it fills' },
-  { step: '4', text: 'Verified posts auto-release payouts inside the 72-hour window' },
+  { step: '4', text: 'Each creator submits the live link, then you release that payout' },
 ];
 
 // Tracking claims verified against CampaignTrackingController + conversion
@@ -193,7 +193,7 @@ const CREATOR_EARNINGS = [
   {
     icon: Zap,
     title: 'Hype slots',
-    body: 'One-tap accept on flat-rate remix campaigns. Post inside the window, payout auto-releases.',
+    body: 'One-tap accept on flat-rate remix campaigns. Post inside the window, submit the live link, and Influora pays you by bank transfer within 2 working days.',
   },
   {
     icon: Ticket,
@@ -220,7 +220,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Influencer Marketing Platform for India | Influora"
-        description="Hire verified Indian creators, agree terms in one Deal Room, pay only on approval. Contracts, payment protection and invoices built in. Free to start."
+        description="Hire verified Indian creators, agree terms in one Deal Room, pay when the post is live. Contracts, payment protection and invoices built in. Free to start."
         canonical="/"
       />
       <JsonLd data={getOrganizationSchema()} />
@@ -229,7 +229,7 @@ export default function LandingPage() {
         data={getWebPageSchema({
           name: 'Influencer Marketing Platform for India',
           description:
-            'Influora is an influencer marketing platform for India where brands hire verified creators, agree terms in a Deal Room, and pay only after approving the delivered work.',
+            'Influora is an influencer marketing platform for India where brands hire verified creators, agree terms in a Deal Room, approve the work, and pay once the post is live.',
           url: '/',
         })}
       />
@@ -254,7 +254,7 @@ export default function LandingPage() {
             'Verified creator discovery',
             'Deal Room negotiation',
             'Auto-generated e-signed contracts',
-            'Protected payments released on approval',
+            'Protected payments released on the live post',
             'Invoice generation on every payout',
             'Hype multi-creator campaigns',
             'Per-creator sales and coupon tracking',
@@ -665,8 +665,8 @@ export default function LandingPage() {
             <FadeUp className="mx-auto max-w-xl text-center">
               <h2 className="text-3xl font-semibold">Creators earn three ways</h2>
               <p className="mt-3 text-muted-foreground">
-                Every stream pays through the same protected rail — funds lock before you start, payout lands
-                after approval, invoice generated for you.
+                Every stream pays through the same protected rail — funds lock before you start, payment goes
+                out once the post is live, invoice generated for you.
               </p>
             </FadeUp>
             <StaggerContainer className="mt-12 grid gap-8 md:grid-cols-3 md:gap-0 md:divide-x md:divide-border/60">

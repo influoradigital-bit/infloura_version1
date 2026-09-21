@@ -69,7 +69,7 @@ const HERO_STATS = [
   { value: 'One thread', label: 'Chat, proposal, contract and payment together' },
   { value: 'E-signed', label: 'Every deal, before any work begins' },
   { value: 'Capped', label: 'Revision limit is written into the contract' },
-  { value: 'On approval', label: 'Payment releases only after you approve the work' },
+  { value: 'On the live post', label: 'Payment goes out once the post is live' },
 ] as const;
 
 const OLD_WAY = [
@@ -111,8 +111,8 @@ const ENGINES = [
   },
   {
     icon: Repeat,
-    title: 'Payout on approval',
-    body: 'Approving the deliverable releases the payment and generates the invoice.',
+    title: 'Paid on the live post',
+    body: 'Approving a draft clears it to go live — it pays nobody yet. The creator posts, submits the link, and the payment is released with an invoice against it.',
   },
 ] as const;
 
@@ -453,7 +453,7 @@ export default function DealRoomFeaturePage() {
                     </div>
                     <div className="flex justify-between gap-3 border-t border-border/60 pt-2">
                       <dt className="text-muted-foreground">Released to creator</dt>
-                      <dd className="text-right font-semibold">On approval</dd>
+                      <dd className="text-right font-semibold">On the live post</dd>
                     </div>
                   </dl>
                   <div className="mt-4 flex items-center gap-2 rounded-lg border border-border/60 p-3 text-sm">

@@ -56,7 +56,7 @@ import {
 /** Hero stat band — the design's four tiles, refilled with things that are true. */
 const HERO_STATS = [
   { value: '₹0', label: 'To start — no subscription on the Free tier' },
-  { value: 'On approval', label: 'Payment releases only after you approve the work' },
+  { value: 'On the live post', label: 'Payment goes out once the post is live' },
   { value: 'Every deal', label: 'E-signed contract, before any work begins' },
   { value: 'Nano → macro', label: 'No minimum follower count to work with' },
 ] as const;
@@ -113,9 +113,9 @@ const PAYMENT_FLOW = [
   {
     n: '04',
     icon: ArrowRight,
-    title: 'Payout releases',
-    body: 'Approval releases the payment to the creator and generates the invoice.',
-    tag: 'On approval',
+    title: 'Payout follows the live post',
+    body: 'Approving clears the post to go live. Once it is live and the link is in, the payment is released to the creator and the invoice is generated.',
+    tag: 'On the live link',
   },
 ] as const;
 
@@ -129,7 +129,7 @@ const OLD_WAY = [
 const INFLUORA_WAY = [
   'One dashboard with every campaign, deal and payout in it.',
   'An e-signed contract on every deal, with usage rights and revision limits written in.',
-  'Funds secured before filming and released only when you approve.',
+  'Funds secured before filming, and released once the post is live.',
   'An invoice generated on every payout, for clean books.',
 ] as const;
 
@@ -168,7 +168,7 @@ export default function HowItWorksBrandsPage() {
         data={getWebPageSchema({
           name: 'How It Works for Brands',
           description:
-            'A brand creates a campaign, discovers verified creators, negotiates in the Deal Room, e-signs a contract and funds the deal, approves the delivered work, and the payment releases to the creator automatically.',
+            'A brand creates a campaign, discovers verified creators, negotiates in the Deal Room, e-signs a contract and funds the deal, and approves the delivered work. The creator posts, submits the live link, and the payment is released to the creator.',
           url: '/how-it-works/brands',
         })}
       />
@@ -519,7 +519,7 @@ export default function HowItWorksBrandsPage() {
                   Chapter 03 — Secure the funds
                 </p>
                 <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-                  Your money does not move until you approve the work
+                  Your money stays secured until the post is live
                 </h2>
                 <p className="mt-4 text-muted-foreground">
                   Your payment is reserved in your Influora wallet from the
@@ -569,7 +569,7 @@ export default function HowItWorksBrandsPage() {
               <p className="mt-4 text-muted-foreground">
                 A Hype Campaign is a 72-hour blitz. Drop one source reel, set a flat per-reel rate,
                 cap the slots. Creators accept with one tap — no back-and-forth — and post before
-                the window closes. Each approved reel pays out automatically.
+                the window closes. Each reel is paid once it is live and its link is in.
               </p>
               <div className="mt-8">
                 <Button size="lg" variant="outline" asChild>

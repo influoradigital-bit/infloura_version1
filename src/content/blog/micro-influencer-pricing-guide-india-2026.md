@@ -120,7 +120,7 @@ It's a starting reference point, but engagement rate, niche, and deliverable typ
 Often yes — regional-language creators may quote lower absolute rates, but frequently deliver stronger relevance and conversion for value-conscious or regionally-focused brands.
 
 **Should payment be made upfront or after posting?**
-Neither extreme is ideal for either side. Payment protection — where the brand funds the deal upfront but payment only releases to the creator after the brand approves the delivered content — removes the risk for both parties regardless of the agreed rate.
+Neither extreme is ideal for either side. Payment protection — where the brand funds the deal upfront, and the payment releases to the creator once their post is live and its link is in — removes the risk for both parties regardless of the agreed rate.
 
 ## The Bottom Line
 
@@ -128,6 +128,6 @@ There's no single number that answers "how much do micro influencers charge" —
 
 ## Set Your Rate. Get Paid Safely.
 
-Influora lets creators publish a rate card, get discovered by verified brands, and receive payment through payment protection — funds are locked before you create content and released to your UPI or bank account within 24 hours of approval.
+Influora lets creators publish a rate card, get discovered by verified brands, and receive payment through payment protection — funds are locked before you create content, and once your post is live and you have submitted the link, Influora pays you by bank transfer within 2 working days.
 
 **[Join as a creator](/creators)**

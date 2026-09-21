@@ -98,16 +98,18 @@ export const LIFECYCLE_SCRIPT: LifecycleScene[] = [
   },
   {
     id: 'approve',
-    kicker: 'Stage 7 — Approve and pay',
-    caption: 'Approve releases the payment',
+    kicker: 'Stage 7 — Review and pay',
+    caption: 'The live post releases the payment',
     /**
      * ACCURACY: verified in `BrandDeliverableService.approve()` — it calls
      * `EscrowService.tryReleaseOnApproval` in the same transaction ("[B3] fix").
-     * The release is gated on that milestone's release_condition, so the copy
+     * That call is gated on the milestone's release_condition, which defaults to
+     * ON_POSTED — so approving a draft does NOT pay: the release only goes through
+     * once the deliverable is POSTED and its live link is in. The copy says so, and
      * says the payment for that deliverable, not the whole budget.
      */
     voice:
-      'Approve it, and the payment for that deliverable is released to the creator. Ask for a revision instead, and nothing is paid until you are happy.',
+      'Approve it, and the creator posts. The payment for that deliverable is released once that post is live. Ask for a revision instead, and nothing is paid until you are happy.',
     seconds: 13,
   },
   {

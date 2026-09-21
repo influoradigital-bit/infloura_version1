@@ -50,8 +50,9 @@ import {
     - "< 12 Hours" / "12h Fast Review Auto-Unlock" and "48-hour auto-release to a
       backup creator pool". No enforced SLA or backup-creator reassignment exists;
       live copy says slots that go unfilled or unposted are simply not paid out.
-    - "Automated Form 16A / Section 194J TDS deduction in real time". TDS is
-      recorded and shown on the payout — not deducted or filed automatically.
+    - "Automated Form 16A / Section 194J TDS deduction in real time". Influora
+      deducts, withholds, files and certifies no tax at all — there is no TDS
+      line on a payout, no TDS figure recorded against one, and no Form 16A.
     - Named people ("Aditya Kashyap", "Pooja Sharma", "@riya.lifestyle",
       "@rohit.fits", "@tanvi.beauty") and real third-party brands ("Bombay Shaving
       Co", "Urban Botanics", "PureSkin Labs"). Fabricated people and companies.
@@ -106,7 +107,7 @@ const HOW_IT_WORKS = [
   {
     step: '06',
     title: 'Payout on verification',
-    body: "Once a post is verified, that creator's payout releases automatically — no manual tracking across 100 creators.",
+    body: "Once a post is live and its link is in, that creator's payment is released — no manual tracking across 100 creators.",
   },
 ] as const;
 
@@ -121,7 +122,7 @@ const BRAND_NEW_WAY = [
   'One flat rate and one brief, posted once — creators self-select into slots',
   'A fixed maximum spend, known before you launch',
   'Every accepted slot is funded and payment-protected automatically',
-  'Payouts release per creator on verification — no manual tracking across 100 people',
+  'Release each payout as its post goes live — no manual tracking across 100 people',
 ] as const;
 
 const CREATOR_OLD_WAY = [
@@ -141,7 +142,8 @@ const CANONICAL_ANSWER =
   'A Hype Campaign is a multi-creator campaign format where a brand posts one source reel at ' +
   'a single flat per-reel rate and caps the number of slots. Up to 100 creators accept a slot ' +
   'with one tap, with no negotiation, and post their own remix inside a 72-hour window. Each ' +
-  'accepted slot is funded up front and paid out automatically once the post is verified.';
+  'accepted slot is funded up front, and Influora pays each creator by bank transfer within 2 ' +
+  'working days of their live post link.';
 
 const FAQS = [
   { question: CANONICAL_QUESTION, answer: CANONICAL_ANSWER },
@@ -172,7 +174,7 @@ export default function HypeFeaturePage() {
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Hype Campaigns — 100 Creators, 72 Hours"
-        description="Launch a 72-hour Hype Campaign: set a flat per-reel rate, cap the slots, and let up to 100 creators accept with one tap. Each reel is paid out automatically."
+        description="Launch a 72-hour Hype Campaign: set a flat per-reel rate, cap the slots, and let up to 100 creators accept with one tap. Influora pays for each reel by bank transfer within 2 working days of its live link."
         canonical="/features/hype"
       />
       <JsonLd
@@ -213,8 +215,8 @@ export default function HypeFeaturePage() {
               <p className="mt-4 text-lg text-muted-foreground">
                 A Hype Campaign is a 72-hour blitz: the brand drops a source reel, sets a flat
                 per-reel rate, and caps the number of slots. Creators accept with one tap — no
-                negotiation, no back-and-forth — and post before the window closes. Each approved
-                reel is paid out automatically.
+                negotiation, no back-and-forth — and post before the window closes. Influora pays for
+                each reel by bank transfer within 2 working days of its live link.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <Button
@@ -509,8 +511,8 @@ export default function HypeFeaturePage() {
                   <h3 className="font-semibold">Why brands love it</h3>
                   <p className="mt-2 text-sm text-muted-foreground">
                     Instead of running 100 separate negotiations, a brand launches one Hype
-                    Campaign and fills every slot in hours. Each approved reel is paid out
-                    automatically, so there's no manual payout tracking across 100 creators.
+                    Campaign and fills every slot in hours. Each reel is paid once it is live and
+                    its link is in, so there's no manual payout tracking across 100 creators.
                   </p>
                 </CardContent>
               </Card>
@@ -521,8 +523,8 @@ export default function HypeFeaturePage() {
                   <h3 className="font-semibold">Why creators love it</h3>
                   <p className="mt-2 text-sm text-muted-foreground">
                     The rate is fixed and visible upfront. There's nothing to negotiate — tap
-                    accept, post within the window, and get paid through Secure Payments as soon
-                    as the reel is approved.
+                    accept, post within the window, and submit the live link. Influora pays the
+                    fee by bank transfer within 2 working days of that link.
                   </p>
                 </CardContent>
               </Card>

@@ -19,7 +19,7 @@ This policy explains what personal data we collect, why, and how you can control
 | Account data | Name, email, phone number, password | To create and secure your account |
 | KYC data | PAN, Aadhaar (creators), GST/company documents (brands) | Identity verification, required before Payout (see KYC Policy) |
 | Campaign data | Campaign briefs, Deliverables, messages, approvals | To run and record Campaigns |
-| Payment data | Bank/UPI details, transaction history | To process wallet top-ups through our payment processor (Razorpay) and to pay out creator withdrawals |
+| Payment data | Bank/UPI details, transaction history | To process wallet top-ups through our payment processor (Razorpay) and to pay creators by bank transfer |
 | Usage data | Device, IP address, log data, cookies | Security, analytics, product improvement |
 | Communications | Support tickets, grievance submissions | To respond to you |
 | Connected social accounts | Instagram profile, your own media, account insights, aggregated audience demographics | Verified analytics and deliverable verification — only if you choose to connect an account. See our [Meta Platform Data & Instagram Data Policy](/meta-data-policy) for the exact fields, permissions and deletion process |

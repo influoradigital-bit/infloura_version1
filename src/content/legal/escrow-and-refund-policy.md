@@ -2,7 +2,7 @@
 
 > ⚠️ **v0 DRAFT — PENDING INDIAN LEGAL COUNSEL / CA REVIEW. NOT LEGALLY BINDING. Ships `noindex` until validated.**
 
-When a brand funds a Campaign, the amount is reserved in the brand's Influora wallet until the work is approved or a dispute is resolved. Funds move only through payment protection release or a dispute-resolution outcome — there are no informal or on-demand refunds outside that process.
+When a brand funds a Campaign, the amount is reserved in the brand's Influora wallet until the approved post is live and its link has been submitted, or a dispute is resolved. Funds move only through payment protection release or a dispute-resolution outcome — there are no informal or on-demand refunds outside that process.
 
 **Last updated: 2026-07-13**
 
@@ -14,18 +14,18 @@ Brands add money to their Influora wallet through Razorpay, which processes card
 
 Payment protection protects both sides:
 
-- **Brands** know funds are only released once they approve the Deliverable.
+- **Brands** know funds stay secured until they have approved the Deliverable and the post is live.
 - **Creators** know the money is already secured before they start work.
 
 ## 2. The payment protection lifecycle
 
 1. **Funding** — the brand pays the full Campaign amount into a protected balance before work begins.
 2. **Delivery** — the creator submits the Deliverable through the platform.
-3. **Review** — the brand reviews the Deliverable within the agreed review window.
+3. **Review** — the brand has **3 working days** to approve, reject or request a revision on a submitted Deliverable. Each revision round gives the brand **2 working days** to re-review, up to a maximum of **2 rounds**. Working days are Monday to Friday.
 4. **Outcome:**
-   - **Approved** → the payment releases the Payout to the creator, minus the creator commission and any tax that must be deducted by law.
+   - **Approved** → approval clears the post to go live; it does not itself pay anyone. Once the post is live and its link has been submitted, the Payout is released, minus the creator commission, and Influora pays the creator by bank transfer (NEFT/IMPS) to the account on their profile **within 2 working days** of that link. Payments are made in accordance with applicable law.
    - **Rejected** → the brand and creator work through our revision process, or either party opens a dispute.
-   - **No response within the review window** → handled per the Campaign's default approval terms (auto-approval or escalation, as agreed at Campaign setup).
+   - **No response within the review window** → the Deliverable is escalated to the Influora team, who follow it up with the brand. It is **never approved automatically** and it never triggers a payment.
 
 ## 3. Our refund framing — please read carefully
 
@@ -34,11 +34,11 @@ Payment protection protects both sides:
 This is not a "no refunds, period" policy. It means:
 
 - A brand cannot request money back from the protected balance just by asking — the Campaign has to run through the review or dispute process.
-- A creator cannot release their own Payout early — release only happens on brand approval or a dispute outcome.
+- A creator cannot release their own Payout early — it is released by an Influora workspace Owner or Admin once the approved post is live and its link has been submitted, or by a dispute outcome.
 - If a **creator genuinely fails to deliver**, or a **brand's rejection is upheld** through our Dispute Resolution Policy, the brand's protected funds are **returned to the brand**. This is a dispute-resolution outcome, not an ad-hoc refund — see our Dispute Resolution Policy for exactly how this works.
 - If a **creator's delivery is upheld** as meeting the brief, the payment releases the Payout to the creator even if the brand is unhappy for reasons outside the agreed brief.
 
-In short: your money is always protected by a defined process — payment protection release on approval, or a dispute-resolution outcome. It is never released informally, and it is never simply frozen with no path forward for either side.
+In short: your money is always protected by a defined process — a release once the live post link is in, or a dispute-resolution outcome. It is never released informally, and it is never simply frozen with no path forward for either side.
 
 ## 4. What can trigger a dispute
 

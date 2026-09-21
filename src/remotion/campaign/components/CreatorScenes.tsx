@@ -494,7 +494,7 @@ export function SecuredScene() {
               Bloomveda secured ₹28,000 for this deal
             </div>
             <div style={{ fontSize: 25, lineHeight: 1.5, color: theme.mutedForeground }}>
-              Not withdrawable yet — it moves to Available Balance once you deliver and it is approved.
+              Not yours yet — it moves to Available Balance once your post is live and the brand releases it.
               But it is in, and you can see it, before you shoot a single frame.
             </div>
           </div>
@@ -594,18 +594,20 @@ export function CreatorDeliverScene() {
 }
 
 /**
- * Stage 8 — approved money becomes withdrawable, then a payout is queued.
+ * Stage 8 — the post goes live, an Owner or Admin releases the payment, and a
+ * bank transfer is queued.
  *
- * Two distinct steps on purpose: the escrow release lands in the Influora
- * wallet (Available Balance); the withdrawal is a separate RazorpayX payout
- * that is only ever QUEUED and confirmed later by webhook — hence
- * "Pending Payouts", never "paid instantly".
+ * Two distinct steps on purpose: the release lands in the Influora wallet
+ * (Available Balance); the transfer out is a separate RazorpayX payout that is
+ * only ever QUEUED and confirmed later by webhook — hence "Pending Payouts",
+ * never "paid instantly". The creator requests nothing: Influora sends it,
+ * within 2 working days of the live link.
  */
 export function PaidScene() {
   const frame = useCurrentFrame();
   return (
     <>
-      <Caption kicker="Stage 8 — Get paid" text="Approved becomes withdrawable" />
+      <Caption kicker="Stage 8 — Get paid" text="Posted becomes paid" />
       <BrowserFrame url="app.influora.in/creator/wallet">
         <div style={{ flex: 1, padding: '30px 46px', fontFamily }}>
           <div
@@ -622,9 +624,10 @@ export function PaidScene() {
             <div style={{ flex: 1.2 }}>
               <div style={{ fontSize: 24, opacity: 0.85 }}>Available Balance</div>
               {/*
-                Rises when the release lands, then falls again when the withdrawal is
-                requested — "Pending Payouts" is money already deducted from Available
-                Balance (creator-wallet.tsx:764), so leaving it in both would count it twice.
+                Rises when the release lands, then falls again when Influora sends the
+                bank transfer — "Pending Payouts" is money already deducted from Available
+                Balance (creator-wallet.tsx), so leaving it in both would count it twice.
+                Nothing here is requested by the creator; there is no withdrawal to request.
               */}
               <div style={{ fontSize: 62, fontWeight: 900, letterSpacing: -2 }}>
                 ₹
@@ -678,10 +681,10 @@ export function PaidScene() {
               }}
             >
               <div style={{ fontSize: 26, fontWeight: 800, color: theme.successForeground }}>
-                Reel 1 approved — ₹7,000 released
+                Reel 1 live — ₹7,000 released
               </div>
               <div style={{ fontSize: 22, color: theme.successForeground, marginTop: 6, opacity: 0.9 }}>
-                Moved from Secured into Available Balance. Yours now.
+                Moved from Secured into Available Balance. Influora sends it to your bank.
               </div>
             </div>
             <div
@@ -695,7 +698,7 @@ export function PaidScene() {
               }}
             >
               <div style={{ fontSize: 26, fontWeight: 800, color: theme.foreground }}>
-                Withdrawn to HDFC ••4417
+                Sent to HDFC ••4417
               </div>
               <div style={{ fontSize: 22, color: theme.mutedForeground, marginTop: 6 }}>
                 Sits in Pending Payouts until your bank confirms it landed.

@@ -23,7 +23,7 @@ Influora is a marketplace that connects brands and creators for influencer marke
 - Find and agree on a Campaign
 - Fund the Campaign into **payment protection** from your Influora wallet (wallet top-ups are processed by Razorpay)
 - Track and approve **Deliverables**
-- Release the **Payout** to the creator once the brand approves the work
+- Release the **Payout** once the post is live and its link has been submitted, and pay it to the creator by bank transfer within 2 working days
 
 We are a facilitator, not a party to the underlying marketing arrangement between a brand and creator. We do not guarantee the quality, timeliness, or outcome of any Campaign, but we do enforce our Payment protection and Dispute Resolution processes to keep both sides protected.
 
@@ -35,14 +35,14 @@ You're responsible for the accuracy of the information you give us and for keepi
 
 1. A brand creates a Campaign and funds it into a protected balance before work begins.
 2. The creator delivers the agreed Deliverable.
-3. The brand reviews and approves (or raises a dispute).
-4. On approval, the payment releases the Payout to the creator, minus the Platform fee and any tax deducted at source.
+3. The brand reviews and approves (or raises a dispute) within 3 working days. If it does not act, the Deliverable is escalated to the Influora team; it is not approved automatically.
+4. Approval clears the content to go live. Once the post is live and its link has been submitted, the Payout is released to the creator, minus the Platform fee, and Influora pays it by bank transfer within 2 working days. Payments are made in accordance with applicable law.
 
 Funds move only through payment protection release or a dispute-resolution outcome — there are no informal or on-demand refunds outside that process. Full detail is in our Payment protection & Refund Policy and Dispute Resolution Policy, which are part of these Terms.
 
 ## 5. Fees and taxes
 
-Using Influora involves a Platform fee (charged to brands, described on our Pricing page) and a commission deducted from creator Payouts at payment protection release. We don't publish exact rates in this document — see `/pricing` for current numbers. Where Indian tax law requires tax to be deducted at source (TDS) from a creator Payout, it is handled as that law requires; see our TDS Policy.
+Using Influora involves a Platform fee (charged to brands, described on our Pricing page) and a commission deducted from creator Payouts at payment protection release. We don't publish exact rates in this document — see `/pricing` for current numbers. Influora deducts no tax at source (TDS) from a creator Payout, and its invoices carry no TDS line. Each party remains responsible for its own tax filings — see our TDS Policy.
 
 ## 6. AI features — please read this carefully
 

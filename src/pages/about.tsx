@@ -216,7 +216,8 @@ export default function AboutPage() {
                     <p className="mt-3 text-sm text-foreground">
                       One platform: verified creator discovery, a single Deal Room thread, an
                       e-signed contract with clear terms, and protection that holds the brand's
-                      payment until the deliverable is approved. Nobody has to chase anybody.
+                      payment until the creator's post is live and its link is in. Nobody has to
+                      chase anybody.
                     </p>
                   </CardContent>
                 </Card>

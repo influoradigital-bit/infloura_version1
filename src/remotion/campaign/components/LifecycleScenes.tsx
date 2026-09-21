@@ -488,7 +488,7 @@ export function SecureFundsScene() {
             }}
           >
             Held against the campaign, not paid out. The creator can see the budget is real —
-            and nothing is released until you approve the work.
+            and nothing is released until the post is live and its link is in.
           </div>
         </div>
       </DealRoomShell>
@@ -579,7 +579,7 @@ export function ApproveScene() {
   const approved = frame >= 150;
   return (
     <>
-      <Caption kicker="Stage 7 — Approve and pay" text="Approve releases the payment" />
+      <Caption kicker="Stage 7 — Review and pay" text="The live post releases the payment" />
       <DealRoomShell active={4} title="Instagram Reel 1" subtitle="Submitted 18 Oct 2026">
         <div style={{ display: 'flex', gap: 28, height: '100%' }}>
           <div

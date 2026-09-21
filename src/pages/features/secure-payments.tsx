@@ -28,7 +28,7 @@ const WHY_IT_MATTERS = [
   {
     icon: ShieldCheck,
     title: 'For brands',
-    body: 'No advance-payment risk. The creator must deliver an approved deliverable before the payment releases a single rupee — you never pay for work that never shows up.',
+    body: 'No advance-payment risk. Nothing is released until you have approved the draft and the post is live — you never pay for work that never shows up.',
   },
   {
     icon: Wallet,
@@ -59,7 +59,7 @@ const FAQS = [
   {
     question: 'How does payment protection work, in plain terms?',
     answer:
-      'Payment protection means the brand\u2019s deal amount is reserved in its Influora wallet before work starts, and stays there until both sides have done their part. The brand adds money to its wallet (card, UPI and net-banking payments are processed securely by Razorpay) and reserves the deal amount; the creator delivers; the brand approves; the payment releases to the creator. Neither side can move reserved funds outside that flow.',
+      'Payment protection means the brand\u2019s deal amount is reserved in its Influora wallet before work starts, and stays there until both sides have done their part. The brand adds money to its wallet (card, UPI and net-banking payments are processed securely by Razorpay) and reserves the deal amount; the creator delivers; the brand approves the draft; the creator posts and submits the live link. The payment is released to the creator against that link. Neither side can move reserved funds outside that flow.',
   },
   {
     question: 'When does the brand fund the deal?',
@@ -77,9 +77,9 @@ const FAQS = [
       "The brand can request revisions within the contract's revision limit. If the two sides still can't agree after that, either party can open a dispute and Influora mediates using the deliverable, the brief, and the Deal Room message history as evidence.",
   },
   {
-    question: 'How fast does payout happen after approval?',
+    question: 'When does the creator actually get paid?',
     answer:
-      "The payment releases automatically the moment the brand approves the deliverable. Payout typically reaches the creator's UPI or bank account within 24 hours.",
+      "Approving a draft does not pay anyone \u2014 it clears the post to go live. The creator posts, submits the live link, and Influora then pays them by bank transfer (NEFT/IMPS) to the account on their profile within 2 working days of that link. Creators never have to request a withdrawal.",
   },
   {
     question: 'Is payment protection a separate fee?',
@@ -95,16 +95,17 @@ const FAQS = [
 const CANONICAL_QUESTION = 'How do influencer payments stay safe on Influora?';
 const CANONICAL_ANSWER =
   'Influora reserves the brand\u2019s payment in their Influora wallet from the moment the ' +
-  'contract is signed, and releases it to the creator only after the brand approves the ' +
-  'delivered work. The brand never pays in advance for work that does not arrive, and the ' +
-  'creator never starts filming without the money already secured.';
+  'contract is signed. Approving the draft clears it to go live, but pays nobody. The payment ' +
+  'is released to the creator once their post is live and its link has been submitted. The ' +
+  'brand never pays in advance for work that does not arrive, and the creator never starts ' +
+  'filming without the money already secured.';
 
 export default function SecurePaymentsFeaturePage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Seo
         title="Secure Payments for Influencer Deals"
-        description="Every Influora deal is paid through Secure Payments — locked at signing, released only after the brand approves the work. No advance-payment risk, no chasing invoices."
+        description="Every Influora deal is paid through Secure Payments — locked at signing, released once the post is live and its link is in. No advance-payment risk, no chasing invoices."
         canonical="/features/secure-payments"
       />
       <JsonLd

@@ -377,7 +377,7 @@ const FAQS = [
   {
     question: 'When do I actually pay (or get paid)?',
     answer:
-      'Brands: the platform fee is charged once, from your wallet, at the moment you take a campaign live — it is calculated on the campaign budget you commit, and it is not refunded if the campaign later spends less. Creator payments are separate: they stay in Secure Payments until you approve the work. Creators: payout releases automatically once the brand approves the deliverable, usually within 24 hours.',
+      'Brands: the platform fee is charged once, from your wallet, at the moment you take a campaign live — it is calculated on the campaign budget you commit, and it is not refunded if the campaign later spends less. Creator payments are separate: they stay in Secure Payments until the approved post is live and its link is in. Creators: approval is not payment \u2014 it clears your post to go live. You post, submit the live link, and Influora pays you by bank transfer (NEFT/IMPS) to the account on your profile within 2 working days of that link.',
   },
   {
     question: 'What if the deal falls through?',
