@@ -16,8 +16,14 @@ import api, { isApiLive } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 /**
- * Placeholder campaign id for the demo escrow call. In live mode this must be the real campaign id
- * threaded from the deal/collaboration context, not a constant.
+ * Placeholder campaign id for the MOCK demo funding call.
+ *
+ * EV-024 (2026-09-20): the note here used to read "in live mode this must be the real campaign id
+ * threaded from the deal/collaboration context, not a constant" — and that threading was never
+ * done. The constant was passed to `api.payments.fundEscrow` in EVERY mode, so the only funding
+ * action Meera offered a live brand was a request to fund a campaign that does not exist.
+ * `handlePay` below now refuses to use it outside mock mode, and `StageFunding` no longer renders
+ * the CTA that calls it.
  */
 const MEERA_DEMO_CAMPAIGN_ID = 'meera_demo_campaign'
 
@@ -92,6 +98,15 @@ export function MeeraWorkspace() {
    * SEPARATE explicit step (see StageFunding's "Approve & release" CTA), never bundled in here.
    */
   const handlePay = async () => {
+    // EV-024 — second line of defence. `StageFunding` no longer renders a funding CTA in live
+    // mode, so this should be unreachable there; if some future canvas state calls it anyway, a
+    // placeholder campaign id must not reach the money endpoint. Refusing here rather than
+    // letting the server reject it keeps the failure honest: nothing is attempted, so nothing can
+    // half-happen, and `markPaid()` — the client's "Secured" state — is never reached on a call
+    // that moved nothing.
+    if (isApiLive()) {
+      return
+    }
     const idempotencyKey = `${MEERA_DEMO_CAMPAIGN_ID}-${Date.now()}`
     const res = await api.payments.fundEscrow(MEERA_DEMO_CAMPAIGN_ID, idempotencyKey)
     if (res.status === 'FUNDED') {

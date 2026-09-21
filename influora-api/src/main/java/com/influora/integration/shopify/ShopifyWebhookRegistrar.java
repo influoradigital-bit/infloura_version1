@@ -1,5 +1,6 @@
 package com.influora.integration.shopify;
 
+import com.influora.integration.http.OutboundRestClients;
 import com.influora.common.ApiException;
 import com.influora.config.ShopifyProperties;
 import com.influora.integration.shopify.exception.ShopifyApiException;
@@ -72,7 +73,8 @@ public class ShopifyWebhookRegistrar {
     @Autowired
     public ShopifyWebhookRegistrar(
             ShopifyProperties props, @Value("${influora.api.public-url:http://localhost:8080}") String apiPublicUrl) {
-        this(props, apiPublicUrl, RestClient.builder().build());
+        // EV-045: explicit connect + read timeouts (request-thread webhook registration).
+        this(props, apiPublicUrl, OutboundRestClients.build());
     }
 
     /** Package-private test constructor for injecting a mocked RestClient. */

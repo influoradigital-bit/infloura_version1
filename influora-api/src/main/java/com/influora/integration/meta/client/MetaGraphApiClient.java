@@ -1,5 +1,6 @@
 package com.influora.integration.meta.client;
 
+import com.influora.integration.http.OutboundRestClients;
 import com.influora.config.MetaApiProperties;
 import com.influora.domain.entity.MetaAuthPath;
 import com.influora.integration.meta.exception.MetaApiException;
@@ -68,7 +69,11 @@ public class MetaGraphApiClient {
                         restClients.computeIfAbsent(
                                 authPath,
                                 path ->
-                                        RestClient.builder()
+                                        // EV-045: explicit connect + read timeouts. Every Graph
+                                        // read below runs on a Tomcat request thread; an untimed
+                                        // client let a hung graph.facebook.com hold that thread
+                                        // with no bound.
+                                        OutboundRestClients.builder()
                                                 .baseUrl(baseUrlFor(path) + "/" + props.getGraphApiVersion())
                                                 .defaultHeader(
                                                         HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)

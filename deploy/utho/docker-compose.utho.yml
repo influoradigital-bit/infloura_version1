@@ -416,6 +416,24 @@ services:
       # 0.75 default is unchanged, so this is not a change to the Q7 pinned value, only to whether
       # it can be overridden per box. Source: influora-ai/app/config.py:455-457.
       AI_CREATOR_MONTHLY_CAP_USD: ${AI_CREATOR_MONTHLY_CAP_USD:-0.75}
+      # EV-044 [ash - 2026-09-20] — per-workspace DAILY hard cap, in USD, UTC day.
+      # BLOCKING (app/costs/gate.py), unlike AI_WORKSPACE_DAILY_SOFT_CAP_USD which only logs.
+      # Previously declared in NO deploy file at all, and the code default was None, so on every
+      # box one workspace could spend the whole shared AI_DAILY_SPEND_CEILING_USD above and take
+      # Meera, brand-safety and the creator copilot down for every other workspace. The code
+      # default is now a real 3.0 (influora-ai/app/config.py), so a forgotten variable is safe;
+      # this line exists so the number is visible and overridable per box. "0" disables the
+      # block entirely -- only ever set that deliberately.
+      WORKSPACE_DAILY_HARD_CAP_USD: ${WORKSPACE_DAILY_HARD_CAP_USD:-3.0}
+      # EV-044 — server-side limits on what a CLIENT can send. The chat history in the request
+      # body is replayed verbatim into the prompt, and influora-api charges one AI credit per
+      # SEND regardless of prompt size, so an unbounded history is one credit buying an
+      # arbitrarily expensive call. Turns/chars are enforced in app/routes/chat.py; the byte
+      # limit is ASGI middleware in app/main.py and covers every route. All three have non-zero
+      # code defaults -- these lines make them tunable, not required.
+      AI_MAX_HISTORY_TURNS: ${AI_MAX_HISTORY_TURNS:-40}
+      AI_MAX_HISTORY_CHARS: ${AI_MAX_HISTORY_CHARS:-60000}
+      AI_MAX_REQUEST_BODY_BYTES: ${AI_MAX_REQUEST_BODY_BYTES:-262144}
       # P1 BLANK TURN fix (2026-07-24, wiki/ai-review/meera-blank-turn-ai-
       # review.md): previously UNSET here, silently inheriting the Python
       # default (384), which sat exactly on create_campaign's tool-JSON

@@ -5,6 +5,7 @@ import { Send, Mic, MicOff, Volume2, VolumeX, X, Loader2, AudioLines } from 'luc
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { recentHistory, type HistoryTurn } from '@/lib/meera-history';
 import { ApiError, isApiLive } from '@/lib/api';
 import { isCreatorToolName, meeraApi, type CreatorToolName } from '@/lib/meera-api';
 import { CreatorToolResultRenderer } from '@/components/creator/meera/CreatorToolResultRenderer';
@@ -489,10 +490,11 @@ export function MeeraCopilotChat({
             conversation_id: conversationId,
             turn_id: turnRes.messageId,
             onbehalf_jwt: turnRes.onBehalfToken ?? '',
-            conversation: [
-              ...messages.map((m) => ({ role: m.role === 'creator' ? 'user' : 'assistant', content: m.text })),
+            // EV-044: only the recent part of the transcript goes to the model (see lib/meera-history).
+            conversation: recentHistory([
+              ...messages.map((m): HistoryTurn => ({ role: m.role === 'creator' ? 'user' : 'assistant', content: m.text })),
               { role: 'user', content: text },
-            ],
+            ]),
           },
         );
       })

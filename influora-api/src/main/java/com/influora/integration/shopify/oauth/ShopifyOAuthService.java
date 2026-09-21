@@ -1,5 +1,6 @@
 package com.influora.integration.shopify.oauth;
 
+import com.influora.integration.http.OutboundRestClients;
 import com.influora.common.ApiException;
 import com.influora.config.ShopifyProperties;
 import com.influora.integration.shopify.dto.ShopifyTokenResponse;
@@ -60,7 +61,8 @@ public class ShopifyOAuthService {
     @Autowired
     public ShopifyOAuthService(ShopifyProperties props) {
         this.props = props;
-        this.restClient = RestClient.builder().build();
+        // EV-045: explicit connect + read timeouts (request-thread token exchange).
+        this.restClient = OutboundRestClients.build();
     }
 
     /** Package-private test constructor for injecting a mocked RestClient. */

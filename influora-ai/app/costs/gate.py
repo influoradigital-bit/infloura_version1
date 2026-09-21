@@ -8,17 +8,30 @@ immediately and make zero provider calls -- this module never calls a
 provider itself, it only decides yes/no.
 
 Order of checks: (a) kill-switch env var first, (b) today's global total vs
-the daily ceiling, (c) [Kabir red-team FIX 3, opt-in] today's per-workspace
-total vs `WORKSPACE_DAILY_HARD_CAP_USD`, only when both a `workspace_id` is
-passed by the caller AND that env var is set.
+the daily ceiling, (c) [Kabir red-team FIX 3] today's per-workspace total vs
+`WORKSPACE_DAILY_HARD_CAP_USD`, whenever a `workspace_id` is passed by the
+caller and the cap is a positive number.
 
 Per-workspace $3/day (`AI_WORKSPACE_DAILY_SOFT_CAP_USD`) remains a
 WARNING-only soft cap logged by chat.py itself after a successful call, not
-gated here -- unchanged by FIX 3. The new hard cap below is a SEPARATE,
-opt-in, BLOCKING check: unset (the default) reproduces today's
-warning-only-only behavior exactly, byte-for-byte backward compatible with
-every existing caller of `check_spend_gate()` that doesn't pass
-`workspace_id` at all.
+gated here -- unchanged by FIX 3. The hard cap below is a SEPARATE, BLOCKING
+check.
+
+EV-044 (2026-09-20) -- the hard cap used to be OPT-IN, and nothing opted in.
+`ai_workspace_daily_hard_cap_usd` was None unless an operator set the env
+var, and no deploy file set it, so the only per-workspace control that
+actually blocks was off everywhere while the global ceiling stayed shared.
+One workspace exhausting `AI_DAILY_SPEND_CEILING_USD` therefore took Meera,
+brand-safety and the creator copilot down for every other workspace.
+
+The cap now has a safe non-zero default in app/config.py, so this check is ON
+by default. `workspace_hard_cap_usd()` below is the one place that decides
+what "no cap" means, and it means exactly one thing: an operator typed a
+value of 0 (or negative) into the deploy on purpose. Every caller of
+`check_spend_gate()` that does not pass `workspace_id` is unaffected, as
+before -- but every route in this service does pass one (chat.py,
+analyze_site.py, brand_safety.py, creator_suggestion.py, trend_tag.py,
+trendspark.py, voice.py).
 """
 
 from __future__ import annotations
@@ -28,6 +41,20 @@ from decimal import Decimal
 
 from app.config import get_settings
 from app.costs import spend_tracker
+
+
+def workspace_hard_cap_usd(configured: float | None) -> Decimal | None:
+    """The per-workspace daily hard cap, or None when it is deliberately off.
+
+    Single source of truth for "is the per-workspace block active", so the
+    gate and anything that reports on it (tests, a future /readyz field)
+    cannot disagree. `None` and `<= 0` both mean OFF; only `<= 0` is now
+    reachable from configuration, and only by typing it into a deploy.
+    """
+    if configured is None:
+        return None
+    cap = Decimal(str(configured))
+    return cap if cap > 0 else None
 
 
 @dataclass(frozen=True)
@@ -78,7 +105,7 @@ async def check_spend_gate(
 
     reserve_amount = Decimal(str(reserve_usd)) if reserve_usd is not None else Decimal(0)
     ceiling = Decimal(str(settings.ai_daily_spend_ceiling_usd))
-    hard_cap = settings.ai_workspace_daily_hard_cap_usd
+    hard_cap = workspace_hard_cap_usd(settings.ai_workspace_daily_hard_cap_usd)
 
     # Every blocking read happens HERE, before the atomic section. F-05 round 2:
     # the previous shape read the global total, compared it, then read the
@@ -97,7 +124,7 @@ async def check_spend_gate(
         global_total=global_total,
         global_ceiling=ceiling,
         workspace_total=workspace_total,
-        workspace_cap=Decimal(str(hard_cap)) if hard_cap is not None else None,
+        workspace_cap=hard_cap,
         **({} if reserve_ttl_seconds is None else {"ttl_seconds": reserve_ttl_seconds}),
     )
     if error_code == "AI_SPEND_CEILING_REACHED":

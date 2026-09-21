@@ -1,5 +1,6 @@
 package com.influora.integration.shopify;
 
+import com.influora.integration.http.OutboundRestClients;
 import com.influora.common.ApiException;
 import com.influora.config.ShopifyProperties;
 import com.influora.integration.shopify.exception.ShopifyApiException;
@@ -75,7 +76,8 @@ public class ShopifyOrderOwnershipVerifier {
 
     @Autowired
     public ShopifyOrderOwnershipVerifier(ShopifyProperties props, ShopifyTokenStorage tokenStorage) {
-        this(props, tokenStorage, RestClient.builder().build());
+        // EV-045: explicit connect + read timeouts (request-thread Admin API read).
+        this(props, tokenStorage, OutboundRestClients.build());
     }
 
     /** Package-private test constructor for injecting a mocked RestClient. */

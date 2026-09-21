@@ -1,5 +1,6 @@
 package com.influora.integration.meta.oauth;
 
+import com.influora.integration.http.OutboundRestClients;
 import com.influora.common.ApiException;
 import com.influora.config.MetaApiProperties;
 import com.influora.config.MetaRedirectUri;
@@ -138,7 +139,11 @@ public class MetaOAuthService {
         if (client == null) {
             synchronized (this) {
                 if (restClient == null) {
-                    restClient = RestClient.builder().build();
+                    // EV-045: explicit connect + read timeouts. This client performs the
+                    // code-for-token exchange on a Tomcat request thread while the user waits on
+                    // the OAuth callback; untimed, a hung Meta endpoint held that thread open
+                    // with no bound at all.
+                    restClient = OutboundRestClients.build();
                 }
                 client = restClient;
             }

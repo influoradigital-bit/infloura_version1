@@ -83,7 +83,14 @@ async def test_chat_blocked_when_this_workspace_is_over_the_hard_cap(monkeypatch
         chat_route, "verify_token_async", AsyncMock(return_value=_verified_service_token())
     ), patch.object(chat_route, "_get_claude") as mock_get_claude:
         response = await chat_route.chat(request, authorization="Bearer whatever")
-        assert response.status_code == 503
+        # EV-044: 429, not 503. THIS workspace spent its own day's allowance --
+        # a different fact from the platform-wide ceiling/kill-switch (503),
+        # and a client has to be able to tell them apart. The code is the
+        # primary signal and is asserted below.
+        assert response.status_code == 429
+        assert json.loads(bytes(response.body))["error"]["code"] == (
+            "AI_WORKSPACE_SPEND_CAP_REACHED"
+        )
         mock_get_claude.assert_not_called()
 
 
@@ -108,8 +115,37 @@ async def test_chat_not_blocked_when_a_different_workspace_is_over_the_hard_cap(
 
 
 @pytest.mark.asyncio
-async def test_chat_hard_cap_unset_never_blocks_even_with_heavy_workspace_spend(monkeypatch):
+async def test_chat_hard_cap_unset_still_blocks_at_the_default(monkeypatch):
+    """EV-044 — this test used to be named
+    `test_chat_hard_cap_unset_never_blocks_even_with_heavy_workspace_spend`
+    and asserted a 200 for a workspace that had spent $500 in a day. It was
+    green, and it was pinning the defect: with the env var unset (which is what
+    every deploy actually did) a single workspace had no ceiling of its own.
+
+    A missing env var now means the documented default, never unlimited.
+    """
     monkeypatch.delenv("WORKSPACE_DAILY_HARD_CAP_USD", raising=False)
+    monkeypatch.setenv("AI_DAILY_SPEND_CEILING_USD", "999999")
+    get_settings.cache_clear()
+    await spend_tracker.record_spend(Decimal("500.00"), workspace_id=WORKSPACE_ID)
+
+    request = _make_request(_body())
+
+    with patch.object(
+        chat_route, "verify_token_async", AsyncMock(return_value=_verified_service_token())
+    ), patch.object(chat_route, "_get_claude") as mock_get_claude:
+        response = await chat_route.chat(request, authorization="Bearer whatever")
+        assert response.status_code == 429
+        assert json.loads(bytes(response.body))["error"]["code"] == (
+            "AI_WORKSPACE_SPEND_CAP_REACHED"
+        )
+        mock_get_claude.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_chat_hard_cap_explicit_zero_never_blocks(monkeypatch):
+    """The escape hatch, and the ONLY one: an operator typed 0 into a deploy."""
+    monkeypatch.setenv("WORKSPACE_DAILY_HARD_CAP_USD", "0")
     monkeypatch.setenv("AI_DAILY_SPEND_CEILING_USD", "999999")
     get_settings.cache_clear()
     await spend_tracker.record_spend(Decimal("500.00"), workspace_id=WORKSPACE_ID)

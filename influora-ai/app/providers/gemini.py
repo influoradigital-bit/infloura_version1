@@ -23,10 +23,12 @@ get a structured result with an `ok: bool`.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 from google import genai
 from google.genai import types as genai_types
@@ -189,6 +191,41 @@ def _usage_from_response(response: Any) -> dict[str, Any] | None:
     }
 
 
+_T = TypeVar("_T")
+
+
+class GeminiTimeoutError(Exception):
+    """The Gemini call was abandoned at the configured deadline."""
+
+
+async def _with_deadline(awaitable: Awaitable[_T], seconds: float) -> _T:
+    """Abandon `awaitable` after `seconds`.
+
+    EV-045 — `app.config.Timeouts` has declared `gemini_connect = 3.0` and
+    `gemini_read = 20.0` since the file was written, and NOTHING read either
+    of them: `grep -rn 'gemini_connect|gemini_read' app/` matched only their
+    own definitions. Every other provider in this package honours its
+    timeouts (claude.py passes `anthropic.Timeout(...)`, sarvam.py and
+    clients/spring.py pass `httpx.Timeout(...)`); the Gemini client was
+    constructed as a bare `genai.Client(api_key=...)`, so a hung Gemini
+    endpoint held `/analyze-site` — and the request thread serving it — open
+    indefinitely.
+
+    `asyncio.wait_for` rather than an SDK timeout option because it is the one
+    mechanism that is guaranteed to hold across google-genai versions: the
+    pinned `google-genai==0.8.0` has no `timeout` field on `HttpOptions` at
+    all (it arrived in the 1.x line), so wiring one there would bind to
+    nothing on the pinned SDK and silently do nothing in production — the
+    exact failure mode this fix exists to remove. `wait_for` cancels the task
+    and returns the coroutine's slot to the event loop at the deadline
+    regardless of what the SDK underneath does.
+    """
+    try:
+        return await asyncio.wait_for(awaitable, timeout=seconds)
+    except asyncio.TimeoutError as exc:
+        raise GeminiTimeoutError(f"gemini call exceeded {seconds}s") from exc
+
+
 class GeminiProvider:
     def __init__(self) -> None:
         settings = get_settings()
@@ -198,6 +235,21 @@ class GeminiProvider:
             failure_threshold=settings.breaker.failure_threshold,
             recovery_seconds=settings.breaker.recovery_seconds,
         )
+
+    def _deadline_seconds(self) -> float:
+        """EV-045: one wall-clock budget per call, connect + read.
+
+        Read from settings at CALL time rather than cached on the instance in
+        `__init__`. Several tests (and any future caller) build a provider with
+        `GeminiProvider.__new__(GeminiProvider)` and set only the two
+        collaborators they care about, so an attribute that exists only when
+        `__init__` ran would make the timeout silently absent on exactly the
+        instances nobody thought about -- an AttributeError swallowed by the
+        broad `except Exception` around the call, reported as
+        `error="provider_error"`. A method has no such hole.
+        """
+        timeouts = get_settings().timeouts
+        return timeouts.gemini_connect + timeouts.gemini_read
 
     async def classify_site(
         self, sanitized_page_text: str, known_products: list[dict[str, Any]] | None = None
@@ -242,12 +294,13 @@ class GeminiProvider:
             )
 
         try:
-            response = await self._client.aio.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=contents,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=_CLASSIFY_SYSTEM_INSTRUCTION,
-                    temperature=0.2,
+            response = await _with_deadline(
+                self._client.aio.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=contents,
+                    config=genai_types.GenerateContentConfig(
+                        system_instruction=_CLASSIFY_SYSTEM_INSTRUCTION,
+                        temperature=0.2,
                     # [Ash AI-review 2026-07-23] gemini-2.5-flash is a THINKING model and its
                     # thinking tokens count against max_output_tokens (see the note at
                     # _usage_from_response). At 1024 the reasoning over a 20k-char page — now asking
@@ -256,13 +309,18 @@ class GeminiProvider:
                     # empty/truncated -> json.loads -> "unparseable_response" -> analysis FAILED
                     # (brand category stuck on the stale value). The JSON itself is only a few
                     # hundred tokens; 4096 leaves ample room for thinking + the full object.
-                    max_output_tokens=4096,
-                    response_mime_type="application/json",
-                    response_schema=_CLASSIFY_RESPONSE_SCHEMA,
+                        max_output_tokens=4096,
+                        response_mime_type="application/json",
+                        response_schema=_CLASSIFY_RESPONSE_SCHEMA,
+                    ),
                 ),
+                self._deadline_seconds(),
             )
             self._breaker.on_success()
-        except Exception as exc:  # noqa: BLE001 - provider/network error -> degrade, don't crash
+        except Exception as exc:  # noqa: BLE001 - provider/network error/timeout -> degrade, don't crash
+            # A timeout counts as a provider failure for the breaker on purpose:
+            # a hung endpoint is exactly the condition the breaker exists to
+            # stop hammering.
             self._breaker.on_failure()
             logger.warning("gemini classify_site failed: %s", type(exc).__name__)
             return ClassifyResult(ok=False, error="provider_error")
@@ -294,17 +352,20 @@ class GeminiProvider:
             return CleanupResult(ok=False, error=f"circuit_open: {exc}")
 
         try:
-            response = await self._client.aio.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=raw_transcript,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=_CLEANUP_SYSTEM_INSTRUCTION,
-                    temperature=0.1,
-                    max_output_tokens=512,
+            response = await _with_deadline(
+                self._client.aio.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=raw_transcript,
+                    config=genai_types.GenerateContentConfig(
+                        system_instruction=_CLEANUP_SYSTEM_INSTRUCTION,
+                        temperature=0.1,
+                        max_output_tokens=512,
+                    ),
                 ),
+                self._deadline_seconds(),
             )
             self._breaker.on_success()
-        except Exception as exc:  # noqa: BLE001 - provider/network error -> degrade, don't crash
+        except Exception as exc:  # noqa: BLE001 - provider/network error/timeout -> degrade, don't crash
             self._breaker.on_failure()
             logger.warning("gemini cleanup_transcript failed: %s", type(exc).__name__)
             return CleanupResult(ok=False, error="provider_error")

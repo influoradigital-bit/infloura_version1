@@ -14,6 +14,7 @@ than as a blanket dependency — see each route module).
 
 from __future__ import annotations
 
+import json
 import logging
 
 from fastapi import FastAPI
@@ -49,6 +50,127 @@ app = FastAPI(
     description="Stateless FastAPI service: chat orchestration, website analyzer, voice. No DB, no money.",
     version=PROMPT_VERSION,
 )
+
+
+# ---------------------------------------------------------------------------
+# EV-044 — request body size limit on the AI path.
+#
+# Every route in this service reads its whole body (`await request.json()`)
+# before it can do anything else: workspace_id has to be read from the body
+# before the token can be checked against it, which is exactly why auth lives
+# inside each route handler rather than as a blanket dependency (see this
+# module's docstring). So without this, an UNAUTHENTICATED caller's body is
+# buffered in full before a single auth check runs.
+#
+# The per-route history limit in app/routes/chat.py is the semantic guard —
+# "this conversation is too long" — and this is the byte guard. This one runs
+# first, and it is the only one that protects the routes that have no
+# conversation at all (/internal/brand-safety, /analyze-site, /voice/*).
+#
+# Pure ASGI middleware rather than `@app.middleware("http")` because it must
+# refuse BEFORE the body is consumed, and it checks BOTH the declared
+# Content-Length and the bytes actually received — a chunked request declares
+# no length, so a Content-Length check on its own is bypassed by omitting the
+# header.
+#
+# Installed BEFORE the CORS block below on purpose: Starlette builds the stack
+# with the LAST-added middleware outermost, so adding CORS after this one
+# keeps CORS outside it and lets a browser actually read this 413 instead of
+# seeing an opaque CORS failure.
+# ---------------------------------------------------------------------------
+
+REQUEST_TOO_LARGE_CODE = "AI_REQUEST_TOO_LARGE"
+_TOO_LARGE_BODY = json.dumps(
+    {
+        "error": {
+            "code": REQUEST_TOO_LARGE_CODE,
+            "message": "That request is too large for Meera to accept.",
+        }
+    }
+).encode()
+
+
+class _BodyTooLarge(Exception):
+    """Raised out of the receive callable once the limit is passed."""
+
+
+def _declared_content_length(scope) -> int | None:
+    for key, value in scope.get("headers") or []:
+        if key == b"content-length":
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+async def _send_too_large(send) -> None:
+    await send(
+        {
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(_TOO_LARGE_BODY)).encode()),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": _TOO_LARGE_BODY})
+
+
+class BodySizeLimitMiddleware:
+    """413s any request whose body exceeds `AI_MAX_REQUEST_BODY_BYTES`.
+
+    `max_bytes <= 0` disables the limit, which has to be typed into a deploy
+    on purpose — an unset env var gets the non-zero default from
+    app/config.py, never "unlimited".
+    """
+
+    def __init__(self, app, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or self.max_bytes <= 0:
+            await self.app(scope, receive, send)
+            return
+
+        declared = _declared_content_length(scope)
+        if declared is not None and declared > self.max_bytes:
+            # The common case: refused without reading one byte of the body.
+            await _send_too_large(send)
+            return
+
+        received = 0
+        started = False
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise _BodyTooLarge()
+            return message
+
+        async def counting_send(message):
+            nonlocal started
+            if message.get("type") == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, limited_receive, counting_send)
+        except _BodyTooLarge:
+            # A chunked/undeclared-length body that grew past the limit. If the
+            # app already started a response there is nothing left to say, so
+            # re-raise rather than corrupt the stream.
+            if started:
+                raise
+            await _send_too_large(send)
+
+
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.ai_max_request_body_bytes)
 
 # Browser-direct Meera SSE stream (deploy blocker 1) — the SPA POSTs to /chat
 # cross-origin with Authorization + Content-Type: application/json

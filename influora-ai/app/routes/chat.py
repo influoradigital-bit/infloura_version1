@@ -334,6 +334,74 @@ async def _fetch_creator_context(
     return context_data, None
 
 
+# ---------------------------------------------------------------------------
+# EV-044 -- client-supplied conversation history limits (server-enforced).
+# ---------------------------------------------------------------------------
+
+HISTORY_TOO_LARGE_CODE = "AI_HISTORY_TOO_LARGE"
+
+# EV-044: the gate's per-workspace refusal code, re-exported here because the
+# route is where it becomes an HTTP status the browser can branch on.
+WORKSPACE_CAP_CODE = "AI_WORKSPACE_SPEND_CAP_REACHED"
+
+
+def _conversation_size(conversation: Any) -> tuple[int, int]:
+    """`(turn_count, total_content_chars)` for a client-supplied history.
+
+    Counts what actually reaches the model: every turn's `content`, plus the
+    serialized `tool_calls` blob on assistant turns, because
+    `build_block_c_messages` renders that into the replayed text too. A
+    non-dict turn still costs its `str()` length there, so it is counted the
+    same way rather than being treated as free.
+    """
+    if not isinstance(conversation, list):
+        return 0, 0
+    chars = 0
+    for turn in conversation:
+        if not isinstance(turn, dict):
+            chars += len(str(turn))
+            continue
+        content = turn.get("content", "")
+        chars += len(content) if isinstance(content, str) else len(str(content))
+        tool_calls = turn.get("tool_calls")
+        if tool_calls:
+            chars += len(str(tool_calls))
+    return len(conversation), chars
+
+
+def _conversation_limit_error(
+    conversation: Any, settings: Any
+) -> tuple[str, str, dict[str, int]] | None:
+    """`(code, user-facing message, log fields)` when the history is too big.
+
+    Returns None when it is within both limits. The message is written for a
+    brand or creator reading it in the chat panel -- it says what to do (start
+    a new conversation), not what the server's internal limit is.
+
+    Deliberately a REFUSAL, not a silent truncation: quietly dropping the
+    oldest turns would make Meera answer with a different history than the one
+    the user can see on screen, which is its own way of misleading them.
+    """
+    turns, chars = _conversation_size(conversation)
+    max_turns = settings.ai_max_history_turns
+    max_chars = settings.ai_max_history_chars
+    if max_turns > 0 and turns > max_turns:
+        return (
+            HISTORY_TOO_LARGE_CODE,
+            "This conversation has grown too long for Meera to carry. "
+            "Start a new conversation to continue.",
+            {"turns": turns, "max_turns": max_turns},
+        )
+    if max_chars > 0 and chars > max_chars:
+        return (
+            HISTORY_TOO_LARGE_CODE,
+            "This conversation has grown too long for Meera to carry. "
+            "Start a new conversation to continue.",
+            {"chars": chars, "max_chars": max_chars},
+        )
+    return None
+
+
 @router.post("/chat")
 async def chat(request: Request, authorization: str | None = Header(default=None)):
     request_id = str(uuid.uuid4())
@@ -439,6 +507,34 @@ async def chat(request: Request, authorization: str | None = Header(default=None
 
     settings = get_settings()
 
+    # EV-044 — SERVER-SIDE ceiling on the client-supplied conversation history.
+    #
+    # `body["conversation"]` is replayed verbatim into Block C (see
+    # app/prompt/assembler.build_block_c_messages: "this block is 100%
+    # client-controlled ... there is no server-side copy to check it
+    # against"). Until this check, nothing bounded it in the service, in
+    # Spring, or in the browser. influora-api charges exactly ONE AI credit
+    # per SEND (AICreditService#tryConsumeForTurn, keyed on the server-minted
+    # messageId) regardless of prompt size, so an unbounded history let one
+    # credit buy an arbitrarily large prompt — the cheapest way for a single
+    # workspace to burn the shared AI_DAILY_SPEND_CEILING_USD.
+    #
+    # Refused HERE: before the spend gate takes a reservation, before Block B
+    # is fetched from Spring, and long before any provider client is
+    # constructed. `release_early` gives the send-time charge back, for the
+    # same reason every other pre-stream refusal in this function does: the
+    # turn is over and the brand received no provider output.
+    conversation_error = _conversation_limit_error(body.get("conversation"), settings)
+    if conversation_error is not None:
+        code, message, fields = conversation_error
+        log_event(
+            logger, logging.WARNING, "chat_turn_blocked_history_too_large",
+            workspace_id=workspace_id, request_id=request_id,
+            fields={"error_code": code, **fields},
+        )
+        await release_early("history_too_large")
+        return _error_response(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, code, message)
+
     # Meera for Creators Phase A (A4), fix round 1 (BLOCKING): audience is
     # derived from the VERIFIED token's claims ONLY -- never from the request
     # body and never from the unverifiable on-behalf JWT (see
@@ -509,8 +605,22 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         # brand paid for a failure that was entirely on our side, then paid again on every
         # retry for as long as the gate stayed shut.
         await release_early("spend_gate_blocked")
+        # EV-044: THIS workspace's own daily cap answers 429, the platform-wide
+        # ceiling/kill-switch keeps 503 -- the same split `_creator_cap_response`
+        # already makes and for the same stated reason ("429 so clients can
+        # distinguish it from the 503 daily-ceiling block (which is a
+        # platform-wide condition, not this creator's allowance)"). A brand that
+        # spent its own day's allowance and a brand caught behind someone else's
+        # spend are two different facts and must not arrive as one status.
+        blocked_status = (
+            status.HTTP_429_TOO_MANY_REQUESTS
+            if gate.error_code == WORKSPACE_CAP_CODE
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        )
         return _error_response(
-            503, gate.error_code or "AI_SPEND_BLOCKED", gate.error_message or "spend gate blocked this call"
+            blocked_status,
+            gate.error_code or "AI_SPEND_BLOCKED",
+            gate.error_message or "spend gate blocked this call",
         )
     spend_reservation = gate.reservation
     # A8 / gate fix round 1 (Q7): the creator's monthly hold, taken AFTER the

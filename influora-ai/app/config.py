@@ -564,14 +564,62 @@ class Settings:
     ai_workspace_daily_soft_cap_usd: float = field(
         default_factory=lambda: _get_float("AI_WORKSPACE_DAILY_SOFT_CAP_USD", 3.0)
     )
-    # Kabir red-team FIX 3 — opt-in, BLOCKING per-workspace daily cap enforced
-    # by app.costs.gate.check_spend_gate(). None (default/unset) preserves the
-    # pre-existing warning-only-only behavior above exactly; set this env var
-    # to actually block a workspace once it's spent this much today. Distinct
-    # from ai_workspace_daily_soft_cap_usd (which never blocks) — see
+    # Kabir red-team FIX 3 — BLOCKING per-workspace daily cap enforced by
+    # app.costs.gate.check_spend_gate(). Distinct from
+    # ai_workspace_daily_soft_cap_usd (which never blocks) — see
     # app/costs/gate.py's module docstring.
-    ai_workspace_daily_hard_cap_usd: float | None = field(
-        default_factory=lambda: _get_optional_float("WORKSPACE_DAILY_HARD_CAP_USD")
+    #
+    # EV-044 (2026-09-20): this used to be `_get_optional_float(...)` — unset
+    # meant None meant NO per-workspace blocking at all, and no deploy input
+    # set it: not deploy/hostinger/docker-compose.hostinger.yml, not
+    # deploy/utho/docker-compose.utho.yml, not
+    # deploy/utho/docker-compose.utho-shared.yml (all three declare
+    # AI_DAILY_SPEND_CEILING_USD and AI_CREATOR_MONTHLY_CAP_USD and neither
+    # this one). So in every production deploy ONE workspace could spend the
+    # whole shared AI_DAILY_SPEND_CEILING_USD and take Meera, brand-safety and
+    # the creator copilot down for every other workspace.
+    #
+    # It now carries a SAFE NON-ZERO DEFAULT, so a forgotten env var means
+    # "capped at the documented default", never "unlimited". 3.0 USD/day
+    # matches the long-standing soft cap above — the number the codebase
+    # already considered one workspace's fair daily share — so turning the
+    # block on does not silently move the threshold as well.
+    #
+    # "Unset" and "0" are deliberately NO LONGER the same thing: an explicit
+    # `WORKSPACE_DAILY_HARD_CAP_USD=0` (or any value <= 0) disables the
+    # per-workspace block, which is the ONLY way to get the old behavior and
+    # has to be typed into a deploy on purpose. `_get_float` (not
+    # `_get_optional_float`) is what makes unset fall to the default;
+    # app.costs.gate normalises <= 0 back to None.
+    ai_workspace_daily_hard_cap_usd: float = field(
+        default_factory=lambda: _get_float("WORKSPACE_DAILY_HARD_CAP_USD", 3.0)
+    )
+
+    # --- EV-044: server-side ceiling on CLIENT-SUPPLIED conversation history ---
+    # `routes/chat.py` takes `body["conversation"]` verbatim (see
+    # app/prompt/assembler.build_block_c_messages' own docstring: "this block
+    # is 100% client-controlled ... there is no server-side copy to check it
+    # against"). Nothing bounded it: a browser holding one valid chat:stream
+    # token could POST an arbitrarily long history and buy an arbitrarily
+    # expensive prompt for a single AI credit, because the send-time charge in
+    # influora-api is one credit per TURN regardless of prompt size.
+    #
+    # Both limits are enforced in the route, on the server, before any prompt
+    # is assembled and before any provider client is touched. Neither is a
+    # browser-side truncation: the client cannot opt out of them.
+    ai_max_history_turns: int = field(
+        default_factory=lambda: _get_int("AI_MAX_HISTORY_TURNS", 40)
+    )
+    ai_max_history_chars: int = field(
+        default_factory=lambda: _get_int("AI_MAX_HISTORY_CHARS", 60_000)
+    )
+    # Request body hard limit for the AI path, enforced by the middleware in
+    # app/main.py before FastAPI ever parses (or buffers) the body. 256 KiB is
+    # ~4x the history char limit above, which leaves generous room for the
+    # rest of a /chat body and for a /internal/brand-safety batch of
+    # BRAND_SAFETY_MAX_ITEMS_PER_CALL captions.
+    ai_max_request_body_bytes: int = field(
+        default_factory=lambda: _get_int("AI_MAX_REQUEST_BODY_BYTES", 262_144)
     )
 
     # --- Meera for Creators, Phase A (A8) — per-creator MONTHLY cap ---

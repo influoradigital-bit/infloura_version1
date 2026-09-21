@@ -92,19 +92,64 @@ async def test_spend_strictly_under_ceiling_is_allowed(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_workspace_hard_cap_unset_is_warning_only_never_blocks(monkeypatch):
-    """Default (unset) behavior must be byte-for-byte unchanged: even a
-    workspace with enormous spend is allowed through when
-    WORKSPACE_DAILY_HARD_CAP_USD is not configured -- this is the
-    backward-compatibility guarantee for every caller of check_spend_gate()
-    that doesn't pass workspace_id at all, and for chat.py's existing
-    warning-only soft cap."""
+async def test_workspace_hard_cap_unset_still_blocks_at_the_default(monkeypatch):
+    """EV-044 — a MISSING env var must not mean unlimited.
+
+    This test previously asserted the opposite ("unset is warning-only, never
+    blocks") and it passed for months, which is precisely how every production
+    deploy ended up with no per-workspace block: not one compose file set
+    WORKSPACE_DAILY_HARD_CAP_USD, so the only control that actually blocks was
+    off everywhere and one workspace could drain the shared daily ceiling.
+
+    The default is now a real, non-zero cap.
+    """
     monkeypatch.delenv("WORKSPACE_DAILY_HARD_CAP_USD", raising=False)
     monkeypatch.setenv("AI_DAILY_SPEND_CEILING_USD", "999999")
     get_settings.cache_clear()
-    await spend_tracker.record_spend(Decimal("1000.00"), workspace_id="ws-big-spender")
+    default_cap = get_settings().ai_workspace_daily_hard_cap_usd
+    assert default_cap > 0
+    await spend_tracker.record_spend(Decimal(str(default_cap)), workspace_id="ws-big-spender")
 
     result = await check_spend_gate(workspace_id="ws-big-spender")
+
+    assert result.allowed is False
+    assert result.error_code == "AI_WORKSPACE_SPEND_CAP_REACHED"
+
+
+@pytest.mark.asyncio
+async def test_workspace_hard_cap_under_the_default_is_allowed(monkeypatch):
+    """The other half of the default: it blocks at the cap, not before it.
+
+    Without this, "unset now blocks" could be satisfied by a cap of 0, which
+    would take every workspace's FIRST call down.
+    """
+    monkeypatch.delenv("WORKSPACE_DAILY_HARD_CAP_USD", raising=False)
+    monkeypatch.setenv("AI_DAILY_SPEND_CEILING_USD", "999999")
+    get_settings.cache_clear()
+    default_cap = get_settings().ai_workspace_daily_hard_cap_usd
+    await spend_tracker.record_spend(
+        Decimal(str(default_cap)) - Decimal("0.01"), workspace_id="ws-just-under-default"
+    )
+
+    result = await check_spend_gate(workspace_id="ws-just-under-default")
+
+    assert result.allowed is True
+
+
+@pytest.mark.asyncio
+async def test_workspace_hard_cap_explicit_zero_disables_the_block(monkeypatch):
+    """The ONLY way back to unlimited is an operator typing 0 into a deploy.
+
+    "Unset" and "0" used to be the same thing (`_get_optional_float`); they are
+    deliberately different now, so that forgetting the variable is safe and
+    disabling the cap is a decision someone made on purpose.
+    """
+    monkeypatch.setenv("WORKSPACE_DAILY_HARD_CAP_USD", "0")
+    monkeypatch.setenv("AI_DAILY_SPEND_CEILING_USD", "999999")
+    get_settings.cache_clear()
+    await spend_tracker.record_spend(Decimal("1000.00"), workspace_id="ws-uncapped-on-purpose")
+
+    result = await check_spend_gate(workspace_id="ws-uncapped-on-purpose")
 
     assert result.allowed is True
 

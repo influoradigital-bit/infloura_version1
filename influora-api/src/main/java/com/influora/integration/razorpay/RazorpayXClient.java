@@ -42,6 +42,27 @@ public class RazorpayXClient {
     private static final Logger log = LoggerFactory.getLogger(RazorpayXClient.class);
 
     /**
+     * EV-045 — explicit outbound timeouts.
+     *
+     * <p>{@code java.net.http.HttpClient} has NO read timeout of its own: {@code connectTimeout}
+     * bounds only the TCP handshake, and the only thing that bounds the response is a per-request
+     * {@code HttpRequest.timeout(...)}. Every one of the four RazorpayX calls below was built
+     * without one, so a RazorpayX endpoint that accepted the connection and then went silent held
+     * the calling thread forever.
+     *
+     * <p>That matters most on the payout path specifically. {@code
+     * WalletService.requestCreatorWithdrawal} debits the creator's wallet through the ledger
+     * BEFORE it calls this client, so a hung payout call is a thread held open on top of a debit
+     * that has already posted — the orphaned-debit window {@code PayoutOrphanedDebitSweepJob}
+     * exists to sweep. A bounded failure hands that window to the sweeper in seconds instead of
+     * leaving it open for as long as the provider stays hung.
+     */
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+
+    /** Whole-exchange bound for one RazorpayX call. See {@link #CONNECT_TIMEOUT}. */
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
+
+    /**
      * [FIX: IMPS cap, 2026-07-27] IMPS caps at ₹5,00,000 per transaction — RazorpayX rejects (or
      * fails) any payout above that amount if sent with {@code mode=IMPS}. This used to be
      * hardcoded to {@code "IMPS"} unconditionally in {@link #initiatePayout}, so any single payout
@@ -83,7 +104,8 @@ public class RazorpayXClient {
         if (client == null) {
             synchronized (this) {
                 if (httpClient == null) {
-                    httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+                    httpClient =
+                            HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
                 }
                 client = httpClient;
             }
@@ -138,6 +160,7 @@ public class RazorpayXClient {
         HttpRequest request =
                 HttpRequest.newBuilder()
                         .uri(URI.create(props.getPayoutApiBaseUrl() + "/payouts"))
+                        .timeout(REQUEST_TIMEOUT)
                         .header("Authorization", basicAuthHeader())
                         .header("Content-Type", "application/json")
                         .header("X-Payout-Idempotency", idempotencyKey)
@@ -188,6 +211,7 @@ public class RazorpayXClient {
         HttpRequest request =
                 HttpRequest.newBuilder()
                         .uri(URI.create(props.getPayoutApiBaseUrl() + "/contacts"))
+                        .timeout(REQUEST_TIMEOUT)
                         .header("Authorization", basicAuthHeader())
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
@@ -246,6 +270,7 @@ public class RazorpayXClient {
         HttpRequest request =
                 HttpRequest.newBuilder()
                         .uri(URI.create(props.getPayoutApiBaseUrl() + "/fund_accounts"))
+                        .timeout(REQUEST_TIMEOUT)
                         .header("Authorization", basicAuthHeader())
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
@@ -278,6 +303,7 @@ public class RazorpayXClient {
         HttpRequest request =
                 HttpRequest.newBuilder()
                         .uri(URI.create(props.getPayoutApiBaseUrl() + "/payouts/" + payoutId))
+                        .timeout(REQUEST_TIMEOUT)
                         .header("Authorization", basicAuthHeader())
                         .GET()
                         .build();
