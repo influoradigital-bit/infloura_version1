@@ -1,0 +1,28 @@
+{"rows": [
+  {"subject": "docs/docs/features",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "script",
+                "command": "bash .proof-os/gates/F-0807-doc-links-resolve.sh across 31 feature docs, corroborated by a fresh-context reviewer who counted independently with a CommonMark parser rather than reusing this scanner",
+                "result": "zero dead relative links remain; the true baseline was fifty-four, not the thirty-four the ticket listed nor the forty-two the first sweep found, and every removal is traced one-for-one against the pre-edit file with nothing silently deleted",
+                "where": "docs/docs/features/wallet.md:16"}},
+
+  {"subject": ".proof-os/gates/F-0807-doc-links-resolve.sh",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "script",
+                "command": "thirteen probes run one at a time in an isolated copy: eight valid shapes that the first cut reded on (fenced dispatch maps, indented code, inline code spans, an HTML-commented link, a titled link, an angle-bracket link), plus a plain dead link, a correction marker quoting a dead link, a directory target, a dead link in a subdirectory, and the real unmutated tree",
+                "result": "all eight valid shapes now pass, the dead link and directory and nested cases are caught, the marker that merely quotes a dead link is not; the fenced-code and quoted-marker cases were reproduced independently by the dispatcher, and the gate re-proves both directions in a self-test on every run",
+                "where": ".proof-os/gates/F-0807-doc-links-resolve.sh:2"}},
+
+  {"subject": ".proof-os/gates/_doc_links_resolve_scan.py",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "fresh-context",
+   "evidence": {"oracle": "model",
+                "command": "a fresh-context reviewer planted seventeen evasion shapes against the first cut and the surviving gaps were re-checked after the rewrite",
+                "result": "a link whose text is split across two source lines by a soft break is still not seen, and anchor fragments, external links and doc trees outside the feature folder are out of scope by design; all four are now declared in the gate's own NOT CHECKED block rather than left silent, which is what turned the first cut from a known limit into a defect",
+                "where": ".proof-os/gates/_doc_links_resolve_scan.py:1"}}
+]}

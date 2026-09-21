@@ -1,0 +1,13 @@
+{"verdict": "believed",
+ "oracle": "vitest",
+ "isolation": "fresh-context",
+ "done_when": "a signed-in brand can reach /brand/settings/billing from the sidebar, and doing so creates a subscriptions row for that workspace",
+ "not_checked": [
+   "CLAUSE 2 IS NOT MET AND IS ALSO WRONG (ledger F-0800): no test anywhere asserts GET /billing/plan leaves a subscriptions row behind; and staged F-4 work provisions the row at registration plus a backfill for existing workspaces, so getOrCreateFreeSubscription short-circuits and a visit creates nothing. A gate asserting 'visiting creates a row' would go RED against correct code.",
+   "nothing was run live: no browser, no dev server, no backend, no database",
+   "App.tsx route registration is uncovered - useNavigate is mocked, so a removed or typo'd path would leave the test green",
+   "the mobile Sheet nav is never opened in the test (mobileMenuOpen false), and its bare <nav> would make findByRole('navigation') ambiguous if it ever rendered alongside the desktop one",
+   "whether BrandBillingSettingsPage actually renders once reached - useBilling fires getPlan, getUsage, getInvoices and two invoicing calls, any of which can surface the error state",
+   "whether a MANAGER/VIEWER reaching the page still triggers GET /billing/plan"
+ ],
+ "skipped": []}

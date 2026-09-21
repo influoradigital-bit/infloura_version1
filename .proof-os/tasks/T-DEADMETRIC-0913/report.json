@@ -1,0 +1,28 @@
+{"rows": [
+  {"subject": ".proof-os/gates/F-0490-dead-metric.sh",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "script",
+                "command": "bash .proof-os/gates/F-0490-dead-metric.sh, plus ten probes run one at a time and restored between: a new dead meter as the LAST enum constant, one in the middle, a new unassigned entity metric field, the unmutated tree, a baseline entry removed, and the live-metric regression checks",
+                "result": "green on the recorded baseline and red on anything outside it; a dead meter added as the last enum constant is now caught, which it was not before, and removing a baseline entry turns it red so the baseline is consulted rather than decorative",
+                "where": ".proof-os/gates/F-0490-dead-metric.sh:2"}},
+
+  {"subject": ".proof-os/gates/_dead_metric_scan.py",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "script",
+                "command": "re-ran the scanner after fixing the enum parse and after teaching RULE 1 to follow one local-variable hop",
+                "result": "the enum parser now reports both constants where it previously saw only the first, and the live metric it wrongly called dead no longer appears while the genuinely dead one still does - so the false red was not traded for a false green",
+                "where": ".proof-os/gates/_dead_metric_scan.py:1"}},
+
+  {"subject": "influora-api/src/main/java/com/influora/domain/enums/UsageMetric.java",
+   "owner": "vikram",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {"oracle": "script",
+                "command": "bash .proof-os/gates/F-0490-dead-metric.sh reports the live set",
+                "result": "six metrics are still dead in code and sit in the ratchet baseline: one usage meter a plan limit rests on, three creator averages nothing writes, a media watch-time field that is serialised to clients, and a support response time hardcoded to zero. The class detection is gated; the instances are not repaired. Tracked as a repair record.",
+                "where": "influora-api/src/main/java/com/influora/domain/enums/UsageMetric.java:4"}}
+]}

@@ -1,0 +1,112 @@
+{
+  "rows": [
+    {
+      "subject": "src/pages/creator-onboarding.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm",
+        "command": "npx vitest run src/pages/creator-onboarding.trust.test.tsx",
+        "result": "exit 0, Tests 8 passed (8)",
+        "where": "src/pages/creator-onboarding.tsx:145"
+      }
+    },
+    {
+      "subject": "src/components/creator/connected-accounts.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm",
+        "command": "npx vitest run src/components/creator/connected-accounts.test.tsx",
+        "result": "exit 0, Tests 9 passed (9)",
+        "where": "src/components/creator/connected-accounts.tsx:371"
+      }
+    },
+    {
+      "subject": "src/components/creator/meta-connect-path-dialog.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "script",
+        "command": "bash .proof-os/gates/meta-authpath-explicit.sh",
+        "result": "exit 0, PROVED - every metaOAuth.authorize call passes an explicit authPath, and every UI surface that starts the redirect asks the creator first",
+        "where": "src/components/creator/meta-connect-path-dialog.tsx:60"
+      }
+    },
+    {
+      "subject": "src/components/creator/copilot/IGConnectPrompt.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm",
+        "command": "npx vitest run src/components/creator/copilot/ig-connect-prompt.path.test.tsx",
+        "result": "exit 0, Tests 3 passed (3)",
+        "where": "src/components/creator/copilot/IGConnectPrompt.tsx:38"
+      }
+    },
+    {
+      "subject": "src/pages/creator-meta-callback.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm",
+        "command": "npx vitest run src/pages/creator-meta-callback.test.tsx",
+        "result": "exit 0, Tests 18 passed (18)",
+        "where": "src/pages/creator-meta-callback.tsx:90"
+      }
+    },
+    {
+      "subject": "src/lib/api.ts",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "tsc",
+        "command": "npx tsc --noEmit",
+        "result": "exit 0, no errors",
+        "where": "src/lib/api.ts:5384"
+      }
+    },
+    {
+      "subject": "src/pages/creator-profile.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "npm",
+        "command": "npx vitest run",
+        "result": "exit 0, Test Files 210 passed (210), Tests 1209 passed (1209)",
+        "where": "src/pages/creator-profile.tsx:571"
+      }
+    },
+    {
+      "subject": "src/components/creator/deal-room/deliverable-lifecycle-panel.tsx",
+      "owner": "meera",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "node",
+        "command": "npx vite build",
+        "result": "exit 0, built in 1m 42s",
+        "where": "src/components/creator/deal-room/deliverable-lifecycle-panel.tsx:113"
+      }
+    },
+    {
+      "subject": "trust claims rendered on the connect screens",
+      "owner": "tejas",
+      "status": "partial",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "model",
+        "command": "fresh-context claim audit against MetaOAuthService / MetaTokenStorage / CreatorProfileSpecifications",
+        "result": "11 of 12 claims TRUE against primary source; 1 OVERSTATED (disconnect said 'today's numbers'), corrected and re-pinned",
+        "where": "src/components/creator/connected-accounts.tsx:371"
+      }
+    }
+  ]
+}

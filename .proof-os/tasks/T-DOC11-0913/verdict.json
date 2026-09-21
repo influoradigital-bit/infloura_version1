@@ -1,0 +1,17 @@
+{"verdict": "believed",
+ "oracle": "model",
+ "isolation": "fresh-context",
+ "done_when": "each of the 11 has its feature-doc line corrected against current code and is closed by promotion - against a gate where one can see it, else --unautomatable with a stated reason - and --recurrence no longer names doc-stale-doc-claim",
+ "evidence": {"oracle": "model",
+              "command": "a fresh-context reviewer opened every code location cited by the eleven corrected lines and judged each against current source; separately, promote.py --recurrence was run before and after closing them",
+              "result": "all eleven corrections judged true with every citation resolving; all eleven closed by promotion; doc-stale-doc-claim no longer appears in the recurrence list",
+              "where": "docs/docs/features/notifications.md:44"},
+ "not_checked": [
+   "that the corrected prose is TRUE cannot be oracle-proved - it is exactly the behaviour-claim shape no scanner here can see, which is why all eleven closed as unautomatable. Clause 1 rests on one fresh-context reviewer reading code, not on a deterministic check.",
+   "F-0805 and F-0806 (incomplete-doc-correction) remain OPEN - the fix landed but no gate exists for 'a doc states a claim and its negation in the same file'",
+   "F-0807 (dead-doc-link) remains OPEN - the six touched files were cleaned, but the reviewer counted 46 dead ../known-limitations.md and ../database.md links across ~22 other feature docs",
+   "the other ~22 feature docs were never swept; the reviewer already found the same defect shape live in contracts.md and invoicing-gst.md by targeted grep alone, so more are likely",
+   "runtime behaviour - nothing was booted. MetricsPollingJob being wired is not the same as it having run successfully against Meta, and no live DB was checked for media_metrics rows.",
+   "the gate's ratchet baseline still records 19 uncited claims while the tree now measures 10, so the improvement is not yet locked in"
+ ],
+ "skipped": []}

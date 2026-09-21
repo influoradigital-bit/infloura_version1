@@ -1,0 +1,38 @@
+{
+ "text": "fix F-0901",
+ "verb": "FIX",
+ "resolution": "proved",
+ "verbs_matched": [
+  "FIX"
+ ],
+ "modifiers": {},
+ "target": {
+  "kind": "ledger",
+  "id": "F-0901",
+  "resolution": "proved",
+  "note": "consent-gate-never-opens",
+  "status": "open"
+ },
+ "scope": [
+  "influora-api/src/main/java/com/influora/service/MetricsAuthorizationService.java",
+  "integration/meta/oauth/MetaTokenStorage.storeCreatorToken"
+ ],
+ "scope_from": "ledger.where",
+ "owner": "vikram",
+ "reviewer": "kabir",
+ "oracles": [],
+ "oracle_first": false,
+ "exit_gate": "mvn -o test -Dtest=MetricsAuthorizationServiceTest,AnalyticsService*Test",
+ "done_when": "MetricsAuthorizationService.resolveAuthorizedCreatorProfileId authorizes a brand workspace for a creator profile exactly when that workspace has a collaboration with that creator that the CREATOR agreed to (source APPLICATION and not CANCELLED, or status TERMS_AGREED or later incl. DISPUTED) or an existing workspace-scoped Meta pairing row; a brand-only INVITED / unanswered brand offer / CANCELLED collaboration is refused; proved by `mvn -o test -Dtest=MetricsAuthorizationServiceTest,AnalyticsService*Test` exiting 0 with a case per allowed and refused status, and reviewed by kabir in a fresh context",
+ "ask": null,
+ "refused": null,
+ "prior_failures": [
+  "F-0796",
+  "F-0878",
+  "F-0901"
+ ],
+ "dispatch": "agents",
+ "oracles_skipped_no_toolchain": [],
+ "graph_nodes": 928,
+ "human_answer": "Creator has agreed (user, 2026-09-18)"
+}

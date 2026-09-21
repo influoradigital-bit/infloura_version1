@@ -1,0 +1,258 @@
+{
+  "role": "CFO (costs & financial risk) - Rohan Sharma",
+  "audit_scope": "RC commit 115f698, checked out clean at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698. Focus: every paid external call (Anthropic/Claude, Gemini, Sarvam, Meta Graph, Razorpay/RazorpayX, MSG91 email, Cloudflare R2 storage, deploy/hosting), AI model/token/cache/cap analysis, payment economics (fees/GST/who-pays-gateway-fee/refunds), cost-explosion vectors.",
+  "questions": [
+    {
+      "question": "Is there a global daily $ ceiling on total AI provider spend, and is it actually enforced in production (not just documented)?",
+      "why_it_matters": "A single runaway loop or attack could otherwise produce unbounded Anthropic/Gemini/Sarvam billing overnight with no human in the loop.",
+      "answer": "Yes. app/costs/gate.py's check_spend_gate() is called at the top of every AI-bound route (chat.py, voice.py, analyze_site.py, brand_safety.py, creator_suggestion.py, trend_tag.py) BEFORE any provider call, comparing today's total (from Redis-backed app/costs/spend_tracker.py) plus a reservation against AI_DAILY_SPEND_CEILING_USD (default $15/day, set to \"15.0\" in deploy/hostinger/docker-compose.hostinger.yml:418, deploy/utho/docker-compose.utho.yml:404, deploy/utho/docker-compose.utho-shared.yml:421). A kill-switch env var (AI_SPEND_KILL_SWITCH) is checked first and unconditionally blocks all provider calls when true.",
+      "evidence": "influora-ai/app/costs/gate.py:44-117 (check_spend_gate); influora-ai/app/routes/{chat.py:491,voice.py:445/597,analyze_site.py:160,brand_safety.py:287,creator_suggestion.py:264,trend_tag.py:223} all call check_spend_gate before any provider client is touched; deploy compose files set AI_DAILY_SPEND_CEILING_USD=15.0 in all three production compose files.",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "Static/config verification only \u2014 no live traffic was generated against a running instance to prove the ceiling actually trips at $15 (E4 would require a safe-env load test, out of scope/prohibited here)."
+    },
+    {
+      "question": "Is the per-call cost estimate (used to enforce the ceiling) accurate, in particular for Anthropic prompt-cache tokens?",
+      "why_it_matters": "If cached tokens are billed at $0, the ceiling silently authorizes multiples of the real spend \u2014 this exact bug (F-01) is documented as having existed and been fixed in this codebase.",
+      "answer": "The pricing table now includes explicit cache_read_per_token (0.1x input) and cache_write_per_token (1.25x input) columns and estimate_cost_usd() reads both cache_read_input_tokens/cache_creation_input_tokens fields distinctly from input_tokens/output_tokens, per Anthropic's documented disjoint-usage-field billing model. Model IDs are also keyed by LITERAL string (not by the possibly-overridden constant), closing a second bug (F-04) where CLAUDE_MODEL=claude-opus-4-1 would have silently billed Opus calls at Sonnet's 5x-cheaper rate. Both fixes are documented in code comments citing specific dollar worked examples, which is corroborating (not sole) evidence.",
+      "evidence": "influora-ai/app/costs/pricing.py:34-58 (ModelRate incl. cache fields), :103-115 (PRICING_TABLE keyed by literal ids: claude-sonnet-4-5-20250929, claude-haiku-4-5-20251001, claude-opus-4-1-20250805, claude-3-5-haiku-20241022, gemini-2.5-flash), :191-241 (_resolve_rate, F-04 fallback-to-most-expensive-rate logic), :244-298 (estimate_cost_usd reading cache_read_input_tokens / cache_creation_input_tokens).",
+      "evidence_score": 2,
+      "confidence": 70,
+      "remaining_uncertainty": "Code-reading only \u2014 did not execute influora-ai/tests/costs/test_pricing.py or test_f01_f07_money_path.py to confirm the fix is actually covered/green (test files exist at influora-ai/tests/costs/ but were not run in this audit)."
+    },
+    {
+      "question": "Is there a per-workspace (per-brand) hard cap that stops one brand from consuming the entire global daily AI budget?",
+      "why_it_matters": "Without one, a single high-volume or misbehaving brand workspace can starve every other brand's Meera access for the rest of the day by burning the whole $15 global ceiling alone.",
+      "answer": "No. The only per-workspace check that BLOCKS is ai_workspace_daily_hard_cap_usd, read from WORKSPACE_DAILY_HARD_CAP_USD, which defaults to None/unset and is opt-in per gate.py's own docstring. Grepping all three production deploy compose files (hostinger, utho, utho-shared) and generate-env.sh finds AI_DAILY_SPEND_CEILING_USD, AI_SPEND_KILL_SWITCH and AI_CREATOR_MONTHLY_CAP_USD set, but WORKSPACE_DAILY_HARD_CAP_USD is set nowhere. The only workspace-level control actually active is ai_workspace_daily_soft_cap_usd ($3/day default), which chat.py logs as a WARNING only \u2014 it never blocks a call.",
+      "evidence": "influora-ai/app/costs/gate.py:10-21 (module docstring: hard cap is 'opt-in'), :81/:90-91 (hard_cap = settings.ai_workspace_daily_hard_cap_usd; only checked when both workspace_id AND hard_cap set); influora-ai/app/config.py:433-445 (ai_workspace_daily_soft_cap_usd is 'WARNING-only, not blocking'; ai_workspace_daily_hard_cap_usd via _get_optional_float, default None); grep across deploy/hostinger/docker-compose.hostinger.yml, deploy/utho/docker-compose.utho.yml, deploy/utho/docker-compose.utho-shared.yml, deploy/utho/generate-env.sh found zero occurrences of WORKSPACE_DAILY_HARD_CAP_USD.",
+      "evidence_score": 3,
+      "confidence": 85,
+      "remaining_uncertainty": "Cannot rule out an env var set out-of-repo directly on the host (e.g. via Hostinger/Utho panel or a .env file not checked into the RC) \u2014 config search was limited to committed deploy artifacts."
+    },
+    {
+      "question": "How many paid provider calls does a single Meera voice conversation turn cost, end to end?",
+      "why_it_matters": "Voice is the most expensive interaction surface (3 chained providers per turn); undercounting this in a per-workflow cost model would misprice the whole creator-facing product.",
+      "answer": "A full voice round-trip is up to 3 separate billed external legs across 2 route handlers: (1) POST /voice/transcribe \u2014 Sarvam STT (flat $0.006/call, no token signal) THEN a Gemini 2.5 Flash 'cleanup_transcript' call (max_output_tokens=512); (2) POST /chat \u2014 1 to tool_loop_max_iterations(=6) Claude calls (claude-sonnet-4-5, max_tokens 1536, 2048 on retry) to actually answer; (3) POST /voice/speak \u2014 Sarvam TTS, char-scaled at ~$0.3614/10,000 chars, capped by TTS_MAX_CHARS=500 in voice.py (\u2264$0.0181/call). Both voice legs independently call check_spend_gate AND check_creator_spend_gate before their respective provider call.",
+      "evidence": "influora-ai/app/routes/voice.py:73 (TTS_MAX_CHARS = 500), :385-460 (voice_transcribe: Sarvam STT then Gemini cleanup, both gated), :546-645 (voice_speak: Sarvam TTS char-scaled cost via estimate_sarvam_tts_cost_usd(result.billed_chars)); influora-ai/app/providers/gemini.py:286,303 (cleanup_transcript max_output_tokens=512); influora-ai/app/tools/loop.py:44 (DEFAULT_MAX_ITERATIONS = 6); influora-ai/app/config.py:331-343 (meera_chat_max_tokens=1536, retry=2048).",
+      "evidence_score": 2,
+      "confidence": 65,
+      "remaining_uncertainty": "Static call-graph reconstruction, not a traced runtime request; the actual number of Claude tool-loop iterations for a typical (not worst-case) voice turn is not measurable from code alone \u2014 labeled ASSUMPTION in the cost table."
+    },
+    {
+      "question": "Does the codebase account for the real Razorpay/RazorpayX transaction fee anywhere in the fee/ledger math, given the CEO ruling that 'platform absorbs Razorpay processing costs'?",
+      "why_it_matters": "If the 10%/15% platform take rate was sized assuming Razorpay's ~2% (payments) / per-payout fee is absorbed 'inside' that margin, but no code ever nets that cost out of platform revenue, Finance has no visibility into the real margin \u2014 it is an unmodeled, unaccounted-for COGS line.",
+      "answer": "The V42 migration adds a razorpay_absorbed_by_platform BOOLEAN (default TRUE) to platform_fee_config, explicitly documented as the CEO's 'Option A = platform absorbs Razorpay processing costs' decision. Searching the entire influora-api source for razorpayAbsorbedByPlatform shows it is only ever READ for admin display/audit-log purposes (PlatformFeeAdminService, AdminAuditLogService, PlatformFeeConfigDtos) \u2014 it is never consumed by BrandCampaignFeeService, PlatformFeeService, EscrowService or any ledger-posting code to actually net a Razorpay cost out of the platform revenue wallet. No RazorpayClient/RazorpayXClient response field for the actual per-transaction fee charged by Razorpay is captured or posted to any ledger/wallet at all.",
+      "evidence": "influora-api/src/main/resources/db/migration/V42__platform_fee_config_brand_fee_razorpay.sql:1-3,25 (razorpay_absorbed_by_platform column + CEO ruling comment); grep of razorpayAbsorbedByPlatform across influora-api/src/main/java/com/influora hits only domain/entity/PlatformFeeConfig.java, service/admin/AdminAuditLogService.java, service/admin/PlatformFeeAdminService.java, web/dto/admin/PlatformFeeConfigDtos.java \u2014 no service/*.java ledger/fee-calculation class references it; service/PlatformFeeService.java and service/BrandCampaignFeeService.java compute fees purely as a bps percentage of gross/budget with no Razorpay-fee subtraction term.",
+      "evidence_score": 2,
+      "confidence": 75,
+      "remaining_uncertainty": "Did not open every ledger-adjacent class in the repo (e.g. WalletLedgerService in full) to rule out a Razorpay-fee posting living somewhere unexpected; absence-of-evidence from a targeted grep, not an exhaustive negative proof."
+    },
+    {
+      "question": "Does a brand's internal escrow refund also recover the original Razorpay gateway fee paid on top-up, or is that fee a sunk cost to the platform on every refund?",
+      "why_it_matters": "Refund cost is explicitly in scope; if escrow funding and escrow refund are pure internal wallet-ledger movements while the ORIGINAL top-up already paid Razorpay a real fee, every refunded campaign has a real, currently un-ledgered loss.",
+      "answer": "Escrow fund/refund (EscrowService.refund/refundInternal, LedgerEscrowBackend) are wallet-to-wallet ledger movements with no re-invocation of RazorpayClient \u2014 confirmed no razorpay import/call in the refund path. The wallet's INR balance was originally created via WalletTopUpService.topUp(), which does call RazorpayClient.createOrder() (a real, fee-bearing Razorpay payment). Since (per the prior question) no code anywhere nets a Razorpay fee against the ledger, a refunded escrow returns the brand's full gross INR to their wallet while the platform has already paid Razorpay's real transaction fee on the original top-up with no recovery mechanism \u2014 consistent with the broader 'unmodeled Razorpay cost' finding, not a separately-coded defect.",
+      "evidence": "influora-api/src/main/java/com/influora/service/EscrowService.java:946-998 (refund/refundInternal call escrowBackend.refund, an internal LedgerEscrowBackend posting, not RazorpayClient); influora-api/src/main/java/com/influora/service/WalletTopUpService.java:70,161 (RazorpayClient.createOrder is the only Razorpay touchpoint for money entering a wallet).",
+      "evidence_score": 2,
+      "confidence": 65,
+      "remaining_uncertainty": "Did not open LedgerEscrowBackend.java in full to rule out a fee-clawback line item; inferred from call-site absence, not from reading that whole class."
+    },
+    {
+      "question": "What is the actual GST treatment on the platform's own fee income (brand 10% / creator 15%), and is it computed correctly?",
+      "why_it_matters": "Incorrect CGST/SGST vs IGST classification on commission invoices is a real compliance and cash exposure, separate from AI/API costs but squarely a CFO concern.",
+      "answer": "GstSplitUtil.compute() implements the standard India GST rule (same first-2-digit GSTIN state code \u2192 CGST+SGST split 50/50 with rounding residual absorbed into SGST; different/unknown state \u2192 full IGST) and is shared by every D14 PDF invoice renderer including CommissionInvoiceService for both the brand-fee and creator-fee legs. This is a reasonable, standard implementation on its face.",
+      "evidence": "influora-api/src/main/java/com/influora/service/GstSplitUtil.java:1-46 (compute() method, intra-state vs inter-state logic, rounding-residual handling).",
+      "evidence_score": 2,
+      "confidence": 70,
+      "remaining_uncertainty": "Did not verify the GST RATE (18%?) is applied correctly upstream of this split, nor trace a real invoice's numbers end-to-end against CommissionInvoiceService/CommissionInvoicePdfService \u2014 this only confirms the CGST/SGST/IGST split math itself, not the full tax pipeline."
+    },
+    {
+      "question": "Is a single AI-bound worker process (rather than multiple, unsynchronized workers) enforced, so the Redis-backed daily ceiling can't be silently bypassed by scaling?",
+      "why_it_matters": "The whole spend-tracking design (F-05 reservations, Redis-shared counters) explicitly assumes one process; if ops ever scales influora-ai horizontally without also fixing this, the daily ceiling reverts to a per-process ceiling.",
+      "answer": "Yes, and it fails closed. The Dockerfile pins uvicorn to --workers 1, and a comment states 'influora-ai refuses to boot with more than one uvicorn worker' \u2014 i.e., there is an explicit boot-time guard (app/costs/worker_guard.py, 98 lines) rather than a mere convention. This is a genuine safety control but also means influora-ai cannot horizontally scale for THROUGHPUT (only for isolated environments/replicas each running their own single worker, each with their own $15/day ceiling unless they share the same Redis \u2014 in which case they'd correctly share the ceiling but also share a single bottlenecked process per container).",
+      "evidence": "influora-ai/Dockerfile:49-54 (CMD pins --workers 1, comment: 'app.main refuses to boot with --workers > 1'); influora-ai/app/costs/worker_guard.py exists (98 lines, not fully read in this pass) as the presumed enforcement point; deploy/hostinger/docker-compose.hostinger.yml:425 repeats the same comment.",
+      "evidence_score": 2,
+      "confidence": 65,
+      "remaining_uncertainty": "Did not open worker_guard.py's full source to confirm the exact mechanism (env var check vs multiprocessing detection) or test that boot actually fails with --workers 2."
+    },
+    {
+      "question": "Are there any AI-adjacent endpoints in this RC with NO spend-gate call at all \u2014 a free-credit-abuse or cost-explosion path that bypasses the ceiling entirely?",
+      "why_it_matters": "A single ungated route calling Claude/Gemini/Sarvam would be a direct path to unbounded billing regardless of how well the gated routes are designed.",
+      "answer": "Every route file that imports a provider client also imports and calls app.costs.gate.check_spend_gate before the call: chat.py, voice.py (both transcribe and speak), analyze_site.py, brand_safety.py, creator_suggestion.py, trend_tag.py. No AI route was found that skips the gate. The one non-gated, unbounded-frequency trigger identified is Java-side, not Python-side: OnboardingService.saveBrandCompany triggers AnalyzeSiteTriggerService.trigger() every time a brand saves/changes its website URL, with no cooldown/rate-limit found in AnalyzeSiteTriggerService.java \u2014 but every resulting call still passes through analyze_site.py's own check_spend_gate on the Python side, so the exposure is bounded by the global ceiling, just not individually rate-limited per brand.",
+      "evidence": "grep of 'check_spend_gate' across influora-ai/app/routes/*.py shows it present and called in chat.py:491, voice.py:445 and :597, analyze_site.py:160, brand_safety.py:287, creator_suggestion.py:264, trend_tag.py:223; influora-api/src/main/java/com/influora/service/brand/AnalyzeSiteTriggerService.java:38-40 ('Call site: OnboardingService.saveBrandCompany calls trigger whenever a brand saves/changes their website URL') with no cooldown/rateLimit/throttle token found in that file via targeted grep.",
+      "evidence_score": 3,
+      "confidence": 75,
+      "remaining_uncertainty": "Did not verify by grep whether OnboardingService.saveBrandCompany itself has a higher-level rate limit (e.g. a generic per-endpoint API rate limiter) that would blunt this; only AnalyzeSiteTriggerService.java itself was checked for a cooldown."
+    },
+    {
+      "question": "Is the per-creator monthly AI cost cap ($0.75/month default) actually enforced BEFORE a provider call, or only logged after the fact?",
+      "why_it_matters": "A creator-facing free product surface (Meera for Creators) is the highest fan-out, lowest-revenue-per-user AI cost center in the system \u2014 if this cap is soft/advisory, per-creator AI cost could exceed the ~500-750 INR commission it's sized against.",
+      "answer": "Blocking, per the code's own design intent and call-site ordering. config.py's comment states it is 'Enforced BLOCKING by app.costs.spend_tracker.check_creator_spend_gate before any provider call' and voice.py's _creator_voice_gate() is called and checked (cap_blocked short-circuits to a friendly fallback message) before check_spend_gate() and before either Sarvam/Gemini call in voice_transcribe.",
+      "evidence": "influora-ai/app/config.py:447-457 (ai_creator_monthly_cap_usd doc, 'Enforced BLOCKING ... before any provider call'); influora-ai/app/routes/voice.py:427-434 (_creator_voice_gate called and cap_blocked returns early, BEFORE the check_spend_gate call at line 445).",
+      "evidence_score": 2,
+      "confidence": 70,
+      "remaining_uncertainty": "Did not open app/costs/spend_tracker.py's check_creator_spend_gate implementation itself (1106-line file, only referenced, not read in full) to confirm the monthly counter reset-at-UTC-month-boundary logic is correct and race-free the way the daily F-05 fix is."
+    }
+  ],
+  "findings": [
+    {
+      "id": "ROH-01",
+      "title": "No per-workspace BLOCKING hard cap is configured in any production deploy artifact; a single brand can exhaust the entire global $15/day AI ceiling alone",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "CONFIGURATION",
+      "evidence": "app/costs/gate.py:81,90-91 only enforces ai_workspace_daily_hard_cap_usd (env WORKSPACE_DAILY_HARD_CAP_USD) when that var is set; it is unset in deploy/hostinger/docker-compose.hostinger.yml, deploy/utho/docker-compose.utho.yml, deploy/utho/docker-compose.utho-shared.yml and deploy/utho/generate-env.sh (all three grepped, zero hits). The only active per-workspace control, ai_workspace_daily_soft_cap_usd ($3/day), is documented in app/config.py:433-436 as 'WARNING-only, not blocking'.",
+      "location": "influora-ai/app/costs/gate.py:81-101; influora-ai/app/config.py:433-445; deploy/hostinger/docker-compose.hostinger.yml (WORKSPACE_DAILY_HARD_CAP_USD absent); deploy/utho/docker-compose.utho.yml (same)",
+      "impact": "One noisy or abusive brand workspace can consume the full $15/day global ceiling before its own 8pm meeting is over, tripping AI_SPEND_CEILING_REACHED for every OTHER brand's Meera chat/voice/analyze-site/brand-safety calls for the rest of the UTC day. This is a fairness/availability cost-explosion vector, not a runaway-total-spend vector (the global ceiling still holds spend to $15/day) \u2014 but it converts a well-designed global backstop into a single-tenant-can-DoS-everyone-else situation.",
+      "recommended_fix": "Set WORKSPACE_DAILY_HARD_CAP_USD in all three production compose files (e.g. $3-5/workspace/day, matching or slightly above the existing $3 soft-cap value already chosen), and confirm chat.py already passes workspace_id to check_spend_gate (it does, per gate.py's own docstring at line 53) so the hard cap activates automatically once the env var is set.",
+      "verification_required": "After setting the env var in a staging deploy, drive one workspace's chat volume past the hard cap and confirm AI_WORKSPACE_SPEND_CAP_REACHED is returned while a second workspace's calls still succeed (E4 runtime proof)."
+    },
+    {
+      "id": "ROH-02",
+      "title": "Real Razorpay/RazorpayX transaction fees are never modeled, tracked, or netted against platform revenue anywhere in the codebase, despite an explicit CEO ruling that the platform absorbs them",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 70,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "V42__platform_fee_config_brand_fee_razorpay.sql:1-3,25 documents the CEO ruling 'Option A = platform absorbs Razorpay processing costs' via a razorpay_absorbed_by_platform BOOLEAN; grepping razorpayAbsorbedByPlatform across the whole influora-api source shows it is read only by admin display/audit-log code (PlatformFeeAdminService.java, AdminAuditLogService.java, PlatformFeeConfigDtos.java) and never by PlatformFeeService.java, BrandCampaignFeeService.java, or any WalletLedgerService posting path. No RazorpayClient/RazorpayXClient response is captured into any ledger line representing the actual gateway fee charged.",
+      "location": "influora-api/src/main/resources/db/migration/V42__platform_fee_config_brand_fee_razorpay.sql:23-27; influora-api/src/main/java/com/influora/service/PlatformFeeService.java (fee = bps only); influora-api/src/main/java/com/influora/service/BrandCampaignFeeService.java (fee = bps only); influora-api/src/main/java/com/influora/integration/razorpay/RazorpayXClient.java, RazorpayClient.java (no fee-field capture found)",
+      "impact": "The 10% brand / 15% creator take rate is presented internally as the platform's margin, but the real Razorpay payment-gateway fee (~2% on card/UPI payments) and RazorpayX payout fee (per-transaction, varies by mode: IMPS/NEFT) are silently subtracted from that margin with zero ledger visibility. Finance cannot see the true net margin per campaign from the ledger alone, and at volume this is real, un-forecast COGS that could materially erode the stated 10%/15% economics, especially on high-frequency small-ticket payouts where a flat per-transaction RazorpayX fee is a larger percentage of the transfer.",
+      "recommended_fix": "Capture RazorpayXClient's actual per-payout fee (available in its API response) and RazorpayClient's per-order fee, and post them as a distinct ledger line (e.g. a new WalletTransactionType.GATEWAY_FEE) against the platform revenue wallet so PlatformFeeAdminService/AdminRevenueService can report a true net-of-gateway-cost margin, not just gross bps revenue.",
+      "verification_required": "Confirm with Razorpay's dashboard/settlement reports what the actual historical gateway fee percentage has been on live volume (referenced in memory: project_meta_razorpay_live_0913.md notes a real Rs 1,000 wallet credit was proven live 2026-09-13), then reconcile against zero ledger entries for that fee in the DB."
+    },
+    {
+      "id": "ROH-03",
+      "title": "influora-ai is architecturally capped at one worker process per container (boot refuses --workers > 1), which is a correctness requirement for the cost-ceiling design but also a hard throughput/cost-scaling ceiling",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 65,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-ai/Dockerfile:49-54 pins `--workers 1` with a comment that app.main refuses to boot with more workers; deploy/hostinger/docker-compose.hostinger.yml:425 repeats the same note tying it to the Redis-backed spend-tracker design.",
+      "location": "influora-ai/Dockerfile:49-54; influora-ai/app/costs/worker_guard.py (98 lines, presumed enforcement, not fully read)",
+      "impact": "This is the CORRECT tradeoff given the current spend-tracker design (multi-worker would silently multiply the effective daily ceiling without the Redis coordination this comment implies is still incomplete for >1 worker), but it means each influora-ai container instance can only serve as many concurrent Claude/Gemini/Sarvam calls as one Python asyncio process supports. At real user-growth scale this becomes a latency/availability cost tradeoff: either accept single-process throughput limits per replica, or someone eventually removes the guard without first verifying the Redis-backed tracker (spend_tracker.py, 1106 lines, not fully audited this pass) is safe under true multi-process concurrency \u2014 which would reopen exactly the F-05 race this guard exists to prevent.",
+      "recommended_fix": "Document this constraint explicitly in a scaling runbook (scale by adding container REPLICAS, each still --workers 1, all pointed at the same REDIS_URL, never by raising --workers) so a future operator does not \"fix\" a perceived throughput problem by removing the boot guard.",
+      "verification_required": "Read influora-ai/app/costs/worker_guard.py and app/costs/spend_tracker.py in full to confirm the Redis-backed counter is safe under concurrent REPLICAS (as opposed to concurrent workers within one process) \u2014 not verified in this pass."
+    },
+    {
+      "id": "ROH-04",
+      "title": "No cooldown/rate-limit found on AnalyzeSiteTriggerService's per-brand-URL-save trigger of the Gemini-backed /analyze-site call",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 60,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-api/src/main/java/com/influora/service/brand/AnalyzeSiteTriggerService.java:38-40 documents the call site as 'OnboardingService.saveBrandCompany calls trigger whenever a brand saves/changes their website URL'; targeted grep for cooldown/rateLimit/lastAnalyzedAt/throttle in that file returned no matches.",
+      "location": "influora-api/src/main/java/com/influora/service/brand/AnalyzeSiteTriggerService.java (full file, cooldown search); influora-ai/app/routes/analyze_site.py:160 (per-call spend gate still applies)",
+      "impact": "Each call costs one Gemini 2.5 Flash call at up to 4096 output tokens (~$0.001-0.003 at gemini-2.5-flash's $0.30/$2.50-per-MTok rate) \u2014 individually cheap, but a brand repeatedly editing/re-saving its website URL (deliberately or via a buggy frontend retry loop) can re-trigger this an unbounded number of times per day with no per-brand cooldown, bounded only by the shared global $15/day ceiling (which every OTHER AI feature also draws from).",
+      "recommended_fix": "Add a per-workspace cooldown (e.g. 1 analyze-site trigger per URL-change per N minutes/hours) in AnalyzeSiteTriggerService.trigger(), independent of the global spend ceiling, so this one feature cannot crowd out chat/voice/brand-safety spend for the rest of the org.",
+      "verification_required": "Confirm whether OnboardingService.saveBrandCompany has a higher-level generic rate limiter (not checked in this pass) that would already blunt this before it reaches AnalyzeSiteTriggerService."
+    },
+    {
+      "id": "ROH-05",
+      "title": "Minor doc/code drift: pricing.py's TTS cost comment cites TTS_MAX_CHARS=200 but voice.py's actual constant is 500",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 90,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-ai/app/costs/pricing.py:138-140 comment: 'the flat $0.006 under-bills a max-length (TTS_MAX_CHARS=200, see routes/voice.py) call by ~20%'; influora-ai/app/routes/voice.py:73: `TTS_MAX_CHARS = 500`.",
+      "location": "influora-ai/app/costs/pricing.py:138-140 vs influora-ai/app/routes/voice.py:73",
+      "impact": "No financial impact \u2014 estimate_sarvam_tts_cost_usd() is char-scaled off the ACTUAL text length sent (result.billed_chars), not off this stale comment's constant, so billing itself is correct. This is purely a stale-comment drift risk: a future reader trusting the comment's '200 chars / Rs 0.60' worked example while the real cap is 500 chars (up to Rs 1.50 at the real rate) would under-estimate the true per-call TTS ceiling by 2.5x when reasoning about worst-case cost from the comment alone.",
+      "recommended_fix": "Update the pricing.py comment to reference the live TTS_MAX_CHARS=500 constant (or better, import and interpolate it rather than hardcoding the number in a comment, so this drift cannot recur).",
+      "verification_required": "None further needed \u2014 both files were opened and the discrepancy is directly confirmed."
+    },
+    {
+      "id": "ROH-06",
+      "title": "No aggregate per-workspace storage quota on Cloudflare R2 uploads (only a per-file 500MB video cap)",
+      "severity": "P3",
+      "evidence_score": 1,
+      "confidence": 40,
+      "status": "INFERRED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-api/src/main/resources/application.yml:374-381 configures R2_MAX_VIDEO_BYTES (524288000 = 500MB) as the only size-related setting; targeted grep of UploadService.java and R2StorageService.java for QUOTA/storage limit/StorageQuota returned no matches.",
+      "location": "influora-api/src/main/java/com/influora/service/UploadService.java; influora-api/src/main/java/com/influora/integration/storage/R2StorageService.java; influora-api/src/main/resources/application.yml:374-381",
+      "impact": "R2's own pricing (no egress fee, ~$0.015/GB-month storage) makes this a low-severity vector \u2014 unbounded uploads per workspace scale storage cost roughly linearly and slowly, unlike the AI cost surface. Flagged for completeness per the audit's cost-explosion-vector requirement, not as a go-live blocker.",
+      "recommended_fix": "If not already tracked at the infra billing level, add a soft per-workspace total-storage-used counter (queryable, not necessarily blocking) so Finance has visibility before this becomes material at scale.",
+      "verification_required": "Confirm with Cloudflare's actual R2 bill whether storage cost has been material to date; this finding is speculative/low-confidence and was not chased further given the higher-priority AI/payment cost surfaces."
+    }
+  ],
+  "features": [
+    {
+      "name": "Global daily AI spend ceiling + kill switch (check_spend_gate)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 80,
+      "user_type": "platform-wide (all AI routes)",
+      "evidence": "app/costs/gate.py + all 6 AI route files call it before any provider call; $15/day ceiling set identically across all 3 production compose files. Code-level and config-level evidence is strong (E3), but no runtime trip of the ceiling was observed (would require E4 load test in a safe env, out of scope)."
+    },
+    {
+      "name": "Per-workspace BLOCKING daily hard cap",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 3,
+      "confidence": 85,
+      "user_type": "per-brand-workspace",
+      "evidence": "Code path exists (gate.py) but the enabling env var WORKSPACE_DAILY_HARD_CAP_USD is absent from every production deploy compose file checked \u2014 the feature exists in code but is off in production. See ROH-01."
+    },
+    {
+      "name": "Per-creator monthly AI cost cap ($0.75/month)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 70,
+      "user_type": "creator (Meera for Creators)",
+      "evidence": "config.py + voice.py call ordering shows it is checked and short-circuits before any provider call; the enforcement env var AI_CREATOR_MONTHLY_CAP_USD IS set (0.75) in all 3 production compose files. Underlying check_creator_spend_gate/spend_tracker implementation (1106 lines) not read in full."
+    },
+    {
+      "name": "Anthropic prompt-cache-aware cost estimation (F-01/F-04 fixes)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 70,
+      "user_type": "platform-wide (billing accuracy)",
+      "evidence": "pricing.py code shows the fix with detailed worked-example comments; influora-ai/tests/costs/test_pricing.py and test_f01_f07_money_path.py exist but were not executed in this audit."
+    },
+    {
+      "name": "Brand-side (10%) / creator-side (15%) platform fee, DB-config-driven, plan-aware (Pro override to 7% brand fee)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 70,
+      "user_type": "brand and creator",
+      "evidence": "PlatformFeeService.java, BrandCampaignFeeService.java, V41/V42 migrations show a coherent bps-based, DB-config, plan-aware fee model with an explicit fail-open direction (documented, logged loudly) on plan-resolution failure. Not runtime-verified against a real transaction."
+    },
+    {
+      "name": "Razorpay gateway fee accounting / netting against platform revenue",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 2,
+      "confidence": 70,
+      "user_type": "platform finance / admin revenue reporting",
+      "evidence": "See ROH-02 \u2014 razorpay_absorbed_by_platform flag exists but is never consumed by fee-calculation or ledger-posting code."
+    },
+    {
+      "name": "GST CGST/SGST/IGST split on commission invoices",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 70,
+      "user_type": "brand and creator (invoicing)",
+      "evidence": "GstSplitUtil.java implements standard state-code-comparison logic, shared across commission and subscription invoice renderers. Not traced end-to-end against a real generated invoice PDF."
+    },
+    {
+      "name": "Single-worker-process enforcement for influora-ai (prevents multi-process spend-ceiling bypass)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 65,
+      "user_type": "platform-wide (infra/ops)",
+      "evidence": "Dockerfile pins --workers 1 with an explicit refuse-to-boot comment; worker_guard.py presumed to implement this but not read in full."
+    }
+  ],
+  "area": {
+    "name": "AI provider cost governance and payment economics",
+    "status": "Mostly sound design with real prior-incident fixes documented in code, but production config has a fairness gap (no per-workspace hard cap) and a real accounting gap (Razorpay fees never netted against revenue).",
+    "evidence_level": 3,
+    "confidence": 72,
+    "main_evidence": "Consistent, code-verified spend-gate call ordering across all 6 AI routes; Redis-shared, single-worker-enforced spend tracker; explicit, dollar-quantified prior-incident fix comments (F-01 cache billing, F-04 model-price fallback, F-05 reservation race) that read as genuine post-mortems rather than aspirational claims; DB-migration-documented CEO-approved fee/GST/Razorpay-absorption ruling.",
+    "main_uncertainty": "No runtime/load-test evidence that the $15/day ceiling or the per-creator monthly cap actually trips correctly under concurrency in this RC specifically (E4); did not read app/costs/spend_tracker.py (1106 lines) or worker_guard.py in full, so the Redis-coordination correctness claims rest on code comments plus call-site ordering, not a full trace of the tracker's own internals.",
+    "limitations": "Static, read-only, single-pass audit against a clean checkout of one commit; no tests were executed; no live/staging environment was probed; Razorpay's actual live fee schedule and settlement reports were not available to this audit to quantify ROH-02's dollar impact precisely."
+  },
+  "extra": "COST-PER-WORKFLOW TABLE (all figures ASSUMPTION-labeled where they extrapolate beyond a single directly-cited constant; Anthropic/Gemini/Sarvam list prices are as hardcoded in influora-ai/app/costs/pricing.py, verified 2026-07-11/12 per that file's own docstring \u2014 re-verify against current Anthropic/Google/Sarvam price pages before using for real budgeting, since AI list prices change):\n\n1) TEXT CHAT TURN (brand or creator, via POST /chat, Claude only)\n   - Model: claude-sonnet-4-5-20250929 ($3/MTok in, $15/MTok out, per pricing.py:105)\n   - Calls per turn: 1 (simple Q&A) to up to 6 (tool_loop_max_iterations, loop.py:44) for a multi-step flow like a Meera-guided campaign create\n   - max_tokens: 1536 normal / 2048 on the one server-side retry (config.py:331-343)\n   - Prompt caching: Block A (persona+tools, cached) + Block B (per-brand profile, cached) per prompt/assembler.py's cache_control:ephemeral markers \u2014 code comment in providers/claude.py:4 claims caching is 'the ~65% cost lever' but this percentage is a design-doc claim, ASSUMPTION, not independently re-derived in this audit\n   - ASSUMPTION cost per simple 1-call turn (200 tokens fresh input on a cache HIT + 400 output tokens, no cache write): ~$0.0064 (200*$0.000003 + 400*$0.000015, ignoring the cached-block tokens which are billed at 0.1x input rate per pricing.py:57-58)\n   - ASSUMPTION cost for a worst-case 6-iteration tool-heavy turn at similar per-call size: ~6x the above, roughly $0.02-0.04\n\n2) VOICE CHAT TURN (creator or brand, POST /voice/transcribe + /chat + /voice/speak)\n   - Leg 1 (STT): Sarvam flat $0.006/call regardless of length (pricing.py:133,153-163)\n   - Leg 1b (Gemini cleanup): gemini-2.5-flash ($0.30/MTok in, $2.50/MTok out), max_output_tokens=512 (gemini.py:303) \u2014 ASSUMPTION ~$0.0006/call at typical usage\n   - Leg 2 (Claude reply): same as text chat turn above, 1-6 calls\n   - Leg 3 (TTS): Sarvam, char-scaled at $0.3614/10,000 chars (pricing.py:146-150), capped at TTS_MAX_CHARS=500 in voice.py:73 => max $0.0181/call, ASSUMPTION typical ~$0.005-0.010/call for a short spoken reply\n   - ASSUMPTION total per voice turn (typical, 1 Claude call): ~$0.006 (STT) + $0.0006 (Gemini) + $0.0064 (Claude) + $0.008 (TTS) \u2approx $0.021/turn\n   - Both /voice/transcribe and /voice/speak independently pass the per-creator MONTHLY cap check before spending anything (config.py:447-457)\n\n3) TREND-SPARK NUDGE (1 cheap Claude Haiku phrasing call)\n   - Model: claude-haiku-4-5-20251001 ($1/MTok in, $5/MTok out, pricing.py:106), TRENDSPARK_MAX_TOKENS=300 (config.py:365-367)\n   - ASSUMPTION cost per call (~150 input, 150 output tokens): ~$0.00098\n\n4) CREATOR CO-PILOT SUGGESTION (POST /internal/creator-suggestion, 1 Claude call)\n   - Model: defaults to TRENDSPARK_MODEL (Haiku), CREATOR_COPILOT_MAX_TOKENS=300 (config.py:383-385)\n   - ASSUMPTION cost similar to Trend-Spark nudge above, ~$0.001/call. Client NEVER throws \u2014 always falls back to a free templated reply on any failure (CreatorSuggestionAiClient.java javadoc), so cost exposure is capped at exactly this one call per suggestion request, never retried by this client itself.\n\n5) BRAND-SAFETY GARM CLASSIFICATION (POST /internal/brand-safety, batched)\n   - Model: defaults to CLAUDE_MODEL (Sonnet), BRAND_SAFETY_MAX_TOKENS=4096 (config.py:421-423), batched up to BRAND_SAFETY_MAX_ITEMS_PER_CALL=25 items/call (config.py:412-414)\n   - ASSUMPTION cost per 25-item batch call (~2000 input tokens of captions/metadata + up to 4096 output tokens worst case): could be as high as ~$0.067/call at the FULL 4096-token output ceiling, though real classification output is typically far shorter than the ceiling\n\n6) ANALYZE-SITE (POST /analyze-site, Gemini only, triggered on brand URL save)\n   - Model: gemini-2.5-flash, max_output_tokens=4096 (gemini.py:259, a THINKING model where reasoning tokens count against this ceiling per that line's own comment)\n   - ASSUMPTION cost per call (~5000 input tokens of scraped page text + up to 4096 output/thinking tokens worst case): roughly $0.0025-0.012/call\n   - No per-brand cooldown found (ROH-04) \u2014 re-triggerable on every URL save\n\nPAYMENT ECONOMICS (Razorpay/RazorpayX, V41/V42 migrations, CEO-approved 2026 ruling):\n   - Brand-side platform fee: 10.00% (1000 bps) of campaign budget at publish, charged as 'fee on top' \u2014 does NOT touch budgetMin/budgetMax or creator payout base (BrandCampaignFeeService.java javadoc). Pro-plan brands get 7.00% (700 bps) instead, resolved per-workspace, fail-open to the 10% global rate on any plan-lookup error (never fails open to a LOWER rate).\n   - Creator-side platform fee: 15.00% (1500 bps, default_fee_bps in V41/V42) deducted at escrow release.\n   - Razorpay/RazorpayX processing costs: 'absorbed by platform' per CEO ruling (razorpay_absorbed_by_platform=TRUE), but this is UNMODELED in code \u2014 see ROH-02. No ledger line nets an actual gateway fee against platform revenue anywhere found.\n   - GST: CGST+SGST (intra-state) vs IGST (inter-state) computed via GstSplitUtil.compute() based on GSTIN state-code comparison, shared across commission and subscription invoicing.\n   - Refunds: escrow refund is a pure internal wallet-ledger reversal (EscrowService.refundInternal -> LedgerEscrowBackend), it does NOT re-touch Razorpay \u2014 meaning the ORIGINAL top-up's Razorpay gateway fee (paid via WalletTopUpService -> RazorpayClient.createOrder) is a sunk, un-recovered, and un-ledgered cost on every refunded campaign (see ROH-02/refund question above).\n\nCOST-EXPLOSION VECTORS AT SCALE (ranked):\n   1. [ROH-01, P2] No per-workspace BLOCKING hard cap active in production \u2014 one workspace can consume 100% of the shared $15/day global ceiling, denial-of-service-by-cost-starvation against every other tenant, not a runaway-total-spend risk per se.\n   2. [ROH-02, P2] Real Razorpay/RazorpayX fees are entirely unmodeled against platform revenue \u2014 at volume, an unaccounted, unbudgeted COGS line that could silently erode the stated 10%/15% margin, worse on high-frequency low-ticket creator payouts where a flat per-transaction gateway fee is a larger fraction of the transfer.\n   3. [ROH-04, P3] No per-brand cooldown on the URL-save-triggered analyze-site Gemini call \u2014 cheap per call but individually un-rate-limited, bounded only by the shared global ceiling.\n   4. [ROH-03, P3] Single-worker-per-container architecture is a deliberate, currently-correct safety tradeoff, but is also a hard throughput ceiling that risk being 'fixed' incorrectly by a future operator without re-verifying the Redis-backed tracker's multi-process safety.\n   5. [ROH-06, P3] No aggregate per-workspace R2 storage quota \u2014 low severity given R2's pricing model, flagged for completeness only.\n\nNO REVENUE OR VOLUME FIGURES WERE INVENTED for this report; all dollar estimates above are per-call/per-token extrapolations from pricing.py's own list-price constants and are explicitly labeled ASSUMPTION where they go beyond a single directly-cited code constant."
+}

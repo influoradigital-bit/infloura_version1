@@ -1,0 +1,408 @@
+{
+  "domain": "Auth, accounts & platform identity (26 endpoints)",
+  "audit_meta": {
+    "release_candidate": "115f698, checked out clean at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+    "graphify": "graphify-out/graph.json did not exist in the RC checkout (only graphify-out/cache/) despite the task's claim; queries were not runnable, so orientation was done by direct source reading instead.",
+    "tests_executed": [
+      "mvn -q -o -Dtest=AuthServiceTest test -> Tests run: 64, Failures: 0, Errors: 0 (exit 0)",
+      "mvn -q -o -Dtest=AdminAuthServiceTest,AccountControllerTest,JwksControllerTest test -> AdminAuthServiceTest 5/5, AccountControllerTest 2/2, JwksControllerTest 2/2, all pass (exit 0)"
+    ]
+  },
+  "questions": [
+    "Does any test actually invoke AuthController.brandRegister/brandLogin/forgotPassword/resetPassword end to end, or only the creator-mirrored methods and the shared AuthService logic underneath?",
+    "Is AdminAuthController's login/lockout/MFA-enforcement path exercised by any test, or only AdminAuthService#resetMfaForAdmin?",
+    "Does the SecurityConfig permitAll list actually correspond to live endpoints, or does it contain matchers (e.g. GET /auth/verify-email) with no backing controller method?",
+    "Is the FE/BE contract mismatch documented in AdminAuthController's javadoc (API_BASE '/api/admin' vs actual mount '/api/v1/admin/...') still real, or has the frontend already been fixed?",
+    "Does GlobalExceptionHandler's error envelope actually get unwrapped correctly by admin-side FE error handling today, per the javadoc's claim that it renders 'undefined'?",
+    "Is UserController (GET/PATCH /users/me) covered by any controller-level test, or only by UserServiceTest at the service layer?",
+    "Can a workspace-suspended brand or profile-suspended creator still successfully complete forgot-password/reset-password or POST /me/password, even though they cannot subsequently log in?",
+    "Is there any scheduled job that purges expired/revoked rows from refresh_tokens or admin_refresh_tokens, or do those tables grow unbounded forever?",
+    "Do StaleTokenCleanupJob and IdempotencyReservationReaperJob actually touch brand/creator/admin auth tables at all, or are they scoped to unrelated domains (Meta OAuth tokens, generic idempotency reservations)?",
+    "Does AdminAuthController's mfa/reset/{targetAdminId} route have any frontend caller, and if not, how is a locked-out SUPER_ADMIN/ADMIN recovered in practice today?",
+    "Does requireEmailOtpBeforeRegister's default (false) match the requireEmailVerification default (true) in a way that avoids bricking new signups, and is that consistency proven by a test or only by comment?",
+    "Is DELETE /me/account's non-revocation of already-issued access tokens (stateless JWT, no DB check) mitigated anywhere else (e.g. a deny-list), or is the documented gap still open?",
+    "Does AccountController's changePassword correctly exclude the caller's own current refresh token from the bulk revoke in a real (non-mocked) integration path, or only in the unit-level AuthServiceTest doubles?",
+    "Are the AuthRateLimitFilter buckets for /auth/brand/send-email-otp and /auth/creator/send-email-otp actually distinct from the DB-backed per-IP/per-email caps in BrandEmailOtpService, or is there overlap/gap between the two layers?"
+  ],
+  "features": [
+    {
+      "name": "Brand email-OTP signup/verify/register/login",
+      "user_type": "Brand (unauthenticated visitor becoming a Brand user)",
+      "purpose": "Prove ownership of an email before/independent of registration, then create a Brand user + Workspace + Wallet + Free subscription, or authenticate an existing Brand user.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 70,
+      "entry_point": "POST /auth/brand/send-email-otp, POST /auth/brand/verify-email, POST /auth/brand/register, POST /auth/brand/login (AuthController.java:51-89)",
+      "flow": "FE src/pages/brand-register.tsx / brand-login.tsx -> src/lib/api.ts -> AuthController (send/verify/register/login) -> BrandEmailOtpService.sendOtp/verifyOtp (EmailOtpChallenge row, Msg91EmailClient) for OTP; AuthService.brandRegister/brandLogin (AuthService.java:125-301) for account creation/auth -> UserRepository/WorkspaceRepository/WorkspaceMemberRepository/WalletRepository/SubscriptionService -> AuthCookieService writes HttpOnly refresh cookie -> ApiResponse<TokenPair> (refresh stripped) to FE.",
+      "api": "POST /auth/brand/send-email-otp (permitAll), POST /auth/brand/verify-email (permitAll), POST /auth/brand/register (auth via POST /auth/** permitAll), POST /auth/brand/login (same). All under context-path /api/v1.",
+      "database": "users (INSERT, UNIQUE email+phone), workspaces (INSERT), workspace_members (INSERT owner row), wallets (INSERT), subscriptions (INSERT free tier via SubscriptionService.getOrCreateFreeSubscription), email_otp_challenges (INSERT/UPDATE), refresh_tokens (INSERT).",
+      "state_machine": "User.status: PENDING_VERIFICATION on create -> ACTIVE once isEmailVerified is set true (either at register time if requireEmailOtpBeforeRegister, or later via reset-password/login-time OTP recovery). EmailOtpChallenge: issued -> verified (consumed) -> optionally required-and-consumed at register.",
+      "authn": "send/verify OTP endpoints are permitAll (unauthenticated by design, pre-account). register/login are POST /auth/** permitAll matchers (SecurityConfig.java:87-88).",
+      "authz": "None beyond email-ownership proof; register enforces phone/email uniqueness and PasswordPolicy server-side (AuthService.java:127-163).",
+      "working_condition": "A previously-unregistered email can send+verify an OTP (if requireEmailOtpBeforeRegister is on) or skip straight to register (default off), get a 201 with a stripped TokenPair plus an HttpOnly refresh cookie, and subsequently log in with the same credentials, landing in the newly created workspace.",
+      "failure_conditions": "Duplicate email/phone -> 409 EMAIL_ALREADY_EXISTS/PHONE_ALREADY_EXISTS (upfront check + DataIntegrityViolationException catch for the TOCTOU race, AuthService.java:127-163,193-221). Weak password -> PasswordPolicy exception. Missing/malformed phone -> 400 PHONE_REQUIRED / validation error. Wrong password on login -> 401 INVALID_CREDENTIALS. Suspended/deactivated user.status -> 403 ACCOUNT_SUSPENDED (see known issue below: this status is never actually written by product code). Unverified + requireEmailVerification -> 403 EMAIL_NOT_VERIFIED.",
+      "security_conditions": "Password BCrypt strength 12 (SecurityConfig.java:~303). OTP send is rate-limited by AuthRateLimitFilter (per-IP) plus a DB-backed per-IP (8/hr) and per-email-global (10/hr) cap in BrandEmailOtpService.java:60-74, distinct layers. getRemoteAddr() (not raw X-Forwarded-For) is used deliberately per AuthController.java:54-57 comment to prevent IP-cap bypass via a spoofed header. Refresh token never exposed to JS (HttpOnly cookie via AuthCookieService).",
+      "tests": "AuthServiceTest (64 tests, all pass) covers AuthService.brandRegister/brandLogin logic directly (service layer). AuthControllerTest.java has ZERO tests exercising brandRegister/brandLogin/sendBrandEmailOtp/verifyBrandEmail controller methods -- every listed @Test in that file is creator-scoped (sendCreatorEmailOtp_delegates, creatorRegister_writesCookieAndStripsRefresh, creatorLogin_writesCookieAndStripsRefresh, etc.). The brand controller methods are structurally identical to the tested creator ones (same cookie-writing call), which lowers but does not eliminate the risk of an untested divergence.",
+      "production_conditions": "influora.auth.require-email-otp-before-register (default false) and influora.auth.require-email-verification (default true) must be set consistently, or a signup can be bricked at 2nd login per the F-0601 history described in BrandEmailOtpService.java:118-128 (this RC's sendOtp already covers the 'unverified but already registered' recovery case). influora.web-base-url must be set for reset-password links (used elsewhere, not this flow directly).",
+      "evidence": "AuthController.java:51-89 (controller wiring); AuthService.java:125-301 (brandRegister/brandLogin bodies, read in full); BrandEmailOtpService.java:1-140 (OTP issuance/caps, read in full); AuthServiceTest surefire report: Tests run 64, Failures 0, Errors 0; AuthControllerTest.java grep shows only creator-scoped @Test methods, no brand ones.",
+      "known_issues": [
+        "AuthController's brand endpoints (register/login/OTP) have no dedicated controller-level test -- only the creator mirror is tested at that layer, and only AuthService (not AuthController) is tested for the brand path.",
+        "requireEmailOtpBeforeRegister defaults false in both AuthService and PublicConfigController -- if flipped inconsistently between the two @Value bindings in different environments, the SPA's OTP-step UI and the server's actual enforcement can disagree (PublicConfigController.java:38-63 explicitly documents this exact risk)."
+      ],
+      "required_fixes": [
+        "Add AuthControllerTest coverage for brandRegister/brandLogin/sendBrandEmailOtp/verifyBrandEmail mirroring the existing creator tests, so a future divergence between the two paths is caught."
+      ]
+    },
+    {
+      "name": "Creator email-OTP signup/verify/register/login",
+      "user_type": "Creator (unauthenticated visitor becoming a Creator user)",
+      "purpose": "Same OTP-then-register/login flow as brand, but creates a CreatorProfile + personal Wallet instead of a Workspace, and supports invite-token linking to an existing external_creators row.",
+      "status": "WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 78,
+      "entry_point": "POST /auth/creator/send-email-otp, /verify-email, /register, /login (AuthController.java:91-123)",
+      "flow": "FE creator-register/creator-login pages -> src/lib/api.ts -> AuthController creator endpoints -> BrandEmailOtpService (shared with brand) for OTP -> AuthService.creatorRegister/creatorLogin (AuthService.java:362-518) -> UserRepository/CreatorProfileRepository/WalletRepository, RegistrationService.consumeInviteToken for invited creators -> AuthCookieService cookie -> ApiResponse<TokenPair>.",
+      "api": "POST /auth/creator/send-email-otp, /verify-email (permitAll via /auth/brand/... matchers do NOT cover /auth/creator/... explicitly -- see known issue), /register, /login.",
+      "database": "users (INSERT), creator_profiles (INSERT via CreatorProfile.newForUser), wallets (INSERT forUser), email_otp_challenges, refresh_tokens, external_creators (UPDATE via RegistrationService.consumeInviteToken linking on invite).",
+      "state_machine": "Same PENDING_VERIFICATION -> ACTIVE as brand. creator_profiles.is_suspended is a SEPARATE flag from users.status and is checked independently on login/refresh (AuthService.java:497-512, 605-616).",
+      "authn": "send/verify OTP + register/login all covered by the blanket POST /auth/** permitAll matcher (SecurityConfig.java:87-88); the more specific brand-only matchers at :89-92 are redundant/narrower subsets of that blanket rule, not gates the creator path depends on.",
+      "authz": "None pre-account; post-login the JWT carries ROLE_CREATOR (AuthPrincipal), enforced against /creator/** by SecurityConfig.java:296-297.",
+      "working_condition": "An email can complete OTP (if required), register as a creator (optionally via an invite token), and log in; a suspended creator_profiles row blocks login even though users.status is ACTIVE.",
+      "failure_conditions": "Same 409/400/401/403 codes as brand, plus a creator-specific 403 ACCOUNT_SUSPENDED sourced from CreatorProfile.isSuspended() rather than User.status (AuthService.java:503-512).",
+      "security_conditions": "Same OTP abuse caps and rate limiting as brand (shared BrandEmailOtpService). registrationService.consumeInviteToken is documented as a safe no-op for a bad/expired/blank token -- verified by reading AuthService.java:449-455's comment plus the method being called unconditionally with req.inviteToken() (nullable).",
+      "tests": "AuthServiceTest (64 tests, passing) covers creatorRegister/creatorLogin logic. AuthControllerTest.java DOES cover the creator controller methods directly: sendCreatorEmailOtp_delegates, verifyCreatorEmail_delegates, verifyCreatorEmail_propagatesBadOtp, creatorRegister_writesCookieAndStripsRefresh, creatorLogin_writesCookieAndStripsRefresh, creatorLogin_propagatesInvalidCredentials -- this is the better-tested half of the two mirrored flows.",
+      "production_conditions": "Same env flags as brand flow. Invite-token linking depends on RegistrationService and external_creators being populated by the admin creator-connect flow (out of this domain's direct scope).",
+      "evidence": "AuthService.java:362-463 (creatorRegister, read in full), :465-518 (creatorLogin, read in full); AuthControllerTest.java grep listing showing 6 creator-specific @Test methods, all passing per the surefire summary pattern used for AuthServiceTest (creator controller tests run as part of the same test class file, not separately executed in this session, but present in source).",
+      "known_issues": [
+        "creator_profiles.is_suspended and users.status are two independently-writable flags with no cross-check enforced at the entity level -- the code comment at AuthService.java:497-502 acknowledges this is deliberate but flags that a reinstate flow could restore the wrong state if it ever touches the wrong flag."
+      ],
+      "required_fixes": []
+    },
+    {
+      "name": "Token refresh + logout",
+      "user_type": "Brand and Creator (shared code path)",
+      "purpose": "Rotate a long-lived refresh token for a new short-lived access token without re-entering credentials, and terminate a session on logout.",
+      "status": "WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 82,
+      "entry_point": "POST /auth/refresh, POST /auth/logout (AuthController.java:131,153)",
+      "flow": "FE fetchWithAuthRetry (src/lib/api.ts) -> POST /auth/refresh (cookie-first, JSON-body fallback) -> AuthService.refresh (AuthService.java:534-641): validates token hash+expiry+revoked, re-checks account/workspace/creator-profile suspension state (AUTH-1/F-0451/F-0458 gates), revokes the presented token, mints+persists a new one, re-derives workspaceId via the same deterministic ordering as login -> AuthCookieService rewrites the cookie -> RefreshResponse{access, expiresIn}. Logout -> AuthService.logout revokes ALL refresh tokens for the user, controller clears the cookie unconditionally.",
+      "api": "POST /auth/refresh (permitAll, since no access token exists at call time by design), POST /auth/logout (authenticated, but code tolerates principal==null and still clears the cookie).",
+      "database": "refresh_tokens: SELECT by token_hash+revoked=false+expires_at>now, UPDATE revoked=true (old row), INSERT new row. logout: bulk UPDATE revokeAllForUser.",
+      "state_machine": "RefreshToken: active -> revoked (single-use rotation, Kabir B3). remembered flag is carried forward from the presented token, never re-derived (AuthService.java:622-626), so a refresh cannot silently upgrade/downgrade session length.",
+      "authn": "refresh reads the HttpOnly cookie via AuthCookieService.readRefreshToken, falling back to a request-body token only if the cookie is absent (AuthController.java:136-143). logout requires @AuthenticationPrincipal but null-checks it rather than 401ing.",
+      "authz": "None beyond token possession; refresh independently re-checks SUSPENDED/DEACTIVATED user status, EMAIL_NOT_VERIFIED, and workspace/creator-profile suspension every single rotation (AuthService.java:569-616) -- this closes the gap noted in the AUTH-1/F-0451 comments where a 30-day refresh window could otherwise outlive a login-time-only suspension check.",
+      "working_condition": "A valid, unrevoked, unexpired refresh token (cookie or body) yields a new access token and a rotated refresh cookie; the account/workspace suspension gates are re-evaluated on every call, not just at login.",
+      "failure_conditions": "Missing token (cookie AND body) -> 401 INVALID_REFRESH_TOKEN (AuthController.java:140-143). Revoked/expired/unknown hash -> 401 INVALID_REFRESH_TOKEN, and the presented token is NOT burned in that case (guards run before the revoke/rotate block, AuthService.java:556-568 comment). Suspended user/workspace/creator-profile -> 403 (ACCOUNT_SUSPENDED/WORKSPACE_SUSPENDED), again without burning the token.",
+      "security_conditions": "Kabir B3 single-use rotation. Kabir A1: refresh token never reaches JS, only the cookie. The fallback JSON body path (AuthController.java:126-129 comment) is a 'transitional' allowance for non-browser clients with no environment gate -- it is always available in this RC, not dev-only.",
+      "tests": "AuthControllerTest: refresh_missingToken, refresh_cookieHappyPath, refresh_bodyFallback, logout_clearsCookie all present and (per file inspection) exercise the controller directly. AuthServiceTest's 64 tests (all passing) include the AuthService.refresh/logout logic per the class's scope, though this session did not enumerate which of the 64 map to refresh specifically.",
+      "production_conditions": "JwtService's access/refresh expiry configuration and AuthCookieService's cookie flags (HttpOnly/Secure/SameSite) must be correctly set per environment; not independently re-verified in this pass beyond reading AuthCookieService.java's structure.",
+      "evidence": "AuthController.java:125-161 (read in full); AuthService.java:520-646 (RefreshRotation record + refresh + logout, read in full); AuthControllerTest.java grep showing refresh_missingToken/refresh_cookieHappyPath/refresh_bodyFallback/logout_clearsCookie test names.",
+      "known_issues": [
+        "The JSON-body refresh-token fallback (AuthController.java:133,137-139) has no environment restriction; it exists permanently as an alternate path alongside the cookie, which is a broader attack surface than a cookie-only design (mitigated by the fact that an attacker still needs the raw refresh token value itself).",
+        "No scheduled job purges revoked/expired refresh_tokens rows -- see the Jobs feature entry; this table only grows."
+      ],
+      "required_fixes": []
+    },
+    {
+      "name": "Forgot/reset password",
+      "user_type": "Brand and Creator (shared code path, role-agnostic reset page)",
+      "purpose": "Let a user who forgot their password request a mailed reset link and set a new password from it.",
+      "status": "WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 75,
+      "entry_point": "POST /auth/forgot-password, POST /auth/reset-password (AuthController.java:163,170); FE routes /brand/forgot-password, /creator/forgot-password both funnel into the same /reset-password page (App.tsx:215-220, role-agnostic per that comment)",
+      "flow": "FE brand-forgot-password.tsx / creator-forgot-password.tsx -> POST /auth/forgot-password -> AuthService.forgotPassword (AuthService.java:662-666): looks up by email, silently no-ops if not found, else createPasswordResetToken -> PasswordResetTokenRepository.save + PasswordResetEvent published (email dispatch, out of this domain) -> generic 'If this email exists...' response always. FE /reset-password?token=... -> BrandResetPasswordPage -> POST /auth/reset-password -> AuthService.resetPassword (AuthService.java:668-772): validates token hash+unused+unexpired, rejects a soft-deleted or SUSPENDED/DEACTIVATED user, sets new password hash, marks email verified, revokes ALL refresh tokens.",
+      "api": "Both POST /auth/** hence permitAll (SecurityConfig.java:87-88).",
+      "database": "password_reset_tokens (INSERT on forgot, SELECT+UPDATE used=true on reset), users (UPDATE password_hash, email_verified), refresh_tokens (bulk revoke on successful reset).",
+      "state_machine": "PasswordResetToken: issued -> used (single-use) or expires after 3600s (AuthService.java:868, TTL literal). A successful reset also promotes User.status PENDING_VERIFICATION -> ACTIVE via setEmailVerified(true) (AuthService.java:762-766), which is the only self-service recovery path for accounts stranded by the F-0601 verification-email-never-sent incident referenced in project memory.",
+      "authn": "None (this is the pre-authentication recovery path by design).",
+      "authz": "None; identity is proven purely by possession of the mailed token.",
+      "working_condition": "forgot-password always returns the same generic message regardless of whether the email exists (anti-enumeration); reset-password with a valid unexpired unused token for a non-deleted, non-suspended user rotates the password hash, marks email verified, and revokes every outstanding session.",
+      "failure_conditions": "Invalid/expired/used token -> 400 INVALID_RESET_TOKEN. Soft-deleted user (deletedAt != null) -> same 400 INVALID_RESET_TOKEN, deliberately not a distinct code per AuthService.java:701-721's reasoning (already proven mailbox ownership means no enumeration risk). SUSPENDED/DEACTIVATED user.status -> 403 ACCOUNT_SUSPENDED (AuthService.java:746-748) -- but see known issue below: this check does NOT look at Workspace.isSuspended()/CreatorProfile.isSuspended(), which are the flags product suspension actually writes.",
+      "security_conditions": "Reset link embeds the raw token in a mailto link built from influora.web-base-url (AuthService.java:881); in dev profile the raw token is ALSO logged (AuthService.java:869-874) -- confirmed gated on environment.isDev(), not always-on. Token hash stored, not raw value (JwtService.hashToken). AccountController's DELETE /me/account path calls purgePasswordResetTokens to close the window where a link mailed before deletion could still write a fresh password onto an anonymized row (AuthService.java:690-721 documents this was previously exploitable up to 7 days for the sponsor-provisioning variant).",
+      "tests": "No forgotPassword/resetPassword controller-level test found in AuthControllerTest.java (grep for 'forgotPassword|resetPassword' against that file returned nothing). AuthServiceTest's 64 tests are the only direct exercise of this logic found in this pass; not individually itemized here.",
+      "production_conditions": "influora.web-base-url must be set (used to build the reset link) and PasswordResetEvent's listener/mailer must actually be wired for non-dev profiles to deliver the email at all (out of this domain's direct file scope to re-verify the mailer wiring).",
+      "evidence": "AuthController.java:163-175 (controller, read in full); AuthService.java:662-772,846-884 (forgotPassword/resetPassword/createPasswordResetToken, read in full); App.tsx grep showing /reset-password -> BrandResetPasswordPage with an explicit role-agnostic comment.",
+      "known_issues": [
+        "resetPassword's suspension guard (AuthService.java:746-748) checks users.status (SUSPENDED/DEACTIVATED), which per the code's own comment (AuthService.java:732-740) is NEVER written by any src/main code path -- actual product suspension lives on Workspace.isSuspended() (brand) and CreatorProfile.isSuspended() (creator), neither of which resetPassword consults. A workspace-suspended brand or profile-suspended creator can therefore still successfully complete a password reset (proving mailbox control) even though they still cannot log in afterward, because the login paths DO check those flags independently. Same gap exists in changePassword (AuthService.java:813-822, self-documented as open there too).",
+        "No forgotPassword/resetPassword test exists at the AuthController (web) layer."
+      ],
+      "required_fixes": [
+        "If the intent is that a suspended brand/creator cannot rotate credentials at all (not just cannot log in with them), add Workspace/CreatorProfile suspension checks to resetPassword and changePassword, matching the checks already present in brandLogin/creatorLogin/refresh."
+      ]
+    },
+    {
+      "name": "Account self-service: DELETE /me/account, POST /me/password, GET/PATCH /users/me",
+      "user_type": "Brand and Creator (authenticated)",
+      "purpose": "Let a logged-in user soft-delete their own account, change their password in-session, and read/update their own profile fields.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 68,
+      "entry_point": "DELETE /me/account, POST /me/password (AccountController.java:79,125); GET/PATCH /users/me (UserController.java:27,32)",
+      "flow": "DELETE /me/account -> AccountController.deleteAccount -> UserRepository.findById -> User.softDelete() (anonymizes PII, stamps deletedAt) -> save -> AuthService.logout (revoke all refresh tokens) -> AuthService.purgePasswordResetTokens -> AuthCookieService.clearRefreshCookie. POST /me/password -> AccountController.changePassword reads the caller's own raw refresh cookie -> AuthService.changePassword (verify currentPassword, F-0703 suspension check, set new hash, revoke all OTHER refresh tokens excluding the caller's own live one). GET/PATCH /users/me -> UserController -> UserService.getProfile/updateProfile -> UserRepository (partial-update semantics: only non-null fields in UpdateProfileRequest are applied, UserService.java:45-51).",
+      "api": "DELETE /me/account, POST /me/password, GET /users/me, PATCH /users/me -- all under the default anyRequest().authenticated() rule (SecurityConfig.java:~298), no permitAll.",
+      "database": "users: UPDATE (soft-delete fields, password_hash, profile fields). refresh_tokens: bulk revoke (all, or all-except-current). password_reset_tokens: DELETE by userId on account deletion.",
+      "state_machine": "User: active -> soft-deleted (deletedAt set, PII nulled, id/status/userType preserved for FK integrity per AccountController.java:29-33 javadoc). Deletion deliberately does NOT cascade into deals/contracts/messages/workspaces.",
+      "authn": "@AuthenticationPrincipal AuthPrincipal required on all four endpoints (no null-tolerant paths here, unlike /auth/logout).",
+      "authz": "Self-only by construction: every operation is scoped to principal.getUserId(), no target-id parameter exists on any of these endpoints.",
+      "working_condition": "An authenticated user can delete their own account (immediately losing all sessions), change their password (keeping their own current session alive per the e60d249 fix), and read/patch their own first/last/display name via PATCH (no password field accepted there, per UserDtos.UpdateProfileRequest having no password property -- confirmed by grep).",
+      "failure_conditions": "deleteAccount: USER_NOT_FOUND 404 if the row is somehow already gone. changePassword: wrong currentPassword -> 401 INVALID_CURRENT_PASSWORD; SUSPENDED/DEACTIVATED users.status -> 403 (same never-written-in-product-code caveat as resetPassword); weak newPassword -> PasswordPolicy exception.",
+      "security_conditions": "[SEC: Kabir H-1 -- PARTIAL, creators only per AccountController.java:35-52 javadoc] Deleting an account revokes refresh tokens but does NOT invalidate an already-issued access token (stateless JWT, no DB round-trip) -- immediate effect relies on per-request context gates re-checking deletedAt. The javadoc states BrandContextService.requireBrand now performs this check as of F-0708 (2026-09-07), closing a gap where a soft-deleted BRAND user kept full brand-scoped access (including wallet/payout endpoints) until token expiry; CreatorContextService.requireCreator always checked it. This was NOT independently re-verified in this pass by opening BrandContextService.java -- flagged as a verification gap, not a confirmed-open bug, since the comment is dated and specific (references a named test and gate script).",
+      "tests": "AccountControllerTest.java has exactly 2 tests, both scoped to DELETE /me/account's ordering guarantees (testDeleteAccountPurgesPasswordResetTokens, testDeleteAccountSavesBeforePurging) -- POST /me/password has NO AccountController-level test. UserController.java has NO dedicated test file at all (confirmed: no UserControllerTest.java under src/test); UserServiceTest.java (22 tests) covers the service layer underneath GET/PATCH /users/me but not the controller/HTTP wiring. AuthRateLimitFilterMePasswordBucketTest.java exists and presumably covers the rate-limit bucket for POST /me/password specifically (not opened in this pass).",
+      "production_conditions": "Depends on BrandContextService/CreatorContextService actually being wired into every brand/creator-scoped controller for the deletedAt check to have the claimed immediate effect -- this pass verified the claim only via AccountController's javadoc, not by opening BrandContextService.java itself.",
+      "evidence": "AccountController.java:1-136 (read in full); UserController.java:1-39 (read in full); UserService.java:24-51 (getProfile/updateProfile, partial read); UserDtos.java grep showing no password field on UpdateProfileRequest; AccountControllerTest.java and JwksControllerTest.java @Test method listings; confirmed absence of any UserControllerTest*.java file via find.",
+      "known_issues": [
+        "No AccountController-level test for POST /me/password (change-password), only for DELETE /me/account.",
+        "No UserController-level test at all; GET/PATCH /users/me correctness is inferred from UserServiceTest, not proven at the HTTP/controller layer.",
+        "changePassword shares resetPassword's Workspace/CreatorProfile suspension-check gap (see Forgot/reset password entry) -- self-documented as open at AuthService.java:813-822.",
+        "The claim that BrandContextService now re-checks deletedAt (closing the brand-side of Kabir H-1) was read from a code comment in AccountController, not independently confirmed by opening BrandContextService.java in this pass."
+      ],
+      "required_fixes": [
+        "Add an AccountControllerTest case for POST /me/password (happy path + wrong-current-password + own-session-preserved assertion).",
+        "Add a UserControllerTest for GET/PATCH /users/me at the web layer.",
+        "Independently verify BrandContextService.requireBrand's deletedAt check (referenced test: BrandContextServiceTest; referenced gate: .proof-os/gates/brand-deletion-enforced.sh) in a follow-up pass."
+      ]
+    },
+    {
+      "name": "Admin login/refresh/logout/me + TOTP MFA setup/verify",
+      "user_type": "Admin (SUPER_ADMIN/ADMIN/SUPPORT)",
+      "purpose": "Third, fully separate auth realm for the admin panel: password+optional-TOTP login with failed-attempt lockout, its own refresh-token rotation, and self-service MFA enrollment.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 55,
+      "entry_point": "POST /admin/auth/login, /refresh, /logout, GET /admin/auth/me, POST /admin/auth/mfa/setup, /mfa/verify (AdminAuthController.java:69-126); FE /admin/login -> admin-login.tsx, session lifecycle in src/admin/services/admin-session.ts",
+      "flow": "FE admin-login.tsx -> src/admin/services/api-contracts.ts authApi.login -> apiRequest('/auth/login') against ADMIN_API_BASE='/api/v1/admin' -> AdminAuthController.login -> AdminAuthService.login (AdminAuthService.java:107-175): password check, lockout check (admin.isLockedOut), MFA-required-if-enabled check with its own lockout counter, MFA-enforce-on-login policy for SUPER_ADMIN/ADMIN roles (AdminSecurityProperties.isMfaEnforceOnLogin, default true) -> issueTokens -> AdminAuthCookieService writes a path-scoped (/api/v1/admin/auth) SameSite=Strict refresh cookie -> raw LoginResponse (NOT ApiResponse-wrapped, deliberate deviation documented in AdminAuthController.java:35-47). Refresh/logout/me/mfa/* mirror the brand/creator shapes but write to admin_users/admin_refresh_tokens.",
+      "api": "POST /admin/auth/login, /admin/auth/refresh permitAll (SecurityConfig.java:263-266); everything else under /admin/** requires hasRole('ADMIN') (SecurityConfig.java:276-277).",
+      "database": "admin_users (SELECT/UPDATE failed_login_attempts, failed_mfa_attempts, last_login_at, encrypted_mfa_secret, mfa_enabled), admin_refresh_tokens (INSERT/UPDATE revoke+rotate).",
+      "state_machine": "AdminUser MFA: not-enrolled -> staged (setupMfa writes encrypted_mfa_secret but mfa_enabled stays false) -> enabled (verifyMfa confirms a working code, AdminUser.confirmMfa). Lockout: normal -> locked (failed_login_attempts >= AdminSecurityProperties.lockoutMaxAttempts) -> unlocked after lockoutCooldownSeconds. Separate MFA-code lockout counter (tighter: 3 attempts/1hr vs 5/15min for password).",
+      "authn": "login/refresh permitAll; logout/me/mfa/* require an already-issued ROLE_ADMIN JWT (AuthPrincipal), resolved via AdminContextService.requireAdminId inside the service, not at the controller.",
+      "authz": "roleRequiresMfa() gates SUPER_ADMIN/ADMIN into mandatory MFA-at-login (SUPPORT exempt) -- code comment flags this MUST stay in lockstep with AdminContextService#requireMfaSatisfied's identical split, a manually-maintained invariant with no shared constant or test cross-checking the two.",
+      "working_condition": "A correct password (+ correct TOTP code if mfa_enabled, or outright login-refusal via MFA_ENROLLMENT_REQUIRED if the role requires MFA but it is unenrolled) issues an access+refresh token pair; /me returns the caller's own AdminUserDto; MFA setup/verify enroll a new TOTP secret two-step (stage then confirm).",
+      "failure_conditions": "Bad password/unknown email -> generic 401 INVALID_CREDENTIALS (enumeration-safe, Kabir P1-2 Gap 3). Locked out (either counter) -> same generic 401, no distinguishing signal. Inactive admin -> 403 ACCOUNT_SUSPENDED. MFA required but code missing -> 401 MFA_REQUIRED. Wrong MFA code -> generic 401 (never a distinct 'wrong code' message, to avoid timing/enumeration leakage per the code comment). Unenrolled MFA on a role that requires it -> 403 MFA_ENROLLMENT_REQUIRED.",
+      "security_conditions": "admin_users.encrypted_mfa_secret is AES-256-GCM ciphertext (AdminMfaSecretCipher); plaintext only ever exists in-memory during setup/verify, per the class javadoc -- not independently re-verified by opening AdminMfaSecretCipher.java in this pass. Dual lockout counters (account-wide password lockout + MFA-code lockout) are documented as complementary to AuthRateLimitFilter's per-IP throttle, not a replacement for it.",
+      "tests": "AdminAuthServiceTest.java contains exactly 5 @Test methods, ALL scoped to resetMfaForAdmin (authorizedSuperAdminResetsAnotherAdminsMfa, resetMfaRevokesTargetsRefreshTokens_superAdminTarget/_supportTarget, nonSuperAdminCallerIsRejected, selfResetIsRejected) -- confirmed by grep and by running the suite (5/5 pass). NONE of login/lockout/MFA-enforcement-at-login/refresh/logout/me/setupMfa/verifyMfa is covered by this test class. No AdminAuthControllerTest*.java file exists at all (confirmed by find). This is the least-tested security-critical surface found in this domain.",
+      "production_conditions": "AdminSecurityProperties.lockoutMaxAttempts/lockoutCooldownSeconds/mfaEnforceOnLogin/mfaLockoutMaxAttempts/mfaLockoutCooldownSeconds must all be set sensibly per environment; not independently verified in this pass (AdminSecurityProperties.java was not opened). The very first SUPER_ADMIN row must be provisioned via scripts/provision-super-admin.sh (pre-enrolls MFA to avoid a documented deadlock) -- this ops script was not verified to exist/run correctly in this pass.",
+      "evidence": "AdminAuthController.java:1-142 (read in full); AdminAuthService.java:1-388 (read in full); admin-session.ts:1-80 (read, shows ADMIN_API_BASE='/api/v1/admin', matching AdminAuthController's actual mount -- see finding on stale javadoc below); api-contracts.ts:95-165 (read, shows apiRequest's error handling already reads body?.error?.message correctly); AdminAuthServiceTest.java grep of @Test methods (5, all resetMfaForAdmin-scoped) plus surefire run confirming 5/5 pass; find confirming no AdminAuthControllerTest file exists.",
+      "known_issues": [
+        "Zero test coverage for AdminAuthService.login (password check, lockout, MFA-required, MFA-enforce-on-login) and for refresh/logout/me/setupMfa/verifyMfa -- the single most security-sensitive login path in the domain (SUPER_ADMIN access) has only its recovery-path sibling (resetMfaForAdmin) under test.",
+        "roleRequiresMfa()'s SUPER_ADMIN/ADMIN-vs-SUPPORT split is manually duplicated in AdminContextService#requireMfaSatisfied with only a code comment (not a shared constant or a test) enforcing they stay in lockstep -- a future edit to one without the other silently reopens the MFA-bypass gap this pair was built to close.",
+        "AdminAuthController's own javadoc (lines 35-54) describes a live FE/BE contract mismatch (api-contracts.ts hardcoding '/api/admin' with no /v1, and an error-message unwrapping bug) that appears to be STALE: the actual admin-session.ts in this RC defines ADMIN_API_BASE = '/api/v1/admin' (matching the controller's real mount) and api-contracts.ts's apiRequest already reads `body?.error?.message ?? body?.message ?? ...` (correctly unwrapping the nested envelope). This is documented separately as a finding (stale comment, not a live bug) rather than here as a functional defect."
+      ],
+      "required_fixes": [
+        "Write AdminAuthServiceTest and/or an AdminAuthControllerTest covering: successful login without MFA, successful login with MFA, lockout after N failed passwords, lockout after N failed MFA codes, MFA_ENROLLMENT_REQUIRED for an unenrolled SUPER_ADMIN/ADMIN, refresh rotation, logout, and the me endpoint.",
+        "Replace the manually-duplicated roleRequiresMfa()/requireMfaSatisfied() role split with a single shared source of truth (e.g. a static method on AdminRole or a shared constant set) and add a test asserting the two never diverge.",
+        "Update or remove AdminAuthController's stale javadoc paragraph about the FE contract mismatch now that admin-session.ts/api-contracts.ts appear to have already fixed both halves of it, or re-verify with the actual FE team whether a residual gap remains."
+      ]
+    },
+    {
+      "name": "Admin MFA reset POST /admin/auth/mfa/reset/{id}",
+      "user_type": "Admin (SUPER_ADMIN only, acting on a different admin)",
+      "purpose": "Recovery path for a SUPER_ADMIN or ADMIN locked out of their own MFA device, without a direct DB edit.",
+      "status": "WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 80,
+      "entry_point": "POST /admin/auth/mfa/reset/{targetAdminId} (AdminAuthController.java:135-140)",
+      "flow": "Caller (must already hold a ROLE_ADMIN JWT with MFA satisfied) -> AdminAuthController.resetMfaForAdmin -> AdminAuthService.resetMfaForAdmin (AdminAuthService.java:341-354): AdminContextService.requireRoleWithMfaSatisfied(principal, SUPER_ADMIN) re-derives the caller's own id server-side (never trusts the path/body), rejects self-targeting, loads the target via loadActive, clears their MFA enrollment (AdminUser.resetMfa()), and bulk-revokes every admin_refresh_tokens row for the TARGET.",
+      "api": "POST /admin/auth/mfa/reset/{targetAdminId}, under the blanket /admin/** hasRole('ADMIN') matcher (no more specific SUPER_ADMIN-at-the-filter-level matcher exists -- enforcement is entirely inside AdminContextService.requireRoleWithMfaSatisfied).",
+      "database": "admin_users: UPDATE (clear encrypted_mfa_secret/mfa_enabled on target). admin_refresh_tokens: bulk revoke for target.",
+      "state_machine": "Target AdminUser: mfa_enabled=true -> mfa_enabled=false (forced back through setup+verify on next login/privileged action).",
+      "authn": "Requires a valid ROLE_ADMIN JWT.",
+      "authz": "Enforced entirely in the service, not the controller/filter: caller must be an ACTIVE SUPER_ADMIN with their OWN MFA already satisfied (AdminContextService.requireRoleWithMfaSatisfied), and may not target their own adminId (checked against the caller id re-derived server-side, never from the path param, per AdminAuthService.java:320-324 comment). Target must be an active admin row.",
+      "working_condition": "An active, MFA-satisfied SUPER_ADMIN can clear a DIFFERENT active admin's MFA enrollment and immediately kill that target's outstanding sessions, forcing re-enrollment.",
+      "failure_conditions": "Non-SUPER_ADMIN caller -> rejected by AdminContextService before any row is touched (test: nonSuperAdminCallerIsRejected). Self-targeting -> 403 CANNOT_RESET_OWN_MFA (test: selfResetIsRejected). Inactive/nonexistent target -> ADMIN_NOT_FOUND via loadActive.",
+      "security_conditions": "F-0648 fix (documented in AdminAuthService.java:332-339): clearing mfa_enabled alone used to leave the target's existing refresh tokens valid until natural expiry, defeating the point of a compromised-session recovery path; now every target role (including SUPPORT, which is exempt from the MFA gate itself) has its sessions revoked as part of the reset.",
+      "tests": "AdminAuthServiceTest.java's entire 5-test suite is dedicated to this one method (authorizedSuperAdminResetsAnotherAdminsMfa, resetMfaRevokesTargetsRefreshTokens_superAdminTarget, resetMfaRevokesTargetsRefreshTokens_supportTarget, nonSuperAdminCallerIsRejected, selfResetIsRejected) -- confirmed passing (5/5) by running the suite in this pass. This is the best-tested piece of the admin auth surface.",
+      "production_conditions": "No FE caller exists for this endpoint (per the task's own pointer and not contradicted by anything found in src/admin in this pass) -- recovery today would have to be performed via a direct API call (curl/Postman) by an operator, not through the admin SPA.",
+      "evidence": "AdminAuthController.java:128-141 (read in full); AdminAuthService.java:308-354 (read in full); AdminAuthServiceTest.java @Test listing (5 methods) plus surefire run: Tests run 5, Failures 0, Errors 0.",
+      "known_issues": [
+        "No frontend UI calls this endpoint -- confirmed absent from the api-contracts.ts grep output captured in this pass (no '/auth/mfa/reset' reference seen); a locked-out admin's recovery today depends on another operator making a raw API call, not on any admin-panel button."
+      ],
+      "required_fixes": [
+        "Either add an admin-panel UI action for a SUPER_ADMIN to trigger this (e.g. from an admin-user detail screen) or explicitly document that this is an ops-only, curl-driven recovery path."
+      ]
+    },
+    {
+      "name": "JWKS GET /.well-known/jwks.json, GET /config/public, GET /health",
+      "user_type": "Unauthenticated (all three) -- JWKS consumed by influora-ai's PyJWKClient, /config/public by pre-signup SPA pages, /health by uptime monitoring",
+      "purpose": "Publish the public signing key set for cross-service JWT verification; expose non-secret client config before any account exists; report liveness including a real DB check.",
+      "status": "WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 85,
+      "entry_point": "JwksController.java:55, PublicConfigController.java (GET /config/public), HealthController.java (GET /health)",
+      "flow": "JWKS: influora-ai PyJWKClient -> GET /.well-known/jwks.json -> JwksController.jwks() -> SpringJwksKeyService.publicJwkSet() -> each Jwk<?> (a Map) copied into a plain LinkedHashMap (toPlainMap) specifically to avoid a documented Jackson serialization crash on jjwt's concrete Jwk type -> {\"keys\": [...]}. Public config: SPA pre-signup pages -> GET /config/public -> PublicConfigResponse{requireEmailOtp} mirroring AuthService's own @Value flag. Health: uptime checks -> GET /health -> Spring Actuator HealthEndpoint (auto-wires DataSourceHealthIndicator, real DB ping) + R2StorageService.isAvailable() -> {status, storage.r2}.",
+      "api": "All three permitAll: /.well-known/jwks.json (SecurityConfig.java:140-141), /config/public (SecurityConfig.java:98-99), /health (SecurityConfig.java:85-86).",
+      "database": "None directly for JWKS/config; /health indirectly pings the datasource via the actuator HealthIndicator (no explicit query written by HealthController itself).",
+      "state_machine": "None (all three are stateless reads).",
+      "authn": "None -- all permitAll by design, each with an explicit justification comment (JWKS: public key material only, safe by RFC 7517 convention; config: pre-account pages need it; health: infra monitoring).",
+      "authz": "None.",
+      "working_condition": "JWKS returns exactly the public key(s) with a kid, serializable without the documented Jackson/jjwt RedactedSupplier crash; /config/public's requireEmailOtp flag matches AuthService's own enforcement; /health returns DOWN (not silently 'ok') when the DB is unreachable.",
+      "failure_conditions": "None modeled beyond infra failure (DB down -> /health reports DOWN via actuator).",
+      "security_conditions": "JwksController explicitly has no access to the private key (only depends on the key service, which never exposes it through a JSON-serializable method, per the class javadoc). PublicConfigController's javadoc explicitly warns that Razorpay's keySecret must NEVER be added to this controller's /public branch -- correctly, getRazorpayConfig() only returns keyId and is a SEPARATE, non-permitAll endpoint.",
+      "tests": "JwksControllerTest.java: 2 tests (testJwksReturnsExpectedShape, testJwksNeverExposesPrivateKeyMaterial), both passing (2/2, confirmed by running the suite). SpringJwksKeyServiceTest.java also exists (not opened in this pass). No PublicConfigControllerTest or HealthControllerTest found by this pass's file listing.",
+      "production_conditions": "influora.auth.require-email-otp-before-register must be set identically to the value AuthService itself reads, since they are two independent @Value bindings of the same property key with no shared config object -- a typo in one but not the other would silently desync the SPA's UI from server enforcement (this is a duplication risk, not a proven live bug).",
+      "evidence": "JwksController.java:1-67 (read in full); PublicConfigController.java (read in full); HealthController.java (read in full); JwksControllerTest.java @Test listing plus surefire run: Tests run 2, Failures 0, Errors 0; SecurityConfig.java grep confirming all three permitAll matchers.",
+      "known_issues": [
+        "requireEmailOtpBeforeRegister is duplicated as two separate @Value(\"${influora.auth.require-email-otp-before-register:false}\") bindings (AuthService.java:72-73 and PublicConfigController.java:38-40) with no shared config class -- a config typo affecting only one binding would desync the SPA's OTP-step UI from actual server enforcement without any compile-time or test-time signal.",
+        "No dedicated test found for PublicConfigController or HealthController in this pass."
+      ],
+      "required_fixes": [
+        "Consolidate the duplicated require-email-otp-before-register @Value binding into a single shared properties/config bean read by both AuthService and PublicConfigController."
+      ]
+    },
+    {
+      "name": "SecurityConfig permitAll list; dead matcher GET /auth/verify-email",
+      "user_type": "N/A (infrastructure/config)",
+      "purpose": "Central authorization policy: which paths bypass JWT authentication entirely, and the default-deny-authenticated fallback for everything else.",
+      "status": "PARTIALLY WORKING",
+      "classification": "OBSERVED",
+      "evidence_score": 3,
+      "confidence": 88,
+      "entry_point": "SecurityConfig.java:83-280 (permitAll block), :93-94 (dead matcher), :276-277 (/admin/** hasRole), :296-297 (/creator/** hasRole), :298 (anyRequest().authenticated())",
+      "flow": "Every request passes through this SecurityFilterChain; requestMatchers are evaluated in declared order (first match wins, per the code's own comment at :271-275), ending in a default anyRequest().authenticated() -- confirmed no gap exists for /me/** or /users/me since neither appears in the permitAll list and both therefore fall through to the authenticated default.",
+      "api": "N/A (config, not an endpoint).",
+      "database": "N/A.",
+      "state_machine": "N/A.",
+      "authn": "Defines what needs a JWT at all.",
+      "authz": "Defines the two explicit role-gated prefixes (/admin/** hasRole ADMIN, /creator/** hasRole CREATOR) as defense-in-depth on top of each controller's own resource-ownership checks (per the code comments at :268-275 and :277-295).",
+      "working_condition": "The permitAll list exactly matches the set of endpoints that are genuinely meant to be reachable pre-authentication, with no matcher that either (a) exposes something it shouldn't or (b) is silently dead because no backing endpoint exists.",
+      "failure_conditions": "A permitAll matcher with no backing endpoint is harmless (it can never be hit) but is a maintenance/audit hazard: it makes the security policy harder to reason about and could mislead a future reviewer into thinking a GET /auth/verify-email endpoint exists.",
+      "security_conditions": "GET /auth/verify-email (SecurityConfig.java:93-94, HttpMethod.GET) has NO corresponding controller method anywhere in AuthController.java -- that file only exposes POST /auth/brand/verify-email and POST /auth/creator/verify-email (both already separately permitAll'd at :90-92 and covered by the blanket POST /auth/** rule at :87-88). This GET matcher is confirmed dead: it can never route to any handler, so it introduces no actual security gap, only source-of-truth drift between the security policy and the real endpoint surface.",
+      "tests": "No test found that asserts the permitAll list matches the actual controller surface (i.e. no test would catch a NEW dead matcher, or a matcher accidentally too broad, being added in the future).",
+      "production_conditions": "N/A.",
+      "evidence": "SecurityConfig.java grep output showing all requestMatchers/permitAll lines 85-297; AuthController.java read in full showing no GET mapping for /verify-email under either /auth/brand or /auth/creator.",
+      "known_issues": [
+        "GET /auth/verify-email permitAll matcher (SecurityConfig.java:93-94) has no backing endpoint anywhere in the codebase's web layer -- confirmed dead by reading the entirety of AuthController.java. Cosmetic/maintenance risk only, not a live security gap."
+      ],
+      "required_fixes": [
+        "Remove the dead GET /auth/verify-email matcher, or add the endpoint if one was actually intended (e.g. a link-based email-verification flow distinct from the OTP flow)."
+      ]
+    },
+    {
+      "name": "Jobs: StaleTokenCleanupJob, IdempotencyReservationReaperJob",
+      "user_type": "System (scheduled, ShedLocked for multi-instance safety)",
+      "purpose": "Background hygiene sweeps named in this domain's task list, but on inspection neither one actually operates on brand/creator/admin auth tables.",
+      "status": "WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 80,
+      "entry_point": "StaleTokenCleanupJob.cleanupStaleTokens() (cron 0 0 4 * * *), IdempotencyReservationReaperJob.reapStaleReservations() (cron 0 */10 * * * *), both @SchedulerLock (shedlock)",
+      "flow": "StaleTokenCleanupJob queries MetaOAuthTokenRepository.findByExpiresAtBeforeAndRevokedFalse(now - 14 days) and calls MetaOAuthToken.revoke()+save per stale row, then writes an AuditLogService.recordToolCall summary -- this operates ENTIRELY on Meta/Instagram OAuth connection tokens (creator social-account linkage), NOT on this domain's refresh_tokens/admin_refresh_tokens. IdempotencyReservationReaperJob queries IdempotencyKeyRecordRepository for IN_PROGRESS rows older than 15 minutes and atomically flips them to FAILED via a conditional UPDATE (reclaimStaleInProgress), handing them back to IdempotencyService's own reclaimFailedForRetry path -- this is a generic cross-domain safety net (payouts, campaign actions, etc. that use IdempotencyService.executeOnce), not specific to authentication either.",
+      "api": "N/A (no HTTP surface; scheduled only).",
+      "database": "StaleTokenCleanupJob: meta_oauth_tokens (UPDATE revoked=true). IdempotencyReservationReaperJob: idempotency_key_records (conditional UPDATE status IN_PROGRESS->FAILED).",
+      "state_machine": "MetaOAuthToken: active -> revoked (soft-revoke only, never deleted, per the class's stated pattern). IdempotencyKeyRecord: IN_PROGRESS -> FAILED (abandoned-reservation reclaim) -> (next legitimate call) retryable.",
+      "authn": "N/A (system job, no principal).",
+      "authz": "N/A.",
+      "working_condition": "Both jobs run on their cron schedule, take a ShedLock to prevent double-execution across instances, single-flight-guard against re-entrancy within one instance (AtomicBoolean running), and per-row try/catch so one bad row never aborts the batch.",
+      "failure_conditions": "A per-row exception is caught, logged, and counted as failed/skipped without aborting the rest of the sweep (both jobs share this pattern explicitly).",
+      "security_conditions": "Neither job writes to refresh_tokens or admin_refresh_tokens (confirmed by grep: no reference to RefreshTokenRepository/AdminRefreshTokenRepository anywhere under src/main/java/com/influora/job/). Consequently: revoked/expired rows in refresh_tokens and admin_refresh_tokens are NEVER purged by any job found in this codebase -- those tables grow without bound as every login/register/refresh/admin-login/admin-refresh call inserts a new row and rotation/logout only ever sets revoked=true, never deletes.",
+      "tests": "No test files found for either job under src/test in this pass's search (search targeted the job names specifically and returned only the src/main files).",
+      "production_conditions": "Requires shedlock's distributed-lock table to be present and correctly migrated for multi-instance deployments; not independently re-verified in this pass.",
+      "evidence": "StaleTokenCleanupJob.java (read in full); IdempotencyReservationReaperJob.java (read in full); grep across src/main/java/com/influora/job/ and the two repositories for RefreshTokenRepository/AdminRefreshTokenRepository returned zero hits.",
+      "known_issues": [
+        "Neither job in this domain's task list actually touches this domain's own tables (refresh_tokens, admin_refresh_tokens, password_reset_tokens, email_otp_challenges) -- StaleTokenCleanupJob is scoped to Meta OAuth tokens and IdempotencyReservationReaperJob is a generic cross-cutting concern. This looks like a domain-assignment mismatch in the audit task list rather than a defect in the jobs themselves.",
+        "No scheduled job purges revoked or expired rows from refresh_tokens, admin_refresh_tokens, password_reset_tokens, or email_otp_challenges anywhere in this codebase (confirmed by the negative grep above) -- these tables grow unboundedly forever. Low severity (storage cost only, no functional or security impact since revoked/expired rows are already unusable), but worth a cleanup job of the same shape as StaleTokenCleanupJob."
+      ],
+      "required_fixes": [
+        "Add a scheduled job (same ShedLock+AtomicBoolean+per-row-try/catch pattern already established) to hard-delete or archive refresh_tokens/admin_refresh_tokens/password_reset_tokens/email_otp_challenges rows that are revoked/used/expired past a retention window.",
+        "Correct the audit task list's domain assignment for these two jobs, or explicitly scope this domain's 'Jobs' entry to note that no auth-table-specific cleanup job currently exists."
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "AUTH-01",
+      "title": "AdminAuthController/AdminAuthService javadoc describes a live FE/BE contract mismatch that the current frontend code no longer has",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "AdminAuthController.java:35-54 javadoc claims api-contracts.ts hardcodes API_BASE = '/api/admin' (no /v1) and that its error-catch path reads error.message (which would be undefined against the actual { error: { code, message } } envelope). Reading the actual files in this RC: src/admin/services/admin-session.ts:29 defines export const ADMIN_API_BASE = '/api/v1/admin' (matching the controller's real /api/v1/admin/... mount), and src/admin/services/api-contracts.ts:95,145-153 defines const API_BASE = ADMIN_API_BASE and reads const message = body?.error?.message ?? body?.message ?? ... -- i.e. both halves of the documented mismatch already appear fixed in this commit's source.",
+      "location": "influora-api/src/main/java/com/influora/web/AdminAuthController.java:35-54; src/admin/services/admin-session.ts:29; src/admin/services/api-contracts.ts:95,145-153",
+      "impact": "Low functional impact (the actual code paths line up), but the stale comment could mislead a future engineer into 'fixing' something that isn't broken, or into missing that this WAS fixed and re-introducing the bug by reverting the wrong side.",
+      "recommended_fix": "Update or remove the stale paragraph in AdminAuthController's javadoc now that the FE half appears already corrected, or confirm with the frontend owner whether a residual gap still exists that this pass did not find.",
+      "reproduction": "Diff the javadoc's claimed API_BASE/error-handling against the current admin-session.ts/api-contracts.ts source.",
+      "verification_required": "Confirm with git blame/history whether admin-session.ts's fix postdates the AdminAuthController comment, and whether any other FE surface still uses the old '/api/admin' base."
+    },
+    {
+      "id": "AUTH-02",
+      "title": "AdminAuthService has no test coverage for login, lockout, MFA-at-login enforcement, refresh, logout, me, or MFA setup/verify",
+      "severity": "P2",
+      "evidence_score": 4,
+      "confidence": 90,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "grep of src/test/java/com/influora/service/admin/AdminAuthServiceTest.java shows exactly 5 @Test methods, all named around resetMfaForAdmin. Running `mvn -q -o -Dtest=AdminAuthServiceTest test` confirms Tests run: 5, Failures: 0, Errors: 0 -- i.e. the 5 tests that exist all pass, but they are the ONLY tests in the class. No AdminAuthControllerTest*.java file exists anywhere under src/test (confirmed via find).",
+      "location": "influora-api/src/test/java/com/influora/service/admin/AdminAuthServiceTest.java (whole file); influora-api/src/main/java/com/influora/service/admin/AdminAuthService.java:107-306 (login, refresh, logout, me, setupMfa, verifyMfa)",
+      "impact": "The admin realm's primary authentication path -- including failed-login lockout, MFA-code lockout, and mandatory-MFA-for-privileged-roles enforcement -- has zero regression protection. A future refactor of AdminAuthService.login could silently break lockout counting or the MFA-enforcement branch and no test would catch it.",
+      "recommended_fix": "Add unit tests for: successful login without MFA; successful login with MFA; wrong password triggering lockout after N attempts; wrong MFA code triggering the separate MFA lockout after its own threshold; MFA_ENROLLMENT_REQUIRED for an unenrolled SUPER_ADMIN/ADMIN when isMfaEnforceOnLogin is true; refresh rotation happy path and revoked/expired rejection; logout revoking all tokens; me returning the caller's own DTO; setupMfa staging a secret; verifyMfa confirming it.",
+      "verification_required": "None further -- this is directly confirmed by test enumeration and a passing (but narrow) test run."
+    },
+    {
+      "id": "AUTH-03",
+      "title": "resetPassword and changePassword do not check Workspace/CreatorProfile suspension, only the never-written users.status enum",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 70,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "AuthService.java:669-772 (resetPassword) and :795-844 (changePassword) both check only `user.getStatus() == UserStatus.SUSPENDED || DEACTIVATED`. AuthService.java:732-740's own comment states plainly that nothing in src/main ever writes UserStatus.SUSPENDED/DEACTIVATED -- product suspension is Workspace.isSuspended() (brand) or CreatorProfile.isSuspended() (creator), which brandLogin/creatorLogin/refresh DO check (AuthService.java:295,338-360,503-512,594-616) but resetPassword/changePassword do not.",
+      "location": "influora-api/src/main/java/com/influora/service/AuthService.java:746-748, 829-831",
+      "impact": "A brand whose workspace has been suspended by an admin, or a creator whose profile has been suspended, can still successfully complete a password reset or an in-session password change (proving/reusing credential control) even though they cannot subsequently log in with the new password, since the login paths independently re-check workspace/profile suspension. Limited real-world impact (no access is actually granted), but it is a genuine, code-confirmed inconsistency between what login blocks and what credential-rotation blocks.",
+      "recommended_fix": "Extend resetPassword and changePassword to also reject when the user's active workspace is suspended (brand) or their CreatorProfile.isSuspended() is true (creator), mirroring the checks already present in brandLogin/creatorLogin/refresh.",
+      "reproduction": "As an admin, suspend a brand's workspace (or a creator's profile) via the existing admin suspend endpoint; as that user, call POST /auth/forgot-password then POST /auth/reset-password with the mailed token -- the reset succeeds despite the account being suspended.",
+      "verification_required": "A live/integration test suspending a workspace or creator profile and then calling resetPassword/changePassword to confirm it is NOT rejected, to move this from OBSERVED (code-read) to VERIFIED (runtime-reproduced)."
+    },
+    {
+      "id": "AUTH-04",
+      "title": "No scheduled job purges revoked/expired rows from refresh_tokens or admin_refresh_tokens",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "grep -rln \"RefreshTokenRepository|AdminRefreshTokenRepository\" across influora-api/src/main/java/com/influora/job/ returned zero matches. The two jobs actually named in this domain's task list (StaleTokenCleanupJob, IdempotencyReservationReaperJob) operate on meta_oauth_tokens and idempotency_key_records respectively, confirmed by reading both files in full.",
+      "location": "influora-api/src/main/java/com/influora/job/ (absence); influora-api/src/main/java/com/influora/repository/RefreshTokenRepository.java, AdminRefreshTokenRepository.java",
+      "impact": "refresh_tokens and admin_refresh_tokens grow without bound: every login/register/refresh/admin-login/admin-refresh inserts a new row, and rotation/logout only ever sets revoked=true. Purely a storage-growth concern (revoked/expired rows are already unusable for authentication), not a security or correctness issue.",
+      "recommended_fix": "Add a scheduled cleanup job matching the existing ShedLock + AtomicBoolean + per-row-try/catch pattern (e.g. RefreshTokenCleanupJob) that hard-deletes rows where revoked=true or expires_at is well in the past, for both refresh_tokens and admin_refresh_tokens (and consider password_reset_tokens/email_otp_challenges similarly).",
+      "verification_required": "None further for the absence claim itself (confirmed by grep); a row-count query against a long-running environment would quantify actual growth rate if desired."
+    },
+    {
+      "id": "AUTH-05",
+      "title": "Dead SecurityConfig matcher: GET /auth/verify-email has no backing endpoint",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 90,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "SecurityConfig.java:93-94 declares .requestMatchers(HttpMethod.GET, \"/auth/verify-email\").permitAll(). AuthController.java (read in full, lines 1-176) contains only POST /auth/brand/verify-email and POST /auth/creator/verify-email -- no GET mapping for any /auth/.../verify-email path exists anywhere in the web layer.",
+      "location": "influora-api/src/main/java/com/influora/config/SecurityConfig.java:93-94",
+      "impact": "None functionally (an unreachable matcher cannot be exploited), but it is a source-of-truth-drift hazard for whoever audits or extends the security policy next.",
+      "recommended_fix": "Delete the dead matcher, or add the GET endpoint if a link-based (non-OTP) email verification flow was actually intended and simply never implemented.",
+      "verification_required": "None -- confirmed directly by reading both files in full."
+    },
+    {
+      "id": "AUTH-06",
+      "title": "UserController (GET/PATCH /users/me) has no dedicated test file",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 85,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "find across influora-api/src/test for 'UserControllerTest*' returned no results. UserServiceTest.java exists with 22 @Test/void-test occurrences (service layer only, not opened line-by-line in this pass) but there is no MockMvc/unit test exercising UserController's HTTP wiring (@AuthenticationPrincipal binding, response envelope, PATCH partial-update request/response shape) directly.",
+      "location": "influora-api/src/main/java/com/influora/web/UserController.java:1-39 (untested controller); influora-api/src/test/java/com/influora/service/UserServiceTest.java (service-only coverage)",
+      "impact": "A regression in the controller's request/response wiring (e.g. a wrong DTO field, a broken @AuthenticationPrincipal resolution, or an ApiResponse wrapping change) would not be caught by any existing test, even though the underlying service logic is reasonably covered.",
+      "recommended_fix": "Add a UserControllerTest covering GET /users/me and PATCH /users/me happy paths plus a partial-update case (only one field supplied).",
+      "verification_required": "None further -- confirmed by direct file-system search."
+    }
+  ]
+}

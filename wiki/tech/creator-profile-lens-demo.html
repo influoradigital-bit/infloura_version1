@@ -1,0 +1,519 @@
+<title>Creator Profile Lens</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root{
+    --paper:#FBF7EE; --paper-raised:#FFFFFF; --paper-sunk:#F3EDDD;
+    --ink:#16241F; --ink-soft:#4E5F57; --ink-faint:#8B968E;
+    --line:#E4D9C2; --line-strong:#D2C4A3;
+    --marigold:#B96A18; --marigold-ink:#7A480F; --marigold-soft:#F3DFC0; --marigold-bg:#FBEEDA;
+    --teal:#276358; --teal-soft:#DCEDE7; --teal-bg:#EEF6F3;
+    --brick:#9C4438; --brick-soft:#F3E1DE;
+    --shadow: 22 36 31;
+    --focus:#1D5FD1;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#101A16; --paper-raised:#16241E; --paper-sunk:#0C1512;
+      --ink:#F1EADC; --ink-soft:#B7C2BA; --ink-faint:#71807A;
+      --line:#28362E; --line-strong:#374739;
+      --marigold:#EEA65C; --marigold-ink:#F6C388; --marigold-soft:#3A2A14; --marigold-bg:#231A0F;
+      --teal:#79C6AF; --teal-soft:#173029; --teal-bg:#12241F;
+      --brick:#E08D7C; --brick-soft:#2E1D1A;
+      --shadow: 0 0 0;
+      --focus:#7DAAFF;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#101A16; --paper-raised:#16241E; --paper-sunk:#0C1512;
+    --ink:#F1EADC; --ink-soft:#B7C2BA; --ink-faint:#71807A;
+    --line:#28362E; --line-strong:#374739;
+    --marigold:#EEA65C; --marigold-ink:#F6C388; --marigold-soft:#3A2A14; --marigold-bg:#231A0F;
+    --teal:#79C6AF; --teal-soft:#173029; --teal-bg:#12241F;
+    --brick:#E08D7C; --brick-soft:#2E1D1A;
+    --shadow: 0 0 0;
+    --focus:#7DAAFF;
+  }
+
+  *{box-sizing:border-box;}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:'Public Sans', -apple-system, 'Segoe UI', sans-serif;
+    font-size:15px; line-height:1.55;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(22,36,31,0.055) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+  :root[data-theme="dark"] body, @media (prefers-color-scheme: dark){ }
+  h1,h2,h3{font-family:'Fraunces', 'Iowan Old Style', Georgia, serif; text-wrap:balance; margin:0;}
+  code, .mono{font-family:'IBM Plex Mono','SFMono-Regular',Menlo,monospace;}
+  a{color:inherit;}
+  button{font:inherit;}
+  ::selection{background:var(--marigold-soft); color:var(--ink);}
+  *:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:4px;}
+
+  .page{max-width:1180px; margin:0 auto; padding:28px 28px 64px;}
+
+  /* ---- top bar ---- */
+  .topbar{
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
+    gap:16px; padding-bottom:18px; border-bottom:1px solid var(--line);
+  }
+  .brand-mark{font-family:'Fraunces',serif; font-weight:600; font-size:1.05rem; letter-spacing:-0.01em;}
+  .brand-mark span{font-weight:400; color:var(--ink-faint); font-size:0.92em;}
+  .mock-badge{
+    font-family:'IBM Plex Mono',monospace; font-size:0.68rem; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--teal); background:var(--teal-soft); border:1px solid var(--teal); border-radius:100px;
+    padding:3px 9px; margin-left:10px; vertical-align:2px;
+  }
+  .view-switch{display:flex; gap:2px; background:var(--paper-sunk); border:1px solid var(--line); border-radius:11px; padding:3px;}
+  .switch-btn{
+    appearance:none; border:0; background:transparent; color:var(--ink-soft);
+    padding:8px 14px; border-radius:8px; cursor:pointer; font-weight:600; font-size:0.83rem;
+    transition:background .18s ease, color .18s ease;
+  }
+  .switch-btn:hover{color:var(--ink);}
+  .switch-btn.is-active{background:var(--paper-raised); color:var(--marigold-ink); box-shadow:0 1px 2px rgba(var(--shadow)/0.12);}
+  :root[data-theme="dark"] .switch-btn.is-active{color:var(--marigold);}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .switch-btn.is-active{color:var(--marigold);}}
+
+  .context-line{
+    margin:18px 0 26px; font-size:0.94rem; color:var(--ink-soft);
+    padding:11px 16px; background:var(--marigold-bg); border:1px solid var(--marigold-soft); border-radius:10px;
+  }
+  .context-line strong{color:var(--ink); font-weight:600;}
+
+  /* ---- layout ---- */
+  .layout{display:grid; grid-template-columns:minmax(0,1fr) 296px; gap:34px; align-items:start;}
+  @media (max-width: 880px){ .layout{grid-template-columns:1fr;} }
+
+  .dossier{display:flex; flex-direction:column; gap:26px; min-width:0;}
+  section.card{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:16px;
+    padding:24px 26px; box-shadow:0 1px 3px rgba(var(--shadow)/0.06);
+  }
+  .card h2{font-size:1.02rem; font-weight:600; margin-bottom:14px; display:flex; align-items:baseline; gap:8px;}
+  .card h2 .tag{
+    font-family:'IBM Plex Mono',monospace; font-size:0.64rem; letter-spacing:.03em; font-weight:500;
+    color:var(--ink-faint); text-transform:none; border:1px solid var(--line-strong); border-radius:5px; padding:1px 6px;
+  }
+
+  /* ---- identity ---- */
+  .identity{display:flex; gap:20px; align-items:flex-start;}
+  .avatar-wrap{position:relative; flex:none; width:84px; height:84px;}
+  .avatar{
+    width:84px; height:84px; border-radius:50%;
+    background:conic-gradient(from 210deg, var(--marigold), #E6B067 40%, var(--teal) 78%, var(--marigold));
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Fraunces',serif; font-weight:600; font-size:1.7rem; color:#fff;
+    box-shadow: inset 0 0 0 3px rgba(255,255,255,0.35);
+  }
+  .verified-badge{
+    position:absolute; right:-2px; bottom:-2px; width:26px; height:26px; border-radius:50%;
+    background:var(--teal); border:3px solid var(--paper-raised); display:flex; align-items:center; justify-content:center;
+  }
+  .id-main{min-width:0; flex:1;}
+  .id-top{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;}
+  .id-name{font-size:1.5rem; font-weight:600; letter-spacing:-0.01em;}
+  .id-handle{color:var(--ink-faint); font-size:0.92rem;}
+  .id-meta{margin-top:4px; color:var(--ink-soft); font-size:0.88rem; display:flex; flex-wrap:wrap; gap:6px 14px;}
+  .chips{margin-top:10px; display:flex; flex-wrap:wrap; gap:7px;}
+  .chip{
+    font-size:0.78rem; font-weight:600; color:var(--marigold-ink); background:var(--marigold-bg);
+    border:1px solid var(--marigold-soft); border-radius:100px; padding:4px 11px;
+  }
+  :root[data-theme="dark"] .chip{color:var(--marigold);}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .chip{color:var(--marigold);}}
+  .bio{margin-top:14px; max-width:62ch; color:var(--ink-soft);}
+
+  /* ---- stats ---- */
+  .stat-grid{display:flex; flex-wrap:wrap; border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+  .stat-tile{background:var(--paper-raised); padding:16px 16px 14px; flex:1 1 130px; min-width:130px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); margin:-1px 0 0 -1px;}
+  .stat-label{font-size:0.68rem; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-faint); font-weight:600;}
+  .stat-value{font-family:'Fraunces',serif; font-weight:600; font-size:1.55rem; margin-top:5px; font-variant-numeric:tabular-nums; letter-spacing:-0.01em;}
+  .stat-sub{font-size:0.72rem; color:var(--ink-faint); margin-top:2px; font-family:'IBM Plex Mono',monospace;}
+  .stats-foot{margin-top:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;}
+  .synced{font-size:0.76rem; color:var(--ink-faint); font-family:'IBM Plex Mono',monospace;}
+  .provenance{font-size:0.72rem; color:var(--ink-faint);}
+  .provenance code{color:var(--teal); background:var(--teal-soft); padding:1px 5px; border-radius:4px;}
+
+  /* ---- audience ---- */
+  .aud-band{
+    font-size:0.95rem; color:var(--ink-soft); background:var(--paper-sunk); border:1px dashed var(--line-strong);
+    border-radius:10px; padding:14px 16px;
+  }
+  .aud-band strong{color:var(--ink); font-weight:600;}
+  .aud-grid{display:grid; grid-template-columns:1fr 1fr; gap:26px;}
+  @media (max-width:560px){.aud-grid{grid-template-columns:1fr;}}
+  .aud-sub{font-size:0.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); font-weight:600; margin-bottom:10px;}
+  .bar-row{display:flex; align-items:center; gap:10px; margin-bottom:8px; font-size:0.85rem;}
+  .bar-row .bl{width:64px; flex:none; color:var(--ink-soft);}
+  .bar-track{flex:1; height:9px; border-radius:5px; background:var(--paper-sunk); overflow:hidden;}
+  .bar-fill{height:100%; border-radius:5px; background:linear-gradient(90deg, var(--teal), var(--marigold));}
+  .bar-pct{width:38px; text-align:right; font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; color:var(--ink-soft);}
+  .city-list{list-style:none; margin:0; padding:0; font-size:0.85rem;}
+  .city-list li{display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--line);}
+  .city-list li:last-child{border-bottom:0;}
+  .city-list .cval{font-family:'IBM Plex Mono',monospace; color:var(--ink-soft); font-variant-numeric:tabular-nums;}
+
+  /* ---- portfolio ---- */
+  .port-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(150px,1fr)); gap:14px;}
+  .port-card{border-radius:12px; overflow:hidden; border:1px solid var(--line); position:relative; background:var(--paper-sunk);}
+  .port-thumb{aspect-ratio:4/5; position:relative;}
+  .port-thumb.p1{background:linear-gradient(155deg, #274A40, #B96A18);}
+  .port-thumb.p2{background:linear-gradient(155deg, #7A480F, #276358);}
+  .port-thumb.p3{background:linear-gradient(155deg, #3A5449, #E6B067);}
+  .port-thumb.p4{background:linear-gradient(155deg, #B96A18, #16241F);}
+  .port-thumb::after{content:"";position:absolute; inset:0; background-image:radial-gradient(circle at 30% 20%, rgba(255,255,255,0.16), transparent 55%);}
+  .port-type{
+    position:absolute; top:8px; left:8px; display:flex; align-items:center; gap:4px;
+    background:rgba(16,26,22,0.55); color:#fff; font-size:0.68rem; font-weight:600; padding:3px 7px; border-radius:100px;
+  }
+  .port-overlay{
+    position:absolute; left:0; right:0; bottom:0; padding:8px 10px 9px; color:#fff;
+    background:linear-gradient(0deg, rgba(10,16,13,0.82), transparent);
+    font-family:'IBM Plex Mono',monospace; font-size:0.72rem; display:flex; gap:10px;
+  }
+  .port-caption{padding:8px 10px 10px; font-size:0.78rem; color:var(--ink-soft); font-style:italic;}
+
+  /* ---- trust ---- */
+  .trust-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:18px;}
+  .score-row{display:flex; align-items:center; gap:10px;}
+  .score-ring{position:relative; width:46px; height:46px; flex:none;}
+  .score-ring svg{transform:rotate(-90deg);}
+  .score-num{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:'IBM Plex Mono',monospace; font-size:0.68rem; font-weight:600;}
+  .score-label{font-size:0.83rem; color:var(--ink-soft);}
+  .score-null{color:var(--ink-faint); font-style:italic;}
+  .rate-line{font-family:'Fraunces',serif; font-size:1.35rem; font-weight:600;}
+  .rate-sub{font-size:0.78rem; color:var(--ink-faint); margin-top:2px;}
+  .track-record{display:flex; gap:22px; margin-top:4px;}
+  .track-item .num{font-family:'Fraunces',serif; font-size:1.35rem; font-weight:600;}
+  .track-item .lab{font-size:0.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); font-weight:600;}
+
+  /* ---- own strip ---- */
+  .own-strip{background:var(--teal-bg); border-color:var(--teal-soft);}
+  .own-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px;}
+  .own-item .lab{font-size:0.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-faint); font-weight:600;}
+  .own-val{margin-top:4px; font-weight:600; display:flex; align-items:center; gap:6px;}
+  .dot{width:8px; height:8px; border-radius:50%; background:var(--teal); flex:none;}
+  .own-note{margin-top:16px; font-size:0.82rem; color:var(--ink-soft); border-top:1px solid var(--line); padding-top:14px;}
+
+  /* ---- reveal mechanic ---- */
+  .reveal{display:grid; grid-template-rows:0fr; transition:grid-template-rows .45s cubic-bezier(.4,0,.2,1);}
+  .reveal.is-open{grid-template-rows:1fr;}
+  .reveal-inner{overflow:hidden; min-height:0;}
+  .reveal-inner > .pad{padding-top:0;}
+  .reveal .reveal-inner > *{opacity:0; transition:opacity .28s ease;}
+  .reveal.is-open .reveal-inner > *{opacity:1; transition-delay:.12s;}
+
+  /* ---- ledger ---- */
+  .ledger{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:16px; padding:22px 22px 20px;
+    position:sticky; top:20px;
+  }
+  .ledger h2{font-size:0.95rem; font-weight:600;}
+  .ledger-sub{font-size:0.8rem; color:var(--ink-faint); margin-top:5px;}
+  .ledger ul{list-style:none; margin:16px 0 0; padding:0; display:flex; flex-direction:column; gap:13px;}
+  .ledger li{font-size:0.83rem; line-height:1.45; color:var(--ink-soft); padding-left:16px; position:relative;}
+  .ledger li::before{content:"—"; position:absolute; left:0; color:var(--brick); font-weight:600;}
+  .ledger li b{color:var(--ink); font-weight:600;}
+  .ledger li code{
+    display:inline-block; margin-top:3px; font-size:0.68rem; color:var(--teal); background:var(--teal-soft);
+    padding:1px 6px; border-radius:4px;
+  }
+  .ledger-source{margin-top:18px; padding-top:14px; border-top:1px solid var(--line); font-size:0.72rem; color:var(--ink-faint);}
+  .ledger-source code{color:var(--ink-soft); background:var(--paper-sunk); padding:1px 5px; border-radius:4px;}
+
+  .foot{margin-top:40px; padding-top:20px; border-top:1px solid var(--line); font-size:0.78rem; color:var(--ink-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
+  .foot code{color:var(--ink-soft);}
+</style>
+
+<h1 class="sr-only">Creator Profile Lens — one Influora creator profile, three ways of seeing it</h1>
+
+<div class="page">
+  <header class="topbar">
+    <div class="brand-mark">Influora <span>· Profile Lens</span><span class="mock-badge">Design reference</span></div>
+    <nav class="view-switch" role="tablist" aria-label="Choose who is looking">
+      <button class="switch-btn is-active" data-view="discovery" role="tab" aria-selected="true">Brand · Discovery</button>
+      <button class="switch-btn" data-view="connected" role="tab" aria-selected="false">Brand · Connected</button>
+      <button class="switch-btn" data-view="own" role="tab" aria-selected="false">Creator · Own view</button>
+    </nav>
+  </header>
+
+  <p class="context-line">Same profile, seen by <strong id="viewerLabel">a brand browsing Discovery, before any collaboration</strong>. The panel on the right lists exactly what stays hidden in this view, and why.</p>
+
+  <div class="layout">
+    <main class="dossier">
+
+      <section class="card identity">
+        <div class="avatar-wrap">
+          <div class="avatar" aria-hidden="true">AV</div>
+          <div class="verified-badge" title="Verified creator">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+        <div class="id-main">
+          <div class="id-top">
+            <span class="id-name">Ananya Verma</span>
+            <span class="id-handle">@ananya.moves</span>
+          </div>
+          <div class="id-meta">
+            <span>Mumbai, IN</span><span>·</span><span>Hindi, English</span>
+          </div>
+          <div class="chips">
+            <span class="chip">Fitness &amp; Wellness</span>
+            <span class="chip">Home Workouts</span>
+          </div>
+          <p class="bio">Strength training, home workouts, and honestly, the snacks that get me through leg day. Mumbai-based, always up before the traffic.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Performance</h2>
+        <div class="stat-grid" id="statGrid"></div>
+        <div class="stats-foot">
+          <span class="synced" id="syncedLine">Instagram synced 6 hours ago</span>
+          <span class="provenance" id="provLine"></span>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Audience</h2>
+        <div class="reveal" id="audBandWrap"><div class="reveal-inner"><div class="pad">
+          <p class="aud-band">Skews <strong>18–34</strong>, majority <strong>women</strong>. Concentrated in <strong>Mumbai, Pune and Bengaluru</strong>. Exact numbers unlock once a collaboration starts.</p>
+        </div></div></div>
+        <div class="reveal" id="audExactWrap"><div class="reveal-inner"><div class="pad">
+          <div class="aud-grid">
+            <div>
+              <div class="aud-sub">Age</div>
+              <div class="bar-row"><span class="bl">18–24</span><span class="bar-track"><span class="bar-fill" style="width:41%"></span></span><span class="bar-pct">41%</span></div>
+              <div class="bar-row"><span class="bl">25–34</span><span class="bar-track"><span class="bar-fill" style="width:38%"></span></span><span class="bar-pct">38%</span></div>
+              <div class="bar-row"><span class="bl">35–44</span><span class="bar-track"><span class="bar-fill" style="width:15%"></span></span><span class="bar-pct">15%</span></div>
+              <div class="bar-row"><span class="bl">45+</span><span class="bar-track"><span class="bar-fill" style="width:6%"></span></span><span class="bar-pct">6%</span></div>
+            </div>
+            <div>
+              <div class="aud-sub">Top cities</div>
+              <ul class="city-list">
+                <li><span>Mumbai</span><span class="cval">22%</span></li>
+                <li><span>Pune</span><span class="cval">11%</span></li>
+                <li><span>Bengaluru</span><span class="cval">9%</span></li>
+                <li><span>Delhi NCR</span><span class="cval">7%</span></li>
+                <li><span>Hyderabad</span><span class="cval">5%</span></li>
+              </ul>
+            </div>
+          </div>
+        </div></div></div>
+      </section>
+
+      <section class="card">
+        <h2>Portfolio</h2>
+        <div class="port-grid">
+          <article class="port-card">
+            <div class="port-thumb p1"><span class="port-type">▶ Reel</span>
+              <div class="reveal" id="ov1"><div class="reveal-inner"><div class="pad port-overlay"><span>92.1K views</span><span>8.4K likes</span></div></div></div>
+            </div>
+            <div class="port-caption">5-move core finisher</div>
+          </article>
+          <article class="port-card">
+            <div class="port-thumb p2"><span class="port-type">Photo</span>
+              <div class="reveal" id="ov2"><div class="reveal-inner"><div class="pad port-overlay"><span>38.4K reach</span><span>2.9K likes</span></div></div></div>
+            </div>
+            <div class="port-caption">Post-workout thali, Mumbai style</div>
+          </article>
+          <article class="port-card">
+            <div class="port-thumb p3"><span class="port-type">▶ Reel</span>
+              <div class="reveal" id="ov3"><div class="reveal-inner"><div class="pad port-overlay"><span>58.7K views</span><span>4.1K likes</span></div></div></div>
+            </div>
+            <div class="port-caption">What 45 min of mobility actually looks like</div>
+          </article>
+          <article class="port-card">
+            <div class="port-thumb p4"><span class="port-type">Photo</span>
+              <div class="reveal" id="ov4"><div class="reveal-inner"><div class="pad port-overlay"><span>29.6K reach</span><span>2.2K likes</span></div></div></div>
+            </div>
+            <div class="port-caption">New kit, same 6am alarm</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Trust &amp; rates</h2>
+        <div class="trust-grid">
+          <div>
+            <div class="score-row">
+              <div class="score-ring"><svg width="46" height="46"><circle cx="23" cy="23" r="19" fill="none" stroke="var(--line)" stroke-width="5"/><circle cx="23" cy="23" r="19" fill="none" stroke="var(--teal)" stroke-width="5" stroke-linecap="round" stroke-dasharray="119.4" stroke-dashoffset="14.3"/></svg><span class="score-num">88</span></div>
+              <span class="score-label">Quality</span>
+            </div>
+          </div>
+          <div>
+            <div class="score-row">
+              <div class="score-ring"><svg width="46" height="46"><circle cx="23" cy="23" r="19" fill="none" stroke="var(--line)" stroke-width="5"/><circle cx="23" cy="23" r="19" fill="none" stroke="var(--marigold)" stroke-width="5" stroke-linecap="round" stroke-dasharray="119.4" stroke-dashoffset="7.2"/></svg><span class="score-num">94</span></div>
+              <span class="score-label">Authenticity</span>
+            </div>
+          </div>
+          <div>
+            <div class="score-row">
+              <div class="score-ring"><svg width="46" height="46"><circle cx="23" cy="23" r="19" fill="none" stroke="var(--line)" stroke-width="5"/></svg><span class="score-num" style="color:var(--ink-faint)">—</span></div>
+              <span class="score-label score-null">Brand safety — not yet scored</span>
+            </div>
+          </div>
+        </div>
+        <div style="height:20px"></div>
+        <div class="trust-grid">
+          <div>
+            <div class="rate-line">₹18,000–₹45,000</div>
+            <div class="rate-sub">per collaboration, INR</div>
+          </div>
+          <div class="track-record">
+            <div class="track-item"><div class="num">14</div><div class="lab">Campaigns done</div></div>
+            <div class="track-item"><div class="num">4.8 ★</div><div class="lab">Avg. rating (11)</div></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="reveal" id="ownStripWrap"><div class="reveal-inner"><div class="pad">
+        <section class="card own-strip">
+          <h2>Your private details <span class="tag">only you see this</span></h2>
+          <div class="own-grid">
+            <div class="own-item"><div class="lab">Identity (KYC)</div><div class="own-val"><span class="dot"></span>Verified — Aadhaar + PAN on file</div></div>
+            <div class="own-item"><div class="lab">Tax registration</div><div class="own-val"><span class="dot"></span>Individual, GSTIN not required</div></div>
+            <div class="own-item"><div class="lab">Payout method</div><div class="own-val"><span class="dot"></span>Bank transfer, IFSC on file</div></div>
+            <div class="own-item"><div class="lab">Account standing</div><div class="own-val"><span class="dot"></span>Good standing, no flags</div></div>
+          </div>
+          <p class="own-note">A brand never sees this strip — connected or not. See the panel on the right for exactly what stays private and why.</p>
+        </section>
+      </div></div></div>
+
+    </main>
+
+    <aside class="ledger">
+      <h2>Visibility ledger</h2>
+      <p class="ledger-sub" id="ledgerSub">Not shown until a collaboration begins:</p>
+      <ul id="ledgerList"></ul>
+      <p class="ledger-source">Source of truth: <code>wiki/tech/profile-data-model.md</code></p>
+    </aside>
+  </div>
+
+  <footer class="foot">
+    <span>Design reference for the widened profile data model — not a live screen. Numbers are illustrative.</span>
+    <span><code>F-0792</code> · <code>F-0793</code> · <code>F-0795</code> · <code>F-0796</code></span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var VIEWS = {
+    discovery: {
+      label: 'a brand browsing Discovery, before any collaboration',
+      stats: [
+        {l:'Followers', v:'1,28,400', s:null},
+        {l:'Engagement', v:'~4%', s:'rounded'},
+        {l:'Rate range', v:'₹18k–45k', s:null},
+        {l:'Campaigns', v:'14', s:'completed'}
+      ],
+      synced: 'Instagram synced 6 hours ago',
+      prov: 'Shown as it ships today · <code>CreatorPublicProfileResponse</code>',
+      audExact:false, portOverlay:false, ownStrip:false,
+      ledgerSub: 'Not shown until a collaboration begins:',
+      ledger:[
+        '<b>Exact audience breakdown</b> — bands only, pre-collaboration. <code>MetricsAuthorizationService</code>',
+        '<b>Per-post performance</b> — views, likes, saves per Reel. <code>ContentPerformanceResponse</code>',
+        '<b>Performance overlay on portfolio</b> — open question. <code>profile-data-model.md §8.2</code>',
+        '<b>Brand-safety score</b> — not yet computed for Ananya; shown as "—", never guessed. <code>BR-18 rule</code>'
+      ]
+    },
+    connected: {
+      label: 'a brand with an active collaboration with Ananya',
+      stats: [
+        {l:'Followers', v:'1,28,400', s:null},
+        {l:'Engagement', v:'4.2%', s:'avgEngagementRate'},
+        {l:'Avg. views', v:'61,400', s:'per post, 30d'},
+        {l:'Avg. reach', v:'74,100', s:'per post, 30d'},
+        {l:'Avg. likes', v:'5,820', s:'per post, 30d'},
+        {l:'Posts', v:'342', s:'mediaCount'},
+        {l:'Avg. watch', v:'18.4s', s:'reels'}
+      ],
+      synced: 'Instagram synced 6 hours ago',
+      prov: 'Widened set · <code>PlatformStatResponse</code> §7.1 (target)',
+      audExact:true, portOverlay:true, ownStrip:false,
+      ledgerSub: 'Never shown to any brand, connected or not:',
+      ledger:[
+        '<b>KYC, tax identity &amp; payout details</b> — Ananya’s alone. <code>CreatorProfile §2.4</code>',
+        '<b>Post captions</b> — brand-safety pipeline input only. <code>decision 2026-07-06, LOCKED</code>',
+        '<b>Suspension / application-review history</b> — admin-only fields.'
+      ]
+    },
+    own: {
+      label: 'Ananya, on her own dashboard',
+      stats: [
+        {l:'Followers', v:'1,28,400', s:null},
+        {l:'Engagement', v:'4.2%', s:'avgEngagementRate'},
+        {l:'Avg. views', v:'61,400', s:'per post, 30d'},
+        {l:'Avg. reach', v:'74,100', s:'per post, 30d'},
+        {l:'Avg. likes', v:'5,820', s:'per post, 30d'},
+        {l:'Posts', v:'342', s:'mediaCount'},
+        {l:'Avg. watch', v:'18.4s', s:'reels'}
+      ],
+      synced: 'Instagram synced 6 hours ago',
+      prov: 'Same data brands see, plus the strip below',
+      audExact:true, portOverlay:true, ownStrip:true,
+      ledgerSub: 'What brands never see about you:',
+      ledger:[
+        '<b>KYC, tax identity &amp; payout details</b> — private, even after connecting.',
+        '<b>Captions you write</b> — the post is public, the caption text is not "data" to a brand. <code>decision 2026-07-06, LOCKED</code>',
+        '<b>Nothing here reaches Meera</b> without this same boundary applying. <code>profile-data-model.md §4.4</code>'
+      ]
+    }
+  };
+
+  var btns = document.querySelectorAll('.switch-btn');
+  var statGrid = document.getElementById('statGrid');
+  var syncedLine = document.getElementById('syncedLine');
+  var provLine = document.getElementById('provLine');
+  var viewerLabel = document.getElementById('viewerLabel');
+  var ledgerSub = document.getElementById('ledgerSub');
+  var ledgerList = document.getElementById('ledgerList');
+  var audBandWrap = document.getElementById('audBandWrap');
+  var audExactWrap = document.getElementById('audExactWrap');
+  var ownStripWrap = document.getElementById('ownStripWrap');
+  var overlays = ['ov1','ov2','ov3','ov4'].map(function(id){return document.getElementById(id);});
+
+  function setReveal(el, open){
+    if(open){ el.classList.add('is-open'); }
+    else { el.classList.remove('is-open'); }
+  }
+
+  function render(key){
+    var v = VIEWS[key];
+
+    statGrid.innerHTML = v.stats.map(function(s){
+      return '<div class="stat-tile"><div class="stat-label">'+s.l+'</div><div class="stat-value">'+s.v+'</div>'+
+             (s.s ? '<div class="stat-sub">'+s.s+'</div>' : '') + '</div>';
+    }).join('');
+
+    syncedLine.textContent = v.synced;
+    provLine.innerHTML = v.prov;
+    viewerLabel.textContent = v.label;
+    ledgerSub.textContent = v.ledgerSub;
+    ledgerList.innerHTML = v.ledger.map(function(item){ return '<li>'+item+'</li>'; }).join('');
+
+    setReveal(audBandWrap, !v.audExact);
+    setReveal(audExactWrap, v.audExact);
+    setReveal(ownStripWrap, v.ownStrip);
+    overlays.forEach(function(el){ setReveal(el, v.portOverlay); });
+
+    btns.forEach(function(b){
+      var active = b.getAttribute('data-view') === key;
+      b.classList.toggle('is-active', active);
+      b.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+  }
+
+  btns.forEach(function(b){
+    b.addEventListener('click', function(){ render(b.getAttribute('data-view')); });
+  });
+
+  render('discovery');
+})();
+</script>

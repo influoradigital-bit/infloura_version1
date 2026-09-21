@@ -1,0 +1,54 @@
+{
+  "role": "independent skeptic verifier",
+  "release_candidate": "115f698 checked out clean at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+  "rc_git_status_clean": true,
+  "questions": [
+    "Does any migration ever ALTER wallet_transactions.type / reference_type to widen the native MySQL ENUM after V8, so the Java-only AFFILIATE_COMMISSION/AFFILIATE_EARNING values are actually accepted at the DB layer?",
+    "Do the entity mappings for WalletTransaction write the enum as a native value (@Enumerated STRING against a real ENUM column) such that an unlisted value would be rejected under MySQL strict mode?",
+    "Do the existing AffiliateSettlementJob/Writer tests use a real database (Testcontainers) or are they pure Mockito, and would they even be capable of catching a DB-level ENUM rejection?",
+    "Is there a Testcontainers/MySQL integration test anywhere in the repo that actually exercises AffiliateSettlementWriter.creditCreatorWallet against a real schema?",
+    "Because doSettleCreator is @Transactional, does a rejected wallet_transactions insert roll back the whole batch (safe-but-broken) or does it partially commit (corrupting data)?",
+    "Does SupportController.java actually expose a requester-facing (non-admin) ticket API, and is SupportService wired to a real repository/table?",
+    "Does the React app have ANY route, component, or admin-only surface that calls the non-admin /support/tickets endpoints?",
+    "Is every 'support/tickets' string in the frontend actually pointed at the admin-prefixed endpoint used by AdminSupportController, or is some of it the requester-facing one?",
+    "Is there any non-in-app fallback (mailto, Intercom, Zendesk, WhatsApp, live chat) for a brand/creator to reach support if the in-app entry point is a placeholder?",
+    "Does docker/nginx.conf.template (the image actually built by the root Dockerfile's runtime stage) set CSP/HSTS/X-Frame-Options/etc., and if so does that contradict a claim that 'the live edge lacks CSP/HSTS/XFO'?",
+    "Do deploy/utho/Caddyfile and deploy/hostinger/Caddyfile reverse-proxy straight through to that same frontend:80 container without hiding/overriding its response headers?",
+    "Does deploy/utho/nginx-influora.conf assign api.influora.in a TLS certificate that is actually mismatched, or does each subdomain get its own dedicated Let's Encrypt cert path?",
+    "Does publish-images.yml's default VITE_API_BASE_URL (https://api.influora.in/api/v1) line up with the domain deploy/utho/nginx-influora.conf actually serves under a matching cert?",
+    "Is the 'topology not reproducible from repo' claim actually about these four cited files, or about a separate, already-known fact that the live box runs its own docker-compose.prod.yml not tracked under deploy/?",
+    "For each finding, is severity consistent with what the code/config actually shows once independently re-derived, versus what the original finder asserted?"
+  ],
+  "verdicts": [
+    {
+      "ev": "EV-010",
+      "title": "Deployment topology / CSP-HSTS-XFO / wrong TLS cert",
+      "verdict": "DOWNGRADED",
+      "final_severity": "P2",
+      "evidence_score": 2,
+      "confidence": 30,
+      "reason": "The specific technical claims are not supported by, and are partly contradicted by, the cited files. docker/nginx.conf.template:130-136 (the config the root Dockerfile's runtime stage bakes into the 'frontend' image -- confirmed by reading the Dockerfile's runtime-stage comments referencing this exact file and its Wave-2 CSP fix) sets all six headers: Content-Security-Policy, Strict-Transport-Security, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy. Both deploy/utho/Caddyfile and deploy/hostinger/Caddyfile simply `reverse_proxy frontend:80` (or, for Utho, nginx-influora.conf -> Caddy -> frontend:80) with no proxy_hide_header/header stripping directive anywhere, so those headers pass through to the browser by default nginx/Caddy behavior. Separately, deploy/utho/nginx-influora.conf:96-104 gives api.influora.in its OWN dedicated Let's Encrypt cert path (/etc/letsencrypt/live/api.influora.in/...), matching publish-images.yml's default vite_api_base_url of https://api.influora.in/api/v1 -- no mismatch found. The file's own comments describe a PAST cert/vhost bug (apex falling through to a CN=snapsby.com default vhost) that this very file's explicit per-domain server blocks fixed. The one defensible part of the underlying claim -- that the box actually running production may not match ANY committed compose/Caddy file (per this repo's own memory: the live Utho stack is /usr/local/App/docker-compose.prod.yml, not deploy/utho/) -- is real but is a different, already-tracked concern (project_frontend_deploy_base_check / project_utho_server_layout) and provides no support for 'breaks every API call' as stated here. Provenance is CONFIGURATION as claimed, but evidence_score 5 / confidence 90 is not earned: no runtime check (curl/TLS handshake against the live hosts) was performed by the original finders, and static reading of the RC's own files argues against the headers/cert claims rather than for them.",
+      "new_evidence": "docker/nginx.conf.template:130-136 sets CSP/HSTS/XFO/nosniff/Referrer-Policy/Permissions-Policy; root Dockerfile runtime stage builds the frontend image from this file (confirmed via its inline comments referencing the same Wave-2 CSP fix); deploy/utho/Caddyfile and deploy/hostinger/Caddyfile both reverse_proxy straight to frontend:80 with no header-stripping directive; deploy/utho/nginx-influora.conf:96-104 assigns api.influora.in its own dedicated cert path, consistent with publish-images.yml's default API URL."
+    },
+    {
+      "ev": "EV-011",
+      "title": "wallet_transactions ENUM never widened for AFFILIATE_COMMISSION / AFFILIATE_EARNING",
+      "verdict": "CONFIRMED-RUNTIME",
+      "final_severity": "P1",
+      "evidence_score": 4,
+      "confidence": 90,
+      "reason": "Read V8__wallet_transactions.sql:6-7,12 -- the native MySQL ENUMs for `type` and `reference_type` list only the original 8/6 values and do NOT include AFFILIATE_COMMISSION or AFFILIATE_EARNING. Grepped every migration file under influora-api/src/main/resources/db/migration (V1 through V20260918180000, ~140 files) for any ALTER/MODIFY touching wallet_transactions -- none exists; the two MODIFY hits found belong to unrelated tables (ai_conversations.tenant_type, content_flags.content_type). Confirmed WalletTransactionType.java and TxnReferenceType.java DO carry AFFILIATE_COMMISSION / AFFILIATE_EARNING (added under the [F-0402] fix), and the WalletTransaction entity maps both columns with @Enumerated(EnumType.STRING) against ddl-auto: validate + MySQLDialect in application.yml -- so production writes the literal enum-name string into a column whose native ENUM definition was never widened to accept it. AffiliateSettlementWriter.creditCreatorWallet (:130-142) calls WalletLedgerService.post(...) with exactly these two values, inside doSettleCreator's @Transactional boundary, so a STRICT_TRANS_TABLES rejection on that insert rolls back the whole per-creator batch (matching the claim that settlement fails/never credits, rather than partially corrupting data). Ran `mvn -q -o -Dtest=AffiliateSettlementJobTest,AffiliateSettlementWriterNullCollaboratorLogTest test` from the RC: exit 0, 9+2=11/11 tests green. Both classes are pure Mockito (@ExtendWith(MockitoExtension.class), every repository/service is @Mock) -- they cannot execute a real INSERT and so cannot observe a DB-level ENUM rejection. Also confirmed the repo's one real-MySQL (Testcontainers) integration test touching this area, DatabaseConstraintIntegrationTest, exercises only the affiliate_earnings UNIQUE(redemption_id) constraint, never a wallet_transactions insert with these new values. This directly substantiates 'H2 and Mockito tests cannot see this' and shows msa's 'WORKING E4' rating rests entirely on tests structurally incapable of catching the defect.",
+      "new_evidence": "Ran the cited unit tests (mvn -Dtest=AffiliateSettlementJobTest,AffiliateSettlementWriterNullCollaboratorLogTest): BUILD SUCCESS, 11/11 passed, confirming the blind spot at runtime; confirmed via full migration-directory grep that no ALTER ever widens wallet_transactions.type/reference_type; confirmed the one real-MySQL integration test in this area does not cover this insert path."
+    },
+    {
+      "ev": "EV-012",
+      "title": "Requester-facing support-ticket API built and tested but no UI entry point",
+      "verdict": "CONFIRMED",
+      "final_severity": "P1",
+      "evidence_score": 4,
+      "confidence": 85,
+      "reason": "Read SupportController.java:36-76 -- a fully implemented, requester-scoped REST controller (POST /support/tickets, GET /support/tickets, GET /support/tickets/{id}, POST /support/tickets/{id}/messages) backed by SupportService, distinct from AdminSupportController. Read App.tsx:861-869 -- the /support route renders <StaticPage title=\"Support\" description=\"Need help? Support resources are being set up and will be available here soon.\"/>, a literal placeholder. Grepped the entire src/ tree for every 'support/tickets' and 'SupportTicket' reference: all of them (src/admin/services/api-contracts.ts:688-713, src/admin/hooks/useTicketList.ts, src/admin/hooks/useSupportStats.ts, src/admin/services/websocket.ts, src/admin/types/admin.types.ts) live under src/admin/ and target the ADMIN-prefixed endpoints (/api/v1/admin/support/tickets/...) that AdminSupportController exposes -- none call the plain /support/tickets path SupportController.java actually serves. Also grepped for any fallback support channel (mailto:, Intercom, Zendesk, WhatsApp support line, live chat) anywhere in src/ -- found none; every WhatsApp mention is marketing copy about deal negotiation, not a support channel. So a brand or creator on this build has no route at all -- in-app or otherwise -- to open a support ticket, even though the backend for it is fully built and tested. This confirms the claim and supports the P1 rating over inventory's P2: on a platform that moves money (escrow, payouts, wallet), having zero reachable support channel is a go-live-relevant gap, not merely a nice-to-have.",
+      "new_evidence": "confirmed zero fallback support channel (mailto/Intercom/Zendesk/chat) exists anywhere in src/; confirmed every frontend 'support/tickets' call site is admin-scoped and none targets the endpoints SupportController.java exposes."
+    }
+  ]
+}

@@ -1,0 +1,1692 @@
+{
+  "summary": {
+    "total_features": 110,
+    "entities": 87,
+    "scheduled_jobs": 23,
+    "working": 18,
+    "partially_working": 2,
+    "not_verified": 90,
+    "broken_or_not_implemented": 0,
+    "pct_working": 16.4,
+    "pct_partial": 1.8,
+    "pct_not_verified": 81.8,
+    "pct_broken": 0.0
+  },
+  "findings": [
+    {
+      "id": "MSA-01",
+      "severity": "P1",
+      "title": "BrandOwnContentService silently defaults Instagram auth path to FACEBOOK_LOGIN, reproducing the F-0950 class of bug on a code path F-0950 did not fix",
+      "location": "influora-api/src/main/java/com/influora/service/trendspark/BrandOwnContentService.java:112",
+      "evidence_score": 3,
+      "confidence": 78,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "InstagramInsightsClient (integration/meta/client/InstagramInsightsClient.java:50-67) exposes both a 3-arg getMedia(igUserId, accessToken, limit) that hardcodes MetaAuthPath.FACEBOOK_LOGIN (line 62), and a 4-arg overload that takes the real auth path. PortfolioService.java:401 and DeliverableVerificationService.java:215/245 were fixed (per their own F-0950/F-0126 comments) to pass tokenRow.getAuthPath()/authPath explicitly. BrandOwnContentService.java fetches a real MetaOAuthToken at line 88-89 (which exposes getAuthPath(), used identically in MetaConnectionService.java:106) but at line 112 calls the 3-arg getMedia(igBusinessAccountId, accessToken.get(), RECENT_MEDIA_LIMIT) overload, never reading token.getAuthPath(). Any brand connected via INSTAGRAM_LOGIN (no linked Facebook Page) will have this call routed to graph.facebook.com and fail with Meta error 190 'Cannot parse access token' \u2014 the exact symptom PortfolioService's own comment describes for its pre-fix state.",
+      "impact": "TrendSpark's brand-own-content feature (BrandOwnContentService) is unusable for any brand onboarded via INSTAGRAM_LOGIN; only FACEBOOK_LOGIN-connected brands see their own content sync succeed.",
+      "recommended_fix": "Change BrandOwnContentService.java:112 to call instagramInsightsClient.getMedia(igBusinessAccountId, accessToken.get(), RECENT_MEDIA_LIMIT, token.getAuthPath()).",
+      "verification_required": "Runtime call against an INSTAGRAM_LOGIN-connected brand token, or a unit test mocking InstagramInsightsClient and asserting the 4-arg overload is invoked with the token's real authPath."
+    },
+    {
+      "id": "MSA-02",
+      "severity": "P2",
+      "title": "Three scheduled jobs touching payment/financial-compliance data paths have zero test coverage",
+      "location": "influora-api/src/main/java/com/influora/job/IdempotencyReservationReaperJob.java; influora-api/src/main/java/com/influora/job/CreatorThemeTaggingJob.java; influora-api/src/main/java/com/influora/service/CampaignServiceInvoiceService.java:374 (retryFailedInvoiceFailures)",
+      "evidence_score": 3,
+      "confidence": 70,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "grep -rl across influora-api/src/test/java for each class/method name returns zero hits for all three. Confirmed via `mvn -o surefire:test` against every job test class in src/test/java/com/influora/job (215/215 pass) plus EmailWorkerTest/PayoutReconciliationServiceTest/DeliverableVerificationServiceTest (42/42 pass) \u2014 none of these three units appears in any passing (or failing) suite because none exists. IdempotencyReservationReaperJob reclaims stuck idempotency-key reservations (a double-charge guard); CampaignServiceInvoiceService.retryFailedInvoiceFailures is the automated recovery path for GST Doc#2 invoices that failed to generate at escrow release (a documented compliance gap, F-0390 D1).",
+      "impact": "Both jobs are wired, compiled, cron-scheduled and @SchedulerLock-protected (infra is sound) but their actual per-row logic has never been exercised by any test \u2014 a regression in either would not be caught by `mvn test` today.",
+      "recommended_fix": "Add a dedicated *JobTest for IdempotencyReservationReaperJob and CreatorThemeTaggingJob, and a CampaignServiceInvoiceServiceTest covering retryFailedInvoiceFailures's PDF_RENDER and invoice-create retry branches.",
+      "verification_required": "New unit tests plus a review of whether the missing tests reflect an intentional scope cut or an oversight."
+    },
+    {
+      "id": "MSA-03",
+      "severity": "P3",
+      "title": "SchedulerLockConfig javadoc cites the wrong migration number for the shedlock table",
+      "location": "influora-api/src/main/java/com/influora/config/SchedulerLockConfig.java (javadoc says 'V66 migration'); actual file is influora-api/src/main/resources/db/migration/V68__shedlock.sql",
+      "evidence_score": 2,
+      "confidence": 90,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "Direct file listing: only V68__shedlock.sql exists under db/migration; SchedulerLockConfig.java's class javadoc says 'the shedlock table, V66 migration'.",
+      "impact": "Cosmetic only (comments are not proof and do not affect runtime), but will mislead the next engineer who greps for V66.",
+      "recommended_fix": "Update the javadoc to say V68.",
+      "verification_required": "None \u2014 trivial text fix."
+    }
+  ],
+  "features": [
+    {
+      "category": "entity",
+      "name": "AbuseThrottleCounter",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(3)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AdminAuditLog",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> FE(1) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 1,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AdminEmailCampaign",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AdminEmailSendLock",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(2)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AdminRefreshToken",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> ZERO test coverage found",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 0
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AdminUser",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(7) -> controller(3) -> FE(5) -> tests(16)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 7,
+        "controllerRefs": 3,
+        "feRefs": 5,
+        "testRefs": 16
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AffiliateEarning",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(2) -> no controller (internal-only?) -> FE(6) -> tests(5)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 0,
+        "feRefs": 6,
+        "testRefs": 5
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AffiliateSettlementBatch",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(3)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AiConversation",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(2) -> controller(3) -> no FE reference found (grep on class name) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 3,
+        "feRefs": 0,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AiMessage",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(2) -> controller(2) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 2,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "ApplicationHistoryEvent",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(4) -> controller(1) -> FE(5) -> tests(8)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 4,
+        "controllerRefs": 1,
+        "feRefs": 5,
+        "testRefs": 8
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AudienceDemographics",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(1) -> controller(2) -> FE(10) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 2,
+        "feRefs": 10,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "AuditLogEntry",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 1,
+      "confidence": 35,
+      "wiring": "entity -> repository -> service(2) -> controller(1) -> FE(6) -> ZERO test coverage found",
+      "note": "Repository/service/controller chain present in source, but zero test files reference this entity anywhere in influora-api/src/test \u2014 no test or runtime evidence of correctness.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 1,
+        "feRefs": 6,
+        "testRefs": 0
+      }
+    },
+    {
+      "category": "entity",
+      "name": "BrandAiCredit",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(5) -> controller(1) -> no FE reference found (grep on class name) -> tests(10)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 5,
+        "controllerRefs": 1,
+        "feRefs": 0,
+        "testRefs": 10
+      }
+    },
+    {
+      "category": "entity",
+      "name": "BrandProfile",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(13) -> controller(3) -> FE(20) -> tests(7)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 13,
+        "controllerRefs": 3,
+        "feRefs": 20,
+        "testRefs": 7
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Campaign",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(49) -> controller(11) -> FE(177) -> tests(46)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 49,
+        "controllerRefs": 11,
+        "feRefs": 177,
+        "testRefs": 46
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CampaignIntent",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(3) -> controller(1) -> FE(1) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 3,
+        "controllerRefs": 1,
+        "feRefs": 1,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CampaignServiceInvoice",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 1,
+      "confidence": 35,
+      "wiring": "entity -> repository -> service(2) -> controller(2) -> FE(5) -> ZERO test coverage found",
+      "note": "Repository/service/controller chain present in source, but zero test files reference this entity anywhere in influora-api/src/test \u2014 no test or runtime evidence of correctness.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 2,
+        "feRefs": 5,
+        "testRefs": 0
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CampaignTemplate",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(4) -> no controller (internal-only?) -> FE(3) -> tests(4)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 4,
+        "controllerRefs": 0,
+        "feRefs": 3,
+        "testRefs": 4
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Collaboration",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(34) -> controller(8) -> FE(54) -> tests(47)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 34,
+        "controllerRefs": 8,
+        "feRefs": 54,
+        "testRefs": 47
+      }
+    },
+    {
+      "category": "entity",
+      "name": "ContentFlag",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(3) -> controller(2) -> FE(8) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 3,
+        "controllerRefs": 2,
+        "feRefs": 8,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Contract",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(14) -> controller(3) -> FE(105) -> tests(13)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 14,
+        "controllerRefs": 3,
+        "feRefs": 105,
+        "testRefs": 13
+      }
+    },
+    {
+      "category": "entity",
+      "name": "ConversionWebhookSecret",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(1) -> controller(1) -> FE(3) -> tests(1)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 1,
+        "feRefs": 3,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CouponCode",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(7) -> controller(2) -> FE(7) -> tests(9)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 7,
+        "controllerRefs": 2,
+        "feRefs": 7,
+        "testRefs": 9
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CouponRedemption",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(5) -> controller(3) -> FE(1) -> tests(8)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 5,
+        "controllerRefs": 3,
+        "feRefs": 1,
+        "testRefs": 8
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CreatorAgentPreferences",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(3) -> controller(2) -> FE(6) -> tests(4)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 3,
+        "controllerRefs": 2,
+        "feRefs": 6,
+        "testRefs": 4
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CreatorBankAccount",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(5) -> controller(2) -> FE(2) -> tests(4)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 5,
+        "controllerRefs": 2,
+        "feRefs": 2,
+        "testRefs": 4
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CreatorCaptionCache",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CreatorConnectionRequest",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(4) -> no controller (internal-only?) -> FE(3) -> tests(7)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 4,
+        "controllerRefs": 0,
+        "feRefs": 3,
+        "testRefs": 7
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CreatorMetric",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(9) -> controller(2) -> FE(24) -> tests(13)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 9,
+        "controllerRefs": 2,
+        "feRefs": 24,
+        "testRefs": 13
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CreatorNudgeLog",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(2)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CreatorProfile",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(46) -> controller(11) -> FE(48) -> tests(46)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 46,
+        "controllerRefs": 11,
+        "feRefs": 48,
+        "testRefs": 46
+      }
+    },
+    {
+      "category": "entity",
+      "name": "CreatorScore",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(6) -> controller(2) -> FE(19) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 6,
+        "controllerRefs": 2,
+        "feRefs": 19,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "DealMessage",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(6) -> controller(3) -> FE(16) -> tests(6)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 6,
+        "controllerRefs": 3,
+        "feRefs": 16,
+        "testRefs": 6
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Deliverable",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(15) -> controller(2) -> FE(88) -> tests(17)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 15,
+        "controllerRefs": 2,
+        "feRefs": 88,
+        "testRefs": 17
+      }
+    },
+    {
+      "category": "entity",
+      "name": "DeliverableMetric",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(6) -> controller(2) -> FE(5) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 6,
+        "controllerRefs": 2,
+        "feRefs": 5,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Dispute",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(5) -> controller(4) -> FE(43) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 5,
+        "controllerRefs": 4,
+        "feRefs": 43,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "EmailOtpChallenge",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(2)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "EmailOutbox",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(10) -> controller(1) -> no FE reference found (grep on class name) -> tests(6)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 10,
+        "controllerRefs": 1,
+        "feRefs": 0,
+        "testRefs": 6
+      }
+    },
+    {
+      "category": "entity",
+      "name": "EmailPreference",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(1) -> controller(1) -> FE(1) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 1,
+        "feRefs": 1,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "ErrorLog",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(2) -> no controller (internal-only?) -> FE(10) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 0,
+        "feRefs": 10,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "EscrowHold",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(16) -> controller(5) -> FE(3) -> tests(15)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 16,
+        "controllerRefs": 5,
+        "feRefs": 3,
+        "testRefs": 15
+      }
+    },
+    {
+      "category": "entity",
+      "name": "ExternalCreator",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(6) -> controller(1) -> FE(6) -> tests(10)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 6,
+        "controllerRefs": 1,
+        "feRefs": 6,
+        "testRefs": 10
+      }
+    },
+    {
+      "category": "entity",
+      "name": "FeaturedCreator",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> FE(2) -> tests(2)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 2,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "FestivalCouponCopy",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> FE(2) -> tests(3)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 2,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "FestivalEnquiry",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(3) -> controller(1) -> FE(5) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 3,
+        "controllerRefs": 1,
+        "feRefs": 5,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "FileUpload",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "HsnSacCode",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(2)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "IdempotencyKeyRecord",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(2) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(5)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 5
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Invoice",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(8) -> controller(2) -> FE(18) -> tests(2)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 8,
+        "controllerRefs": 2,
+        "feRefs": 18,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "InvoiceNumberSequence",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> ZERO test coverage found",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 0
+      }
+    },
+    {
+      "category": "entity",
+      "name": "MediaMetric",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(6) -> controller(2) -> FE(2) -> tests(9)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 6,
+        "controllerRefs": 2,
+        "feRefs": 2,
+        "testRefs": 9
+      }
+    },
+    {
+      "category": "entity",
+      "name": "MeeraCreatorConversation",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(2)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "MeeraInteractionLog",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(1) -> controller(1) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 1,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "MeeraToolCall",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(3) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(2)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 3,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "MetaOAuthToken",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(7) -> no controller (internal-only?) -> FE(2) -> tests(17)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 7,
+        "controllerRefs": 0,
+        "feRefs": 2,
+        "testRefs": 17
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Notification",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(1) -> controller(2) -> FE(20) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 2,
+        "feRefs": 20,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "NudgeLog",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(2)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "PasswordResetToken",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(2) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(3)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "PaymentMilestone",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(10) -> controller(1) -> FE(3) -> tests(14)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 10,
+        "controllerRefs": 1,
+        "feRefs": 3,
+        "testRefs": 14
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Payout",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(4) -> controller(2) -> FE(52) -> tests(6)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 4,
+        "controllerRefs": 2,
+        "feRefs": 52,
+        "testRefs": 6
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Plan",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(11) -> controller(3) -> FE(16) -> tests(21)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 11,
+        "controllerRefs": 3,
+        "feRefs": 16,
+        "testRefs": 21
+      }
+    },
+    {
+      "category": "entity",
+      "name": "PlatformCommissionInvoice",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 1,
+      "confidence": 35,
+      "wiring": "entity -> repository -> service(3) -> controller(3) -> FE(5) -> ZERO test coverage found",
+      "note": "Repository/service/controller chain present in source, but zero test files reference this entity anywhere in influora-api/src/test \u2014 no test or runtime evidence of correctness.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 3,
+        "controllerRefs": 3,
+        "feRefs": 5,
+        "testRefs": 0
+      }
+    },
+    {
+      "category": "entity",
+      "name": "PlatformFeeConfig",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(4) -> controller(2) -> FE(4) -> tests(2)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 4,
+        "controllerRefs": 2,
+        "feRefs": 4,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "PlatformStat",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(11) -> controller(1) -> FE(14) -> tests(8)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 11,
+        "controllerRefs": 1,
+        "feRefs": 14,
+        "testRefs": 8
+      }
+    },
+    {
+      "category": "entity",
+      "name": "PortfolioEvent",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "RefreshToken",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Review",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(6) -> controller(3) -> FE(80) -> tests(2)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 6,
+        "controllerRefs": 3,
+        "feRefs": 80,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "SavedCreator",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> FE(1) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 1,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Shipment",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(2) -> controller(2) -> FE(5) -> tests(1)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 2,
+        "feRefs": 5,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "ShopifyIntegration",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(1) -> controller(3) -> no FE reference found (grep on class name) -> tests(4)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 3,
+        "feRefs": 0,
+        "testRefs": 4
+      }
+    },
+    {
+      "category": "entity",
+      "name": "SnapsbyCatalogVideo",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(2) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> ZERO test coverage found",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 0
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Subscription",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(7) -> controller(3) -> FE(10) -> tests(14)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 7,
+        "controllerRefs": 3,
+        "feRefs": 10,
+        "testRefs": 14
+      }
+    },
+    {
+      "category": "entity",
+      "name": "SupportTicket",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(4) -> controller(2) -> FE(5) -> tests(2)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 4,
+        "controllerRefs": 2,
+        "feRefs": 5,
+        "testRefs": 2
+      }
+    },
+    {
+      "category": "entity",
+      "name": "SupportTicketMessage",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(2) -> controller(1) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 1,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Trend",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(7) -> controller(1) -> FE(42) -> tests(4)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 7,
+        "controllerRefs": 1,
+        "feRefs": 42,
+        "testRefs": 4
+      }
+    },
+    {
+      "category": "entity",
+      "name": "UsageCounter",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "UsageCounterDetail",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(1) -> no controller (internal-only?) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 0,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "User",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(27) -> controller(6) -> FE(122) -> tests(30)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 27,
+        "controllerRefs": 6,
+        "feRefs": 122,
+        "testRefs": 30
+      }
+    },
+    {
+      "category": "entity",
+      "name": "UtmCampaign",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(8) -> controller(5) -> FE(1) -> tests(7)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 8,
+        "controllerRefs": 5,
+        "feRefs": 1,
+        "testRefs": 7
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Wallet",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(16) -> controller(3) -> FE(56) -> tests(16)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 16,
+        "controllerRefs": 3,
+        "feRefs": 56,
+        "testRefs": 16
+      }
+    },
+    {
+      "category": "entity",
+      "name": "WalletTopUp",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(2) -> controller(1) -> FE(4) -> tests(1)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 2,
+        "controllerRefs": 1,
+        "feRefs": 4,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "entity",
+      "name": "WalletTransaction",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 45,
+      "wiring": "entity -> repository -> service(5) -> no controller (internal-only?) -> FE(4) -> tests(6)",
+      "note": "No REST controller references this entity directly \u2014 likely internal/job/admin-only usage (not confirmed as intentional for every row).",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 5,
+        "controllerRefs": 0,
+        "feRefs": 4,
+        "testRefs": 6
+      }
+    },
+    {
+      "category": "entity",
+      "name": "WooCommerceIntegration",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(1) -> controller(3) -> no FE reference found (grep on class name) -> tests(3)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 3,
+        "feRefs": 0,
+        "testRefs": 3
+      }
+    },
+    {
+      "category": "entity",
+      "name": "Workspace",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(62) -> controller(21) -> FE(59) -> tests(71)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 62,
+        "controllerRefs": 21,
+        "feRefs": 59,
+        "testRefs": 71
+      }
+    },
+    {
+      "category": "entity",
+      "name": "WorkspaceMember",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(13) -> controller(2) -> FE(4) -> tests(26)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 13,
+        "controllerRefs": 2,
+        "feRefs": 4,
+        "testRefs": 26
+      }
+    },
+    {
+      "category": "entity",
+      "name": "WorkspaceMemberInvite",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "wiring": "entity -> repository -> service(1) -> controller(1) -> no FE reference found (grep on class name) -> tests(1)",
+      "note": "Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request->DB->response path, so this is code-reading evidence, not runtime/E2E proof.",
+      "raw": {
+        "repo": true,
+        "serviceRefs": 1,
+        "controllerRefs": 1,
+        "feRefs": 0,
+        "testRefs": 1
+      }
+    },
+    {
+      "category": "scheduled_job",
+      "name": "AffiliateEarningReconciliationJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 82,
+      "wiring": "cron: 0 15 * * * *",
+      "note": "Hourly. @SchedulerLock present. AffiliateEarningReconciliationJobTest: 5/5 pass (mvn surefire, this session).",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "AffiliateSettlementJob (+AffiliateSettlementWriter)",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 82,
+      "wiring": "cron: 0 0 5 1 * *",
+      "note": "Monthly settlement, writes via a separate @Component (AffiliateSettlementWriter) per its own javadoc'd W1-7 fix. AffiliateSettlementJobTest 9/9, AffiliateSettlementWriterNullCollaboratorLogTest 2/2, CreatorAffiliateEarningSettlementTest 3/3 all pass (14/14 total, this session).",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "AICreditResetJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "wiring": "cron: 0 0 2 1 * ? (UTC)",
+      "note": "Monthly AI-credit reset. AICreditResetJobTest 7/7 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "AudienceDemographicsJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "wiring": "cron: 0 30 3 * * SUN",
+      "note": "Weekly. Delegates to InstagramInsightsClient#getAudienceDemographics. AudienceDemographicsJobTest 13/13 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "CreatorCaptionSyncJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 78,
+      "wiring": "cron: ${...caption-sync-cron:0 0 2 * * *} UTC",
+      "note": "Nightly caption cache sync feeding CreatorThemeTaggingJob. CreatorCaptionSyncJobTest 13/13 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "CreatorConnectNudgeJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 78,
+      "wiring": "cron: ${...cron:0 30 9 * * *} Asia/Kolkata",
+      "note": "CreatorConnectNudgeJobTest 9/9 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "CreatorThemeTaggingJob",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 42,
+      "wiring": "cron: ${...theme-tag-batch-cron:0 0 3 * * *} UTC",
+      "note": "Compiles, scheduled, @SchedulerLock present, but NO dedicated test file exists (src/test has none). It is only ever mentioned inside javadoc comments of CreatorCopilotConfigWiringTest and CreatorCaptionSyncJobTest \u2014 those comments describe it, they do not instantiate or invoke it. Zero direct or transitive test execution found.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "DeliverableCleanupJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "wiring": "cron: 0 0 2 * * * + 0 30 2 * * * (2 sweeps)",
+      "note": "Two @Scheduled methods (cleanupSupersededRevisions, cleanupAbandonedDrafts), each with its own @SchedulerLock. DeliverableCleanupJobTest 11/11 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "DeliverableVerificationJob",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 58,
+      "wiring": "cron: 0 30 */6 * * *",
+      "note": "Job class itself has no dedicated test file, but it is a thin wrapper delegating to DeliverableVerificationService.verify(), which IS covered: DeliverableVerificationServiceTest 16/16 pass (run this session). The job's own overlap-guard/pagination/tally logic (runVerificationSweep/sweep) is untested in isolation.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "IdempotencyReservationReaperJob",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 1,
+      "confidence": 32,
+      "wiring": "cron: 0 */10 * * * *",
+      "note": "Reclaims stuck payment-idempotency reservations (a financial-safety mechanism per the idempotency-key architecture). Compiles, scheduled, @SchedulerLock present. Zero references anywhere in influora-api/src/test (verified by grep across the whole test tree) \u2014 no test exercises this class at all.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "MeeraInteractionLogRetentionPurgeJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 76,
+      "wiring": "cron: 0 0 3 * * *",
+      "note": "MeeraInteractionLogRetentionPurgeJobTest 4/4 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "MetaTokenRefreshService",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "wiring": "cron: 0 30 2 * * *",
+      "note": "MetaTokenRefreshServiceTest 13/13 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "MetricsPollingJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 84,
+      "wiring": "cron: 0 0 */6 * * * (UTC)",
+      "note": "Largest job test suite in the app: MetricsPollingJobTest 37/37 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "PayoutOrphanedDebitSweepJob",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 56,
+      "wiring": "cron: 0 */10 * * * *",
+      "note": "No dedicated test file for the job itself, but it delegates entirely to PayoutReconciliationService (PayoutReconciliationServiceTest 18/18 pass, run this session) and PayoutServiceTest references the exact orphaned-debit state it sweeps. Job-level scheduling/guard logic untested in isolation.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "PlatformStatsAggregationJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 78,
+      "wiring": "cron: 0 45 3 * * *",
+      "note": "PlatformStatsAggregationJobTest 13/13 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "ScoreCalculationJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 76,
+      "wiring": "cron: 0 0 4 * * * (UTC)",
+      "note": "ScoreCalculationJobTest 7/7 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "StaleTokenCleanupJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 76,
+      "wiring": "cron: 0 0 4 * * *",
+      "note": "StaleTokenCleanupJobTest 5/5 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "SubscriptionDunningJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 74,
+      "wiring": "cron: 0 0 3 * * * (UTC)",
+      "note": "SubscriptionDunningJobTest 4/4 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "SubscriptionRenewalResetJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 82,
+      "wiring": "cron: 0 30 3 * * * (UTC)",
+      "note": "SubscriptionRenewalResetJobTest 28/28 + SubscriptionRenewalResetJobEmailDeliveryTest 4/4 = 32/32 pass, the second-largest suite in the app.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "TrendPullJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 78,
+      "wiring": "cron: ${...pull-cron:0 0 5 * * *} UTC",
+      "note": "TrendPullJobTest 20/20 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "WalletTopUpReconciliationJob",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 78,
+      "wiring": "cron: 0 35 * * * *",
+      "note": "WalletTopUpReconciliationJobTest 8/8 pass.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "CampaignServiceInvoiceService.retryFailedInvoiceFailures",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 1,
+      "confidence": 30,
+      "wiring": "cron: fixedDelay 300000ms (5 min)",
+      "note": "[F-0390 D1] Scheduled retry for GST Doc#2 invoice failures (escrow_invoice_failures table) \u2014 the automated recovery half of the previously-known 'invoice can silently go missing at release' gap. @SchedulerLock present, compiles. Zero references to retryFailedInvoiceFailures anywhere in src/test (verified by grep) \u2014 the retry path that is supposed to close this financial-compliance gap has no test proving it actually retries/clears a failure row.",
+      "raw": {}
+    },
+    {
+      "category": "scheduled_job",
+      "name": "EmailWorker.processOutbox",
+      "status": "WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "wiring": "cron: fixedDelay 30000ms (30s)",
+      "note": "Outbox email dispatch (OTP, password reset, admin notifications). EmailWorkerTest 8/8 pass (run this session), test explicitly exercises processOutbox() including the auth.otp/auth.password_reset prioritization path.",
+      "raw": {}
+    }
+  ],
+  "methodology_notes": [
+    "RC audited: commit 115f698, clean checkout at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698 (git status clean, verified).",
+    "graphify-out/graph.json does NOT exist in the RC (only graphify-out/cache/ is present) \u2014 graphify query/path/explain were unavailable; this audit fell back to direct source reading, grep and `mvn` as instructed by the fallback rule in CLAUDE.md.",
+    "`mvn -o compile` and `mvn -o test-compile` both succeeded (BUILD SUCCESS, offline, from Maven-local cache) on the RC \u2014 the shedlock-spring/shedlock-provider-jdbc-template coordinates DO resolve and compile, superseding the 'UNVERIFIED \u2014 needs mvn verify' note in SchedulerLockConfig.java's own javadoc.",
+    "All 23 scheduled/background job units were checked for @SchedulerLock: 100% have it (verified by grep across job/ and service/), giving real distributed-locking coverage against the shedlock table (V68__shedlock.sql, schema matches the library's required column shape).",
+    "18 of 23 scheduled jobs have a dedicated *JobTest (or equivalent) that was actually executed in this session via `mvn -o surefire:test`: 215 job-package tests + 42 supporting-service tests, 257 total, 0 failures, 0 errors. These are scored WORKING at evidence 4 / confidence ~75-85.",
+    "The 88-entity table is built primarily from static cross-referencing (repository/service/controller/frontend/test file presence via grep) inside the RC, corrected for known naming/subpackage false negatives that were manually spot-checked (see raw counts per row). Because this audit did not execute a full application, hit live endpoints, or trace every entity's actual request path end-to-end, essentially every entity row is capped at IMPLEMENTED BUT NOT VERIFIED (or lower) per the audit's own evidence rules \u2014 code presence, even with a same-named test file, is not proof the wiring works at runtime.",
+    "Percentages below are computed straight from these 111 rows and are only as strong as each row's own evidence score/confidence shown in the table \u2014 treat the 'WORKING' share as a floor set almost entirely by the job subsystem's real test runs, and the 'not verified' share as the honest default for code that compiles and looks wired but was not executed in this audit."
+  ]
+}

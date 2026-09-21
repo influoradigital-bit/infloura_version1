@@ -1,0 +1,19 @@
+{
+  "verdict": "believed",
+  "oracle": "vitest",
+  "isolation": "fresh-context",
+  "done_when": "When a live Meera turn returns CREDITS_EXHAUSTED, the paywall's CTA navigates the brand to /brand/settings/billing (the only path that restores credits: SubscriptionService applies the plan allotment on upgrade) instead of calling onFunctionCall('request_payment'); its copy no longer claims funding a campaign unlocks Meera (applyEscrowFundedReset has no caller) and names no fixed reset date; proved by `npx vitest run src/components/feature/meera` exiting 0 including a test that clicks the CTA and asserts the navigation and that onFunctionCall was NOT called, and reviewed by kavya in a fresh context",
+  "evidence": {
+    "oracle": "vitest",
+    "command": "npx vitest run src/components/feature/meera --exclude **/.lanedv/**",
+    "result": "Test Files 5 passed, Tests 31 passed",
+    "where": "src/components/feature/meera/__tests__/MeeraChatPanel.credit-paywall.test.tsx:1"
+  },
+  "not_checked": [
+    "done_when clause 'applyEscrowFundedReset has no caller' is FALSE: ConfirmLaunchExecutor.java:386 calls it (Meera confirm_launch, never offered to the model); the fix is unaffected, the claim was corrected in comments",
+    "live browser run against a real 402 from the Spring API",
+    "whether F-0848 later routes the credit reset through CampaignActivationGuard (copy stays true either way)",
+    "the Pro-cancel/halt refill behaviour (other lane, F-0893)"
+  ],
+  "skipped": []
+}

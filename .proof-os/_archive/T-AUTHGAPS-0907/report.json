@@ -1,0 +1,64 @@
+{
+  "rows": [
+    {
+      "subject": "influora-api/src/main/java/com/influora/service/AuthService.java changePassword guard",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": ".proof-os/gates/password-rotation-account-state.sh",
+        "result": "PROVED, gate exit 0; with the guard removed the same gate exits 1",
+        "where": "influora-api/src/main/java/com/influora/service/AuthService.java:776"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/java/com/influora/service/AuthService.java deletedAt refusal",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": ".proof-os/gates/forgot-password-reset-verifies.sh",
+        "result": "PROVED, gate exit 0; removing the check, and separately diverging the message, each drive the gate nonzero",
+        "where": "influora-api/src/main/java/com/influora/service/AuthService.java:663"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/java/com/influora/web/AccountController.java purge call site",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "mvn -o test -Dtest=AccountControllerTest (cwd influora-api)",
+        "result": "2 tests green; with the call site removed the same run exits 1",
+        "where": "influora-api/src/main/java/com/influora/web/AccountController.java:95"
+      }
+    },
+    {
+      "subject": "influora-api/src/main/java/com/influora/repository/PasswordResetTokenRepository.java deleteByUserId",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "mvn -o test -Dtest=PasswordResetTokenRepositoryDeleteByUserIdTest (cwd influora-api)",
+        "result": "3 tests green on real Hibernate + H2; DELETE statements observed in the SQL log",
+        "where": "influora-api/src/test/java/com/influora/repository/PasswordResetTokenRepositoryDeleteByUserIdTest.java:72"
+      }
+    },
+    {
+      "subject": "BrandContextService omits the deletedAt check that AccountController claimed it had",
+      "owner": "kabir",
+      "status": "broken",
+      "isolation": "fresh-context",
+      "evidence": {
+        "oracle": "grep",
+        "command": "grep -n deletedAt BrandContextService.java (zero hits) vs CreatorContextService.java:40",
+        "result": "confirmed absent by grep; the comment asserting otherwise is corrected, the gap itself is tracked separately",
+        "where": "influora-api/src/main/java/com/influora/service/BrandContextService.java:36"
+      }
+    }
+  ]
+}

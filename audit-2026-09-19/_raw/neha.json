@@ -1,0 +1,247 @@
+{
+  "role": "Neha — E2E / Live UI Tester",
+  "audit_scope": {
+    "release_candidate_commit": "115f698b9df0ca2735e9cb2f2c5fe656daf07b66",
+    "release_candidate_path": "C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+    "live_site_tested": "https://influora.in",
+    "date": "2026-09-19",
+    "note_graphify": "graphify-out/graph.json does NOT exist in the RC checkout (only in the main working tree per repo CLAUDE.md), so graphify query/path/explain were unavailable for the RC; oriented via direct Grep/Read against the RC instead."
+  },
+  "summary": "Live production site (influora.in) renders correctly on desktop and mobile for all public pages tested (home, pricing, 7 legal policy pages, creator/brand login and register) with no functional console errors — only a pre-existing, externally-managed GTM duplicate Meta Pixel warning. Two concrete defects were verified by direct browser reproduction: (1) any URL that is not a registered route and does not start with '@' falls through to the public creator-portfolio catch-all and renders a broken 'The handle @ doesn't seem to belong to anyone on Influora' message (empty handle interpolation) while returning HTTP 200 (soft-404), which is exactly the SEO/crawl-budget problem a recent commit (T-SEOCRO-0819) fixed for 6 named routes but left open for the general case. (2) The e2e/ Playwright specs cannot be run at all: @playwright/test is not declared anywhere in package.json despite playwright.config.ts and both spec files importing it, so `npx playwright test` fails immediately with MODULE_NOT_FOUND; no GitHub Actions workflow references playwright either, meaning this suite has apparently never been executed in CI. Additionally, the live bundle's asset hashes (index-CuJLpqhw.js / index-DbzFIpsJ.css, index.html Last-Modified 2026-09-18) do not match a same-day build produced from RC HEAD 115f698 (index-VeUi4oUB.js / index-CZmM-45R.css) — moderate-confidence evidence that the deployed frontend is running an older build than the release candidate, consistent with this repo's documented 'no commit matches the live hash' deploy-base problem. A homepage financial-claims check (payment-custody wording on /refund-policy) was reviewed against the standing 'no RBI PA/escrow licence' ruling and found compliant as worded (attributes custody to a third-party licensed Payment Aggregator, page marked noindex + pending-legal-review banner).",
+  "questions": [
+    {
+      "question": "What is the production domain and does the public marketing site actually render there?",
+      "why_it_matters": "The whole audit depends on testing the right live target.",
+      "answer": "https://influora.in (apex marketing site), app.influora.in (SPA), api.influora.in, ai.influora.in per deploy/utho/nginx-influora.conf and deploy/utho/nginx-influora-app.conf. influora.in renders the full homepage, pricing, legal, and auth pages correctly.",
+      "evidence": "index.html canonical tag; deploy/utho/nginx-influora.conf:19,59; live navigation + get_page_text on https://influora.in and /pricing",
+      "evidence_score": 4,
+      "confidence": 95,
+      "remaining_uncertainty": "None material."
+    },
+    {
+      "question": "Does the site return a real 404 (or an equivalent honest error) for a URL that matches nothing?",
+      "why_it_matters": "Soft-404s (HTTP 200 on broken URLs) waste crawl budget and confuse users; this exact failure mode was previously found and partially fixed in this repo (T-SEOCRO-0819).",
+      "answer": "No. GET https://influora.in/this-page-does-not-exist-xyz and GET https://influora.in/somerandomhandle123 both return HTTP 200 and render the creator-portfolio-not-found screen with a broken, empty handle: 'The handle @ doesn't seem to belong to anyone on Influora.'",
+      "evidence": "Live network log: both URLs → 200; live get_page_text showing the broken message; root cause at src/pages/creator-portfolio-public.tsx:156-157 (`const username = handle.startsWith('@') ? handle.slice(1) : ''` forces username='' for any non-@ path) and :278-281 (renders '@{username}'); catch-all registered at src/App.tsx:882 `<Route path=\"/:handle\" ...>`",
+      "evidence_score": 4,
+      "confidence": 88,
+      "remaining_uncertainty": "Whether the production nginx/CDN layer has any independent 404 handling in front of the SPA fallback that I could not observe from the browser (unlikely given the 200 status observed, but not 100% ruled out)."
+    },
+    {
+      "question": "Was the previously-documented favicon.ico 200-vs-404 bug (F-0709) actually fixed live?",
+      "why_it_matters": "The index.html comment says an absent favicon.ico used to get served as the SPA's index.html (text/html, 97kB) and broke Google's favicon rendering.",
+      "answer": "Yes — GET https://influora.in/favicon.ico returns a real 48x48 image (browser tab title read 'favicon.ico (48×48)'), not the SPA fallback HTML.",
+      "evidence": "Live navigate + tab-title observation for https://influora.in/favicon.ico",
+      "evidence_score": 4,
+      "confidence": 90,
+      "remaining_uncertainty": "Did not fetch byte-level content-type header directly (blocked by tooling), inferred from browser-reported image dimensions."
+    },
+    {
+      "question": "Can the e2e/ Playwright specs actually be run as the task requires, and if not, why?",
+      "why_it_matters": "Determines whether the 'smoke' coverage these files claim to provide (creator dashboard, login, journey) has ever actually been exercised.",
+      "answer": "No. `npx playwright test --reporter=line` from the RC root fails immediately: 'Error: Cannot find module @playwright/test', because @playwright/test is absent from package.json dependencies AND devDependencies even though playwright.config.ts:1 and both e2e/*.spec.ts files import it. Separately, no file under .github/workflows/*.yml references 'playwright' at all, so this suite is not wired into CI either.",
+      "evidence": "Command output: 'Error: Cannot find module \\'@playwright/test\\' ... at Object.<anonymous> (playwright.config.ts:1:1)'; grep of package.json dependencies/devDependencies for 'playwright' → no matches; grep of .github/workflows/*.yml for 'playwright' → no matches",
+      "evidence_score": 4,
+      "confidence": 92,
+      "remaining_uncertainty": "A CI runner outside .github/workflows (e.g. a manually-triggered pipeline elsewhere) could theoretically install @playwright/test ad hoc before running these specs, but no such config was found anywhere in the RC."
+    },
+    {
+      "question": "If @playwright/test were installed, would the two specs plausibly pass against the app in mock mode?",
+      "why_it_matters": "Distinguishes 'missing dependency' from 'tests are also broken'.",
+      "answer": "Cannot verify without installing the missing dependency, which is a repo-modifying action outside this audit's read-only scope. The specs themselves look internally consistent (they inject a mock sessionStorage token, force VITE_API_MODE=mock via playwright.config.ts webServer.env, and assert on selectors like 'Available balance' / 'Active deals' that do appear in the dashboard's actual copy per grep), but this is INFERRED, not run.",
+      "evidence": "e2e/creator-dashboard.smoke.spec.ts:1-47, e2e/creator-journey.spec.ts:1-48, playwright.config.ts:20-46",
+      "evidence_score": 2,
+      "confidence": 35,
+      "remaining_uncertainty": "Whether the selectors still match current component markup; whether the mock API layer they depend on actually serves the expected shapes; none of this was executed."
+    },
+    {
+      "question": "Does the deployed live bundle match a build of the release-candidate commit (115f698)?",
+      "why_it_matters": "If go-live sign-off is being given against 115f698 but production is serving something else, the audit's live-site findings may not reflect what will actually ship.",
+      "answer": "Asset hashes differ: live index.html (Last-Modified 2026-09-18, one day before the 115f698 commit at 2026-09-19 13:27) references /assets/index-CuJLpqhw.js and /assets/index-DbzFIpsJ.css; a same-day local build present in the RC checkout (dist/, gitignored/untracked, built 2026-09-19 14:25 — after the commit) produced /assets/index-VeUi4oUB.js and /assets/index-CZmM-45R.css. The hashes do not match, and 115f698 itself only touches backend Java (CreatorNudgeService), so this gap reflects earlier undeployed frontend commits, not this specific one.",
+      "evidence": "fetch() response headers for https://influora.in showing last-modified: Fri, 18 Sep 2026; live network log showing assets/index-CuJLpqhw.js and assets/index-DbzFIpsJ.css on every page load; `ls dist/assets` in the RC showing index-VeUi4oUB.js / index-CZmM-45R.css; `git show --stat 115f698` confirming it only touches influora-api Java files; `git status --short dist` empty + .gitignore:35 'dist/' confirming dist/ is untracked build output, not a committed artifact",
+      "evidence_score": 3,
+      "confidence": 55,
+      "remaining_uncertainty": "The RC's dist/ was not built by me from a verified-clean `npm ci`; its provenance is inferred from mtime (built after the commit, in a checkout the task states was clean) rather than directly re-built and hash-diffed by this session. Marking this moderate rather than high confidence; this matches the repo's own documented 'Frontend deploy base check' trap (project memory) where dirty-tree builds make hash-matching unreliable."
+    },
+    {
+      "question": "Are there console errors, CSP violations, or network failures on the public pages?",
+      "why_it_matters": "Directly requested by the audit task; catches broken third-party scripts, blocked resources, or client crashes real visitors would hit.",
+      "answer": "No JS errors and no failed (non-200) network requests were observed on home, pricing, /refund-policy, /disputes, creator/login, brand/login, or creator/register, at both desktop and 375px mobile width. The only recurring console line is a [warn]-level '[Meta Pixel] - Duplicate Pixel ID: 624599723914394', which fires on every page load. No CSP violation messages appeared, but that is because no Content-Security-Policy is served at all (see next question) — there is nothing to violate.",
+      "evidence": "read_console_messages across 8 live page loads (desktop + mobile); read_network_requests showing 200 for every request across the same navigations",
+      "evidence_score": 4,
+      "confidence": 85,
+      "remaining_uncertainty": "Only a sample of public pages was visited (home, pricing, 7 legal pages, 3 auth pages, /blog and /about were not opened); other public pages could have issues not sampled here."
+    },
+    {
+      "question": "Where does the duplicate Meta Pixel warning come from, and is it a new defect in this repo?",
+      "why_it_matters": "Distinguishes an app-code bug (fixable here) from an externally-managed tag-manager misconfiguration (out of this repo's control).",
+      "answer": "It is not app code in this repo. This repo only loads Google Tag Manager container GTM-K7LNG26G (index.html:140, public/site-tags.js:2,37); the duplicate Meta Pixel tag for the same pixel ID lives inside that externally-managed GTM container, matching an already-documented finding (project memory: 'GTM container contents' — GTM-K7LNG26G holds two Meta Pixel tags for one id).",
+      "evidence": "index.html:68,76,140; public/site-tags.js:2,37,47; live console warning reproduced on every page load matching the documented pixel id 624599723914394",
+      "evidence_score": 4,
+      "confidence": 90,
+      "remaining_uncertainty": "None — this simply reconfirms a previously known, externally-rooted issue; it is not new."
+    },
+    {
+      "question": "Is there a Content-Security-Policy on the live public site, and does anything in the RC configure one for it?",
+      "why_it_matters": "CSP is a baseline hardening control; its total absence is worth recording even though it produces no 'violations' to catch.",
+      "answer": "No CSP header and no CSP <meta> tag were found on the live influora.in response. A search of the RC for 'Content-Security-Policy' across *.html/*.conf/*.yml only matches influora-api/src/main/resources/application.yml (a backend/API concern), not the static frontend/nginx layer (deploy/utho/nginx-*.conf, deploy/hostinger/Caddyfile) which sets no CSP directives.",
+      "evidence": "fetch(location.href).headers dump on https://influora.in returning only content-encoding/content-type/date/etag/last-modified/server (no CSP); grep for Content-Security-Policy across the RC's html/conf/yml files",
+      "evidence_score": 3,
+      "confidence": 70,
+      "remaining_uncertainty": "CSP could be added at a CDN/WAF layer in front of nginx that is not visible in this repo; from the browser's perspective, none was observed."
+    },
+    {
+      "question": "Does the /refund-policy live copy about who holds campaign funds violate the standing 'no RBI PA/escrow licence, never claim a regulator or licensed PA holds brand funds' ruling (project memory F-0851)?",
+      "why_it_matters": "A false regulatory/custody claim on a live financial product page would be a serious compliance exposure.",
+      "answer": "As worded, no. The live page states funds are held 'through a licensed, RBI-authorized Payment Aggregator' and explicitly says 'the money does not go to Influora' — attributing the licence to the third-party PA (Razorpay), not to Influora itself, which is consistent with the ruling. The page is also visibly marked 'PENDING LEGAL REVIEW — V0 DRAFT... NOT LEGALLY BINDING. Ships noindex until validated', and the homepage trust-strip wording 'Payments held by a licensed gateway' (src/components/site/trust-items.ts:17) is similarly about the gateway, not Influora.",
+      "evidence": "Live get_page_text of https://influora.in/refund-policy; src/components/site/TrustBar.tsx:18-24 (javadoc explicitly says this claim is a mechanism the product implements, not a marketing invention); src/components/site/trust-items.ts:17",
+      "evidence_score": 2,
+      "confidence": 60,
+      "remaining_uncertainty": "This is a UI-copy read, not a legal compliance review — whether the underlying Razorpay Route implementation actually moves funds the way the copy describes (bypassing Influora's own account) was not independently verified in the payments backend and is outside this tester's normal scope; project memory notes Razorpay Route was still incomplete (per-payment transfers + creator KYC linked accounts) as of 2026-07-27, which is a live-payments-flow question for Kabir/Priya, not a UI finding."
+    },
+    {
+      "question": "Do the mobile (375px) layouts of the pages tested hold up, or is anything visibly broken?",
+      "why_it_matters": "Directly requested by the audit task; India traffic to this site is mobile-heavy.",
+      "answer": "On repeated clean loads, home and pricing render correctly at 375px with no overlap, clipping, or overflow. One single screenshot, taken immediately after programmatically resizing the viewport and navigating in the same turn, showed the hero heading's words stuck partway through their Framer Motion reveal animation (a large blank gap where 'and creators sign real deals' should have been). A second, clean reload at the same 375px width rendered the full heading correctly, so this did not reproduce on retry and is not being reported as a confirmed defect — only as a low-confidence signal that WordReveal's `viewport={{ once: true }}` IntersectionObserver-based reveal (src/components/motion/WordReveal.tsx) could be fragile to a resize-during-load race, which a real user rotating a device mid-load could conceivably hit.",
+      "evidence": "Two mobile screenshots of https://influora.in/ (one showing the stuck-animation gap immediately post-resize, one showing correct rendering on a clean reload); src/components/motion/WordReveal.tsx:15-58; src/lib/motion-config.ts:13-16 (VIEWPORT_ONCE = { once: true, margin: '-80px' })",
+      "evidence_score": 1,
+      "confidence": 25,
+      "remaining_uncertainty": "Did not reproduce deterministically; could be an artifact of the browser-automation tool's own resize/navigate sequencing rather than a real end-user path. Not escalated as a finding."
+    },
+    {
+      "question": "Do the login and signup pages render usable forms without hitting live auth (per the audit's no-submission constraint)?",
+      "why_it_matters": "Confirms the public-facing entry points to the product are not broken, without performing the prohibited action of actually submitting them.",
+      "answer": "Yes. /creator/login, /brand/login, and /creator/register all rendered their expected headings, form fields (email/password, name/email/mobile/password/confirm for register), and cross-links ('Create an account', 'Are you a brand?') with no console errors. No form was submitted and no credentials were entered, per the audit's safety constraints.",
+      "evidence": "get_page_text + read_console_messages for all three URLs",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "Only rendering was checked; actual submission/auth behavior was intentionally not tested."
+    }
+  ],
+  "findings": [
+    {
+      "id": "NEH-01",
+      "title": "Any unmatched URL soft-404s (HTTP 200) with a broken, empty '@' handle message",
+      "severity": "P2",
+      "evidence_score": 4,
+      "confidence": 85,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "Live: GET https://influora.in/this-page-does-not-exist-xyz and GET https://influora.in/somerandomhandle123 both return HTTP 200 (confirmed via read_network_requests) and render 'Page not found / The handle @ doesn't seem to belong to anyone on Influora.' with the handle rendered as a bare, empty '@'. Root cause in RC source: src/App.tsx:882 registers `<Route path=\"/:handle\" element={<CreatorPortfolioPublicPage />} />` as the final catch-all; src/pages/creator-portfolio-public.tsx:153-157 comments that a valid handle 'MUST start with \\'@\\'' and computes `const username = handle.startsWith('@') ? handle.slice(1) : ''` — for ANY path that isn't already registered elsewhere and doesn't start with '@', username is forced to the empty string, and the not-found copy at :278-281 renders `@{username}` i.e. a bare '@'.",
+      "location": "src/App.tsx:882; src/pages/creator-portfolio-public.tsx:153-157,278-281",
+      "impact": "Every mistyped URL, dead external backlink, or crawler probe on the whole site returns HTTP 200 with confusing, half-broken copy instead of a real 404 — the exact SEO soft-404/crawl-budget problem an adjacent commit (T-SEOCRO-0819, same file's history) explicitly fixed for 6 named legal routes, but the general catch-all still exhibits it for every other unknown path, and additionally shows broken '@' text to real users who land on a dead link.",
+      "recommended_fix": "Add a genuine catch-all 404 route (returning a real 'not found' UI, and ideally an actual HTTP 404 via the server config / prerender step) ahead of or instead of falling through to `/:handle` for paths that don't start with '@'; keep `/:handle` scoped to paths starting with '@' only.",
+      "verification_required": "Re-run the same two navigations after a fix and confirm (a) a real 404 status where feasible, or at minimum (b) copy that does not reference a literal handle for non-handle paths."
+    },
+    {
+      "id": "NEH-02",
+      "title": "e2e/ Playwright specs cannot run: @playwright/test is not a declared dependency, and no CI workflow runs them",
+      "severity": "P2",
+      "evidence_score": 4,
+      "confidence": 92,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "`npx playwright test --reporter=line` from the RC root failed immediately: 'Error: Cannot find module \\'@playwright/test\\' ... Require stack: ...\\\\playwright.config.ts ... code: MODULE_NOT_FOUND'. `grep playwright package.json` → no matches in dependencies or devDependencies. `grep -rn playwright .github/workflows/*.yml` → no matches across any of the 10 workflow files.",
+      "location": "package.json (missing @playwright/test dependency); playwright.config.ts:1; e2e/creator-dashboard.smoke.spec.ts:9; e2e/creator-journey.spec.ts:10; .github/workflows/ (no playwright step in any of the 10 files)",
+      "impact": "The two 'smoke' specs (creator dashboard load, creator login render, creator journey login→dashboard, creator disputes) provide zero actual regression coverage today: they cannot even resolve their imports locally, and since no CI workflow invokes playwright at all, there is no evidence they have ever passed since being written. Any go-live confidence that cites 'e2e smoke tests' as coverage for the creator dashboard/login/journey flows is not backed by anything currently executable.",
+      "recommended_fix": "Add `@playwright/test` (matching the version implied by playwright.config.ts / installed browsers) to devDependencies, run `npx playwright install --with-deps chromium` once, verify both specs actually pass against the mock-mode dev server, and add a CI workflow step that runs them on PRs.",
+      "verification_required": "After adding the dependency, re-run `npx playwright test --reporter=line` and confirm both spec files' 4 tests pass (or capture their real failures) before treating this suite as coverage."
+    },
+    {
+      "id": "NEH-03",
+      "title": "Live frontend bundle hash does not match a build of RC HEAD (115f698); live index.html predates the commit",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 55,
+      "status": "OBSERVED",
+      "provenance": "UNKNOWN",
+      "evidence": "Live https://influora.in response header `last-modified: Fri, 18 Sep 2026 07:36:11 GMT` (one day before the 115f698 commit, 2026-09-19 13:27:54 +05:30) and serves /assets/index-CuJLpqhw.js + /assets/index-DbzFIpsJ.css consistently across every page load tested. A same-day build present in the RC checkout at dist/ (untracked, .gitignore:35, mtime 2026-09-19 14:25, i.e. after the commit) instead has /assets/index-VeUi4oUB.js + /assets/index-CZmM-45R.css. `git show --stat 115f698` confirms this specific commit only touches influora-api Java files, so this gap reflects some earlier, still-undeployed frontend commit(s), not 115f698 itself.",
+      "location": "Live: https://influora.in (index.html Last-Modified header, /assets/index-CuJLpqhw.js, /assets/index-DbzFIpsJ.css); RC: dist/assets/index-VeUi4oUB.js, dist/assets/index-CZmM-45R.css",
+      "impact": "If go-live sign-off assumes the RC's frontend is what's live, it is not currently live — production is serving an older frontend build. Whatever frontend-only fixes exist in commits between the live build's actual base and 115f698 are not yet visible to real users. This matches this repo's own previously-documented 'Frontend deploy base check' problem (dirty-tree builds mean no commit hash reliably matches what's live).",
+      "recommended_fix": "Identify the actual git commit (or dirty-tree state) the live /var/www/influora (or equivalent) build came from via a normalised bundle diff, per the repo's own documented deploy-base-check procedure, before treating any frontend-touching audit finding as already-live.",
+      "verification_required": "A byte-for-byte or normalised diff between a clean `npm ci && npm run build` of 115f698 and the live bundle's downloaded JS/CSS, to move this from OBSERVED/moderate-confidence to VERIFIED."
+    },
+    {
+      "id": "NEH-04",
+      "title": "No Content-Security-Policy is served anywhere for the public marketing/app frontend",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 70,
+      "status": "OBSERVED",
+      "provenance": "CONFIGURATION",
+      "evidence": "fetch(location.href) on https://influora.in returns only content-encoding/content-type/date/etag/last-modified/server headers — no content-security-policy. Grep of the RC for 'Content-Security-Policy' across *.html/*.conf/*.yml matches only influora-api/src/main/resources/application.yml (a backend/API concern); none of deploy/utho/nginx-influora.conf, deploy/utho/nginx-influora-app.conf, or deploy/hostinger/Caddyfile set any CSP directive for the static frontend.",
+      "location": "deploy/utho/nginx-influora.conf; deploy/utho/nginx-influora-app.conf; deploy/hostinger/Caddyfile (all absent any add_header Content-Security-Policy)",
+      "impact": "No baseline mitigation against injected-script/XSS or clickjacking exists at the HTTP layer for the public site; this is a hardening gap rather than an observed exploit, and is why zero 'CSP violation' console messages were seen (nothing is being enforced to violate).",
+      "recommended_fix": "Add a Content-Security-Policy header (start in report-only mode given the number of third-party scripts already loaded — GTM, Meta Pixel, fonts) at the nginx/Caddy layer for the frontend host.",
+      "verification_required": "None beyond config review; this is a configuration observation, not a runtime defect to reproduce further."
+    }
+  ],
+  "features": [
+    {
+      "name": "Public marketing site rendering (home, pricing)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 90,
+      "evidence": "Live get_page_text + read_console_messages showed correct titles, full copy, and zero JS errors on https://influora.in and /pricing at both desktop and 375px mobile widths.",
+      "user_type": "all visitors"
+    },
+    {
+      "name": "Legal/policy static pages (/terms, /privacy, /refund-policy, /disputes, /grievance, /kyc, /tds, /disclosure)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 88,
+      "evidence": "Live navigation to /refund-policy and /disputes returned correct titles and 'PENDING LEGAL REVIEW' banners with HTTP 200; source confirms all 6 T-SEOCRO-0819 routes plus /terms, /privacy and /meta-data-policy are registered in src/App.tsx:744-859.",
+      "user_type": "all visitors, search/AI crawlers"
+    },
+    {
+      "name": "Custom 404 / unknown-URL handling",
+      "status": "BROKEN",
+      "evidence_score": 4,
+      "confidence": 85,
+      "evidence": "See finding NEH-01: any unregistered URL returns HTTP 200 with a broken empty-handle message via the /:handle catch-all.",
+      "user_type": "all visitors, search/AI crawlers"
+    },
+    {
+      "name": "Creator/brand login and registration page rendering (no submission tested)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "get_page_text + read_console_messages confirmed correct headings/forms with zero errors on /creator/login, /brand/login, /creator/register; actual authentication was not exercised per audit safety rules.",
+      "user_type": "creators, brands"
+    },
+    {
+      "name": "e2e/ Playwright smoke suite (creator dashboard, login, journey, disputes)",
+      "status": "BROKEN",
+      "evidence_score": 4,
+      "confidence": 92,
+      "evidence": "See finding NEH-02: fails at config-load time with MODULE_NOT_FOUND for @playwright/test; not referenced by any CI workflow.",
+      "user_type": "engineering (test coverage), indirectly all users who rely on it as a safety net"
+    },
+    {
+      "name": "favicon.ico serving a real image (F-0709)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 88,
+      "evidence": "Live navigation to https://influora.in/favicon.ico loaded a real 48x48 image (browser-reported), not the SPA HTML fallback previously described in index.html's own code comment.",
+      "user_type": "search engines, browser tab UI"
+    },
+    {
+      "name": "Live deployment freshness vs RC HEAD (115f698)",
+      "status": "UNKNOWN",
+      "evidence_score": 3,
+      "confidence": 50,
+      "evidence": "See finding NEH-03: live and RC-built asset hashes differ and live index.html predates the commit by ~1 day; not independently confirmed via a from-scratch verified build/diff.",
+      "user_type": "engineering / release management"
+    }
+  ],
+  "area": {
+    "name": "Production live-site health + E2E test-infra readiness (RC 115f698)",
+    "status": "MIXED — public site functionally healthy; 404 handling and E2E test infrastructure both have concrete, reproduced gaps",
+    "evidence_level": 4,
+    "confidence": 75,
+    "main_evidence": "Direct browser reproduction (network status codes, console messages, page text/DOM) across 10+ live page loads on desktop and mobile, plus a direct command-line reproduction of the Playwright failure and grep-based confirmation that no CI workflow runs it.",
+    "main_uncertainty": "Whether the live bundle mismatch (NEH-03) traces back further than 115f698 (i.e., how many frontend commits are actually undeployed) was not fully pinned down, and the payments-custody copy question (refund-policy) touches a backend/legal area (Razorpay Route completeness) outside this tester's direct verification scope.",
+    "limitations": "Read-only, no-submission browser testing per audit safety rules (no forms submitted, no accounts created); only a sample of public pages was visited (home, pricing, 7 legal pages, 3 auth pages — /blog and /about were not opened); graphify-out/graph.json was absent from the RC so graphify's query/path/explain tools could not be used to orient, direct Grep/Read was used instead; the Playwright dependency gap was diagnosed but not fixed, per the audit's read-only mandate."
+  },
+  "extra": "Live asset hashes observed across every page load: /assets/index-CuJLpqhw.js, /assets/index-DbzFIpsJ.css (site-tags.js also loaded on every page). RC same-day dist/ build hashes: dist/assets/index-VeUi4oUB.js, dist/assets/index-CZmM-45R.css. Recurring console line on every live page: '[warn] [Meta Pixel] - Duplicate Pixel ID: 624599723914394.' (root cause: externally-managed GTM container GTM-K7LNG26G, not this repo's code — see index.html:68-140, public/site-tags.js:2-47). Network requests sampled across all navigations: 100% HTTP 200, zero broken images/scripts/styles observed. Playwright repro command and error: `npx playwright test --reporter=line` -> 'Error: Cannot find module \\'@playwright/test\\' ... code: MODULE_NOT_FOUND' (require stack rooted at playwright.config.ts:1). e2e/ contains exactly 2 spec files (creator-dashboard.smoke.spec.ts, 47 lines; creator-journey.spec.ts, 48 lines), both gated with `test.skip(process.env.VITE_API_MODE === 'live', ...)` for fail-closed mock-only operation."
+}

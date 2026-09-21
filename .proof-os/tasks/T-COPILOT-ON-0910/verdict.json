@@ -1,0 +1,24 @@
+{"verdict": "broken",
+ "oracle": "gates/frontend.sh",
+ "isolation": "oracle",
+ "done_when": "each available oracle ran over the scope and its raw output is recorded",
+ "evidence": {
+   "oracle": "gates/frontend.sh",
+   "command": "bash gates/frontend.sh . ; npx tsc --noEmit ; npx vitest run <5 copilot files> ; mvn -o test -Dtest=CreatorCopilotConfigWiringTest,CreatorMetaOAuthServiceTest",
+   "result": "frontend.sh exit 1 (repo-wide pre-existing findings, zero in copilot files); tsc exit 0; vitest 20/20 passed; surefire 4/4 + 9/9, mvn exit 0. BROKEN verdict is not from these oracles - it is F-0774: the trends table has no writer deployed in production.",
+   "where": ".proof-os/tasks/T-COPILOT-ON-0910/frontend.log:1"
+ },
+ "not_checked": [
+   "the live Utho host was never reached - no MCP for it from this session, so the actual value of CREATOR_COPILOT_ENABLED in production is unread",
+   "memory records the live stack as /usr/local/App/docker-compose.prod.yml, NOT deploy/utho/ - that file was not read, so whether the live topology matches the repo compose files is unverified and editing deploy/utho/ may change nothing on the live host",
+   "whether an n8n instance is running somewhere outside the compose files entirely (a separate host, a SaaS n8n account) and already populating trends",
+   "whether the n8n credential store on any such instance already holds NEWSAPI_KEY, TMDB_API_KEY and YOUTUBE_API_KEY",
+   "runtime behaviour of the copilot end to end - no boot, no curl against /creator/copilot/suggestion/today, no live DB row",
+   "the 7 leaks gitleaks reported repo-wide - pre-existing and out of this task's scope, not triaged here"
+ ],
+ "skipped": [
+   {"step": "the full mvn test suite",
+    "reason": "scoped to the two copilot test classes deliberately - a concurrent session is documented to share this target/ directory and a colliding full run produces detail-free surefire failures that are not real regressions"},
+   {"step": "flipping CREATOR_COPILOT_ENABLED to true",
+    "reason": "F-0774 makes it a no-op that would look like a shipped feature while returning no_suggestion_today to every creator - enabling it is the wrong action until the trends writer is deployed"}
+ ]}

@@ -1,0 +1,18 @@
+{
+  "verdict": "believed",
+  "oracle": "mvn",
+  "isolation": "fresh-context",
+  "done_when": "AnalyticsService.buildMetricsResponse computes followers, the per-post averages, engagement, follower growth and the trend only from creator_metrics rows whose isPlatformVerified() is true (Meta-synced); a newer CREATOR_REPORTED row never becomes the headline figure or a growth/trend point; a creator with only creator-reported rows gets the empty response (0 followers, no trend); proved by `mvn -o test -Dtest=AnalyticsService*Test` exiting 0 with tests that fail when the verified filter is removed from either the headline or the window path, reviewed by kabir in a fresh context",
+  "evidence": {
+    "oracle": "mvn",
+    "command": "bash .proof-os/gates/f0961-analytics-verified-rows-only.sh",
+    "result": "Tests run: 29, Failures: 0, Errors: 0; VERDICT: proved",
+    "where": ".proof-os/gates/f0961-analytics-verified-rows-only.sh:1"
+  },
+  "not_checked": [
+    "real MySQL index/collation for (creator_profile_id, data_source, time)",
+    "frontend state for a creator with only declared rows (now 0 followers)",
+    "other newest-row readers: F-0963 (b0), F-0964 (public), F-0965 (scoring/aggregation source fix)"
+  ],
+  "skipped": []
+}

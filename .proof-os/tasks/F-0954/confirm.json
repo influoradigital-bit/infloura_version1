@@ -1,0 +1,40 @@
+{
+  "text": "fix F-0954 no metrics sync on connect",
+  "verb": "FIX",
+  "resolution": "proved",
+  "verbs_matched": [
+    "FIX"
+  ],
+  "modifiers": {},
+  "target": {
+    "kind": "ledger",
+    "id": "F-0954",
+    "resolution": "proved",
+    "note": "stale-until-cron",
+    "status": "open"
+  },
+  "scope": [
+    "influora-api/src/main/java/com/influora/job/MetricsPollingJob.java"
+  ],
+  "scope_from": "ledger.where",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "oracles": [],
+  "oracle_first": false,
+  "exit_gate": "mvn -o test -Dtest=MetricsPollingJob*Test",
+  "done_when": "When CreatorMetaConnectedEvent is published after a successful connect (both login paths), MetricsPollingJob runs exactly one poll for that creator asynchronously after commit, using the same pollOne path as the 6-hourly cron, never throws, and does nothing for a creator with no valid token row; proved by `mvn -o test -Dtest=MetricsPollingJob*Test` exiting 0 with a test that fails when the listener is removed, reviewed by kabir in a fresh context",
+  "ask": "F-0954 has no `fix` recorded \u2014 what must be true for it to be closed?",
+  "refused": null,
+  "prior_failures": [
+    "F-0126",
+    "F-0379",
+    "F-0479",
+    "F-0515",
+    "F-0516",
+    "F-0608"
+  ],
+  "dispatch": "agents",
+  "oracles_skipped_no_toolchain": [],
+  "graph_nodes": 928,
+  "human_answer": "Yes (user, 2026-09-18): build all four, commit after review for today's push"
+}

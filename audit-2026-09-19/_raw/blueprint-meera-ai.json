@@ -1,0 +1,399 @@
+{
+  "domain": "Meera AI (brand + creator), TrendSpark & Creator Copilot (37 endpoints + 10 AI-service routes)",
+  "audit_meta": {
+    "release_candidate_commit": "115f698b9df0ca2735e9cb2f2c5fe656daf07b66",
+    "release_candidate_dir": "C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+    "rc_clean_at_audit": true,
+    "graphify_available": false,
+    "graphify_note": "graphify-out/graph.json does NOT exist in the RC checkout (only graphify-out/cache/ present); `graphify query` failed with 'graph file not found'. Proceeded via direct source reading/grep per the fallback rule ('only grep after graphify has oriented you' -- graphify could not orient because the graph file is absent).",
+    "runtime_evidence_gathered": [
+      "mvn -q -o -Dtest=MeeraControllerTest test -> 4/4 pass",
+      "mvn -q -o -Dtest=CreatorMeeraControllerTest test -> 17/17 pass",
+      "mvn -q -o -Dtest=MeeraInternalControllerContextTest test -> 5/5 pass",
+      "mvn -q -o -Dtest=MeeraInternalControllerConversationIdTest test -> 4/4 pass",
+      "mvn -q -o -Dtest=MeeraInternalControllerCreateCampaignTest test -> 2/2 pass",
+      "mvn -q -o -Dtest=TrendPullJobTest test -> 20/20 pass",
+      "mvn -q -o -Dtest=CreatorAgentControllerTest test -> 10/10 pass",
+      "mvn -q -o -Dtest=AdminCreatorAgentControllerTest test -> 2/2 pass",
+      "python -m pytest tests/routes/test_creator_suggestion.py tests/eval/test_trendspark_nudge.py tests/routes/test_chat_creator_audience.py -q -> 62/62 pass"
+    ],
+    "questions": [
+      "Does the browser ever reach /readyz=200 while /internal/trendspark/nudge, /internal/brand-safety, /internal/trendspark/tag or /internal/creator-suggestion failed to register? -- YES: main.py's on_event(startup) and /readyz only check keys_loaded/redis/cap_scope, never whether the 4 try/except-imported routers actually mounted (main.py:79-114, 191-226). A silent import regression in any of those 4 modules degrades to 404 on that route while the pod still reports ready.",
+      "Is TREND_INGEST_ENABLED actually on anywhere committed? -- Default false (TrendIngestProperties, application.yml), and even when true the job still fails closed and stores nothing unless TREND_INGEST_CLASSIFIER_WORKSPACE_ID is also set (TrendPullJob.java:62-76, class javadoc). No evidence in application*.yml of a non-blank value being set -- feature is OFF in production by default and even when enabled needs a second env var no committed config supplies.",
+      "Is CREATOR_COPILOT_ENABLED on by default? -- NO. CreatorCopilotProperties.enabled defaults to false (CreatorCopilotProperties.java:25-26), gating both CreatorCaptionSyncJob and CreatorThemeTaggingJob's scheduled bodies (both no-op when disabled). The controller/service layer (CreatorCopilotController, CreatorNudgeService) has no equivalent flag -- GET /creator/copilot/suggestion/today always returns 200, but with the batch jobs off, captions are never synced/tagged, so real suggestions can never populate; the route just returns pending_tagging/no_suggestion_today forever in that configuration.",
+      "Does the Google Trends source ever produce a real trend? -- NO. trend-pull-workflow.json's 'Google Trends (pytrends/SerpAPI -- STUB)' n8n node returns [] unconditionally (trend-pull-workflow.json line 183-193) -- it is not wired to either documented path (pytrends microservice or SerpAPI). This is the n8n workflow's node; TrendPullJob.java (the Java replacement) has no Google Trends TrendSourceClient at all -- only tmdb/news/youtube_trending sources were seen wired (per test log 'source tmdb skipped', 'source youtube_trending skipped', 'source news ...').",
+      "Can a CREATOR ever trigger a money tool (request_payment/confirm_launch)? -- No route exists for it on CreatorMeeraController, and MeeraSessionService#sendTurn's class javadoc states creator turns never charge the brand AI-credit ledger; the 6 money/state tool executors in MeeraInternalController are reached only via workspace_id + on-behalf JWT resolution that requires a BRAND-typed principal for the elevated-role tools (resolveForWorkspaceRequiringElevatedRoleAndScope) -- verified by reading the controller but not independently runtime-proven against a live CREATOR JWT in this pass.",
+      "Does MeeraInteractionController's IDOR fix actually hold at runtime? -- OBSERVED in code (workspaceId path segment is read into the method signature but never referenced in the body -- brandContext.requireBrandWorkspace(principal) is the sole source of the workspace used to persist the row, MeeraInteractionController.java:51-63) and confirmed FE always sends the literal 'me' as the path segment (meera-api.ts:891-899), consistent with the class javadoc's stated IDOR fix. Not independently re-run at HTTP layer in this pass (no controller test file was found for MeeraInteractionController specifically).",
+      "Is TrendSparkController's 'no test' claim in the task correct? -- CONFIRMED: no *TrendSparkControllerTest.java exists under influora-api/src/test/java/com/influora/web/. TrendPullJob (the ingest job) and TrendSparkAiClient/CreatorNudgeService DO have tests, but the brand-facing GET/POST /brand/trendspark/nudge{,/click,/purchase} controller has zero direct test coverage -- classified IMPLEMENTED BUT NOT VERIFIED at the controller layer despite the job/service layers being test-covered.",
+      "What happens to a Meera turn's charged AI credit if influora-ai's SSE stream just dies mid-response (no error event, no done)? -- Per MeeraController's class javadoc, the credit is only refunded via POST /internal/meera/turns/release, which is called by influora-ai on 'a genuine PROVIDER failure (an error SSE event, or the stream ending with no assistant text/before done)' -- but 'NEVER for a plain client disconnect, which stays charged'. The exact distinguishing logic lives in influora-ai's app/routes/chat.py, not opened line-by-line in this pass -- the boundary between 'stream died' and 'client disconnected' is asserted by comment, not independently re-verified against chat.py's actual SSE loop.",
+      "Does the voice pipeline ever surface a hard error to the brand/creator? -- By design, NO: both /meera/voice/speak and /meera/voice/transcribe (and their creator mirrors) return 200 with {fallback:true} for every failure mode except the shared requireBrandWorkspace/requireCreatorProfile auth gate and Bean Validation on `text` (MeeraController.java:230-236, 269-277). This means a broken Sarvam integration is invisible to standard HTTP-status monitoring -- only a log/metrics dashboard on the fallback:true rate would catch a total outage.",
+      "Is the on-behalf JWT audience/scope check (AUDIENCE_PRINCIPAL_MISMATCH) actually exercised by a test? -- YES, MeeraInternalControllerContextTest (5/5 green in this run) covers /internal/meera/context; requireAudiencePrincipalMatch's mismatch branch is exercised per the controller's own inline commentary referencing this defect's fix history (fix round 1, item 3).",
+      "Does AICreditResetJob risk double-crediting a workspace that changed billing clocks mid-month? -- The job explicitly skips any workspace whose creditClockFor() resolves to other than CALENDAR_MONTH (AICreditResetJob.java:104-113, citing F-0896 and a named decision doc) and uses resetForNewCycleIfDue (idempotent per UTC month) rather than an unconditional reset (citing T-S3-F0879-0917) -- both fixes are code-observed with clear commit-message-style provenance in the javadoc, not independently re-run against a live double-trigger in this pass.",
+      "Is the Creator Meera Phase A rollback flag (MEERA_CREATOR_ENABLED) wired everywhere it needs to be? -- CreatorMeeraController, CreatorAgentController both call requireFeatureEnabled() as the very first line of every gated handler (verified by reading both files); withdrawConsent/listConversations/exportConversation/deleteConversation on CreatorAgentController do NOT call requireFeatureEnabled() (CreatorAgentController.java:90-114) -- a DPDP-mandated consent-withdrawal/export/delete path stays reachable even when the feature flag is off, which is arguably correct (a disabled feature should still let a creator withdraw consent/export/delete their data) but is an undocumented asymmetry versus every other route on the same controller.",
+      "Does the classifier failure path in TrendPullJob actually fail the WHOLE run or just one headline? -- Runtime-verified via TrendPullJobTest (20/20 pass, test log shows 'classifier_error' and 'classifier_unconfigured' rejections logged per-headline while the run continues to 'written=1' on other rows in later test cases) -- the repair-round-2 fix (widening the catch from BrandSafetyAiException to RuntimeException) is exercised by the green suite.",
+      "Are the 11 AI->Spring internal routes actually gated by BOTH InternalServiceTokenFilter and OnBehalfAuthResolver, or could a caller skip one? -- OBSERVED in code: SecurityConfig wires InternalServiceTokenFilter ahead of the controller (per MeeraInternalController's class javadoc, not independently re-read here), and every route additionally calls one of the OnBehalfAuthResolver.resolveFor* methods explicitly inside the handler body (verified directly in MeeraInternalController.java for all 9 handlers). This is defense-in-depth by construction; SecurityConfig.java itself was not opened in this pass to confirm the filter chain ordering."
+    ]
+  },
+  "features": [
+    {
+      "name": "Brand Meera sessions / messages / credits / brand-profile / voice",
+      "user_type": "BRAND (workspace owner/member)",
+      "purpose": "Lets a brand user start/resume a Meera chat session, send a turn (streaming-first, charge-gated), read message history, check AI-credit status, read the analyzed brand profile, and use voice input/output -- the core brand-facing Meera surface.",
+      "status": "PARTIALLY WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 85,
+      "entry_point": "FE: src/brand/meera (per task pointer), src/hooks/useMeeraStream.ts, src/lib/meera-api.ts (meeraApi.startSession/sendTurn/messages/credits/brandProfile/speak/transcribe). BE: MeeraController.java:95-337 (@RequestMapping /meera)",
+      "flow": "Browser -> meeraApi.startSession('brand') -> POST /meera/sessions (MeeraController.startSession, MeeraController.java:95-115) -> BrandContextService.requireBrandWorkspace -> MeeraSessionService.startOrResume + AICreditService.getStatus -> SessionStartResponse. Browser -> POST /meera/sessions/{id}/messages (sendTurn, :117-156) -> MeeraSessionService.sendTurn (charge-gates via AICreditService.tryConsumeForTurn, persists USER message, mints stream token + on-behalf JWT) -> response carries streamUrl=MeeraStreamProperties.getPublicChatUrl(). Browser then connects DIRECTLY to influora-ai POST /chat (SSE) with the stream token -- Spring never proxies the stream. On stream completion influora-ai calls back POST /internal/meera/messages (persistAssistantWriteback) or, on provider failure, POST /internal/meera/turns/release (credit refund) -- see MeeraInternalController feature.",
+      "api": "POST /meera/sessions, POST /meera/sessions/{conversationId}/messages, GET /meera/sessions/{conversationId}/messages?after=, GET /meera/credits, GET /meera/brand-profile, POST /meera/voice/speak, POST /meera/voice/transcribe (multipart)",
+      "database": "ai_conversations (AiConversation), ai_messages (AiMessage), brand_ai_credit (BrandAiCredit via AICreditService), brand_profile (BrandProfile) -- read only on this controller",
+      "state_machine": "AiConversation.status: ACTIVE/ANALYZING (exposed verbatim in SessionStartResponse). BrandProfile.analysisStatus: PENDING/ANALYZING/READY/ERROR. Credit status derived: UNLIMITED / FREE (remaining>0) / EXHAUSTED.",
+      "authn": "@AuthenticationPrincipal AuthPrincipal (Spring Security JWT-derived)",
+      "authz": "Every route scoped via BrandContextService.requireBrandWorkspace(principal) -- workspace is NEVER taken from the request body (class javadoc 'Guardrail 4'), so no IDOR surface on this controller by construction.",
+      "working_condition": "A brand user with a valid access token and an existing/creatable BRAND workspace can POST /meera/sessions to get a conversationId, POST a turn with an Idempotency-Key header to get a streamToken+onBehalfToken+streamUrl, and the browser then completes the reply over SSE directly against influora-ai using that token.",
+      "failure_conditions": "Credit exhaustion blocks tryConsumeForTurn (not independently read in this pass, referenced by class javadoc as SECURITY FIX Wave 2 round 2). A provider failure mid-stream is refunded via /internal/meera/turns/release; a PLAIN CLIENT DISCONNECT is explicitly NOT refunded (stays charged) per the controller javadoc -- this is an intentional product decision, not a bug, but is a real UX/billing edge case (a flaky connection costs the brand a credit with no message delivered).",
+      "security_conditions": "Voice endpoints impose a local 10MB clip cap (MAX_VOICE_CLIP_BYTES) distinct from the global multipart cap, specifically to prevent a DoS/OOM via getBytes() buffering (Kabir H-1, MeeraController.java:71-80). Voice/transcribe and /speak degrade SILENTLY to 200 {fallback:true} for every failure except the shared auth gate -- by design, but means voice outages are invisible to naive uptime monitoring (see audit_meta.questions).",
+      "tests": "MeeraControllerTest (4 tests, RUN in this pass: 4/4 PASS). Covers at minimum session start / send turn / credits / brand-profile at the controller-mock level; does not by itself prove the full browser<->influora-ai SSE round trip (that crosses process/service boundaries into influora-ai's chat.py, not exercised by this Java test).",
+      "production_conditions": "Requires MEERA_STREAM_SIGNING_SECRET, MEERA_PUBLIC_CHAT_URL (application-prod.yml:107-109, hard env-required in prod -- Java field default is localhost:8000 and application-prod.yml comments confirm this was a deploy blocker fixed by requiring the env var), MEERA_CHAT_AI_BASE_URL, VOICE_AI_BASE_URL (or falls back to MEERA_CHAT_AI_BASE_URL).",
+      "evidence": "Read MeeraController.java in full (338 lines). Ran mvn -Dtest=MeeraControllerTest -> 4/4 pass (target/surefire-reports/com.influora.web.MeeraControllerTest.txt). Read MeeraStreamProperties.java and application(-prod).yml grep output confirming the env-var-required pattern for the public chat URL.",
+      "known_issues": [
+        "Voice pipeline failures are invisible to HTTP-status-based monitoring (always 200); only a fallback:true rate metric would catch a total Sarvam outage (see audit_meta.questions).",
+        "A plain client disconnect mid-stream leaves the brand's AI credit charged with no delivered reply -- documented as intentional, but is a real billing-fairness edge case worth product confirmation before go-live."
+      ],
+      "required_fixes": [
+        "Add an operational metric/alert on the voice-fallback rate (speak/transcribe returning {fallback:true}) so a real provider outage is visible before a brand complains.",
+        "Confirm with product whether a plain-disconnect-stays-charged policy is the intended, communicated behavior; if not, thread a client-side beforeunload/visibilitychange signal to a best-effort refund call."
+      ]
+    },
+    {
+      "name": "Creator Meera sessions / messages / voice",
+      "user_type": "CREATOR",
+      "purpose": "The creator-audience counterpart to Brand Meera: lets a creator start a Meera session, send conversational turns (no money tools, no brand AI-credit charge), and use voice input/output, gated behind a DPDP consent precondition and a rollback feature flag.",
+      "status": "PARTIALLY WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 85,
+      "entry_point": "FE: src/creator/chat (per task pointer). BE: CreatorMeeraController.java:138-322 (@RequestMapping /creator/meera)",
+      "flow": "Browser -> meeraApi.startSession('creator') -> basePath('creator') resolves to /creator/meera (meera-api.ts:483-484, fix-round-1 item 1) -> POST /creator/meera/sessions -> requireFeatureEnabled() (MEERA_CREATOR_ENABLED flag) -> CreatorContextService.requireCreatorProfile -> requireConsent(creatorUserId) (403 CONSENT_REQUIRED if not accepted at the CURRENT consent version) -> MeeraSessionService.startOrResumeForCreator (persists a language-aware onboarding greeting as a real ASSISTANT message on first creation, unlike the brand path's bare conversation). sendTurn mirrors the brand flow but never touches AICreditService (0 credits reported, unused on this audience) and passes UserType.CREATOR through so downstream write-back records via CreatorAgentConversationService instead of the brand ledger.",
+      "api": "POST /creator/meera/sessions, POST /creator/meera/sessions/{conversationId}/messages, GET /creator/meera/sessions/{conversationId}/messages?after=, POST /creator/meera/voice/speak, POST /creator/meera/voice/transcribe (multipart)",
+      "database": "ai_conversations, ai_messages, creator_agent_preferences (consent/version/language read via CreatorAgentPreferencesService)",
+      "state_machine": "Same AiConversation.status as brand. Consent gate: CreatorAgentPreferences.isConsentAccepted() requires storedConsentVersion == CURRENT_CONSENT_VERSION, not merely a non-null timestamp (fix round 2, Priya Q3) -- a creator who consented under a superseded DPDP notice is treated identically to one who never consented.",
+      "authn": "@AuthenticationPrincipal AuthPrincipal",
+      "authz": "Identity always resolved via CreatorContextService.requireCreatorProfile(principal) -- never a body/path id. The on-behalf token's workspaceId claim is deliberately the creator's own USER id (documented convention carried into MeeraContextService).",
+      "working_condition": "A consented creator, with MEERA_CREATOR_ENABLED=true (the application.yml default), can start a session, receive a persisted greeting, send turns, and use voice -- all without any brand AI-credit interaction.",
+      "failure_conditions": "MEERA_CREATOR_ENABLED=false -> every route on this controller 404s (FEATURE_DISABLED) regardless of identity/consent state (requireFeatureEnabled() runs first in every handler). Unconsented or stale-consent-version creator -> 403 CONSENT_REQUIRED on sessions/messages/voice routes specifically (this check does NOT gate CreatorAgentController's withdraw/export/delete routes -- see that feature's known_issues).",
+      "security_conditions": "DPDP consent precondition moved from a Python-only check (chat.py) to Spring-first (fix round 2, item 1) specifically to stop an unconsented creator's message from ever being persisted to ai_messages before the old Python 403 fired -- described as previously-real data-retention gap, now closed at the controller.",
+      "tests": "CreatorMeeraControllerTest RUN in this pass: 17/17 PASS (target/surefire-reports/com.influora.web.CreatorMeeraControllerTest.txt) -- broader coverage than the brand controller's 4 tests, consistent with this being the newer, more heavily gate-reviewed surface (Priya gate review defects 3/4 referenced inline).",
+      "production_conditions": "MEERA_CREATOR_ENABLED (default true), same MEERA_STREAM_SIGNING_SECRET/MEERA_PUBLIC_CHAT_URL/voice base URLs as the brand controller (shared MeeraStreamProperties/MeeraVoiceAiClient beans).",
+      "evidence": "Read CreatorMeeraController.java in full (323 lines). Ran mvn -Dtest=CreatorMeeraControllerTest -> 17/17 pass. Cross-checked FE basePath(role) routing fix in src/lib/meera-api.ts:476-484 (explicit commentary describing the exact bug this fixed: every call previously hit the brand-gated /meera path regardless of role).",
+      "known_issues": [
+        "MeeraCreatorPhaseABootValidationTest exists (integration/dbconstraints package) suggesting a dedicated boot-time validation for this feature's DB wiring -- not read in this pass; worth a follow-up look given its name implies it exists specifically because a prior boot-time gap was found."
+      ],
+      "required_fixes": []
+    },
+    {
+      "name": "Browser -> AI /chat stream (SSE transport config)",
+      "user_type": "BRAND and CREATOR (shared transport)",
+      "purpose": "The browser-direct SSE connection from the React app to influora-ai's POST /chat, carrying the scoped stream token minted by Spring so the reply streams without Spring proxying it.",
+      "status": "WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 70,
+      "entry_point": "MeeraStreamProperties.java:25 (publicChatUrl field, default http://localhost:8000/chat)",
+      "flow": "MeeraController/CreatorMeeraController.sendTurn reads streamProperties.getPublicChatUrl() and returns it verbatim as streamUrl in SendTurnResponse. FE's src/hooks/useMeeraStream.ts (not opened line-by-line in this pass) connects the browser directly to that URL with the streamToken. influora-ai's app/routes/chat.py (not opened in this pass) verifies the stream token (aud=meera-stream, distinct signing key from user access/refresh JWTs) and streams the Claude/provider response back as SSE.",
+      "api": "GET-adjacent SSE: browser -> POST {streamUrl} (influora-ai, not a Spring route) with Authorization: <streamToken>",
+      "database": "None directly (stateless per the influora-ai service's own docstring: 'Stateless per request: no DB, no session store, no local disk writes')",
+      "state_machine": "N/A -- pure transport",
+      "authn": "Short-lived (<=60s TTL, MeeraStreamProperties.streamTokenTtlSeconds default 60) stream token, distinct signing key from JwtProperties per the class javadoc ('a compromise of one must not compromise the other').",
+      "authz": "Token is scoped per-turn (minted by StreamTokenService, not opened in this pass) and carries the workspaceId the browser must also send in its own SSE request body -- chat.py 403s a mismatch per MeeraController's inline comment.",
+      "working_condition": "In any non-dev deploy, application-prod.yml:107-109 REQUIRES MEERA_PUBLIC_CHAT_URL to be set (${MEERA_PUBLIC_CHAT_URL} with no default) -- the comment explicitly calls this out as 'Deploy blocker 2' that was fixed by making it fail closed rather than silently serving localhost to browsers.",
+      "failure_conditions": "If MEERA_PUBLIC_CHAT_URL is unset in a non-prod-profile deploy (e.g. a staging environment not using application-prod.yml), the Java field default (http://localhost:8000/chat) would be handed to real browsers, breaking every stream -- this exact regression class is what the prod-profile env-required binding was built to prevent, but only application-prod.yml carries the required binding; other profiles (e.g. a hypothetical staging profile) were not checked in this pass.",
+      "security_conditions": "allow_credentials=False on the CORS middleware (influora-ai main.py, not directly opened but referenced structurally); MEERA_ALLOWED_ORIGINS gates whether CORS headers are added at all.",
+      "tests": "Not independently run in this pass (crosses the Spring/Python boundary, no single test exercises the full browser round trip). influora-ai has test_chat_transport.py, test_chat_conversation_binding.py etc. (listed in test inventory) which were not executed in this pass.",
+      "production_conditions": "MEERA_PUBLIC_CHAT_URL must resolve to a public HTTPS URL reachable from the browser (e.g. via Caddy /meera/* per a comment seen elsewhere in application.yml: 'the browser streams them direct via Caddy /meera/* (SSE), not through MeeraChatAiClient').",
+      "evidence": "Read MeeraStreamProperties.java in full. Grepped application-prod.yml/application.yml for meera stream config lines showing the required-env-var pattern and its accompanying deploy-blocker commentary.",
+      "known_issues": [
+        "The Java field default remains localhost:8000/chat; correctness depends entirely on every real deploy profile setting MEERA_PUBLIC_CHAT_URL -- only application-prod.yml was confirmed to enforce this (fail-closed via ${MEERA_PUBLIC_CHAT_URL} with no default)."
+      ],
+      "required_fixes": [
+        "Verify every deployed Spring profile (not just application-prod.yml) either requires MEERA_PUBLIC_CHAT_URL or is never used for a real browser-facing deploy."
+      ]
+    },
+    {
+      "name": "11 AI->Spring tool/context callbacks (POST /internal/meera/*)",
+      "user_type": "SYSTEM (influora-ai calling Spring on the AI's behalf, ultimately gated to BRAND or CREATOR principal identity)",
+      "purpose": "The real tool-call executor surface Claude's tool loop forwards through: show_creators, calculate_budget, create_campaign, request_payment, confirm_launch, get_campaign_performance, plus /context, /messages (writeback), /turns/release (refund), /analyze_site_result, /interaction-log.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 82,
+      "entry_point": "MeeraInternalController.java:156-450 (@RequestMapping /internal/meera)",
+      "flow": "influora-ai's app/clients/spring.py mints a service JWT (iss=meera-python, aud=influora-internal, <=60s TTL) + HMAC request signature, forwards the on-behalf human JWT as X-Onbehalf-Authorization and (for money/state tools) Idempotency-Key = tool_use.id+workspace_id. Spring's InternalServiceTokenFilter verifies the service token+HMAC before the controller method runs; inside each handler, OnBehalfAuthResolver re-validates the human JWT and asserts token.workspaceId == body.workspace_id; ToolCallValidator enforces a name-whitelist + R/D/C/Forbidden tier gate. create_campaign/request_payment/confirm_launch use ctx.conversationId() (server-minted from the JWT) rather than any client-body field -- documented fix for a live 2026-07-23 409 'Column conversation_id cannot be null' bug.",
+      "api": "POST /internal/meera/context, /show_creators, /calculate_budget, /create_campaign, /request_payment, /confirm_launch, /get_campaign_performance, /messages, /turns/release, /analyze_site_result, /interaction-log (11 routes, matching the task's '11 AI->Spring tool/context callbacks' count)",
+      "database": "ai_conversations, ai_messages, meera_tool_calls (ledger), campaign_intent / Campaign entities (via CreateCampaignExecutor), meera_interaction_log",
+      "state_machine": "Tool tiers: read (show_creators, calculate_budget, get_campaign_performance) / draft (create_campaign) / commit (request_payment, confirm_launch, both C-tier requiring elevated role+scope). request_payment ALWAYS returns PENDING_CONFIRM only -- actual money movement is a wholly separate public endpoint the human clicks (governing rule quoted in the class javadoc: 'Meera proposes; Spring disposes; the human commits money').",
+      "authn": "Dual: X-Meera-Service-Token (verified by InternalServiceTokenFilter before the controller runs) + X-Onbehalf-Authorization (re-validated per-call by OnBehalfAuthResolver).",
+      "authz": "requireAudiencePrincipalMatch (context route) rejects a REQUESTED audience of CREATOR/BRAND that disagrees with the JWT-verified principal's real userType -- fix round 1 item 3, documented as closing a gap where Python's own mismatch check could only trip on AUDIENCE_NOT_SUPPORTED, never a genuine spoofed-audience request. request_payment/confirm_launch additionally require an ELEVATED role (resolveForWorkspaceRequiringElevatedRoleAndScope) on top of scope -- 'the human-confirm click still belongs to a workspace member who can act on money'.",
+      "working_condition": "A validly-signed influora-ai call with a matching on-behalf JWT, correct tool-name whitelist entry, and (for commit-tier tools) an elevated-role+scoped token succeeds and returns the tool's structured result; the controller never trusts conversationId/userType/workspaceId from the client body for anything security-relevant.",
+      "failure_conditions": "Unknown tool name or Forbidden-tier mapping -> rejected+logged, never executed (ToolCallRejectedException -> 403). Missing workspace_id in body -> 400 WORKSPACE_ID_REQUIRED. Resolved tool != expected route -> 403 TOOL_ROUTE_MISMATCH (defense against a tool-name/route confusion).",
+      "security_conditions": "No route exists at all for bid-approval, payment-method changes, payout config, or code/config changes -- described as 'structural absence, not a soft block' per 06-MEERA-PERMISSIONS-MATRIX.md. /turns/release has no Idempotency-Key header requirement because releaseTurnCredit/AICreditService#release are self-idempotent, keyed on the server-verified messageId.",
+      "tests": "MeeraInternalControllerContextTest RUN: 5/5 PASS. MeeraInternalControllerConversationIdTest RUN: 4/4 PASS. MeeraInternalControllerCreateCampaignTest RUN: 2/2 PASS (all target/surefire-reports/*.txt, this session). These are narrow/targeted test classes (2-5 tests each) -- broad coverage of every one of the 6 tool executors was NOT independently confirmed; only context resolution, conversation-id threading, and create_campaign were directly test-run in this pass.",
+      "production_conditions": "Requires the internal HMAC key + service-token signing key (Spring side) and matching influora-ai-side secrets to be provisioned and IN SYNC across both services -- a mismatch fails closed (every call rejected by InternalServiceTokenFilter), not silently insecure.",
+      "evidence": "Read MeeraInternalController.java in full (451 lines) and app/tools/schemas.py:60-90 confirming TOOL_TO_SPRING_PATH maps 1:1 onto this controller's 6 tool routes. Read app/clients/spring.py header (lines 1-40) confirming the HMAC+service-token+on-behalf-JWT contract matches the controller's stated gate chain. Ran the 3 targeted MeeraInternalController* test classes -- all green.",
+      "known_issues": [
+        "Only 3 of the ~9 handler methods on this controller have a dedicated test class visible under influora-api/src/test/java/com/influora/web/ (Context, ConversationId, CreateCampaign) -- show_creators, calculate_budget, request_payment, confirm_launch, get_campaign_performance, persistTurnWriteback, releaseTurnCredit, analyzeSiteResult, and interactionLog were not confirmed to have their own direct controller-level test coverage in this pass (they may be covered indirectly via MeeraSessionServiceTest or the tool executor's own unit tests, not verified here)."
+      ],
+      "required_fixes": [
+        "Confirm (or add) direct controller-level test coverage for request_payment and confirm_launch specifically -- these are the two C-tier/elevated-role/money-adjacent routes and warrant the same scrutiny CreateCampaign got."
+      ]
+    },
+    {
+      "name": "Option-tapped telemetry (POST /workspaces/{id}/meera/interactions/option-tapped)",
+      "user_type": "BRAND",
+      "purpose": "Fire-and-forget flywheel analytics: records when a brand taps a Meera-presented option card, counterpart to the AI-side OPTIONS_PRESENTED event logged via /internal/meera/interaction-log.",
+      "status": "WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 75,
+      "entry_point": "MeeraInteractionController.java:46, meera-api.ts:897 (meeraApi.logOptionTapped)",
+      "flow": "ToolResultRenderer.tsx's onOptionPick (not opened in this pass) -> meeraApi.logOptionTapped(sessionId, toolName, recommended) -> POST /workspaces/me/meera/interactions/option-tapped (literal 'me' path segment, meera-api.ts:891-899, with inline commentary explaining 'me' mirrors the existing /workspaces/me convention) -> MeeraInteractionController.optionTapped -> the {workspaceId} path variable is read into the method signature but DELIBERATELY UNUSED for authorization -- workspace is resolved solely from BrandContextService.requireBrandWorkspace(principal) -> MeeraInteractionLogService.record(..., OPTION_TAPPED, ...).",
+      "api": "POST /workspaces/{workspaceId}/meera/interactions/option-tapped",
+      "database": "meera_interaction_log",
+      "state_machine": "N/A -- append-only event log",
+      "authn": "Normal authenticated brand-session auth (NOT the /internal/meera/* dual-credential mesh gate -- this is a real browser request).",
+      "authz": "IDOR fix per explicit class javadoc ('Priya's explicit ruling'): the path-segment workspaceId is NEVER trusted; only the authenticated principal's resolved workspace is used. Confirmed the FE always sends the literal string 'me' as that path segment, consistent with this design (not attempting to pass a real id at all).",
+      "working_condition": "Any authenticated brand user tapping an option-card fires this endpoint; it always succeeds (200) and swallows any transport failure client-side (meera-api.ts: '.catch(() => { // Telemetry only -- swallow failures. })').",
+      "failure_conditions": "None surfaced to the user by design -- a dropped analytics event is invisible.",
+      "security_conditions": "Same IDOR discipline as every other brand-session write in the codebase (class javadoc cites BrandDeliverableController as the precedent pattern).",
+      "tests": "No dedicated MeeraInteractionControllerTest file was found under influora-api/src/test/java/com/influora/web/ in this pass -- MeeraInteractionLogRepositoryQueryTest and MeeraInteractionLogRetentionPurgeJobTest exist (service/repository/job layer) but not a controller-layer test for this specific route.",
+      "production_conditions": "None beyond standard auth config.",
+      "evidence": "Read MeeraInteractionController.java in full (66 lines) and meera-api.ts:870-899 confirming the FE always sends 'me' and swallows failures, matching the task's stated finding verbatim.",
+      "known_issues": [
+        "No controller-level test exists for this specific route (IDOR-fix claim is code-observed, not independently HTTP-re-verified in this pass)."
+      ],
+      "required_fixes": [
+        "Add a controller test asserting a request with a spoofed {workspaceId} path segment (e.g. another tenant's id) still records against the AUTHENTICATED principal's own workspace, to lock in the documented IDOR fix against regression."
+      ]
+    },
+    {
+      "name": "Creator agent preferences / consent / conversations (export + delete)",
+      "user_type": "CREATOR",
+      "purpose": "DPDP-compliant self-service: creator's Meera preferences (rate floors, filters, automation level, language/tone, working hours), consent record/withdraw, and conversation list/export/delete.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "entry_point": "CreatorAgentController.java:63-114 (@RequestMapping /creator/agent-preferences)",
+      "flow": "GET/PUT / -> preferencesService.getOrCreatePreferences/updatePreferences. POST /consent -> preferencesService.recordConsent. DELETE /consent -> preferencesService.withdrawConsent (A6, DPDP 'withdrawal as easy as consent'). GET /conversations, GET /conversations/{id}/export, DELETE /conversations/{id} -> CreatorAgentConversationService, identity always via principal.getUserId() only.",
+      "api": "GET/PUT /creator/agent-preferences, POST/DELETE /creator/agent-preferences/consent, GET /creator/agent-preferences/conversations, GET /creator/agent-preferences/conversations/{id}/export, DELETE /creator/agent-preferences/conversations/{id}",
+      "database": "creator_agent_preferences, ai_conversations/ai_messages (export/delete scope)",
+      "state_machine": "Consent: none -> recorded(version=CURRENT) -> withdrawn (back to requiring re-consent, matching CreatorMeeraController's requireConsent gate).",
+      "authn": "@AuthenticationPrincipal AuthPrincipal",
+      "authz": "principal.getUserId() only, never a path/body id (class javadoc).",
+      "working_condition": "A creator can GET default preferences (auto-created on first read), PUT updates, POST consent to unlock CreatorMeeraController's gated routes, and GET/export/delete their own conversations.",
+      "failure_conditions": "getPreferences/updatePreferences/recordConsent are gated by requireFeatureEnabled() (404 FEATURE_DISABLED when MEERA_CREATOR_ENABLED=false) -- but withdrawConsent, listConversations, exportConversation, deleteConversation do NOT call requireFeatureEnabled() at all (verified directly in the source: those 4 handlers have no requireFeatureEnabled() line, unlike every other handler on this controller and unlike every handler on CreatorMeeraController). This means a creator can still withdraw consent / export / delete their own conversation data even when the whole Meera-for-Creators feature is administratively disabled.",
+      "security_conditions": "DPDP consent-version enforcement (CURRENT_CONSENT_VERSION) means a creator who consented under a stale notice is functionally 'unconsented' without needing separate version-comparison logic in the gate itself.",
+      "tests": "CreatorAgentControllerTest RUN: 10/10 PASS. CreatorAgentConversationServiceTest and CreatorAgentPreferencesServiceTest also exist (service layer, not independently run in this pass). AdminCreatorAgentControllerTest RUN: 2/2 PASS (a separate admin-facing controller, confirms at least some cross-cutting coverage exists).",
+      "production_conditions": "MEERA_CREATOR_ENABLED gates 3 of 7 routes; the other 4 (withdraw/list/export/delete) are always reachable regardless of the flag.",
+      "evidence": "Read CreatorAgentController.java in full (116 lines) -- directly observed the missing requireFeatureEnabled() calls on withdrawConsent/listConversations/exportConversation/deleteConversation by comparing method bodies line-by-line against getPreferences/updatePreferences/recordConsent, which DO call it. Ran mvn -Dtest=CreatorAgentControllerTest,AdminCreatorAgentControllerTest -> 10/10 and 2/2 pass respectively.",
+      "known_issues": [
+        "Asymmetric feature-flag gating: withdrawConsent/listConversations/exportConversation/deleteConversation are reachable even when MEERA_CREATOR_ENABLED=false, while every other creator-Meera route (including the other 3 handlers on this SAME controller) is not. This may be an intentional DPDP-safety design (a disabled feature should still let a user exercise data-subject rights) but is undocumented in this controller's javadoc as a deliberate asymmetry, unlike every other cross-cutting decision in this codebase which is explicitly commented."
+      ],
+      "required_fixes": [
+        "Either add an explicit code comment confirming the asymmetry is intentional (DPDP data-subject rights must survive a feature kill-switch), or add requireFeatureEnabled() to the 4 missing handlers if the omission was accidental -- currently indistinguishable from a bug without asking the feature owner."
+      ]
+    },
+    {
+      "name": "TrendSpark nudges: get / click / purchase",
+      "user_type": "BRAND",
+      "purpose": "Serves an AI-phrased 'trend nudge' suggesting a video purchase tied to a currently-relevant trend, and records click/purchase callbacks for the flywheel.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 55,
+      "entry_point": "TrendSparkController.java:40-59 (@RequestMapping /brand/trendspark) -> TrendSparkAiClient.java (POST /internal/trendspark/nudge)",
+      "flow": "GET /brand/trendspark/nudge -> BrandContextService.requireBrandWorkspace -> TrendSparkNudgeService.getNudge(workspaceId) -> Optional<NudgeResponse>, 200 if present else 204 (silent, correct empty state: 'below score threshold, no active trend, or brand has no profile yet'). POST /nudge/{id}/click -> markClicked (stamps clicked_at). POST /nudge/{id}/purchase -> markPurchased (stamps purchased_at/purchased_video_id). Underlying nudge phrasing calls TrendSparkAiClient.requestPhrasing -> influora-ai POST /internal/trendspark/nudge, with a 'hallucination kill-switch' that drops any video_id in the AI response not present in the original request's video set, and NEVER throws to the caller (falls back to a deterministic templated message on any failure).",
+      "api": "GET /brand/trendspark/nudge, POST /brand/trendspark/nudge/{nudgeId}/click, POST /brand/trendspark/nudge/{nudgeId}/purchase",
+      "database": "trends (Trend entity, written by TrendPullJob), a nudge/flywheel table (schema lock §1d/§4, not directly opened) tracking shown/clicked/purchased state",
+      "state_machine": "Nudge: shown -> clicked (clicked_at) -> purchased (purchased_at, purchased_video_id). No further backward transitions observed.",
+      "authn": "@AuthenticationPrincipal AuthPrincipal",
+      "authz": "Workspace ALWAYS resolved via BrandContextService from the authenticated principal -- 'never trusted from a path/query param (Guardrail 2, schema lock §5.2)' per class javadoc. FE (Ananya, per javadoc) calls this controller only, never influora-ai directly.",
+      "working_condition": "A brand with an active, above-threshold trend match gets a real nudge; clicking/purchasing stamps the respective timestamp columns for downstream flywheel analytics.",
+      "failure_conditions": "No trends are ever ingested in production by default: TrendIngestProperties defaults to disabled (TREND_INGEST_ENABLED default false per task pointer, consistent with TrendPullJob's props.isEnabled() gate observed in the job read); even if enabled, the job fails closed and stores NOTHING unless TREND_INGEST_CLASSIFIER_WORKSPACE_ID is also set (a second, undocumented-in-config prerequisite -- no evidence found of it being set in any committed application*.yml). The n8n workflow's Google Trends node is a hard STUB returning []. Net effect: GET /brand/trendspark/nudge will realistically return 204 (no nudge) indefinitely in a fresh production deploy unless BOTH env vars are set AND the classifier workspace is funded to pay for BrandSafetyAiClient calls.",
+      "security_conditions": "TrendSparkAiClient's output re-validation drops any hallucinated video_id -- 'the response DTO has no price field at all, so there is nothing to scrub structurally -- price shown to the user always comes from the persisted catalog row, never from this call.'",
+      "tests": "NO TrendSparkControllerTest exists (confirmed: find over influora-api/src/test/java/com/influora/web/ for TrendSpark* returned nothing) -- matches the task's explicit '(no test)' annotation for this controller. TrendPullJob (the upstream ingest job) IS well-tested: TrendPullJobTest RUN 20/20 PASS. TrendSparkAiClient/CreatorNudgeService-adjacent tests exist under service/trendspark but the CONTROLLER itself (the actual brand-facing API surface named in this feature) has zero direct test coverage.",
+      "production_conditions": "TREND_INGEST_ENABLED=true, all 3 source API keys (TMDb/NewsAPI/YouTube -- confirmed via test log 'source tmdb skipped -- no API key configured', 'source youtube_trending skipped'), TREND_INGEST_CLASSIFIER_WORKSPACE_ID set to a real, funded workspace, plus BRAND_SAFETY_AI_BASE_URL/credentials for the GARM classifier call every stored trend depends on.",
+      "evidence": "Read TrendSparkController.java in full (69 lines) and TrendSparkAiClient.java in full. Read TrendPullJob.java in full (509 lines, extensively commented with dated fix history). Ran TrendPullJobTest -- 20/20 pass, log output directly showing 'source tmdb skipped -- no API key configured', 'classifier_unconfigured -- no influora.trend-ingest.classifier-workspace-id set, failing closed', and successful writes only when a workspace id was test-injected. Grepped trend-pull-workflow.json confirming the Google Trends node is a STUB emitting [].",
+      "known_issues": [
+        "No controller-level test for TrendSparkController's 3 brand-facing routes (task-confirmed gap).",
+        "Feature is realistically non-functional in a fresh production deploy without 2 separate, easy-to-miss env-var/config prerequisites (TREND_INGEST_ENABLED + TREND_INGEST_CLASSIFIER_WORKSPACE_ID) beyond the 3 source API keys.",
+        "Google Trends source (1 of 4 documented sources) is a permanent no-op stub in the n8n workflow; the Java TrendPullJob path appears to have no Google Trends TrendSourceClient at all based on the sources actually exercised in the test run (tmdb, youtube_trending, news only)."
+      ],
+      "required_fixes": [
+        "Add a TrendSparkControllerTest covering the 3 routes at minimum for the 204-empty-state and the click/purchase timestamp-stamping behavior.",
+        "Either wire a real Google Trends source (pytrends microservice or SerpAPI, both already documented as options in the n8n stub's own comments) or explicitly descope it from go-live claims.",
+        "Confirm TREND_INGEST_CLASSIFIER_WORKSPACE_ID is set in the actual production environment config (not found in any committed application*.yml in this pass) before claiming this feature live."
+      ]
+    },
+    {
+      "name": "Creator Copilot: suggestion/today, dismiss, acted",
+      "user_type": "CREATOR",
+      "purpose": "Tier-1 daily content suggestion for a creator based on their Instagram caption history matched against a theme taxonomy, with dismiss/acted tracking.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 65,
+      "entry_point": "CreatorCopilotController.java:42-63 (@RequestMapping /creator/copilot) -> influora-ai /internal/creator-suggestion (task pointer)",
+      "flow": "GET /creator/copilot/suggestion/today -> CreatorContextService.requireCreatorProfile -> CreatorNudgeService.getSuggestion(profile.getId()) -> always 200 with status: pending_tagging | no_suggestion_today | ready (API-CONTRACT.md §1.1, 'never a 4xx/204' per class javadoc). POST /suggestion/{id}/dismiss and /acted stamp dismissed_at/acted_at, idempotent, with ownership enforced inside CreatorNudgeLogRepository.findByIdAndCreatorProfileId (never by trusting the path {id} alone) -- SUGGESTION_NOT_FOUND (404) returned identically whether the id doesn't exist or belongs to another creator (explicit IDOR discipline).",
+      "api": "GET /creator/copilot/suggestion/today, POST /creator/copilot/suggestion/{id}/dismiss, POST /creator/copilot/suggestion/{id}/acted",
+      "database": "creator_nudge_log (unique constraint on creator_profile_id+shown_day enforces the daily cap -- documented as the REAL enforcement mechanism, not the Java-side maxSuggestionsPerCreatorPerDay field which 'documents intent only'), creator_captions (CreatorCaptionCache, populated by CreatorCaptionSyncJob), creator_profile.theme_tags (populated by CreatorThemeTaggingJob)",
+      "state_machine": "Suggestion: pending_tagging (no tagged captions yet) -> no_suggestion_today (tagged but below scoreThreshold) -> ready -> dismissed_at set OR acted_at set (both stamps, dismissed/acted suggestions still report as 'ready' server-side for the rest of the day -- FE sessionStorage collapses the card client-side).",
+      "authn": "@AuthenticationPrincipal AuthPrincipal",
+      "authz": "Identity always via CreatorContextService.requireCreatorProfile(principal); {id} path param is the suggestion id only, ownership enforced in the repository query, never by trusting the path (Kabir gate threat-1: PASS per class javadoc).",
+      "working_condition": "A creator with connected Instagram, synced+tagged captions, and a theme-overlap score >= CreatorCopilotProperties.scoreThreshold (default 2) sees a real suggestion; otherwise a correct 'nothing to say today' 200 response.",
+      "failure_conditions": "CreatorCopilotProperties.enabled defaults to FALSE (CreatorCopilotProperties.java:25-26, confirmed directly in source) -- this flag gates BOTH CreatorCaptionSyncJob and CreatorThemeTaggingJob's scheduled bodies (both explicitly check props.isEnabled() and no-op otherwise, confirmed by reading both job classes in full). With the flag off (the shipped default), captions are never synced from Meta and never tagged, so getSuggestion() can only ever resolve to pending_tagging/no_suggestion_today -- the controller itself has NO equivalent enabled-check, so it always returns 200 looking superficially healthy while structurally starved of data.",
+      "security_conditions": "CreatorThemeTaggingJob explicitly notes 'zero model exposure to caption text (Kabir gate threat-2: PASS, downgraded P0->Low precisely because this tagging pass is non-LLM)' -- pure Java keyword-match against a closed taxonomy, not an LLM call, for the tagging step itself (the SUGGESTION generation calling influora-ai's /internal/creator-suggestion is a separate, AI-backed step not traced further in this pass).",
+      "tests": "NO CreatorCopilotControllerTest exists (confirmed: find over influora-api/src/test/java/com/influora/web/ for CreatorCopilot* returned nothing). CreatorNudgeServiceTest (service layer) exists and was not independently re-run in this pass. On the influora-ai side, tests/routes/test_creator_suggestion.py RUN as part of a 62-test combined run in this pass -- ALL PASSED, giving E4 evidence for the influora-ai /internal/creator-suggestion route specifically, but not for the Spring controller.",
+      "production_conditions": "CREATOR_COPILOT_ENABLED (maps to influora.creator-copilot.enabled, default false) must be true, plus every Instagram-connect/Meta-token prerequisite the caption sync job depends on (MetaOAuthToken rows, InstagramInsightsClient reachability).",
+      "evidence": "Read CreatorCopilotController.java in full (71 lines), CreatorCopilotProperties.java in full (confirmed enabled=false default), CreatorCaptionSyncJob.java and CreatorThemeTaggingJob.java in full (confirmed both gate on the same flag). Ran the influora-ai test_creator_suggestion.py as part of a combined pytest run -- passed with the other 61 tests (62 passed, 1 warning, 13.73s).",
+      "known_issues": [
+        "No controller-level test for the 3 Spring-side routes.",
+        "The feature-off default (CREATOR_COPILOT_ENABLED=false) is silent from the API's perspective -- GET /creator/copilot/suggestion/today returns a normal-looking 200 pending_tagging/no_suggestion_today response indefinitely with no signal distinguishing 'feature administratively off' from 'creator genuinely has no matching content yet'."
+      ],
+      "required_fixes": [
+        "Add CreatorCopilotControllerTest covering the today/dismiss/acted routes including the documented same-404-either-way IDOR behavior.",
+        "Consider surfacing the CREATOR_COPILOT_ENABLED state distinctly (even just in an internal admin/ops view) so 'off' is distinguishable from 'no content yet' without reading config."
+      ]
+    },
+    {
+      "name": "influora-ai FastAPI service: 10 routes (/healthz, /readyz, /chat, /analyze-site, /voice/speak, /voice/transcribe, /internal/brand-safety, /internal/trendspark/nudge, /internal/trendspark/tag, /internal/creator-suggestion)",
+      "user_type": "SYSTEM (browser-direct for /chat and /voice/*; Spring-internal for the /internal/* routes)",
+      "purpose": "The stateless Python reasoner service backing all Meera/TrendSpark/Copilot AI calls; core routes (chat/analyze-site/voice) always register, the 4 internal-integration routes register defensively (try/except per module).",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 70,
+      "entry_point": "influora-ai/app/main.py:1-227",
+      "flow": "app.include_router(chat/analyze_site/voice) happens unconditionally at import time (lines 76-78). trendspark, brand_safety, trend_tag, creator_suggestion are each imported and registered inside their OWN try/except (lines 79-106) 'so a regression in either module degrades to route not registered + a logged error instead of the whole service refusing to boot (C-17)'. /healthz is a bare liveness check (no auth, 'process is up'). /readyz checks keys_loaded (anthropic/gemini/sarvam/internal_hmac/service_token_signing_key/jwks-or-dev-secret), Redis reachability (fail-SAFE if REDIS_URL unset, fail-CLOSED if set-but-unreachable), and the creator monthly-cap concurrency scope -- but does NOT check whether the 4 conditionally-imported routers actually mounted.",
+      "api": "GET /healthz, GET /readyz (both no-auth), POST /chat, POST /analyze-site, POST /voice/speak, POST /voice/transcribe, POST /internal/brand-safety, POST /internal/trendspark/nudge, POST /internal/trendspark/tag, POST /internal/creator-suggestion",
+      "database": "None -- service is explicitly documented stateless: 'no DB, no session store, no local disk writes'.",
+      "state_machine": "N/A at the service level; readyz.ready is a derived boolean (all(keys_loaded) AND redis_ok AND cap_scope.safe).",
+      "authn": "Every route except /healthz and /readyz goes through app.auth.service_token's dependency, enforced 'at the route-body level' per main.py's own module docstring (workspace_id must be read from the body before the token can be checked against it).",
+      "authz": "Per-route, delegated to each route module (not individually re-opened in this pass beyond chat/trendspark-adjacent tests already run).",
+      "working_condition": "All 10 routes registered and reachable; /readyz reports 200 only when every provider key is loaded, Redis (if configured) is reachable, and the creator-cap concurrency scope is safe for the current worker count.",
+      "failure_conditions": "CONFIRMED BY DIRECT CODE READ: a regression that breaks the import of trendspark.py, brand_safety.py, trend_tag.py, or creator_suggestion.py logs an exception (logger.exception(...)) and continues booting WITHOUT that router -- /readyz still reports ready=true if keys/redis/cap_scope are otherwise fine, because readyz's `keys_loaded` dict and `ready` boolean have NO entry checking router-registration success. A caller hitting the now-unregistered route gets FastAPI's default 404, which is indistinguishable at the infrastructure-health level from 'this route was never built' -- only an application-level integration test or a real call would surface it, not a liveness/readiness probe.",
+      "security_conditions": "redaction-based structured JSON logging is configured process-wide (configure_logging) -- not independently verified for completeness of redaction coverage in this pass.",
+      "tests": "test_cors.py, test_gate.py and many others exist per the file listing (78 test files under influora-ai/tests). Ran a 3-file subset (test_creator_suggestion.py, test_trendspark_nudge.py [in tests/eval/], test_chat_creator_audience.py) totaling 62 tests, ALL PASSED. Did not run the full suite (78 files) in this pass due to scope/time -- the /readyz gap identified above is a code-read finding, not something any of the 62 executed tests specifically probed (none of the 3 files run target main.py's startup/readyz logic directly).",
+      "production_conditions": "ANTHROPIC_API_KEY, GEMINI_API_KEY, SARVAM_API_KEY, internal HMAC key, service-token signing key, and either SPRING_JWKS_URL or a dev shared secret must all be set for readyz to report ready; REDIS_URL should be set for a multi-worker deploy (readyz fails closed on a set-but-unreachable Redis specifically to catch a silently-degraded shared cap/replay-guard).",
+      "evidence": "Read influora-ai/app/main.py in full (227 lines) including the complete /readyz implementation -- directly confirmed the keys_loaded dict has exactly 6 keys (anthropic, gemini, sarvam, internal_hmac, service_token_signing_key, jwks_or_dev_secret) and NONE of them reflect router-registration state for trendspark/brand_safety/trend_tag/creator_suggestion.",
+      "known_issues": [
+        "readyz does not check whether the 4 conditionally-imported routers (trendspark, brand_safety, trend_tag, creator_suggestion) actually registered -- a silent import regression in any of them is invisible to infrastructure health checks (task-confirmed finding, independently verified by direct code read)."
+      ],
+      "required_fixes": [
+        "Add a router-registration check to /readyz (e.g. a module-level dict of {name: bool} set inside each try/except block, folded into the readyz response and the overall `ready` boolean) so a broken import on any of the 4 defensively-registered routes fails readiness instead of silently 404ing in production."
+      ]
+    },
+    {
+      "name": "AI jobs/workflows: TrendPullJob, CreatorCaptionSyncJob, CreatorThemeTaggingJob, AICreditResetJob, n8n trend-pull-workflow, BrandSafetyAiClient/AnalyzeSiteAiClient",
+      "user_type": "SYSTEM (scheduled batch jobs, no direct end-user entry point)",
+      "purpose": "The background batch layer feeding TrendSpark and Creator Copilot, plus the monthly AI-credit reset and the two AI HTTP clients (brand-safety classification, site analysis) these jobs/routes depend on.",
+      "status": "PARTIALLY WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "entry_point": "influora-api/src/main/java/com/influora/job/{TrendPullJob,CreatorCaptionSyncJob,CreatorThemeTaggingJob,AICreditResetJob}.java; trendspark/n8n/trend-pull-workflow.json",
+      "flow": "TrendPullJob (05:00 UTC cron default): pulls from every configured TrendSourceClient (tmdb/news/youtube_trending confirmed exercised in test run; NO Google Trends Java client observed), dedups, truncates to 500 chars THEN screens+stores that exact truncated text (fix round 3, closing a truncation-introduces-unsafe-token gap), rejects bidi-control-character spoofs BEFORE the word filter (fix round 2), runs the deterministic word filter, then (if TREND_INGEST_CLASSIFIER_WORKSPACE_ID is set) calls BrandSafetyAiClient.classify and validates the FULL 10-category/4-risk-level GARM response shape (content_id match, exact category SET match, valid risk level) before accepting it as 'safe' -- ANY malformed response fails closed per-headline, and a RuntimeException from the classifier call (widened from a narrower catch in a prior repair round) no longer aborts the whole run. CreatorCaptionSyncJob (2:00 UTC cron default, OR @Async on a CreatorMetaConnectedEvent for an immediate head-start): fetches each creator's recent IG captions via InstagramInsightsClient, persists PENDING creator_captions rows, per-creator AND per-item try/catch. CreatorThemeTaggingJob (3:00 UTC default): tags PENDING captions via pure-Java keyword match (zero LLM exposure), unions results into CreatorProfile.theme_tags. AICreditResetJob (2am UTC on the 1st): resets BRAND-only workspaces on a CALENDAR_MONTH credit clock (explicitly skips BILLING_PERIOD workspaces to avoid a documented F-0896 double-credit bug), syncs planAllotment to the CURRENT active plan unconditionally (F-0836 fix, previously Pro-only which left a cancelled-Pro workspace stuck at 400 forever) before applying resetForNewCycleIfDue (idempotent per UTC month, closing a documented double-reset-in-one-month bug T-S3-F0879-0917). The n8n trend-pull-workflow.json is a PARALLEL, apparently-legacy pipeline (TMDb/NewsAPI/YouTube/Google-Trends daily at 06:00 Asia/Kolkata) with its Google Trends node hard-stubbed to return [].",
+      "api": "N/A (scheduled jobs); BrandSafetyAiClient calls influora-ai internally (not a public route)",
+      "database": "trends (Trend, TrendPullJob), creator_captions (CreatorCaptionCache, sync+tag jobs), creator_profile.theme_tags, brand_ai_credit (BrandAiCredit, AICreditResetJob), meta_oauth_token (source of connected-creator enumeration)",
+      "state_machine": "CaptionTagStatus: PENDING -> TAGGED or FAILED (retried next run on FAILED, per markFailed()). Credit clock: CALENDAR_MONTH (this job resets it) vs BILLING_PERIOD (explicitly skipped, reset by a separate billing-webhook path not traced in this pass).",
+      "authn": "N/A (internal scheduled jobs); BrandSafetyAiClient mints its own service token via BrandSafetyServiceTokenService per call.",
+      "authz": "TrendPullJob fails closed with NOTHING written if no classifier-workspace is configured to pay for the classification calls -- an explicit, escalated-not-decided business/billing question per the class javadoc ('Escalated, not decided here... there is no platform/system workspace in this codebase').",
+      "working_condition": "All 4 jobs require their respective feature flag ON (influora.trend-ingest.enabled, influora.creator-copilot.enabled x2, none for AICreditResetJob which always runs) via @SchedulerLock-protected @Scheduled methods (net.javacrumbs.shedlock, implying multi-instance-safe execution).",
+      "failure_conditions": "TrendPullJob: disabled by default (confirmed via TrendIngestProperties reference and the job's own props.isEnabled() early-return, log line 'TrendPullJob: disabled ... skipping run' directly observed in the test run output) AND requires a second config value (classifier-workspace-id) that appears unset in every committed application*.yml reviewed. CreatorCaptionSyncJob/CreatorThemeTaggingJob: disabled by default (CreatorCopilotProperties.enabled=false). AICreditResetJob: no feature flag -- always scheduled, guarded only by an AtomicBoolean re-entrancy lock and per-workspace try/catch.",
+      "security_conditions": "CreatorCaptionSyncJob explicitly never logs access tokens or caption text. TrendPullJob's bidi-control-character defense is a genuine, reviewer-discovered Trojan-Source-style spoof fix (headline 'diwali sale <U+202E>yadot dellik 5' renders as '...5 killed today' but its literal codepoints never contain a banned word) -- this is a real, non-trivial security fix with a concrete before/after probe documented in the source.",
+      "tests": "TrendPullJobTest RUN: 20/20 PASS (target/surefire-reports/com.influora.job.TrendPullJobTest.txt), log output directly confirms per-scenario coverage of word-filter rejection, bidi-control rejection, classifier-error/unconfigured fail-closed, GARM-duplicate-category rejection, content-id-mismatch rejection, invalid-risk-level rejection, and successful writes. CreatorCaptionSyncJobTest exists (not independently re-run in this pass). AICreditResetJobTest exists (not independently re-run in this pass). No CreatorThemeTaggingJobTest was found in the job test directory listing.",
+      "production_conditions": "TREND_INGEST_ENABLED + TREND_INGEST_CLASSIFIER_WORKSPACE_ID + 3 source API keys (TMDb/NewsAPI/YouTube) for TrendPullJob to ever write a row; CREATOR_COPILOT_ENABLED for the two Copilot jobs; a real BRAND_SAFETY_AI_BASE_URL-reachable influora-ai deployment for the classifier call to succeed rather than fail-closed.",
+      "evidence": "Read TrendPullJob.java, CreatorCaptionSyncJob.java, CreatorThemeTaggingJob.java, AICreditResetJob.java in full (all 4, ~1470 combined lines). Ran mvn -Dtest=TrendPullJobTest -> 20/20 pass with full log output reviewed line-by-line. Grepped trend-pull-workflow.json confirming the Google Trends stub. Read CreatorCopilotProperties.java in full confirming enabled=false default shared by both Copilot jobs.",
+      "known_issues": [
+        "No CreatorThemeTaggingJobTest found (CreatorCaptionSyncJobTest and AICreditResetJobTest exist but were not re-run in this pass to independently confirm their green status).",
+        "The n8n workflow and the Java TrendPullJob appear to be two parallel, only-partially-equivalent implementations of the same trend-ingest concept (the n8n workflow includes theme-tagging against 'Nisha's locked vocab' and HYPE/SEASONAL/PRIDE campaign-type branching the Java job explicitly says it does NOT implement, per TrendPullJob's own 'Descoped' section) -- unclear from this pass alone which one, if either, is the intended production path, or whether both are live simultaneously (which would risk duplicate/conflicting trend rows)."
+      ],
+      "required_fixes": [
+        "Clarify (and if needed, decommission) whichever of {n8n trend-pull-workflow.json, TrendPullJob.java} is NOT the intended production trend-ingest path -- running both against the same trends table risks duplicate or conflicting rows and doubles the maintenance surface for a security-sensitive content-screening pipeline.",
+        "Run CreatorThemeTaggingJob under a dedicated test if none exists, or confirm its coverage lives elsewhere (e.g. inside CreatorNudgeServiceTest) before treating it as verified."
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "MEERAAI-01",
+      "title": "influora-ai /readyz never checks whether the 4 conditionally-imported routers (trendspark, brand_safety, trend_tag, creator_suggestion) actually registered",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 85,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-ai/app/main.py:79-106 wraps each of the 4 router imports in its own try/except that logs and continues on failure. main.py:191-226's /readyz builds `keys_loaded` from exactly 6 boolean checks (anthropic, gemini, sarvam, internal_hmac, service_token_signing_key, jwks_or_dev_secret) and computes `ready = all(keys_loaded.values()) and redis_ok and cap_scope.safe` -- none of these terms reference whether app.include_router succeeded for any of the 4 conditional routers.",
+      "location": "influora-ai/app/main.py:79-106 (registration), 191-226 (/readyz)",
+      "impact": "A deploy where one of these 4 modules fails to import (e.g. a dependency bump, a typo in a shared schema import) will pass every health/readiness probe while silently 404ing on /internal/trendspark/nudge, /internal/brand-safety, /internal/trendspark/tag, or /internal/creator-suggestion -- exactly the class of failure a readiness probe exists to catch, invisible until a real caller hits the dead route (which itself fails silently in Spring's TrendSparkAiClient/BrandSafetyAiClient, both documented to return null/fallback rather than surface an error).",
+      "recommended_fix": "Track each conditional router's registration success in a module-level dict populated inside its try/except, fold it into the /readyz JSON body and into the overall `ready` boolean.",
+      "verification_required": "Simulate an ImportError in one of the 4 route modules (e.g. temporarily break an import) and confirm /readyz still returns 200 today; then confirm it returns 503 after the fix."
+    },
+    {
+      "id": "MEERAAI-02",
+      "title": "TrendSpark nudge feature has no controller-level test and 2 separate config prerequisites absent from every committed application*.yml",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "CONFIGURATION",
+      "evidence": "No TrendSparkControllerTest.java under influora-api/src/test/java/com/influora/web/ (directory listing confirmed empty for that name). TrendPullJob.java:62-76 documents TREND_INGEST_CLASSIFIER_WORKSPACE_ID as required beyond TREND_INGEST_ENABLED, with fail-closed behavior confirmed by the TrendPullJobTest log line 'classifier_unconfigured -- no influora.trend-ingest.classifier-workspace-id set, failing closed'. grep of application.yml/application-prod.yml for this key found only the binding to ${TREND_INGEST_CLASSIFIER_WORKSPACE_ID:} (blank default), no evidence of a real value being set anywhere in the committed config tree.",
+      "location": "influora-api/src/main/java/com/influora/web/TrendSparkController.java (no test); influora-api/src/main/java/com/influora/job/TrendPullJob.java:62-76 (config prerequisite)",
+      "impact": "TrendSpark nudges will realistically never populate in a fresh production deploy even with TREND_INGEST_ENABLED=true, because the classifier-workspace-id (who pays for the GARM classification AI credits) is a separate, easy-to-miss prerequisite with no committed non-blank value found.",
+      "recommended_fix": "Add TrendSparkControllerTest for the 3 brand-facing routes; document TREND_INGEST_CLASSIFIER_WORKSPACE_ID explicitly in the go-live checklist and confirm a real value is set in the actual production environment (not verifiable from this repo checkout alone).",
+      "verification_required": "Check the actual production environment/secrets store (not this repo) for a non-blank TREND_INGEST_CLASSIFIER_WORKSPACE_ID and TREND_INGEST_ENABLED=true."
+    },
+    {
+      "id": "MEERAAI-03",
+      "title": "Creator Copilot batch jobs (caption sync + theme tagging) are OFF by default, starving the always-200 suggestion endpoint with no distinguishing signal",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "CONFIGURATION",
+      "evidence": "CreatorCopilotProperties.java:25-26: `private boolean enabled = false;` with javadoc explicitly stating this gates BOTH CreatorCaptionSyncJob and CreatorThemeTaggingJob's scheduled bodies -- confirmed by reading both job classes' `if (!props.isEnabled()) { ...skip... }` guards directly.",
+      "location": "influora-api/src/main/java/com/influora/config/CreatorCopilotProperties.java:25-26; CreatorCaptionSyncJob.java:91-94; CreatorThemeTaggingJob.java:72-75",
+      "impact": "With the shipped default, GET /creator/copilot/suggestion/today always returns a structurally-valid 200 (pending_tagging or no_suggestion_today) forever, indistinguishable via the API alone from 'feature administratively disabled' versus 'creator genuinely has no tagged content yet' -- a go-live reviewer testing this endpoint would see a plausible-looking response and could easily miss that the entire data pipeline behind it never runs.",
+      "recommended_fix": "Surface the CREATOR_COPILOT_ENABLED state in an ops-visible way (metrics tag, admin endpoint, or startup log line grep-able in deploy verification) distinct from the per-creator suggestion status.",
+      "verification_required": "Confirm the actual production value of CREATOR_COPILOT_ENABLED before claiming this feature live; if true, confirm CreatorCaptionSyncJobTest/CreatorThemeTaggingJob coverage independently."
+    },
+    {
+      "id": "MEERAAI-04",
+      "title": "CreatorAgentController: 4 of 7 routes (withdrawConsent, listConversations, exportConversation, deleteConversation) skip the MEERA_CREATOR_ENABLED feature-flag check that every other creator-Meera route enforces",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 70,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "Direct line-by-line comparison of CreatorAgentController.java:63-114: getPreferences (line 66), updatePreferences (line 73), recordConsent (line 81) each call requireFeatureEnabled() as their first statement; withdrawConsent (lines 90-94), listConversations (96-100), exportConversation (102-107), deleteConversation (109-114) do not.",
+      "location": "influora-api/src/main/java/com/influora/web/CreatorAgentController.java:90-114",
+      "impact": "When MEERA_CREATOR_ENABLED=false, a creator can still withdraw consent and export/list/delete their Meera conversation data via this controller, while every other creator-Meera surface (CreatorMeeraController's sessions/messages/voice, and this same controller's preferences/consent-grant routes) 404s. This is plausibly an intentional DPDP-safety carve-out (data-subject rights should survive a kill-switch) but is not documented as such anywhere in the class or method javadoc, unlike every other cross-cutting decision in this file, making it indistinguishable from an oversight without asking the feature owner.",
+      "recommended_fix": "Add an explicit comment confirming the asymmetry is intentional, or add requireFeatureEnabled() to the 4 missing handlers if it was accidental.",
+      "verification_required": "Ask the feature owner (Priya, per the gate-review references throughout this codebase) whether this asymmetry is intentional; if not documented as intentional, treat as a defect."
+    },
+    {
+      "id": "MEERAAI-05",
+      "title": "Two parallel, non-equivalent trend-ingest implementations exist (n8n trend-pull-workflow.json vs. TrendPullJob.java) with an unclear production-of-record",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 55,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "TrendPullJob.java's own class javadoc lists a 'Descoped from the full job-design' section explicitly stating it lacks the n8n workflow's theme-recovery pass and HYPE/SEASONAL/PRIDE campaign-type branching ('every stored row is tagged EDUCATIONAL... This is a real behavior gap versus the n8n workflow's HYPE/SEASONAL/PRIDE branching'). trend-pull-workflow.json independently exists as a complete, differently-shaped n8n pipeline with its own Google Trends stub.",
+      "location": "influora-api/src/main/java/com/influora/job/TrendPullJob.java:35-58 (class javadoc); trendspark/n8n/trend-pull-workflow.json",
+      "impact": "If both are live in production simultaneously, they could write duplicate or conflicting rows to the same `trends` table (no cross-run natural-key uniqueness is enforced either, per TrendPullJob's own javadoc: 'cross-run natural-key uniqueness is a known, documented gap'). If only one is intended as authoritative, the other represents dead/legacy infrastructure that should be decommissioned rather than left ambiguous.",
+      "recommended_fix": "Determine and document which of the two pipelines (if either) is the production system of record; decommission or explicitly mark the other as legacy/reference-only.",
+      "verification_required": "Check whether the n8n workflow is actually deployed/scheduled anywhere in production infrastructure (outside this repo's scope to verify) versus TrendPullJob's Spring @Scheduled cron."
+    }
+  ]
+}

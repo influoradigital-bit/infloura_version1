@@ -1,0 +1,17 @@
+{
+  "verdict": "believed",
+  "oracle": "vitest",
+  "isolation": "fresh-context",
+  "done_when": "GET /creator/analytics/me/metrics and GET /analytics/creators/{id}/metrics return `followers` = the follower count of the creator's newest creator_metrics row (0 when there is none), and /creator/analytics plus /brand/creators/:id/analytics render it as a 'Followers' card; proved by `mvn -o test -Dtest=AnalyticsService*Test` and `npx vitest run src/pages/creator-analytics.test.tsx src/pages/__tests__/brand-creator-analytics*` exiting 0, each with a test that fails on the pre-fix code, reviewed by kabir in a fresh context",
+  "evidence": {
+    "oracle": "vitest",
+    "command": "bash .proof-os/gates/f0951-f0954-creator-analytics.sh",
+    "result": "VERDICT: proved; Test Files 8 passed, Tests 24 passed; mvn 0 failures",
+    "where": ".proof-os/gates/f0951-f0954-creator-analytics.sh:1"
+  },
+  "not_checked": [
+    "F-0961: the follower figure is the newest row of ANY platform, possibly a creator-declared unverified row",
+    "live run with real Meta data"
+  ],
+  "skipped": []
+}

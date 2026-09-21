@@ -1,0 +1,37 @@
+{
+  "text": "fix F-0953 mislabeled analytics cards",
+  "verb": "FIX",
+  "resolution": "proved",
+  "verbs_matched": [
+    "FIX"
+  ],
+  "modifiers": {},
+  "target": {
+    "kind": "ledger",
+    "id": "F-0953",
+    "resolution": "proved",
+    "note": "mislabeled-metric",
+    "status": "open"
+  },
+  "scope": [
+    "src/pages/creator-analytics.tsx",
+    "src/pages/brand-creator-analytics.tsx"
+  ],
+  "scope_from": "ledger.where",
+  "owner": "ananya",
+  "reviewer": "kavya",
+  "oracles": [],
+  "oracle_first": false,
+  "exit_gate": "npx vitest run src/pages/creator-analytics.test.tsx src/pages/__tests__",
+  "done_when": "On /creator/analytics, /brand/creators/:id/analytics and /brand/analytics no card calls a per-post average a total: the reach and impressions cards are labelled as per-post averages, the duplicate 'Avg. Views Per Post' card (same field as impressions) is gone, and the roster aggregate is labelled as combined per-post averages; demographics empty state names Meta's 100+ follower rule; proved by vitest on those pages' tests exiting 0 with a test that fails on the old labels, reviewed by kabir in a fresh context",
+  "ask": "F-0953 has no `fix` recorded \u2014 what must be true for it to be closed?",
+  "refused": null,
+  "prior_failures": [
+    "F-0441",
+    "F-0953"
+  ],
+  "dispatch": "agents",
+  "oracles_skipped_no_toolchain": [],
+  "graph_nodes": 928,
+  "human_answer": "Yes (user, 2026-09-18): build all four, commit after review for today's push"
+}

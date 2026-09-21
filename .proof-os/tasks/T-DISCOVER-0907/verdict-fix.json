@@ -1,0 +1,24 @@
+{
+ "verdict": "proved",
+ "oracle": "mvn",
+ "isolation": "oracle",
+ "done_when": "a creator with no Meta OAuth token can record an INSTAGRAM handle and follower count, the row lands in platform_stats so the brand's platforms=INSTAGRAM filter matches them, and it never renders as platform-verified",
+ "not_checked": [
+  "the existing creators already in the production database still have no platform_stats row until each of them opens the portfolio editor and declares one - this ships the door, it does not walk anyone through it",
+  "whether the brand's Discover results actually change on live - no production DB or API was probed",
+  "creator-onboarding.tsx was deliberately not touched, so a NEW creator who declines Meta OAuth still finishes onboarding with no platform row and must visit the portfolio editor",
+  "F-0696 and F-0697 (the Instagram tab's dead marketplace flag and the unset system IG caller) are untouched and still open"
+ ],
+ "skipped": [
+  {
+   "step": "edit creator-onboarding.tsx to offer the same field at signup",
+   "reason": "another Claude Code session was writing that exact file 61 seconds before the edit (T-IGTRUST-0907, mtime confirmed); this repo has a recorded history of silently clobbering concurrent in-progress edits, so the onboarding half is left for the user to sequence"
+  }
+ ],
+ "evidence": {
+  "oracle": "mvn",
+  "command": "bash .proof-os/gates/discovery-self-declared-platform.sh",
+  "result": "PROVED - backend PortfolioServiceDeclarePlatformTest 7 of 7 passing and frontend f0694-declare-platform 5 of 5 passing; gate exit 0",
+  "where": ".proof-os/gates/discovery-self-declared-platform.sh:1"
+ }
+}

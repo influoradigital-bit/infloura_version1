@@ -1,0 +1,20 @@
+{
+ "verdict": "proved",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "deleting the chargeOnPublish call at EITHER publish path - CampaignService.update or ConfirmLaunchExecutor.doExecute - turns a gate RED",
+ "not_checked": [
+  "that the fee is actually charged AT RUNTIME - this proves a call instruction is reachable from the exact entry-point signature, not that control flow reaches it. An always-false guard around a reachable call passes here; only CampaignServiceTest / CampaignActivationGatesTest / ConfirmLaunchExecutorTest caught that probe, which is why the gate runs them alongside.",
+  "a THIRD publish path added later - it needs its own named assertion; there is no generic 'anything that sets ACTIVE must also charge' scan, because CampaignService.update reaches ACTIVE through Campaign.applyPatch and carries no literal ACTIVE at the transition point",
+  "a no-op inside the fee service itself - forcing feeBps to 0 returns legally and moves no money while every gate stays green; nobody probed that",
+  "the full backend suite and the Testcontainers classes - only five test classes were run",
+  "whether any CI config actually executes this gate"
+ ],
+ "skipped": [],
+ "evidence": {
+  "oracle": "script",
+  "command": "bash .proof-os/gates/F-0802-F-0803-brand-fee-publish-paths.sh",
+  "result": "exits 0; all 62 tests it runs passed and none were skipped. Falsified per publish path: deleting only the CampaignService call turns it red, deleting only the ConfirmLaunchExecutor call turns it red, and the wrong-overload mutation that was green before this fix is now red - reproduced independently by the dispatcher.",
+  "where": ".proof-os/gates/F-0802-F-0803-brand-fee-publish-paths.sh:1"
+ }
+}

@@ -1,0 +1,374 @@
+{
+  "presentation": "CREATOR_PRESENTATION.pptx",
+  "release_candidate": "115f698",
+  "ceo_decision": {
+    "decision": "NO-GO",
+    "evidence_level": 3,
+    "confidence": 75
+  },
+  "prepared_by": "Riya (Sage presentation design)",
+  "date": "2026-09-19",
+  "method": "Every capability claim on the deck is drawn from _raw/merged-register.json \"features\" status for creator-facing surfaces (WORKING/VERIFIED WORKING -> Available; PARTIALLY WORKING/IMPLEMENTED BUT NOT VERIFIED/CONFIGURATION DEPENDENT -> In development; NOT IMPLEMENTED/BROKEN/NOT VERIFIED -> Planned or presented only as an honest caveat), cross-checked against _raw/verification-and-review.json final verdicts/severities and _raw/final-decision.json's matrix and must_fix_first list. Register EVs describing brand-only or pure backend/infra defects (e.g. EV-006 leaked keys, EV-017 Redis wiring) are used only to justify why a related creator feature is labeled In development, never quoted directly to creators. No customer counts, revenue, traction, market size or AI-accuracy figures appear anywhere in the deck. No secret values appear anywhere in the deck. The RC code at the given Temp path was read only for brand design tokens (src/app/globals.css) used for the palette.",
+  "slide_count": 12,
+  "claims": [
+    {
+      "slide": 1,
+      "area": "Title / framing",
+      "claim_text": "\"Early Access Preview\" badge; \"This is a pre-launch preview. Capabilities below reflect what the code can do today, not a live product for the public yet.\"",
+      "status_on_slide": "disclaimer",
+      "evidence_ids": ["final-decision.decision", "final-decision.overall_evidence_level", "final-decision.overall_confidence"],
+      "confidence": 75,
+      "notes": "Reflects final-decision.json: decision=NO-GO, overall_evidence_level=3, overall_confidence=75 for RC 115f698. Framing chosen instead of a standard product-launch deck because EV-001 means this RC's backend cannot boot at all (E5/C98, verification-and-review.json verdicts[0])."
+    },
+    {
+      "slide": 2,
+      "area": "Apply to campaigns",
+      "claim_text": "\"Browse the marketplace and apply to brand campaigns directly\" — Available",
+      "status_on_slide": "Available",
+      "evidence_ids": ["feature:Creator marketplace browse/detail/apply"],
+      "confidence": 85,
+      "notes": "merged-register.json features: \"Creator marketplace browse/detail/apply\" = WORKING, evidence_score 4, confidence 85, source blueprint-campaigns-discovery."
+    },
+    {
+      "slide": 2,
+      "area": "Reviews / reputation",
+      "claim_text": "\"Two-way reviews build a reputation brands can see before they hire you.\" — Available",
+      "status_on_slide": "Available",
+      "evidence_ids": ["feature:Two-way reviews: submit / received / flag"],
+      "confidence": 80,
+      "notes": "merged-register.json features: \"Two-way reviews: submit / received / flag\" = WORKING."
+    },
+    {
+      "slide": 2,
+      "area": "Portfolio",
+      "claim_text": "\"A public, shareable portfolio page shows off your past collaborations.\" — Available",
+      "status_on_slide": "Available",
+      "evidence_ids": ["feature:Creator portfolio"],
+      "confidence": 72,
+      "notes": "merged-register.json features: \"Creator portfolio\" = PARTIALLY WORKING overall bucket (evidence_score 5, confidence 72), but the specific capability claimed here — a public page existing — is corroborated by perf.json's \"Public creator portfolio page (GET /portfolio/{username})\" entry and blueprint-marketing-festival-public's public /:handle route. Shown as Available for 'page exists and is public'; the deeper analytics/perf caveats are separated onto slide 4 as In development/Planned (EV-072, EV-147)."
+    },
+    {
+      "slide": 2,
+      "area": "Meera for creators",
+      "claim_text": "\"Meera, Influora's AI assistant, is being rolled out to help you navigate deals and questions.\" — In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["feature:Creator Meera chat"],
+      "confidence": 72,
+      "notes": "merged-register.json features: \"Creator Meera chat\" = PARTIALLY WORKING (evidence_score 4, confidence 72); ash source rates it IMPLEMENTED BUT NOT VERIFIED."
+    },
+    {
+      "slide": 3,
+      "area": "Meta connect (Instagram/Facebook)",
+      "claim_text": "\"Sign in with either Instagram Login or Facebook Login\"; \"Connect your account\", \"Metrics start syncing\", \"Your handle appears on your profile\" — all In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["feature:Meta OAuth + Instagram ingestion", "feature:Background jobs: MetricsPollingJob, AudienceDemographicsJob, MetaTokenRefreshService, PlatformStatsAggregationJob, CreatorConnectNudgeJob"],
+      "confidence": 76,
+      "notes": "merged-register.json features: \"Meta OAuth + Instagram ingestion\" = IMPLEMENTED BUT NOT VERIFIED (evidence_score 3, confidence 76; worst-status source is dev.json, while blueprint-creator-onboarding-meta-analytics-portfolio rated it WORKING — conflict recorded). Background metrics-sync jobs = PARTIALLY WORKING. No specific connect-time claim (e.g. '30 seconds') is made on the slide because EV-155 flags that exact claim as unverified load-time copy elsewhere in the product."
+    },
+    {
+      "slide": 3,
+      "area": "Meta connect — omitted claim",
+      "claim_text": "(Deliberately not claimed) — no promise that Instagram connect works identically regardless of which Meta login path a creator used.",
+      "status_on_slide": "omitted",
+      "evidence_ids": ["EV-027"],
+      "confidence": 55,
+      "notes": "EV-027 (P2 DOWNGRADED, E3/C55): BrandOwnContentService silently defaults the Instagram auth path to FACEBOOK_LOGIN, so behavior can diverge by login path. This is a brand-surface finding (BrandOwnContentService), not confirmed on the creator connect path itself, so it is not cited on-slide, but it is why both IG and FB paths are shown generically as In development rather than asserting parity."
+    },
+    {
+      "slide": 4,
+      "area": "Portfolio page",
+      "claim_text": "\"Public, shareable profile page\" / \"One link for brands to see your bio, categories and past collaborations.\" — Available",
+      "status_on_slide": "Available",
+      "evidence_ids": ["feature:Creator portfolio"],
+      "confidence": 72,
+      "notes": "Same basis as slide 2 portfolio claim: blueprint-creator-onboarding-meta-analytics-portfolio (portfolio public/contact + own get/patch/sync/platforms/cover/analytics) and blueprint-marketing-festival-public (public /c/:username, /:handle catch-all)."
+    },
+    {
+      "slide": 4,
+      "area": "Portfolio metrics sync",
+      "claim_text": "\"Follower and engagement numbers pull from your connected Instagram/Facebook account.\" — In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["feature:Meta OAuth + Instagram ingestion", "EV-008"],
+      "confidence": 76,
+      "notes": "Same Meta-sync basis as slide 3. Not claimed as fully verified because EV-008 (P0 CONFIRMED, E3/C82) shows self-declared metrics can currently outrank a fresh Meta poll and render as verified with no dataSource filter — so 'auto-synced' is accurate but the integrity of what's synced is still being hardened (see slide 8, 11)."
+    },
+    {
+      "slide": 4,
+      "area": "Link-click analytics",
+      "claim_text": "\"See how many clicks each link in your media kit gets.\" — Planned",
+      "status_on_slide": "Planned",
+      "evidence_ids": ["EV-147"],
+      "confidence": 80,
+      "notes": "EV-147 (P3 OBSERVED): PortfolioAnalyticsResponse.linkClicks is permanently an empty list — custom-link click tracking was never implemented. Correctly labeled Planned, not In development, since no partial implementation exists."
+    },
+    {
+      "slide": 4,
+      "area": "Example portfolio card",
+      "claim_text": "\"Illustrative example — not a real creator\" caption on the mock portfolio card",
+      "status_on_slide": "disclaimer",
+      "evidence_ids": ["EV-169"],
+      "confidence": 60,
+      "notes": "EV-169 (P3 OBSERVED) flags that an unlabeled illustrative creator-portfolio example elsewhere in the product reads like a real testimonial, inconsistent with the site's no-testimonials policy. This deck's mock card uses only placeholder shapes (no fabricated name/stats) and an explicit 'illustrative example' label to avoid repeating that exact mistake."
+    },
+    {
+      "slide": 5,
+      "area": "Browse marketplace / apply",
+      "claim_text": "\"Browse the marketplace\", \"Apply in one click\" — Available",
+      "status_on_slide": "Available",
+      "evidence_ids": ["feature:Creator marketplace browse/detail/apply"],
+      "confidence": 85,
+      "notes": "Same as slide 2: WORKING, evidence_score 4, confidence 85."
+    },
+    {
+      "slide": 5,
+      "area": "Application tracking",
+      "claim_text": "\"Track your applications\" / \"See status and history for everything you've applied to.\" — In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["feature:Creator applications + history (/creator/applications*)"],
+      "confidence": 55,
+      "notes": "merged-register.json features: \"Creator applications + history (/creator/applications*)\" = PARTIALLY WORKING, evidence_score 3, confidence 55 (blueprint-campaigns-discovery)."
+    },
+    {
+      "slide": 5,
+      "area": "Deal-room messaging",
+      "claim_text": "\"Chat in the deal room\" / \"Message the brand directly once you're shortlisted.\" — Available",
+      "status_on_slide": "Available",
+      "evidence_ids": ["feature:Deal-room messaging incl. SSE stream"],
+      "confidence": 80,
+      "notes": "merged-register.json features: \"Deal-room messaging incl. SSE stream\" = WORKING."
+    },
+    {
+      "slide": 6,
+      "area": "Contract signing",
+      "claim_text": "\"Review terms and e-sign; download a PDF copy for your records.\" — In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["feature:Contracts"],
+      "confidence": 55,
+      "notes": "merged-register.json features: \"Contracts\" = PARTIALLY WORKING overall (worst-status source vikram-api E3); sources disagree (blueprint-deals-contracts-content rates WORKING E4, swapnil rates IMPLEMENTED BUT NOT VERIFIED E3) — conflict recorded in the register, so the deck uses the conservative 'In development' label."
+    },
+    {
+      "slide": 6,
+      "area": "Deliverable upload",
+      "claim_text": "\"Submit content, proof of posting and metrics right from the deal room, then mark it posted.\" — Available",
+      "status_on_slide": "Available",
+      "evidence_ids": ["feature:Creator deliverables: list / bulk / upload / status / submit / metrics / proof / mark-posted / verify"],
+      "confidence": 90,
+      "notes": "merged-register.json features: this exact feature bucket = WORKING, evidence_score 5, confidence 90 (highest-confidence creator-facing entry in the register)."
+    },
+    {
+      "slide": 6,
+      "area": "Approval releases payment",
+      "claim_text": "\"Once the brand approves your submission, your payment moves toward release.\" — Available",
+      "status_on_slide": "Available",
+      "evidence_ids": ["feature:Deliverable approval -> payment release", "EV-019", "EV-021"],
+      "confidence": 90,
+      "notes": "merged-register.json features: \"Deliverable approval -> payment release\" = WORKING (related_ev EV-019, EV-021). Deliberately phrased as 'moves toward release' rather than 'is paid', because EV-019 (P1 CONFIRMED-RUNTIME, E4/C93) shows approval alone does not auto-release funds — a second brand action is required. That caveat is called out explicitly in the amber callout box on the same slide."
+    },
+    {
+      "slide": 6,
+      "area": "Manual release caveat",
+      "claim_text": "\"Approval and payment release are currently two separate brand actions. We're building automatic release so your payout starts the moment a deliverable is approved.\"",
+      "status_on_slide": "In development",
+      "evidence_ids": ["EV-019"],
+      "confidence": 93,
+      "notes": "EV-019 (P1, verification-and-review.json verdict CONFIRMED-RUNTIME, E4/C93): Deliverable approval never releases payment (Deliverable.milestoneId never populated); release needs a second brand action and there is no auto-release. final-decision.json must_fix_first item 10 lists this as a required fix."
+    },
+    {
+      "slide": 7,
+      "area": "Wallet ledger",
+      "claim_text": "\"You earn it\" / \"It lands in your wallet\" — escrow + wallet ledger tracking — In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["feature:Double-entry wallet ledger", "feature:Escrow funding"],
+      "confidence": 75,
+      "notes": "merged-register.json features: \"Double-entry wallet ledger\" = PARTIALLY WORKING; \"Escrow funding\" = PARTIALLY WORKING (related_ev EV-002, P0 CONFIRMED E4/C85: re-funding an already-funded milestone can double-debit)."
+    },
+    {
+      "slide": 7,
+      "area": "Manual payout by ops",
+      "claim_text": "\"Ops reviews & releases\" / \"Our finance team processes your payout as a bank transfer, checked against your KYC.\" — In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["EV-020", "feature:Admin manual payout"],
+      "confidence": 90,
+      "notes": "EV-020 (P1 CONFIRMED, E3/C90): Creator bank payout is not self-serve in the production build; withdraw is off by default and payouts are manual admin UTR (bank reference) entries. merged-register.json features: \"Admin manual payout\" = IMPLEMENTED BUT NOT VERIFIED. This is the only payout mechanism described on the slide, matching what the code actually does today."
+    },
+    {
+      "slide": 7,
+      "area": "Self-serve withdrawal",
+      "claim_text": "\"Self-serve instant withdrawal is not turned on yet — today, payouts are handled manually.\" — Planned",
+      "status_on_slide": "Planned",
+      "evidence_ids": ["feature:Creator withdrawal / payouts", "EV-003", "EV-014"],
+      "confidence": 85,
+      "notes": "merged-register.json features: \"Creator withdrawal / payouts\" = BROKEN (related_ev EV-003, EV-014, EV-020). EV-014 (P1 CONFIRMED, E4/C88): the withdrawal idempotency key overflows a VARCHAR(64) column, so every FE withdrawal fails at commit. EV-003 (P1 DOWNGRADED on reverification, E4/C75, verification-and-review.json): withdrawal calls RazorpayX inside an open DB transaction before a durable Payout row exists, risking a stranded bank transfer with no reconciliation row. Presented as Planned, not In development, because the code path is currently non-functional rather than partially working."
+    },
+    {
+      "slide": 7,
+      "area": "No payout-time promise",
+      "claim_text": "\"We don't promise a payout window we can't back up yet\" (no specific hours/days figure stated anywhere in the deck)",
+      "status_on_slide": "disclaimer",
+      "evidence_ids": ["EV-104"],
+      "confidence": 80,
+      "notes": "EV-104 (P2 OBSERVED, C80): the creator-facing 'Payout typically inside 24 hours' claim elsewhere in the product has no operational evidence behind it. The deck deliberately omits any turnaround-time figure rather than repeating that unverified claim."
+    },
+    {
+      "slide": 7,
+      "area": "KYC hardening",
+      "claim_text": "\"KYC identity checks are still being hardened\"",
+      "status_on_slide": "In development",
+      "evidence_ids": ["EV-058"],
+      "confidence": 70,
+      "notes": "EV-058 (P2 OBSERVED, C70): Creator identity KYC is self-declared — nothing sets VERIFIED and the payout gate currently accepts PENDING status."
+    },
+    {
+      "slide": 8,
+      "area": "Reach / engagement / growth analytics",
+      "claim_text": "\"See how far your connected content is reaching\", \"Track likes, comments and engagement rate\", \"Follow how your audience is growing over time\" — all In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["feature:Creator analytics"],
+      "confidence": 80,
+      "notes": "merged-register.json features: \"Creator analytics\" (brand-view + self-view) = PARTIALLY WORKING, evidence_score 3, confidence 80."
+    },
+    {
+      "slide": 8,
+      "area": "Verified-metrics badge",
+      "claim_text": "\"We're hardening the logic so brands only see numbers confirmed from your connected platform.\" — In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["EV-008", "feature:Creator verified metrics"],
+      "confidence": 82,
+      "notes": "EV-008 (P0 CONFIRMED, E3/C82): self-declared follower counts can currently surface as Meta-verified because the public verified page and brand analytics headline read CreatorMetric rows with no dataSource filter. merged-register.json features: \"Creator verified metrics\" = PARTIALLY WORKING (related_ev EV-008). final-decision.json must_fix_first item 9 requires re-verifying this before any next RC."
+    },
+    {
+      "slide": 9,
+      "area": "Meera chat",
+      "claim_text": "\"Ask questions about deals, campaigns and your account, right inside the app. Usage is capped and consent-gated.\" — In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["feature:Creator Meera chat"],
+      "confidence": 72,
+      "notes": "merged-register.json features: \"Creator Meera chat\" = PARTIALLY WORKING. ash.json source: 'Meera for Creators chat (no tools, consent gate, monthly cap)', corroborating the consent-gate/cap framing used on the slide."
+    },
+    {
+      "slide": 9,
+      "area": "Meera voice",
+      "claim_text": "\"Voice chat (speak and listen) is being rolled out alongside the text experience.\" — In development",
+      "status_on_slide": "In development",
+      "evidence_ids": ["feature:Meera voice STT/TTS"],
+      "confidence": 70,
+      "notes": "merged-register.json features: \"Meera voice STT/TTS\" = PARTIALLY WORKING."
+    },
+    {
+      "slide": 9,
+      "area": "Data export/delete",
+      "claim_text": "\"Export or delete your Meera conversation history at any time from your settings.\" — Available",
+      "status_on_slide": "Available",
+      "evidence_ids": ["feature:Creator agent preferences / consent / conversations (export + delete)"],
+      "confidence": 85,
+      "notes": "merged-register.json features: \"Creator agent preferences / consent / conversations (export + delete)\" = WORKING. Note: EV-082 (P2 OBSERVED) found 4 of 7 CreatorAgentController routes, including export/list/delete, skip the MEERA_CREATOR_ENABLED flag check — meaning these data-rights actions keep working even if Meera chat itself is toggled off, which supports rather than undermines this specific claim."
+    },
+    {
+      "slide": 9,
+      "area": "Caption suggestions",
+      "claim_text": "\"AI-drafted captions based on your content themes, tuned to your posting style.\" — Planned",
+      "status_on_slide": "Planned",
+      "evidence_ids": ["EV-068", "feature:Creator Copilot"],
+      "confidence": 80,
+      "notes": "EV-068 (P2 CONFIRMED, C80): Creator Copilot batch jobs (caption sync + theme tagging) ship OFF by default, so the suggestion endpoint always returns an empty/pending response in production. merged-register.json features: \"Creator Copilot\" = CONFIGURATION DEPENDENT. Labeled Planned rather than In development because the feature is fully gated off, not partially live."
+    },
+    {
+      "slide": 10,
+      "area": "FAQ — Meta connect safety",
+      "claim_text": "\"You connect through Meta's own official login screen, and you can disconnect from your settings at any time.\"",
+      "status_on_slide": "context",
+      "evidence_ids": ["feature:Meta OAuth + Instagram ingestion"],
+      "confidence": 76,
+      "notes": "Based on the coded authorize/callback/status/disconnect endpoints in \"Meta OAuth + Instagram ingestion\" (IMPLEMENTED BUT NOT VERIFIED, C76)."
+    },
+    {
+      "slide": 10,
+      "area": "FAQ — getting paid",
+      "claim_text": "\"Once a brand approves your deliverable, funds move toward release and our finance team processes a bank transfer. Instant self-serve withdrawal isn't live yet.\"",
+      "status_on_slide": "context",
+      "evidence_ids": ["EV-019", "EV-020", "EV-014"],
+      "confidence": 88,
+      "notes": "Consistent with slides 6 and 7; see those entries for full EV basis."
+    },
+    {
+      "slide": 10,
+      "area": "FAQ — AI data control",
+      "claim_text": "\"Yes — you can export or delete your Meera conversation history whenever you want.\"",
+      "status_on_slide": "context",
+      "evidence_ids": ["feature:Creator agent preferences / consent / conversations (export + delete)"],
+      "confidence": 85,
+      "notes": "Same basis as slide 9."
+    },
+    {
+      "slide": 10,
+      "area": "FAQ — support",
+      "claim_text": "\"In-app support ticketing is in development. Until then, reach your Influora contact directly.\"",
+      "status_on_slide": "context",
+      "evidence_ids": ["EV-012"],
+      "confidence": 85,
+      "notes": "EV-012 (P1 CONFIRMED, C85): the requester-facing support-ticket API is fully built and tested but has no UI entry point; /support is a 'coming soon' placeholder. final-decision.json must_fix_first item 13 lists shipping the support UI as a required fix."
+    },
+    {
+      "slide": 10,
+      "area": "FAQ — follower verification",
+      "claim_text": "\"We're actively hardening verified-metrics logic; some numbers shown today may still be self-reported.\"",
+      "status_on_slide": "context",
+      "evidence_ids": ["EV-008"],
+      "confidence": 82,
+      "notes": "Same basis as slide 8."
+    },
+    {
+      "slide": 11,
+      "area": "Roadmap — In development",
+      "claim_text": "Automatic payment release after approval; verified-metrics hardening; Instagram/Facebook connect fully verified end-to-end; creator analytics maturing; Meera chat & voice rolling out",
+      "status_on_slide": "In development",
+      "evidence_ids": ["EV-019", "EV-008", "feature:Meta OAuth + Instagram ingestion", "feature:Creator analytics", "feature:Creator Meera chat", "feature:Meera voice STT/TTS"],
+      "confidence": 75,
+      "notes": "Aggregates the In development items already cited on slides 3, 6, 8 and 9 into a single forward-looking list; no new facts introduced."
+    },
+    {
+      "slide": 11,
+      "area": "Roadmap — Planned",
+      "claim_text": "Self-serve instant withdrawals; in-app support tickets; portfolio per-link click analytics; AI caption suggestions; automated TDS documentation on payouts",
+      "status_on_slide": "Planned",
+      "evidence_ids": ["EV-014", "EV-003", "EV-020", "EV-012", "EV-147", "EV-068", "EV-031"],
+      "confidence": 80,
+      "notes": "EV-031 (P1 CONFIRMED, C88): 'TDS shown on invoices / TDS on payouts' is not computed anywhere in the automated, gateway-driven creator payout path today. All other items aggregate slides 4, 7, 9 and 10; no new facts introduced. These are also the exact items final-decision.json's must_fix_first list (items 9–13) requires before any creator beta."
+    },
+    {
+      "slide": 12,
+      "area": "CTA framing",
+      "claim_text": "\"We're onboarding a limited, invite-only group of creators while the platform finishes the fixes on our roadmap. Get on the list and we'll reach out as access opens up.\"",
+      "status_on_slide": "context",
+      "evidence_ids": ["final-decision.can_launch"],
+      "confidence": 75,
+      "notes": "Mirrors final-decision.json can_launch's own described future path: 'a LIMITED invite-only beta (hand-picked brands and creators, same-day ops SLA for KYC and payouts), with creator withdrawals off server-side ... This is a future path, not something approved on this RC.' CTA is 'Join the waitlist', not 'Sign up now', to avoid implying self-serve production access exists today."
+    },
+    {
+      "slide": 12,
+      "area": "Closing disclaimer",
+      "claim_text": "\"This deck reflects the 2026-09-19 engineering audit of release candidate 115f698. That build is not cleared for production (CEO decision: NO-GO, evidence level 3, confidence 75%) because the backend fails to start in its current state.\"",
+      "status_on_slide": "disclaimer",
+      "evidence_ids": ["final-decision.decision", "final-decision.overall_evidence_level", "final-decision.overall_confidence", "EV-001"],
+      "confidence": 98,
+      "notes": "final-decision.json: release_candidate=115f698, decision=NO-GO, overall_evidence_level=3, overall_confidence=75. EV-001 (verification-and-review.json verdict CONFIRMED-RUNTIME, E5/C98): influora-api cannot boot in any Spring profile (BeanCreationException on TrendPullJob), reproduced twice at runtime. This is the load-bearing reason the whole deck is framed as a pre-launch preview rather than a live product pitch."
+    },
+    {
+      "slide": 12,
+      "area": "Contact domain",
+      "claim_text": "\"app.influora.in\" shown as the destination to join the waitlist",
+      "status_on_slide": "context",
+      "evidence_ids": [],
+      "confidence": null,
+      "notes": "Domain confirmed present across multiple _raw JSON files (referenced as app.influora.in, api.influora.in, ai.influora.in). No specific signup URL path, email address or contact person is invented; the bare domain is the only detail asserted."
+    }
+  ],
+  "omitted_or_softened_claims": [
+    "No claim that Influora is a licensed/RBI-authorized Payment Aggregator or that it 'never pools' funds — EV-007 (P0) found this exact claim false and contradicted by the pooled clearing-wallet ledger; the deck never uses the word 'guaranteed' about payment (XR-ROHAN-01) and never states a payout turnaround time (EV-104).",
+    "No claim that TDS is automatically computed/shown on payouts — EV-031 (P1): not implemented on the automated path; shown only as Planned.",
+    "No specific connect-time duration (e.g. '30 seconds') for Instagram/Facebook connect — EV-155 flags that exact claim as unverified elsewhere in the product.",
+    "No named/real creator, stats, testimonial or follower count used in the portfolio mockup — avoids repeating the EV-169 pattern (an unlabeled illustrative example reading as a real testimonial).",
+    "No specific fabricated contact email, phone number, or signup URL path — only the bare, audit-confirmed app.influora.in domain is used.",
+    "No AI accuracy, model-quality or eval numbers claimed for Meera — EV-057 (P2) found no live-model quality evidence (0-fixture eval datasets); the deck limits Meera claims to what the code does (chat, voice, consent/export/delete, caption suggestions) and their build status."
+  ]
+}

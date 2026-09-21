@@ -1,0 +1,35 @@
+{
+  "text": "fix F-0952 per-post likes comments hidden",
+  "verb": "FIX",
+  "resolution": "proved",
+  "verbs_matched": [
+    "FIX"
+  ],
+  "modifiers": {},
+  "target": {
+    "kind": "ledger",
+    "id": "F-0952",
+    "resolution": "proved",
+    "note": "dropped-field",
+    "status": "open"
+  },
+  "scope": [
+    "src/components/analytics/ContentPerformancePanel.tsx"
+  ],
+  "scope_from": "ledger.where",
+  "owner": "ananya",
+  "reviewer": "kavya",
+  "oracles": [],
+  "oracle_first": false,
+  "exit_gate": "npx vitest run src/components/analytics",
+  "done_when": "ContentPerformancePanel renders each post's likes, comments, saves, shares and video views from the ContentPerformanceResponse fields, showing '\u2014' (never 0) when a field is null or omitted; ContentPerformanceItem declares those fields; proved by `npx vitest run src/components/analytics` exiting 0 with a test that fails on the pre-fix panel, reviewed by kabir in a fresh context",
+  "ask": "F-0952 has no `fix` recorded \u2014 what must be true for it to be closed?",
+  "refused": null,
+  "prior_failures": [
+    "F-0952"
+  ],
+  "dispatch": "agents",
+  "oracles_skipped_no_toolchain": [],
+  "graph_nodes": 928,
+  "human_answer": "Yes (user, 2026-09-18): build all four, commit after review for today's push"
+}

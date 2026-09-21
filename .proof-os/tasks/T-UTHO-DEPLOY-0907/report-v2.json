@@ -1,0 +1,364 @@
+{
+ "rows": [
+  {
+   "subject": "deploy/utho/install-ai-vhost.sh",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the script source read line by line against the ss output transcribed in live-state.txt",
+    "command": "read deploy/utho/install-ai-vhost.sh:66 and :180; compared with live-state.txt:33 and :37",
+    "result": "preflight greps for the literal '127.0.0.1:8080' but the listeners print as '0.0.0.0:8000' (uvicorn) and '*:8080' (foreign java), so the grep never matches and the non-interactive branch at :85 dies; PHASE2 proxy_pass at :180 points at 127.0.0.1:8080, the co-tenant java pid=2658, not the AI service on 8000. Two one-line edits make it safe; the rest of the script (two-phase certbot, nginx -t gating every reload at :125/:205, automatic rollback at :33-48, duplicate-server_name preflight at :89-93) is sound",
+    "where": "deploy/utho/install-ai-vhost.sh:66,180; live-state.txt:33,37"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/nginx-ai-influora.conf",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the conf file read in full against the ss listener table in live-state.txt",
+    "command": "read deploy/utho/nginx-ai-influora.conf:47 alongside live-state.txt:33 and :37",
+    "result": "proxy_pass http://127.0.0.1:8080 targets the foreign java process pid=2658, not influora-ai's uvicorn on 0.0.0.0:8000; the file's own premise at :36 and :50-51 is a Caddy on 8080 that docker ps at live-state.txt:22-30 shows does not exist on this box. Sole defect; server_name is correctly scoped to one host at :25 and :41 and the SSE set is present at :62-68",
+    "where": "deploy/utho/nginx-ai-influora.conf:47; live-state.txt:33,37"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/nginx-influora.conf",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the conf file read against the enabled sites listing and the apex vhost transcribed in live-state.txt",
+    "command": "read deploy/utho/nginx-influora.conf:19,47,59,65 against live-state.txt:6 and :48-76",
+    "result": "declares influora.in and www.influora.in on :80 (:19) and again on :443 (:47, :59) while /etc/nginx/sites-available/influora.in is already enabled and owns those names; two enabled files sharing a server_name makes nginx silently pick one. It also proxies the apex to 127.0.0.1:8080 (:65) and carries no location /api/ block, so the live API route at live-state.txt:64-65 would disappear",
+    "where": "deploy/utho/nginx-influora.conf:19,47,59,65; live-state.txt:6,50-58,64-65"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/nginx-influora-app.conf",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the conf file read against the letsencrypt live directory listing in live-state.txt",
+    "command": "read deploy/utho/nginx-influora-app.conf:20,37-38,58-59,89-90 against live-state.txt:19",
+    "result": "references certificates for app.influora.in, api.influora.in and ai.influora.in; /etc/letsencrypt/live/ holds only bysnaps.com, influora.in, README and snapsby.com, so nginx -t fails outright. Line 20 also claims ai.influora.in on :80, which would collide with the ai-influora.conf this plan installs and trip the script's own conflict check. All three upstreams are 127.0.0.1:8080",
+    "where": "deploy/utho/nginx-influora-app.conf:20,37,58,89; live-state.txt:19"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/docker-compose.utho.yml",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the compose file read against the ss listener table and docker ps output in live-state.txt",
+    "command": "read deploy/utho/docker-compose.utho.yml:63,120,275 against live-state.txt:37 and :183-185",
+    "result": "publishes Caddy on 127.0.0.1:8080, which the wildcard *:8080 bind held by java pid=2658 blocks, so the stack cannot start. It declares no container_name anywhere and pulls ghcr.io/influoradigital-bit images, whereas the running containers use local tags influora-api:latest and influora-ai:latest with no compose labels, so a compose up would create a second parallel stack rather than update them",
+    "where": "deploy/utho/docker-compose.utho.yml:63,120,275; live-state.txt:37,183-185"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/docker-compose.utho-shared.yml",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the compose file read against the ss listener table and docker ps output in live-state.txt",
+    "command": "read deploy/utho/docker-compose.utho-shared.yml:79,136,259,299 against live-state.txt:37 and :183-185",
+    "result": "same 127.0.0.1:8080 publish collision and the same ghcr image / no-container_name mismatch with the hand-run local-tag containers. Its CORS_ALLOWED_ORIGINS (:158) and MEERA_ALLOWED_ORIGINS (:292) are correctly shaped but reach nothing on this box",
+    "where": "deploy/utho/docker-compose.utho-shared.yml:79,136,158,259,292,299; live-state.txt:37,183-185"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/Caddyfile",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the Caddyfile read against the docker ps container list in live-state.txt",
+    "command": "read deploy/utho/Caddyfile:8-11,16,25,30,39,49 against live-state.txt:22-30 and :37",
+    "result": "sets http_port 8080, already held; reverse-proxies to compose service names frontend, influora-api and influora-ai that exist only inside a compose network; docker ps lists no Caddy container at all. Its stated premise that nginx proxies plain HTTP to Caddy on 127.0.0.1:8080 is false for this box",
+    "where": "deploy/utho/Caddyfile:8-11,16,49; live-state.txt:22-30,37"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/README.md",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the README read in full against the free/swap and docker ps captures in live-state.txt",
+    "command": "read deploy/utho/README.md:299,301,332 against live-state.txt:202 and :28-30",
+    "result": "README:299 states 'Swap: 0B' and :311-314 tells the operator to create one; live-state.txt:202 records 'Swap 4.0Gi total, 1.5Gi USED (/swapfile exists - README's Swap: 0B is stale)', so following it adds a second swapfile. README:301 calls grafana, loki and promtail 'Dead since ~5 weeks' and :332 runs docker rm on them; live-state.txt:28-30 shows all three Up 9 days and live-state.txt:5 shows grafana-test is an enabled nginx vhost. Sections 5, 5b and 5b.1 (:111-274) remain correct and are used verbatim in the plan's browser pass",
+    "where": "deploy/utho/README.md:299,301,332; live-state.txt:5,28-30,202"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/generate-env.sh",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "the script source read against the on-box directory listing in live-state.txt",
+    "command": "read deploy/utho/generate-env.sh:14,43-71,77 against live-state.txt:78-89 and :139-146",
+    "result": "defaults to /opt/influora/.env, a path for the compose topology; the real env files are /usr/local/App/influora/influora.env and /usr/local/App/influora-ai/influora-ai/influora-ai.env. Lines 43-71 mint fresh AES keys and signing secrets on every run including INFLUORA_PII_EMAILPHONEENCRYPTIONKEY and INFLUORA_PII_BANKENCRYPTIONKEY, so adopting its output would make existing encrypted PII undecryptable. Useful only as a reference list of which variables exist",
+    "where": "deploy/utho/generate-env.sh:14,51-52,77; live-state.txt:139-146"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": ".env.production",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "the file read against the bundle grep transcribed in live-state.txt",
+    "command": "read .env.production:38 against live-state.txt:214-216",
+    "result": "VITE_API_BASE_URL=https://influora.in/api/v1 matches the value the live bundle actually bakes ('3 x https://influora.in/api/v1'), and the box has no vhost or certificate for api.influora.in (live-state.txt:19, :218-219). Repo and box now agree. The comment at :26-28 correctly flags this must be reversed only once api.influora.in has its own vhost and certificate",
+    "where": ".env.production:38; live-state.txt:215-216"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": ".env.production absence of VITE_MEERA_STREAM_URL",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "the file read in full plus the frontend source that consumes the variable",
+    "command": "read .env.production (no such assignment) and src/lib/meera-api.ts:38-39,541-549 and influora-api/src/main/java/com/influora/web/MeeraController.java:145",
+    "result": "the variable is declared in no build input, so a local npm run build bakes meera-api.ts's fallback https://ai.influora.internal. That is currently harmless because the constant is only read inside the if (!isApiLive()) mock branch at :547, while the live path takes streamUrl from Spring's response. It stops being harmless the moment anything reads it outside that branch, and neither new gate would catch it",
+    "where": "src/lib/meera-api.ts:39,547; influora-api/src/main/java/com/influora/web/MeeraController.java:145"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": ".proof-os/gates/cors-origin-wellformed.py",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "the gate source read in full, including its stated non-coverage",
+    "command": "read .proof-os/gates/cors-origin-wellformed.py:1-22,110-145,158-172",
+    "result": "matches the F-0723 defect exactly: ORIGIN_RE at :39 rejects a trailing separator, the INTERP_RE substitution at :131 keeps a ${VAR} entry's shape judgeable, and the gate directory is excluded at :55-62 so it cannot report its own prose. It declares its own gaps at :170-172, including that it cannot see whether the running process holds the value in the file, which is precisely the live fault at live-state.txt:233-235",
+    "where": ".proof-os/gates/cors-origin-wellformed.py:39,55-62,131,170-172"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": ".proof-os/gates/allowlist-domain-owned.py",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "the gate source read in full against the dig output transcribed in live-state.txt",
+    "command": "read .proof-os/gates/allowlist-domain-owned.py:16-21,103-110,139-141,184-186 against live-state.txt:207",
+    "result": "deliberately offline and deterministic; ownership is declared only in owned-domains.txt, which matches live-state.txt:207 recording influora.com as third-party infrastructure. IP literals and reserved suffixes are routed to out_of_remit at :139-141 rather than silently passed, and the closing NOT CHECKED line at :184-186 correctly disclaims reachability",
+    "where": ".proof-os/gates/allowlist-domain-owned.py:139-141,184-186; live-state.txt:207"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": ".proof-os/gates/api-base-url-served.py",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "the gate source read in full, tracing which files declared_urls actually opens",
+    "command": "read .proof-os/gates/api-base-url-served.py:37,55-69,109-122",
+    "result": "the TRUE/FALSE separation at :18-23 and :114-122 is correct: an unreachable control host returns UNAVAILABLE rather than a false pass. But KEYS at :37 includes VITE_MEERA_STREAM_URL while declared_urls at :58 reads only .env.production and .env.production.local; that key is assigned in neither, so it is unchecked rather than failed. An absent declaration reads as a green gate",
+    "where": ".proof-os/gates/api-base-url-served.py:37,58,104-107"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": ".proof-os/gates/owned-domains.txt",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "the declaration file read against the dig output transcribed in live-state.txt",
+    "command": "read .proof-os/gates/owned-domains.txt:9-15 against live-state.txt:206-208",
+    "result": "declares influora.in and records why influora.com and snapsby.com are excluded; live-state.txt:207 confirms influora.com resolves to 44.232.173.249 / 52.40.42.113, third-party infrastructure, and live-state.txt:206 confirms the four influora.in hosts all point at 150.241.245.242. The exclusion comments match the box",
+    "where": ".proof-os/gates/owned-domains.txt:9-15; live-state.txt:206-208"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: influora-api runtime env vs its corrected env file",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the fourth and fifth captures in live-state.txt, read against each other",
+    "command": "compared live-state.txt:189 (docker inspect Config.Env) with live-state.txt:225-227 and :233-235",
+    "result": "the running container holds CORS_ALLOWED_ORIGINS=https://influora.in/ with a trailing separator, while the on-disk file was corrected to https://influora.in,https://www.influora.in. The capture states plainly that no container was restarted and that Docker bakes env at creation, so the runtime still holds the old value. Only recreating the container closes this",
+    "where": "live-state.txt:189,227,233-235"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: influora-ai runtime env vs its corrected env file",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the fourth and fifth captures in live-state.txt, read against each other",
+    "command": "compared live-state.txt:198 (docker exec influora-ai env) with live-state.txt:228-230 and :233-235",
+    "result": "the running container holds MEERA_ALLOWED_ORIGINS=https://app.influora.com, a host under a domain owned-domains.txt:9-13 records as not ours, while the file was corrected to the two influora.in origins. Same creation-time freeze; the browser would be refused by the AI service even after its vhost exists",
+    "where": "live-state.txt:198,230,233-235"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: influora-ai SPRING_JWKS_URL and SPRING_INTERNAL_BASE_URL port",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the fourth capture's docker exec env output read against the same capture's ss listener table",
+    "command": "compared live-state.txt:195-196 with live-state.txt:36, :37, :188 and :64-65",
+    "result": "both variables name http://localhost:8080/api/v1..., but 127.0.0.1:8080 is java pid=2658 (which also holds Tomcat's shutdown port 8005 at :38), while influora-api is pid=1609031 on *:8082 with SERVER_PORT=8082 and is proxied as 127.0.0.1:8082 by the live apex vhost. The AI service therefore verifies its JWTs against, and makes internal calls to, a co-tenant application. Not covered by F-0721/F-0722/F-0723 and present in no repo file; needs an F-number",
+    "where": "live-state.txt:195-196,36,37,188"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: ai.influora.in public route",
+   "owner": "priya",
+   "status": "missing",
+   "evidence": {
+    "oracle": "the first, fourth and sixth captures in live-state.txt",
+    "command": "read live-state.txt:4-7 (sites-enabled listing), :19 (letsencrypt live), :206 (dig), :219 (openssl s_client) and :242-245 (default_server)",
+    "result": "the hostname resolves to this box and there is no server block and no certificate for it, so it falls through to snapsby.com's default_server and presents subject=CN=snapsby.com. The AI service itself is up and listening on 0.0.0.0:8000 (:33) but filtered from outside (:129), so the only missing piece is the vhost plus certificate",
+    "where": "live-state.txt:19,206,219,242-245"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: nginx default_server ownership by the co-tenant",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "the sixth capture's grep for default_server plus the nginx.conf include",
+    "command": "read live-state.txt:241-252 and :254-260, and grepped default_server across the four repo nginx files",
+    "result": "snapsby.com holds default_server on all four listen lines (:26, :27, :42, :43), nginx.conf:61 includes sites-enabled/* unconditionally, and only three files are enabled. None of the four repo nginx files contains default_server, so installing one cannot displace the catch-all; nginx would instead fail nginx -t on a duplicate, which the install script gates on at :125 and :205. The invariant is provable after install by an unknown-SNI handshake still returning CN=snapsby.com",
+    "where": "live-state.txt:242-245,247-252,255"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: container creation mechanism",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "the second and fourth captures in live-state.txt",
+    "command": "read live-state.txt:154-155 (find for compose files) and :183-185 (docker inspect with compose labels)",
+    "result": "no compose file exists under either Influora directory at depth 2, and both containers carry empty compose project and file labels, confirming they were hand-run. Recreation is therefore a literal docker run: --network host, --restart unless-stopped, the local :latest tag, and no -v because binds is empty. The Dockerfile at :167-170 supplies the entrypoint, so none is passed",
+    "where": "live-state.txt:154-155,167-170,183-185"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: the docker run argv that created the containers",
+   "owner": "priya",
+   "status": "missing",
+   "evidence": {
+    "oracle": "the four captures that inspect the containers, read for what they do and do not record",
+    "command": "read live-state.txt:172-177 (failed inspect) and :183-192 (recovered fields only)",
+    "result": "the third capture's inspect failed with NetworkMode, Image, RestartPolicy and Binds explicitly UNREAD, and the fourth recovered exactly those four plus five of influora-api's seventy-five env vars. Flags with no record here (--memory, --cpus, --log-opt, --add-host, --dns, --ulimit, --entrypoint) would be silently dropped by any reconstructed run. Obtainable with one command: docker inspect influora-api influora-ai --format with .HostConfig and .Config.Entrypoint, which the plan lists as blocking preconditions P2 and P3",
+    "where": "live-state.txt:172-177,183-192"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: MEERA_PUBLIC_CHAT_URL current value",
+   "owner": "priya",
+   "status": "missing",
+   "evidence": {
+    "oracle": "the fourth capture's partial env dump read against the Spring config that requires the value",
+    "command": "read live-state.txt:187-192 against influora-api/src/main/resources/application-prod.yml:71-79 and MeeraController.java:141-145",
+    "result": "the capture prints '(75 vars; selected)' and shows five, none of them this one, so the current value is unverified. It matters because application-prod.yml:79 has no default (the API will not boot without it) and MeeraController.java:145 hands its value straight to the browser as the SSE endpoint. deploy/utho/nginx-ai-influora.conf:6-8 asserts it was pointed at the apex, but that is a repo claim in no capture. One grep of the env dump from precondition P1 settles it",
+    "where": "live-state.txt:187; influora-api/src/main/resources/application-prod.yml:79"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: influora-ai uptime reported differently across captures",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "the first and fifth captures in live-state.txt, both dated 2026-09-07",
+    "command": "compared live-state.txt:24 with live-state.txt:236",
+    "result": "the first capture reports 'influora-ai ... Up 12 hours (healthy)' and the later one 'influora-ai Up 12 days, healthy'. These cannot both describe one uninterrupted container on the same day, so either a restart occurred between captures or one line is a mis-transcription. It matters because the plan's premises are all drawn from these captures. Resolvable with docker inspect influora-ai --format '{{.State.StartedAt}}'",
+    "where": "live-state.txt:24,236"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: /var/www/influora bundle contents",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "the fourth capture's greps of the served bundle, read against the frontend source",
+    "command": "read live-state.txt:210-216 against src/lib/meera-api.ts:38-39,541-549",
+    "result": "the bundle is fresh (built 2026-09-07 00:09) and bakes https://influora.in/api/v1 three times with zero occurrences of api.influora.in, matching .env.production:38. It also shows ai.influora.in = 0, which is consistent with the code rather than alarming, since the stream URL constant is only read in the mock branch. But the grep covered exactly one asset file, index-Dl65C8NZ.js, so a lazily-loaded Meera chunk was never searched; one occurrence each of api.influora.com and app.influora.in in that file is also unexplained",
+    "where": "live-state.txt:211-216; src/lib/meera-api.ts:547"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: /var/www/html certbot webroot",
+   "owner": "priya",
+   "status": "missing",
+   "evidence": {
+    "oracle": "the directory listings in live-state.txt, checked for this path",
+    "command": "read live-state.txt:210 and searched all six captures for /var/www/html",
+    "result": "only /var/www/influora appears; /var/www/html is never listed. deploy/utho/install-ai-vhost.sh:61 aborts if it is absent and certbot --webroot at :136 and :144 writes the challenge there, so its existence is a hard precondition for the vhost step. Obtainable with ls -ld /var/www/html, listed as precondition P4",
+    "where": "live-state.txt:210; deploy/utho/install-ai-vhost.sh:61,136"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: influora-api datasource password state",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "the fourth capture's env dump, which the artifact itself flags as deliberately redacted",
+    "command": "read live-state.txt:180 and :192",
+    "result": "SPRING_DATASOURCE_PASSWORD is recorded as '***REDACTED - SEE F-0724, ROTATE***', and the capture header at :180 confirms one line was redacted on purpose. The recreate steps carry whatever value the running container holds, so a rotation performed between the env capture and the recreate would leave the merged file stale and the API would fail to boot. Rotate before the capture or not during the deploy window",
+    "where": "live-state.txt:180,192"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: host resource headroom for the recreate",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "the fourth capture's free, swapon and df output",
+    "command": "read live-state.txt:200-203",
+    "result": "7.3Gi RAM with 2.8Gi available, a 4.0Gi swapfile of which 1.5Gi is in use, and 44G free of 77G on /. Recreating two host-network containers from images already present adds no image pull and no new memory beyond a brief overlap, so headroom is adequate. This also directly falsifies README.md:299's 'Swap: 0B', which the capture itself notes",
+    "where": "live-state.txt:200-203"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: SSH access method",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "the first and fourth capture headers in live-state.txt",
+    "command": "read live-state.txt:134-135 and :179",
+    "result": "the first capture records authentication succeeded by password with no public key reachable on the box; the fourth capture header states 'Step 0 complete, over key auth', so a key was added between them. The later capture wins, so the plan's scp and ssh invocations assume key auth works. Which key, and for which user, is not recorded",
+    "where": "live-state.txt:134-135,179"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: /usr/local/App/docker-compose.prod.yml ownership",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "the first capture's verbatim transcription of that compose file",
+    "command": "read live-state.txt:91-120",
+    "result": "the file declares exactly one service, container_name snaps-backend, with CORS_ORIGINS defaulting to https://snapsby.com and ports 8081:8080. It is the co-tenant product's compose, not Influora's, so no Influora change belongs in it and running docker compose there would restart a neighbouring production service. It confirms the Influora containers are managed by nothing on this box",
+    "where": "live-state.txt:97,105,111,120"
+   },
+   "isolation": "fresh-context"
+  }
+ ]
+}

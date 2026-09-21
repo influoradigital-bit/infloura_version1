@@ -1,0 +1,300 @@
+{
+  "audit_meta": {
+    "auditor": "Sage feature-blueprint engineer (Vikram+Ananya+Kavya lens)",
+    "domain": "Notifications, email, support tickets, uploads & client errors (12 endpoints)",
+    "release_candidate_commit": "115f698b9df0ca2735e9cb2f2c5fe656daf07b66",
+    "rc_dir": "C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+    "rc_git_status": "clean (0 local changes) at HEAD 115f698",
+    "graphify_note": "graphify-out/graph.json does NOT exist in the RC directory (only graphify-out/cache/{ast,stat-index.json}). `graphify query` fails with 'graph file not found'. Proceeded via direct source reads/grep per the fallback the audit rules allow when query/path/explain do not surface enough context.",
+    "tests_executed": [
+      {"cmd": "mvn -q -o -Dtest=NotificationControllerTest,SupportServiceTest,UploadServiceTest,UploadControllerTest,ClientErrorControllerTest,EmailWorkerTest,UnsubscribeLinkReachableFromEmailTest test", "cwd": "rc-115f698/influora-api", "exit_code": 0, "result": "Tests run: 5+17+13+2+11+8+4 = 60, Failures: 0, Errors: 0, Skipped: 0 (verified via target/surefire-reports/*.txt, not piped through grep/tail)"},
+      {"cmd": "npx vitest run src/components/ErrorBoundary.test.tsx", "cwd": "rc-115f698", "exit_code": 0, "result": "7 passed (7)"}
+    ]
+  },
+  "sharp_questions": [
+    {"q": "Does anything reach SupportController from a real brand/creator screen, or is it backend-only?", "a": "Backend-only. grep of src/lib/api.ts, src/lib/meera-api.ts and every src/pages/*.tsx for 'support/tickets' or a ticket client returns nothing outside src/admin/** (the ADMIN surface, which talks to AdminSupportController, a different controller). App.tsx's /support route renders a static 'coming soon' StaticPage. brand-help.tsx (the closest FE analog) makes zero API calls."},
+    {"q": "Is the GET /notifications, POST /notifications/read, POST /notifications/read-all envelope shape actually consistent with what the FE expects?", "a": "No. GET /notifications and GET /notifications/preferences are wrapped in ApiResponse.ok(...) (matches FE's generic envelope unwrap). POST /notifications/read, POST /notifications/read-all and POST /notifications/preferences return their bare DTOs directly (NotificationController.java:103-139, 270-292) with NO ApiResponse wrapper. This does not currently throw because MarkReadResponse/SetPreferenceResponse's first field happens to be named `success` (satisfying HttpClient.request's envelope.success check), but `envelope.data` is undefined, so the typed `newUnreadCount` these client calls promise is always `undefined` at runtime. useNotifications.ts's own comment (line ~211-216) documents exactly this and works around it by never reading that field."},
+    {"q": "Can an admin actually see the GSTIN/PAN document or creator selfie they are approving via POST /admin/brands/{id}/verify-kyc?", "a": "No. UploadService.uploadPrivate persists only the bare R2 object key (never a permanent public URL) for KYC purposes. The only code that turns that key back into a viewable URL, OnboardingService#resolveKycDocUrl / CreatorOnboardingService#resolveKycDocUrl, has zero callers anywhere in influora-api/src/main/java (confirmed by grep). AdminBrandDtos.BrandDetailDto carries no gstinDocUrl/panDocUrl field. So the admin verify-kyc action is decided with no visibility into the submitted proof."},
+    {"q": "Is the FE KYC upload wiring (purpose=creator_kyc_selfie / brand_kyc_gstin_doc / brand_kyc_pan_doc) actually done, or still pending as UploadService.java's javadoc claims ('frontend files are outside this task's scope')?", "a": "It is already done and correct. KycIdentityForm.tsx and brand-kyc-prompt.tsx both call uploads.upload(file, role, purpose) and correctly persist the returned `key` (not the presigned `url`) into selfieUrl/gstinDocUrl/panDocUrl. The backend javadoc claiming this FE work is outstanding is stale — it does not change the resolveKycDocUrl dead-code finding above, but it means the gap is purely 'nobody can view the doc after upload', not 'the FE never sends it'."},
+    {"q": "Does EmailWorker's 30s poll ever double-send an email?", "a": "Not in the paths exercised by EmailWorkerTest (8/8 passing, executed): FOR UPDATE SKIP LOCKED claiming, per-item mark transactions, admin.custom unsubscribe-recheck and cancel-recheck at dispatch, and the A4 wall-clock-budget deferral all behaved as documented. One acknowledged, NOT reproduced edge case remains in the code's own javadoc and is structurally consistent on inspection: if a single row's MSG91 call takes >~30s under degraded SMTP, the run's wall-clock deadline (measured from after the claim transaction) can be exceeded before the claim LEASE itself expires, letting a second instance re-claim and re-send that one row. Blast radius per the code's own reasoning is one duplicate marketing email, never an OTP (OTP/password-reset are single-row and priority-ordered)."},
+    {"q": "Is the F-0444 templateKey->eventType translation table in NotificationController.unsubscribeViaLink actually exercised by a test?", "a": "Only indirectly. UnsubscribeLinkReachableFromEmailTest (4/4 passing) proves the HMAC token round-trips and that EmailTemplateRegistry renders the URL into lifecycle emails (and omits it from transactional ones) — it never calls NotificationController.unsubscribeViaLink itself, and nothing asserts TEMPLATE_KEY_TO_EVENT_TYPE's 22 entries stay in sync with every NotificationListener#notify(...) templateKey. A future templateKey introduced with a different eventType and no map entry would silently unsubscribe the wrong (or a nonexistent) event type -- no error, no test failure today."},
+    {"q": "Is POST /client-errors's 'always 202, never fails the caller' guarantee actually true end to end, including the security hardening (redaction, log-injection defenses)?", "a": "Yes, verified at E4: I ran ClientErrorControllerTest (11/11 passing) and directly observed the exact log lines it claims to produce -- JWT/Razorpay-key/hex redaction, control-character and bidi-override stripping, logfmt-safe quoting, oversized-body drop (>16KB), malformed-JSON drop, and non-object-body drop all fired correctly in the test run. The one honest exception (a 429 from AuthRateLimitFilter's upstream 'client-errors' bucket) is by design and documented."},
+    {"q": "Does GET /notifications enforce any upper bound on the `size` query param?", "a": "No bound was found in NotificationController.list (page/size are plain @RequestParam ints with defaults 0/20, no @Max or clamping). Not exercised as a live DoS in this audit (would need a runtime probe against a live DB), so this is flagged as a minor, unverified hardening gap rather than a confirmed defect."},
+    {"q": "Is /notifications/unsubscribe-link's permitAll matcher scoped tightly, or could it accidentally open other notification routes?", "a": "Tightly scoped: SecurityConfig.java:146-147 matches only `HttpMethod.GET, \"/notifications/unsubscribe-link\"` (exact verb+path), not a `/notifications/**` wildcard, so the rest of NotificationController correctly falls through to anyRequest().authenticated()."},
+    {"q": "Does the requester-facing SupportService correctly prevent one user from reading or replying to another user's ticket?", "a": "Yes, by code and by test. SupportService.requireOwnTicket resolves the ticket by id first, then checks ticket.getUserId().equals(principal.getUserId()) and throws the SAME 404 either way (no existence-oracle). SupportServiceTest (10/10 passing, executed) exercises ownership scoping and the terminal-ticket (RESOLVED/CLOSED) reply refusal."}
+  ],
+  "domain": "Notifications, email, support tickets, uploads & client errors (12 endpoints)",
+  "features": [
+    {
+      "name": "Notifications list / mark-read / mark-all-read / preferences",
+      "user_type": "authenticated brand or creator",
+      "purpose": "Let a logged-in user see their in-app notification feed with an unread badge, mark items read (singly or in bulk), and manage which event types email them.",
+      "status": "PARTIALLY WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 78,
+      "entry_point": "GET /notifications, POST /notifications/read, POST /notifications/read-all, GET/POST /notifications/preferences (NotificationController.java:82-291); FE: src/hooks/useNotifications.ts, src/pages/brand-notifications.tsx, src/pages/creator-notifications.tsx, brand-settings.tsx/creator-settings.tsx",
+      "flow": "brand-notifications.tsx -> useNotifications('brand') hook -> src/lib/api.ts `notifications.{list,markRead,markAllRead,getPreferences,setPreference}` -> HttpClient.request (JWT bearer, credentials:include) -> NotificationController -> NotificationRepository/EmailPreferenceRepository -> MySQL `notifications`/`email_preferences` tables -> response (ApiResponse-enveloped for list/getPreferences; BARE DTO for markRead/markAllRead/setPreference) -> FE unwrap in api.ts -> hook state -> page render.",
+      "api": "GET /notifications (page,size query; wrapped ApiResponse<NotificationListResponse>, WORKING/tested). POST /notifications/read {notificationId} -> bare MarkReadResponse{success,newUnreadCount} (envelope mismatch, see finding NOTIF-01). POST /notifications/read-all -> same bare DTO. GET /notifications/preferences -> wrapped ApiResponse<PreferencesResponse> (WORKING/tested). POST /notifications/preferences {eventType,subscribed} -> bare SetPreferenceResponse (same mismatch, inert because FE call is typed <void>).",
+      "database": "notifications (V17__notifications.sql: id,user_id FK users,workspace_id,event_type,title,body,link,is_read,created_at; idx (user_id,is_read,created_at DESC)). email_preferences (V18__email_outbox.sql: id,user_id FK users,event_type,unsubscribed,unique(user_id,event_type)). Before: row absent/is_read=false. After markRead: single row is_read=true. After markAllRead: NotificationRepository.markAllReadForUser bulk UPDATE ... WHERE userId=:userId AND isRead=false (tenant-scoped, verified in code).",
+      "state_machine": "Notification: unread -> read (one-way per row; no unread-again transition exposed). EmailPreference: (userId,eventType) upsert unsubscribed false<->true via setPreference; global opt-out via eventType='*' honored by NotificationService.isUnsubscribed.",
+      "authn": "JWT AuthPrincipal required for all four routes (no permitAll matcher other than the separate unsubscribe-link route); role-correct token selected client-side via useNotifications(role).",
+      "authz": "Every query scoped by user.getUserId() server-side (findByUserIdOrdered, countByUserIdAndIsReadFalse, findByIdAndUserId, findByUserId) -- confirmed by NotificationControllerTest's 'getPreferencesDoesNotLeakAcrossUsers' and 'setPreferenceUsesPrincipalUserIdNotRequestBody' tests (both PASSING, executed).",
+      "working_condition": "A logged-in user's GET /notifications returns their own paginated, unread-first list plus a server-wide unread count; POST /notifications/read flips one row and the badge decrements optimistically; POST /notifications/read-all zeroes the badge in one UPDATE; preferences GET/POST round-trip per-event-type email opt-outs.",
+      "failure_conditions": "401/403 -> useNotifications.ts applies exponential poll backoff (F-0093, up to 15 skipped 60s ticks) rather than hammering the endpoint while logged out. No @Max/clamp found on `size` query param (unverified hardening gap, not reproduced). A failed markRead/markAllRead reverts the FE's optimistic update and toasts an error (code-verified).",
+      "security_conditions": "No cross-tenant leakage found in the four scoped queries. The envelope mismatch (NOTIF-01) does not itself leak data -- it only makes `newUnreadCount` on 3 endpoints permanently undefined to the FE.",
+      "tests": "NotificationControllerTest: 5/5 PASSING (executed) -- covers list-envelope shape, preferences get/set scoping, setPreference principal-vs-body precedence. Does NOT cover markRead, markAllRead, or the unsubscribe-link route (see NOTIF-02).",
+      "production_conditions": "MySQL only; no external service or env var dependency beyond the standard DB connection.",
+      "evidence": "Read NotificationController.java, NotificationDtos.java, NotificationRepository.java, src/hooks/useNotifications.ts, src/lib/api.ts (HttpClient.request/parseEnvelope at lines ~697-775 and notifications client at ~4234-4292). Ran NotificationControllerTest (5/5 pass, target/surefire-reports confirms 'Tests run: 5, Failures: 0, Errors: 0, Skipped: 0').",
+      "known_issues": [
+        "POST /notifications/read, POST /notifications/read-all and POST /notifications/preferences return bare (non-ApiResponse) DTOs while every other JSON endpoint in this controller (and the FE's generic HttpClient) assumes the {success,data,error} envelope. It does not currently break anything visible because (a) the bare DTOs' first field happens to be named `success`, which satisfies the generic envelope.success check without throwing, and (b) the FE never reads the resulting `envelope.data` (always undefined) for these three calls -- it recomputes state optimistically instead. This is fragile, self-documented in useNotifications.ts's own comment, and inconsistent with the rest of the API.",
+        "No test exercises markRead, markAllRead, or unsubscribeViaLink at the controller/HTTP layer."
+      ],
+      "required_fixes": [
+        "Wrap MarkReadResponse and SetPreferenceResponse in ApiResponse.ok(...) like every other endpoint in this controller, for consistency and so the typed newUnreadCount/eventType/unsubscribed fields are actually usable by any future caller.",
+        "Add controller-level tests for markRead and markAllRead (envelope shape + tenant scoping) and for unsubscribeViaLink (see NOTIF-02)."
+      ]
+    },
+    {
+      "name": "Email unsubscribe link (GET /notifications/unsubscribe-link)",
+      "user_type": "unauthenticated email recipient (brand or creator, reached from an inbox, no session)",
+      "purpose": "Let someone unsubscribe from one class of transactional/lifecycle email by clicking a signed link in the email footer, with no login required.",
+      "status": "NOT VERIFIED",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 72,
+      "entry_point": "GET /notifications/unsubscribe-link?token=... (permitAll, NotificationController.java:192-220); reached from links minted by Msg91EmailClient/EmailTemplateRegistry in delivered email HTML/text.",
+      "flow": "Delivered email footer link -> browser GET, no Authorization header -> NotificationController.unsubscribeViaLink -> UnsubscribeTokenService.verify(token) (HMAC signature check) -> TEMPLATE_KEY_TO_EVENT_TYPE.getOrDefault(parsed.eventType(), parsed.eventType()) [translates the email's templateKey, e.g. 'creator.campaign_match', into the domain eventType, e.g. 'campaign.created', that NotificationService#isUnsubscribed actually gates on] -> EmailPreferenceRepository upsert unsubscribed=true on (userId,eventType) -> plain HTML confirmation page (not JSON).",
+      "api": "Single GET, produces text/html, no request body, returns 200 with a confirmation page on success or 400 with an 'invalid or expired' page on a bad/tampered/unknown token.",
+      "database": "email_preferences: upsert one row keyed (userId, eventType) with unsubscribed=true.",
+      "state_machine": "token valid+known-user -> EmailPreference row created-or-updated to unsubscribed=true. token invalid/tampered/expired -> no write, 400 page.",
+      "authn": "None by design -- the recipient has no session; the HMAC-signed token IS the trust boundary (UnsubscribeTokenService).",
+      "authz": "N/A (no principal); integrity comes from the signature, not from access control.",
+      "working_condition": "A real, non-expired token minted for (userId, templateKey) and embedded in a delivered lifecycle email, when GET-requested, flips exactly that user's email preference for the CORRECT domain eventType (via the translation table) to unsubscribed, and NotificationService#isUnsubscribed then skips future emails of that type for that user.",
+      "failure_conditions": "Tampered token (last 2 chars altered) is rejected -- verified by UnsubscribeLinkReachableFromEmailTest.testTamperedTokenIsRefused (PASSING, executed). A templateKey absent from TEMPLATE_KEY_TO_EVENT_TYPE and different from its own eventType would silently unsubscribe the wrong key (see known_issues) -- not currently reproduced as live, all 22 mapped entries were not individually cross-checked against every NotificationListener call site in this pass.",
+      "security_conditions": "Token forgery defended by HMAC; tamper test passing. Transactional mail (auth.password_reset) is confirmed, by a dedicated control test, to carry NO unsubscribe footer at all, so a user cannot accidentally opt out of account-recovery email.",
+      "tests": "UnsubscribeLinkReachableFromEmailTest: 4/4 PASSING (executed) -- covers token round-trip, tamper rejection, and the lifecycle-vs-transactional footer control. It does NOT call NotificationController.unsubscribeViaLink itself, so the controller's own TEMPLATE_KEY_TO_EVENT_TYPE branch and its EmailPreference write are not directly exercised by any test found.",
+      "production_conditions": "Depends on Msg91EmailClient actually minting the token into delivered mail (out of scope for this pass) and on SecurityConfig's permitAll matcher staying scoped to this exact verb+path (confirmed, SecurityConfig.java:146-147).",
+      "evidence": "Read NotificationController.java:141-220, UnsubscribeTokenService (via the test), UnsubscribeLinkReachableFromEmailTest.java in full, SecurityConfig.java permitAll matcher list.",
+      "known_issues": [
+        "TEMPLATE_KEY_TO_EVENT_TYPE (NotificationController.java:158-182) is a hand-maintained, 22-entry map with no test asserting it stays in sync with every notify(...) call's templateKey in NotificationListener.java (30 call sites found). The class's own javadoc acknowledges: 'a templateKey absent here is used as-is via the getOrDefault fallback ... same unsubscribe-key correctness bug, just not yet mapped, rather than a link that 400s' -- i.e. a future divergent, unmapped templateKey fails silently (wrong or nonexistent EmailPreference row), not loudly."
+      ],
+      "required_fixes": [
+        "Add a controller-level test that POSTs/GETs unsubscribe-link with a real token and asserts the resulting EmailPreference row's eventType, for at least one templateKey!=eventType case (e.g. 'creator.campaign_match' -> 'campaign.created').",
+        "Consider a compile-time or startup-time assertion that every templateKey passed to NotificationService.notify(...) which differs from its eventType has an entry in this map, so a future addition cannot silently regress."
+      ]
+    },
+    {
+      "name": "Email outbox worker (EmailWorker, fixedDelay 30s, ShedLocked)",
+      "user_type": "system/background job (no direct end user; delivers all transactional/lifecycle email for the platform)",
+      "purpose": "Drain the transactional email_outbox table every 30 seconds, sending via MSG91 with priority ordering, retries/backoff, and crash-safe distributed locking so multiple app instances never duplicate-send.",
+      "status": "WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 88,
+      "entry_point": "EmailWorker.processOutbox() -- @Scheduled(fixedDelay=30000) @SchedulerLock(name=\"EmailWorker_processOutbox\", lockAtMostFor=\"PT5M\", lockAtLeastFor=\"PT10S\") (EmailWorker.java:197-237).",
+      "flow": "NotificationService.notify()/queueEmailIfNotUnsubscribed INSERTs an email_outbox row (idempotencyKey = eventType:entityId:userId, deduped) -> every 30s, claimBatch() runs a short DB-only transaction: SELECT ... FOR UPDATE SKIP LOCKED (priority-ordered so auth.otp/otpman/auth.password_reset always fill first) then EmailOutbox#markClaimed(leaseUntil) leases up to 50 rows and commits -> for each claimed row, processOne() calls Msg91EmailClient.sendTemplateEmail with NO open transaction/DB connection -> markResult() opens a fresh short transaction per item and calls EmailOutbox#markSent() or #markFailed(errorMessage) with exponential backoff.",
+      "api": "None -- internal scheduled job, not HTTP-reachable.",
+      "database": "email_outbox (V18__email_outbox.sql: status ENUM('PENDING','SENT','FAILED'), retry_count TINYINT, next_retry_at, sent_at, error_message, idempotency_key UNIQUE). EmailOutboxStatus.java mirrors the 3-value DB enum exactly (no drift found); 'cancelled'/'skipped-unsubscribed' terminal outcomes correctly reuse FAILED with retryCount forced to MAX_RETRIES rather than inventing an enum value the DB doesn't have (EmailOutbox.markSkippedUnsubscribed/markCancelled) -- this is sound design, not a bug.",
+      "state_machine": "PENDING -(claimed, nextRetryAt=lease)-> PENDING(leased) -(send success)-> SENT | -(send failure, retryCount<5)-> PENDING(backoff 30/90/270/810s) -(retryCount==5)-> FAILED(terminal). admin.custom rows additionally re-check unsubscribe/cancel status immediately before dispatch and skip without sending if either fired after claim.",
+      "authn": "N/A (background job).",
+      "authz": "N/A.",
+      "working_condition": "Every PENDING row eventually reaches SENT or terminal FAILED with at most 5 attempts; two app instances never both send the same row (SKIP LOCKED + per-row lease); a large blast never blocks the connection pool (no long-held transaction across the sequential HTTP sends); OTP/password-reset rows are never queued behind a marketing blast.",
+      "failure_conditions": "MSG91 exception/failure caught inside processOne, never propagates -- goes to markFailed with backoff. A batch whose remaining wall-clock would risk exceeding the 3-minute claim lease stops dispatching early (A4 fix) and safely defers the rest to a later poll rather than risking a duplicate.",
+      "security_conditions": "N/A directly, though this is the delivery mechanism for auth OTP/password-reset email, so its priority-ordering correctness is security-adjacent.",
+      "tests": "EmailWorkerTest: 8/8 PASSING (executed by me, not just read) -- I directly observed, in the test run's own log output, the claim-batch/processing-count log lines, the admin.custom cancel-at-dispatch skip, the admin.custom unsubscribe-at-dispatch skip, and the A4 'batch wall-clock budget ... exceeded ... deferring the rest to a later poll' warning all fire exactly as documented.",
+      "production_conditions": "Requires a working Msg91EmailClient/MSG91 account and ShedLock's distributed-lock table for multi-instance safety in production; single-instance dev/test runs are unaffected by the lock.",
+      "evidence": "Read EmailWorker.java in full (383 lines) and EmailOutbox.java entity; ran EmailWorkerTest and inspected surefire report ('Tests run: 8, Failures: 0, Errors: 0, Skipped: 0') plus the raw stdout log lines matching every documented behavior.",
+      "known_issues": [
+        "Self-documented, unresolved edge case (EmailWorker.java class javadoc, 'Known gap in that guarantee, under degraded SMTP'): the per-run wall-clock deadline is measured from just after the claim transaction committed, which starts slightly LATER than the lease clock stamped inside that same transaction. Under degraded SMTP, a single row taking >~30s can push a run past its own 3-minute CLAIM_LEASE before the wall-clock budget (2.5 min) would have stopped it, letting a second instance re-claim and re-send that one row once the lease naturally expires. The code's own analysis bounds the blast radius to one duplicate MARKETING email, never an OTP/password-reset (those are single-row, priority-ordered, and typically fast). This was traced structurally in the timing arithmetic, not reproduced under an actual slow-SMTP + multi-instance scenario."
+      ],
+      "required_fixes": [
+        "Derive the wall-clock deadline from the lease Instant captured inside claimBatch() (thread it back out of the TransactionTemplate.execute() call) instead of from Instant.now() taken after that transaction returns, and reserve margin for the mark-phase transaction, as the class javadoc itself already prescribes as the correct fix."
+      ]
+    },
+    {
+      "name": "User (brand/creator) support tickets: create / list / get / message",
+      "user_type": "authenticated brand or creator (requester side, as opposed to the admin support console)",
+      "purpose": "Let a brand or creator open a support ticket, see their own tickets, read a ticket's thread, and reply -- the requester-facing half of a support system whose admin half (AdminSupportController) already existed.",
+      "status": "NOT IMPLEMENTED",
+      "classification": "INCOMPLETE",
+      "evidence_score": 4,
+      "confidence": 85,
+      "entry_point": "POST/GET /support/tickets, GET /support/tickets/{id}, POST /support/tickets/{id}/messages (SupportController.java:47-69). No non-admin frontend caller exists anywhere in this repository.",
+      "flow": "DESIGNED flow (not reachable today): brand/creator screen -> a support API client (does not exist in src/lib/api.ts or src/lib/meera-api.ts) -> SupportController -> SupportService -> SupportTicketRepository/SupportTicketMessageRepository -> support_tickets/support_ticket_messages tables (V34__admin_tables.sql). ACTUAL flow today: nothing reaches this controller from the product surface. The only live route named '/support' (App.tsx, ~line 861-869) renders `<StaticPage title=\"Support\" description=\"Need help? Support resources are being set up and will be available here soon.\" />` -- a placeholder. brand-help.tsx (the nearest FE analog) makes zero API calls of any kind.",
+      "api": "POST /support/tickets {category,subject,message,priority?} -> 201 TicketDetailResponse. GET /support/tickets -> TicketSummaryResponse[]. GET /support/tickets/{id} -> TicketDetailResponse (404 if not the caller's). POST /support/tickets/{id}/messages {content} -> TicketDetailResponse (409 TICKET_NOT_OPEN if RESOLVED/CLOSED). All four are fully implemented and, per SupportServiceTest, behave correctly in isolation.",
+      "database": "support_tickets (V34__admin_tables.sql: id,user_id FK users,user_type ENUM(BRAND,CREATOR),category,subject,status ENUM(OPEN,IN_PROGRESS,WAITING_USER,RESOLVED,CLOSED),priority ENUM(LOW,MEDIUM,HIGH,URGENT),assigned_to FK admin_users,created_at,updated_at,resolved_at). support_ticket_messages (id,ticket_id FK,sender_id,sender_type ENUM(USER,ADMIN),content,created_at). SupportTicket.java entity maps this 1:1, including the userType restriction to BRAND/CREATOR only (correctly narrower than the shared UserType enum, which also has ADMIN).",
+      "state_machine": "OPEN -> (admin: IN_PROGRESS/WAITING_USER/RESOLVED/CLOSED via AdminSupportController) ; requester reply clears WAITING_USER back to OPEN (SupportTicket#noteUserReplied) but never reopens RESOLVED/CLOSED, and SupportService.addMessage explicitly 409s a reply attempt on a terminal ticket.",
+      "authn": "JWT AuthPrincipal required (no permitAll matcher for /support/tickets/**, falls to anyRequest().authenticated()).",
+      "authz": "Resolve-then-scope ownership check in SupportService.requireOwnTicket: fetches by id, then verifies ticket.getUserId()==principal.getUserId(), else throws the identical 404 as a genuinely missing ticket (no existence oracle) -- sound design, matches this codebase's other resolve-then-scope patterns.",
+      "working_condition": "In isolation (unit tests), a brand/creator principal can open a ticket with an opening message, list only their own tickets newest-first, read one ticket's full thread, and reply (clearing WAITING_USER) -- but there is currently no way for a real user to reach any of this, since no screen in the product calls it.",
+      "failure_conditions": "Someone else's ticket id -> 404 (same as nonexistent). Reply on RESOLVED/CLOSED -> 409 TICKET_NOT_OPEN. Unrecognized priority string on create -> 400 INVALID_PRIORITY (not silently downgraded to MEDIUM) -- all asserted by SupportServiceTest.",
+      "security_conditions": "Ownership scoping and 404-masking verified above; no admin-only fields (assignedTo, internal admin ids) are exposed in the requester-facing SupportDtos, which are a deliberately separate class from AdminSupportDtos.",
+      "tests": "SupportServiceTest: 10/10 PASSING (executed) -- covers create/list/get/addMessage, ownership scoping, terminal-ticket refusal, and priority validation, all at the SERVICE layer. NO SupportControllerTest exists anywhere in influora-api/src/test (confirmed by directory search) -- the HTTP layer (whether @AuthenticationPrincipal actually binds, whether @Valid returns 400 for a blank subject, the actual JSON shape a client receives) is untested.",
+      "production_conditions": "None beyond the standard DB/JWT dependencies already present for every other authenticated endpoint.",
+      "evidence": "Read SupportController.java, SupportService.java, SupportDtos.java, SupportTicket.java, V34__admin_tables.sql. Grepped src/lib/api.ts, src/lib/meera-api.ts, and all of src/pages/ and src/components/ for 'support/tickets' -- zero non-admin hits. Read App.tsx's /support route and brand-help.tsx in full. Ran SupportServiceTest (10/10 pass, surefire-confirmed) and confirmed via `find` that no SupportControllerTest file exists.",
+      "known_issues": [
+        "The entire requester-facing support-ticket feature -- fully built, unit-tested server-side -- has zero UI entry point. A brand or creator visiting /support today sees only a static 'coming soon' message; there is no form, no ticket list, nothing that calls POST or GET /support/tickets.",
+        "No controller-level (HTTP/Spring MVC) test exists for SupportController, unlike most other controllers in this codebase that have both a *ServiceTest and a *ControllerTest."
+      ],
+      "required_fixes": [
+        "Either build the brand/creator support-ticket UI (a create form + list + thread view) and wire it to the existing, tested SupportController/SupportService, or explicitly deprioritize/remove the backend if support is intentionally handled elsewhere (e.g. a third-party helpdesk) -- currently the code implies a finished feature that isn't reachable, which is a discoverability/scope-tracking risk on its own.",
+        "Add a SupportControllerTest exercising auth wiring, validation-driven 400s, and the actual JSON envelope shape."
+      ]
+    },
+    {
+      "name": "Generic file uploads (POST /uploads), including brand logo / creator avatar (public) and brand GSTIN+PAN / creator selfie KYC documents (private)",
+      "user_type": "authenticated brand or creator",
+      "purpose": "Accept a multipart file upload, validate it (size, magic-byte MIME, malware scan), store it in Cloudflare R2, and persist metadata -- serving both ordinary public assets (brand logo, portfolio cover, creator avatar) and sensitive private KYC documents via an explicit `purpose` allowlist.",
+      "status": "PARTIALLY WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 82,
+      "entry_point": "POST /uploads (UploadController.java:42-49); FE: src/lib/upload.ts (public), src/pages/creator-profile.tsx (creator avatar), src/components/brand/BrandKycForm.tsx / brand/campaigns/brand-kyc-prompt.tsx / creator/KycIdentityForm.tsx (private KYC purposes).",
+      "flow": "File input -> api.uploads.upload(file, role, purpose?) [src/lib/api.ts ~4611-4623] -> multipart POST /uploads (field 'file', optional field 'purpose') -> UploadController.upload -> UploadService.uploadForPurpose -> (purpose blank/omitted) UploadService.upload: validateAndStore (10MB cap, MediaMimeSniffer magic-byte detection + declared-Content-Type cross-check, MalwareScanService.requireClean, R2StorageService.putStream under key 'uploads/{userType}/{userId}/{ulid}{ext}') -> r2StorageService.publicUrl(key) -> FileUpload row persisted (status READY) -> {url,key} returned, caller persists `url` (e.g. workspaces.logo_url). OR (purpose in KYC_UPLOAD_PURPOSES) UploadService.uploadPrivate: same validateAndStore, but NEVER calls publicUrl -- returns a short-lived presigned preview `url` and the bare object `key`; caller MUST persist `key` (confirmed FE does exactly this) into Workspace.kycGstinDocUrl/kycPanDocUrl or CreatorProfile.selfieUrl via OnboardingService.submitBrandKyc / CreatorOnboardingService.submitKyc.",
+      "api": "POST /uploads, multipart/form-data, fields: file (required), purpose (optional string). 201 ApiResponse<UploadResponse{url,key}>. purpose omitted/blank -> public upload (byte-identical to pre-KYC-feature behavior). purpose in {creator_kyc_selfie, brand_kyc_gstin_doc, brand_kyc_pan_doc} -> private upload. Any other non-blank purpose -> 400 INVALID_UPLOAD_PURPOSE (server-side allowlist, never a client-trusted flag).",
+      "database": "file_uploads (V1__file_uploads.sql: id,owner_id,owner_type ENUM(USER,WORKSPACE),purpose,r2_bucket,r2_key,mime_type,size_bytes,etag,public_url,thumbnail_key,status ENUM(PENDING,READY,FAILED,DELETED)). FileUpload.create() explicitly sets status=READY on every insert (no dangling PENDING rows found). Downstream: Workspace.kycGstinDocUrl/kycPanDocUrl and CreatorProfile.selfieUrl columns store either a legacy public URL (pre-D4 rows) or a bare R2 key (post-D4 KYC uploads) -- OnboardingService/CreatorOnboardingService's resolveKycDocUrl exists specifically to normalize either shape into a viewable URL.",
+      "state_machine": "Upload request -> validated (size/MIME/malware) -> stored in R2 -> file_uploads row READY (or the request fails before any row is written: FILE_TOO_LARGE/INVALID_FILE_TYPE/STORAGE_UNAVAILABLE/UPLOAD_FAILED, all 4xx/503 ApiExceptions, no partial row left behind).",
+      "authn": "JWT AuthPrincipal required (no permitAll matcher; falls to anyRequest().authenticated()).",
+      "authz": "Upload key is namespaced by the caller's own userType/userId (no cross-user write surface); the endpoint does not itself branch on role beyond that namespacing.",
+      "working_condition": "A valid image/PDF under 10MB, with a declared Content-Type matching its actual magic bytes and passing the malware scan, is stored in R2 and a file_uploads row is created; for KYC purposes the response's `key` (never the presigned `url`) is what gets persisted into the onboarding record, and this IS correctly done by BrandKycForm.tsx / brand-kyc-prompt.tsx / KycIdentityForm.tsx today (verified by reading all three call sites) -- contradicting UploadService.java's own javadoc claim that this FE wiring was 'reported separately (frontend files are outside this task's scope)', which is a stale comment, not a current gap.",
+      "failure_conditions": "Oversized file -> 400 FILE_TOO_LARGE. Declared/actual MIME mismatch or unsupported type -> 400 INVALID_FILE_TYPE. Malware hit -> handled by MalwareScanService.requireClean (NoOpMalwareScanService outside prod per an accepted-risk note found in comments; ClamAv in prod -- not independently verified in this pass). Unknown non-blank purpose -> 400 INVALID_UPLOAD_PURPOSE, never silently downgraded to public. R2 unavailable -> 503 STORAGE_UNAVAILABLE.",
+      "security_conditions": "Magic-byte sniffing + declared-type cross-check (UploadService.validateMime) blocks a mislabeled file. KYC purposes are a server-side ALLOWLIST (KYC_UPLOAD_PURPOSES), never client-decided, so a malicious/typo'd purpose cannot downgrade a KYC doc to public storage. HOWEVER: once a KYC document is correctly stored privately, there is NO code path anywhere in influora-api/src/main/java that ever resolves its bare R2 key back into a viewable URL for a human reviewer -- OnboardingService#resolveKycDocUrl and CreatorOnboardingService#resolveKycDocUrl both exist, are presumably unit-tested for correctness in isolation, but have ZERO callers (confirmed by `grep -rn resolveKycDocUrl influora-api/src/main/java` returning only their own declarations and javadoc cross-references). AdminBrandDtos.BrandDetailDto (the DTO an admin would see before calling POST /admin/brands/{id}/verify-kyc) carries no gstinDocUrl/panDocUrl field at all -- confirmed by reading that record's full field list. So an admin can approve or reject a brand's GSTIN/PAN KYC, and by the same code shape presumably a creator's identity KYC, without the system ever being able to show them the submitted document image.",
+      "tests": "UploadServiceTest: 13/13 PASSING (executed) -- size cap, MIME sniff/cross-check, malware-scan gate, purpose allowlist routing (public vs private), key namespacing. UploadControllerTest: 2/2 PASSING (executed) -- basic controller wiring. No test found that exercises the admin-side KYC REVIEW/VIEW path (because no such code path exists to test).",
+      "production_conditions": "Requires R2Properties/R2StorageService configured (bucket, credentials) and a real MalwareScanService implementation in prod (ClamAv per an in-code note; not independently verified here).",
+      "evidence": "Read UploadController.java, UploadService.java in full, FileUpload.java entity, V1__file_uploads.sql, src/lib/upload.ts, src/lib/api.ts's `uploads` client (~4599-4624). Read KycIdentityForm.tsx:76-105 and brand-kyc-prompt.tsx:140-190 in full to confirm `key` (not `url`) is what's submitted. Grepped OnboardingService.java/CreatorOnboardingService.java for resolveKycDocUrl callers (none found outside their own declarations) and AdminBrandDtos.java for gstinDocUrl/panDocUrl/selfieUrl fields (none found). Ran UploadServiceTest and UploadControllerTest (15/15 pass total, surefire-confirmed).",
+      "known_issues": [
+        "KYC documents (brand GSTIN/PAN, creator selfie) upload and persist correctly as private R2 objects, but nothing in the codebase can ever turn the stored key back into a URL a human can look at -- resolveKycDocUrl is dead code, and the admin KYC-approval DTO doesn't carry the field even if it were wired. This means POST /admin/brands/{id}/verify-kyc (and, by the same code shape, the creator equivalent) is currently a document-blind approval action.",
+        "UploadService.java's own javadoc is stale: it claims the frontend change to send `purpose` and persist `key` is still outstanding and 'reported separately' -- this audit found it is already implemented correctly on all three KYC call sites."
+      ],
+      "required_fixes": [
+        "Wire resolveKycDocUrl (or equivalent) into whatever surface actually approves brand/creator KYC, exposing a short-lived presigned view URL for gstinDocUrl/panDocUrl/selfieUrl to that reviewer, before treating POST /admin/brands/{id}/verify-kyc (or its creator counterpart) as a real compliance control.",
+        "Correct or remove the stale 'frontend work outstanding' claim in UploadService.java's javadoc."
+      ]
+    },
+    {
+      "name": "Client crash reporting (POST /client-errors)",
+      "user_type": "any visitor (authenticated or not) whose browser hits an uncaught React render error",
+      "purpose": "Give the server visibility into SPA render crashes that would otherwise only appear in a devtools console nobody has open, without ever becoming a source of failure itself.",
+      "status": "WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 5,
+      "confidence": 92,
+      "entry_point": "POST /client-errors (permitAll, rate-limited; ClientErrorController.java:63-97). FE: src/components/ErrorBoundary.tsx componentDidCatch -> reportCrash -> api.clientErrors.report (src/lib/api.ts ~6925-6960).",
+      "flow": "Uncaught render error anywhere in the SPA -> React calls ErrorBoundary.componentDidCatch -> console.error (unchanged) + reportCrash(): builds a session-scoped dedupe key (JSON.stringify([message,pathname])) via a module-level Set so a render loop reports once, not per re-render -> api.clientErrors.report({message,stack,componentStack,pathname}) -- a raw fetch bypassing HttpClient entirely because the response is an empty 202, which the standard envelope parser would choke on -- attaches whichever role's in-memory access token exists (brand checked first), NEVER throws/rejects by construction -> POST /client-errors -> ClientErrorController.report wraps everything in try/catch -> handle(): readCapped (16KB hard cap, byte-counted, not just Content-Length-trusted) -> objectMapper.readTree -> per-field textOf/redactSecrets/truncate/pathOnly -> single '[CLIENT_ERROR_REPORT] pathname=... buildId=... userAgent=... message=... stack=... componentStack=...' WARN log line, every value individually quoted for logfmt safety -> always responds 202 Accepted with an empty body, regardless of what happened inside handle().",
+      "api": "POST /client-errors, JSON body {message?,stack?,componentStack?,pathname?,buildId?,userAgent?}, always 202 empty body. No auth header required; one is opportunistically attached client-side if present but the controller doesn't read/require it.",
+      "database": "None -- log-only, no table.",
+      "state_machine": "N/A (stateless, fire-and-forget).",
+      "authn": "None enforced (SecurityConfig.java:200-201 permitAll on POST /client-errors specifically, not a wildcard).",
+      "authz": "N/A.",
+      "working_condition": "Any well-formed-enough JSON body under 16KB produces exactly one WARN log line with every free-text field redacted for known secret shapes (JWT/Razorpay key/long hex) and every field truncated + control-character/bidi-override-stripped + quoted, and the HTTP caller always gets 202 no matter what -- verified directly by running the test suite and reading the resulting log lines.",
+      "failure_conditions": "Body >16KB -> dropped, logged server-side only, still 202 to caller. Malformed JSON -> dropped, still 202. Non-object JSON (e.g. a bare array) -> dropped, still 202. Any other exception inside handle() -> caught in report()'s outer try/catch, logs only the exception's class name (never its message, which could embed submitted content), still 202. The ONE documented exception to 'never a 4xx' is AuthRateLimitFilter's upstream per-IP 'client-errors' rate-limit bucket, which can return 429 before this controller ever runs -- this is by design and explicitly corrected in the class's own javadoc (an earlier version of the comment claiming 'never a 4xx' was itself wrong and has been fixed).",
+      "security_conditions": "Verified directly (not just claimed): redaction regexes for JWTs (eyJ...), Razorpay key/secret ids (rzp_(live|test)_...), and long hex/base64-ish runs (32+ hex chars) fired correctly in the test run's log output. Control-character/bidi-override stripping uses [\\p{Cc}\\p{Cf}\\p{Zl}\\p{Zp}] specifically because Java's \\p{Cntrl} is ASCII-only and misses U+0085/U+2028/U+2029 (parser-visible line breaks to Scanner/regex MULTILINE) and U+202E RIGHT-TO-LEFT OVERRIDE (a Trojan-Source attack on a human reading the log) -- both classes of forged/reversed log lines were exercised and defeated in the passing test run. Every field is also quoted for logfmt safety so a forged 'pathname=/x buildId=trusted userAgent=Googlebot' cannot forge sibling fields of the SAME marker or bleed into logback's own surrounding key=value fields.",
+      "tests": "ClientErrorControllerTest: 11/11 PASSING (executed by me) -- I directly observed, in the raw test stdout, log lines exactly matching every documented control: JWT+Razorpay-key redaction together in one message, forged-field-via-unquoted-space defeated, non-object body dropped, oversized (>16KB) body dropped, malformed JSON dropped, a well-formed full-fidelity report logged verbatim (redacted/quoted), and a bidi-override 'forged-line' case rendered safely reversed rather than actually reversing subsequent log content. AuthRateLimitFilterClientErrorsBucketTest exists separately for the rate-limit bucket (not re-run in this pass, evidence from that file's existence + the doc's cross-reference only).",
+      "production_conditions": "None beyond the standard logging pipeline; explicitly does not depend on JWT/session infrastructure at all, by design, so it works pre-login and on the public portfolio page.",
+      "evidence": "Read ClientErrorController.java in full (287 lines) and ErrorBoundary.tsx in full. Ran ClientErrorControllerTest (11/11 pass, surefire-confirmed: 'Tests run: 11, Failures: 0, Errors: 0, Skipped: 0') and read its stdout output line by line against the class's documented guarantees.",
+      "known_issues": [
+        "No @Max/size validation found on `size` was N/A here (this endpoint has no query params); the one soft spot is that Content-Length is checked as a fast-path only -- correctly not relied on alone, since readCapped's actual byte-counted read is the real enforcement (verified in code, not just trusted from the comment)."
+      ],
+      "required_fixes": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "SUPPORT-01",
+      "title": "Requester-facing support ticket feature (SupportController) has zero UI entry point in the product",
+      "severity": "P1",
+      "evidence_score": 4,
+      "confidence": 88,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "affected_features": ["User support tickets create/list/get/message"],
+      "location": "influora-api/src/main/java/com/influora/web/SupportController.java:36-76; src/App.tsx (~lines 861-869, /support route); src/pages/brand-help.tsx (whole file, no API calls); src/lib/api.ts (no support/ticket client exported)",
+      "evidence": "grep of src/lib/api.ts and src/lib/meera-api.ts for 'support/tickets' or any ticket-shaped client function returns zero non-admin hits; the only /support/tickets callers found are in src/admin/services/api-contracts.ts, which targets the separate AdminSupportController surface. App.tsx's /support route renders a static StaticPage with 'coming soon' copy. brand-help.tsx makes no fetch/api calls at all. SupportServiceTest (10/10, executed) proves the backend logic is correct in isolation, which only sharpens the gap: a fully working, tested feature that no user can reach.",
+      "impact": "A brand or creator who needs help has no in-product way to open, read, or reply to a support ticket, despite the entire backend (routes, service, ownership scoping, entity/repository, DB tables) being built and unit-tested.",
+      "recommended_fix": "Build the requester-facing support UI (ticket create form, list, thread view) against the existing SupportController, or explicitly document that support is intentionally out-of-product for now so this isn't mistaken for a completed feature in status tracking.",
+      "reproduction": "Load the SPA at /support as a logged-in brand or creator; observe the static placeholder. Search src/ for any fetch/axios/api call to '/support/tickets' outside src/admin/**; none exists.",
+      "verification_required": "Confirm with product/Swapnil whether requester-facing support was descoped deliberately (e.g. handled via a third-party helpdesk) before treating this as a gap to close."
+    },
+    {
+      "id": "UPLOAD-01",
+      "title": "Uploaded KYC documents (brand GSTIN/PAN, creator selfie) cannot be viewed by any admin reviewer -- resolveKycDocUrl is dead code and the admin KYC DTO carries no doc-url field",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "affected_features": ["Generic file uploads (POST /uploads)"],
+      "location": "influora-api/src/main/java/com/influora/service/UploadService.java:139-148 (uploadPrivate persists bare key only); influora-api/src/main/java/com/influora/service/OnboardingService.java:205 (resolveKycDocUrl, zero callers); influora-api/src/main/java/com/influora/service/CreatorOnboardingService.java:189 (same, zero callers); influora-api/src/main/java/com/influora/web/dto/admin/AdminBrandDtos.java (BrandDetailDto has no gstinDocUrl/panDocUrl field); influora-api/src/main/java/com/influora/web/AdminBrandController.java:141-147 (verifyKyc)",
+      "evidence": "grep -rn resolveKycDocUrl influora-api/src/main/java returns only the two methods' own declarations and their mutual javadoc cross-references -- no call site anywhere. Read AdminBrandDtos.java's BrandDetailDto record field-by-field: no gstinDocUrl/panDocUrl/selfieUrl. FE call sites (KycIdentityForm.tsx, brand-kyc-prompt.tsx) confirmed to correctly persist the private-upload `key` (not the presigned preview `url`) into the onboarding record, so the document IS captured -- it just can never be displayed again by this codebase as it stands.",
+      "impact": "POST /admin/brands/{id}/verify-kyc (and, by the same code shape, any creator KYC approval) lets an admin approve or reject a brand's tax/identity verification without the system ever being able to show them the submitted document image -- the approval is a rubber stamp with respect to the actual proof, not a reviewed decision.",
+      "recommended_fix": "Add a doc-url field (resolved via OnboardingService#resolveKycDocUrl / CreatorOnboardingService#resolveKycDocUrl) to the admin-facing KYC review DTO/endpoint before relying on the verify-kyc action as a real control.",
+      "reproduction": "Submit a brand GSTIN/PAN KYC via the UI (persists bare R2 keys); call GET on whatever admin endpoint lists/details that brand for KYC review; observe no document URL field in the response; grep the codebase for a consumer of resolveKycDocUrl and find none.",
+      "verification_required": "Confirm no separate, undiscovered admin surface (e.g. a raw S3/R2 console link shown out-of-band, or an admin tool outside this repo) already compensates for this before treating it as a compliance gap requiring a code fix."
+    },
+    {
+      "id": "NOTIF-01",
+      "title": "POST /notifications/read, /read-all and /preferences return bare (non-ApiResponse) DTOs, silently defeating the FE's generic envelope client for those three fields",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 70,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "affected_features": ["Notifications list / mark-read / mark-all-read / preferences"],
+      "location": "influora-api/src/main/java/com/influora/web/NotificationController.java:103-139,270-292; influora-api/src/main/java/com/influora/web/dto/notification/NotificationDtos.java (MarkReadResponse, SetPreferenceResponse); src/lib/api.ts:734-750 (HttpClient.request/parseEnvelope), :4249-4292 (notifications client)",
+      "evidence": "Read NotificationController.java: markRead/markAllRead/setPreference all return their DTO directly (`ResponseEntity.ok(new MarkReadResponse(...))`), unlike list/getPreferences which wrap in ApiResponse.ok(...). Read HttpClient.request in api.ts: it JSON.parses the raw body as ApiEnvelope<T> and checks `envelope.success` before returning `envelope.data`. Because MarkReadResponse's/SetPreferenceResponse's first field is literally named `success`, the check passes without throwing, but `envelope.data` is undefined since there is no `data` key in the bare DTO's JSON. useNotifications.ts's own inline comment (near markRead) documents this exact mechanism and works around it by not reading the field.",
+      "impact": "notificationsApi.markRead/markAllRead/setPreference's typed `newUnreadCount`/other fields are always undefined at runtime; currently harmless because the FE never reads them (relies on optimistic local state instead), but any future caller that DOES read the typed return value will get a silent undefined instead of an error or a real value.",
+      "recommended_fix": "Wrap MarkReadResponse and SetPreferenceResponse in ApiResponse.ok(...) for consistency with the rest of the controller and this codebase's general convention.",
+      "reproduction": "Call POST /notifications/read with a valid notificationId as an authenticated user; observe the raw JSON body is `{\"success\":true,\"newUnreadCount\":N}` with no `data` wrapper; trace that through HttpClient.request and confirm the returned object's `newUnreadCount` is undefined.",
+      "verification_required": "A live/integration run (not just static tracing) POSTing to these three routes and inspecting the exact response body would upgrade this from OBSERVED to VERIFIED."
+    },
+    {
+      "id": "SUPPORT-02",
+      "title": "No SupportControllerTest exists -- the HTTP layer of the (unwired) support-ticket feature is untested",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 80,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "affected_features": ["User support tickets create/list/get/message"],
+      "location": "influora-api/src/test/java/com/influora/web/ (directory search: no SupportControllerTest.java present, unlike NotificationControllerTest, UploadControllerTest, ClientErrorControllerTest which each pair a *ServiceTest with a *ControllerTest)",
+      "evidence": "`find influora-api/src/test -iname '*Support*'` returns only SupportServiceTest.java and admin/AdminSupportServiceTest.java -- no controller-level test for the requester-facing SupportController.",
+      "impact": "Auth wiring (@AuthenticationPrincipal binding), request validation (@Valid -> 400 on blank subject/category/message), and the actual JSON response shape at the HTTP layer are unverified even though the service logic beneath them is well-tested.",
+      "recommended_fix": "Add a SupportControllerTest mirroring the pattern already used for NotificationControllerTest/UploadControllerTest.",
+      "reproduction": "`find influora-api/src/test -iname '*SupportController*'` -- no results.",
+      "verification_required": "None -- this is a direct, deterministic filesystem fact."
+    },
+    {
+      "id": "NOTIF-02",
+      "title": "F-0444 templateKey->eventType map in unsubscribeViaLink is untested at the controller level and unguarded against future drift",
+      "severity": "P2",
+      "evidence_score": 1,
+      "confidence": 45,
+      "status": "INFERRED",
+      "provenance": "COMMITTED",
+      "affected_features": ["Email unsubscribe link (GET /notifications/unsubscribe-link)"],
+      "location": "influora-api/src/main/java/com/influora/web/NotificationController.java:141-220 (TEMPLATE_KEY_TO_EVENT_TYPE, 22 entries); influora-api/src/main/java/com/influora/service/notification/NotificationListener.java (30 notify(...) call sites, not individually cross-checked in this pass)",
+      "evidence": "UnsubscribeLinkReachableFromEmailTest (4/4 passing) tests the token round-trip and EmailTemplateRegistry rendering, never NotificationController.unsubscribeViaLink itself or the completeness of TEMPLATE_KEY_TO_EVENT_TYPE against NotificationListener's actual call sites. The class's own javadoc explicitly names this as a known, not-yet-fully-closed risk class ('a templateKey absent here is used as-is ... same unsubscribe-key correctness bug, just not yet mapped').",
+      "impact": "If a future email template's templateKey diverges from its domain eventType and is added to NotificationListener without a corresponding TEMPLATE_KEY_TO_EVENT_TYPE entry, that template's unsubscribe link will silently write an EmailPreference row keyed by the raw templateKey instead of the real eventType, so NotificationService#isUnsubscribed never sees it and the recipient keeps receiving mail they believe they opted out of -- with no error anywhere.",
+      "recommended_fix": "Add a controller-level test exercising unsubscribeViaLink with a templateKey!=eventType case, and/or a startup-time or compile-time check that every distinct templateKey used in NotificationListener with an eventType it doesn't equal has a TEMPLATE_KEY_TO_EVENT_TYPE entry.",
+      "reproduction": "Not reproduced -- this is a risk inferred from the code's own documented caveat plus the absence of a controller-level test, not an observed live failure. A full cross-check of all 30 notify(...) call sites' templateKey/eventType pairs against the 22-entry map would be needed to say whether the CURRENT set is complete.",
+      "verification_required": "Cross-reference every templateKey argument in NotificationListener.java's notify(...) calls against its corresponding event.eventType() and the TEMPLATE_KEY_TO_EVENT_TYPE map to confirm today's set is actually complete (not attempted in this pass due to scope/time)."
+    },
+    {
+      "id": "EMAILWORKER-01",
+      "title": "EmailWorker's wall-clock deadline is measured slightly later than its own claim lease, leaving a narrow window for a duplicate marketing email under degraded SMTP + multiple instances",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 55,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "affected_features": ["Email outbox worker (EmailWorker, fixedDelay 30s, ShedLocked)"],
+      "location": "influora-api/src/main/java/com/influora/service/notification/EmailWorker.java:103-116 (class javadoc 'Known gap'), :211 (Instant batchDeadline = Instant.now().plus(maxBatchWallClock), measured after claimBatch()'s transaction already committed)",
+      "evidence": "Read the class's own javadoc, which documents this exact gap and its cause (deadline clock starts after the lease clock was already stamped inside the prior transaction), then independently confirmed the timing arithmetic in processOutbox()/claimBatch() matches that description. Not reproduced under an actual slow-SMTP + multi-instance scenario -- EmailWorkerTest's passing A4 case (verified by me) exercises the wall-clock-budget-exceeded deferral path, but with a deterministic tiny Duration, not the specific 'single row pushes past CLAIM_LEASE' race the javadoc separately warns about.",
+      "impact": "Per the code's own bounding analysis: requires degraded SMTP AND multiple app instances AND a poll landing in a narrow timing window; when it fires, one marketing email (never an OTP/password-reset, which are single-row and priority-ordered) is sent twice.",
+      "recommended_fix": "Derive the wall-clock deadline from the lease Instant captured inside claimBatch() rather than from Instant.now() taken after that transaction returns, and reserve margin for the mark-phase transaction -- exactly what the class's own javadoc already prescribes.",
+      "reproduction": "Not reproduced live. Would require simulating a >30s-per-message SMTP delay across two concurrent worker instances against a shared DB.",
+      "verification_required": "A timing-injection test (mock Msg91EmailClient with an artificial delay near the CLAIM_LEASE boundary, two EmailWorker instances against the same DB) would move this from OBSERVED/inferred-from-comment to VERIFIED or refute it."
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{"rows": [
+  {"subject": "src/components/brand/brand-layout.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {"oracle": "vitest",
+                "command": "npx vitest run src/components/brand/brand-layout-billing-nav.test.tsx src/components/brand/brand-layout-logout.test.tsx",
+                "result": "Test Files 2 passed (2), Tests 3 passed (3), exit 0",
+                "where": "src/components/brand/brand-layout.tsx:140"}},
+
+  {"subject": "src/components/brand/brand-layout-billing-nav.test.tsx",
+   "owner": "ananya",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {"oracle": "vitest",
+                "command": "three mutations of brand-layout.tsx run one at a time against the unchanged test: (A) delete the navGroups Billing entry, (B) change its href to /brand/settings, (C) delete the entry AND plant <button>Billing</button> in the header",
+                "result": "A RED, B RED, C RED, restored GREEN; mutation C was GREEN before the within(nav) scoping fix, which is ledger F-0799",
+                "where": "src/components/brand/brand-layout-billing-nav.test.tsx:122"}},
+
+  {"subject": "influora-api/src/main/java/com/influora/web/BillingController.java",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "fresh-context",
+   "evidence": {"oracle": "read",
+                "command": "source trace only, no execution",
+                "result": "clause 2 of the done_when is NOT proved: no test anywhere asserts that GET /billing/plan leaves a subscriptions row behind, and staged F-4 work makes the clause causally false - see ledger F-0800",
+                "where": "influora-api/src/main/java/com/influora/web/BillingController.java:90"}}
+]}

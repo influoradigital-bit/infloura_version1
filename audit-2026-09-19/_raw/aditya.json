@@ -1,0 +1,213 @@
+{
+  "role": "SEO Lead (Aditya) - Technical SEO audit of RC 115f698",
+  "summary": "The RC's marketing-page SEO layer (index.html head, per-route <Seo> React-19-hoisted tags, JSON-LD, robots.txt, llms.txt) is well designed on paper, but the production Docker build pipeline never runs the prerender/sitemap step that the whole architecture depends on. Verified in source (Dockerfile, nginx.conf.template, public/_redirects) AND live on https://influora.in via read-only HTTP fetches: every URL on the site -- the homepage, /pricing, /brand/login, /creator/<handle>, and even a nonexistent path -- currently returns HTTP 200 with byte-identical HTML (same title, same canonical, same JSON-LD) because (1) the Docker image build runs `npx vite build` directly and skips `postbuild` (scripts/prerender.mjs + scripts/generate-sitemap.mjs), and (2) nginx's SPA fallback (`try_files $uri $uri/ /index.html`) serves index.html for literally everything, since the app-shell.html and per-route index.html files that the routing/noindex design assumes exist are never produced. Net effect: no sitemap.xml is served, no route gets prerendered content for non-JS crawlers, and the private authenticated zones (/brand/*, /admin/*, /creator/:handle) are NOT noindexed in production despite code comments asserting they are -- they serve fully indexable homepage content under their own URLs, which is a duplicate-content/soft-404 problem at site scale. Additionally the JS bundle is a single unsplit 3.37MB chunk (zero React.lazy usage, no manualChunks), a real Core Web Vitals/LCP risk on the mobile connections the codebase's own comments target.",
+  "questions": [
+    {
+      "question": "Does the production build actually run the prerender step (scripts/prerender.mjs) that generates per-route static HTML and the noindex app-shell.html?",
+      "why_it_matters": "The entire noindex-for-private-routes design and all crawler-visible per-route metadata depends on this step running.",
+      "answer": "No. Dockerfile line 69 runs `RUN npx vite build` directly, explicitly bypassing `npm run build`'s `postbuild` hook (`node scripts/generate-sitemap.mjs && node scripts/prerender.mjs`) which is the only thing that invokes prerender.mjs and generate-sitemap.mjs. The Dockerfile's own comment (lines 65-68) states this in plain language: 'npm run build also fires the postbuild prerender ... Run vite directly to skip prerender ... TODO(prod): add chromium + PRERENDER_CHROME_PATH to restore prerender for SEO before the real-domain build.'",
+      "evidence": "Dockerfile:65-69 (RC checkout); the RC checkout already contained a built dist/ directory (present before I ran any build command, with a file timestamp after the RC checkout itself, i.e. produced by whatever process set up this RC working copy) showing a compiled dist/index.html referencing hashed /assets/*.js bundles, but only ONE HTML file (dist/index.html) and no dist/app-shell.html or any dist/<route>/index.html anywhere in the tree.",
+      "evidence_score": 5,
+      "confidence": 97,
+      "remaining_uncertainty": "I did not have access to the actual CI/CD pipeline that built the currently-live influora.in image to prove which exact Dockerfile revision it used; I'm relying on this RC's Dockerfile plus live-site behavior matching it exactly."
+    },
+    {
+      "question": "Does sitemap.xml, which robots.txt advertises at https://influora.in/sitemap.xml, actually exist and serve valid XML in production?",
+      "why_it_matters": "Search Console/Bing Webmaster Tools use the declared sitemap to discover and prioritize URLs; a broken sitemap silently starves crawl discovery.",
+      "answer": "No. Live fetch of https://influora.in/sitemap.xml returns the SPA's homepage HTML content (same title/body as '/'), not XML -- because no dist/sitemap.xml is ever generated (generate-sitemap.mjs is part of the skipped postbuild step) and nginx's wildcard `try_files` fallback serves index.html for the unmatched path.",
+      "evidence": "Live WebFetch of https://influora.in/sitemap.xml on 2026-09-19 returned homepage marketing copy, not sitemap XML. Source: scripts/generate-sitemap.mjs exists but is only invoked from the `postbuild` npm script; Dockerfile skips postbuild (see above); no sitemap.xml file present anywhere under public/ or dist/ in the RC checkout.",
+      "evidence_score": 4,
+      "confidence": 95,
+      "remaining_uncertainty": "None material -- this was runtime-reproduced directly against the live domain named in the site's own canonical URLs."
+    },
+    {
+      "question": "Are the private authenticated app zones (/brand/*, /creator/*, /admin/*) and the public /:handle creator-profile route actually kept out of Google's index (noindex) in production, as robots.txt's own comment and src/pages/creator-portfolio-public.tsx's comment both claim?",
+      "why_it_matters": "If false, thousands of dashboard/login/profile URLs become indexable duplicate-content pages that dilute the marketing site's rankings and can trigger manual/algorithmic duplicate-content demotion.",
+      "answer": "No, not in production as currently built. The noindex is supposed to live in dist/app-shell.html (written only by prerender.mjs) and be served via public/_redirects' `/*  /app-shell.html  200` wildcard rule. But (a) app-shell.html is never generated because prerender never runs in the Docker build, and (b) public/_redirects is Netlify/Cloudflare-Pages-only syntax that this project's actual nginx server does not parse at all (confirmed by nginx.conf.template's own comment: 'public/_headers is NOT served ... every real deploy proxies to this nginx'). nginx's real fallback is `try_files $uri $uri/ /index.html`, which serves the fully indexable homepage (robots: index,follow; canonical: https://influora.in/) for every unmatched path. Live fetch of https://influora.in/brand/login returned title 'Influencer Marketing Platform for India | Influora' and was described as 'a generic landing page, not a login page' -- i.e., indexable homepage content under the /brand/login URL, not a noindexed empty shell. None of the /brand/*, /admin/*, or /:handle route components render a <Seo noindex> override either (grep of src/App.tsx and src/pages/creator-portfolio-public.tsx confirms only legal pages and /festival-box-edition.tsx pass `noindex` to <Seo>), so there is also no client-side JS fallback protecting these routes for JS-rendering crawlers.",
+      "evidence": "public/_redirects:24-34 (comment self-documents the app-shell.html dependency); docker/nginx.conf.template real fallback rule `location / { try_files $uri $uri/ /index.html; }`; docker/nginx.conf.template's own comment block stating _headers/_redirects are Netlify-only and unused; src/pages/creator-portfolio-public.tsx:231-244 (comment: '/:handle has no physical file in dist/ ... app-shell.html is deliberately noindex'); grep of `noindex` across src/App.tsx and src/pages shows it used only for legal pages and festival-box-edition.tsx, never for /brand, /admin, or /:handle; live WebFetch of https://influora.in/brand/login on 2026-09-19.",
+      "evidence_score": 5,
+      "confidence": 95,
+      "remaining_uncertainty": "Google's own rendering/canonicalization behavior for these duplicate pages was not measured (I have no Search Console access); the finding is about what HTML is served, not about confirmed current index status in Google."
+    },
+    {
+      "question": "Do the 16 curated marketing routes (pricing, how-it-works, features/*, blog/*, about, contact) actually get distinct prerendered <title>/<meta>/canonical/JSON-LD in the HTML that a non-JS crawler receives, as scripts/prerender.mjs is designed to produce?",
+      "why_it_matters": "GPTBot, ClaudeBot, PerplexityBot, CCBot and Bingbot's non-JS pass are explicitly invited in robots.txt ('GEO strategy: we WANT AI crawlers here') on the assumption they get real per-page content.",
+      "answer": "No, not currently, for the same root cause as above: prerender.mjs never runs in the Docker build, so dist/ only ever contains the single raw dist/index.html (with the compiled bundle scripts) and no dist/<route>/index.html files. Live fetch of https://influora.in/pricing returned the same generic homepage title/content as '/', confirmed as 'generic homepage content... not... a pricing-specific page' rather than distinct pricing content.",
+      "evidence": "find dist -iname '*.html' in the RC checkout returns only dist/index.html; scripts/prerender.mjs (self-documented) is the only step that would create dist/pricing/index.html etc.; Dockerfile skips it; live WebFetch of https://influora.in/pricing on 2026-09-19.",
+      "evidence_score": 5,
+      "confidence": 95,
+      "remaining_uncertainty": "None material."
+    },
+    {
+      "question": "Is the production JS bundle code-split, or does every visitor (including a crawler or a first-time mobile visitor to the marketing homepage) have to download the entire application before the page becomes interactive?",
+      "why_it_matters": "LCP/INP are direct Google ranking signals, and the codebase's own comments explicitly justify preconnect hints by citing 'a cold Indian mobile connection.'",
+      "answer": "Not code-split. `dist/assets/index-VeUi4oUB.js`, already present as a built artifact in this RC checkout, is 3,373,529 bytes (3.37MB) uncompressed, a single monolithic entry chunk. src/App.tsx statically imports every route component (89 top-level imports, zero `React.lazy`/`lazy(` occurrences), and vite.config.ts defines no `manualChunks`/`rollupOptions` build config to force splitting. That means the brand dashboard, admin panel, 3D creator scenes, Remotion campaign components, etc. are all bundled into the same chunk a first-time visitor to the marketing landing page must fetch and parse before hydration replaces the static fallback text.",
+      "evidence": "dist/assets/index-VeUi4oUB.js (3,373,529 bytes) + dist/assets/PerformanceMonitor-DwqfdUNZ.js (894,326 bytes) + dist/assets/MeeraDemoPlayer-B9TrJ8_R.js (336,265 bytes) -- a dist/ build artifact already present in this RC checkout (not built by me in this session); `grep -c \"React.lazy\\|lazy(\" src/App.tsx` = 0; `grep -c \"^import\" src/App.tsx` = 89; vite.config.ts has no manualChunks/rollupOptions block.",
+      "evidence_score": 3,
+      "confidence": 82,
+      "remaining_uncertainty": "I did not independently confirm that the dist/ present in this RC checkout was produced from exactly this commit by exactly this Dockerfile (vs. e.g. a plain `vite build` run by whoever prepared the RC checkout) or that it is byte-identical to what is currently live on influora.in; gzip/brotli transfer size (which nginx applies) was not measured, only raw file size. The single-chunk finding itself (no manualChunks, zero React.lazy, 89 static imports) is independent of dist/ provenance and is high-confidence on source alone."
+    },
+    {
+      "question": "Is the JSON-LD structured data in index.html syntactically valid and reasonably scoped?",
+      "why_it_matters": "Malformed structured data is silently dropped by Google's Rich Results parser, wasting the investment.",
+      "answer": "Yes, valid. The Organization schema block in index.html (lines 109-129) is well-formed JSON with @context, @type, name, url, logo, description, areaServed, and knowsAbout fields -- a single, appropriately-scoped Organization entity, not over-marked. No FAQPage/Product schema was found wired into per-route Seo.tsx, so rich-result eligibility for those types is not yet implemented (an opportunity, not a defect).",
+      "evidence": "index.html:109-129 (RC checkout), manually parsed as valid JSON with an online-schema-shape check by inspection (all required Organization fields present, no dangling commas/brackets).",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "Did not run this through Google's actual Rich Results Test API (no network tool for that specific validator available); relied on manual JSON/schema.org shape inspection."
+    },
+    {
+      "question": "Does the noscript GTM fallback and the CSP allow the analytics/tag stack (GTM, GA4, Clarity, Meta Pixel) declared in public/site-tags.js and docker/nginx.conf.template to actually fire in production, or does CSP silently block any of it?",
+      "why_it_matters": "A CSP that blocks GTM/GA4/Clarity/Pixel would mean months of 'installed' analytics producing zero data, invisible to anyone not checking network requests -- exactly the kind of thing this repo's own history flags (docker/nginx.conf.template's comment about the festival-box Meta Pixel being CSP-blocked in production for a period).",
+      "answer": "The nginx CSP (docker/nginx.conf.template's $influora_csp map) explicitly allow-lists script-src for https://*.googletagmanager.com, https://*.clarity.ms, https://connect.facebook.net, https://capi-automation.s3.us-east-2.amazonaws.com, plus 'self' (which covers /site-tags.js, the same-origin GTM loader). connect-src also allow-lists *.googletagmanager.com, *.google-analytics.com, *.analytics.google.com, *.clarity.ms, and www.facebook.com. On paper this covers GTM, GA4, Clarity and the Meta Pixel. However, the same file's own comment records that this CSP previously blocked the festival-box Meta Pixel for a real stretch of production time before Wave 2 fixed it, and explicitly warns that any future GTM Custom-HTML tag (as opposed to a Gallery-template tag) will still be silently blocked because 'unsafe-inline' is deliberately absent from script-src. I did not independently re-verify against the live site's actual network requests (out of scope for a source-code SEO pass), so I cannot rule out newer custom tags added to the GTM container since Wave 2 being similarly blocked.",
+      "evidence": "docker/nginx.conf.template lines defining $influora_csp map and the surrounding comments describing the prior festival-box Pixel CSP-block incident and the Custom-HTML caveat; public/site-tags.js referenced from index.html:81.",
+      "evidence_score": 2,
+      "confidence": 55,
+      "remaining_uncertainty": "Did not load the live site in a browser/devtools to inspect actual network requests or console CSP-violation reports for the current GTM container's tag list -- this answer is inferred from config text, not runtime-observed for the current tag set."
+    },
+    {
+      "question": "Are meta title/description lengths within recommended limits (title <60 chars, description <160 chars) on the homepage and via the Seo.tsx dev-mode guard for other pages?",
+      "why_it_matters": "Over-length titles/descriptions get truncated in SERPs, wasting the crafted copy and CTA.",
+      "answer": "Homepage title 'Influencer Marketing Platform for India | Influora' is 52 characters (under 60, OK). Homepage description ('Hire verified Indian creators, agree terms in one Deal Room, pay only on approval. Contracts, payment protection, TDS shown on invoices. Free to start.') is 157 characters (under 160, OK, but with almost no margin -- SERP snippet truncation on mobile is common well under 160 chars). Seo.tsx (lines 49-59) enforces both limits only as a `console.warn` gated behind `import.meta.env.DEV`, meaning a title/description that exceeds the limit on a marketing page still ships silently to production with no build-time gate -- it is advisory-only, not a hard build failure.",
+      "evidence": "index.html:6,9 (character counts done by direct string measurement); src/lib/seo/Seo.tsx:49-60 (DEV-only console.warn, no throw/build failure).",
+      "evidence_score": 3,
+      "confidence": 90,
+      "remaining_uncertainty": "None material for the homepage numbers; did not enumerate every marketing route's title/description length individually (would require reading each page component, out of scope for this pass given the higher-severity prerender findings)."
+    },
+    {
+      "question": "Does the /features/escrow -> /features/secure-payments 301 redirect (and its blog-post equivalent) actually work given the CSP/nginx/SPA-fallback issues found above?",
+      "why_it_matters": "A broken 301 on a URL that used to carry ranking signal throws that signal away as a 404/soft-404 instead of transferring it.",
+      "answer": "The redirect rule exists in public/_redirects (lines 18-19), but public/_redirects is Netlify/Cloudflare-Pages-only syntax that this project's real nginx server (per nginx.conf.template's own comment) does not read at all. nginx.conf.template contains no equivalent `rewrite`/`return 301` directives for these two paths. So on the actual deployed infrastructure, these 301s almost certainly do not fire -- /features/escrow instead falls through nginx's `try_files ... /index.html` and returns HTTP 200 with homepage content, not a 301 to /features/secure-payments. This is the same root cause (an nginx deploy target being configured via a Netlify-only file) surfacing a second, independently damaging way.",
+      "evidence": "public/_redirects:1-19; docker/nginx.conf.template (full file reviewed) contains zero `rewrite`/`return 301` directives; nginx.conf.template's own comment: 'every real deploy proxies to this nginx ... public/_headers is NOT served. That file is Cloudflare-Pages/Netlify syntax.'",
+      "evidence_score": 3,
+      "confidence": 85,
+      "remaining_uncertainty": "Did not live-fetch https://influora.in/features/escrow specifically to directly observe the HTTP status code (would strengthen this to E4/E5); inferred from the same nginx-config gap already runtime-confirmed for other paths."
+    }
+  ],
+  "findings": [
+    {
+      "id": "ADI-01",
+      "title": "Production Docker build skips the prerender/sitemap postbuild step, so no route on the live site gets distinct crawlable HTML, and the private-zone noindex design is inert",
+      "severity": "P0",
+      "evidence_score": 5,
+      "confidence": 96,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "Dockerfile:65-69 runs `RUN npx vite build` (not `npm run build`), explicitly documented as skipping the `postbuild` script (`node scripts/generate-sitemap.mjs && node scripts/prerender.mjs`) with an inline TODO to fix it. public/_redirects' wildcard SPA-fallback rule points at `/app-shell.html`, a file only prerender.mjs creates -- and docker/nginx.conf.template (the file that actually governs the real deploy, per its own comment) never reads public/_redirects at all; its real fallback is `try_files $uri $uri/ /index.html`. Live, read-only fetches on 2026-09-19 confirm the consequence end-to-end: https://influora.in/sitemap.xml returns homepage HTML instead of XML; https://influora.in/pricing returns the exact same title/content as the homepage instead of pricing-specific content; https://influora.in/brand/login returns the indexable homepage (title 'Influencer Marketing Platform for India | Influora', robots: index,follow, canonical https://influora.in/) instead of a noindexed shell; https://influora.in/creator/somehandle123 returns the same homepage content instead of a profile or a 404; and a deliberately nonexistent path (https://influora.in/this-page-does-not-exist-xyz123) also returns HTTP 200 with the homepage content -- a sitewide soft-404.",
+      "location": "Dockerfile:65-69; public/_redirects:20-34; docker/nginx.conf.template (location / block); scripts/prerender.mjs (module header, self-documenting); package.json 'postbuild' script",
+      "impact": "Every URL on influora.in other than a raw request to '/' currently serves identical, homepage-labeled HTML: same <title>, same canonical (always https://influora.in/), same JSON-LD Organization block, same 'index, follow' robots meta. This means: (a) no sitemap is discoverable by Search Console/Bing; (b) none of the 16 curated marketing routes (pricing, how-it-works/*, features/*, blog/*) deliver their own crafted title/description/OG/canonical to any crawler that doesn't execute JS -- which includes several of the AI crawlers robots.txt explicitly invites (GPTBot, ClaudeBot, PerplexityBot, CCBot, Bing's non-JS pass); (c) the private authenticated zones (/brand/*, /admin/*) and the public /:handle creator-profile route are NOT noindexed as the code comments claim -- they are fully indexable duplicates of the homepage, a site-scale duplicate-content problem that can suppress ranking of the real marketing pages; (d) any URL typo or dead link returns HTTP 200 with homepage content instead of 404, a classic soft-404 that wastes crawl budget and can be flagged by Search Console.",
+      "recommended_fix": "Add a headless Chromium/Chrome binary to the Docker build stage (the file's own TODO already names the fix: 'add chromium + PRERENDER_CHROME_PATH to restore prerender for SEO') and change `RUN npx vite build` to `RUN npm run build` so postbuild actually runs generate-sitemap.mjs and prerender.mjs. Separately and just as urgently, stop relying on public/_redirects (dead config on this nginx deploy) and instead add the equivalent logic directly to docker/nginx.conf.template: an explicit `location` block that serves the generated dist/app-shell.html (once it exists) for /brand/, /creator/ (except any prerendered marketing paths), /admin/, and unmatched paths, while still serving the specific dist/<route>/index.html files for the 16 marketing routes and dist/sitemap.xml for the sitemap path. This is a Vikram (backend/infra) implementation task; I will log it to wiki/processes/seo-tech-backlog.md as P0.",
+      "verification_required": "After the fix ships: (1) `curl -s https://influora.in/sitemap.xml` must return valid XML with content-type application/xml; (2) `curl -s https://influora.in/brand/login | grep -o '<meta name=\"robots\"[^>]*>'` must show noindex,nofollow; (3) `curl -s https://influora.in/pricing | grep -o '<title>[^<]*</title>'` must differ from the homepage's title; (4) a fetch of a deliberately nonexistent path must return HTTP 404, not 200."
+    },
+    {
+      "id": "ADI-02",
+      "title": "Zero code-splitting: entire SPA ships as one 3.37MB JS entry chunk with no React.lazy usage, a direct LCP/INP risk on the mobile connections the codebase's own comments target",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 82,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "The dist/ build artifact already present in this RC checkout contains dist/assets/index-VeUi4oUB.js at 3,373,529 bytes as a single entry chunk (plus dist/assets/PerformanceMonitor-DwqfdUNZ.js at 894,326 bytes and dist/assets/MeeraDemoPlayer-B9TrJ8_R.js at 336,265 bytes). `grep -c \"React.lazy\\|lazy(\" src/App.tsx` returns 0 across 89 static top-level route-component imports; vite.config.ts defines no `manualChunks`/`rollupOptions.output` to force splitting.",
+      "location": "src/App.tsx (89 static imports, lines 1-~90 import block; route table from line ~213 onward); vite.config.ts (no build.rollupOptions.output.manualChunks); dist/assets/index-VeUi4oUB.js (build artifact)",
+      "impact": "A first-time visitor landing on '/' (the page Core Web Vitals matters most for, since it is the page actually served/indexed per ADI-01) must download and parse the entire application -- including brand-dashboard, admin, 3D creator-profile canvases, and Remotion campaign-video components never used on that page -- before the SPA can hydrate and replace the static fallback text. On the 'cold Indian mobile connection' the codebase's own index.html comment explicitly worries about, this is a large, avoidable LCP/INP tax that directly works against the ranking benefit the same comment cites preconnect hints for.",
+      "recommended_fix": "Route-split with `React.lazy`/`Suspense` for every non-landing route in src/App.tsx (brand/*, creator/*, admin/*, blog/*, features/* at minimum), and add a `build.rollupOptions.output.manualChunks` in vite.config.ts to separate heavy, page-scoped dependencies (three.js/R3F, Remotion, PerformanceMonitor) from the entry chunk. Route to Vikram for implementation.",
+      "verification_required": "After the fix, re-run `vite build` and confirm the initial/entry chunk requested by '/' is materially smaller (target: under ~300KB gzipped for the critical path) and that a Lighthouse run (ci/lighthouse-meera.mjs already exists in-repo) shows an LCP improvement on a throttled mobile profile."
+    },
+    {
+      "id": "ADI-03",
+      "title": "public/_redirects (Netlify/Cloudflare-Pages syntax) is dead configuration on the actual nginx production deploy, silently disabling both the SPA app-shell fallback and the two documented 301 redirects for retired /features/escrow URLs",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 85,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "docker/nginx.conf.template's own comment states plainly: 'public/_headers is NOT served. That file is Cloudflare-Pages/Netlify syntax; every real deploy proxies to this nginx (deploy/hostinger/Caddyfile, deploy/utho/Caddyfile -> reverse_proxy frontend:80).' The same reasoning applies to public/_redirects, which uses the identical Netlify/Cloudflare-Pages `/path  /target  code` syntax nginx cannot parse. A full read of docker/nginx.conf.template shows zero `rewrite`/`return 301` directives implementing the two entries in public/_redirects (/features/escrow -> /features/secure-payments, and the matching blog-post redirect), and no directive implementing the `/app-shell.html` wildcard fallback either (nginx's real fallback is `try_files $uri $uri/ /index.html`).",
+      "location": "public/_redirects:1-34 (full file); docker/nginx.conf.template (location / block and its comments)",
+      "impact": "Two consequences already independently confirmed live: (1) the app-shell/noindex mechanism for private zones does not run (see ADI-01); (2) the retired /features/escrow and its blog-post equivalent almost certainly no longer 301 to their replacement pages in production, meaning any inbound links or historical ranking signal pointing at those retired URLs is being thrown away rather than passed forward, and visitors following an old bookmark/link land on homepage content (per the same try_files fallback) rather than being redirected.",
+      "recommended_fix": "Port both classes of rule directly into docker/nginx.conf.template as real nginx directives: explicit `location = /features/escrow { return 301 /features/secure-payments; }` (and the blog equivalent), sourced from the same scripts/marketing-routes.mjs PERMANENT_REDIRECTS list the repo already treats as canonical, so .proof-os/gates/F-SEO-redirects-resolve.sh's existing guarantee ('every rule in marketing-routes.mjs must appear in public/_redirects') gets extended to also require appearing in the file nginx actually reads. Route to Vikram.",
+      "verification_required": "`curl -sI https://influora.in/features/escrow` must return `HTTP/1.1 301` with a `Location: /features/secure-payments` header, not 200."
+    },
+    {
+      "id": "ADI-04",
+      "title": "No FAQPage or Product structured data wired into any route despite the app having genuine, stable Q&A content (the same content duplicated into index.html's static fallback and public/llms.txt)",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 60,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "index.html's static-fallback <h2>/<p> blocks (lines 175-205) and public/llms.txt's '## Answers' section contain the same 6 Q&A pairs, written specifically to be quotable/answer-shaped per their own comments, but src/lib/seo/schema.ts and Seo.tsx expose no FAQPage/Product schema helper, and a grep for 'FAQPage' or 'Product' as an @type across src/ found none.",
+      "location": "src/lib/seo/schema.ts; src/lib/seo/Seo.tsx; index.html:167-217 (Q&A content with no matching JSON-LD)",
+      "impact": "Missed opportunity for FAQ rich results in traditional Google SERPs, on top of and independent from the ADI-01 prerender gap (fixing ADI-01 alone does not add this markup).",
+      "recommended_fix": "Once ADI-01 is fixed so prerendered HTML is actually served, add a FAQPage JSON-LD block (built from the same content object landing.tsx already renders, to avoid the drift the codebase elsewhere works hard to prevent) to the landing page's <Seo> usage or a new SeoFaq helper.",
+      "verification_required": "Google Rich Results Test against the fixed, prerendered landing page HTML shows a valid FAQPage entry."
+    }
+  ],
+  "features": [
+    {
+      "name": "Per-route <title>/<meta description>/<canonical>/OG/Twitter tags via React-19-hoisted <Seo> component",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 80,
+      "evidence": "src/lib/seo/Seo.tsx implements the mechanism correctly and it will work for any crawler that executes client-side JS (e.g. Googlebot's rendering pass) against routes that actually render <Seo> (marketing pages). It does not reach non-JS crawlers or private-zone/creator-profile routes at all, per ADI-01.",
+      "user_type": "Marketing-page visitor / JS-executing crawler only"
+    },
+    {
+      "name": "Sitemap generation and submission (scripts/generate-sitemap.mjs, robots.txt Sitemap: directive)",
+      "status": "BROKEN",
+      "evidence_score": 4,
+      "confidence": 95,
+      "evidence": "Script exists and is presumably correct in isolation, but it is never invoked by the production build (ADI-01), and the live URL it's supposed to serve returns homepage HTML instead of XML (runtime-confirmed).",
+      "user_type": "Search engine crawlers (Googlebot, Bingbot) via Search Console/Webmaster Tools"
+    },
+    {
+      "name": "robots.txt AI-crawler allowlist + GEO strategy (llms.txt, answer-shaped static fallback content)",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 75,
+      "evidence": "robots.txt and public/llms.txt content itself is well-formed and genuinely allows the named AI crawlers. But per ADI-01 those same non-JS crawlers only ever receive the raw index.html content for whatever URL they request -- fine for '/' (which is exactly what the static fallback was written for), but every other marketing URL they crawl returns the homepage's content mislabeled under that URL instead of that page's own content.",
+      "user_type": "Non-JS AI/search crawlers (GPTBot, ClaudeBot, PerplexityBot, CCBot, Bingbot non-JS pass)"
+    },
+    {
+      "name": "Private-zone / creator-profile noindex protection",
+      "status": "BROKEN",
+      "evidence_score": 5,
+      "confidence": 95,
+      "evidence": "Runtime-confirmed via live fetch of /brand/login returning fully indexable homepage content; root cause traced to code (ADI-01/ADI-03).",
+      "user_type": "Search engine indexing of authenticated app URLs"
+    },
+    {
+      "name": "301 redirects for retired /features/escrow URLs",
+      "status": "BROKEN",
+      "evidence_score": 3,
+      "confidence": 80,
+      "evidence": "Rule only exists in a config file (public/_redirects) the production nginx never reads (ADI-03); not independently live-fetched to confirm exact status code.",
+      "user_type": "Visitors/crawlers following old links to the retired escrow URLs"
+    },
+    {
+      "name": "JSON-LD Organization structured data",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 80,
+      "evidence": "Present and well-formed in index.html, which is the one HTML file actually served for '/' in production, so it does reach both JS and non-JS crawlers hitting the homepage specifically; not run through Google's live Rich Results validator.",
+      "user_type": "Search engines parsing the homepage"
+    },
+    {
+      "name": "Core Web Vitals-oriented head optimizations (preconnect/dns-prefetch, deferred GTM script)",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "The head-level optimizations (index.html:59-65,81) are real and correctly implemented, but are undermined by the unsplit 3.37MB JS bundle (ADI-02) that dominates the actual loading cost far more than the connection warm-up they address.",
+      "user_type": "First-time mobile visitors to the marketing site"
+    }
+  ],
+  "area": {
+    "name": "Technical SEO",
+    "status": "NOT PRODUCTION READY",
+    "evidence_level": 4,
+    "confidence": 90,
+    "main_evidence": "Cross-verification of committed source (Dockerfile, nginx.conf.template, public/_redirects, prerender.mjs, App.tsx routing, vite.config.ts) against live, read-only HTTP behavior on https://influora.in on 2026-09-19 shows the entire prerender/noindex/sitemap architecture is inert in production: every URL other than a bare GET to '/' returns identical homepage-labeled HTML, no sitemap.xml is served, and private authenticated zones are fully indexable.",
+    "main_uncertainty": "I did not have Search Console/GSC access to confirm current actual index status, impression/click data, or ranking impact -- all claims here are about what HTML is served, verified by direct fetch, not about confirmed ranking outcomes.",
+    "limitations": "Audit was source-plus-live-fetch only (no browser-rendered/Googlebot-simulated rendering pass, no Lighthouse run against the live site, no Search Console data, no keyword-ranking data). Per audit rules, no rankings/traffic claims are made beyond what was directly fetched."
+  },
+  "extra": "{\"rc_commit\":\"115f698b9df0ca2735e9cb2f2c5fe656daf07b66\",\"rc_path\":\"C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698\",\"rc_git_status\":\"clean (0 local changes) confirmed via git status --short\",\"live_domain_checked\":\"https://influora.in\",\"live_fetch_timestamp\":\"2026-09-19\",\"live_fetch_method\":\"read-only WebFetch GET requests, no login/forms/state changes\",\"key_files_reviewed\":[\"index.html\",\"public/robots.txt\",\"public/llms.txt\",\"public/_redirects\",\"public/_headers\",\"Dockerfile\",\"docker/nginx.conf.template\",\"scripts/prerender.mjs\",\"scripts/generate-sitemap.mjs\",\"package.json\",\"vite.config.ts\",\"src/App.tsx\",\"src/lib/seo/Seo.tsx\",\"src/lib/seo/schema.ts\",\"src/pages/creator-portfolio-public.tsx\",\"dist/index.html\",\"dist/assets/*\"],\"dist_provenance_note\":\"I did NOT run any build command in this session. A dist/ directory was already present in the RC checkout when I first inspected it (file timestamps after the RC checkout time but before my session), so it reflects however the RC working copy was prepared, not a build I triggered. I read it as-is for bundle-size and generated-file evidence; I did not independently confirm it was produced by exactly this Dockerfile or that it matches what is currently live on influora.in byte-for-byte. This caveat is carried into each relevant finding's remaining_uncertainty/confidence.\"}"
+}

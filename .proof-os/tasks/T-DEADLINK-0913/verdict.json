@@ -1,0 +1,17 @@
+{"verdict": "proved",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "no live relative markdown link in docs/docs/features/ points at a nonexistent file, and a gate in .proof-os/gates/ naming F-0807 goes RED when a dead link is planted",
+ "evidence": {"oracle": "script",
+              "command": "bash .proof-os/gates/F-0807-doc-links-resolve.sh, plus thirteen probes run one at a time in an isolated copy",
+              "result": "zero dead links across thirty-one feature docs; a planted dead link, a directory target and a nested dead link each turn it red, while eight valid shapes and a correction marker quoting a dead link all stay green. The fenced-code and quoted-marker cases were reproduced independently by the dispatcher.",
+              "where": ".proof-os/gates/F-0807-doc-links-resolve.sh:2"},
+ "not_checked": [
+   "a link whose text is split across two source lines by a soft break is not seen; none exists in the tree today, and it is declared in the gate's own NOT CHECKED block rather than left silent",
+   "anchor fragments on links that DO resolve, and external http/mailto links, are not verified",
+   "doc trees outside docs/docs/features/ - wiki/, top-level READMEs, .proof-os/tasks - are unscanned, and the reviewer notes dead links are likely there too",
+   "the docs site was never built, so 'resolves' is judged by CommonMark semantics and the filesystem, not by the real renderer",
+   "whether proof-os treats this gate's exit 2 as non-blocking - if it does, deleting docs/docs/features/ entirely would pass silently",
+   "the corrected prose itself - this task verified link resolution and excision quality, not whether the surrounding claims are true"
+ ],
+ "skipped": []}

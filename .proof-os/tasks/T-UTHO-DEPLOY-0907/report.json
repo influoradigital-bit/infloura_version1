@@ -1,0 +1,328 @@
+{
+ "rows": [
+  {
+   "subject": "deploy/utho/docker-compose.utho.yml",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "file-read + live-state.txt",
+    "command": "cat -n deploy/utho/docker-compose.utho.yml; read live-state.txt ss -ltnp rows",
+    "result": "caddy publishes 127.0.0.1:8080:8080 but a wildcard listener *:8080 (java pid=2658) already holds that port on the box, so docker-proxy cannot bind and caddy never starts; images are ghcr.io/influoradigital-bit/* while the running containers use local influora-api:latest tags",
+    "where": "deploy/utho/docker-compose.utho.yml:62-64,136 vs live-state.txt:37"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/docker-compose.utho-shared.yml",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "file-read + live-state.txt",
+    "command": "grep -n 'ports:|image:|SPRING_DATASOURCE_URL|container_name' deploy/utho/docker-compose.utho-shared.yml; read live-state.txt docker ps",
+    "result": "same 127.0.0.1:8080 collision; hardcodes jdbc:mysql://mysql:3306/influora against a fresh mysql:8.0 container while the box runs a host mysqld; sets no container_name for any service so `up -d` would create a parallel influora-api-1/influora-ai-1/redis alongside the bare-named containers already running",
+    "where": "deploy/utho/docker-compose.utho-shared.yml:78-79,96,147 vs live-state.txt:23-25,34,37"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/nginx-influora.conf",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "nginx-config + live-state.txt",
+    "command": "cat -n deploy/utho/nginx-influora.conf; read live-state.txt ls /etc/letsencrypt/live and cat sites-available/influora.in",
+    "result": "references three per-host cert dirs (app/api/ai.influora.in) that do not exist on the box, so nginx -t fails; if they did exist its server_name influora.in duplicates the live influora.in vhost and, sorting first in the sites-enabled glob, wins the apex while providing no `location /api/` \u2014 killing the currently-200 https://influora.in/api/v1/health path",
+    "where": "deploy/utho/nginx-influora.conf:59,64-72,82-83,103-104,134-135 vs live-state.txt:19,52,58,64-65,126"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/nginx-influora-app.conf",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "nginx-config + live-state.txt",
+    "command": "cat -n deploy/utho/nginx-influora-app.conf; read live-state.txt ls /etc/letsencrypt/live",
+    "result": "correctly refuses to touch the apex, which is the right instinct for this box, but references app/api/ai cert dirs absent from /etc/letsencrypt/live, proxies to 127.0.0.1:8080 where no Caddy exists, and declares ai.influora.in which collides with nginx-ai-influora.conf",
+    "where": "deploy/utho/nginx-influora-app.conf:3-10,37-38,41,87 vs live-state.txt:19,37"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/nginx-ai-influora.conf",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "nginx-config + live-state.txt",
+    "command": "cat -n deploy/utho/nginx-ai-influora.conf; read live-state.txt ss -ltnp rows",
+    "result": "the SSE set (proxy_buffering off / proxy_cache off / Connection '' / 3600s) and the two-phase reasoning are correct and should be kept verbatim, but proxy_pass targets 127.0.0.1:8080 which on this box is a foreign Tomcat; the reachable AI upstream is 127.0.0.1:8000 where uvicorn listens",
+    "where": "deploy/utho/nginx-ai-influora.conf:47,62-68 vs live-state.txt:33,37"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/install-ai-vhost.sh",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "file-read + live-state.txt",
+    "command": "cat -n deploy/utho/install-ai-vhost.sh; read live-state.txt ss -ltnp rows",
+    "result": "rollback, nginx -t gating, certbot dry-run and server_name conflict check are genuinely sound; but the preflight greps the literal '127.0.0.1:8080' while the live listener prints as '*:8080', so it reports NOTHING listening when the port is in fact taken by a non-Caddy process, then installs a vhost pointing at it and maps the resulting 405 to 'nginx is still not routing this host'",
+    "where": "deploy/utho/install-ai-vhost.sh:66,69,180,224 vs live-state.txt:37"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/install-ai-vhost.sh next-step MEERA_PUBLIC_CHAT_URL instruction",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "file-read",
+    "command": "grep -n MEERA deploy/utho/docker-compose.utho*.yml deploy/utho/generate-env.sh; sed -n '230,245p' deploy/utho/install-ai-vhost.sh",
+    "result": "the script tells the operator to set MEERA_PUBLIC_CHAT_URL in /opt/influora/.env, but neither compose file nor generate-env.sh interpolates that name; both set INFLUORA_MEERA_STREAM_PUBLICCHATURL from ${AI_DOMAIN}, so the documented remediation is a silent no-op",
+    "where": "deploy/utho/install-ai-vhost.sh:236 vs deploy/utho/docker-compose.utho.yml:180 and docker-compose.utho-shared.yml:190"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/Caddyfile",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "file-read + live-state.txt",
+    "command": "cat -n deploy/utho/Caddyfile; read live-state.txt docker ps and ss -ltnp rows",
+    "result": "the whole Option A premise is http_port 8080 with nginx proxying to Caddy there; no Caddy container is running and *:8080 is held by java pid=2658, so the routing layer the site blocks depend on does not exist on this box",
+    "where": "deploy/utho/Caddyfile:13-17,24-56 vs live-state.txt:22-30,37"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/README.md section 4 TRUSTED_PROXIES procedure",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "file-read",
+    "command": "grep -rn 'TRUSTED_PROXIES|internal-proxies' influora-api/src/main/resources/application.yml; grep -rn TOMCAT_INTERNAL_PROXIES deploy/",
+    "result": "application.yml states the TRUSTED_PROXIES env var is inert; the live knob is server.tomcat.remoteip.internal-proxies, which no file under deploy/ forwards. Posture is accidentally safe because the default regex already covers 127.x and 172.16-31, but the runbook creates false assurance and its implied narrowing would collapse all clients to the proxy IP",
+    "where": "deploy/utho/README.md:96-109 vs influora-api/src/main/resources/application.yml:117,184"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/README.md section 7 box inventory",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read live-state.txt docker ps output against README.md:296-341",
+    "result": "README (measured 2026-08-21) calls grafana/loki/promtail dead and instructs `docker rm grafana loki promtail`, and calls snaps-backend crash-looping; on 2026-09-07 all four are Up (grafana/loki/promtail 9 days, snaps-backend 10 days healthy). Following step 3 destroys running observability",
+    "where": "deploy/utho/README.md:296,300-301,332 vs live-state.txt:26,28-30"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/README.md section 2 certificate issuance",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "file-read + live-state.txt",
+    "command": "sed -n '50,72p' deploy/utho/README.md; read live-state.txt ls /etc/letsencrypt/live",
+    "result": "issues one five-SAN certificate into /etc/letsencrypt/live/influora.in/, which never creates the live/app.influora.in, live/api.influora.in or live/ai.influora.in paths that nginx-influora.conf requires; the runbook cannot make its own nginx file pass nginx -t",
+    "where": "deploy/utho/README.md:55-62 vs deploy/utho/nginx-influora.conf:82-83,103-104,134-135 and live-state.txt:19"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/generate-env.sh",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "file-read",
+    "command": "grep -n 'MEERA|AI_DOMAIN|TRUSTED_PROXIES|ROOT_DOMAIN' deploy/utho/generate-env.sh",
+    "result": "domain vars are correct and consistent (ROOT_DOMAIN=influora.in, AI_DOMAIN=ai.influora.in), but it emits the inert TRUSTED_PROXIES=172.16.0.0/12 and never emits TOMCAT_INTERNAL_PROXIES or MEERA_PUBLIC_CHAT_URL",
+    "where": "deploy/utho/generate-env.sh:35,38,40,47"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "wiki/processes/OPS-F0697-instagram-system-caller.md deploy target",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read wiki/processes/OPS-F0697-instagram-system-caller.md:54-67 against live-state.txt cat /usr/local/App/docker-compose.prod.yml",
+    "result": "the doc names /usr/local/App/docker-compose.prod.yml as the live Influora stack; that file declares exactly one service, container_name snaps-backend, ports 8081:8080, CORS defaulting to snapsby.com. Step 5 would write a live Meta access token into a different product's .env and step 7 would restart snaps-backend while influora-api never receives the variable",
+    "where": "wiki/processes/OPS-F0697-instagram-system-caller.md:54-67 vs live-state.txt:93,97,105,111,120"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: ai.influora.in public route",
+   "owner": "priya",
+   "status": "missing",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read ls /etc/nginx/sites-enabled/, grep -Rh server_name, ls /etc/letsencrypt/live/, docker ps, ss -ltnp",
+    "result": "influora-ai is Up and healthy with uvicorn on 0.0.0.0:8000, but no enabled vhost declares ai.influora.in, no server_name mentions it, and no certificate exists for it, so it falls through to the default vhost; port 8000 is firewalled externally. Meera has no public route today",
+    "where": "live-state.txt:5-7,9-16,19,24,33,129"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: SSH root authentication",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read the ssh root@150.241.245.242 transcription line",
+    "result": "authentication succeeded by PASSWORD with no public key reachable; password-only root on a host carrying two products' databases and third-party API credentials",
+    "where": "live-state.txt:134-135"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: n8n exposed on port 5678",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read ss -ltnp rows and the external TCP reachability probe",
+    "result": "docker-proxy binds 0.0.0.0:5678 and the external probe reports port 5678 REACHABLE; n8n is not behind any nginx server_name so there is no TLS, and it stores workflow credentials for every service it automates",
+    "where": "live-state.txt:27,42,132 (absence of a 5678 vhost: live-state.txt:9-16)"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: wide 0.0.0.0 bind surface",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read ss -ltnp rows and the external TCP reachability probe",
+    "result": "uvicorn 0.0.0.0:8000, mysqld 0.0.0.0:3306 and 0.0.0.0:33060, grafana 0.0.0.0:3000, loki 0.0.0.0:3100 are all bound to every interface and defended only by the perimeter firewall (probe: blocked/filtered). Redis is correctly bound to 127.0.0.1, showing the box can do this right",
+    "where": "live-state.txt:33-35,39-40,43-44,129-131"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: /usr/local/App/docker-compose.prod.yml service inventory",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read cat /usr/local/App/docker-compose.prod.yml transcription",
+    "result": "declares exactly one service (backend / snaps-backend) with snapsby.com CORS and FRONTEND_URL defaults; it is Snapsby's compose file and is not a valid deploy target for influora-api or influora-ai despite being named as such in repo documentation",
+    "where": "live-state.txt:91-120"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: influora-api and influora-ai container provenance",
+   "owner": "priya",
+   "status": "missing",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read docker ps and ss -ltnp; NOT ANSWERABLE from the capture. Needs: docker inspect influora-api --format '{{index .Config.Labels \"com.docker.compose.project.config_files\"}}' and docker inspect influora-api influora-ai --format '{{.HostConfig.NetworkMode}}'",
+    "result": "containers show PORTS (none) yet their java/uvicorn processes appear in the host ss output rather than behind docker-proxy, consistent with network_mode host but not proven; image tags are local (influora-api:latest) not the GHCR tags the compose files use, and the bare container names cannot come from a compose file that sets no container_name. The owning compose file is unknown, so there is no known-correct way to restart the API with a changed env var",
+    "where": "live-state.txt:23-24,33,36,40-44"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: apex vhost and /api/ proxy path",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read cat /etc/nginx/sites-available/influora.in and the two curl -sI checks",
+    "result": "the apex serves the SPA statically from /var/www/influora with try_files SPA fallback and proxies /api/ to 127.0.0.1:8082 where the Java API listens; both https://influora.in/ and https://influora.in/api/v1/health return HTTP/2 200. This is the working configuration the deploy must not break",
+    "where": "live-state.txt:48-76,123,126"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: TLS certificate inventory",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "read ls /etc/letsencrypt/live/",
+    "result": "certificates exist for bysnaps.com, influora.in and snapsby.com only; app.influora.in, api.influora.in and ai.influora.in have none, which is what makes every subdomain vhost in deploy/utho/ fail nginx -t and what makes those hosts serve the default vhost's certificate today",
+    "where": "live-state.txt:18-19"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "live-state.txt: swap and disk headroom",
+   "owner": "priya",
+   "status": "missing",
+   "evidence": {
+    "oracle": "live-state.txt",
+    "command": "NOT IN CAPTURE. Needs: free -h; swapon --show; df -h /",
+    "result": "README recorded Swap: 0B on 2026-08-21 and explains that at swap 0 the kernel OOM-kills the largest RSS (Snapsby or MySQL, not Influora). The capture contains no free/swapon/df output, while /usr/local/App holds ~800 MB of dated snapsbyugc-backend.jar copies plus a 13 MB tomcat zip. Current headroom is unknown and must be measured before pulling any new images",
+    "where": "live-state.txt:86-88 (disk contents only); deploy/utho/README.md:299,307-310"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": ".env.production VITE_API_BASE_URL",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "file-read + live-state.txt",
+    "command": "grep -n '^VITE_' .env.production; read live-state.txt sites-enabled, server_name sweep and letsencrypt listing",
+    "result": "bakes https://api.influora.in/api/v1 into any local production build, but api.influora.in has no nginx server block and no certificate on this box; deploying such a bundle to /var/www/influora breaks the app entirely even though the box's own same-origin /api/ proxy works",
+    "where": ".env.production:33 vs live-state.txt:5-7,9-16,19,64-65"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "src/lib/meera-api.ts VITE_MEERA_STREAM_URL default",
+   "owner": "priya",
+   "status": "broken",
+   "evidence": {
+    "oracle": "file-read",
+    "command": "grep -rn VITE_MEERA_STREAM_URL src/ .env.production",
+    "result": "falls back to 'https://ai.influora.internal', a non-resolvable host, and .env.production sets only four VITE vars (11,33,60,68) with this one absent; any locally built production bundle has Meera dead in the browser regardless of server-side configuration",
+    "where": "src/lib/meera-api.ts:39; .env.production:11,33,60,68"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "influora-api application-prod.yml meera public-chat-url binding",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "file-read",
+    "command": "grep -rn 'public-chat-url|MEERA_PUBLIC_CHAT_URL' influora-api/src/main; sed -n '595,640p' SecretsStartupValidator.java",
+    "result": "application-prod.yml binds influora.meera.stream.public-chat-url to ${MEERA_PUBLIC_CHAT_URL} while the compose files supply the same property under its Spring env form INFLUORA_MEERA_STREAM_PUBLICCHATURL; two names for one property is why the ops instruction misses. SecretsStartupValidator only rejects loopback and non-HTTPS, so the recorded wrong value https://influora.in/meera/chat boots clean and returns nginx's 405 to browsers",
+    "where": "influora-api/src/main/resources/application-prod.yml:79; influora-api/src/main/java/com/influora/config/SecretsStartupValidator.java:617-635; deploy/utho/docker-compose.utho.yml:180"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "influora-api application.yml tomcat remoteip internal-proxies default",
+   "owner": "priya",
+   "status": "aligned",
+   "evidence": {
+    "oracle": "file-read",
+    "command": "sed -n '85,120p;178,186p' influora-api/src/main/resources/application.yml",
+    "result": "the default internal-proxies regex already trusts 127.x and 172.16-31.x, which covers both the nginx hop and the Docker bridge under Option A, so XFF handling would be correct on this topology without any operator action. The code is right; only the runbook pointing at the inert TRUSTED_PROXIES is wrong",
+    "where": "influora-api/src/main/resources/application.yml:111,117,178-186"
+   },
+   "isolation": "fresh-context"
+  },
+  {
+   "subject": "deploy/utho/README.md claim of two-place divergence from deploy/hostinger",
+   "owner": "priya",
+   "status": "partial",
+   "evidence": {
+    "oracle": "file-read",
+    "command": "ls -la deploy/utho/ deploy/hostinger/",
+    "result": "README claims the files differ from deploy/hostinger in exactly two places; deploy/utho additionally contains four nginx configs and two shell scripts that deploy/hostinger (Caddyfile, docker-compose.hostinger.yml, docker-compose.test.yml) does not. Cosmetic, but it invites a wrong mental model of what the directory is",
+    "where": "deploy/utho/README.md:8-9; directory listings of deploy/utho/ and deploy/hostinger/"
+   },
+   "isolation": "fresh-context"
+  }
+ ]
+}

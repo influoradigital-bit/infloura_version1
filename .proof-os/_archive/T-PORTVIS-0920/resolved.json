@@ -1,0 +1,30 @@
+{
+ "text": "fix F-0972 F-0973 F-0974 F-0975 F-0976 creator portfolio visibility enforcement",
+ "verb": "FIX",
+ "resolution": "proved",
+ "target": {
+  "kind": "ledger",
+  "id": "F-0972",
+  "resolution": "proved",
+  "status": "open"
+ },
+ "owner": "vikram",
+ "reviewer": "kabir",
+ "scope": [
+  "influora-api/src/main/java/com/influora/service/portfolio/**",
+  "influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java",
+  "influora-api/src/main/java/com/influora/service/CreatorProfileService.java",
+  "influora-api/src/main/java/com/influora/web/dto/**",
+  "src/pages/creator-portfolio-public.tsx",
+  "src/pages/brand-creator-profile.tsx",
+  "src/lib/api.ts"
+ ],
+ "done_when": ".proof-os/gates/portfolio-visibility-enforced.sh exits 0 (it asserts: each of the 9 PortfolioVisibility record components has >=1 reader in influora-api/src/main; PortfolioService.requireDiscoverablePortfolio and CreatorProfileService.requireProfileByUsername both filter isSuspended; CreatorDiscoveryService.getPublicProfile references rateCard visibility; captchaToken has a reader in src/main or 0 occurrences) AND `mvn -o -Dtest=PortfolioServiceVisibilityMatrixTest,PortfolioServicePublicVisibilityTest,CreatorDiscoveryServiceTest surefire:test` exits 0 AND `npx tsc --noEmit` exits 0",
+ "exit_gate": ".proof-os/gates/portfolio-visibility-enforced.sh",
+ "dispatch": "proceed",
+ "oracles": [
+  "mvn",
+  "tsc"
+ ],
+ "oracle_first": false
+}

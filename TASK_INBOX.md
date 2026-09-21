@@ -1,7 +1,141 @@
 # TASK INBOX — Sage Digital
 
 > **Orchestrator:** Arjun Kapoor
-> **Last Updated:** 2026-09-03 (T-RATECARD-0903 added by Swapnil: rate-card leak fixed, rate-card v2 queued)
+> **Last Updated:** 2026-09-17 (Arjun: open assignments re-posted with ledger IDs; 09-13 base-url instruction corrected - see first block)
+
+---
+
+## 🔴 OPEN ASSIGNMENTS — posted by Arjun, 2026-09-17 (supersedes the 2026-09-13 block)
+
+Every row carries a proof-os ledger ID (`.proof-os/ledger/failures.jsonl`) — close only via
+`promote.py`, never by editing this file. Evidence for older rows: `wiki/tech/PENDING-WORK-0912.md`.
+
+### ⚠️ CORRECTION — read before touching the live box
+
+The 2026-09-13 block here told you to set the AI base-urls to `http://127.0.0.1:8000`.
+**That instruction caused ~20 minutes of production downtime (F-0804).** Commit `66b1860` added a
+boot validator that rejects `localhost` and `127.0.0.1` — and so does the previous build, so
+rollback did not recover it either. Arjun recommended a value his own shipped validator refuses.
+
+**The correct value is `https://ai.influora.in`** — a real host, `/healthz` 200, not loopback, not
+`.internal`. It satisfies both builds. Meera applied it to all six `*_AI_BASE_URL` vars on
+2026-09-13 and production recovered. Swapnil had said this was the live value; Arjun argued otherwise.
+
+Do not re-apply `127.0.0.1` anywhere. Do not use `ai.influora.internal`.
+
+### 🔴 T-PRICING-0917 — money and tax defects from Priya's brand-pricing audit
+Source: `wiki/decisions/CTO-BRAND-PRICING-ANSWERS-0917.md`. F-0847 and F-0848 verified independently by Arjun.
+
+| ID | Defect | Owner |
+|---|---|---|
+| **F-0851** | Copy claims an **RBI-authorized Payment Aggregator** HOLDS brand funds; the code holds them in our own ledger. **Ruling (Swapnil, 2026-09-17): no licence yet, volume too small, apply later.** Tejas audited 12 instances (`wiki/decisions/CMO-CUSTODY-COPY-F0851-0917.md`). **Arjun verification found 3 more, all in legal docs:** `dispute-resolution-policy.md:69` and `grievance-redressal-policy.md:45` both refer to "our Payment Aggregator"; plus 2 code comments (`features/hype.tsx:42-44`, `pricing.tsx:113-115`) that instruct future writers to use the claim — fix those too. **Nuance to settle before rewriting:** Razorpay (our processor) IS RBI-authorised, so "payments processed by Razorpay" may be true; what is false is that a PA *holds* funds until release. | **Tejas** amends audit → **Swapnil** approves (6 legal docs need counsel) → **Ananya** applies |
+| **F-0847** | Brand commission invoice adds 18% GST on top of the fee, prints Total = fee + GST, marks it **PAID**, but only the fee left the wallet. Every brand invoice claims tax that was never collected. | **Swapnil** (CA ruling: is the fee GST-inclusive?) then **Vikram** |
+| **F-0848** | A campaign **created** as ACTIVE pays no platform fee and secures no funds; the fee runs only on the PATCH-to-ACTIVE path. Hype form and Publish-on-new-campaign both take the free path. **Revenue leak.** | **Vikram**, Kabir reviews |
+| **F-0849** | Fee copy hardcodes 10% while the charge uses the plan rate (Pro 7%); Publish shows no fee before commit; fee is on the max budget and never refunded. | **Vikram** (server) + **Ananya** (show the rupee fee before commit) |
+| **F-0850** | Invoices print "TCS @ 1%" that is computed and printed but never posted, deducted or remitted (no GSTR-8 anywhere). TDS is an admin-typed field that does NOT reduce the payout — the ledger posts the full amount (verified `AdminFinanceService.java`). Rohan: `wiki/decisions/CFO-TCS-TDS-F0850-0917.md`. **Rohan recommends removing the false TCS line from invoices NOW**, pending the CA; `tds-policy.md` already shows the right pattern. | **Swapnil** approves removal + books CA → **Vikram** removes line, then builds per CA ruling |
+
+### 🔴 T-F0848-0917 — Meera's independent test: **FAIL**. NOT committed (correctly). Plan: `wiki/tech/BUILD-PLAN-F0848-MEMORY-0917.md`
+Built: Vikram (backend guard) + Ananya (secure-the-funds publish step). 80 backend + 16 frontend tests green. Meera confirmed by reading the code that **no path to ACTIVE bypasses the fee and funds checks** — the core fix is sound. It fails on proof and edge cases:
+1. **Would not compile if pushed** — `CampaignActivationGuard.java` and `secure-and-publish-step.tsx` are untracked, but tracked files import them. Stage both plus the 6 new test files. — **Arjun, at commit**
+2. **F-0871** — a resumed **Hype** draft with funds already secured is offered funding again; no test catches it. — **Ananya**
+3. **F-0857 (now PROVEN by Meera)** — resuming a paused, already-paid campaign demands a top-up if the wallet dropped below the fee. — **Vikram**: skip the charge when a fee posting already exists for the campaign.
+4. **F-0858** — editing the budget while paused can block resume with a 409. Same fix as #3. — **Vikram**
+5. **F-0872** — the activation gate cannot see ACTIVE set through a variable; 3 mutations slipped past. Fix it, or stop claiming it blocks new paths. — **Vikram**
+6. **F-0873** — no server-side stop on a second funds hold; a reload or second tab can create two. — **Vikram**
+7. **F-0874** — "Resume Campaign" on an unfunded draft shows a raw error instead of the new step. — **Ananya**
+8. **Real-ledger test never ran** — Docker unavailable here. — **Meera**, on CI or a Docker machine
+Re-test after fixes: **Meera** (clean build + falsify), then **Neha** live once deployed.
+
+Also: **F-0875** — commit `23c42b9` cites F-0871 for an Instagram fix, but that ID was never written to the ledger, so F-0871 now names two different defects. — **Priya**: add a commit-msg check that cited F-ids exist.
+
+### 🟠 T-MEERA-MEMORY-0917 — Meera ask-and-remember. **Design ready, needs Swapnil's approval to build.**
+Design: `wiki/tech/MEERA-ASK-AND-REMEMBER-DESIGN-0917.md` (Priya). ~8.5 dev-days: backend 3, AI 2, frontend 2.5, review 1.
+- Stores: per-creator budget and usual campaign budget (both expire), product price, niche, target platforms, preferred creator size. Never free text, competitor pricing, or financial/PII data.
+- New `brand_facts` table, NOT `BrandProfile` — `applyAnalysisResult` (`BrandProfile.java:165-180`) overwrites every analyser field, so the re-analyze endpoint shipped in `66b1860` would wipe anything stored there.
+- Written only when the brand taps Save on a confirmation card; the model cannot save or label a fact itself.
+- **Never shared across brands as a number.** A budget is what one brand will pay, not what creators charge.
+- Needs a canonical niche list first, or brand-stated niches may silently match no rate band.
+- **F-0852** (found during design, exists today): the prompt lists product prices with no source label. Fix inside this build.
+Owners once approved: **Vikram** (table, endpoint, validation) · **Priya/Ash** (tool + prompt) · **Ananya** (card, view/edit/delete) · **Kabir** (cross-tenant review).
+
+### ✅ T-AIBASEURL-0913 — env RESOLVED 2026-09-13 (F-0804). Three follow-ups still open.
+1. **Prove it, don't infer it.** A new brand signup must write `analysis_status=READY` with a
+   non-null `product_catalog`. Until that row exists, "fixed" is a config read, not a result. — **MEERA**
+2. **Recover the 6 stuck brands** via `POST /admin/brands/{workspaceId}/reanalyze`. FAILED was
+   terminal; fixing the env does not re-run them. — **MEERA**
+3. **The new API build is staged on the box but NOT deployed** — so the email-OTP signup gate and the
+   enquiry-form OTP are not live. — **MEERA, on Swapnil's go**
+
+### 🔴 T-KEYS-0913 — Owner: **SWAPNIL**. Open 14 days, 5 reviews.
+Rotate the Anthropic and Sarvam keys. Live-format keys are in tracked `influora-ai/env.example`
+across ≥5 commits of history. Deleting the file achieves nothing — only vendor rotation does.
+
+### 🟠 RULINGS BLOCKING ENGINEERS — Owner: **SWAPNIL**
+| # | Question | Unblocks |
+|---|---|---|
+| A | P1-7: delete the two dead canvas stages, mark them "your step", or drive them from campaign status? | Ananya |
+| B | P1-10: ship Tejas's copy rewrite, or build Priya's 4-day matching algorithm? | Tejas / Vikram |
+| C | P1-6 backstop: build `wiki/tech/P1-6-BACKSTOP-DESIGN.md` or leave it? | Kabir, then Vikram |
+| D | Privacy policy claims we train on customer data (we don't) and omits the foreign sub-processor (we use one) | legal |
+| E | Are the concurrent session's billing / auth / metrics commits sanctioned? 20 commits unpushed on this branch. | Arjun |
+| F | On-time rate: a deliverable whose deadline PASSED and was NEVER submitted is currently excluded, not counted late. Should a creator who never delivers be penalised? | Vikram (F-0589) |
+
+### 🟡 VIKRAM (Backend)
+1. **F-0589 + F-0588 — built, NOT signed off.** Public on-time rate no longer counts unevaluable
+   deliverables as on time; both N+1s batched. Clean oracle 55/55. Priya review + Meera test were
+   killed when the session ended — **resume both before commit.** 2 test files untracked: stage them.
+2. **F-0591** — portfolio guest enquiry is emailed and notified but never persisted. A missed
+   notification loses the lead permanently.
+3. **F-0840** — `CreateCampaignExecutor.java:490,553` `toUpperCase()` with no `Locale.ROOT`. Two
+   sites, not one. Test under `tr-TR`.
+4. **F-0841** — wire `has_invented_price` into brand chat (`chat.py` imports nothing from
+   `validators.py`). Kabir reviews.
+5. **F-0844** — `ToolCallValidator` rejects nothing at runtime. Wire it or delete it; Priya decides.
+6. Rate card v2 + availability + budget-fit (T-RATECARD-0903 Ticket B, 30-day scope).
+7. ~~F-0498~~ closed · ~~F-0497~~ fixed — removed; the 09-13 block listed both as open in error.
+
+### 🟡 MEERA (DevOps)
+1. The three T-AIBASEURL-0913 follow-ups above.
+2. **Provision the two live test accounts.** Blocked every E2E pass since 2026-07-23. Highest-leverage
+   item on this board.
+3. **F-0846** — `deploy-api.sh` rollback restores image and jar but never the env file, so a bad env
+   value survives a correct rollback. Add a pre-deploy check that runs the validator's host rule
+   against the live env values before swapping the container.
+4. **F-0843** — incremental `mvn` served a stale green on a mutant ("Nothing to compile" after a real
+   change). Falsification runs must use `clean` and show a "Compiling N source files" line.
+5. Pin image digests; kill mutable `:latest`.
+6. Gitignore both `env.example`; strip the plaintext demo password from `meera-live-smoke.yml:38-39`;
+   point that workflow at `influora.in`.
+
+### 🟡 NEHA (E2E)
+1. The full live brand journey — signup → campaign → creator → payment. **Never once completed.**
+   Blocked on Meera #2.
+
+### 🟡 ANANYA (Frontend)
+1. Admin UI control for `POST /admin/brands/{workspaceId}/reanalyze`.
+2. P1-7 canvas rail (`src/data/stage-config.ts`) — **hold for ruling A**.
+
+### 🟡 KABIR (Red-Team)
+1. Sign off `wiki/tech/P1-6-BACKSTOP-DESIGN.md` before anyone builds it.
+2. **F-0735, open since 2026-09-07:** influora-ai calls `localhost:8080`, which under host networking
+   is a co-tenant product. Recheck now that the base-urls moved to `https://ai.influora.in`.
+3. Review Vikram's F-0841 price-validator wiring.
+
+### 🟡 ROHAN (CFO)
+1. ~~F-0850 TCS/TDS analysis~~ DONE — see T-PRICING-0917 row. Was in progress: F-0850 TCS/TDS — what is printed vs withheld vs remitted, CA question list, exposure formula → `wiki/decisions/CFO-TCS-TDS-F0850-0917.md`.
+
+### 🟡 PRIYA (CTO)
+1. ~~Meera ask-and-remember design~~ DONE — see T-MEERA-MEMORY-0917. Was in progress: Meera ask-and-remember design (Swapnil: when unsure, ask, store the answer, learn) → `wiki/tech/MEERA-ASK-AND-REMEMBER-DESIGN-0917.md`.
+1b. ~~36 brand-side pricing questions~~ DONE — `wiki/decisions/CEO-BRAND-PRICING-QUESTIONS-0917.md`
+   → answers to `CTO-BRAND-PRICING-ANSWERS-0917.md`.
+2. **F-0842** — replace the compose gate. It diffs two repo files; production runs neither.
+3. **F-0845** — design a per-workspace Meera off switch. Today the only brake takes every AI feature
+   down for every customer.
+4. **The vacuous-gate pattern** — F-0842, F-0844, and F-17 asserting a field that never existed. We
+   assert against assumptions, not production. Its own piece of work.
+
+### 🟡 TEJAS (CMO)
+1. Matching-claim copy rewrite is done and waiting on ruling B.
 
 ---
 
@@ -1810,3 +1944,155 @@ Week 3: Deliverables journey **[100% COMPLETE]** — upload→metrics end-to-end
 - **Tick #30 (~21:15 IST):** Loop PID **29880** confirmed alive (last heartbeat 21:04:48). CEO directive: Discovery (10%) + OWASP (30%) + E2E QA (10%). Dispatched parallel: Vikram #36, Ananya #37, Kabir K6, Kavya Kv3. Cursor session heartbeat re-armed.
 - **Tick #29 (~20:26 IST):** Loop PID **29880** confirmed alive (started 19:34:47; last heartbeat 20:04:48). Dispatched P2 parallel: Priya batch sign-off #26–#33 + Review/Dispute specs; Vikram V5 Task #34 Dispute; Vikram V6 Task #35 creator-self analytics; Meera M1 changelog backfill. Ananya A5 blocked on #35; Kavya Kv2 queued after Priya specs.
 - **Tick #28 (~20:20 IST):** Audited #26–#33; closed Meera #31; full-platform **~71% → ~78%**.
+
+---
+
+## Phase 1 — Safety non-negotiables, dispatched (Arjun, 2026-09-15)
+
+Per `wiki/processes/task-creator-profile-and-copilot.md` Phase 1. All three tasks were
+`Blocked by: nothing` — dispatching now on Swapnil's go-ahead.
+
+```yaml
+Task: Phase 1 — Creator Co-pilot safety fixes
+Subtasks:
+  - [Vikram] F-0786 content filter on CreatorNudgeService.templatedFallback (Task 1.1)
+  - [Vikram] F-0785 concurrency 500 on the daily cap, same file (Task 1.3)
+    ^ dispatched TOGETHER, one changeset — both land in CreatorNudgeService.java;
+      running them as separate parallel agents on the same file is the exact
+      collision class already logged twice in this repo (project_concurrent_session_write_collisions.md)
+  - [Vikram] F-0784 word-boundary matching, ThemeMatchService.java + n8n JS tagger (Task 1.2)
+    ^ independent file, dispatched in parallel with the above
+  - [Kabir] security gate on F-0786 specifically — BLOCKING, queued until Vikram's fix lands
+  - [Kavya] QA gate on all three — queued
+  - [Meera] build + test verify — queued
+  - [Priya] sign-off — queued
+  - [Rohan] cost log — queued
+```
+
+---
+
+## Phase 1 update — F-0784 QA'd, PASS (Arjun, 2026-09-15)
+
+Kavya's QA on commit de35f63: **PASS**, no CRITICAL/HIGH. 4 independent mutations (not 1),
+caught her own tooling mistake mid-review (bash heredoc trap) and disclosed it rather than
+hiding it. Two real findings, neither blocking:
+
+- **F-0820** — the fail-closed taxonomy-load branch has no test, and `Pattern.quote()`'s
+  necessity is unverified (taxonomy has zero metacharacter keys today; if one is ever added
+  without a quote-coverage test, `@PostConstruct` would throw instead of failing closed).
+- **F-0821** — the anchoring fix trades false positives (Sonam≠onam, fixed) for a real recall
+  loss on plurals (movies↛movie), which flips some non-TMDb HYPE headlines to the EDUCATIONAL
+  30-day default. Recall loss to a SAFE default, not a new false trigger — and the pipeline this
+  feeds (Phase 3 / F-0774) isn't deployed yet, so zero live blast radius today. Decided
+  deliberately, not silently: ship F-0784 now, track F-0821 before Phase 3 ships.
+
+F-0784 status: fixed, committed (de35f63), independently verified twice (Arjun + Kavya, each
+falsifying from scratch), QA PASSED. Not ledger-closed — no gate script exists on disk yet for
+promote.py, consistent with how F-0775/776/777 are tracked. Routing to Meera for build verify
+next; her run will also confirm whether F-0819 (unrelated pre-existing test-tree break,
+AnalyticsControllerTest.java) is still blocking a full mvn test.
+
+---
+
+## Phase 1 — Kabir BLOCKED, routing fix-and-re-test loop (Arjun, 2026-09-15)
+
+Kabir's gate on commit ab87c46: BLOCKED, 2 High + 2 Medium + 2 Low. Ledgered F-0825/826/827/828.
+Dispatching to Vikram, ONE changeset (same file as before — CreatorNudgeService.java again),
+per the pipeline rule: Critical/High findings block the phase until fixed AND re-tested.
+
+```yaml
+Task: Fix Kabir's F-0786 blocking findings
+Subtasks:
+  - [Vikram] F-0825 — move the filter to cover both the AI and fallback paths
+  - [Vikram] F-0826 — close 22 demonstrated term-list bypasses
+  - [Vikram] F-0827 — NFKC normalize + strip format/combining chars before matching
+  - [Vikram] LOW-6 — fail closed on an all-invisible headline, not just isBlank()
+  - [Kabir] RE-REVIEW required — his own bypass strings must be re-run against the fix,
+    not accepted on Vikram's word. Same standard as the first pass.
+```
+
+---
+
+## Phase 1 — F-0825/826/827 fix landed, routing back to Kabir (Arjun, 2026-09-17)
+
+Vikram's fix (commit d3a2491) was interrupted by a session boundary mid-task on 2026-09-15,
+resumed 2026-09-17 with the falsification work still outstanding. Verified independently before
+routing:
+
+- Commit exists, exactly 4 files, nothing else in the tree disturbed.
+- Fresh compile + isolated test run: 119/119 (up from 58), exit 0.
+- Spot-checked 2 load-bearing claims by direct code read: phrase-rescue (bare
+  shooting/attack/clash = 0 occurrences, phrase forms present) and the unsafe-theme design
+  extension (no safe substitute for a poisoned theme → `no_suggestion_today`, no row written) —
+  both confirmed exactly as reported.
+- Real red-then-green falsification shown for all three findings independently (term list alone,
+  normalizer alone, gate+message_source alone) — each reversion produces a distinct, correctly-
+  scoped set of failures, proving the three fixes are independent of each other.
+
+One thing Kabir needs to know before re-running his harness: the implementing engineer caught and
+fixed a bug in their OWN first attempt at homoglyph fixtures — a phonetic substitution (Cyrillic р
+in the r-slot of "murder", which *sounds* similar but isn't a visual lookalike) was mistaken for a
+homoglyph. The shape-based fold is correct; fixtures were corrected to true lookalikes. If Kabir's
+original harness generated its Cyrillic bypass string phonetically rather than by visual shape,
+that specific string may still pass — by design, not by omission. Worth settling before verdict.
+
+Three non-blocking residuals ledgered, all disclosed in-code by the implementer, not discovered
+later: F-0829 (no stemmer, so new inflections of the newly-added terms aren't systematically
+covered), F-0830 (confusables fold is ~30 hand-picked chars, not the full Unicode table), F-0831
+(the fix trades in new accepted false positives — grooming/blast/explosion/hostage — listed
+explicitly rather than left to be found).
+
+Routing back to Kabir for re-review with his own bypass strings, per the standing rule this phase
+holds itself to.
+
+---
+
+## Phase 1 — Kabir PASSED, routing final pipeline steps (Arjun, 2026-09-17)
+
+Kabir re-reviewed d3a2491 with his own bypass harness (not the new tests): PASS. Caught his own
+round-1 mistake (phonetic-vs-visual homoglyph mixup) and found one new bug in the process (plural
+evades phrase-rescue, F-0832) — none blocking. Phase 1's mandatory security gate is cleared.
+
+Also: fresh memory flagged a prior incident where misattributing an agent's edits to the wrong
+session broke the branch. Checked both my commits (ab87c46, d3a2491) via isolated `git archive` +
+compile, decoupled from the working tree — both innocent, confirmed the actual break was commit
+7638afb (concurrent session's own, since fixed by their own 784e580). Ledgered as F-0835.
+
+```yaml
+Task: Phase 1 final pipeline steps
+Subtasks:
+  - [Meera] full build + test verify on d3a2491, using isolated-archive compile per F-0835
+    (not just working-tree compile) — confirm the commit itself is clean, not just the tree
+  - [Priya] sign-off on the security fix + the whole Phase 1 arc
+  - [Rohan] cost log across the full Phase 1 workstream
+```
+
+---
+
+## Phase 1 — Meera's isolated verify caught a second F-0835 instance, fixed (Arjun, 2026-09-17)
+
+Meera did the right thing: verified d3a2491 via isolated `git archive` + compile, not the working
+tree. Two findings, both handled:
+
+1. **d3a2491 sits inside the F-0835 broken window** (7638afb → d3a2491 → 784e580) but its own 4
+   files are innocent — confirmed by patching just the F-0835 fix onto d3a2491 and getting a clean
+   isolated compile. Already fixed upstream by 784e580; nothing to do here.
+2. **NEW — a second F-0835-pattern instance, live at HEAD:** `TrendIngestProperties` (shipped in
+   this workstream's own 85861a8) was never registered in `InfluoraApiApplication.java` —
+   the registration sat as an UNCOMMITTED edit for 2 days, making
+   `ConfigurationPropertiesRegistrationTest` pass locally (working tree) while failing at every
+   actual commit including HEAD. Latent, not live (nothing injects it yet), but the gate was red
+   regardless.
+
+Fixed: commit `8e1a182`, scoped to exactly that one file, that one registration. Proved via
+isolated archive per the exact recipe Meera specified — `mvn -o test-compile` (exit 0) +
+`mvn -o surefire:test -Dtest=ConfigurationPropertiesRegistrationTest` (1/1, exit 0). Then a full
+consolidated isolated re-check of all 4 workstream test classes at new HEAD: 136/136, exit 0.
+
+Meera separately reported F-0819 as CLOSED (test-compile succeeds tree-wide now, contradicting the
+earlier belief it was broken) and flagged a background-task wrapper reporting exit 0 while the
+real mvn exit was 1 (the documented piped-mvn hazard) — noting both for the record, not
+independently re-verified by Arjun given time, but Meera read the mvn output directly rather than
+trusting the wrapper, which is the right instinct.
+
+Phase 1 is now ready for Priya's sign-off against HEAD, not d3a2491.

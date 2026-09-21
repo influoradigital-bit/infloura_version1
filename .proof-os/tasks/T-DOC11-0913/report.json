@@ -1,0 +1,28 @@
+{"rows": [
+  {"subject": ".proof-os/ledger/failures.jsonl",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "script",
+                "command": "python promote.py --recurrence, before and after closing the eleven",
+                "result": "doc-stale-doc-claim no longer appears in the recurrence list at all; blocked classes fell from three to two, recurrences from twenty-three to fifteen, rate from six percent to four",
+                "where": ".proof-os/ledger/failures.jsonl:1"}},
+
+  {"subject": ".proof-os/gates/doc-stale-doc-claim.sh",
+   "owner": "meera",
+   "status": "missing",
+   "isolation": "oracle",
+   "evidence": {"oracle": "script",
+                "command": "planted F-0585's original wording ('brand-safety scoring is not wired.') into docs/docs/features/analytics.md and ran the gate",
+                "result": "gate exits zero and does not see the claim - its adjacency rule needs a shipping route or type named within forty-five characters of the negative, and these eleven claims name none, which is why they slipped past it originally. That is why all eleven closed as unautomatable rather than against this gate.",
+                "where": ".proof-os/gates/doc-stale-doc-claim.sh:1"}},
+
+  {"subject": "docs/docs/features/notifications.md",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "fresh-context",
+   "evidence": {"oracle": "model",
+                "command": "a fresh-context reviewer opened every code location cited in the corrected lines and judged each claim true or false against current source",
+                "result": "all eleven corrections true and every citation resolves; the reviewer then found two twins left standing in the same files, which were fixed in a second round and re-grepped across the whole features tree",
+                "where": "docs/docs/features/notifications.md:44"}}
+]}

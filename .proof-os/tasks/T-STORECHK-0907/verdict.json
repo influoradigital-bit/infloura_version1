@@ -1,0 +1,22 @@
+{
+ "verdict": "believed",
+ "oracle": "model",
+ "isolation": "fresh-context",
+ "done_when": "each available oracle ran over the scope and its raw output is recorded",
+ "not_checked": [
+  "whether any real Shopify or WooCommerce delivery has ever reached this API — no live webhook was fired, no store was connected, and no staging environment was exercised",
+  "whether Spring relaxed binding would pick up INFLUORA_SHOPIFY_APIKEY if an operator set it directly on the live box outside the repo, which no file here would show",
+  "the live Hostinger project's actual environment, which is pushed via MCP outside this repo",
+  "whether the four kabir findings reproduce at runtime — two were re-opened at source by the dispatcher, two rest on a single fresh-context read"
+ ],
+ "skipped": [
+  {
+   "step": "gates/build.go.sh",
+   "reason": "no Go toolchain in this project; resolve.py reported it under oracles_skipped_no_toolchain"
+  },
+  {
+   "step": "gates/e2e.sh",
+   "reason": "no store is connected in any environment, so an end-to-end store journey has nothing to exercise"
+  }
+ ]
+}

@@ -1,0 +1,409 @@
+{
+  "role": "Meera Joshi - DB/DevOps deep audit (entities vs Flyway, repositories, transactions)",
+  "summary": "Audited RC 115f698 (clean checkout) statically with a scripted diff of 87 @Entity classes against the final schema produced by replaying all 140 Flyway migrations in version order (89 tables), plus a scan of 287 derived repository queries and 10 native queries, a full offline `mvn test` run on an isolated scratch copy (3621 tests, 0 failures, 1 environment-only error, 22 skipped), and a unit-level repro written in scratch. Every entity column exists in the migrated schema. No duplicate migration versions and no BigDecimal money on a non-DECIMAL column were found. JSON columns line up. Findings: (1) wallet_transactions.type/reference_type ENUMs (V8) were never widened for AFFILIATE_COMMISSION / AFFILIATE_EARNING, so every affiliate settlement ledger insert fails under MySQL strict mode and creators are never credited; (2) creator withdrawal builds a ledger idempotency key of 82 chars (80 for payouts) against VARCHAR(64), so every withdrawal with the FE's crypto.randomUUID key fails; (3) initiateFund does not check milestone status, so an already-FUNDED milestone can be funded again with a fresh Idempotency-Key, debiting the brand twice and orphaning the first hold. Reproduced in a scratch unit test; (4) @Transactional is inert (self-invoked via lambda, no outer tx) on CreateCampaignExecutor/RequestPaymentExecutor/MeeraSessionService write paths; (5) catch(DataIntegrityViolationException) around plain save() of assigned-id entities is dead in about 12 services, including WalletLedgerService; (6) 3 migrations were edited after commit (Flyway checksum risk). None of the migrations have been run against real MySQL in this environment. All Testcontainers suites were skipped (no Docker), and the @DataJpaTest suites use H2 with Hibernate create-drop, so they never execute a Flyway migration.",
+  "questions": [
+    {
+      "question": "Does every @Entity column exist, with a compatible type, in the schema the Flyway chain produces (ddl-auto=validate would refuse to boot otherwise)?",
+      "why_it_matters": "application.yml:47 sets spring.jpa.hibernate.ddl-auto=validate - a missing column or table is a boot blocker on deploy.",
+      "answer": "Yes for tables/columns: 87/87 entity tables exist and 0 entity columns are missing after replaying all 140 migrations in Flyway version order. Unmapped DB columns are only generated/marker columns with defaults (viewed_dedup_key, brand_level_marker, primary_marker, shown_day, brand_leg_campaign_marker, page_level_marker) plus platform_stats.created_at/updated_at and media_metrics.avg_watch_time_seconds (nullable/defaulted) - none break INSERTs.",
+      "evidence": "Scripted parser (scratchpad meera-db/schema_diff.py) over influora-api/src/main/resources/db/migration/*.sql and domain/entity/*.java: 'tables 89 entities 87', MISSING_COLUMN=0 after excluding nested Builder fields; 0 unparsed statements.",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "Static replay, not a real Flyway run + Hibernate validate on MySQL. Hibernate's ENUM-vs-VARCHAR type-compat rules were not executed (MeeraCreatorPhaseABootValidationTest was skipped - no Docker)."
+    },
+    {
+      "question": "Do Java enum constants persisted with @Enumerated(STRING) all fit the MySQL ENUM definitions?",
+      "why_it_matters": "MySQL strict mode rejects an INSERT with a value outside the ENUM ('Data truncated for column'), so the write path fails at runtime even though boot succeeds.",
+      "answer": "No, there are 4 gaps. wallet_transactions.type lacks AFFILIATE_COMMISSION and wallet_transactions.reference_type lacks AFFILIATE_EARNING (both live-reachable via AffiliateSettlementWriter:132-141). meera_tool_calls.tool_name lacks get_campaign_performance (latent: that tool only writes audit_log). support_tickets.user_type lacks ADMIN (latent).",
+      "evidence": "V8__wallet_transactions.sql:6-7,12 (never ALTERed by any later migration - grep 'wallet_transactions' in migrations: no ALTER); WalletTransactionType.java AFFILIATE_COMMISSION; TxnReferenceType.java AFFILIATE_EARNING; V14__ai_credits_tool_calls.sql:19 vs MeeraToolName.java:10; V34__admin_tables.sql support_tickets vs SupportTicket.java:36.",
+      "evidence_score": 3,
+      "confidence": 88,
+      "remaining_uncertainty": "Prod sql_mode not read directly (V20260907120000 migration comment references STRICT_TRANS_TABLES; MySQL 8 default includes it)."
+    },
+    {
+      "question": "Are all VARCHAR idempotency-key columns long enough for the keys the code actually builds?",
+      "why_it_matters": "A key longer than the column fails the insert in strict mode, so the money path fails every time.",
+      "answer": "No, creator withdrawal breaks it. scopedKey = 'creator-withdraw:' + userId(26) + ':' + client key. The FE sends crypto.randomUUID (36 chars), so scopedKey is 80 chars. The ledger stores scopedKey+':D' (82) in wallet_transactions.idempotency_key VARCHAR(64), and Payout.createQueued stores scopedKey (80) in payouts.idempotency_key VARCHAR(64). The idempotency_keys composite (123) passes the 128-char pre-check. All other ledger callers stay within 64: escrow-fund/release/refund/brand-fee/payout-debit/topup/retry keys are all at most 60 chars.",
+      "evidence": "WalletService.java:304 (scopedKey), :385-395 (ledger post with scopedKey), Payout.java:56 (length=64), V8__wallet_transactions.sql:15, V48__payouts.sql:13, WalletLedgerService.java:158,176 (+':D'/':C'), src/lib/api.ts:3760-3764 + :4078-4079 (crypto.randomUUID), IdempotencyService.java:80,207-209.",
+      "evidence_score": 3,
+      "confidence": 85,
+      "remaining_uncertainty": "Withdraw is FE-gated behind PAYOUTS_ENABLED (src/lib/api.ts:121); if prod runs manual payouts only, the path is not user-reachable today. Not executed against MySQL."
+    },
+    {
+      "question": "Can the same payment milestone be funded twice (double debit of a brand)?",
+      "why_it_matters": "This is a financial correctness issue: the brand gets debited twice and the first hold is orphaned, because it is no longer referenced by the milestone.",
+      "answer": "Yes. EscrowService.initiateFund dedupes only on the client Idempotency-Key. assertContractActiveForMilestone checks signatures and collaboration status but never milestone.status. applyFunding calls PaymentMilestone.markFunded unconditionally, overwriting escrowHoldId. escrow_holds has no UNIQUE on milestone_id. Reproduced: a scratch test with a milestone already FUNDED and a new key ran initiateFund to completion, posted 1 ledger debit, and overwrote milestone.escrowHoldId.",
+      "evidence": "EscrowService.java:212-341 (initiateFund), :388-440 (assertContractActiveForMilestone), :479-500 (applyFunding -> milestone.markFunded), PaymentMilestone.java:141-145, V9__escrow_holds.sql (only uq_escrow_idem). Scratch test EscrowServiceTest#meeraAuditReproMilestoneDoubleFund output: 'MEERA-AUDIT-REPRO: second fund accepted; milestone.escrowHoldId now=01M2WE36TAT8380D272F78HW9C'.",
+      "evidence_score": 4,
+      "confidence": 88,
+      "remaining_uncertainty": "Repro is service-level with mocked repositories; whether the FE can issue a second fund for a FUNDED milestone (e.g. retry after timeout generating a new key, two tabs) was not exercised in a browser."
+    },
+    {
+      "question": "Are the concurrent-update hot rows (wallets, escrow holds, milestones, payouts, campaigns) protected by locks or @Version?",
+      "why_it_matters": "Without locking or versioning, two concurrent updates to the same row can silently overwrite each other or double-apply money movements.",
+      "answer": "Partially. @Version is used only on disputes, platform_fee_config and subscriptions. Wallet balance changes all go through WalletLedgerService.post, which locks both wallets PESSIMISTIC_WRITE in id order (deadlock-safe). Escrow release/refund use EscrowHoldRepository.findByIdForUpdate. The funding path locks the collaboration but not the milestone or the hold. Payout webhook reconciliation (PayoutReconciliationService.confirmExecuted) reads without a lock, and the ledger unique key is the only thing preventing a double re-credit.",
+      "evidence": "WalletLedgerService.java:97-104, 267-270; WalletRepository.java:13-19; EscrowHoldRepository.java:196-198; EscrowService.java:632,881,973,1770; PayoutReconciliationService.java:110-133; grep @Version domain/entity -> Dispute.java:73, PlatformFeeConfig.java:92, Subscription.java:100.",
+      "evidence_score": 2,
+      "confidence": 75,
+      "remaining_uncertainty": "Concurrency behaviour is not executed. AICreditRaceIntegrationTest and CreatorNudgeDailyCapConcurrencyIntegrationTest were skipped for lack of Docker."
+    },
+    {
+      "question": "Are @Transactional boundaries actually in effect on multi-write paths (self-invocation / non-public trap)?",
+      "why_it_matters": "If the annotation is inert, a failure partway through leaves partial rows committed, such as a campaign without its tool-call record, and an idempotency retry creates a duplicate.",
+      "answer": "No, on 4 paths it is inert. CreateCampaignExecutor.doExecute, RequestPaymentExecutor.doExecute, MeeraSessionService.doSendTurn and doPersistAssistantWriteback are protected @Transactional methods invoked as `() -> doX(...)` lambdas on `this` inside IdempotencyService.executeOnce, which opens no transaction around the supplier. Their public callers (execute/sendTurn/persistAssistantWriteback, MeeraInternalController) are not transactional either, so each save commits separately. PayoutService.doQueuePayout has the same shape but documents it and relies on ledger atomicity. WalletService.doProcessWithdrawal is covered by the outer @Transactional requestCreatorWithdrawal.",
+      "evidence": "CreateCampaignExecutor.java:138,166-170,207-208,433-438; RequestPaymentExecutor.java:63,75,110-111; MeeraSessionService.java:320-344,354-355,562-567,606-607; IdempotencyService.java:131-165 (action.get() with no tx); MeeraInternalController.java:216,235.",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "The partial-commit failure was not reproduced at runtime; the impact depends on which save fails."
+    },
+    {
+      "question": "Do catch(DataIntegrityViolationException) blocks around save() actually catch the duplicate?",
+      "why_it_matters": "With assigned ULID ids, save() merges and the INSERT is deferred to flush or commit. The constraint violation then surfaces outside the try, so the specific error code or replay path never runs.",
+      "answer": "No. About 12 sites use plain save() with no flush inside the try: WalletLedgerService.post:182-201 (the race-replay branch is dead), CreatorCampaignService:264 (ALREADY_APPLIED), CreatorDiscoveryService:556, DealService:300, ReviewService:139,204, ShipmentService:123 (the race re-query is dead), CreatorProfileService:91,188, CreatorBankAccountService:100,152-157, AuthService:204-206,432-433, UsageCounterService:141,181. Duplicates fall through to GlobalExceptionHandler:110-115 as a generic 409 DATA_INTEGRITY_VIOLATION. No money is lost, but callers get the wrong code and the idempotent-replay branches never run.",
+      "evidence": "grep -B10 'catch (DataIntegrityViolationException' shows only .save( (no saveAndFlush/flush) at the listed lines; WalletTransaction/Collaboration/Review/etc. do not implement Persistable (only IdempotencyKeyRecord does); GlobalExceptionHandler.java:110-115.",
+      "evidence_score": 2,
+      "confidence": 70,
+      "remaining_uncertainty": "An earlier auto-flush inside the same transaction, triggered by a JPQL query on the same table, can move the INSERT before the catch on some paths. That was not traced per site."
+    },
+    {
+      "question": "Is the Flyway chain safe to run against the existing production history (ordering, duplicates, edited applied migrations)?",
+      "why_it_matters": "A checksum mismatch or a skipped migration blocks boot or leaves the schema drifted.",
+      "answer": "There are no duplicate versions. Out-of-order is enabled deliberately (application.yml:61), because numeric V41-V74 sort below the V2026... timestamp versions. baseline-on-migrate is true by default and false in prod (application-prod.yml:12). validate-on-migrate stays at its default (true). Three migrations were modified after their first commit: V73 and V74 (1792c37 on 09-03 -> 8c7b18b on 09-04, ENGINE/charset appended) and V20260917120000 (3456818 -> 77fbb6b, both 09-17, backfill SQL rewritten). Any environment that applied the pre-edit file fails checksum validation at boot until `flyway repair` is run.",
+      "evidence": "git log --follow on each migration in rc-115f698; git show 8c7b18b / 77fbb6b diffs; application.yml:51-61; application-prod.yml:11-12; version-duplicate check (uniq -d) empty.",
+      "evidence_score": 3,
+      "confidence": 72,
+      "remaining_uncertainty": "Production flyway_schema_history was not read (read-only rule; no prod DB access), so whether the pre-edit versions were ever applied anywhere is unknown."
+    },
+    {
+      "question": "Do the automated tests exercise the real MySQL schema (migrations + constraints)?",
+      "why_it_matters": "Without that coverage, ENUM, length and MySQL-only DDL defects reach production with a green suite.",
+      "answer": "No, not in this environment. The full suite ran 3621 tests with 0 failures and 1 error (ShopifyPropertiesBindingTest needs ../deploy, which the scratch copy lacks). 22 tests were skipped: all Testcontainers MySQL suites (DatabaseConstraintIntegrationTest, AICreditRaceIntegrationTest, MeeraCreatorPhaseABootValidationTest, etc.). The 16 @DataJpaTest repository tests use H2 MODE=MySQL with Hibernate create-drop from entities, so they never run a migration and cannot see the V8 ENUM gap or the VARCHAR(64) limits.",
+      "evidence": "mvn -o -q test on scratch copy: 'Tests run: 3621, Failures: 0, Errors: 1, Skipped: 22'; surefire reports with skipped>0 for 8 classes incl. MeeraCreatorPhaseABootValidationTest; log shows 'Hibernate: drop table if exists ...' (create-drop); repository/*Test.java use jdbc:h2:mem:...;MODE=MySQL.",
+      "evidence_score": 4,
+      "confidence": 92,
+      "remaining_uncertainty": "The Testcontainers suites may pass in CI where Docker exists; no CI logs were read."
+    },
+    {
+      "question": "Are hot lookups backed by an index whose leading column matches the query?",
+      "why_it_matters": "Unindexed lookups on auth, webhook or cron paths become full table scans as the tables grow.",
+      "answer": "Mostly yes: 261 of 287 derived queries lead on an indexed column. Gaps worth fixing: password_reset_tokens.token_hash (findByTokenHashAndUsedFalse has no index and no UNIQUE); coupon_codes.code (the redemption path's global findAllByCode, where uq is (workspace_id, code)); payouts.status (four cron finders); plans.razorpay_plan_id (subscription webhook); meera_tool_calls (tool_name, result_ref_id, status); idempotency_keys (status, created_at) used by the reaper; meta_oauth_tokens (revoked, expires_at) used by refresh sweeps; users.last_active_workspace_id (no index or FK).",
+      "evidence": "repo_scan.py output (NOIDX list); V2__core_auth.sql:79-88; V24__coupon_codes.sql:41-42; V48__payouts.sql:12,22-24; V54__subscription_billing.sql:18; RedemptionWriter.java:218; CouponCodeRepository.java:81.",
+      "evidence_score": 3,
+      "confidence": 75,
+      "remaining_uncertainty": "Table sizes are unknown; with small tables the impact is negligible today."
+    },
+    {
+      "question": "Are there unbounded findAll/list queries on growth tables in request paths?",
+      "why_it_matters": "Unbounded result sets grow with the data and can exhaust memory or time out requests.",
+      "answer": "Only on admin paths. CreatorAgentBaselineService.getBaselines loads creatorProfileRepository.findAll() and collaborationRepository.findAll() into memory (lines 63, 96). AdminBrandService:860 loads the full wallet ledger via the unpaged findByWalletIdOrderByCreatedAtDesc. AdminCampaignService:259 uses campaignRepository.findByStatus(ACTIVE) unpaged. User-facing ledger/notification endpoints use Pageable overloads.",
+      "evidence": "grep '.findAll()' service/; WalletTransactionRepository.java:20 vs :22; AdminBrandService.java:860; AdminCampaignService.java:259.",
+      "evidence_score": 2,
+      "confidence": 75,
+      "remaining_uncertainty": "Callers of every unpaged List finder were not traced."
+    },
+    {
+      "question": "Do native SQL queries reference real columns, and are they MySQL-only?",
+      "why_it_matters": "Native SQL bypasses Hibernate's JPQL validation at boot, so a wrong column name only fails at runtime.",
+      "answer": "All 10 native queries reference columns that exist in the migrated schema (checked abuse_throttle_counters, festival_coupon_copies.bucket_day, creator_scores.time, support_ticket_messages.sender_type, collaborations, etc.). Two are MySQL-specific (ON DUPLICATE KEY UPDATE; JSON_CONTAINS/JSON_QUOTE in CollaborationRepository.findRateBandCandidates), so they cannot run on the H2 harness.",
+      "evidence": "repo.json native list; schema columns from out.json; AbuseThrottleCounterRepository.increment, FestivalCouponCopyRepository.recordCopy, CollaborationRepository.findRateBandCandidates.",
+      "evidence_score": 3,
+      "confidence": 78,
+      "remaining_uncertainty": "Not executed against MySQL."
+    },
+    {
+      "question": "Is money stored as DECIMAL everywhere and are audit/soft-delete conventions consistent?",
+      "why_it_matters": "Float storage corrupts money values, and missing audit or soft-delete fields hide data changes.",
+      "answer": "Yes for money: every BigDecimal is DECIMAL and no float or double money fields were found. Audit timestamps are set in code; the only entities that never assign createdAt are 4 read-only ones (FeaturedCreator, HsnSacCode, SnapsbyCatalogVideo, AbuseThrottleCounter written by native upsert). Only users has soft delete (deleted_at). wallets.escrow_balance is never written but is still returned by GET /wallet (WalletService.toBalanceResponse:607-613), so it always reads 0.",
+      "evidence": "schema_diff.py MONEY_TYPE/MONEY_FLOAT = 0; WalletService.java:607-613; EscrowHoldRepository.java:34 comment context confirmed by grep (no writer of escrowBalance).",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "FE consumption of WalletBalanceResponse.escrowBalance not found, so the user-visible impact is probably nil."
+    }
+  ],
+  "findings": [
+    {
+      "id": "MEERA-DB-01",
+      "title": "wallet_transactions ENUMs never widened: every affiliate commission ledger posting fails, so creators are never credited",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 88,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "V8__wallet_transactions.sql:6-7 type ENUM('DEPOSIT','WITHDRAWAL','ESCROW_HOLD','ESCROW_RELEASE','ESCROW_REFUND','PLATFORM_FEE','PAYOUT','ADJUSTMENT') and :12 reference_type ENUM('COLLABORATION','ESCROW_HOLD','MILESTONE','CAMPAIGN','DEPOSIT_ORDER','MANUAL'). No later migration ALTERs wallet_transactions. WalletTransactionType.AFFILIATE_COMMISSION and TxnReferenceType.AFFILIATE_EARNING were added by F-0402. AffiliateSettlementWriter.creditCreatorWallet:132-141 posts exactly those values through WalletLedgerService.post, which saves two WalletTransaction rows (WalletLedgerService.java:146-176). @Enumerated(STRING) with no columnDefinition. H2 @DataJpaTest (create-drop) and Mockito tests cannot see this.",
+      "location": "influora-api/src/main/resources/db/migration/V8__wallet_transactions.sql:6-12; influora-api/src/main/java/com/influora/job/AffiliateSettlementWriter.java:132-141; domain/enums/WalletTransactionType.java; domain/enums/TxnReferenceType.java",
+      "impact": "The monthly AffiliateSettlementJob (cron 0 0 5 1 * *, AffiliateSettlementJob.java:131) fails with 'Data truncated for column type' under STRICT_TRANS_TABLES. doSettleCreator rolls back, earnings stay PENDING, and the idempotency reservation is marked FAILED and retried every month without ever succeeding. Creator affiliate commission is never paid. No double pay.",
+      "recommended_fix": "Add a new migration: ALTER TABLE wallet_transactions MODIFY type ENUM(...existing..., 'AFFILIATE_COMMISSION') NOT NULL, MODIFY reference_type ENUM(...existing..., 'AFFILIATE_EARNING') NULL. Add a conformance test asserting each Java enum value is in the corresponding DB ENUM, parsed from the migration chain.",
+      "reproduction": "On MySQL 8 with default sql_mode: INSERT INTO wallet_transactions (..., type, ...) VALUES (..., 'AFFILIATE_COMMISSION', ...) fails with error 1265. In-app: create a PENDING affiliate_earnings row older than the settlement window and trigger AffiliateSettlementJob.",
+      "verification_required": "Run the settlement job against a Testcontainers/staging MySQL with a PENDING earning and confirm the failure, then confirm the fix migration credits the creator wallet.",
+      "affected_features": ["Affiliate commission settlement", "Creator wallet credit for coupon conversions"]
+    },
+    {
+      "id": "MEERA-DB-02",
+      "title": "Initiating escrow funding re-funds an already-FUNDED milestone (double debit, orphaned hold)",
+      "severity": "P0",
+      "evidence_score": 4,
+      "confidence": 85,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "EscrowService.initiateFund:212-341 dedupes only by escrowHoldRepository.findByIdempotencyKey(client key). assertContractActiveForMilestone:388-440 checks contract signatures and collaboration != CANCELLED but never milestone.getStatus(). applyFunding:479-500 calls milestone.markFunded(hold.getId()), and PaymentMilestone.markFunded:141-145 overwrites escrowHoldId unconditionally. escrow_holds (V9) has only uq_escrow_idem(idempotency_key), with no uniqueness on milestone_id. Scratch unit test (clone of EscrowServiceTest.initiateFundRecordsApplicationHistoryEvent with the milestone pre-set to FUNDED via markFunded and a fresh key) completed without an exception, verified 1 ledger post and printed 'MEERA-AUDIT-REPRO: second fund accepted; milestone.escrowHoldId now=01M2WE36TAT8380D272F78HW9C'.",
+      "location": "influora-api/src/main/java/com/influora/service/EscrowService.java:212-341, 388-440, 479-500; domain/entity/PaymentMilestone.java:141-145; web/EscrowController.java:68-89",
+      "impact": "A brand that retries (new Idempotency-Key after a timeout, second tab or double submit) on the same milestone is debited again. The milestone now points only at the second hold, so the first FUNDED hold is never released by the milestone path, and the money stays locked in the clearing wallet until an admin intervenes. The same applies to a RELEASED milestone, which can be funded again.",
+      "recommended_fix": "In initiateFund's milestone branch, lock the milestone (add PaymentMilestoneRepository.findByIdForUpdate) and reject unless status == PENDING and escrowHoldId == null (409 MILESTONE_ALREADY_FUNDED). Optionally add a partial-uniqueness guard, e.g. a generated column funded_milestone_id = IF(status IN ('PENDING','FUNDED','FROZEN'), milestone_id, NULL) with a UNIQUE key.",
+      "reproduction": "Scratch copy of influora-api, add EscrowServiceTest#meeraAuditReproMilestoneDoubleFund (milestone.markFunded('01HFIRSTHOLD000000000A') before initiateFund with key 'idem-fund-SECOND'), then run mvn -o test -Dtest=EscrowServiceTest#meeraAuditReproMilestoneDoubleFund.",
+      "verification_required": "Kabir/Neha: confirm on staging with a real DB that POST /wallet/escrow/fund twice with different Idempotency-Keys for one milestone produces two FUNDED escrow_holds and two ESCROW_HOLD debit legs.",
+      "affected_features": ["Escrow funding per milestone", "Brand wallet balance", "Milestone release"]
+    },
+    {
+      "id": "MEERA-DB-03",
+      "title": "Creator withdrawal idempotency key (80/82 chars) overflows VARCHAR(64) in wallet_transactions and payouts",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 85,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "WalletService.java:304 scopedKey = 'creator-withdraw:'(17) + userId(26 ULID) + ':' + client key. The FE sends crypto.randomUUID() (36 chars; src/lib/api.ts:3760-3764, 4078-4079), so scopedKey is 80. WalletLedgerService.java:158/176 stores scopedKey+':D'/':C' (82) into wallet_transactions.idempotency_key VARCHAR(64) (V8:15). Payout.createQueued stores scopedKey into payouts.idempotency_key VARCHAR(64) (V48:13, Payout.java:56). The composite idempotency_keys key (wallet.withdraw:<26>:<80> = 123) passes the 128-char guard (IdempotencyService.java:80,207-209,225), so the failure happens at the ledger insert. The payout-retry path fixed the same class of bug with a SHA-256 digest (PayoutReconciliationService.java:353-427); the withdraw path was not fixed.",
+      "location": "influora-api/src/main/java/com/influora/service/WalletService.java:304, 381-395; service/WalletLedgerService.java:158,176; V8__wallet_transactions.sql:15; V48__payouts.sql:13",
+      "impact": "Every creator withdrawal (POST /wallet/withdraw) with a key longer than 18 chars fails with 'Data too long' and returns 409/500. The creator cannot withdraw. No money moves, because the tx rolls back.",
+      "recommended_fix": "Hash the client key the same way as retryDebitKey: scopedKey = 'creator-withdraw:' + sha256(userId + ':' + key).substring(0,32), which gives 49 chars (+2 for the ledger suffix = 51). Or widen both columns to VARCHAR(128) via a migration. Add a test asserting generated key length <= column length for every ledger caller.",
+      "reproduction": "Arithmetic from source: 17+26+1+36 = 80; +2 = 82 > 64. On MySQL 8 strict, calling POST /wallet/withdraw as a KYC'd creator with a primary bank account and Idempotency-Key = a UUID fails.",
+      "verification_required": "Execute on staging/Testcontainers MySQL with PAYOUTS_ENABLED on. Confirm whether prod currently exposes withdraw (src/lib/api.ts:121 gate).",
+      "affected_features": ["Creator withdrawal (RazorpayX payout rail)"]
+    },
+    {
+      "id": "MEERA-DB-04",
+      "title": "@Transactional inert on Meera write paths (self-invoked lambdas, no outer transaction)",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "CreateCampaignExecutor.execute:138 (not transactional) calls idempotencyService.executeOnce(..., () -> doExecute(...)) at :166-170. doExecute is `@Transactional protected` at :207-208 and is invoked on raw `this`. IdempotencyService.executeOnce:131-165 runs action.get() with no transaction. MeeraInternalController.createCampaign:216,235 is not transactional. doExecute then saves Campaign (:433), CampaignIntent (:436) and MeeraToolCall (:438) as three separate auto-commit transactions. Same shape in RequestPaymentExecutor.java:63,75,110-111, MeeraSessionService.sendTurn:326-344 -> doSendTurn:354-355, and persistAssistantWriteback:562-567 -> doPersistAssistantWriteback:606-607. The PayoutService.java:417-432 javadoc acknowledges the pattern.",
+      "location": "influora-api/src/main/java/com/influora/service/meera/tool/CreateCampaignExecutor.java:166-170,207-208,433-438; RequestPaymentExecutor.java:75,110-111; service/meera/MeeraSessionService.java:344,355,567,607",
+      "impact": "A failure after Campaign is saved, for example at the meera_tool_calls insert, leaves an orphan campaign draft with no tool-call record. executeOnce marks the key FAILED and the retry reclaims it, creating a duplicate campaign. Chat turns can persist the user message without the conversation update.",
+      "recommended_fix": "Move doExecute/doSendTurn/doPersistAssistantWriteback into a separate @Service bean (as was done for AffiliateSettlementWriter), or wrap the supplier in a TransactionTemplate inside the executor.",
+      "reproduction": "Unit test with meera_tool_calls save stubbed to throw after campaignRepository.save. With a real DB, observe that the campaigns row persists.",
+      "verification_required": "An H2 or Testcontainers test that forces the third save to fail and asserts the campaigns row is rolled back (expected to fail today).",
+      "affected_features": ["Meera create_campaign tool", "Meera request_payment tool", "Meera chat turn persistence"]
+    },
+    {
+      "id": "MEERA-DB-05",
+      "title": "Dead catch(DataIntegrityViolationException) around plain save() of assigned-id entities (~12 sites incl. ledger race replay)",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 70,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "The entities use manually assigned ULID @Id and do not implement Persistable (only IdempotencyKeyRecord does), so save() merges and the INSERT is deferred to flush or commit, outside the try. Sites with only .save( in the try: WalletLedgerService.java:182-201, CreatorCampaignService.java:263-268, CreatorDiscoveryService.java:555-561, DealService.java:299-305, ReviewService.java:138-144 and 203-209, ShipmentService.java:122-130, CreatorProfileService.java:90-95 and 188, CreatorBankAccountService.java:99-106 and 152-157, AuthService.java:204-206 and 432-433, UsageCounterService.java:141,181. GlobalExceptionHandler.java:110-115 maps the escaped exception to a generic 409 DATA_INTEGRITY_VIOLATION.",
+      "location": "influora-api/src/main/java/com/influora/service/WalletLedgerService.java:182-201 (and sites listed in evidence)",
+      "impact": "Specific conflict codes (ALREADY_APPLIED, ALREADY_REVIEWED, USERNAME_TAKEN, COLLABORATION_EXISTS, PRIMARY_CONFLICT) are never returned, and FE branches keyed on them are dead. The ledger's and ShipmentService's race-replay recovery never runs, so a same-key concurrent posting returns a 409 instead of the idempotent replay. No money is double-posted, because uq_wtx_idem still holds.",
+      "recommended_fix": "Use saveAndFlush() inside each try (or call repository.flush() before the catch). For the ledger, re-check findExistingPosting after acquiring the wallet locks.",
+      "reproduction": "@DataJpaTest (H2 is fine for this): save a duplicate Collaboration(campaign_id, creator_id) via CreatorCampaignService.apply and observe a DataIntegrityViolationException at commit, not ApiException ALREADY_APPLIED.",
+      "verification_required": "Write the H2 @DataJpaTest described above for one site. Confirm per site whether an intervening JPQL query auto-flushes earlier.",
+      "affected_features": ["Creator apply to campaign", "Brand invite creator", "Deal creation", "Reviews/flags", "Shipments", "Creator username claim", "Bank account primary switch", "Ledger idempotent replay"]
+    },
+    {
+      "id": "MEERA-DB-06",
+      "title": "Three Flyway migrations edited after first commit (checksum mismatch risk on any DB that applied the original)",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 65,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "git log --follow: V73__creator_agent_preferences.sql and V74__meera_creator_conversations.sql were created in 1792c37 (2026-09-03) and modified in 8c7b18b (2026-09-04), which appended ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci. V20260917120000__brand_ai_credit_plan_loyalty_split.sql was created in 3456818 and rewritten in 77fbb6b (backfill logic, +39/-18). spring.flyway.validate-on-migrate is not set, so the default is true (application.yml:51-61).",
+      "location": "influora-api/src/main/resources/db/migration/V73__creator_agent_preferences.sql; V74__meera_creator_conversations.sql; V20260917120000__brand_ai_credit_plan_loyalty_split.sql",
+      "impact": "Any environment (prod, staging, a developer DB) that applied the pre-edit version fails to boot with 'Migration checksum mismatch'. An environment that applied the original V20260917120000 also keeps the raising backfill that the repair was meant to prevent.",
+      "recommended_fix": "Before deploy, run SELECT version, checksum FROM flyway_schema_history WHERE version IN ('73','74','20260917120000') on each environment and compare with the RC checksums. Where they differ, run `flyway repair` and a corrective forward migration for data. Adopt a CI rule that forbids edits to migrations already on main.",
+      "reproduction": "Apply the migration chain at 1792c37, check out 115f698 and start the app, which fails validation.",
+      "verification_required": "Read-only check of flyway_schema_history on prod and staging by an operator.",
+      "affected_features": ["Application boot / deploy", "Creator agent preferences", "Brand AI credit allotment"]
+    },
+    {
+      "id": "MEERA-DB-07",
+      "title": "No test in this environment runs the Flyway chain on MySQL; H2 create-drop tests mask schema drift",
+      "severity": "P2",
+      "evidence_score": 4,
+      "confidence": 90,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "Offline mvn test on an isolated copy of RC influora-api: Tests run 3621, Failures 0, Errors 1 (ShopifyPropertiesBindingTest needs ../deploy, a scratch-copy artifact), Skipped 22. The skipped suites are all Testcontainers MySQL suites, including MeeraCreatorPhaseABootValidationTest, DatabaseConstraintIntegrationTest, AICreditRaceIntegrationTest and FestivalBoxCouponConstraintIntegrationTest (docker ps: daemon not running). The 16 repository @DataJpaTest classes use jdbc:h2:mem:...;MODE=MySQL and Hibernate create-drop ('Hibernate: drop table if exists ...' in the log).",
+      "location": "influora-api/src/test/java/com/influora/repository/*Test.java; influora-api/src/test/java/com/influora/integration/dbconstraints/*",
+      "impact": "Defects MEERA-DB-01 and MEERA-DB-03 (ENUM and VARCHAR limits that exist only in migrations) pass a green suite. A green local mvn run is not evidence of schema correctness.",
+      "recommended_fix": "Make CI run the Testcontainers suites and fail if any are skipped. Add one boot test that runs Flyway migrate plus ddl-auto=validate on MySQL 8, and an enum-vs-DB-ENUM conformance test.",
+      "reproduction": "cd influora-api && mvn -o test (without Docker); inspect surefire reports for skipped>0.",
+      "verification_required": "Check that the CI workflow runs these suites with Docker and publishes a skipped count of 0.",
+      "affected_features": ["All DB-backed features (release gate)"]
+    },
+    {
+      "id": "MEERA-DB-08",
+      "title": "Missing indexes on hot lookups: password_reset_tokens.token_hash, coupon_codes.code, payouts.status, plans.razorpay_plan_id",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 78,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "V2__core_auth.sql:79-88 password_reset_tokens has only PK and idx_prt_user(user_id); PasswordResetTokenRepository.findByTokenHashAndUsedFalse filters on token_hash (no index, no UNIQUE, unlike refresh_tokens uq_token_hash at V2:74). V24__coupon_codes.sql:41-42 uniques are (workspace_id, code) and (campaign_id, creator_id), while RedemptionWriter.java:218 calls the global CouponCodeRepository.findAllByCode:81. V48__payouts.sql indexes milestone_id, creator_user_id and razorpay_payout_id but not status, which PayoutRepository.findByStatusAndCreatedAtBefore/findByStatusIn/findByStatusInAndUpdatedAtBefore use. V54:18 plans.razorpay_plan_id is unindexed and used by PlanRepository.findByRazorpayPlanId.",
+      "location": "V2__core_auth.sql:79-88; V24__coupon_codes.sql:41-42; V48__payouts.sql:22-24; V54__subscription_billing.sql:18",
+      "impact": "The password reset, coupon redemption webhook and payout reconciliation cron scan the full table as they grow. password_reset_tokens.token_hash also has no uniqueness guarantee.",
+      "recommended_fix": "Add a migration with UNIQUE(token_hash) on password_reset_tokens, INDEX(code) on coupon_codes, INDEX(status, updated_at) on payouts, INDEX(razorpay_plan_id) on plans, and INDEX(status, created_at) on idempotency_keys.",
+      "reproduction": "EXPLAIN SELECT * FROM password_reset_tokens WHERE token_hash=? AND used=0 shows type=ALL.",
+      "verification_required": "Run EXPLAIN on a staging copy.",
+      "affected_features": ["Password reset", "Coupon redemption attribution", "Payout reconciliation cron", "Subscription webhooks"]
+    },
+    {
+      "id": "MEERA-DB-09",
+      "title": "Latent ENUM drift: meera_tool_calls.tool_name lacks get_campaign_performance; support_tickets.user_type lacks ADMIN",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "V14__ai_credits_tool_calls.sql:19 has ENUM('create_campaign','request_payment','confirm_launch','show_creators','calculate_budget') but MeeraToolName.java:10 adds get_campaign_performance. GetCampaignPerformanceExecutor writes only audit_log today (:160-168), and MeeraToolCallRepository.existsByToolNameAndResultRefIdAndStatus accepts that value as a parameter. support_tickets.user_type ENUM('BRAND','CREATOR') (V34) is mapped to the shared UserType, which includes ADMIN (SupportTicket.java:20,36), and SupportService.create:54-60 passes principal.getUserType().",
+      "location": "V14__ai_credits_tool_calls.sql:19; domain/enums/MeeraToolName.java:10; V34__admin_tables.sql (support_tickets); domain/entity/SupportTicket.java:36; service/SupportService.java:54-60",
+      "impact": "The first code path that persists a MeeraToolCall for get_campaign_performance, or opens a ticket as an ADMIN principal, fails with a truncation error.",
+      "recommended_fix": "Widen both ENUMs in a migration, or map these columns as VARCHAR.",
+      "reproduction": "Insert a meera_tool_calls row with tool_name='get_campaign_performance' on MySQL strict mode.",
+      "verification_required": "Confirm whether any admin principal can reach POST /support/tickets.",
+      "affected_features": ["Meera tool-call audit", "Support tickets"]
+    },
+    {
+      "id": "MEERA-DB-10",
+      "title": "wallets.escrow_balance is never written but GET /wallet returns it (always 0)",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "grep for escrowBalance writers finds none: only WalletLedgerService.applyBalanceDelta changes balance. WalletService.toBalanceResponse:607-613 returns wallet.getEscrowBalance() in WalletBalanceResponse. getSummary derives escrow from FUNDED holds instead (WalletService.java:146, 184-187).",
+      "location": "influora-api/src/main/java/com/influora/service/WalletService.java:607-613; domain/entity/Wallet.java",
+      "impact": "API consumers of GET /wallet see escrowBalance=0 while holds are FUNDED. No FE consumer was found for this field.",
+      "recommended_fix": "Derive escrowBalance from FUNDED holds in toBalanceResponse, as getSummary does, or drop the field and the column.",
+      "reproduction": "Fund an escrow hold, then call GET /wallet and observe escrowBalance=0.",
+      "verification_required": "Confirm there are no external API consumers.",
+      "affected_features": ["Wallet balance API"]
+    },
+    {
+      "id": "MEERA-DB-11",
+      "title": "invoices cascade-delete with workspaces/subscriptions; data migration inserts non-ULID subscription ids",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 65,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "V54__subscription_billing.sql:46,68,84 declare FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE on subscriptions, invoices and usage_counters, and invoices.subscription_id also has ON DELETE CASCADE. No workspace or subscription delete path exists in src/main today. V20260918140000__convert_agency_workspaces_to_brand.sql generates ids as UPPER(SUBSTRING(REPLACE(UUID(),'-',''),1,26)), which are hex rather than Crockford ULIDs and do not sort by time the way the rest of the ids do.",
+      "location": "V54__subscription_billing.sql:46,68,84; V20260918140000__convert_agency_workspaces_to_brand.sql",
+      "impact": "A future workspace hard delete or GDPR purge would silently erase tax invoices that must be retained. Code that assumes ULID ordering or parses ids could misbehave on the backfilled subscriptions.",
+      "recommended_fix": "Change the invoice FKs to ON DELETE RESTRICT. Generate ULIDs for backfilled rows in a Java migration, or accept and document hex ids.",
+      "reproduction": "DELETE FROM workspaces WHERE id=? on a workspace with invoices, then observe that the invoices are deleted.",
+      "verification_required": "Legal/finance confirmation of invoice retention requirements.",
+      "affected_features": ["Subscription invoices", "Agency-to-brand conversion"]
+    },
+    {
+      "id": "MEERA-DB-12",
+      "title": "Admin baseline/brand endpoints load whole tables into memory",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "CreatorAgentBaselineService.getBaselines:63 calls creatorProfileRepository.findAll(), and :96 iterates collaborationRepository.findAll() to filter appliedAt in Java. AdminBrandService.java:860 uses the unpaged WalletTransactionRepository.findByWalletIdOrderByCreatedAtDesc(String) (repo :20). AdminCampaignService.java:259 uses the unpaged findByStatus(ACTIVE).",
+      "location": "service/admin/CreatorAgentBaselineService.java:63,96; service/admin/AdminBrandService.java:860; service/admin/AdminCampaignService.java:259",
+      "impact": "Admin dashboard latency and memory grow linearly with data. The impact is admin-only.",
+      "recommended_fix": "Replace with aggregate queries (GROUP BY tier; COUNT DISTINCT creator_id WHERE applied_at > ?) and paged ledger reads.",
+      "reproduction": "Load GET on the admin creator-agent baselines endpoint with a large seeded dataset.",
+      "verification_required": "None blocking.",
+      "affected_features": ["Admin creator-agent baselines", "Admin brand detail ledger", "Admin campaign overview"]
+    }
+  ],
+  "features": [
+    {
+      "name": "Entity <-> migration column/type alignment (ddl-auto=validate boot)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "Scripted replay: 87/87 tables and 0 missing columns. No MySQL boot-validation test ran (MeeraCreatorPhaseABootValidationTest skipped).",
+      "user_type": "platform"
+    },
+    {
+      "name": "Double-entry wallet ledger (WalletLedgerService.post)",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 72,
+      "evidence": "Ordered pessimistic wallet locks and uq_wtx_idem hold. Mockito tests pass. The race-replay catch is dead (MEERA-DB-05), and the ENUM values for affiliate are missing (MEERA-DB-01).",
+      "user_type": "brand/creator"
+    },
+    {
+      "name": "Affiliate commission settlement",
+      "status": "BROKEN",
+      "evidence_score": 3,
+      "confidence": 85,
+      "evidence": "MEERA-DB-01: the posted ENUM values are not in V8's wallet_transactions ENUMs.",
+      "user_type": "creator"
+    },
+    {
+      "name": "Creator withdrawal (POST /wallet/withdraw)",
+      "status": "BROKEN",
+      "evidence_score": 3,
+      "confidence": 80,
+      "evidence": "MEERA-DB-03: the 82-char key exceeds VARCHAR(64). The feature is FE-gated by PAYOUTS_ENABLED.",
+      "user_type": "creator"
+    },
+    {
+      "name": "Escrow funding per milestone",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 85,
+      "evidence": "The happy path is covered by EscrowServiceTest. The double-fund of a FUNDED milestone was reproduced in scratch (MEERA-DB-02).",
+      "user_type": "brand"
+    },
+    {
+      "name": "Escrow release/refund concurrency",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 70,
+      "evidence": "EscrowHoldRepository.findByIdForUpdate is used on release and refund (EscrowService.java:632,881,973,1770). There is no concurrent runtime test.",
+      "user_type": "brand/creator"
+    },
+    {
+      "name": "Meera create_campaign / request_payment atomicity",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 75,
+      "evidence": "MEERA-DB-04: the @Transactional annotation is inert, so the writes commit separately.",
+      "user_type": "brand"
+    },
+    {
+      "name": "Flyway migration chain on production history",
+      "status": "CONFIGURATION DEPENDENT",
+      "evidence_score": 3,
+      "confidence": 65,
+      "evidence": "No duplicate versions and out-of-order is enabled. Three edited migrations (MEERA-DB-06) depend on what prod has already applied.",
+      "user_type": "platform"
+    },
+    {
+      "name": "Repository native queries",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 75,
+      "evidence": "All 10 reference existing columns. They are MySQL-only (ON DUPLICATE KEY, JSON_CONTAINS) and were not executed.",
+      "user_type": "platform"
+    },
+    {
+      "name": "Backend unit/integration test suite",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 92,
+      "evidence": "3621 run, 0 failures, 1 env error, 22 skipped (all Testcontainers MySQL suites).",
+      "user_type": "platform"
+    }
+  ],
+  "area": {
+    "name": "Database: JPA entities vs Flyway migrations, repositories, transactions",
+    "status": "NOT GO-LIVE READY for money paths: 1 P0 (milestone double-fund) and 2 P1 (affiliate ENUM, withdraw key length). The schema otherwise aligns with the entities.",
+    "evidence_level": 3,
+    "confidence": 78,
+    "main_evidence": "A scripted full diff of 87 entities against 140 replayed migrations, a scan of 287 derived and 10 native queries, a full offline mvn test on an isolated RC copy (3621/0 fail/22 skipped), a scratch unit repro of the milestone double-fund, and git history of the migration files.",
+    "main_uncertainty": "No real MySQL run. Docker was down, so the Testcontainers suites were skipped. I did not authenticate to the local MySQL80 service, and prod flyway_schema_history was not inspected. ENUM and VARCHAR runtime failures are inferred from DDL plus MySQL strict-mode semantics.",
+    "limitations": "Static parser (regex-based) may miss exotic DDL, although 0 statements went unparsed. Hot-index analysis covers derived queries only, not JPQL @Query bodies. Tenant scoping was spot-checked on escrow and wallet paths only. The ~12 dead-catch sites were not individually runtime-verified. Read-only audit: no repo files edited; the scratch test lives only in the scratchpad copy."
+  },
+  "extra": "ENTITY | TABLE | COLS(entity/db) | FKs | STATUS/NOTES\nAbuseThrottleCounter | abuse_throttle_counters | 6/6 | 0 | OK\nAdminAuditLog | admin_audit_log | 12/12 | 1 | OK\nAdminEmailCampaign | admin_email_campaigns | 13/13 | 1 | OK\nAdminEmailSendLock | admin_email_send_lock | 2/2 | 0 | OK (pessimistic lock)\nAdminRefreshToken | admin_refresh_tokens | 6/6 | 1 | OK\nAdminUser | admin_users | 14/14 | 0 | OK\nAffiliateEarning | affiliate_earnings | 12/12 | 4 | OK (but settlement ledger post fails, see wallet_transactions)\nAffiliateSettlementBatch | affiliate_settlement_batches | 7/7 | 0 | OK\nAiConversation | ai_conversations | 8/8 | 2 | OK (CHECK tenant constraints)\nAiMessage | ai_messages | 7/7 | 1 | OK\nApplicationHistoryEvent | application_history_events | 14/15 | 2 | OK (sequence_no AUTO_INCREMENT insertable=false; viewed_dedup_key generated)\nAudienceDemographics | audience_demographics | 11/11 | 1 | OK\nAuditLogEntry | audit_log | 16/16 | 0 | OK\nBrandAiCredit | brand_ai_credits | 17/17 | 1 | OK columns; V20260917120000 edited after commit (checksum risk)\nBrandProfile | brand_profiles | 15/15 | 1 | OK\nCampaign | campaigns | 28/28 | 2 | OK (findByIdForUpdate)\nCampaignIntent | campaign_intents | 15/15 | 3 | OK\nCampaignServiceInvoice | campaign_service_invoices | 16/16 | 5 | OK\nCampaignTemplate | campaign_templates | 19/19 | 1 | OK\nCollaboration | collaborations | 19/19 | 2 | OK (findByIdForUpdate)\nContentFlag | content_flags | 12/12 | 1 | OK\nContract | contracts | 18/18 | 2 | OK\nConversionWebhookSecret | conversion_webhook_secrets | 6/6 | 1 | OK\nCouponCode | coupon_codes | 11/12 | 2 | OK columns; global findAllByCode not index-led\nCouponRedemption | coupon_redemptions | 9/9 | 1 | OK\nCreatorAgentPreferences | creator_agent_preferences | 23/23 | 1 | OK columns; V73 edited after commit\nCreatorBankAccount | creator_bank_accounts | 12/13 | 1 | OK (primary_marker generated; lockAllForCreatorUpdate)\nCreatorCaptionCache | creator_captions | 9/9 | 1 | OK\nCreatorConnectionRequest | creator_connection_requests | 12/12 | 1 | OK\nCreatorMetric | creator_metrics | 16/16 | 1 | OK\nCreatorNudgeLog | creator_nudge_log | 13/14 | 2 | OK (shown_day generated)\nCreatorProfile | creator_profiles | 43/43 | 4 | OK\nCreatorScore | creator_scores | 19/19 | 1 | OK\nDealMessage | deal_messages | 9/9 | 1 | OK\nDeliverable | deliverables | 25/25 | 3 | OK\nDeliverableMetric | deliverable_metrics | 15/15 | 3 | OK\nDispute | disputes | 12/12 | 3 | OK @Version\nEmailOtpChallenge | email_otp_challenges | 7/7 | 0 | OK\nEmailOutbox | email_outbox | 12/12 | 1 | OK\nEmailPreference | email_preferences | 6/6 | 1 | OK\nErrorLog | error_log | 13/13 | 0 | OK\nEscrowHold | escrow_holds | 15/15 | 6 | ISSUE: no guard/unique on milestone_id -> milestone re-fund (MEERA-DB-02); no @Version, locked on release/refund\nExternalCreator | external_creators | 20/20 | 0 | OK\nFeaturedCreator | featured_creators | 11/11 | 1 | OK (read-only entity)\nFestivalCouponCopy | festival_coupon_copies | 8/8 | 0 | OK\nFestivalEnquiry | festival_enquiries | 29/29 | 0 | OK\nFileUpload | file_uploads | 14/14 | 0 | MINOR: created_at/updated_at NULLable in DB vs nullable=false\nHsnSacCode | hsn_sac_codes | 6/6 | 0 | OK (read-only)\nIdempotencyKeyRecord | idempotency_keys | 7/7 | 0 | OK (Persistable); reaper query (status,created_at) unindexed\nInvoice | invoices | 18/18 | 2 | NOTE: ON DELETE CASCADE from workspaces/subscriptions\nInvoiceNumberSequence | invoice_number_sequences | 7/7 | 0 | OK (pessimistic lock)\nMediaMetric | media_metrics | 20/21 | 1 | OK (avg_watch_time_seconds unmapped, nullable)\nMeeraCreatorConversation | meera_creator_conversations | 6/6 | 1 | OK columns; V74 edited after commit\nMeeraInteractionLog | meera_interaction_log | 10/10 | 0 | OK\nMeeraToolCall | meera_tool_calls | 11/11 | 2 | LATENT DRIFT: tool_name ENUM lacks get_campaign_performance\nMetaOAuthToken | meta_oauth_tokens | 13/13 | 2 | OK\nNotification | notifications | 9/9 | 1 | OK\nNudgeLog | nudge_log | 14/14 | 0 | OK\nPasswordResetToken | password_reset_tokens | 6/6 | 1 | ISSUE: token_hash no index/unique\nPaymentMilestone | payment_milestones | 15/15 | 4 | ISSUE: markFunded unconditional, no lock (MEERA-DB-02)\nPayout | payouts | 16/16 | 2 | ISSUE: idempotency_key VARCHAR(64) < withdraw scopedKey 80; status unindexed\nPlan | plans | 16/16 | 0 | MINOR: razorpay_plan_id unindexed\nPlatformCommissionInvoice | platform_commission_invoices | 16/17 | 4 | OK (CHECK leg shape; marker generated)\nPlatformFeeConfig | platform_fee_config | 12/12 | 0 | OK @Version\nPlatformStat | platform_stats | 8/10 | 1 | OK (created_at/updated_at unmapped, defaulted)\nPortfolioEvent | portfolio_events | 6/6 | 0 | OK\nRefreshToken | refresh_tokens | 7/7 | 1 | OK\nReview | reviews | 9/9 | 2 | OK (CHECK stars)\nSavedCreator | saved_creators | 6/6 | 2 | OK\nShipment | shipments | 19/19 | 0 | OK (UNIQUE collaboration_id, no FK by design)\nShopifyIntegration | shopify_integrations | 10/10 | 1 | OK\nSnapsbyCatalogVideo | snapsby_catalog_video | 9/9 | 0 | OK (read-only)\nSubscription | subscriptions | 17/17 | 3 | OK @Version; V20260918140000 backfill uses hex non-ULID ids\nSupportTicket | support_tickets | 11/11 | 2 | LATENT DRIFT: user_type ENUM lacks ADMIN\nSupportTicketMessage | support_ticket_messages | 6/6 | 1 | OK\nTrend | trends | 12/12 | 0 | OK\nUsageCounter | usage_counters | 7/7 | 1 | OK\nUsageCounterDetail | usage_counter_details | 6/6 | 1 | OK\nUser | users | 20/20 | 0 | OK; soft delete deleted_at; last_active_workspace_id no FK/index\nUtmCampaign | utm_campaigns | 19/20 | 3 | OK (page_level_marker generated)\nWallet | wallets | 9/9 | 0 | OK (pessimistic lock); escrow_balance never written\nWalletTopUp | wallet_topups | 11/11 | 2 | OK (findByIdForUpdate)\nWalletTransaction | wallet_transactions | 15/15 | 1 | BROKEN: type ENUM lacks AFFILIATE_COMMISSION, reference_type lacks AFFILIATE_EARNING; idempotency_key VARCHAR(64) < withdraw key 82\nWooCommerceIntegration | woocommerce_integrations | 8/8 | 1 | OK\nWorkspace | workspaces | 29/29 | 3 | OK\nWorkspaceMember | workspace_members | 7/7 | 2 | OK\nWorkspaceMemberInvite | workspace_member_invites | 10/10 | 2 | OK\nORPHAN TABLES (no entity, intentional): shedlock (ShedLock), escrow_invoice_failures (JdbcTemplate in CampaignServiceInvoiceService)\n\nMETRICS: migrations=140 (no duplicate versions; gaps V40,V60,V66,V67 harmless); tables=89; entities=87; entity columns missing in DB=0; @Enumerated-vs-DB-ENUM gaps=4 (2 live, 2 latent); @Version entities=3; pessimistic-lock finders=13; derived queries scanned=287 (26 not index-led); native queries=10 (all columns resolve); cascade FKs=8.\nTEST RUN (isolated scratch copy of RC influora-api, mvn -o -q test): Tests run 3621, Failures 0, Errors 1 (ShopifyPropertiesBindingTest NoSuchFile ../deploy/hostinger/docker-compose.hostinger.yml - artifact of copying influora-api alone), Skipped 22 (all Testcontainers MySQL suites; Docker daemon down).\nREPRO: EscrowServiceTest#meeraAuditReproMilestoneDoubleFund (scratch only) -> 'MEERA-AUDIT-REPRO: second fund accepted; milestone.escrowHoldId now=01M2WE36TAT8380D272F78HW9C'.\nTOOLS: scratchpad meera-db/schema_diff.py, repo_scan.py (out.json, repo.json). graphify-out/graph.json was NOT present in the RC checkout (graphify query errored), so orientation used source directly."
+}

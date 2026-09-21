@@ -1,0 +1,19 @@
+{
+  "verdict": "believed",
+  "oracle": "mvn",
+  "isolation": "fresh-context",
+  "done_when": "changePassword refuses SUSPENDED/DEACTIVATED, resetPassword refuses a soft-deleted user as INVALID_RESET_TOKEN, the delete path purges that user's reset tokens, each pinned by a test, and mvn test run with cwd influora-api exits 0",
+  "not_checked": [
+    "BrandContextService still omits the deletedAt check that AccountController's javadoc claimed it had, so account deletion is NOT immediate for brand users — comment corrected, gap open and tracked separately",
+    "production transactionality of the derived delete: @DataJpaTest supplies its own transaction, so no executed test proves the real AuthService path is transactional",
+    "the same endpoint still answers ACCOUNT_SUSPENDED 403 and USER_NOT_FOUND 400 with distinct codes; deliberate for the first, latent for the second since nothing hard-deletes user rows",
+    "product suspension: neither changePassword nor resetPassword consults Workspace.isSuspended() or CreatorProfile.isSuspended(), so an admin-suspended brand or creator can still rotate their password",
+    "the soft-deleted changePassword path relies on BCryptPasswordEncoder returning false against a null hash; true as wired, would become a 500 under a DelegatingPasswordEncoder, and no test pins the bean type",
+    "concurrency: a reset in flight against a delete in flight — three separate transactions, no locking, no test",
+    "whether any other user-scoped table (OTP challenges, invites) leaves a way in at deletion; only refresh and reset tokens were audited",
+    "no HTTP or live proof of either endpoint; the 15 skipped tests are the Testcontainers classes and need Docker"
+  ],
+  "skipped": [
+    {"step": "fixing the BrandContextService deletedAt gap", "reason": "it changes authorization on every brand endpoint and needs its own caller enumeration and tests; correcting the false comment was in scope, silently widening brand authz was not"}
+  ]
+}

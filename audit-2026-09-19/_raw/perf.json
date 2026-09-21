@@ -1,0 +1,279 @@
+{
+  "role": "Performance engineer (Meera/Ananya lens)",
+  "rc_commit": "115f698b9df0ca2735e9cb2f2c5fe656daf07b66",
+  "rc_path": "C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+  "summary": "Performance/lag audit of RC 115f698. Frontend: zero route-level code splitting -- all ~90 routes in src/App.tsx are statically imported, producing a single 3.37MB (897KB gzip) main JS bundle (dist/assets/index-VeUi4oUB.js) loaded eagerly by every visitor; only 4 lazy() calls exist anywhere and none are route-level (they gate 3D/canvas sub-widgets on 2 pages). Backend: two confirmed N+1 query patterns in PortfolioService reachable from the PUBLIC, unauthenticated GET /portfolio/{username} endpoint; a documented M-17 Redis-cache perf fix (CreatorDiscoveryFacetsCache) that was built but never wired into CreatorDiscoveryService, so the original expensive 5,000-row in-memory facet scan still runs on every creator-search request; the production Hostinger docker-compose file never sets SPRING_DATA_REDIS_HOST/PORT for influora-api while the sibling test compose file does (with a comment explicitly warning 'default is localhost -> Connection refused'), putting the admin CEO-pulse dashboard's @Cacheable call at risk of failing on every load in prod; a CI workflow using the wrong (Spring Boot 2.x) SPRING_REDIS_HOST/PORT env var names that silently no-op on this app's Spring Boot 3.3.5, masking the prod gap; missing outbound HTTP timeouts on Meta Graph API and Shopify OAuth RestClients (contrasted with TrendSpark/AI clients which do set timeouts); and ~40 @Async notification/deal methods sharing Spring Boot's unbounded default task executor -- the exact failure mode OtpEmailExecutorConfig's own javadoc says was carved out specifically to avoid, but only for OTP, not for NotificationListener/DealService/the sync jobs.",
+  "questions": [
+    {
+      "question": "What is the actual first-load JS payload for a visitor, and is it split by route?",
+      "why_it_matters": "Determines time-to-interactive on 3G/mid-tier mobile, which is most of India's traffic for this product.",
+      "answer": "No route splitting at all. dist/assets/index-VeUi4oUB.js is 3,373,529 bytes raw / 897,208 bytes gzip, and is the ONLY <script type=module> tag in dist/index.html. src/App.tsx statically imports all ~90 route components (brand dashboard, admin console, campaigns, wallet, chat, blog, landing, etc.) at module top-level; grep found only 4 lazy() calls in the whole src tree, none of them route-level (they gate 3D canvas sub-widgets inside meera-for-creators.tsx and dev-motion-skills.tsx).",
+      "evidence": "dist/assets/*.js sizes measured directly (gzip -c | wc -c); src/App.tsx lines 11-91 (import list) and lines 203-895 (Routes, ~90 path= occurrences, zero React.lazy wrapping); grep -rn 'React.lazy(|= lazy(' across src.",
+      "evidence_score": 3,
+      "confidence": 90,
+      "remaining_uncertainty": "Did not run a Lighthouse/WebPageTest trace against a live deploy to confirm real-world TTI/LCP numbers -- this is a build-artifact + source measurement, not a browser-timed one."
+    },
+    {
+      "question": "Are there N+1 query patterns reachable from public, high-traffic, unauthenticated pages?",
+      "why_it_matters": "Public SEO-indexable pages (crawled by search engines and shared on social) get far more raw traffic than any authenticated page, so a per-item query multiplies badly there.",
+      "answer": "Yes. GET /portfolio/{username} (PortfolioController.java:40-41, unauthenticated) calls PortfolioService.assemble() -> computeStats() -> computeOnTimeRate() and countRepeatBrands(), each of which issues one repository call PER completed collaboration instead of a single batched query: isCollaborationOnTime() calls deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc() once per collaboration (PortfolioService.java:928-934), and countRepeatBrands() calls campaignRepository.findById(id) once per collaboration instead of campaignRepository.findAllById(ids) (PortfolioService.java:946-952). A creator with N completed collaborations triggers roughly 2N extra SELECTs on every portfolio-page view.",
+      "evidence": "PortfolioController.java:40-41 (@GetMapping(\"/portfolio/{username}\")); PortfolioService.java:769-780 (assemble() calling computeStats(completed, ...)); PortfolioService.java:896-908 (computeStats calling countRepeatBrands then computeOnTimeRate); PortfolioService.java:920-934 (computeOnTimeRate/isCollaborationOnTime loop); PortfolioService.java:946-952 (countRepeatBrands loop).",
+      "evidence_score": 3,
+      "confidence": 82,
+      "remaining_uncertainty": "Not runtime-reproduced (no DB/query-log capture in this read-only audit); actual per-creator collaboration counts in production are unknown, so real-world query-count multiplier is inferred from code shape, not measured."
+    },
+    {
+      "question": "Is Redis actually reachable from influora-api in the production deployment, so @Cacheable calls succeed instead of erroring?",
+      "why_it_matters": "Two live features (admin CEO-pulse dashboard, creator-search facets) are wired through @Cacheable(Redis); if the connection is misconfigured, every call either errors or silently falls back to uncached (slow) behavior depending on Spring's failure mode.",
+      "answer": "Very likely broken in prod as configured. Spring Boot is 3.3.5 (pom.xml), where the Redis host property is spring.data.redis.host / env var SPRING_DATA_REDIS_HOST, defaulting to 'localhost' if unset. deploy/hostinger/docker-compose.hostinger.yml (the production compose file) never sets SPRING_DATA_REDIS_HOST or SPRING_DATA_REDIS_PORT on the influora-api service -- grepped and confirmed absent -- even though it does start a separate 'redis' container reachable only at hostname 'redis'. The sibling deploy/hostinger/docker-compose.test.yml DOES set SPRING_DATA_REDIS_HOST: redis, with its own comment: '# Point Spring at the redis container (default is localhost -> Connection refused).' That comment describes exactly the state the production file is left in. No CacheErrorHandler bean exists anywhere in the codebase (grepped, zero results), so a RedisConnectionFailureException from a failed connection is not swallowed -- it propagates as an unhandled exception to GlobalExceptionHandler's generic @ExceptionHandler(Exception.class) (line 202), which logs and returns a 500.",
+      "evidence": "influora-api/pom.xml lines 8-11 (spring-boot-starter-parent 3.3.5); deploy/hostinger/docker-compose.hostinger.yml influora-api service environment block (grepped for redis/SPRING_DATA_REDIS/SPRING_REDIS -- zero matches) vs. deploy/hostinger/docker-compose.test.yml lines 88-89 (SPRING_DATA_REDIS_HOST: redis, with the connection-refused comment); influora-api/src/main/resources/application.yml and application-prod.yml (grepped, no spring.data.redis.* keys at all); grep -rn CacheErrorHandler across src/main/java (0 results); com/influora/common/GlobalExceptionHandler.java:202 (generic handler).",
+      "evidence_score": 3,
+      "confidence": 72,
+      "remaining_uncertainty": "Not runtime-verified against the actual production container network (would require standing up the compose stack, which is out of scope for a read-only source audit) -- it is possible an operator sets SPRING_DATA_REDIS_HOST via an untracked .env file on the VPS itself that this audit cannot see. Flagging as a must-verify-on-the-box item."
+    },
+    {
+      "question": "Does the documented M-17 Redis-backed facets cache (CreatorDiscoveryFacetsCache) actually get exercised by the creator-search endpoint it was built for?",
+      "why_it_matters": "If it is dead code, the perf win the team believes it shipped (removing a 5,000-row in-memory scan from every search request) never happened, and GET /creators/search still pays the full scan cost on every call.",
+      "answer": "No. CreatorDiscoveryFacetsCache.computeFacets() is never called anywhere in the codebase except its own class body -- a repo-wide grep for 'CreatorDiscoveryFacetsCache' and 'computeFacets(' outside that file only turns up references inside RedisCacheConfig.java's own javadoc (which just documents the TTL, it doesn't call it). CreatorDiscoveryService.buildAvailableFacets() (lines 821-827) still runs its own direct, uncached creatorProfileRepository.findAll(CreatorProfileSpecifications.discoverable(), PageRequest.of(0, 5_000, ...)) -- the exact scan the cache class's own javadoc says it 'replaces'.",
+      "evidence": "grep -rn 'CreatorDiscoveryFacetsCache|computeFacets(' influora-api/src/main/java -- only self-references and the RedisCacheConfig doc comment; CreatorDiscoveryService.java:821-827 (buildAvailableFacets, direct findAll with PageRequest.of(0, 5_000, ...)); CreatorDiscoveryFacetsCache.java class javadoc claiming this scan is 'replaced'.",
+      "evidence_score": 3,
+      "confidence": 85,
+      "remaining_uncertainty": "None material -- this is a straightforward call-graph absence, confirmed by exhaustive grep, not a probabilistic inference."
+    },
+    {
+      "question": "Do outbound HTTP calls to third-party APIs that run synchronously inside a servlet request thread have connect/read timeouts?",
+      "why_it_matters": "Without a timeout, a slow or hung upstream (Meta, Shopify) can hold a Tomcat worker thread indefinitely; enough concurrent hangs exhaust the whole thread pool and every endpoint (login, deals, webhooks) stalls, not just the one calling the slow API.",
+      "answer": "Inconsistent, and the two integrations most exposed to third-party flakiness (Meta, which per project memory has an unstable App Review/rate-limit history, and Shopify OAuth) have none. MetaGraphApiClient.restClient() (line 71-77) and MetaOAuthService.restClient() (~line 141) both do RestClient.builder().build() with no requestFactory/timeout. ShopifyOAuthService (line 63), ShopifyOrderOwnershipVerifier (line 78), and ShopifyWebhookRegistrar (line 75) do the same. By contrast, NewsApiTopHeadlinesClient, TmdbUpcomingClient, and YouTubeMostPopularClient all explicitly set a SimpleClientHttpRequestFactory with 5s connect / 15s read timeouts, and the two AI integration clients (BrandSafetyAiClient, MeeraVoiceAiClient) also set explicit timeouts (5s connect / 10s request, configurable). So the codebase clearly knows this pattern and applies it selectively, but skipped it for Meta and Shopify.",
+      "evidence": "influora-api/src/main/java/com/influora/integration/meta/client/MetaGraphApiClient.java:64-77; integration/meta/oauth/MetaOAuthService.java (restClient() method, ~line 133-144); integration/shopify/oauth/ShopifyOAuthService.java:62-63; integration/shopify/ShopifyOrderOwnershipVerifier.java:78; integration/shopify/ShopifyWebhookRegistrar.java:75; contrast with service/trendspark/ingest/NewsApiTopHeadlinesClient.java:50-60 and integration/ai/BrandSafetyAiClient.java / MeeraVoiceAiClient.java (explicit Duration-based timeouts).",
+      "evidence_score": 2,
+      "confidence": 75,
+      "remaining_uncertainty": "Did not trace every call site to confirm each is on a synchronous request-thread path (vs. a background job) for 100% of these classes -- MetaGraphApiClient is used by brand analytics/creator-connect flows which are request-thread paths per its own javadoc, but a couple of Shopify call sites may run from webhook-triggered async paths, which would lower but not eliminate the risk."
+    },
+    {
+      "question": "Is the Hikari connection-pool size appropriate relative to Tomcat's thread pool, so the app doesn't stall requests waiting for a DB connection under load?",
+      "why_it_matters": "If Tomcat can accept far more concurrent requests than Hikari can hand out DB connections, request latency spikes and can cascade into timeouts under any real traffic burst.",
+      "answer": "Plausible mismatch, not confirmed under load. application.yml sets spring.datasource.hikari.maximum-pool-size default 10; application-prod.yml raises it to a default of 20 (SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:20), minimum-idle 5, connection-timeout 30s. Tomcat's own thread-pool comment in application.yml (line ~97) references 'a pool of 200' threads as the ambient assumption for that connector. 20 DB connections behind 200 possible concurrent request threads is a 10x ratio; under a genuine burst, requests needing a DB connection queue for up to the 30s connection-timeout before failing, and since virtually every endpoint in this app touches the DB, that queue is shared platform-wide.",
+      "evidence": "influora-api/src/main/resources/application.yml:15-16 (hikari.maximum-pool-size default 10) and its own comment about Tomcat's 200-thread pool (lines 91-99); application-prod.yml:29-37 (maximum-pool-size default 20, minimum-idle 5, connection-timeout 30000ms).",
+      "evidence_score": 2,
+      "confidence": 55,
+      "remaining_uncertainty": "No load test was run (out of scope, read-only audit); real concurrency in production may be well below 200 simultaneous DB-bound requests, in which case this ratio is a non-issue in practice. This is a capacity-planning flag, not a proven defect."
+    },
+    {
+      "question": "Are @Async background methods bounded, so a burst of events can't grow an unbounded queue or thread count?",
+      "why_it_matters": "An unbounded async executor under a traffic spike (e.g., many campaign-launch notifications firing at once) grows memory and delays processing indefinitely instead of failing predictably; the team has already hit and fixed this exact class of bug once (OTP email).",
+      "answer": "Only the OTP email path is protected. OtpEmailExecutorConfig.java defines a dedicated bounded ThreadPoolTaskExecutor (core 2 / max 8 / queue 500 / AbortPolicy) specifically because, per its own javadoc, the Boot-auto-configured default executor 'also carries NotificationListener and the creator sync jobs, and its auto-configured queue is effectively unbounded.' That javadoc is still accurate today: grep for bare @Async (no named executor) finds ~40 methods in NotificationListener.java, 6 in DealService.java, and one each in CreatorCaptionSyncJob.java and MetricsPollingJob.java -- none of these declare a dedicated executor, so they all still share Spring Boot's default auto-configured task executor (unbounded queue by default), the exact condition the OTP fix was written to avoid.",
+      "evidence": "influora-api/src/main/java/com/influora/config/OtpEmailExecutorConfig.java (javadoc + bean definition, core=2/max=8/queue=500/AbortPolicy); grep -rn '^\\s*@Async\\b' across src/main/java -- 40 hits in service/notification/NotificationListener.java, 6 in service/DealService.java, 1 each in job/CreatorCaptionSyncJob.java and job/MetricsPollingJob.java, none paired with a named executor or a dedicated @Bean Executor besides OtpEmailExecutorConfig.",
+      "evidence_score": 3,
+      "confidence": 78,
+      "remaining_uncertainty": "Did not verify at runtime that a burst actually causes queue growth (would need a load test); some of these @Async methods may be low-frequency enough in practice that the shared default pool is fine day-to-day."
+    },
+    {
+      "question": "Does the SSE deal-messaging stream hold servlet worker threads for its full connection lifetime, and does it scale past one API replica?",
+      "why_it_matters": "SSE done wrong (blocking request threads for the connection's whole life) caps concurrent open chats at the Tomcat thread count; and a naive multi-instance deploy can silently drop messages.",
+      "answer": "Uses Spring MVC's async SseEmitter (Servlet 3 async dispatch), not a thread held for the full 30-minute connection -- so it is not a naive thread-per-connection design. However, DealMessageStreamRegistry is explicitly an in-memory, single-JVM ConcurrentHashMap/CopyOnWriteArrayList fan-out with no shared pub/sub backing (confirmed: no Redis Pub/Sub or DB LISTEN/NOTIFY code anywhere in the class). The class's own header comment documents this as a deliberate single-replica MVP scope call with a known consequence: if the API ever runs more than one replica, a message sent while the counterparty is connected to a different instance is silently dropped until their next reconnect.",
+      "evidence": "influora-api/src/main/java/com/influora/service/DealMessageStreamRegistry.java (ConcurrentHashMap-based emitter map, CopyOnWriteArrayList, no pub/sub import); web/DealController.java:141-153 (SseEmitter with EMITTER_TIMEOUT_MS, async).",
+      "evidence_score": 2,
+      "confidence": 65,
+      "remaining_uncertainty": "Only relevant if/when the deployment scales to more than one influora-api replica; current single-replica Hostinger deploy (per project memory) means this is not an active production bug today."
+    },
+    {
+      "question": "Are large or unbounded findAll() queries a memory/latency risk anywhere in the request or job path?",
+      "why_it_matters": "An unpaginated findAll() over a growing table degrades linearly with data size and can eventually OOM or produce multi-second responses with no warning until the table crosses some threshold.",
+      "answer": "Most service-layer findAll() calls found are Specification+PageRequest paginated (bounded), including the 5,000-row-capped discovery scan discussed above. Two background jobs (PlatformStatsAggregationJob, ScoreCalculationJob) do call bare, unpaginated .findAll() -- acceptable for a scheduled batch job today at current data volume, but worth a page-based rewrite before those tables grow large, since a batch job's cost is invisible until it starts blowing its own execution-window SLA.",
+      "evidence": "grep -rn '\\.findAll(' across influora-api/src/main/java -- 30 call sites; job/PlatformStatsAggregationJob.java and job/ScoreCalculationJob.java use bare findAll() (no Pageable/Specification argument) vs. the majority of service-layer call sites which pass a Specification + PageRequest.",
+      "evidence_score": 2,
+      "confidence": 60,
+      "remaining_uncertainty": "Did not check current row counts for the tables these two jobs scan, so the practical urgency (is this 500 rows or 500,000?) is unknown from source alone."
+    }
+  ],
+  "findings": [
+    {
+      "id": "PERF-01",
+      "title": "Zero route-level code splitting: entire SPA ships as one 3.37MB/897KB-gzip JS bundle",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 88,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "dist/assets/index-VeUi4oUB.js measured at 3,373,529 bytes raw / 897,208 bytes gzip via `gzip -c | wc -c`; dist/index.html contains exactly one <script type=\"module\"> tag pointing at that file and zero <link modulepreload> entries for route chunks. src/App.tsx imports all ~90 routed page components (lines 11-91) statically at module top level and none of the <Route element={...}> usages (lines 203-895) wrap a lazy()-loaded component. grep -rn 'React.lazy(|= lazy(' across the whole src tree returns only 4 hits, all inside src/pages/dev-motion-skills.tsx and src/pages/meera-for-creators.tsx, gating 3D/canvas sub-widgets, not routes.",
+      "location": "src/App.tsx:11-91 (imports), src/App.tsx:203-895 (Routes); build output dist/assets/index-VeUi4oUB.js",
+      "impact": "Every first-time visitor -- including on the public unauthenticated landing/blog/portfolio pages, which are the ones most likely to be on a slow mobile connection or hit by search-engine crawlers -- downloads and parses the entire brand dashboard, creator dashboard, and admin console JS before the app can render anything, adding hundreds of ms to multiple seconds of avoidable time-to-interactive depending on device/network.",
+      "recommended_fix": "Wrap each top-level route element in React.lazy()+Suspense (or use react-router's lazy loading), grouped by area (brand/*, creator/*, admin/*, public/marketing) so a visitor to the public landing page never downloads the admin console or brand dashboard bundle.",
+      "verification_required": "After splitting, re-run `npx vite build` and confirm dist/assets shows multiple route-scoped chunks with the public/landing entry chunk meaningfully smaller than 897KB gzip; measure Lighthouse TTI on the landing page before/after."
+    },
+    {
+      "id": "PERF-02",
+      "title": "N+1 queries in PortfolioService, reachable from the public unauthenticated portfolio page",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "PortfolioController.java:40-41 (`@GetMapping(\"/portfolio/{username}\")`, no auth annotation) calls into PortfolioService.assemble() (line ~769) which calls computeStats(completed, ...) (line 780); computeStats (line 896-908) calls countRepeatBrands(completed) then computeOnTimeRate(completed). countRepeatBrands (946-952) does `completed.stream().map(Collaboration::getCampaignId).map(id -> campaignRepository.findById(id).orElse(null))` -- one SELECT per collaboration instead of one `campaignRepository.findAllById(...)`. computeOnTimeRate (920-925) calls isCollaborationOnTime(collaboration) per item, which itself calls `deliverableRepository.findByCollaborationIdOrderBySlotIndexAsc(collaboration.getId())` (928-930) -- another one-query-per-collaboration pattern.",
+      "location": "influora-api/src/main/java/com/influora/service/portfolio/PortfolioService.java:920-934 (computeOnTimeRate/isCollaborationOnTime), :946-952 (countRepeatBrands)",
+      "impact": "Every view of a creator's public portfolio page issues roughly 2xN extra round-trip SELECT statements, where N is that creator's completed-collaboration count. This is on a public, SEO-indexable, sharable page with no auth gate and no caching layer in front of it, so it scales with both organic traffic and creator tenure (more history = more collaborations = more queries per view).",
+      "recommended_fix": "Batch both loops: fetch all deliverables for the full set of collaboration ids with one `findByCollaborationIdIn(ids)` call and group in memory before computing on-time rate; fetch all campaigns with one `campaignRepository.findAllById(campaignIds)` before grouping by workspace in countRepeatBrands (mirrors the batching pattern CreatorDiscoveryService already uses elsewhere, e.g. findByCreatorProfileIdIn).",
+      "verification_required": "Add a Hibernate statistics assertion or a MockRestServiceServer/SQL-log-based test asserting a fixed, N-independent query count for GET /portfolio/{username} against a fixture creator with e.g. 10 completed collaborations."
+    },
+    {
+      "id": "PERF-03",
+      "title": "Production compose file omits SPRING_DATA_REDIS_HOST/PORT for influora-api; @Cacheable admin-dashboard cache likely fails on every call",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 72,
+      "status": "OBSERVED",
+      "provenance": "CONFIGURATION",
+      "evidence": "Spring Boot 3.3.5 (influora-api/pom.xml:8-11) binds Redis host via `spring.data.redis.host` / env `SPRING_DATA_REDIS_HOST`, defaulting to `localhost`. deploy/hostinger/docker-compose.hostinger.yml's influora-api service environment block (grepped in full) sets no SPRING_DATA_REDIS_HOST/PORT despite the file also defining a separate `redis` container reachable only at hostname `redis`. The sibling deploy/hostinger/docker-compose.test.yml:88-89 explicitly sets `SPRING_DATA_REDIS_HOST: redis` with the comment 'Point Spring at the redis container (default is localhost -> Connection refused)'. Neither application.yml nor application-prod.yml sets any spring.data.redis.* property either (grepped, zero matches). AdminDashboardStatsCache.pulseStats() is `@Cacheable(cacheNames = RedisCacheConfig.ADMIN_PULSE_CACHE, ...)` and is called from AdminDashboardService.java:103 (`return statsCache.pulseStats();`), which backs the admin CEO-pulse dashboard. No CacheErrorHandler bean exists anywhere (grepped), so a connection failure is not swallowed by Spring's cache abstraction -- it propagates to GlobalExceptionHandler's generic Exception handler (line 202) as a 500.",
+      "location": "deploy/hostinger/docker-compose.hostinger.yml (influora-api service, environment block); influora-api/src/main/java/com/influora/service/admin/AdminDashboardStatsCache.java:71 (@Cacheable); AdminDashboardService.java:103",
+      "impact": "If reproduced on the live box, every load of the admin CEO-pulse dashboard (AdminLayout's auto-refresh) would 500 in production rather than degrading gracefully, since the whole point of the cache annotation was to avoid re-running the underlying campaign/escrow/support/user aggregate queries on every poll -- instead it may prevent the endpoint from working at all.",
+      "recommended_fix": "Add SPRING_DATA_REDIS_HOST: redis (and SPRING_DATA_REDIS_PORT if non-default) to the influora-api service block in docker-compose.hostinger.yml, matching docker-compose.test.yml; additionally add a CacheErrorHandler that logs and falls through to the uncached method on any Redis failure, so a future Redis outage degrades performance instead of availability.",
+      "verification_required": "This must be verified directly on the live Hostinger VPS (docker inspect the running influora-api container's env, or hit GET the admin pulse endpoint and check for a 500) since an untracked host-level .env could theoretically supply the missing var outside this repo's tracked files -- flagged here as static/config evidence only, not runtime-confirmed."
+    },
+    {
+      "id": "PERF-04",
+      "title": "CI Redis env-var name is Spring Boot 2.x syntax and silently no-ops on Boot 3.3.5, masking the exact production gap in PERF-03",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 68,
+      "status": "OBSERVED",
+      "provenance": "CONFIGURATION",
+      "evidence": ".github/workflows/backend-tests.yml:74-75 sets `SPRING_REDIS_HOST: 127.0.0.1` / `SPRING_REDIS_PORT: 6379`. In Spring Boot 3.x (confirmed 3.3.5 via pom.xml), the property was renamed to `spring.data.redis.host`/`port`; `spring.redis.*` is not bound to anything, so these two env vars have no effect on the running application. The tests still pass because a GitHub Actions service container exposes Redis on the runner's own `127.0.0.1`, which happens to match Spring Data Redis's own default host -- so CI is 'accidentally green' regardless of whether the env var binding works, and would not have caught the production docker-compose gap in PERF-03 even if it existed at the time these tests ran.",
+      "location": ".github/workflows/backend-tests.yml:74-75",
+      "impact": "This is the same class of issue flagged in project memory as 'CI gates passing vacuously' -- a config value that looks like it is wiring Redis for tests is actually a no-op, and the fact that tests still pass gives false confidence that Redis-backed caching is exercised and correct end-to-end in CI.",
+      "recommended_fix": "Rename to SPRING_DATA_REDIS_HOST/SPRING_DATA_REDIS_PORT in the workflow file; then temporarily point the CI Redis service at a non-default host/port to prove the property is actually being consumed (a real assertion the current setup cannot make).",
+      "verification_required": "Rerun the workflow after the rename with the CI Redis container's port intentionally shifted off 6379 (mapped to a different host port with the new env vars pointed at it) and confirm cache-dependent tests still pass -- proving the binding, rather than the coincidental default, is what's working."
+    },
+    {
+      "id": "PERF-05",
+      "title": "M-17 Redis facets cache built but never wired in -- creator-search still runs the original uncached 5,000-row scan on every request",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 85,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "CreatorDiscoveryFacetsCache.java's own class javadoc states it 'replaces a per-request, up-to-5,000-row in-memory scan that used to re-run on every single GET /creators/search call (CreatorDiscoveryService.buildAvailableFacets)'. A repo-wide grep for `CreatorDiscoveryFacetsCache` and `computeFacets(` outside that file's own definition returns only two hits, both inside RedisCacheConfig.java's doc comment (which documents the TTL but never calls it) -- CreatorDiscoveryService.java itself has zero references to the class. CreatorDiscoveryService.buildAvailableFacets() (lines 821-827) still directly calls `creatorProfileRepository.findAll(CreatorProfileSpecifications.discoverable(), PageRequest.of(0, 5_000, Sort.unsorted()))` -- the exact scan the cache class claims to have replaced.",
+      "location": "influora-api/src/main/java/com/influora/service/CreatorDiscoveryFacetsCache.java (unused class); influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java:821-827 (original uncached path, still live)",
+      "impact": "The 5-minute-TTL Redis cache this was built to provide (per M-17's own design intent) never engages; every GET /creators/search call that needs facet metadata still loads and iterates up to 5,000 CreatorProfile rows in Java on every request, the exact per-request cost the fix was written to eliminate.",
+      "recommended_fix": "Call `creatorDiscoveryFacetsCache.computeFacets()` from CreatorDiscoveryService.buildAvailableFacets() (inject the bean) instead of the inline findAll(), so the already-written and already-deployed cache actually takes effect.",
+      "verification_required": "After wiring it in, assert via a repository-call-count test or SQL log that a second GET /creators/search within the 5-minute TTL window does not re-query creator_profiles."
+    },
+    {
+      "id": "PERF-06",
+      "title": "Meta Graph API and Shopify OAuth RestClients have no connect/read timeout, unlike sibling integration clients that do",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 73,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "MetaGraphApiClient.restClient() (lines 64-77) builds `RestClient.builder().baseUrl(...).defaultHeader(...).build()` with no `.requestFactory(...)` call. MetaOAuthService.restClient() does `RestClient.builder().build()` with the same omission. ShopifyOAuthService:63, ShopifyOrderOwnershipVerifier:78, and ShopifyWebhookRegistrar:75 all do the same bare `RestClient.builder().build()`. By contrast, NewsApiTopHeadlinesClient.java:50-60, TmdbUpcomingClient.java, and YouTubeMostPopularClient.java all explicitly construct a `SimpleClientHttpRequestFactory` with `setConnectTimeout(Duration.ofSeconds(5))`/`setReadTimeout(Duration.ofSeconds(15))` before building their RestClient, and BrandSafetyAiClient/MeeraVoiceAiClient set explicit HttpClient-level timeouts too.",
+      "location": "influora-api/src/main/java/com/influora/integration/meta/client/MetaGraphApiClient.java:71-77; integration/meta/oauth/MetaOAuthService.java (restClient(), ~line 138-141); integration/shopify/oauth/ShopifyOAuthService.java:63; integration/shopify/ShopifyOrderOwnershipVerifier.java:78; integration/shopify/ShopifyWebhookRegistrar.java:75",
+      "impact": "A slow or hung Meta Graph API or Shopify endpoint (both third-party services outside this team's control, and per project memory Meta's integration has an active history of instability) can hold the calling servlet thread indefinitely on these code paths, since the underlying JDK HttpClient has no configured connect/read timeout in this configuration. Enough concurrent hangs during a Meta-side incident could exhaust the Tomcat worker pool for the whole API, not just the Meta-dependent endpoints.",
+      "recommended_fix": "Add an explicit request factory with connect/read timeouts (mirroring NewsApiTopHeadlinesClient's pattern, e.g. 5s connect / 10-15s read) to MetaGraphApiClient, MetaOAuthService, ShopifyOAuthService, ShopifyOrderOwnershipVerifier, and ShopifyWebhookRegistrar's RestClient builders.",
+      "verification_required": "Point one of these clients at a deliberately slow local stub (e.g. a WireMock delay) in a test and assert the call fails/returns within the intended timeout window rather than hanging."
+    },
+    {
+      "id": "PERF-07",
+      "title": "~40+ @Async notification/deal methods share Spring Boot's unbounded default executor, the exact condition a sibling fix (OTP) was already written to avoid",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 78,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "OtpEmailExecutorConfig.java's own javadoc states the reason a dedicated bounded executor (core=2/max=8/queue=500/AbortPolicy) was built for OTP emails: the Boot default executor 'also carries NotificationListener and the creator sync jobs, and its auto-configured queue is effectively unbounded.' `grep -rn '^\\s*@Async\\b'` across influora-api/src/main/java finds bare (no named-executor) @Async on ~40 methods in service/notification/NotificationListener.java, 6 in service/DealService.java, and one each in job/CreatorCaptionSyncJob.java and job/MetricsPollingJob.java. None of these are paired with a dedicated @Bean Executor -- the only such bean in the codebase is OtpEmailExecutorConfig, scoped solely to OtpEmailDispatcher (the only `@Async(EXECUTOR)` call site with an explicit qualifier).",
+      "location": "influora-api/src/main/java/com/influora/service/notification/NotificationListener.java (bare @Async on ~40 methods); service/DealService.java (6 bare @Async methods); config/OtpEmailExecutorConfig.java (javadoc describing the risk, scoped to OTP only)",
+      "impact": "A burst of domain events (e.g. many campaign/deal notifications firing close together, or a spike in creator-sync jobs) queues on Spring Boot's auto-configured default task executor, whose queue capacity is effectively unbounded by default -- exactly the failure mode the team already diagnosed and fixed for OTP emails, but left unaddressed for every other async consumer sharing that pool.",
+      "recommended_fix": "Give NotificationListener and DealService's @Async methods (and the two job classes) a dedicated, explicitly-bounded ThreadPoolTaskExecutor with a sized queue and a defined rejection policy, following the OtpEmailExecutorConfig pattern already established in this codebase.",
+      "verification_required": "Load-test by publishing a burst of N notification events and observing queue depth / memory on the default executor versus a newly-bounded one; or, at minimum, add a @Bean TaskExecutor with explicit maxPoolSize/queueCapacity and confirm it is picked up (e.g. via a debug log of the executor's class/config at startup)."
+    },
+    {
+      "id": "PERF-08",
+      "title": "Hikari max-pool-size (10 dev / 20 prod default) is a 10x-narrower ceiling than Tomcat's implicit request-thread capacity",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 55,
+      "status": "OBSERVED",
+      "provenance": "CONFIGURATION",
+      "evidence": "application.yml:15-16 sets `spring.datasource.hikari.maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:10}`; application-prod.yml:29-37 raises the default to 20 with `minimum-idle: 5` and `connection-timeout: 30000` ms. application.yml's own comment block around the Tomcat upload-timeout setting (lines ~91-99) references 'a pool of 200' Tomcat worker threads as the assumed baseline for that connector.",
+      "location": "influora-api/src/main/resources/application.yml:15-16; application-prod.yml:29-37",
+      "impact": "Under a genuine concurrency spike approaching Tomcat's thread ceiling, requests needing a DB connection queue behind the Hikari pool for up to 30s before failing; since virtually every endpoint touches the DB, this is a shared, platform-wide bottleneck rather than isolated to one feature.",
+      "recommended_fix": "Size Hikari's maximum-pool-size against measured peak concurrent DB-bound requests rather than a flat default, or lower Tomcat's effective thread ceiling to match if 200 concurrent requests was never a real target; document the intended ratio explicitly.",
+      "verification_required": "Load test at increasing concurrency and watch Hikari's `connection-timeout` / `HikariPool-1 - Timeout` warnings in logs alongside p99 request latency to find the actual saturation point."
+    }
+  ],
+  "features": [
+    {
+      "name": "Route-level code splitting (frontend bundle)",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 3,
+      "confidence": 88,
+      "evidence": "dist/assets/index-VeUi4oUB.js is a single 3.37MB/897KB-gzip bundle; only 4 non-route lazy() calls exist in src.",
+      "user_type": "all visitors (public + brand + creator + admin)"
+    },
+    {
+      "name": "Admin CEO-pulse dashboard caching (Redis, @Cacheable)",
+      "status": "CONFIGURATION DEPENDENT",
+      "evidence_score": 3,
+      "confidence": 72,
+      "evidence": "Code correctly wires @Cacheable through AdminDashboardStatsCache -> AdminDashboardService.pulse(), but the production compose file never supplies SPRING_DATA_REDIS_HOST, so the underlying Redis connection is likely to fail against Spring Boot 3.3.5's localhost default inside the influora-api container.",
+      "user_type": "admin"
+    },
+    {
+      "name": "Creator-search facets caching (CreatorDiscoveryFacetsCache, M-17)",
+      "status": "DEAD CODE",
+      "evidence_score": 3,
+      "confidence": 85,
+      "evidence": "Class and @Cacheable annotation exist and are correctly written, but nothing in the codebase calls computeFacets(); the original uncached path it was meant to replace is still what runs.",
+      "user_type": "brand (creator discovery/search)"
+    },
+    {
+      "name": "Public creator portfolio page (GET /portfolio/{username})",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 80,
+      "evidence": "Functionally correct (renders real stats), but computeOnTimeRate/countRepeatBrands issue one extra query per completed collaboration each -- correctness is not in question, only the O(N) query-count scaling.",
+      "user_type": "public/unauthenticated visitor"
+    },
+    {
+      "name": "OTP email async dispatch",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 70,
+      "evidence": "OtpEmailExecutorConfig provides a correctly-bounded dedicated executor (core 2/max 8/queue 500/AbortPolicy) -- the one part of the async-notification surface that was hardened; not runtime-load-tested in this audit.",
+      "user_type": "brand + creator (signup/login OTP)"
+    },
+    {
+      "name": "Notification/deal-event async dispatch",
+      "status": "CONFIGURATION DEPENDENT",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "~40+ bare @Async methods across NotificationListener/DealService share Spring Boot's default, effectively-unbounded task executor -- the same condition documented as risky in OtpEmailExecutorConfig's own javadoc, just not yet remediated for these consumers.",
+      "user_type": "brand + creator (in-app/email notifications, deal message side-effects)"
+    },
+    {
+      "name": "Deal-room SSE live messaging",
+      "status": "CONFIGURATION DEPENDENT",
+      "evidence_score": 2,
+      "confidence": 65,
+      "evidence": "Uses async SseEmitter (not thread-blocking), but is single-instance/in-memory by explicit design; correct and functional on the current single-replica deploy, would silently drop cross-instance messages if ever scaled horizontally without the documented pub/sub upgrade.",
+      "user_type": "brand + creator (deal-room chat)"
+    },
+    {
+      "name": "Meta Graph API / Shopify outbound HTTP calls",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 73,
+      "evidence": "Functionally present and used for analytics/OAuth flows, but built without connect/read timeouts unlike sibling clients in the same codebase, so resilience under a slow upstream is unverified and, on current code, likely absent.",
+      "user_type": "creator (Meta connect/analytics), brand (Shopify connect)"
+    }
+  ],
+  "area": {
+    "name": "Performance / Latency",
+    "status": "NEEDS WORK",
+    "evidence_level": 3,
+    "confidence": 74,
+    "main_evidence": "Direct build-artifact measurement (single 897KB-gzip bundle, zero route splitting) plus multiple independently-confirmed backend patterns: two N+1 loops on a public endpoint, a dead perf-fix cache, a production Redis config gap mirrored by a masking CI bug, missing HTTP timeouts on two third-party integrations, and an unbounded default async executor shared by dozens of notification methods.",
+    "main_uncertainty": "The Redis production-config finding (PERF-03) and the Hikari/Tomcat ratio (PERF-08) are strong from static evidence but not runtime-reproduced against the live Hostinger box in this read-only audit; real-world severity of several findings depends on production traffic/data volumes not visible from source alone.",
+    "limitations": "Read-only, source/config/build-artifact audit of the checked-out RC only (no live traffic captured, no APM/query-log access, no load test run); dist/ was reused from a build already produced by another agent rather than freshly built by this audit, though its contents (route imports, bundle composition) were independently cross-checked against source."
+  },
+  "extra": "Command evidence: `gzip -c dist/assets/index-VeUi4oUB.js | wc -c` = 897208; `grep -c \"path=\" src/App.tsx` = 92; `grep -rn 'React.lazy(|= lazy(' src` = 4 non-route hits; `grep -rn '@EntityGraph' influora-api/src/main/java` = 0 hits (no @EntityGraph usage anywhere in the codebase, consistent with the manual-batching-or-N+1 pattern seen throughout); `grep -rn '^\\s*@Async\\b' influora-api/src/main/java` = ~48 hits, only 1 (OtpEmailDispatcher) qualified with a named executor. Hikari pool: dev default 10, prod default 20 (both overridable via env). No spring.data.redis.* key found in application.yml/application-prod.yml; no SPRING_DATA_REDIS_HOST/PORT found in deploy/hostinger/docker-compose.hostinger.yml's influora-api service (grepped in full)."
+}

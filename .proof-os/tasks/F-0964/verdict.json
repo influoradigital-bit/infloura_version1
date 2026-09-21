@@ -1,0 +1,20 @@
+{
+  "verdict": "believed",
+  "oracle": "vitest",
+  "isolation": "fresh-context",
+  "done_when": "PublicCreatorService builds verified_metrics only from the creator's newest META_API creator_metrics row (via findByCreatorProfileIdAndDataSourceOrderByTimeDesc); a newer CREATOR_REPORTED row never appears there, and with no Meta row followers/reach_30d/engagement_rate/verified_at are all omitted rather than filled from CreatorProfile's cross-platform totals; the public page (creator-verified-metrics.tsx) renders a missing follower count as 'Not available yet'; proved by `mvn -o test -Dtest=PublicCreatorService*Test` and `npx vitest run src/pages/creator-verified-metrics*` exiting 0 with tests that fail on the pre-fix code, reviewed by kabir in a fresh context",
+  "evidence": {
+    "oracle": "vitest",
+    "command": "bash .proof-os/gates/f0964-public-profile-verified-only.sh",
+    "result": "VERDICT: proved; PublicCreator tests + 4 page tests pass",
+    "where": ".proof-os/gates/f0964-public-profile-verified-only.sh:1"
+  },
+  "not_checked": [
+    "live /c/:username/verified render in a browser",
+    "real Jackson serialisation of an all-null VerifiedMetrics (read from annotations)",
+    "engagement_rate formatting to 4 dp (LOW)",
+    "'30-Day Reach' is fed a per-post average (outside this page's done_when)",
+    "F-0966 Meta sync writing followers=0"
+  ],
+  "skipped": []
+}

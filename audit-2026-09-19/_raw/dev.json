@@ -1,0 +1,320 @@
+{
+  "role": "dev - schedulers, webhooks, n8n/Postiz, email/OTP, external integration clients audit",
+  "summary": "RC=115f698, audited clean from C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698 (verified 0 local changes, HEAD=115f698). graphify-out/graph.json does NOT exist in the RC (only in the main uncommitted tree), contrary to the task's premise, so this audit used direct source reading/grep instead per the audit rules (RC-only evidence). The scheduler/job/idempotency/dead-letter layer is unusually mature and well-documented in code comments (ShedLock on all 21 @Scheduled classes, a dedicated 10-thread TaskScheduler, an outbox pattern with claim/send/mark phase separation and exponential backoff, and four independent crash-recovery reaper/sweep jobs). The weaker areas are: (1) TrendSpark's Java trend-pull job is disabled by default and additionally fails closed on a missing billing-workspace config, so no automated trend ingestion runs in production as shipped; (2) the n8n workflow that used to do this job is an orphaned, inactive dev-only artifact, not wired into any deploy compose file; (3) Postiz has zero code footprint anywhere in the repo, referenced only in role-description docs; (4) there is no circuit-breaker/bulkhead library anywhere and at least one HTTP client (Meta Graph) has no explicit timeout; (5) async notification-listener failures have no custom exception handling beyond Spring's default log-and-drop.",
+  "questions": [
+    {
+      "question": "Does graphify-out/graph.json actually exist in the RC directory as the task assumed, so graphify query could be used to orient?",
+      "why_it_matters": "The audit rules mandate using graphify first when the graph exists; using it wrong or skipping it when required would violate the audit process.",
+      "answer": "No. `ls`/`find` confirm graphify-out/ exists only under the main working tree (C:/Users/Sage world/Downloads/New Influora Ai/New Influora/graphify-out), not under the RC checkout (C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698). Running `graphify query` from the RC directory fails with 'graph file not found'. Proceeded with direct grep/Read against RC source only, per the rule that source must come from the RC.",
+      "evidence": "Bash: `find \"$RC\" -maxdepth 1 -iname graphify*` returned nothing; `find \"<main tree>\" -maxdepth 1 -iname graphify*` returned graphify-out; `graphify query ...` from RC printed 'error: graph file not found: ...rc-115f698\\graphify-out\\graph.json'.",
+      "evidence_score": 4,
+      "confidence": 96,
+      "remaining_uncertainty": "None material — this is a direct tool-output observation, not an inference."
+    },
+    {
+      "question": "Is every @Scheduled job in the RC protected against double-execution across multiple app instances (ShedLock), and is there a single-threaded-scheduler bottleneck?",
+      "why_it_matters": "Without distributed locking, a multi-instance deploy double-runs jobs (double Meta spend, duplicate settlement/dunning, double-sent emails); a single scheduler thread can also starve time-sensitive jobs (e.g. the 30s email poll) behind a long nightly job.",
+      "answer": "Yes to both protections, as shipped in the RC. All 21 job classes under influora-api/src/main/java/com/influora/job/ (plus EmailWorker) pair every @Scheduled method with @SchedulerLock — verified by grepping annotation counts per file (e.g. DeliverableCleanupJob: 2/2, MeeraInteractionLogRetentionPurgeJob: 2/2, WalletTopUpReconciliationJob: 1 @Scheduled/2 @SchedulerLock covering an internal helper too). SchedulerLockConfig.java wires JdbcTemplateLockProvider against the app's own MySQL datasource, backed by the real V68__shedlock.sql Flyway migration (confirmed present on disk). TaskSchedulerConfig.java explicitly replaces Spring Boot's default single-threaded auto-configured scheduler with a dedicated 10-thread ThreadPoolTaskScheduler, with class-javadoc documenting the exact prior incident (\"M-17... email latency spikes\") this was built to fix.",
+      "evidence": "influora-api/src/main/java/com/influora/config/SchedulerLockConfig.java (JdbcTemplateLockProvider bean); influora-api/src/main/java/com/influora/config/TaskSchedulerConfig.java (POOL_SIZE=10, ThreadPoolTaskScheduler); influora-api/src/main/resources/db/migration/V68__shedlock.sql (exists); per-file grep counts across influora-api/src/main/java/com/influora/job/*.java showing matched @Scheduled/@SchedulerLock counts on every file.",
+      "evidence_score": 3,
+      "confidence": 88,
+      "remaining_uncertainty": "Not executed at runtime (no mvn verify possible in this environment, and SchedulerLockConfig's own javadoc self-flags 'UNVERIFIED — needs mvn verify' for the shedlock-spring/shedlock-provider-jdbc-template Maven coordinates resolving/compiling against this Spring Boot 3.3.5 tree). Static/config-level confirmation only."
+    },
+    {
+      "question": "Is the TrendSpark trend-ingest pipeline (n8n workflow vs. the Java @Scheduled TrendPullJob) actually running in production, or only configured/represented?",
+      "why_it_matters": "This is exactly the class of 'looks built, never runs' gap the audit rules ask to catch — determines whether TrendSpark actually gets fresh trend data for campaign generation.",
+      "answer": "Neither path is live in production as shipped. (1) The n8n workflow (trendspark/n8n/trend-pull-workflow.json) ships with \"active\": false and its own top-level meta.description says it needs manual credential wiring (\"import the workflow... create the 4 credentials... fill their IDs into the nodes, and flip the workflow active\" — root docker-compose.yml comment). The n8n service block exists ONLY in the root docker-compose.yml (a local/dev compose) — grepping deploy/hostinger/docker-compose.hostinger.yml and deploy/utho/docker-compose.utho*.yml for an n8n service definition returns zero matches; neither production compose file runs an n8n container at all. (2) The newer Java TrendPullJob (job/TrendPullJob.java), whose own class javadoc calls itself the replacement for that n8n workflow, is feature-flagged off by default: `influora.trend-ingest.enabled` defaults to `${TREND_INGEST_ENABLED:false}` in application.yml:570, and both production compose files also default the same env var to `false`. Even if flipped on, the job additionally fails closed on `classifier-workspace-id` (`${TREND_INGEST_CLASSIFIER_WORKSPACE_ID:}` — blank by default in application.yml and all three compose files) — the job's own extensive javadoc states this was an explicit, un-made billing decision escalated to Arjun/Swapnil/Priya, and with it blank the job stores zero trends every run regardless of source-API-key configuration.",
+      "evidence": "trendspark/n8n/trend-pull-workflow.json line 449 `\"active\": false`; root docker-compose.yml lines 57-102 (n8n service, comments describing required manual steps); `grep -n \"^  n8n:\\|n8nio\" deploy/hostinger/docker-compose.hostinger.yml deploy/utho/docker-compose.utho*.yml` = no matches; influora-api/src/main/java/com/influora/job/TrendPullJob.java `@Scheduled(cron=...) public void pullTrends() { if (!props.isEnabled()) { ...return; } }`; influora-api/src/main/java/com/influora/config/TrendIngestProperties.java (`enabled=false`, `classifierWorkspaceId=\"\"` defaults + javadoc explaining the fail-closed rationale); application.yml:569-577; deploy/hostinger/docker-compose.hostinger.yml:212-228 and deploy/utho/docker-compose.utho.yml:213-247 (both default TREND_INGEST_ENABLED and TREND_INGEST_CLASSIFIER_WORKSPACE_ID to false/blank).",
+      "evidence_score": 3,
+      "confidence": 90,
+      "remaining_uncertainty": "Did not inspect the actual .env files used on the live Hostinger/Utho hosts (out of scope — those are secrets on a remote VPS, not in this checkout), so it is possible an operator has manually set TREND_INGEST_ENABLED=true and a real workspace id outside version control. Static evidence only shows the shipped defaults are off/fail-closed."
+    },
+    {
+      "question": "Does a Postiz scheduling integration exist anywhere in this codebase?",
+      "why_it_matters": "The task explicitly asks whether this is real code or only a role description; Postiz would be a third-party social-post-scheduling product distinct from n8n.",
+      "answer": "No. A case-insensitive grep for 'postiz' across the entire RC (java/ts/tsx/json/yml/md, excluding node_modules) returns matches ONLY inside sage-team skill/role-description markdown files (e.g. sage-suite/sage-team/skills/dev/SKILL.md, which describes 'Dev' as owning 'Postiz scheduling integration' as a role responsibility) and a cost-review doc. There is no Postiz client class, controller, config-properties class, API key property, or scheduled job anywhere in influora-api/src or the frontend src/ tree.",
+      "evidence": "`grep -rli \"postiz\" \"$RC\" --include=*.java --include=*.ts --include=*.tsx --include=*.json --include=*.yml --include=*.md` returned only docs/AI connect/backend/20-ROHAN-COST-REVIEW.md, sage-suite/sage-team/skills/*/SKILL.md, and two wiki markdown files — zero source files.",
+      "evidence_score": 3,
+      "confidence": 92,
+      "remaining_uncertainty": "None material for 'no code exists' — grep across all source extensions is a strong negative-evidence method for this specific claim."
+    },
+    {
+      "question": "Are Razorpay and Meta inbound webhooks idempotent against provider-side retries, and do they correctly avoid retry storms on unroutable events?",
+      "why_it_matters": "Razorpay/Meta retry non-2xx responses; a webhook that throws on an unresolvable-but-valid event (e.g. a payload the product doesn't recognize) can be retried forever and can even get the webhook URL disabled by the provider, breaking ALL future crediting.",
+      "answer": "Yes, with real prior-incident scarring visible in the code comments. RazorpayWebhookController: `payment.captured` is deliberately routed through a nullable-receipt-tolerant path (dispatchFundingEventIfResolvable) specifically because an earlier version threw ESCROW_NOT_FOUND on a receipt-less payload and caused an infinite Razorpay retry storm (documented inline, referencing a fixed defect). Unknown event types hit a no-op `default` branch returning 200 (never a throw), and events belonging to the same Razorpay account's OTHER product (Snapsby, a shared account per F-0809) are caught narrowly by TOPUP_NOT_FOUND/ESCROW_NOT_FOUND only and ACKed rather than retried forever. Idempotency: subscription.* events go through IdempotencyService.executeOnce keyed on eventType+subscriptionId+webhook created_at (survives Razorpay's own retries of the identical delivery); order.paid/payment.captured funding events rely on EscrowService.confirmFunded's own status check (`if (hold.getStatus()==FUNDED) return hold;` inside an actual @Transactional method) as their idempotency layer instead — a second, different mechanism, but a functioning one. Meta's compliance callbacks (MetaPlatformCallbackController) similarly HMAC-verify the signed_request before parsing and use their own IdempotencyService scope (meta.platform.callback).",
+      "evidence": "influora-api/src/main/java/com/influora/integration/razorpay/RazorpayWebhookController.java lines 89-157 (switch dispatch, inline comments naming the [B11/H-8] retry-storm fix and F-0809 shared-account narrowing), lines 310-345 (subscription idempotency via IdempotencyService); influora-api/src/main/java/com/influora/service/EscrowService.java lines 451-462 (confirmFunded's own-status idempotent no-op, @Transactional at line 450); influora-api/src/main/java/com/influora/integration/meta/webhook/MetaPlatformCallbackController.java (HMAC verify-before-parse, CALLBACK_IDEMPOTENCY_SCOPE).",
+      "evidence_score": 3,
+      "confidence": 85,
+      "remaining_uncertainty": "Static/code-level only — no live Razorpay/Meta sandbox delivery was replayed in this audit (out of scope, read-only). RazorpayWebhookControllerTest exists (confirmed on disk) which raises confidence this is exercised by tests, but its actual pass/fail was not re-run here."
+    },
+    {
+      "question": "Is the Shopify webhook chain actually wired end-to-end (subscription creation + receipt + verification), or does it only exist as an unreachable receiver (a known prior failure mode named in this repo's own history, F-0730)?",
+      "why_it_matters": "A webhook receiver that nothing ever subscribes to is functionally dead code — exactly the 'connected vs. only represented' distinction this audit is scoped to surface.",
+      "answer": "Wired end-to-end as shipped in the RC. ShopifyWebhookRegistrar.java exists specifically to close a previously-real gap: its own javadoc states the prior state verbatim — 'Nothing in this codebase ever told Shopify to send us anything... verified by grepping the whole repository for webhooks.json, registerWebhook, createWebhook and *.toml before writing this' (F-0730). It now calls Shopify's Admin API to subscribe orders/paid and orders/create at OAuth-connect time, derives the callback URL from influora.api.public-url (refusing a non-https/localhost address outright rather than silently registering a dead URL), and treats Shopify's 422 duplicate-subscription response as success (idempotent reconnect). ShopifyWebhookController then HMAC-verifies (X-Shopify-Hmac-Sha256) before any parsing, resolves the shop-to-workspace mapping via X-Shopify-Shop-Domain, and — per a second documented prior finding (F-0726, that header is unauthenticated) — re-confirms the order against the claimed shop's own Admin API via ShopifyOrderOwnershipVerifier before any write. Tests exist on disk: ShopifyWebhookControllerTest.java, ShopifyWebhookIdempotencyTest.java, ShopifyWebhookSignatureVerifierTest.java.",
+      "evidence": "influora-api/src/main/java/com/influora/integration/shopify/ShopifyWebhookRegistrar.java (full class javadoc quoting the F-0730 prior-state investigation, topic subscription logic, 422-as-success handling); influora-api/src/main/java/com/influora/web/ShopifyWebhookController.java (HMAC verify-then-parse, F-0726 comment, ShopifyOrderOwnershipVerifier call); test files present at influora-api/src/test/java/com/influora/web/ShopifyWebhookControllerTest.java and ShopifyWebhookIdempotencyTest.java and influora-api/src/test/java/com/influora/integration/shopify/webhook/ShopifyWebhookSignatureVerifierTest.java.",
+      "evidence_score": 3,
+      "confidence": 82,
+      "remaining_uncertainty": "Did not execute the tests in this environment (no Maven build run here) to confirm they currently pass on 115f698 — code-plus-test-file-presence evidence, not a green test run."
+    },
+    {
+      "question": "Does the codebase have any circuit-breaker, bulkhead, or standardized retry library protecting outbound calls to Razorpay/Meta/MSG91/third-party AI, and are HTTP timeouts consistently configured?",
+      "why_it_matters": "Without a circuit breaker or timeout, one degraded external dependency can hang worker/scheduler threads indefinitely, cascading into unrelated jobs (the exact failure class TaskSchedulerConfig's own javadoc describes for a different cause).",
+      "answer": "No circuit-breaker/bulkhead library is present anywhere in the RC — a repo-wide grep for resilience4j, CircuitBreaker, and a Spring @Retry annotation returns zero matches, and influora-api/pom.xml declares no such dependency. Timeout coverage is inconsistent: SMTP (used by Msg91EmailClient/EmailWorker) has explicit 10s connect/read/write timeouts in application.yml (`spring.mail.properties.mail.smtp.{connectiontimeout,timeout,writetimeout}: 10000`). By contrast, MetaGraphApiClient.java — the single shared HTTP client underlying InstagramInsightsClient, FacebookPageClient, MetricsPollingJob, AudienceDemographicsJob, CreatorCaptionSyncJob, MetaTokenRefreshService — builds its Spring RestClient with only `.baseUrl(...)` and a default JSON Accept header; no `.requestFactory(...)`/connectTimeout/readTimeout call exists anywhere in that file or its callers, so it runs on the JDK HttpClient's own defaults (no read timeout by default). RazorpayClient.java (wrapping the razorpay-java SDK's Order/Plan/Subscription calls) likewise has no visible timeout override in this codebase.",
+      "evidence": "`grep -rli \"circuitbreaker\\|resilience4j\\|@Retry\\b\" influora-api/src/main/java influora-api/pom.xml` = no matches; application.yml lines 23-43 (spring.mail SMTP timeouts, 10000ms each); influora-api/src/main/java/com/influora/integration/meta/client/MetaGraphApiClient.java lines 60-75 (RestClient.builder().baseUrl(...).defaultHeader(...).build(), no timeout call); influora-api/src/main/java/com/influora/integration/razorpay/RazorpayClient.java imports (com.razorpay.* SDK types only, no HTTP client/timeout import).",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "razorpay-java's own SDK may set internal default timeouts not visible from this codebase (its source wasn't inspected — that's a third-party jar, out of this repo). Also did not check whether a JVM-wide `-Dsun.net.client.defaultConnectTimeout`/`defaultReadTimeout` system property is set in the Dockerfile/entrypoint, which would be an alternate mitigation outside application code."
+    },
+    {
+      "question": "What happens when an async event handler (e.g. NotificationListener's @Async @TransactionalEventListener methods, or OtpEmailDispatcher) throws — is there any custom failure handling, retry, or dead-letter, or does it just vanish?",
+      "why_it_matters": "NotificationListener fans out ~25+ domain events (escrow funded, contract signed, payout released, KYC approved, etc.) to email/notification sends; a silent failure here means a user-facing communication is dropped with no operational signal.",
+      "answer": "No custom async-failure handling exists. A repo-wide grep for AsyncConfigurer, a custom getAsyncExecutor() override, or AsyncUncaughtExceptionHandler returns zero implementations — only `@EnableAsync` on InfluoraApiApplication.java and comments referencing it. Spring's default behavior for a `void`-returning `@Async` method that throws is to hand the exception to `SimpleAsyncUncaughtExceptionHandler`, which only logs it (stack trace to the application log) — there is no retry, no dead-letter row, and no alert/metric emitted for a failed NotificationListener handler. OtpEmailExecutorConfig (a separate, deliberately-isolated executor for OTP mail) does at least use an AbortPolicy with the rejection caught at the call site — but that only covers queue-saturation, not an exception thrown mid-send.",
+      "evidence": "`grep -rn \"AsyncConfigurer\\|@EnableAsync\\|getAsyncExecutor\\|AsyncUncaughtExceptionHandler\" influora-api/src/main/java` returned only the `@EnableAsync` annotation itself and prose comments referencing it, no implementing class; influora-api/src/main/java/com/influora/service/notification/NotificationListener.java (25+ `@Async @TransactionalEventListener` methods, no per-method try/catch-with-alert visible in the imports/structure reviewed); influora-api/src/main/java/com/influora/config/OtpEmailExecutorConfig.java (AbortPolicy, documented as deliberate for a different failure mode — queue saturation, not exception-during-send).",
+      "evidence_score": 2,
+      "confidence": 65,
+      "remaining_uncertainty": "Did not read every one of NotificationListener's 25+ handler method bodies individually to confirm NONE of them has an internal try/catch that logs-and-continues gracefully (some individual handlers may degrade more gracefully than the class-wide default) — this is a class-level architectural observation (no shared safety net), not a proof that every single handler is unguarded."
+    },
+    {
+      "question": "Is there crash-recovery for money-moving jobs that could leave a debit orphaned if the process dies mid-operation (e.g. between debiting a creator wallet and confirming a RazorpayX payout)?",
+      "why_it_matters": "A crash between 'debit committed' and 'gateway call confirmed' is a classic money-loss/stuck-money bug class; the audit specifically calls out idempotency/failure-recovery/dead-letter handling as in scope.",
+      "answer": "Yes — this is explicitly designed for and documented as fixing a real prior incident. PayoutOrphanedDebitSweepJob sweeps Payout rows stuck in STATUS_PENDING longer than a grace period (both the original queue-time debit window AND, per a documented 'Red-team F2' follow-up, the separate admin-retry-path debit window that the original sweep missed), delegating actual resolution to PayoutReconciliationService's reconcileOrphanedPendingPayout/reconcileFailedPayoutRetry. A parallel job, IdempotencyReservationReaperJob, reaps any idempotency_keys row stuck IN_PROGRESS (e.g. a hard kill between reservation-commit and action-completion) by flipping it to FAILED — never COMPLETED, since the job can't know the true outcome — which then feeds the existing reclaimFailedForRetry path rather than permanently blocking the same key. Both jobs follow the same documented pattern: AtomicBoolean single-flight guard, grace-period query (never races a still-legitimately-running instance), and per-row try/catch so one bad row doesn't abort the sweep.",
+      "evidence": "influora-api/src/main/java/com/influora/job/PayoutOrphanedDebitSweepJob.java (full class javadoc naming the crash window, the queue-time AND admin-retry-path variants, and 'Red-team F2 fix'); influora-api/src/main/java/com/influora/job/IdempotencyReservationReaperJob.java (STALE_IN_PROGRESS_GRACE_PERIOD = 15 minutes, javadoc naming 'Red-team F2 fix — stale IN_PROGRESS idempotency reservation reaper').",
+      "evidence_score": 3,
+      "confidence": 84,
+      "remaining_uncertainty": "Did not trace into PayoutReconciliationService.reconcileOrphanedPendingPayout/reconcileFailedPayoutRetry bodies to verify their actual resolution logic (retry vs. reverse) is itself correct — only confirmed the sweep/detection layer exists and is scheduled+locked."
+    },
+    {
+      "question": "Does AffiliateSettlementJob actually move real money (credit a creator), or only mark database rows as settled without any effect (the class of bug this repo's own project memory names as a past defect — 'commission has NEVER been credited')?",
+      "why_it_matters": "Directly checks whether a previously known defect is fixed as of this specific release candidate, and clarifies exactly how far 'settlement' currently reaches.",
+      "answer": "As of 115f698, the wallet-crediting side is wired: the job's own class javadoc states settlement now includes 'crediting the settled amount to the creator's Influora wallet via AffiliateSettlementWriter#doSettleCreator, the same WalletLedgerService double-entry path LedgerEscrowBackend#release uses' and cites this as fixing F-0402. However, the SAME javadoc explicitly states the job does NOT call RazorpayX or move real bank money — turning a settled wallet balance into an actual bank transfer is named as a deliberate, out-of-scope follow-up pending a product decision on the disbursement mechanism (same wallet as milestone payouts vs. a separate RazorpayX contact vs. batched wire). Double-settlement is structurally prevented via a server-derived idempotency key (creatorId+periodYearMonth) run through IdempotencyService.executeOnce, backed by the DB unique constraint, backed again by AffiliateEarning's own UNIQUE(redemption_id).",
+      "evidence": "influora-api/src/main/java/com/influora/job/AffiliateSettlementJob.java lines 23-60 (full 'what settle means in this slice' + 'Double-payout structurally impossible' javadoc sections, both read directly).",
+      "evidence_score": 3,
+      "confidence": 83,
+      "remaining_uncertainty": "Did not verify whether a creator's Influora wallet balance credited this way is actually withdrawable end-to-end through the standard PayoutService/RazorpayX cash-out flow, or whether it is stranded in-wallet with no UI/API path to cash out — that would require tracing WalletService's withdrawal eligibility rules against affiliate-sourced wallet credits specifically, which was out of this task's time budget."
+    },
+    {
+      "question": "Is Meta integration connected via a real-time inbound webhook (e.g. Instagram comments/mentions/messages), or purely a polling model, and what IS webhook-shaped on the Meta side?",
+      "why_it_matters": "The task explicitly asks to characterize every inbound webhook; conflating 'has a /webhooks/meta path' with 'subscribes to Meta's real-time Webhooks product' would misrepresent the integration.",
+      "answer": "Purely polling for content/metrics data; the only real Meta-facing webhook endpoints are compliance callbacks, not content webhooks. MetricsPollingJob (a @Scheduled job) pulls Instagram Insights on a schedule via MetaGraphApiClient's synchronous GET calls. /webhooks/meta (MetaPlatformCallbackController) implements only the Deauthorize Callback and Data Deletion Callback that Meta's App Review requires — both are inbound POSTs from Meta, HMAC (signed_request) verified, but they exist to learn about a user revoking consent, not to receive comments/DMs/mentions in real time. A repo-wide grep for `hub.challenge`/`hub.verify_token`/`X-Hub-Signature` (the standard Meta real-time-Webhooks handshake/verification artifacts) returns zero matches anywhere in influora-api/src/main/java — confirming no subscription to Meta's actual Webhooks product exists.",
+      "evidence": "influora-api/src/main/java/com/influora/job/MetricsPollingJob.java (class javadoc: 'Polls Instagram metrics... Phase 2 Data Pipeline'); influora-api/src/main/java/com/influora/integration/meta/webhook/MetaPlatformCallbackController.java (class javadoc explicitly scoping itself to 'Deauthorize Callback and... Data Deletion Callback'); `grep -rn \"hub.challenge\\|hub.verify_token\\|X-Hub-Signature\" influora-api/src/main/java` = no matches.",
+      "evidence_score": 3,
+      "confidence": 88,
+      "remaining_uncertainty": "This appears to be an intentional architecture choice (polling is simpler and Meta's real-time Webhooks product requires additional App Review scopes), not necessarily a defect — flagged here purely for completeness of the webhook inventory the task asked for."
+    }
+  ],
+  "findings": [
+    {
+      "id": "DEV-01",
+      "title": "TrendSpark's Java trend-pull scheduler (TrendPullJob) ships disabled by default and additionally fails closed on a missing billing-workspace config — zero automated trend ingestion runs in production as shipped",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 88,
+      "status": "OBSERVED",
+      "provenance": "CONFIGURATION",
+      "evidence": "influora-api/src/main/java/com/influora/job/TrendPullJob.java `pullTrends()`: `if (!props.isEnabled()) { log.info(...); return; }`; influora-api/src/main/java/com/influora/config/TrendIngestProperties.java: `private boolean enabled = false;` and `private String classifierWorkspaceId = \"\";` with javadoc stating the job 'FAILS CLOSED — with no workspace configured, every candidate trend is dropped'; influora-api/src/main/resources/application.yml:570 `enabled: ${TREND_INGEST_ENABLED:false}` and :577 `classifier-workspace-id: ${TREND_INGEST_CLASSIFIER_WORKSPACE_ID:}`; deploy/hostinger/docker-compose.hostinger.yml:212,228 and deploy/utho/docker-compose.utho.yml:213,247 both default the same two env vars to false/blank.",
+      "location": "influora-api/src/main/java/com/influora/job/TrendPullJob.java:180 (pullTrends); influora-api/src/main/java/com/influora/config/TrendIngestProperties.java:26,62; influora-api/src/main/resources/application.yml:570,577",
+      "impact": "The TrendSpark feature's automated daily trend-pull (feeding campaign-type suggestions/theme tagging) does not run on any environment using the shipped defaults, silently — there is a log line ('TrendPullJob: disabled...') but no alert, dashboard, or startup warning surfacing this to an operator.",
+      "recommended_fix": "Not a code fix — this is a documented, escalated business decision (who pays for the GARM classifier calls) per the job's own javadoc, already routed to Arjun/Swapnil/Priya. Confirm whether that decision has been made and the two env vars set on the live Hostinger/Utho hosts' actual (out-of-repo) .env files; if not, this is a known, tracked gap rather than a newly discovered one.",
+      "verification_required": "Check the live .env files on the Hostinger and Utho VPS hosts (not in this repo) for TREND_INGEST_ENABLED and TREND_INGEST_CLASSIFIER_WORKSPACE_ID actual values, and check application logs for 'TrendPullJob: disabled' or a classifier-workspace-related skip message.",
+      "affected_features": ["TrendSpark trend ingestion", "TrendSpark campaign-type auto-suggestion"]
+    },
+    {
+      "id": "DEV-02",
+      "title": "trendspark/n8n/trend-pull-workflow.json is an orphaned, inactive dev-only artifact — not deployed in either production docker-compose file and superseded by the Java job it names as its own replacement",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 85,
+      "status": "OBSERVED",
+      "provenance": "UNCOMMITTED_BUT_TRACKED",
+      "evidence": "trendspark/n8n/trend-pull-workflow.json line 449: `\"active\": false`; root docker-compose.yml lines 57-102 define an `n8n:` service with a comment block describing manual post-deploy steps required to activate it; `grep -n \"^  n8n:\\|n8nio\" deploy/hostinger/docker-compose.hostinger.yml deploy/utho/docker-compose.utho.yml deploy/utho/docker-compose.utho-shared.yml` returns no matches in any of the three production compose files; influora-api/src/main/java/com/influora/config/TrendIngestProperties.java javadoc: 'the n8n workflow this replaces'.",
+      "location": "trendspark/n8n/trend-pull-workflow.json:449; docker-compose.yml:57-102 (dev-only); deploy/hostinger/docker-compose.hostinger.yml (no n8n service); deploy/utho/docker-compose.utho.yml (no n8n service)",
+      "impact": "If anyone assumes trendspark/n8n is 'the' trend pipeline (its own workflow name/description strongly implies a real, running pipeline: 'TrendSpark — Daily Trend Pull (6AM IST)'), they would be wrong for both current environments — dev (inactive, needs manual import+credentials) and production (container doesn't exist at all). Combined with DEV-01, there is currently NO live trend-ingestion path in production.",
+      "recommended_fix": "Either explicitly archive/delete the n8n workflow file and remove the n8n service from docker-compose.yml to avoid confusion (the Java job has already superseded it per its own javadoc), or if n8n is still wanted as a fallback, actually deploy it and complete the manual activation steps documented in the compose comment.",
+      "verification_required": "Confirm with Dev/Vikram whether trendspark/n8n is intentionally kept as a documented-but-dormant fallback or should be removed.",
+      "affected_features": ["TrendSpark trend ingestion (legacy path)"]
+    },
+    {
+      "id": "DEV-03",
+      "title": "Postiz social-scheduling integration has zero code — exists only as a role-description line in sage-team skill docs",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 90,
+      "status": "VERIFIED",
+      "provenance": "UNKNOWN",
+      "evidence": "`grep -rli \"postiz\" \"$RC\" --include=*.java --include=*.ts --include=*.tsx --include=*.json --include=*.yml --include=*.md` (excluding node_modules) returns only sage-suite/sage-team/skills/*/SKILL.md, docs/AI connect/backend/20-ROHAN-COST-REVIEW.md, and two wiki markdown files — zero matches under influora-api/src, src/, or any config/properties file.",
+      "location": "sage-suite/sage-team/skills/dev/SKILL.md (only reference)",
+      "impact": "None on the running product — this confirms Postiz is not a real, connected feature; only relevant if stakeholders believe otherwise from the role description.",
+      "recommended_fix": "No code fix needed. If Postiz integration is actually wanted, it needs to be built from scratch — there is no existing client/controller/config to extend.",
+      "verification_required": "None — this is a clean negative result (absence of code) directly confirmed by exhaustive grep.",
+      "affected_features": ["Postiz scheduling (not implemented)"]
+    },
+    {
+      "id": "DEV-04",
+      "title": "No circuit-breaker/bulkhead library anywhere in the codebase; MetaGraphApiClient's shared RestClient has no explicit connect/read timeout",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "`grep -rli \"circuitbreaker\\|resilience4j\\|@Retry\\b\" influora-api/src/main/java influora-api/pom.xml` = no matches; influora-api/src/main/java/com/influora/integration/meta/client/MetaGraphApiClient.java lines 60-75: `RestClient.builder().baseUrl(baseUrlFor(path) + \"/\" + props.getGraphApiVersion()).defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE).build()` — no `.requestFactory(...)` or timeout configuration anywhere in the file.",
+      "location": "influora-api/src/main/java/com/influora/integration/meta/client/MetaGraphApiClient.java:66-73",
+      "impact": "MetricsPollingJob, AudienceDemographicsJob, CreatorCaptionSyncJob, and MetaTokenRefreshService all funnel through this one client. A slow/hanging Meta Graph API response (rate-limit soft-hangs, network partition) has no read-timeout ceiling and no circuit breaker to fail fast on repeated failures — worst case a scheduler-pool thread (of only 10 total, shared across every other job per TaskSchedulerConfig) sits blocked for as long as the OS-level TCP timeout, degrading unrelated scheduled jobs.",
+      "recommended_fix": "Add explicit connectTimeout/readTimeout to the RestClient's underlying ClientHttpRequestFactory (e.g. via `.requestFactory(ClientHttpRequestFactories.get(...))` with a bounded Duration), and consider a resilience4j CircuitBreaker/TimeLimiter around Meta and Razorpay calls given the shared, limited scheduler thread pool.",
+      "verification_required": "Runtime reproduction: point MetaApiProperties at a host that accepts a connection but never responds, and time how long a MetricsPollingJob run blocks.",
+      "affected_features": ["Instagram metrics polling", "Audience demographics", "Creator caption sync", "Meta token refresh"]
+    },
+    {
+      "id": "DEV-05",
+      "title": "No custom async-exception handling for NotificationListener's ~25 @Async event handlers — a thrown exception is only logged by Spring's default handler, with no retry or dead-letter",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 62,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "`grep -rn \"AsyncConfigurer\\|getAsyncExecutor\\|AsyncUncaughtExceptionHandler\" influora-api/src/main/java` returns no implementing class, only the bare `@EnableAsync` on InfluoraApiApplication.java:133; influora-api/src/main/java/com/influora/service/notification/NotificationListener.java has ~25 `@Async`-annotated `@TransactionalEventListener(AFTER_COMMIT)` handler methods (import list alone spans AuthOtpEvent through WalletLowBalanceEvent).",
+      "location": "influora-api/src/main/java/com/influora/service/notification/NotificationListener.java (class-wide); influora-api/src/main/java/com/influora/InfluoraApiApplication.java:133",
+      "impact": "A transient failure inside any one of these ~25 handlers (e.g. a DB blip while resolving a recipient, an NPE on an unexpected payload shape) is swallowed after being logged — the triggering event (escrow funded, contract signed, KYC approved, payout released, etc.) never gets its user-facing notification, with no queue-based retry and no operational alert distinct from combing through application logs.",
+      "recommended_fix": "Register a custom AsyncConfigurer with an AsyncUncaughtExceptionHandler that at minimum emits a structured/alertable log or metric per (event type, exception), and evaluate whether business-critical notification events (payout released, KYC approved) should route through the existing EmailOutbox durable-retry pattern instead of a bare @Async fire-and-forget.",
+      "verification_required": "Force an exception inside one NotificationListener handler in a test/staging environment and confirm no retry occurs and no alert fires beyond a log line.",
+      "affected_features": ["All ~25 domain-event-driven notifications (escrow funded, contract signed, payout released, KYC approved/rejected, subscription halted, etc.)"]
+    },
+    {
+      "id": "DEV-06",
+      "title": "EmailWorker has one self-documented duplicate-send window under simultaneous degraded-SMTP + multi-instance conditions",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 78,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-api/src/main/java/com/influora/service/notification/EmailWorker.java class javadoc, section 'Known gap in that guarantee, under degraded SMTP': states a single row taking longer than ~30s can push a batch past its own CLAIM_LEASE (3 minutes), making the row visible to findPendingForSend again so 'another instance may re-claim and re-send it', explicitly scoped to marketing email only, never OTP.",
+      "location": "influora-api/src/main/java/com/influora/service/notification/EmailWorker.java (class javadoc, 'Known gap' section, near end of file header)",
+      "impact": "Under a specific, narrow combination (degraded SMTP relay taking >30s per message AND multiple app instances AND a poll landing exactly in that window), a single marketing email could be sent twice to the same recipient. Self-scored by the code's own authors as requiring three simultaneous conditions; blast radius explicitly excludes OTP/transactional mail.",
+      "recommended_fix": "Already tracked in the code comment as 'tracked, not done here' — deriving the wall-clock deadline from the lease instant itself (rather than from after the claim transaction commits) and reserving margin for the mark transaction would close it, as the comment itself proposes.",
+      "verification_required": "Would require a live multi-instance deploy against an artificially slow SMTP relay to reproduce — not attempted (out of scope for a read-only audit).",
+      "affected_features": ["Admin custom/marketing email blasts (EmailOutbox templateKey=admin.custom)"]
+    },
+    {
+      "id": "DEV-07",
+      "title": "WooCommerce webhook flow has no server-side verification that the merchant actually created the webhook correctly — silent breakage risk (design gap, not a code defect)",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 55,
+      "status": "INFERRED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-api/src/main/java/com/influora/web/WooCommerceConnectController.java class javadoc: 'WooCommerce has no OAuth app-install flow at all: WooCommerce is REST-webhook based... a brand creates a webhook directly in their WordPress admin... and WooCommerce lets them set (or auto-generates) a Secret'; no WooCommerceWebhookRegistrar-equivalent class exists (confirmed absent by directory listing of influora-api/src/main/java/com/influora/integration/woocommerce/), unlike Shopify's ShopifyWebhookRegistrar.",
+      "location": "influora-api/src/main/java/com/influora/web/WooCommerceConnectController.java:22-39; influora-api/src/main/java/com/influora/integration/woocommerce/ (no registrar/health-check class present)",
+      "impact": "This is architecturally correct for WooCommerce (it genuinely has no Shopify-style Admin API for webhook subscription), but there is no equivalent of a 'test webhook' or first-delivery health check — a brand can mistype the URL, pick the wrong topic, or never actually save the webhook in wp-admin, and Influora has no way to detect or surface that until (if ever) the brand notices coupon redemptions aren't tracking.",
+      "recommended_fix": "Consider a lightweight verification UX: e.g. prompt the brand to trigger a test order/webhook and confirm receipt within N minutes of connecting, surfaced in the connect UI, distinct from a code fix to WooCommerceConnectController itself.",
+      "verification_required": "Confirm with product/Kavya whether this manual-setup risk is an accepted trade-off already, or worth a follow-up.",
+      "affected_features": ["WooCommerce order-conversion tracking / coupon redemption"]
+    }
+  ],
+  "features": [
+    {
+      "name": "ShedLock distributed scheduler locking (all @Scheduled jobs)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 80,
+      "evidence": "SchedulerLockConfig.java + V68__shedlock.sql + per-file @Scheduled/@SchedulerLock pairing across all 21 job classes; the config class's own javadoc flags itself as 'UNVERIFIED — needs mvn verify' since no Maven build was run in this environment to confirm the shedlock-spring dependency actually resolves/compiles.",
+      "user_type": "internal/ops (multi-instance deploy safety)"
+    },
+    {
+      "name": "Email outbox worker (EmailWorker) — claim/send/mark, exponential backoff, dead-letter via FAILED status + admin requeue",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "EmailWorker.java + EmailOutbox.java full read; EmailWorkerTest.java present on disk. Not executed in this audit (no mvn run).",
+      "user_type": "all users receiving transactional/OTP/marketing email"
+    },
+    {
+      "name": "Razorpay inbound webhook (escrow funding, payouts, subscriptions)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "RazorpayWebhookController.java full read (idempotency, retry-storm avoidance, shared-account narrowing all present in code); RazorpayWebhookControllerTest.java present on disk. Not executed here.",
+      "user_type": "brands funding escrow, creators receiving payouts, brands on subscriptions"
+    },
+    {
+      "name": "Shopify webhook subscription + receipt (orders/paid, orders/create)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "ShopifyWebhookRegistrar.java + ShopifyWebhookController.java + ShopifyOrderOwnershipVerifier.java full read; three test files present (ShopifyWebhookControllerTest, ShopifyWebhookIdempotencyTest, ShopifyWebhookSignatureVerifierTest). Not executed here.",
+      "user_type": "brands connecting a Shopify store for conversion/coupon tracking"
+    },
+    {
+      "name": "WooCommerce webhook receipt (manual merchant-created webhook)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "evidence": "WooCommerceWebhookController.java, WooCommerceWebhookSignatureVerifier.java, WooCommerceIntegrationService.java exist and were read for structure; no delivery health-check exists (DEV-07).",
+      "user_type": "brands connecting a WooCommerce store"
+    },
+    {
+      "name": "Meta content data ingestion (Instagram metrics)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 75,
+      "evidence": "MetricsPollingJob.java full read; MetricsPollingJobTest.java present on disk. This is a polling model, not a webhook — see Q11.",
+      "user_type": "brands/creators viewing Instagram analytics"
+    },
+    {
+      "name": "Meta deauthorize / data-deletion compliance callbacks",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 65,
+      "evidence": "MetaPlatformCallbackController.java full read (HMAC verify, idempotency, audit trail). No test file located for this specific controller in the time budget available.",
+      "user_type": "creators revoking Meta consent (App Review requirement)"
+    },
+    {
+      "name": "TrendSpark automated trend ingestion (n8n workflow AND its Java replacement, TrendPullJob)",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 3,
+      "confidence": 85,
+      "evidence": "See DEV-01 and DEV-02 — disabled by default, fails closed on missing config, and the n8n predecessor is inactive/undeployed.",
+      "user_type": "TrendSpark AI campaign-type suggestion pipeline"
+    },
+    {
+      "name": "Postiz social-post scheduling integration",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 3,
+      "confidence": 90,
+      "evidence": "See DEV-03 — zero code anywhere in the RC.",
+      "user_type": "N/A"
+    },
+    {
+      "name": "Affiliate settlement (wallet crediting only, no bank disbursement)",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 2,
+      "confidence": 70,
+      "evidence": "AffiliateSettlementJob.java class javadoc: wallet-ledger crediting wired (F-0402), bank disbursement via RazorpayX explicitly out-of-scope/undecided. Not executed here.",
+      "user_type": "creators earning affiliate commission"
+    },
+    {
+      "name": "Crash-recovery reapers/sweeps (IdempotencyReservationReaperJob, PayoutOrphanedDebitSweepJob, WalletTopUpReconciliationJob, AffiliateEarningReconciliationJob)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "All four job files read directly; consistent AtomicBoolean single-flight + grace-period + per-row try/catch pattern documented in each. Not executed here.",
+      "user_type": "internal/ops (financial data integrity)"
+    },
+    {
+      "name": "OTP email dispatch (dedicated bounded executor, AbortPolicy)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 75,
+      "evidence": "OtpEmailExecutorConfig.java + OtpEmailDispatcher.java read directly; sizing/policy rationale documented in code comments referencing BrandEmailOtpService's rate caps.",
+      "user_type": "all users receiving login/verification OTP email"
+    }
+  ],
+  "area": {
+    "name": "Schedulers, webhooks, n8n/Postiz, email/OTP pipelines, external integration clients",
+    "status": "Core money/notification-moving scheduler and webhook infrastructure is well-engineered and heavily self-documented against real prior incidents (ShedLock, outbox pattern, four independent crash-recovery jobs, two-layer webhook idempotency). The TrendSpark trend-ingestion pipeline (both its n8n and Java forms) and Postiz are the two clearly non-functioning/non-existent pieces in this area as shipped in 115f698. No circuit-breaker pattern exists anywhere, and async notification failures have no safety net beyond default logging.",
+    "evidence_level": 3,
+    "confidence": 78,
+    "main_evidence": "Direct reading of ~25 source files (job/*.java, webhook controllers for Razorpay/Meta/Shopify/WooCommerce, IdempotencyService and its reaper, EmailWorker/EmailOutbox, MetaGraphApiClient, TrendIngestProperties/TrendPullJob), cross-checked against application.yml and all three deploy docker-compose files, plus confirming presence/absence of corresponding test files on disk.",
+    "main_uncertainty": "No code in this RC was actually compiled or executed (no Maven/mvn build was run in this environment); all 'IMPLEMENTED BUT NOT VERIFIED' features would need a real `mvn test`/`mvn verify` pass (or a live staging replay of a Razorpay/Meta/Shopify webhook) to move from code-level confidence to VERIFIED WORKING.",
+    "limitations": "graphify-out/graph.json did not exist in the RC (only in the uncommitted main tree), so graphify query/path/explain could not be used as the task instructed; this audit relied on direct grep/Read against the RC instead, which is slower but did not block coverage of the requested scope. Time/turn budget did not allow tracing every downstream service body referenced by the jobs read (e.g. PayoutReconciliationService's actual resolution logic, WalletService's affiliate-wallet withdrawal eligibility) — those are named as remaining uncertainties on the relevant questions/findings above rather than asserted either way."
+  },
+  "extra": "Process note: the task's premise that 'graphify-out/graph.json exists in C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698' was false — verified by direct filesystem check; it exists only in the main (uncommitted) working tree at C:/Users/Sage world/Downloads/New Influora Ai/New Influora/graphify-out. Per the audit rule to source code ONLY from the RC, this session did not copy or reference the main tree's graph, and instead used grep/Read directly against the RC checkout for all findings above. No source files were modified; no destructive commands were run; no secrets were printed (RazorpayWebhookController/MetaPlatformCallbackController code was read for logic only, no live secret values encountered or needed). Files reviewed but not quoted at length here for brevity include: influora-api/src/main/java/com/influora/service/PayoutReconciliationService.java (not opened — named only via PayoutOrphanedDebitSweepJob's javadoc), WalletService.java (not opened), and the full body of NotificationListener.java's individual handler methods (only its import list / annotation shape was inspected, not every method body)."
+}

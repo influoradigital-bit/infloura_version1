@@ -1,0 +1,40 @@
+{
+ "rows": [
+  {
+   "subject": "https://influora.in/favicon.ico",
+   "owner": "meera",
+   "status": "broken",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "curl",
+    "command": "curl -sSL -o /dev/null -w '%{http_code} %{content_type} %{size_download}' https://influora.in/favicon.ico",
+    "result": "200 text/html 97483 - identical size to the homepage; the SPA catch-all answers it and no favicon.ico exists in the repo",
+    "where": "index.html:19"
+   }
+  },
+  {
+   "subject": "influora.in Organization and WebSite structured data",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "curl",
+    "command": "curl -sSL https://influora.in/ then parse every application/ld+json block",
+    "result": "WebSite carries name=Influora and url=https://influora.in, Organization carries name, url and a logo that resolves 200 image/png - the site-name and logo schema Google needs is present and correct",
+    "where": "index.html:62"
+   }
+  },
+  {
+   "subject": "public/icon-light-32x32.png",
+   "owner": "meera",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "python - read PNG IHDR width/height for every declared icon",
+    "result": "largest declared icon is 32x32; apple-icon is 180x180 but is not in the rel=icon list. Google recommends a multiple of 48px square for the search favicon",
+    "where": "index.html:22"
+   }
+  }
+ ]
+}

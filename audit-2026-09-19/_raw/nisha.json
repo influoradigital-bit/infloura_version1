@@ -1,0 +1,216 @@
+{
+  "role": "Nisha — Content Lead",
+  "summary": "Content operations audit for RC 115f698. Blog infrastructure is static-markdown and working. Content strategy documents exist (content-map.md, content-standard.md). Postiz queue integration defined in workflow but NOT implemented in code. Newsletter subscription infrastructure missing. Product naming (Influora/Meera/TrendSpark) is consistent across codebase. Email sending for admin only (OTP works, bulk email unimplemented—returns 501).",
+  "questions": [
+    {
+      "question": "Is Postiz queue integration actually implemented in the RC, or is it workflow-only documentation?",
+      "why_it_matters": "Nisha's role includes 'queue approved content to Postiz via SHARED_CONTEXT.md tag' but this is critical for social media scheduling. If not implemented, it's a P1 blocker for any content/marketing workflow.",
+      "answer": "Postiz integration is WORKFLOW DOCUMENTATION ONLY. Nisha/SKILL.md describes [POSTIZ-QUEUE] tags in SHARED_CONTEXT.md and 'n8n reads this tag → sends to Postiz API', but zero code implementation found. No Postiz API client, no n8n webhook listener, no content_queue table. The workflow is described but the automation does not exist.",
+      "evidence": "sage-suite/sage-team/skills/nisha/SKILL.md lines 28, 75-91 describe the workflow. Grep for 'postiz|POSTIZ' yields only skill files and docs (nisha/SKILL.md, meera/SKILL.md, dev/SKILL.md reference, one mention in ai-brand-features-menu task). No Java beans, no REST endpoints, no n8n config.",
+      "evidence_score": 3,
+      "confidence": 92,
+      "remaining_uncertainty": "SHARED_CONTEXT.md itself is not in the RC (working-tree only). If n8n is external, the integration point may not be in this codebase. But based on code inspection alone: Postiz is not implemented."
+    },
+    {
+      "question": "Where does blog content come from at runtime — static files, CMS, or database?",
+      "why_it_matters": "Content sourcing affects how content is published, updated, and versioned. Static files mean Ishaan edits .md and rebuilds. CMS/DB mean API-driven publishing.",
+      "answer": "Blog content is STATIC MARKDOWN FILES, loaded at BUILD TIME. Source: src/content/blog/*.md (7 posts, all .md). Parser: src/lib/blog/posts.ts uses Vite's import.meta.glob with ?raw query to eagerly load all posts at build time. CEO-DECISION documented: 'no backend blog API for MVP' (src/lib/blog/posts.ts:2-4). Frontmatter is JSON-parsed (title, slug, excerpt, category, author, publishedAt, updatedAt, readingMinutes, keywords, featuredImageAlt). Posts are never read from database.",
+      "evidence": "src/lib/blog/posts.ts lines 103-107: `import.meta.glob<string>('/src/content/blog/*.md', { eager: true, query: '?raw' })`. Lines 54-101 define parseFrontmatter() and BlogFrontmatter interface. src/pages/blog/index.tsx lines 1-14 use getAllPosts(). No blog_posts table in V34__admin_tables.sql or any migration.",
+      "evidence_score": 5,
+      "confidence": 100,
+      "remaining_uncertainty": "None. This is directly verified in code."
+    },
+    {
+      "question": "Is there a content calendar document, and is it maintained?",
+      "why_it_matters": "Content calendars track publication schedule, ownership, and alignment with product launches. If missing/stale, content delivery is ad-hoc.",
+      "answer": "Content calendar document DOES NOT EXIST. wiki/website/content-map.md (detailed, 909 lines) exists and references it at lines 72-73 ('Maintain content calendar in wiki/processes/content-calendar.md'), but that file is not in the RC. The content-map.md itself shows Phase 1-4 timelines and ownership (Nisha approval, Aditya SEO, Ananya FE, Zara design) but no external calendar is tracked.",
+      "evidence": "Find for content-calendar.md returns no results. wiki/website/content-map.md § 8 'CONTENT PRODUCTION PIPELINE' shows phased timeline but no calendar file. SHARED_CONTEXT.md (2026-09-07) shows 'STITCH PORT — about + blog' as an ACTIVE TASK but no calendar tracking dates across all content work.",
+      "evidence_score": 3,
+      "confidence": 95,
+      "remaining_uncertainty": "Possible the calendar exists outside git (e.g., Google Sheets). But no .md reference in wiki/processes/."
+    },
+    {
+      "question": "Is newsletter/email subscription infrastructure implemented?",
+      "why_it_matters": "Blogs need subscriber capture. If newsletter is missing, the blog is traffic-only with no retention.",
+      "answer": "Newsletter infrastructure is MISSING. src/pages/blog/index.tsx lines 43-44 explicitly state: 'There is no newsletter subscribe endpoint anywhere in src/lib/api.ts — building the input would be a control that persists nothing (banned under TECH-STACK.md UI Honesty). The section is omitted rather than shipped fake or disabled.' AdminEmailController.java returns 501 Not Implemented for /emails endpoints. No subscribe table, no email_subscribers table in any migration.",
+      "evidence": "src/pages/blog/index.tsx:43-44 (direct comment). influora-api/src/main/java/com/influora/web/AdminEmailController.java returns HttpStatus.NOT_IMPLEMENTED (501) for email endpoints. Grep for 'newsletter|subscribe' finds no working endpoint.",
+      "evidence_score": 5,
+      "confidence": 100,
+      "remaining_uncertainty": "None."
+    },
+    {
+      "question": "Are product names (Influora, Meera, TrendSpark) used consistently across copy and UI?",
+      "why_it_matters": "Brand consistency affects user understanding. Mixed naming (e.g., 'Platform' vs 'Influora') causes confusion.",
+      "answer": "Product naming is CONSISTENT. 'Influora' used for the main platform throughout (landing.tsx, blog/index.tsx, about.tsx, help text). 'Meera' used specifically for AI agent features (Meera-for-Creators, MeeraController, MeeraChatAiProperties, meera-for-creators page). 'TrendSpark' used for trend analysis feature (TrendSparkAiProperties, TrendSparkNudgeCard, TrendSparkProperties). No evidence of mixed naming or alternate product names.",
+      "evidence": "src/pages/blog/index.tsx:216 'Influora Blog', :342 'Influora' in trust section. src/components/brand/campaigns/ uses Influora. src/lib/meera-api.ts (second API layer for Meera). influora-api/config/ has separate TrendSparkAiProperties vs MeeraChatAiProperties. All three product names in distinct scopes.",
+      "evidence_score": 4,
+      "confidence": 85,
+      "remaining_uncertainty": "Sample from src/**/*.tsx checked (40 results), no exhaustive full-codebase check. But pattern is consistent."
+    },
+    {
+      "question": "Does content depend on features that don't exist or are broken?",
+      "why_it_matters": "Blog posts that reference non-existent features (or broken ones) confuse users and harm credibility.",
+      "answer": "No broken content dependencies found. Blog posts in src/content/blog/ reference: Escrow (exists, live), Deal Room (exists), Contracts (exists, auto-generated), creators & brands (both exist). Pricing page references 'platform fee' and 'commission' (actual rates unknown, but entities exist). No posts reference deleted features or broken workflows. Content references real product surfaces.",
+      "evidence": "Blog post titles checked: 'How to pay influencers safely' (payouts exist), 'Deal room' feature (Deal Room component verified), 'Payment protection' (escrow exists). Content-map.md § 4.2 sample topics align with implemented features. No unimplemented features referenced in readable posts.",
+      "evidence_score": 3,
+      "confidence": 75,
+      "remaining_uncertainty": "Only 7 blog posts exist; not all may be published yet. Verify actual published content references at launch."
+    }
+  ],
+  "findings": [
+    {
+      "id": "NISHA-F001",
+      "title": "Postiz social media queue integration documented but not implemented",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 92,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "sage-suite/sage-team/skills/nisha/SKILL.md lines 75-91 define [POSTIZ-QUEUE] tag format and workflow, stating 'n8n reads this tag → sends to Postiz API → schedules automatically.' Zero code implementation found: no Postiz API client, no n8n webhook listener, no social-media posting endpoint, no queue table.",
+      "location": "sage-suite/sage-team/skills/nisha/SKILL.md:75-91; SHARED_CONTEXT.md (workflow reference only); no backend code",
+      "impact": "Nisha's core responsibility (queue content to Postiz) is non-functional. Any social media posting workflow is blocked. This is workflow documentation only, not implemented automation.",
+      "recommended_fix": "Either implement Postiz integration (API client + n8n listener) or descope social media scheduling from the content workflow and update Nisha's SKILL.md to match actual capabilities.",
+      "verification_required": "Code review for Postiz API client in influora-api/; search for 'PostizClient', 'SocialMediaQueue', or n8n webhook endpoint; verify SHARED_CONTEXT.md tag listener exists."
+    },
+    {
+      "id": "NISHA-F002",
+      "title": "Newsletter/email subscription infrastructure is unimplemented",
+      "severity": "P2",
+      "evidence_score": 5,
+      "confidence": 100,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "src/pages/blog/index.tsx:43-44 explicitly states newsletter subscribe is omitted: 'There is no newsletter subscribe endpoint anywhere in src/lib/api.ts — building the input would be a control that persists nothing (banned under TECH-STACK.md UI Honesty). The section is omitted rather than shipped fake or disabled.' influora-api/src/main/java/com/influora/web/AdminEmailController.java @PostMapping endpoints return HttpStatus.NOT_IMPLEMENTED (501 status code). No email_subscribers or newsletter_subscribers table in any migration.",
+      "location": "src/pages/blog/index.tsx:43-44; influora-api/src/main/java/com/influora/web/AdminEmailController.java (entire class)",
+      "impact": "Blog has no subscriber capture or email marketing capability. Content distribution is organic/SEO only. Retention funnel from blog to product is missing.",
+      "recommended_fix": "Implement newsletter subscription: add email_subscribers table, create /api/v1/newsletter/subscribe endpoint, wire AdminEmailController.sendBulkEmail() to a real queue (SendGrid, Braze, etc.), implement unsubscribe flow.",
+      "verification_required": "Query database for email_subscribers table; test POST /admin/emails/send-bulk endpoint (currently returns 501); verify sendBulkEmail() implementation."
+    },
+    {
+      "id": "NISHA-F003",
+      "title": "Content calendar document does not exist (referenced but missing)",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 95,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "wiki/website/content-map.md:73 cites 'wiki/processes/content-calendar.md' as document Nisha maintains, but find returns no such file. No external calendar tracking visible in SHARED_CONTEXT.md.",
+      "location": "wiki/website/content-map.md:73 (reference); wiki/processes/ (no content-calendar.md found)",
+      "impact": "Content production timeline and ownership unclear. Phase 1-4 timelines in content-map.md exist but not tracked against actual dates.",
+      "recommended_fix": "Create wiki/processes/content-calendar.md or link to external calendar (Google Sheets, Notion); populate with: blog post schedule, feature page launch dates, asset deadlines (Zara), approval checkpoints (Nisha), SEO review (Aditya).",
+      "verification_required": "Search for calendar file or spreadsheet link; verify Phase 1-4 timelines are actually tracked."
+    },
+    {
+      "id": "NISHA-F004",
+      "title": "Email bulk-sending endpoint returns 501 Not Implemented",
+      "severity": "P2",
+      "evidence_score": 4,
+      "confidence": 100,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-api/src/main/java/com/influora/web/AdminEmailController.java class comment states: '@PostMapping(\"/emails/send-bulk\") DANGEROUS — intentionally NOT wired to enqueue/send mass email this pass. Returns 501 Not Implemented.' Admin email compose/queue UI exists (src/admin/pages/EmailComposePage.tsx, EmailQueuePage.tsx) but backend is stub.",
+      "location": "influora-api/src/main/java/com/influora/web/AdminEmailController.java (entire class); src/admin/pages/EmailComposePage.tsx (frontend component)",
+      "impact": "Admin cannot send broadcast emails (product updates, announcements, support notifications). UI exists but endpoint is intentionally disabled.",
+      "recommended_fix": "Implement sendBulkEmail(): wire to Razorpay/SendGrid; add email_queue table for durability; implement rate limit, cap, unsubscribe skip (per code comment); toggle from 501 to 200 OK.",
+      "verification_required": "HTTP 501 check on POST /admin/emails/send-bulk; verify sendBulkEmail() method logic; check for message queue table."
+    },
+    {
+      "id": "NISHA-F005",
+      "title": "Blog content is static-markdown only (no database CMS)",
+      "severity": "P0-Informational",
+      "evidence_score": 5,
+      "confidence": 100,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "src/lib/blog/posts.ts:2-4 documents CEO decision: 'no backend blog API for MVP'. Lines 103-107 load blogs via Vite's import.meta.glob('/src/content/blog/*.md', { eager: true, query: '?raw' }). All 7 blog posts are .md files in src/content/blog/. Build-time parsing, never queried from database.",
+      "location": "src/lib/blog/posts.ts:2-7 (architecture decision); src/content/blog/*.md (7 posts); no blog_posts table in database schema",
+      "impact": "Blog is static. Publishing requires git commit + rebuild. No admin UI for Ishaan to publish without code commit. Migration to CMS would be needed for non-technical publishing.",
+      "recommended_fix": "For MVP this is intentional and correct (no backend API needed). When scaling, migrate to Contentful/Sanity or build a blog_posts table + admin CRUD.",
+      "verification_required": "Verify no blog_posts table exists; confirm all posts load from import.meta.glob; confirm build includes posts in vite bundle."
+    }
+  ],
+  "features": [
+    {
+      "name": "Blog infrastructure (static markdown)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 5,
+      "confidence": 100,
+      "evidence": "7 blog posts in src/content/blog/*.md. Build-time loader at src/lib/blog/posts.ts eagerly loads all via Vite glob. Frontmatter parser validates required fields. Pages at src/pages/blog/index.tsx (index) and src/pages/blog/post.tsx (single post). Categories (brands, creators, industry, updates) implemented. Related posts rail working. Read time calculated from content.",
+      "user_type": "Public / all users"
+    },
+    {
+      "name": "Blog categories (brands, creators, industry, updates)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 100,
+      "evidence": "src/lib/blog/posts.ts:30-35 defines BLOG_CATEGORIES. src/pages/blog/index.tsx implements category filtering (useParams, getPostsByCategory). Routes at /blog and /blog/category/:category. Current posts categorized correctly.",
+      "user_type": "Public / all users"
+    },
+    {
+      "name": "Blog SEO infrastructure (sitemap, prerender, structured data)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 92,
+      "evidence": "src/lib/seo/schema.ts has Article, BreadcrumbList, Organization schemas. scripts/generate-sitemap.mjs creates sitemap. scripts/prerender.mjs runs in postbuild. Blog posts carry Helmet meta tags in src/pages/blog/post.tsx. One gap: FaqPage schema not emitted (per content-standard.md:41-45).",
+      "user_type": "Public / search engines"
+    },
+    {
+      "name": "Postiz social media queue integration",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 3,
+      "confidence": 92,
+      "evidence": "SKILL.md:75-91 defines workflow and tag format. Zero code found. No Postiz API client, no n8n listener, no queue table. Workflow is documented but automation does not exist.",
+      "user_type": "Nisha (Content Lead) / internal workflow"
+    },
+    {
+      "name": "Newsletter/email subscription",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 5,
+      "confidence": 100,
+      "evidence": "src/pages/blog/index.tsx:43-44 explicitly omit subscribe UI because no endpoint exists. AdminEmailController returns 501 on /emails/send-bulk. No email_subscribers table.",
+      "user_type": "Public / subscribers"
+    },
+    {
+      "name": "Content workflow (approval chain: Ishaan → Nisha → Aditya → Ananya)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 65,
+      "evidence": "wiki/website/content-map.md:873-881 defines approval flow (Ishaan writes → Nisha reviews → Aditya SEO → Zara assets → Ananya FE → Meera verify → Nisha final). No code enforcement. SHARED_CONTEXT.md used for handoffs but no audit trail or automated checks.",
+      "user_type": "Internal / team workflow"
+    },
+    {
+      "name": "Content calendar and production timeline",
+      "status": "INCOMPLETE",
+      "evidence_score": 2,
+      "confidence": 70,
+      "evidence": "wiki/website/content-map.md has detailed Phase 1-4 timelines and ownership. Referenced calendar document (wiki/processes/content-calendar.md) does not exist. Phase start/end dates not tracked in code.",
+      "user_type": "Internal / team planning"
+    },
+    {
+      "name": "Admin email composition and queue",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 75,
+      "evidence": "src/admin/pages/EmailComposePage.tsx exists with template/preview/confirm UI. src/admin/pages/EmailQueuePage.tsx shows queued emails. Backend endpoint returns 501 Not Implemented. No actual sending.",
+      "user_type": "Admin / internal"
+    },
+    {
+      "name": "OTP email sending (auth flow)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 3,
+      "confidence": 85,
+      "evidence": "influora-api/src/main/java/com/influora/web/AuthController.java has @PostMapping('/brand/send-email-otp') and '/creator/send-email-otp' endpoints. Both call brandEmailOtpService.sendOtp(). Email delivery works for onboarding.",
+      "user_type": "Brand / Creator (during signup)"
+    }
+  ],
+  "area": {
+    "name": "Content Operations & Marketing Automation",
+    "status": "PARTIAL READY",
+    "evidence_level": 3,
+    "confidence": 80,
+    "main_evidence": "Blog infrastructure (static markdown) is complete and working. Content strategy documents (content-map.md, content-standard.md) exist and detailed. Postiz social media queue integration is workflow-documented but NOT implemented in code. Newsletter subscription is explicitly omitted. Email bulk-sending stub exists but returns 501. Product naming (Influora/Meera/TrendSpark) is consistent.",
+    "main_uncertainty": "Postiz integration status — if external (n8n cloud), integration point may exist outside this repo. But codebase has zero Postiz/n8n code. Content calendar tracking mechanism (SHARED_CONTEXT.md handoffs vs external calendar) unclear.",
+    "limitations": "Only RC codebase examined. Postiz account, n8n workflows, external CMS/calendar tools not checked. Live deployment behavior not tested. SHARED_CONTEXT.md not in RC (working-tree only), so actual queue entries not verified."
+  },
+  "extra": "CONTENT OPERATIONS SUMMARY\n\nImplemented & Working:\n- Blog: 7 static markdown posts, build-time loaded, categories working, SEO basics (sitemap, prerender, Helmet meta)\n- OTP email: signup flow sends OTP emails successfully\n- Content strategy docs: content-map.md (909 lines, detailed phases 1-4), content-standard.md (SEO/AEO/GEO rules)\n- Product naming: Influora (main), Meera (AI), TrendSpark (trends) — consistent across UI/backend\n\nNot Implemented:\n- Postiz social media queue: workflow documented, code missing (no Postiz API client, no n8n listener)\n- Newsletter subscription: UI omitted, no endpoint, no email_subscribers table\n- Bulk email sending: AdminEmailController returns 501 Not Implemented\n- Content calendar tracking: referenced at content-map.md:73, file does not exist\n\nAt Risk (not directly content, but affects publishing):\n- FaqPage schema not emitted on blog posts (content-standard.md:41-45 flags as gap)\n- slug filename agreement not enforced (content-standard.md:74-77 warns)\n- Redirect gate checks PERMANENT_REDIRECTS but no audit of existing 301s\n\nGo-Live Readiness:\n- Blog can ship as-is (static posts, no backend dependencies)\n- Postiz queue must be implemented or removed from Nisha workflow\n- Newsletter should be implemented for retention, or explicitly out-of-scope\n- Email bulk-sending should be wired (admin feature, not user-facing)\n- Content strategy (phases, timeline, approval chain) is documented but not automated"
+}

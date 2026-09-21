@@ -1,0 +1,435 @@
+WARNING: A Java agent has been loaded dynamically (C:\Users\Sage world\.m2\repository\net\bytebuddy\byte-buddy-agent\1.14.19\byte-buddy-agent-1.14.19.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+[ERROR] Tests run: 33, Failures: 13, Errors: 0, Skipped: 0, Time elapsed: 3.953 s <<< FAILURE! -- in com.influora.service.creatorcopilot.CreatorNudgeServiceTest
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_fallbackWithBlankDisplayName_usesYou -- Time elapsed: 3.449 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.assertFallbackHeadlineStartsWithYou(CreatorNudgeServiceTest.java:690)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_fallbackWithBlankDisplayName_usesYou(CreatorNudgeServiceTest.java:474)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_themeIsLowestCommonThemeAlphabetically -- Time elapsed: 0.018 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_themeIsLowestCommonThemeAlphabetically(CreatorNudgeServiceTest.java:368)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_aiCallReceivesCreatorIdThemeAndTrendTextInThatOrder -- Time elapsed: 0.008 s <<< FAILURE!
+Wanted but not invoked:
+aiClient.requestSuggestion(
+    "01HCREATORPROFILE100000000",
+    "action",
+    "Diwali morning workout challenge"
+);
+-> at com.influora.integration.ai.CreatorSuggestionAiClient.requestSuggestion(CreatorSuggestionAiClient.java:103)
+Actually, there were zero interactions with this mock.
+
+	at com.influora.integration.ai.CreatorSuggestionAiClient.requestSuggestion(CreatorSuggestionAiClient.java:103)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_aiCallReceivesCreatorIdThemeAndTrendTextInThatOrder(CreatorNudgeServiceTest.java:404)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_persistsCanonicalRowFields -- Time elapsed: 0.011 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_persistsCanonicalRowFields(CreatorNudgeServiceTest.java:491)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_aiReturnsNull_usesTemplatedFallbackWithMessageSourceFallback -- Time elapsed: 0.015 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_aiReturnsNull_usesTemplatedFallbackWithMessageSourceFallback(CreatorNudgeServiceTest.java:436)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_expiresAtIsStartOfNextUtcDay -- Time elapsed: 0.013 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_expiresAtIsStartOfNextUtcDay(CreatorNudgeServiceTest.java:535)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_scoreExactlyAtThreshold_producesSuggestion -- Time elapsed: 0.018 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <ready> but was: <no_suggestion_today>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:182)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:177)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1145)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_scoreExactlyAtThreshold_producesSuggestion(CreatorNudgeServiceTest.java:302)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_aiReturnsCopy_persistsAiCopyWithMessageSourceAi -- Time elapsed: 0.009 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_aiReturnsCopy_persistsAiCopyWithMessageSourceAi(CreatorNudgeServiceTest.java:419)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_aiClientThrows_swallowedIntoFallbackAndNeverPropagates -- Time elapsed: 0.013 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <ready> but was: <no_suggestion_today>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:132)
+	at org.junit.jupiter.api.AssertEquals.failNotEqual(AssertEquals.java:197)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:182)
+	at org.junit.jupiter.api.AssertEquals.assertEquals(AssertEquals.java:177)
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:1145)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_aiClientThrows_swallowedIntoFallbackAndNeverPropagates(CreatorNudgeServiceTest.java:461)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_returnedDtoMirrorsPersistedRow -- Time elapsed: 0.009 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_returnedDtoMirrorsPersistedRow(CreatorNudgeServiceTest.java:518)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_themeIsServerDerived_neverTakenFromAiCopy -- Time elapsed: 0.002 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_themeIsServerDerived_neverTakenFromAiCopy(CreatorNudgeServiceTest.java:387)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_tiedScores_keepFirstTrendInRepositoryOrder -- Time elapsed: 0.006 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_tiedScores_keepFirstTrendInRepositoryOrder(CreatorNudgeServiceTest.java:339)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_fallbackWithNullDisplayName_usesYou -- Time elapsed: 0.005 s <<< FAILURE!
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.assertFallbackHeadlineStartsWithYou(CreatorNudgeServiceTest.java:690)
+	at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.getSuggestion_fallbackWithNullDisplayName_usesYou(CreatorNudgeServiceTest.java:468)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1596)
+
+[ERROR] Failures: 
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_aiCallReceivesCreatorIdThemeAndTrendTextInThatOrder:404 
+Wanted but not invoked:
+aiClient.requestSuggestion(
+    "01HCREATORPROFILE100000000",
+    "action",
+    "Diwali morning workout challenge"
+);
+-> at com.influora.integration.ai.CreatorSuggestionAiClient.requestSuggestion(CreatorSuggestionAiClient.java:103)
+Actually, there were zero interactions with this mock.
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_aiClientThrows_swallowedIntoFallbackAndNeverPropagates:461 expected: <ready> but was: <no_suggestion_today>
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_aiReturnsCopy_persistsAiCopyWithMessageSourceAi:419->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_aiReturnsNull_usesTemplatedFallbackWithMessageSourceFallback:436->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_expiresAtIsStartOfNextUtcDay:535->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_fallbackWithBlankDisplayName_usesYou:474->assertFallbackHeadlineStartsWithYou:690->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_fallbackWithNullDisplayName_usesYou:468->assertFallbackHeadlineStartsWithYou:690->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_persistsCanonicalRowFields:491->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_returnedDtoMirrorsPersistedRow:518->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_scoreExactlyAtThreshold_producesSuggestion:302 expected: <ready> but was: <no_suggestion_today>
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_themeIsLowestCommonThemeAlphabetically:368->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_themeIsServerDerived_neverTakenFromAiCopy:387->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR]   CreatorNudgeServiceTest.getSuggestion_tiedScores_keepFirstTrendInRepositoryOrder:339->captureSaved:725 
+Wanted but not invoked:
+creatorNudgeLogRepository.save(
+    <Capturing argument: CreatorNudgeLog>
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeServiceTest.captureSaved(CreatorNudgeServiceTest.java:725)
+
+However, there was exactly 1 interaction with this mock:
+creatorNudgeLogRepository.findByCreatorProfileIdAndShownAtAfter(
+    "01HCREATORPROFILE100000000",
+    2026-09-12T00:00:00Z
+);
+-> at com.influora.service.creatorcopilot.CreatorNudgeService.getSuggestion(CreatorNudgeService.java:99)
+
+
+[ERROR] Tests run: 33, Failures: 13, Errors: 0, Skipped: 0
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.2.5:test (default-test) on project influora-api: There are test failures.
+[ERROR] 
+[ERROR] Please refer to C:\Users\Sage world\Downloads\New Influora Ai\New Influora\influora-api\target\surefire-reports for the individual test results.
+[ERROR] Please refer to dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

@@ -1,0 +1,28 @@
+{"rows": [
+  {"subject": ".proof-os/gates/F-0519-rotate-keeps-identifier.sh",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "script",
+                "command": "bash .proof-os/gates/F-0519-rotate-keeps-identifier.sh, plus five reversions run one at a time and restored between: each of the three integration fixes alone, the unmutated tree, and a synthetic fifth integration carrying the same bug shape",
+                "result": "each of the three reversions turns it red independently and names the integration; the synthetic fifth integration is caught although the gate had never seen that class; the unmutated tree is green. The Meta reversion was reproduced independently by the dispatcher.",
+                "where": ".proof-os/gates/F-0519-rotate-keeps-identifier.sh:2"}},
+
+  {"subject": "influora-api/src/main/java/com/influora/domain/entity/MetaOAuthToken.java",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "mvn",
+                "command": "three new behavioural tests that reconnect a workspace to a different store or account and assert the persisted identifier, which is the test every ledger entry in this class asked for and none had",
+                "result": "all three integrations now take the identifier as a required parameter, so a caller that omits it does not compile; the suite passes with nothing skipped",
+                "where": "influora-api/src/main/java/com/influora/domain/entity/MetaOAuthToken.java:185"}},
+
+  {"subject": "influora-api/src/main/java/com/influora/integration/meta/oauth/MetaTokenStorage.java",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {"oracle": "mvn",
+                "command": "traced the new-row and existing-row branches of storeToken and compared what each writes",
+                "result": "a fourth instance nobody had filed: the new-row branch stored the Instagram business account id and the reconnect branch silently kept the previous one, so a creator reconnecting a different account read the wrong account forever. Found only by sweeping the class instead of fixing the two integrations already named.",
+                "where": "influora-api/src/main/java/com/influora/integration/meta/oauth/MetaTokenStorage.java:118"}}
+]}

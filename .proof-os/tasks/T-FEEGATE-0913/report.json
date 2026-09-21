@@ -1,0 +1,40 @@
+{
+ "rows": [
+  {
+   "subject": ".proof-os/gates/F-0802-F-0803-brand-fee-publish-paths.sh",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/F-0802-F-0803-brand-fee-publish-paths.sh",
+    "result": "the gate script exits 0; all 62 tests it runs passed and none were skipped",
+    "where": ".proof-os/gates/F-0802-F-0803-brand-fee-publish-paths.sh:1"
+   }
+  },
+  {
+   "subject": "influora-api/src/test/java/com/influora/service/BrandFeePublishPathConformanceTest.java",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "five mutations of the two publish paths, each run alone with test-compile checked first and restored between: M1 delete only the CampaignService call, M2 delete only the ConfirmLaunchExecutor call, M4 delete the real-signature call and add a same-named overload that calls it, M5 delete from source then surefire:test with no compile, M6 behaviour-preserving Extract Method",
+    "result": "M1 red, M2 red, M4 red, M5 red via the staleness check, M6 green; M4 was independently reproduced by the dispatcher and was green before this fix (F-0802)",
+    "where": "influora-api/src/test/java/com/influora/service/BrandFeePublishPathConformanceTest.java:176"
+   }
+  },
+  {
+   "subject": "influora-api/src/main/java/com/influora/service/CampaignService.java",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "adversarial probe: guard the charge with a condition that is always false at the transition point",
+    "result": "not proved that the fee is charged at runtime - an always-false guard around a reachable call leaves this gate green; only the behavioural Mockito tests caught that probe",
+    "where": "influora-api/src/main/java/com/influora/service/CampaignService.java:376"
+   }
+  }
+ ]
+}

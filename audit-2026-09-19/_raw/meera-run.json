@@ -1,0 +1,54 @@
+{
+  "role": "meera-build-test-runtime-verifier",
+  "rc_commit": "115f698b9df0ca2735e9cb2f2c5fe656daf07b66",
+  "rc_path": "C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+  "rc_git_status_clean": true,
+  "summary": "influora-api's Java unit/repository test suite is fully green (3621/3621, 0 failures/errors) and all 136 Flyway migrations apply cleanly to a real MySQL 8 engine, but the RC application CANNOT BOOT in any Spring profile (default, dev, or by inspection prod) due to a BeanCreationException on TrendPullJob -- a constructor-ambiguity bug introduced 2026-09-18, one day before this RC, and never caught locally because the only tests that build a full Spring context are Testcontainers/Docker-gated and Docker is down in this sandbox (22 tests across 8 classes skipped). Frontend tsc and vite build are clean; eslint has 7 real errors (not just the known warn-policy noise) so it would fail as a CI gate; vitest has 2 failures, one a load-induced flake (passes in isolation) and one (creator-protected-route.test.tsx, F-0459) that reproducibly times out importing @/App even in isolation, leaving F-0459 unverified. influora-ai's Python suite is 874/875 passing once playwright (which fails to pip-install on Windows due to a long-path limit, an environment issue not a code defect) is excluded from the dependency set; the 1 failure is a timing-sensitive SSE heartbeat test that is flaky under real asyncio scheduling (2 fail / 1 pass across 3 isolated reruns).",
+  "steps": [
+    {
+      "step": "1. influora-api: mvn -B clean test",
+      "command": "JAVA_HOME=<jdk21> mvn -B clean test",
+      "exit_code": 0,
+      "result": "BUILD SUCCESS. Tests run: 3621, Failures: 0, Errors: 0, Skipped: 22. Total time 11:10 min.",
+      "skipped_detail": "22 skipped across 8 classes, all via AbstractIntegrationTest (@SpringBootTest + Testcontainers MySQL 8.0.40), each skip message: 'No Docker environment available -- skipping Testcontainers-backed integration test'. Classes: AICreditClockIntegrationTest(1), AICreditRaceIntegrationTest(1), CreatorConversationPersistIntegrationTest(4), CreatorNudgeDailyCapConcurrencyIntegrationTest(1), DatabaseConstraintIntegrationTest(3), FestivalBoxCouponConstraintIntegrationTest(3), MeeraCreatorPhaseABootValidationTest(2), EscrowReleaseGateIntegrationTest(7)."
+    },
+    {
+      "step": "2. Docker check + throwaway migration proof",
+      "command": "docker info; docker ps",
+      "exit_code": "n/a (daemon unreachable)",
+      "result": "Docker Desktop daemon down: 'failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine ... The system cannot find the file specified.' Docker CLI/client present (v29.6.1) but no engine running.",
+      "substitute_used": "A local MySQL 8.0 Windows service (MySQL80, already running on 127.0.0.1:3306 outside this RC's control, pre-existing with many unrelated databases) was used to create a fresh, uniquely-named, isolated throwaway database `rc_audit_flyway_20260919`, in the same spirit as the requested throwaway container. `mvn flyway:migrate` was run against it directly (bypassing Docker/Testcontainers).",
+      "flyway_result": "BUILD SUCCESS. 'Successfully applied 136 migrations to schema `rc_audit_flyway_20260919`, now at version v20260918180000' (execution time 01:39.329s). Database dropped afterward (cleanup confirmed, `SHOW DATABASES LIKE 'rc_audit%'` empty)."
+    },
+    {
+      "step": "3. Boot influora-api locally + curl probes",
+      "attempt_1": "mvn spring-boot:run, default profile, SPRING_DATASOURCE_URL -> throwaway DB, SERVER_PORT=8099. Result: BUILD FAILURE after ~80s -- IllegalStateException: 'Company tax config validation failed: influora.company.gstin is still the committed placeholder (REPLACE_WITH_REAL_GSTIN)' (CompanyTaxStartupValidator, fails closed outside dev profile).",
+      "attempt_2": "Same, with SPRING_PROFILES_ACTIVE=dev (the documented way to relax that validator). Company-tax and Instagram-lookup validators now correctly downgrade to WARN. Flyway validated 136 migrations against the same throwaway DB, Hibernate/JPA context initialized, security filter chain built (jwtAuthenticationFilter, correlationIdFilter, planGateFilter, authRateLimitFilter, internalServiceTokenFilter all registered) -- BUT at singleton pre-instantiation: BeanCreationException creating bean 'trendPullJob' -> BeanInstantiationException: 'Failed to instantiate [com.influora.job.TrendPullJob]: No default constructor found' -> NoSuchMethodException: com.influora.job.TrendPullJob.<init>(). Application context never started; Tomcat never actually served a request. BUILD FAILURE, exit code 1, total time 01:30 min.",
+      "curl_probes": "NOT PERFORMED -- the application never reached 'Started InfluoraApiApplication', so there was no live port to probe (health, 401-on-protected-route, register/login, read endpoint). The boot failure itself is the finding.",
+      "reproducibility": "Deterministic: reproduced twice (default profile and dev profile), same root cause both times."
+    },
+    {
+      "step": "4. Frontend checks (from RC root)",
+      "tsc": "npx tsc --noEmit -p tsconfig.json -> exit 0, ZERO errors/output.",
+      "eslint": "npx eslint . -> exit 1. '226 problems (7 errors, 219 warnings)'. The 219 warnings are almost entirely react-hooks/set-state-in-effect and react-refresh/only-export-components, consistent with the repo's documented react-hooks-v7 warn-only policy (2026-08-03) -- not re-litigated here. The 7 ERRORS (all @typescript-eslint/no-unused-vars, would fail any --max-warnings-tolerant-but-error-strict CI gate) are: src/admin/components/users/BrandProfile.tsx:39-40 ('Radio','Check' unused), src/components/brand/deal-room/deal-payments-tab.tsx:77-78 ('deliverablesDone','deliverablesTotal' unused params), src/components/brand/timeline/event-cards/proposal-card.tsx:7,23 ('Button' unused, 'settled' unused), src/pages/__tests__/brand-settings-account-phone.test.tsx:28 ('fireEvent' unused).",
+      "vitest_full_run": "npx vitest run (concurrent with mvn/pytest/eslint/tsc, i.e. under heavy system load) -> exit 1, 850s. Test Files: 2 failed | 239 passed (241). Tests: 2 failed | 1348 passed | 3 skipped (1353).",
+      "vitest_failure_1": "src/__tests__/creator-protected-route.test.tsx -- 'Error: Hook timed out in 120000ms' at its own beforeAll importing '@/App' (test file's own explicit 120_000ms timeout, chosen 'raised here rather than globally'). Re-run in ISOLATION (no contention) TWICE more: still timed out both times at the same beforeAll. 3 tests in this file (F-0459 storage-split remember-me guard) were consequently SKIPPED, not executed, both times.",
+      "vitest_failure_2": "src/pages/brand-chat-accept-recovery.test.tsx (F-0440, 2 tests) -- TestingLibraryElementError: could not find role=button name /^Accept$/i (timing/render-state issue under load). Re-run in ISOLATION: BOTH tests PASSED. Confirmed as a load-induced flake, not a functional defect.",
+      "vite_build": "npx vite build -> exit 0, 'built in 6m', 4905 modules transformed. Bundle sizes: dist/assets/index-VeUi4oUB.js = 3,373.53 kB (899.29 kB gzip); dist/assets/PerformanceMonitor-DwqfdUNZ.js = 894.33 kB (241.84 kB gzip). Both exceed Vite's 500kB chunk-size warning threshold; no manualChunks/code-splitting configured for these."
+    },
+    {
+      "step": "5. influora-ai: python -m pytest -q",
+      "venv": "Created in scratchpad (no global installs). requirements.txt install FAILED: pip OSError on a Windows long-path (>260 char) file inside playwright's bundled Chromium devtools recorder assets ('No such file or directory' / pip's own long-path hint). This is a Windows-filesystem environment limitation, not a repo code defect -- reproduced twice (with and without playwright's transitive presence via requirements-dev.txt's `-r requirements.txt`).",
+      "resolution": "Installed every dependency except playwright (fastapi, uvicorn, httpx, anthropic, google-genai, pyjwt, redis, pydantic, python-multipart, pytest, pytest-asyncio) directly, pinned to the versions in requirements.txt/requirements-dev.txt.",
+      "result": "1 failed, 874 passed, 24 warnings in 166.55s. Failure: tests/routes/test_f02_f14_route_level.py::test_f14_the_heartbeat_is_actually_delivered_during_the_wait -- sets SSE_HEARTBEAT_SECONDS=0.05 and asserts >=3 ': ping' heartbeats across a mocked 0.25s tool call; got only 2.",
+      "reproducibility": "Re-ran this single test in isolation 3x: FAIL, FAIL, PASS ('only 2 heartbeats' both times it failed). Confirmed flaky/timing-sensitive (asyncio scheduling at a 50ms granularity is close to Windows' default timer resolution), not a deterministic functional defect in the SSE heartbeat code path (app/routes/chat.py lines ~700-863) -- but the test itself is unreliable.",
+      "not_run": "Every test file importing httpx/fastapi/cryptography that also (transitively, via app/clients/spring.py or similar) needed playwright installed fine once playwright itself was excluded -- the only genuinely blocked tests were ones directly importing the `playwright` package itself, and grep found none; all 43 initial collection errors were fixed by excluding playwright's own broken install, not by skipping any test file."
+    }
+  ],
+  "cleanup_performed": [
+    "DROP DATABASE rc_audit_flyway_20260919 (throwaway MySQL DB) -- confirmed empty afterward.",
+    "No Docker containers were started (Docker daemon was down) so none needed removal.",
+    "Both failed spring-boot:run Maven processes exited on their own (BUILD FAILURE); no process was left listening on port 8099 (confirmed via netstat).",
+    "No files were modified in the RC checkout or the main tree; the RC's git status was re-confirmed clean at the end."
+  ]
+}

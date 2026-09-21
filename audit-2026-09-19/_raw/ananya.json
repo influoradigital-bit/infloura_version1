@@ -1,0 +1,363 @@
+{
+  "role": "Ananya (Frontend) — SPA production-readiness audit, RC commit 115f698 (clean checkout at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698)",
+  "summary": "Audited the Vite + React 18 + react-router-dom SPA (src/App.tsx, src/pages, src/components, src/admin, src/lib) at commit 115f698, checked out clean and audited only from that directory. `tsc --noEmit` passes clean (E4, exit 0) and CI runs it as a separate gate — but `npm run build` is literally `vite build` with no typecheck plugin in vite.config.ts, so the production build itself does not typecheck (this is documented as a known-fixed CI gap, but the build script itself is still typecheck-blind). A full production build was run in this session with the repo's own .env.production (VITE_API_MODE=live, real API base URL) and completed in ~15.5 min, producing a single 3.37 MB (899 KB gzip) main JS chunk — none of the ~100 page components in App.tsx use React.lazy/route-level code-splitting, so every visitor, including an anonymous landing-page visit, downloads virtually the whole brand+creator+admin+3D bundle up front. Auth architecture is asymmetric across the three realms: brand/creator sessions (F-0551) hold the access token in memory only with an HttpOnly refresh cookie and a hardened 401→refresh→retry→hard-redirect-to-login path (F-0438); the admin realm stores its access token in localStorage (mitigated by a short 900s expiry + rotation) but its own 401→refresh→retry handler in src/admin/services/api-contracts.ts only clears the token on definitive failure — it never calls the admin equivalent of `redirectToLogin`, so a mid-session admin whose token/refresh is revoked is left rendering the console with failing calls until they manually navigate, instead of being bounced to /admin/login the way brand/creator explicitly were fixed to be. The Razorpay checkout wrapper (src/lib/razorpay.ts) is correctly designed as UI-only — it never trusts the Checkout `handler` callback as proof of payment and documents that callers must re-verify server-side — and the client-side money-flag gate that blocks withdraw/fund/top-up when payments are disabled is covered by a passing runtime test (9/9, E4) that asserts `fetch` is never called. Two built, wired-together pieces of the Meera AI credit-metering feature (`useMeeraCredits` hook and `CreditMeter` component, both P13-labelled) are completely orphaned — zero references anywhere else in src/, including no CREDITS_EXHAUSTED/402 handling in the real brand-chat.tsx — so real users get no visible credit meter or paywall UI for Meera today. Two more real, non-trivial components are similarly dead code: `CounterProposalCard` (creator deal-room accept/decline card) and `HeroGlobe` (3D hero). No <img> without alt was found, and the main site nav has correct aria-labels for its icon-only hamburger button. A full vitest run and a full manual pass over all ~100 pages' loading/empty/error states was out of scope for the time available; this report is based on direct source reading, config/CI inspection, a real `tsc --noEmit` run, a real production `vite build`, and one targeted vitest run of the money-flag gate suite.",
+  "questions": [
+    {
+      "question": "Does `npm run build` (the actual production build command) type-check the codebase, or only `npm run typecheck`?",
+      "why_it_matters": "If the build script itself doesn't typecheck, a type error can ship in any pipeline that runs `build` without also running `typecheck` as a separate, non-skippable step.",
+      "answer": "No. `package.json`'s `build` script is `vite build` (Rollup/esbuild transform only); `vite.config.ts` has no `vite-plugin-checker` or any TS-checking plugin. `typecheck` (`tsc -p tsconfig.json --noEmit`) is a separate script. CI (`.github/workflows/frontend-checks.yml`) does run both as separate steps in the same job, with a comment stating this was a known-fixed gap (\"vite build alone does NOT typecheck\"), so in THIS repo's CI a type error is caught — but only because both steps are wired into the same required job, not because `build` itself checks types.",
+      "evidence": "package.json scripts block (`\"build\": \"vite build\"`, separate `\"typecheck\": \"tsc -p tsconfig.json --noEmit\"`); vite.config.ts has no checker plugin (grep for checker/typescript/tsc returned nothing); .github/workflows/frontend-checks.yml lines 39-95 run `npm run typecheck` and `npm run build` as separate steps in job `typecheck · test · build`.",
+      "evidence_score": 3,
+      "confidence": 92,
+      "remaining_uncertainty": "Did not check every deploy path (e.g. a Docker build stage) to confirm it always runs both steps rather than `build` alone."
+    },
+    {
+      "question": "Does `tsc --noEmit` actually pass clean on this RC, right now?",
+      "why_it_matters": "This is the single cheapest, most direct signal of FE code health available before go-live.",
+      "answer": "Yes. Ran `tsc -p tsconfig.json --noEmit` directly against the clean RC checkout; it exited 0 with zero output.",
+      "evidence": "Command run in this session: `npx tsc -p tsconfig.json --noEmit` in C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698, exit code 0, no stdout/stderr.",
+      "evidence_score": 4,
+      "confidence": 97,
+      "remaining_uncertainty": "None material — this is a direct, reproduced runtime result on the exact RC commit."
+    },
+    {
+      "question": "Does `vite build` (the actual production build) complete successfully against the real production API config, and what does the output tell us about bundle health?",
+      "why_it_matters": "A build that fails, or that ships an oversized single chunk, directly affects whether the app can deploy and how fast it loads for real users.",
+      "answer": "Yes, it completes (took ~15m 37s in this sandbox — 4905 modules transformed) using the repo's own committed .env.production (VITE_API_MODE=live, real influora.in API base URL, i.e. the same config a real prod build would use). The build emits one dominant chunk, dist/assets/index-VeUi4oUB.js, at 3,373.53 kB raw / 899.29 kB gzip, plus a second oversized chunk dist/assets/PerformanceMonitor-*.js at 894.33 kB / 241.84 kB gzip. Vite's own warning flags both as over its 500 kB threshold and recommends dynamic import()/manualChunks — neither is configured.",
+      "evidence": "Full `npx vite build` run to completion in this session; build log tail shows `✓ 4905 modules transformed`, the two oversized-chunk lines, Vite's \"(!) Some chunks are larger than 500 kB\" warning, and `✓ built in 15m 37s`. vite.config.ts has no `manualChunks`/`rollupOptions.output` config (grepped, no matches).",
+      "evidence_score": 4,
+      "confidence": 90,
+      "remaining_uncertainty": "The 15m37s build time is measured in this sandbox environment, not representative of CI/production build infra speed; only the artifact sizes are a reliable signal."
+    },
+    {
+      "question": "Is the SPA route tree code-split, so a first-time visitor to the public landing page isn't forced to download the brand/creator/admin dashboards too?",
+      "why_it_matters": "A monolithic bundle directly hurts LCP/TTI for the highest-traffic, least-authenticated pages (landing, pricing, public portfolio) which are also the pages most exposed to organic/paid traffic and mobile networks.",
+      "answer": "No. Every one of the ~100 page components imported in src/App.tsx (BrandLoginPage, BrandDashboardPage, AdminConsolePage, CreatorChatPage, etc.) is a static top-level `import ... from '@/pages/...'`, not `React.lazy(() => import(...))`. Only two isolated pieces (a 3D login scene on a dev-only page, and MeeraDemoPlayer on the marketing meera-for-creators page) use dynamic `import()`. This matches the single 899 KB-gzip main chunk observed in the real build output.",
+      "evidence": "src/App.tsx lines 11-91 (all static page imports) and lines 203-895 (Routes using those statically-imported components directly, no Suspense/lazy wrapper at the route level); confirmed against real build output (previous question).",
+      "evidence_score": 3,
+      "confidence": 88,
+      "remaining_uncertainty": "Did not measure actual Lighthouse/LCP numbers in a browser for this RC (ci/lighthouse-meera.mjs exists in the repo but was not run in this session)."
+    },
+    {
+      "question": "Are the brand/creator and admin auth realms consistent in how they store tokens and recover from a session dying mid-use?",
+      "why_it_matters": "The admin console explicitly handles money/KYC/moderation (per its own route-guard comment) — an inconsistency here is higher-stakes than the same inconsistency on a marketing page.",
+      "answer": "No, they diverge in two ways. (1) Storage: brand/creator access tokens live in memory only (src/lib/api.ts HttpClient.getToken/setToken, per the F-0551 hardening comment) with the refresh token in an HttpOnly cookie; the admin access token is stored in localStorage (src/admin/services/admin-session.ts ADMIN_TOKEN_KEY='admin_token') — mitigated by a short 900s expiry + server-side rotation on every refresh, but still a JS-readable token at rest, unlike brand/creator's memory-only design. (2) Failure handling: brand/creator's `fetchWithAuthRetry` (src/lib/api.ts ~line 647-658) explicitly calls `redirectToLogin(role)` (a hard `window.location.href` navigation) when a 401's follow-up refresh also fails, with a comment (F-0438) stating this was fixed specifically because leaving the user on a dead page until their next navigation was a known bug. The admin equivalent, `apiRequest` in src/admin/services/api-contracts.ts (lines 130-143), on the same refresh-fails-too path only calls `clearAdminToken()` — no navigate/redirect call anywhere in that function or file. Grepping the whole src/admin tree for a reactive redirect-on-auth-failure found only the manual Logout button's `navigate('/admin/login')` in AdminLayout.tsx, which fires on an explicit click, not on session death.",
+      "evidence": "src/lib/use-auth-guard-state.ts (memory+cookie based check); src/lib/api.ts lines 468-500 (getToken/setToken split by isApiLive) and lines 647-658 (401→refresh→retry→redirectToLogin, F-0438 comment); src/admin/services/admin-session.ts lines 38-112 (localStorage-based ADMIN_TOKEN_KEY, getAdminToken/setAdminToken/clearAdminToken); src/admin/services/api-contracts.ts lines 106-164 (apiRequest, no redirect on refresh failure); src/admin/components/AdminLayout.tsx line 108-116 (only a manual-logout navigate).",
+      "evidence_score": 3,
+      "confidence": 78,
+      "remaining_uncertainty": "Did not runtime-reproduce an actual admin-session-death scenario (would require a live/staging admin JWT to expire or be revoked mid-session); this is a direct code-level comparison, not an observed runtime failure. It's also possible some outer admin route wrapper (not found in this pass) polls or listens for token clearance and redirects — none was found in src/admin, src/App.tsx, or src/pages/admin-console.tsx's top-level wiring, but the admin tree is large."
+    },
+    {
+      "question": "Is the Razorpay checkout integration safe against a client claiming payment succeeded when it did not?",
+      "why_it_matters": "Trusting a client-side payment callback as proof of a fund transfer is a classic money-safety bug (fabricated success, race conditions, tampered response).",
+      "answer": "The wrapper itself is built correctly: src/lib/razorpay.ts's `openRazorpayCheckout` never marks anything as paid — its own header comment states \"[Checkout's] `handler` callback is untrusted... callers MUST verify funding via a server-confirmed status\" and the function only forwards the SDK's response to the caller's `onSuccess`, doing no state mutation itself. The publishable key is always fetched from `GET /config/razorpay`, never hardcoded, and the module documents it never accepts a secret.",
+      "evidence": "src/lib/razorpay.ts lines 1-18 (header comment on money-safety posture) and 152-189 (openRazorpayCheckout implementation — handler just calls the passed-in onSuccess, no local balance/state mutation).",
+      "evidence_score": 2,
+      "confidence": 70,
+      "remaining_uncertainty": "This audit did not open every CALLER of openRazorpayCheckout (e.g. FundEscrowButton.tsx, brand-wallet.tsx's topUp flow) to confirm each one actually re-verifies against the server before updating UI state, rather than trusting onSuccess directly — the wrapper's contract is sound but caller compliance was not individually re-verified in this pass beyond what the wrapper's own comments describe (useEscrowFund.ts / brand-wallet.tsx polling GET /wallet/escrow/{id} and GET /wallet)."
+    },
+    {
+      "question": "Can a money-moving client action (withdraw, escrow fund, wallet top-up) ever fire a network request when the corresponding payments feature flag says it's disabled?",
+      "why_it_matters": "A ledger debit issued to a disabled/unprovisioned payment rail is exactly the scenario documented elsewhere in this repo's own history (WalletService debits before calling RazorpayX) that a orphaned-debit sweep job exists to clean up after.",
+      "answer": "No — verified by actually running the test, not just reading it. `src/lib/payments-gate.test.tsx` asserts on `fetch` never being called (not just on an error being shown) when `VITE_API_MODE=live` and the money flags are off, for withdraw, escrow-fund and wallet top-up. Ran it directly: 9/9 tests passed.",
+      "evidence": "Command run in this session: `npx vitest run src/lib/payments-gate.test.tsx` → `✓ src/lib/payments-gate.test.tsx (9 tests)`, all passing, Test Files 1 passed (1), Tests 9 passed (9).",
+      "evidence_score": 4,
+      "confidence": 93,
+      "remaining_uncertainty": "This proves the CLIENT-side gate holds under this specific test harness (stubbed fetch/env); it does not prove the feature-flag values are correctly baked into every real deployed image (that is F-0390's own gate, in .proof-os/gates/, not re-verified here)."
+    },
+    {
+      "question": "Is the Meera AI credit-metering system (usage limits, low-credit warning, exhausted paywall) actually visible to real users anywhere in the shipped app?",
+      "why_it_matters": "If a cost-control/paywall mechanism exists in code but isn't wired to any page, either credits are silently unenforced from the user's perspective (no warning before a request fails) or there is a duplicate, undiscovered enforcement path elsewhere that this audit didn't find.",
+      "answer": "No page renders it. Both `src/hooks/useMeeraCredits.ts` and `src/components/feature/meera/CreditMeter.tsx` (a complete, well-built P13 feature: loading/error/unlimited/low/exhausted states, calls `meeraApi.getCredits()`) have zero references anywhere else in src/ — grepped the whole tree. The real Meera chat page, src/pages/brand-chat.tsx, has no `CREDITS_EXHAUSTED`/402 handling at all (grepped for both strings, no matches outside comments/unrelated address text). `src/lib/voice-usage.ts` independently documents itself as \"a fire-and-forget no-op today... Do NOT build billing logic here\" for voice actions specifically, which is consistent with credits not yet being enforced end-to-end on the client.",
+      "evidence": "`grep -rln useMeeraCredits src` → only useMeeraCredits.ts and CreditMeter.tsx; `grep -rln CreditMeter\\|HeroGlobe` cross-file → only their own files; `grep -n \"getCredits|CREDITS_EXHAUSTED|402\" src/lib/meera-api.ts src/pages/brand-chat.tsx src/pages/brand-meera.tsx` → getCredits only declared (not called outside the hook), no CREDITS_EXHAUSTED match, the one \"402\" hit is a street address string; src/lib/voice-usage.ts full file (11 lines) self-documents as a stub.",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "Did not check the backend for whether GET /meera/credits or a 402 CREDITS_EXHAUSTED response actually exists/fires server-side (out of scope — FE audit only); if the server never returns 402 either, this may be an intentionally deferred feature rather than a regression."
+    },
+    {
+      "question": "Are there other real, non-trivial frontend components that are built but never rendered anywhere in the app (dead code / possibly-abandoned features)?",
+      "why_it_matters": "Dead components are wasted engineering investment at best, and at worst indicate a feature the team believes shipped but that users can never actually reach.",
+      "answer": "Yes, at least two more beyond the Meera credit UI: `src/components/creator/deal-room/counter-proposal-card.tsx` (a complete accept/decline/reply card for a creator viewing an incoming counter-proposal, with real earnings-calculation logic) is never imported anywhere — only mentioned in two comments (in proposal-card.tsx and its test) as a sibling file, while the actually-wired component in creator-chat.tsx is the submission form `CounterProposalForm`, not this display card. `src/components/3d/HeroGlobe.tsx` is also entirely unreferenced anywhere in src/. A broader sweep of src/components found ~20 more shadcn/ui primitives (carousel, drawer, menubar, sidebar, pagination, etc.) with zero current usage, which is normal/expected for a scaffolded component library and not itself a defect.",
+      "evidence": "`grep -rln \"HeroGlobe\\|counter-proposal-card\\|CreditMeter\"` repo-wide (excluding each file's own path) returned no import/usage hits, only comment mentions for counter-proposal-card; `grep -n \"CounterProposal\" src/pages/creator-chat.tsx` shows only `CounterProposalForm` is imported/rendered (line 69, 3244), never `CounterProposalCard`.",
+      "evidence_score": 3,
+      "confidence": 82,
+      "remaining_uncertainty": "Did not confirm with product/design intent whether CounterProposalCard was meant to replace or supplement the inline rendering a recipient currently sees for a counter-proposal inside chat — it's possible the counter-proposal's accept/decline UI is rendered via a different, generic message-card component in creator-chat.tsx that this pass didn't specifically open."
+    },
+    {
+      "question": "Is any mock/demo data ever rendered to a real, live-mode (production) user?",
+      "why_it_matters": "Demo/seed data leaking into a real user's screen (fake campaigns, fake creators) is a trust and correctness problem in production.",
+      "answer": "Not in the sample checked. Every consumer of `src/lib/demo-data.ts` that was inspected (e.g. `campaigns-list.tsx`) gates the demo record behind an explicit `isApiLive()`-derived ternary (`liveApi ? liveCampaigns : [demoHypeCampaign, ...mockCampaigns]`), so it only appears when the app is compiled/running in mock mode, not live mode.",
+      "evidence": "src/components/brand/campaigns/campaigns-list.tsx line 379: `const base = liveApi ? liveCampaigns : [demoHypeCampaign, ...mockCampaigns];`, with `liveApi = isApiLive()` at line 240.",
+      "evidence_score": 2,
+      "confidence": 65,
+      "remaining_uncertainty": "Only 1 of 8 files that import demo-data.ts (campaigns-list.tsx) was individually opened and verified; the other seven (hype-inbox-card.tsx, demo-access-panel.tsx, brand-analytics.tsx, brand-creator-analytics.tsx, creator-deals.tsx, features/hype.tsx, landing.tsx) were not individually checked for the same gating pattern in this pass."
+    },
+    {
+      "question": "Are there console.log/debug statements left in production source that could leak information or clutter real users' consoles?",
+      "why_it_matters": "Stray console output in production is a minor but real code-quality/security-hygiene signal (accidental data exposure, unprofessional DevTools noise).",
+      "answer": "Essentially none of concern. Only one non-test console.log/debug call exists in all of src/ outside test files: `src/lib/voice-usage.ts`, and it's explicitly gated behind `import.meta.env?.DEV` (so it's compiled out / never runs in a production build) and has an eslint-disable comment acknowledging it as intentional dev-only stub logging.",
+      "evidence": "`grep -rn \"console\\.(log|debug)\" src --include=*.tsx --include=*.ts | grep -v test` → exactly 1 match, src/lib/voice-usage.ts line 14, wrapped in `if (import.meta.env?.DEV)`.",
+      "evidence_score": 3,
+      "confidence": 85,
+      "remaining_uncertainty": "Did not grep for console.warn/console.error/console.trace, which could still be present and firing in production (console.error IS deliberately used in ErrorBoundary.tsx and useMeeraCredits.ts, which is appropriate defensive logging, not a leak)."
+    },
+    {
+      "question": "Does a render crash on one page take down the whole SPA, and is crash reporting safe (never throws, never blocks the fallback)?",
+      "why_it_matters": "This is the single most important resilience property for an SPA with ~100 routes — one bad page must not white-screen the whole session.",
+      "answer": "The error boundary is correctly scoped: `RoutedErrorBoundary` in App.tsx wraps `<Routes>` INSIDE `<BrowserRouter>` and resets its `hasError` state via a `resetKey` tied to `location.pathname`, with an explicit comment (CR-10) describing the prior bug (mounted outside the Router, so one crash killed routing for the rest of the session) and how this fixes it. The crash-reporting side-effect (`reportCrash` in ErrorBoundary.tsx) is wrapped in nested try/catch, is fire-and-forget (never awaited), and dedupes per session on a JSON-encoded `[message, pathname]` key so a render loop can't flood the report endpoint.",
+      "evidence": "src/App.tsx lines 187-201 (RoutedErrorBoundary + CR-10 comment) and 210 (mounted inside BrowserRouter, wrapping <Routes>); src/components/ErrorBoundary.tsx lines 62-125 (componentDidCatch → reportCrash, try/catch nesting, reportedCrashKeys Set dedupe, componentDidUpdate resetting hasError only on resetKey change).",
+      "evidence_score": 3,
+      "confidence": 83,
+      "remaining_uncertainty": "Did not runtime-trigger an actual render crash in a browser to observe the fallback UI and confirm the POST to /api/v1/client-errors fires as described; this is direct code-reading only (E2/E3, not E4 for this specific behavior)."
+    },
+    {
+      "question": "Do the brand/creator registration forms validate consistently and map server error codes back to the correct field, rather than showing a generic toast?",
+      "why_it_matters": "Generic error toasts on a field-specific server rejection (e.g. \"phone already exists\") force users to guess which field is wrong, directly hurting signup conversion.",
+      "answer": "Yes, on the one form inspected in depth. `creator-register.tsx`'s `validate()` does real client-side checks (name, email regex, phone via `normalizePhone`/`isValidPhone`, password length ≥8, confirm-password match, terms acceptance) before submit, and `submitRegistration`'s catch block branches on the server's machine-readable `err.code` (e.g. `PHONE_ALREADY_EXISTS`) rather than the bare HTTP status, explicitly because the same endpoint also 409s for `EMAIL_ALREADY_EXISTS` and status-only branching would mislabel one as the other.",
+      "evidence": "src/pages/creator-register.tsx lines 78-108 (validate function) and lines 159-169 (catch block branching on `err.code === 'PHONE_ALREADY_EXISTS'`, with a comment explaining why status-alone branching would be wrong).",
+      "evidence_score": 2,
+      "confidence": 70,
+      "remaining_uncertainty": "Only one form (creator-register.tsx) was read in this depth; other forms (brand-register.tsx, brand-new-campaign.tsx, creator-portfolio-editor.tsx, etc.) were not individually verified for the same discipline, and this codebase does NOT appear to use the installed `@hookform/resolvers`/react-hook-form+zod pattern here (this page uses hand-rolled useState validation), so consistency across all ~30 forms in src/pages is unverified and plausibly variable."
+    },
+    {
+      "question": "Are icon-only interactive controls and images given accessible names/alt text on the pages checked?",
+      "why_it_matters": "Missing labels on icon buttons (hamburger menus, close buttons) are one of the most common and highest-impact accessibility failures for screen-reader users.",
+      "answer": "Good on the samples checked. Zero `<img>` tags anywhere in src/**/*.tsx were found missing an `alt=` attribute on the same line (a simple but reasonably reliable heuristic at this scale). The main site header's icon-only mobile-nav trigger has `aria-label=\"Open navigation menu\"` on the button and `aria-hidden=\"true\"` on its decorative Menu icon, and its two navigation landmarks are correctly labelled (`aria-label=\"Mobile\"` / `\"Main\"`).",
+      "evidence": "`grep -rn \"<img \" src --include=*.tsx | grep -v \"alt=\"` → 0 matches; src/components/site/SiteHeader.tsx line 56 (`aria-label=\"Open navigation menu\"`), line 57 (`aria-hidden=\"true\"` on the Menu icon), lines 66 and 134 (labelled nav landmarks).",
+      "evidence_score": 2,
+      "confidence": 60,
+      "remaining_uncertainty": "This checked one component (SiteHeader) and one simple grep pattern across the whole tree; it does not cover icon-only buttons inside admin/dashboard components, JSX-expression alt values that might resolve to empty strings at runtime, or focus-order/contrast, none of which were audited in this pass."
+    },
+    {
+      "question": "Does this codebase have the known 'two API layers' trap (src/lib/api.ts and src/lib/meera-api.ts diverging), and how much of the app depends on each?",
+      "why_it_matters": "Per this project's own prior findings, grepping only one of the two FE API layers produces false 'endpoint has no client' conclusions — worth confirming the split still exists and is this lopsided before trusting any single-file grep elsewhere in this or other audits.",
+      "answer": "Confirmed still present and heavily lopsided: 154 files import from `@/lib/api` versus 14 files from `@/lib/meera-api` (a third, separate admin-only client also exists at `src/admin/services/api-contracts.ts` on top of these two). Any future grep-based FE audit in this repo must check all three, not just one.",
+      "evidence": "`grep -rl \"from '@/lib/api'\" src | grep -v test | wc -l` → 154; `grep -rl \"from '@/lib/meera-api'\" src | grep -v test | wc -l` → 14; plus the separate `src/admin/services/api-contracts.ts` (own `apiRequest`/`ADMIN_API_BASE`) confirmed by direct read.",
+      "evidence_score": 3,
+      "confidence": 88,
+      "remaining_uncertainty": "Did not check for actual duplicated/diverging TYPE DEFINITIONS between the two main clients (e.g. two different shapes for the same DTO) — only counted usage/import surface area, which was the scope this question needed."
+    }
+  ],
+  "findings": [
+    {
+      "id": "ANA-01",
+      "title": "Admin session does not force a re-login when it dies mid-use — only clears localStorage, unlike the fixed brand/creator path",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 78,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "src/admin/services/api-contracts.ts apiRequest() (lines 130-143): on a 401 whose follow-up refresh also fails, it calls `clearAdminToken()` and nothing else — no navigate/redirect anywhere in that function or file. Contrast with src/lib/api.ts fetchWithAuthRetry() (lines 647-658), which on the identical failure mode calls `this.clearToken(role); redirectToLogin(role);` — a hard `window.location.href` navigation — with an explicit F-0438 comment stating this was fixed BECAUSE 'leaving them on a dead page until their next navigation happens to re-run the route guard' was a real bug for brand/creator. Grepped all of src/admin for any other redirect-on-auth-failure path; the only `navigate('/admin/login')` found is the manual Logout button handler in src/admin/components/AdminLayout.tsx (fires on click, not on session death).",
+      "location": "src/admin/services/api-contracts.ts:130-143 (apiRequest); compare src/lib/api.ts:647-658 (fetchWithAuthRetry, F-0438 fix) and src/admin/components/AdminLayout.tsx:108-116 (manual logout only)",
+      "impact": "An admin whose token is revoked, whose account is deactivated, or whose 30-day refresh cookie expires while they have the console open in an idle tab is not redirected to /admin/login. They are left staring at a rendered but functionally dead console — the visible data goes stale and every subsequent action shows the generic 'Request failed' fallback message the same file already documents (line ~146-154) as poor UX — until they manually reload or navigate away. Because the admin console is explicitly the money/KYC/moderation surface (per the route guard's own header comment), a support agent debugging 'the admin panel is broken' for this operator would not immediately suspect an expired session, since nothing tells them to log back in.",
+      "recommended_fix": "In api-contracts.ts's apiRequest(), on the refresh-fails branch, call the same kind of hard redirect brand/creator already uses (e.g. a small admin-specific `redirectToAdminLogin()` mirroring src/lib/api.ts's `redirectToLogin`), guarded the same way (skip if already on /admin/login) so a route already there doesn't loop.",
+      "verification_required": "Reproduce by minting a short-lived admin JWT + refresh cookie in a controlled/staging admin account, letting both expire while the console is open, then triggering any apiRequest call and observing whether the browser navigates to /admin/login or stays on the dead page."
+    },
+    {
+      "id": "ANA-02",
+      "title": "No route-level code-splitting — single 899 KB gzip JS chunk shipped to every visitor, including anonymous landing-page traffic",
+      "severity": "P2",
+      "evidence_score": 4,
+      "confidence": 88,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "Ran `npx vite build` to completion against the RC's own committed .env.production (VITE_API_MODE=live, real API base URL — the same config a real prod build uses). Output: `dist/assets/index-VeUi4oUB.js  3,373.53 kB │ gzip: 899.29 kB` plus a second `PerformanceMonitor-*.js 894.33 kB │ gzip: 241.84 kB` chunk, both flagged by Vite's own '(!) Some chunks are larger than 500 kB' warning. src/App.tsx imports every one of its ~100 page components (BrandDashboardPage, AdminConsolePage, CreatorChatPage, LandingPage, etc.) via static top-level `import`, not `React.lazy`; only two isolated leaf components elsewhere use dynamic import(). vite.config.ts has no manualChunks/rollupOptions.output configuration.",
+      "location": "src/App.tsx:11-91 (static page imports), :203-895 (Routes with no Suspense/lazy boundaries); vite.config.ts (no chunking config); build artifact dist/assets/index-VeUi4oUB.js",
+      "impact": "A first-time visitor to the public marketing landing page or a public creator portfolio (/:handle) — the highest-traffic, most SEO/ad-exposed, most likely-to-be-on-mobile pages in the app — downloads, parses and executes essentially the entire brand dashboard, creator dashboard, admin console and 3D/Remotion code paths before they can see or interact with the page they actually asked for. This directly worsens LCP/TTI/INP on exactly the pages where first impressions and conversion matter most.",
+      "recommended_fix": "Convert the App.tsx route imports to `React.lazy(() => import('@/pages/...'))` wrapped in a shared `<Suspense>` fallback, at minimum splitting the three realms (public/marketing, brand, creator) and the admin console into separate chunks, then re-run `vite build` and confirm the public/landing entry chunk drops well under 500 KB gzip.",
+      "verification_required": "After splitting, re-run `vite build` and diff the per-route chunk sizes; separately, run ci/lighthouse-meera.mjs (already in the repo) against the landing page before/after to confirm LCP/TTI improve."
+    },
+    {
+      "id": "ANA-03",
+      "title": "Meera AI credit-metering feature (usage meter + paywall) is fully built but never rendered or wired into the live Meera chat page",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "`grep -rln useMeeraCredits src` returns only src/hooks/useMeeraCredits.ts (the hook itself) and src/components/feature/meera/CreditMeter.tsx (its only consumer) — no page or layout imports either. src/pages/brand-chat.tsx (the real Meera chat surface) has zero matches for CREDITS_EXHAUSTED or a 402-handling branch (the one '402' hit found is an unrelated street-address string). src/lib/voice-usage.ts independently self-documents: 'No backend cost meter exists yet — this is a fire-and-forget no-op today... Do NOT build billing logic here — this is intentionally a stub.'",
+      "location": "src/hooks/useMeeraCredits.ts (entire file, unused), src/components/feature/meera/CreditMeter.tsx (entire file, unused); absence confirmed in src/pages/brand-chat.tsx and src/pages/brand-meera.tsx",
+      "impact": "Real users get no visual indicator of remaining Meera AI credits, no low-credit warning, and no client-side paywall gate before hitting a request that the backend may reject — a materially worse UX than what the fully-built CreditMeter component already implements (loading/unlimited/low/exhausted states with a paywall CTA). This either means credits are effectively unenforced from the user's perspective today, or the backend enforces them with no client-side warning, both of which are worth a product decision.",
+      "recommended_fix": "Either wire CreditMeter + useMeeraCredits into the Meera workspace header on brand-chat.tsx/brand-meera.tsx as originally designed (P13), or if the credits feature has been deliberately deferred, delete the dead files so they don't mislead the next engineer into thinking the feature shipped.",
+      "verification_required": "Confirm with backend whether GET /meera/credits and a 402 CREDITS_EXHAUSTED response currently exist and fire in production; if they do, this is a real integration gap, not just a deferred feature."
+    },
+    {
+      "id": "ANA-04",
+      "title": "Admin access token stored in localStorage, not memory-only — architecturally weaker than the brand/creator (F-0551) design in the same codebase",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 62,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "src/admin/services/admin-session.ts: `export const ADMIN_TOKEN_KEY = 'admin_token'` and `setAdminToken`/`getAdminToken` read/write `localStorage` directly. Contrast with src/lib/api.ts's HttpClient, whose F-0551 comment (line 20-41) explicitly moved brand/creator access tokens to memory-only specifically to close an 'XSS-exfiltration surface.' The admin module's own header comment acknowledges the token stays short-lived (900s) with server-side rotation as the mitigation.",
+      "location": "src/admin/services/admin-session.ts:38-112 (localStorage-based token storage); compare src/lib/api.ts:442-500 (memory-only token storage, F-0551)",
+      "impact": "Any XSS in the admin console (a lower-traffic, more privileged surface) has a slightly larger window to read a live admin bearer token directly out of localStorage than the equivalent brand/creator token, which never touches persistent storage. The 900s expiry + rotation meaningfully bounds the blast radius, which is why this is P3 rather than higher, but the inconsistency itself is worth a deliberate call rather than an accidental one.",
+      "recommended_fix": "Consider migrating the admin access token to the same memory-only pattern as brand/creator, now that admin-session.ts already has the refresh-cookie infrastructure in place to support it.",
+      "verification_required": "None beyond the code read already done here; this is a design-consistency observation, not a reproducible bug."
+    },
+    {
+      "id": "ANA-05",
+      "title": "CounterProposalCard (creator deal-room accept/decline/reply UI) is built but never imported or rendered anywhere",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "`grep -rln \"counter-proposal-card\" .` (whole repo, excluding the file's own path) returns only two comment mentions (in src/components/brand/timeline/event-cards/proposal-card.tsx and its test) that cite it as a sibling file — no actual import. `grep -n \"CounterProposal\" src/pages/creator-chat.tsx` shows only `CounterProposalForm` (the submission form) is imported and rendered (lines 69, 3244); `CounterProposalCard` never appears in that file.",
+      "location": "src/components/creator/deal-room/counter-proposal-card.tsx (entire file, unused); the wired equivalent is src/components/creator/deal-room/counter-proposal-form.tsx via src/pages/creator-chat.tsx:69,3244",
+      "impact": "Low direct user impact if a counter-proposal's accept/decline is actually rendered some other way inside chat (not independently confirmed in this pass), but it is dead, maintained-looking code (real earnings-calculation logic, real props contract) that either represents an abandoned UI direction or an intended surface that never got wired up.",
+      "recommended_fix": "Confirm with product/design whether a recipient of a counter-proposal currently sees a purpose-built accept/decline card anywhere; if not, wire CounterProposalCard in; if the feature was superseded, delete the file.",
+      "verification_required": "Manually trigger a counter-proposal in a test/staging deal and observe what the recipient (creator or brand) actually sees rendered for it."
+    },
+    {
+      "id": "ANA-06",
+      "title": "HeroGlobe.tsx (3D component) is dead code — zero references anywhere in src/",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 70,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "`grep -rln \"HeroGlobe\" .` (repo-wide, excluding its own file) returns zero matches.",
+      "location": "src/components/3d/HeroGlobe.tsx (entire file, unused)",
+      "impact": "Minor — unused code adds to bundle-analysis noise and maintenance surface, though tree-shaking should exclude it from the actual shipped bundle since nothing imports it. Worth confirming it isn't a stale duplicate of whatever 3D hero visual is actually live (this pass did not identify the currently-used replacement, if any).",
+      "recommended_fix": "Delete if superseded, or wire it in if it was meant to replace or supplement whatever the landing page's current hero visual is.",
+      "verification_required": "Check landing.tsx and its imports for whichever 3D/hero visual IS currently rendered, to confirm HeroGlobe is a superseded duplicate rather than a component someone forgot one import line for."
+    },
+    {
+      "id": "ANA-07",
+      "title": "Positive: `tsc --noEmit` passes clean and is enforced as its own CI gate, separate from `vite build`",
+      "severity": "P3",
+      "evidence_score": 4,
+      "confidence": 95,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "Ran `npx tsc -p tsconfig.json --noEmit` directly against the clean RC; exited 0, zero errors. .github/workflows/frontend-checks.yml runs `npm run typecheck` as a required step in the same job as `npm run build`, so a type error would fail CI even though `vite build` alone would not have caught it.",
+      "location": "tsconfig.json; .github/workflows/frontend-checks.yml:53-54",
+      "impact": "Positive finding — the codebase's TypeScript surface is currently type-clean, and the pipeline has a real (not vacuous) gate for it, addressing this project's known past pattern of a build script that silently didn't typecheck.",
+      "recommended_fix": "No action needed; keep both steps in the same required CI job so `build` can never merge without `typecheck` also having passed on the same commit.",
+      "verification_required": "None — directly reproduced in this session."
+    },
+    {
+      "id": "ANA-08",
+      "title": "Positive: client-side money-flag gate verified at runtime — withdraw/escrow-fund/top-up never fire a network request when payments are disabled",
+      "severity": "P3",
+      "evidence_score": 4,
+      "confidence": 93,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "Ran `npx vitest run src/lib/payments-gate.test.tsx` directly; 9/9 tests passed, including assertions that `fetch` is never called for withdraw/fundEscrow/topUp when VITE_API_MODE=live and the money flags are off.",
+      "location": "src/lib/payments-gate.test.tsx (entire file); gated code in src/lib/api.ts (isMoneyActionBlocked, PaymentsUnavailableError)",
+      "impact": "Positive finding — this directly closes the specific failure mode this project's own history describes (a debit posted to the ledger before the payment gateway is actually reachable), at least on the client side, with a real runtime-reproduced test rather than just a code-reading inference.",
+      "recommended_fix": "No action needed for the client gate itself; keep this test in the required CI suite (it already is, per `npm test` in frontend-checks.yml).",
+      "verification_required": "None — directly reproduced in this session."
+    }
+  ],
+  "features": [
+    {
+      "name": "TypeScript type-checking (tsc --noEmit)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 95,
+      "evidence": "Ran directly against the RC; exit 0, zero errors.",
+      "user_type": "n/a (build-time gate)"
+    },
+    {
+      "name": "Production build (vite build)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 88,
+      "evidence": "Ran to completion against the RC's own .env.production (live mode, real API URL); produced a valid dist/ output, but with an oversized, non-code-split main chunk (see ANA-02).",
+      "user_type": "n/a (build-time)"
+    },
+    {
+      "name": "Route guards — brand/creator (ProtectedRoute, CreatorProtectedRoute)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 65,
+      "evidence": "Code reads cleanly: memory-token + HttpOnly-cookie based check, server-verified onboarding-completion gate via useQuery, fails open on transient network errors by design (documented). Not runtime-exercised in a browser in this pass.",
+      "user_type": "Brand and Creator authenticated users"
+    },
+    {
+      "name": "Route guard — admin (AdminProtectedRoute)",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 2,
+      "confidence": 62,
+      "evidence": "Correctly blocks initial unauthenticated access (checks localStorage presence, redirects to /admin/login). Does NOT recover a mid-session death gracefully — see ANA-01.",
+      "user_type": "Admin/operator users"
+    },
+    {
+      "name": "Money-flag gate (withdraw / escrow-fund / wallet top-up blocked when disabled)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 93,
+      "evidence": "9/9 tests passed at runtime in this session (src/lib/payments-gate.test.tsx).",
+      "user_type": "Brand (fund/top-up) and Creator (withdraw)"
+    },
+    {
+      "name": "Razorpay Checkout launcher (src/lib/razorpay.ts)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 68,
+      "evidence": "Code correctly treats the Checkout success callback as untrusted and documents server-side re-verification as the caller's responsibility; individual callers (FundEscrowButton, brand-wallet topUp) were not independently re-opened to confirm each one follows through.",
+      "user_type": "Brand users funding escrow / topping up wallet"
+    },
+    {
+      "name": "Meera AI credit meter / paywall UI (CreditMeter + useMeeraCredits)",
+      "status": "DEAD CODE",
+      "evidence_score": 3,
+      "confidence": 80,
+      "evidence": "Complete, well-built component and hook; zero references anywhere else in src/, no CREDITS_EXHAUSTED/402 handling in the real Meera chat page.",
+      "user_type": "Brand users chatting with Meera"
+    },
+    {
+      "name": "Counter-proposal accept/decline card (CounterProposalCard)",
+      "status": "DEAD CODE",
+      "evidence_score": 3,
+      "confidence": 75,
+      "evidence": "Complete component with real earnings-calc logic; zero imports anywhere; only the submission form (CounterProposalForm) is wired into creator-chat.tsx.",
+      "user_type": "Creator users viewing a brand's counter-proposal"
+    },
+    {
+      "name": "3D hero globe (HeroGlobe.tsx)",
+      "status": "DEAD CODE",
+      "evidence_score": 3,
+      "confidence": 70,
+      "evidence": "Zero references anywhere in src/.",
+      "user_type": "Public landing-page visitors (if it was meant to render there)"
+    },
+    {
+      "name": "Route-level code splitting",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 4,
+      "confidence": 88,
+      "evidence": "No React.lazy/Suspense at the route level in App.tsx; confirmed by a real 899 KB-gzip single main chunk in an actual production build.",
+      "user_type": "All visitors, especially first-time/anonymous"
+    },
+    {
+      "name": "Global render-crash isolation (ErrorBoundary + RoutedErrorBoundary)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 82,
+      "evidence": "Code correctly scopes the boundary inside the Router with a pathname-keyed reset (CR-10) and a defensively-wrapped, deduped crash-report side effect (CR-11); not runtime-triggered in a browser in this pass.",
+      "user_type": "All users"
+    },
+    {
+      "name": "Demo/mock data isolation from live-mode users",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "evidence": "The one consumer inspected in depth (campaigns-list.tsx) correctly gates demo data behind isApiLive(); the other 7 of 8 known consumers of demo-data.ts were not individually re-checked.",
+      "user_type": "All live-mode (production) users"
+    }
+  ],
+  "area": {
+    "name": "Frontend SPA (src/, vite.config.ts, App.tsx routing, pages, components, admin, lib)",
+    "status": "Mostly production-ready, with one auth-consistency gap in the admin realm and a real (unaddressed) bundle-size/code-splitting problem",
+    "evidence_level": 3,
+    "confidence": 74,
+    "main_evidence": "Direct source reading of App.tsx routing/guards, auth session modules (brand/creator and admin, three separate realms), Razorpay wrapper, ErrorBoundary, and API-error-mapping code; a real `tsc --noEmit` run (clean, E4); a real production `vite build` run against the repo's own live-mode env config (succeeded, but revealed the code-splitting gap, E4); one real vitest run of the payments-gate test suite (9/9 passing, E4); and a full repo-wide grep sweep for orphaned components confirming three dead, real (non-scaffold) components.",
+    "main_uncertainty": "This audit did not run the full vitest suite (hundreds of test files exist across src/pages, src/lib, src/admin — only one targeted file was executed), did not exercise any page in an actual browser (no visual/interactive testing of loading/empty/error states, responsive breakpoints, or keyboard/screen-reader navigation), and did not open every one of the ~100 pages or ~275 components individually — coverage is necessarily a sample, weighted toward auth, payments, and dead-code detection per the task's stated focus areas.",
+    "limitations": "Backend behavior (whether the server actually returns CREDITS_EXHAUSTED 402s, whether DTO shapes match what api.ts/meera-api.ts declare) was out of scope for this FE-only pass and is not claimed either way beyond what FE source directly shows. Build/test runs were executed in a sandboxed environment, not the real CI/production infra, so absolute timings (e.g. the 15m37s build) are not representative, though pass/fail outcomes and artifact sizes are."
+  },
+  "extra": "Commands actually executed against the clean RC (C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698), for reproducibility: `git log -1` confirmed HEAD=115f698, 0 local changes; `npx tsc -p tsconfig.json --noEmit` → exit 0; `npx vite build` (using the repo's committed .env.production, VITE_API_MODE=live) → succeeded in 15m37s, 4905 modules, main chunk dist/assets/index-VeUi4oUB.js = 3,373.53 kB / 899.29 kB gzip, second oversized chunk dist/assets/PerformanceMonitor-*.js = 894.33 kB / 241.84 kB gzip, Vite's own >500kB warning fired; `npx vitest run src/lib/payments-gate.test.tsx` → 1 file, 9 tests, all passed in 38.84s. graphify-out/graph.json does NOT exist in the RC checkout (confirmed via `ls`, `test -d`, and the `graphify query` CLI itself erroring 'graph file not found' at that exact path) despite the task's/hook's claim that it does, so this audit was done via direct Read/Grep/Glob rather than the graphify tool. A Node.js static-import scanner (275 candidate component files under src/components) flagged 23 files with zero cross-file static-import matches; manual verification found most of these are either (a) legitimately unused shadcn/ui scaffold primitives (carousel, drawer, menubar, sidebar, pagination, breadcrumb, context-menu, hover-card, kbd, item, field, input-otp, input-group, button-group, toggle-group, resizable, aspect-ratio, navigation-menu — 17 files, not reported as individual findings since this is normal for a generated UI kit) or (b) false positives caught by dynamic `import()` (login-scene-3d.tsx, MeeraDemoPlayer.tsx — both confirmed genuinely wired via lazy-loading and excluded from findings). The remaining 3 (HeroGlobe.tsx, counter-proposal-card.tsx, CreditMeter.tsx) were individually confirmed dead via repo-wide grep and are reported as ANA-03/05/06."
+}

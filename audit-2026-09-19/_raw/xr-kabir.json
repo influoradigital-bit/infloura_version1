@@ -1,0 +1,129 @@
+{
+  "reviewer": "kabir (Red-Team — security & payments-abuse lens, cross-team review)",
+  "rc_commit": "115f698",
+  "rc_dir": "C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+  "rc_clean_at_audit_time": true,
+  "questions": [
+    {
+      "q": "Can a brand double-fund (double-debit) the same milestone through the real escrow API?",
+      "answer": "Yes. EscrowService.assertContractActiveForMilestone (:388-434) checks contract signatures and CollaborationStatus.CANCELLED only, never milestone.getStatus(); applyFunding (:473-517) unconditionally calls milestone.markFunded(hold.getId()) at :495-503; PaymentMilestone.markFunded (:141-145) unconditionally overwrites status/escrowHoldId regardless of the prior value. A brand retrying with a fresh Idempotency-Key on an already-FUNDED or RELEASED milestone gets double-debited. Confirms EV-002."
+    },
+    {
+      "q": "Can a brand claw back money after a creator has delivered and had the work approved?",
+      "answer": "Yes. EscrowService.refundInternal (:971-1013) only checks assertEscrowNotBlockedByDispute and requireStatus(hold, FUNDED) — no check against Deliverable/approval state. A FUNDED hold whose deliverable was already approved can still be refunded via POST /wallet/escrow/refund. Confirms EV-015."
+    },
+    {
+      "q": "Can a low-privilege workspace member (VIEWER) trigger a real money release?",
+      "answer": "Yes. BrandDeliverableService.approve (:128-187) calls only brandContext.requireBrandWorkspace(principal) (JWT workspace claim, no membership/role check) before calling escrowService.tryReleaseOnApproval. The explicit EscrowController release path requires requireRole(OWNER, ADMIN); the deliverable-approval path does not. Confirms EV-021."
+    },
+    {
+      "q": "Is the /internal/** service-token gate for Meera credit refund/message injection actually enforced against a normal user JWT?",
+      "answer": "No. InternalServiceTokenFilter.java:82-83 still calls stripContext(request.getRequestURI()) with no decoding before the startsWith(INTERNAL_PREFIX) check, so a percent-encoded path segment bypasses the filter while Spring's own routing still matches the logical /internal/** controller. Reaffirms my own prior finding EV-004."
+    },
+    {
+      "q": "Do the Razorpay/Shopify/WooCommerce webhook signature verifiers actually validate HMAC correctly and fail closed?",
+      "answer": "Yes, verified in source — all three (WebhookSignatureVerifier.java, ShopifyWebhookSignatureVerifier.java, WooCommerceWebhookSignatureVerifier.java) fail closed on missing/blank secret or signature, use constant-time comparison, and use the provider-correct encoding (hex for Razorpay, base64 for Shopify/WooCommerce). No finding — positive/informational, worth preserving so a future audit does not re-flag it."
+    },
+    {
+      "q": "Is the SSRF protection on the brand-website-analysis feature (analyze_site) adequate against DNS rebinding and redirect abuse?",
+      "answer": "Yes. influora-ai/app/security/ssrf_guard.py resolves DNS first, blocks private/loopback/link-local/CGNAT/metadata ranges, PINS the first resolved IP and connects to that pinned IP (not a fresh resolve) for every hop including redirects, caps redirects at 2 with per-hop re-validation, and streams the response with a hard size cap enforced during the read (not after buffering). No finding — positive/informational."
+    },
+    {
+      "q": "Are affiliate commissions actually postable to the wallet ledger given the DB schema, and if posted, do they land where the creator can see them?",
+      "answer": "No on both counts. V8__wallet_transactions.sql's `type` ENUM column (`ENUM('DEPOSIT','WITHDRAWAL','ESCROW_HOLD','ESCROW_RELEASE','ESCROW_REFUND','PLATFORM_FEE','PAYOUT','ADJUSTMENT')`) never lists AFFILIATE_COMMISSION even though WalletTransactionType.java (Java enum) declares it — posting will be rejected/truncated against real MySQL (confirms EV-011). Separately, AffiliateSettlementWriter.java:130 credits walletService.requireOrCreateUserWallet(earning.getCreatorId()), where getCreatorId() is creator_profiles.id (per V28/V24 FK), while WalletService.getBalanceForUser/getSummaryForUser read by principal.getUserId() (users.id) — a different key, so even a successful credit is invisible to the creator's own wallet view (confirms EV-025)."
+    },
+    {
+      "q": "Is there a systemic pattern of missing role/membership checks beyond the individually-flagged endpoints, and is EV-099's severity accurately scored given that pattern?",
+      "answer": "Yes to the pattern, no to the scoring. SecurityConfig.java:272-298 adds explicit defense-in-depth hasRole(\"ADMIN\")/hasRole(\"CREATOR\") matchers for /admin/** and /creator/**, with a comment explicitly citing this as protection against a future controller silently relying only on service-layer checks — but no equivalent ROLE_BRAND matcher exists for /campaigns/**, /wallet/** etc., so brand-scoped endpoints depend entirely on each service remembering to check. That exact failure mode is independently CONFIRMED at EV-021 (deliverable approval), EV-070 (contract signing / webhook-secret rotation) and EV-036 (admin money-cap write) — three separate, already-verified instances in the SAME register. EV-099 itself is scored P2/evidence_score 2/confidence 55/INFERRED with an EMPTY evidence field, which understates a now-corroborated, non-hypothetical pattern. See disagreement below."
+    },
+    {
+      "q": "Can a brand create and publish a campaign directly to ACTIVE without ever funding escrow or paying the publish fee, via the real product UI?",
+      "answer": "Yes. CampaignService.create() (:145-235) has no call to requireFundedEscrow() or brandCampaignFeeService.chargeOnPublish() for any incoming status, while update()'s transitioningToActive branch (:368-377) calls both. Both real FE entry points (campaign-form.tsx, brand-new-hype-campaign.tsx) call create() with status:'ACTIVE' directly. Confirms EV-005."
+    },
+    {
+      "q": "Does the idempotency-key scoping for creator withdrawal actually fit the DB column it is stored in?",
+      "answer": "No. WalletService.java:304 builds scopedKey = \"creator-withdraw:\" (17 chars) + userId (26-char ULID) + \":\" + the client's raw Idempotency-Key header (commonly a 36-char UUID) = ~80 chars, against idempotency_key VARCHAR(64) in both V8__wallet_transactions.sql:15 and V48__payouts.sql:13. This is a functional reliability bug (every real withdrawal fails at commit), not an abuse vector per se, but blocks the entire creator payout path. Confirms EV-014."
+    },
+    {
+      "q": "Are there hardcoded credentials, default admin passwords, or committed live API keys in this RC?",
+      "answer": "Live-shaped third-party keys (Anthropic sk-ant-, Sarvam, Cloudflare R2, MSG91) are committed in tracked influora-ai/env.example and influora-api/env.example and their git history — my own prior finding, EV-006, reaffirmed. No hardcoded DB/admin passwords found in any Flyway migration or seed data on this pass (grepped for admin/password/changeme/test123 literals)."
+    },
+    {
+      "q": "Is JWT validation vulnerable to algorithm confusion (\"alg: none\") or a weak/missing signing key?",
+      "answer": "No finding. JwtService.java uses jjwt's modern verifyWith(accessKey()).build().parseSignedClaims(token) API (lines ~46-49), which binds verification to a specific key type and rejects an unsigned/none-alg token by construction. No issue found."
+    },
+    {
+      "q": "Is there a mass-assignment / self-role-escalation risk on workspace membership (e.g. a MEMBER promoting themselves to OWNER)?",
+      "answer": "No finding. WorkspaceMemberController exposes invite/accept/deactivate/switch/list only — no PATCH-role endpoint. parseRole() (used by /invite) explicitly restricts the target role to ADMIN/MANAGER/MEMBER/VIEWER (OWNER is not a parseable value), so no self- or peer-escalation to OWNER is possible through this surface."
+    },
+    {
+      "q": "Do escrow fund/release/refund actions record which authenticated workspace member actually performed them, for dispute/forensic purposes?",
+      "answer": "No — new finding, not previously in the register. See XR-KABIR-01: neither escrow_holds (V9) nor wallet_transactions (V8) has an actor/member column; the only ApplicationHistoryEvent write in EscrowService (line 554, for FUND_ESCROW only) hardcodes actorType=SYSTEM/actorId=\"system\" even on the brand-initiated wallet-funding path that has a live principal; release and refund make zero history or log calls at all. Combined with EV-021 and EV-015 (both confirmed above), this means the platform cannot identify who funded, released, or refunded a given escrow hold inside a multi-seat workspace."
+    }
+  ],
+  "agreements": [
+    "EV-002 (P0, double-fund an already-FUNDED/RELEASED milestone) — CONFIRMED by direct read: EscrowService.java:388-434 (assertContractActiveForMilestone never checks milestone.getStatus()), :473-517/:495-503 (applyFunding unconditionally calls markFunded), PaymentMilestone.java:141-145 (markFunded unconditionally overwrites status/escrowHoldId). Real, exploitable-by-retry P0.",
+    "EV-003 (P0, RazorpayX call inside open DB transaction, idempotency marked COMPLETED pre-commit) — structurally confirmed: requestCreatorWithdrawal is @Transactional and calls doProcessWithdrawal (gateway call) before Payout persistence, matching the cited line ranges. Runtime reproduction against a real gateway was not performed by anyone in the register (noted under missing_evidence).",
+    "EV-004 (P0, /internal/** percent-encoding bypass) — my own prior finding (kabir:KAB-02), reaffirmed by re-reading InternalServiceTokenFilter.java:82-83 at this RC: raw getRequestURI(), no decode.",
+    "EV-005 (P0, CampaignService.create() skips escrow/fee gates) — confirmed: create() (:145-235) has no requireFundedEscrow/chargeOnPublish call; both real FE publish entry points post status:'ACTIVE' directly to create().",
+    "EV-006 (P0, live-format credentials committed in env.example + history) — my own prior finding (kabir:KAB-01), reaffirmed.",
+    "EV-011 (P1, wallet_transactions ENUM never widened for AFFILIATE_COMMISSION/AFFILIATE_EARNING) — confirmed: Java enums declare the values, no Flyway migration adds them to the DB ENUM columns.",
+    "EV-014 (P1, creator withdrawal idempotency key overflows VARCHAR(64)) — confirmed arithmetically and in source: WalletService.java:304 scopedKey easily exceeds 64 chars.",
+    "EV-015 (P1, brand can self-refund a FUNDED hold post-approval) — confirmed: refundInternal (:971-1013) checks dispute-block and FUNDED status only, no deliverable/collaboration-progress gate.",
+    "EV-021 (P1, any workspace member incl. VIEWER can approve+release escrow) — confirmed: BrandDeliverableService.approve uses requireBrandWorkspace only, no requireRole(OWNER,ADMIN), unlike the explicit EscrowService.release role gate.",
+    "EV-025 (P1, affiliate commission credited to a wallet keyed by the wrong id) — confirmed: AffiliateSettlementWriter.java:130 uses creator_profiles.id while balance reads use users.id.",
+    "EV-036 (P1, AdminCreatorAgentController#setMonthlyCap has no role-tier/MFA check) — confirmed: class javadoc explicitly disclaims a per-method check unlike sibling Admin*Controllers.",
+    "EV-070 (P2, missing workspace role checks on contract signing / webhook-secret rotation) — my own prior finding (kabir:KAB-09), reaffirmed.",
+    "EV-079 (P2, Meera on-behalf JWT has no jti replay enforcement) — confirmed: 'jti' appears only in comments in OnBehalfAuthResolver.java/OnBehalfTokenService.java, never read/recorded/checked.",
+    "EV-092 (P2, password-reset/invite tokens in URL query strings on GTM-loaded pages) — my own prior finding (kabir:KAB-08), reaffirmed.",
+    "EV-129 (P3, refresh-token rotation has no reuse detection) — my own prior finding, consistent with the AuthService/AdminAuthService refresh code observed this pass; not independently re-walked line-by-line this session."
+  ],
+  "positive_informational_not_in_register": [
+    "Razorpay/Shopify/WooCommerce webhook HMAC verifiers (WebhookSignatureVerifier.java, ShopifyWebhookSignatureVerifier.java, WooCommerceWebhookSignatureVerifier.java) are correctly implemented: fail-closed on missing secret/signature, constant-time comparison, provider-correct encoding (hex vs base64).",
+    "SSRF guard for the brand-website-analysis feature (influora-ai/app/security/ssrf_guard.py) implements DNS resolve-then-pin, blocks private/loopback/link-local/CGNAT/metadata ranges, re-validates every redirect hop against a fresh pin, caps redirects at 2, and enforces the response-size cap during streaming (not after buffering).",
+    "CorsConfig.java uses an explicit env-driven allow-list (never '*') with allowCredentials(true), which is the safe combination.",
+    "JwtService.java uses jjwt's modern verifyWith(key).build().parseSignedClaims() API — not vulnerable to alg:none / algorithm-confusion.",
+    "WorkspaceMemberController has no role-update endpoint and its invite-role parser excludes OWNER — no self-escalation path found.",
+    "No hardcoded DB/admin passwords found in Flyway migrations or seed data (separate from the env.example live-key issue in EV-006)."
+  ],
+  "disagreements": [
+    {
+      "ev": "EV-099",
+      "position": "Severity/evidence-score/confidence are understated for 'Brand endpoints have no role gate at the filter chain'. Should be P1, evidence_score 3, confidence ~75, not P2/E2/C55/INFERRED.",
+      "evidence": "Independently confirmed at influora-api/src/main/java/com/influora/config/SecurityConfig.java:272-298: '/admin/**' gets hasRole(\"ADMIN\") and '/creator/**' gets hasRole(\"CREATOR\") as explicit filter-chain defense-in-depth, with an inline comment stating this exists specifically because relying only on each controller's own lookup 'held only by accident... A future controller here... would silently drop that protection with no test to catch it.' No equivalent ROLE_BRAND matcher exists for brand-scoped paths (/campaigns/**, /wallet/**, /creators (discovery), etc.) — they fall through to anyRequest().authenticated() and rely entirely on each service calling brandContext.requireMember/requireRole correctly. This is not hypothetical: the SAME merged register independently confirms the exact failure at EV-021 (BrandDeliverableService.approve skips the role check and releases real money), EV-070 (ContractService.recordSignature and ConversionWebhookSecretController skip the role check), and EV-036 (AdminCreatorAgentController#setMonthlyCap skips the role/MFA check) — three separately-evidenced instances of precisely the gap EV-099 describes. Root-cause grouping RC-05 in this same register already clusters EV-099 with EV-021/EV-070/EV-036/EV-022/EV-004/EV-071/EV-079/EV-082/EV-029/EV-140, but EV-099's own per-finding score was not raised to reflect that corroboration.",
+      "evidence_score": 3,
+      "confidence": 75,
+      "proposed_change": "Raise EV-099 to severity P1, evidence_score 3 (code + corroborating pattern across 3 independently-confirmed sibling findings in the same register), confidence ~75; populate its currently-empty evidence/impact/recommended_fix fields by cross-referencing EV-021/EV-070/EV-036 as concrete, already-verified instances of the exact gap it describes, and recommend adding an explicit .requestMatchers(\"/campaigns/**\", \"/wallet/**\", ...).hasRole(\"BRAND\") (or a shared brand-role annotation/aspect) as filter-chain defense-in-depth, mirroring the pattern already used for /admin/** and /creator/**."
+    }
+  ],
+  "missing_evidence": [
+    "EV-099: the 'evidence' field is literally empty (`\"evidence\": \"[inventory:INV-05] \"`) with blank impact/recommended_fix/reproduction fields. The finder cited only source line numbers with no quoted reasoning about what is present/absent there. I independently re-derived and substantiated the reasoning (see disagreement above); as submitted, this entry's C55/E2/INFERRED rating is not backed by any recorded analysis, only a location pointer.",
+    "EV-003: reproduction is explicitly marked 'not performed' (static/code-read only, no MySQL + RazorpayX-sandbox run). The core 'orphaned debit survives a post-gateway-accept crash' claim rests entirely on code-path tracing, not an observed failure. Recommend Kavya/Meera run the integration-test reproduction named in its own verification_required before treating this as more than code-confirmed.",
+    "EV-129 (refresh-token reuse detection) in this register carries no fresh reproduction from this pass on my part — I am relying on my own prior finding plus a general read of AuthService/AdminAuthService refresh code, not a line-by-line re-walk this session; flagging so it is not double-counted as independently re-verified evidence."
+  ],
+  "missed_issues": [
+    {
+      "id": "XR-KABIR-01",
+      "category": "audit-logging",
+      "title": "No escrow money-movement (fund/release/refund) records which authenticated workspace member performed it — no actor column on escrow_holds/wallet_transactions, and the one ApplicationHistoryEvent write hardcodes actorId=\"system\"",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 82,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "location": "influora-api/src/main/resources/db/migration/V9__escrow_holds.sql:1-26 (no actor/member column); influora-api/src/main/resources/db/migration/V8__wallet_transactions.sql:1-20 (same); influora-api/src/main/java/com/influora/service/EscrowService.java:212-341 (initiateFund receives AuthPrincipal principal but never threads it into applyFunding, ApplicationHistoryEvent, or any log call), :473-517 with the sole record() call at :551-566 (hardcodes ApplicationHistoryActorType.SYSTEM / actorId literal \"system\", even though this call site is reached from the brand-authenticated initiateFund path, not only the unauthenticated webhook path), :959-1015 refundInternal (zero application-history or log calls), release path ~:893-955 (same, zero actor-recording calls); influora-api/src/main/java/com/influora/web/EscrowController.java (zero log.* statements across all five money-moving endpoints).",
+      "evidence": "grep -n \"applicationHistoryService.record|\\\\.record(\" influora-api/src/main/java/com/influora/service/EscrowService.java returns exactly ONE match (line 554), and that call's actorType/actorId arguments are ApplicationHistoryActorType.SYSTEM and the string literal \"system\" — not collaboration-derived, not principal-derived — despite the method being reachable from initiateFund, which does have an authenticated AuthPrincipal in scope (used only for brandContext.requireMember/requireRole authorization, then discarded). grep -n \"actorId|performedBy|initiatedBy|memberId\" over the same file returns zero matches. Reading V9__escrow_holds.sql and V8__wallet_transactions.sql end-to-end shows workspace_id/wallet_id columns but no member/actor/user/initiated_by column of any kind on either table. EscrowController.java (the controller for /wallet/escrow/fund, /release, /refund, /status, /list) contains no log.* call anywhere in the file.",
+      "reproduction": "cat influora-api/src/main/resources/db/migration/V9__escrow_holds.sql and V8__wallet_transactions.sql (no actor column in either CREATE TABLE); grep -n \"applicationHistoryService.record|\\\\.record(\" influora-api/src/main/java/com/influora/service/EscrowService.java (1 hit at :554, hardcoded \"system\"); grep -n \"actorId|performedBy|initiatedBy|memberId\" same file (0 hits); grep -n \"log\\\\.\" influora-api/src/main/java/com/influora/web/EscrowController.java (0 hits).",
+      "impact": "Combined with EV-021 (a VIEWER, not just OWNER/ADMIN, can approve a deliverable and trigger a real escrow release) and EV-015 (an OWNER/ADMIN can refund a FUNDED hold to the brand even after the creator's work was delivered and approved), this is a genuine forensic gap on every real money movement the escrow subsystem performs: the database, the append-only application-history timeline, and the application logs are all silent on WHICH specific member/session of a multi-seat brand workspace funded, released, or refunded a given hold — only the workspace as a whole is ever recorded. If a workspace seat is compromised (stolen session, an offboarded employee's still-live refresh token per EV-071/EV-129, or insider collusion with a creator), the platform has no durable record to answer 'who authorized this transfer' for a payment dispute, a chargeback defense, or an internal fraud investigation.",
+      "recommended_fix": "Add an actor_user_id (or actor_member_id) column to escrow_holds and to wallet_transactions (or a dedicated escrow_hold_events audit table); thread principal.getUserId()/member.getId() from EscrowController through EscrowService.initiateFund/release/refund into that column and into an ApplicationHistoryEvent.record() call for all three actions — today only fund gets one, and it is hardcoded to SYSTEM. Reserve ApplicationHistoryActorType.SYSTEM for the genuinely-unauthenticated confirmFunded webhook path; use the real principal for initiateFund, release and refund, which all have one.",
+      "verification_required": "Kabir/Kavya on staging: fund, then release (or refund) an escrow hold as three differently-named workspace members (e.g. OWNER, then a second ADMIN) and confirm that none of escrow_holds, wallet_transactions, application_history_events, or the API access/application logs contain any field identifying which of the members performed each action.",
+      "affected_features": [
+        "Escrow fund (POST /wallet/escrow/fund)",
+        "Escrow release (POST /wallet/escrow/release)",
+        "Escrow refund (POST /wallet/escrow/refund)",
+        "Payment dispute / chargeback defense",
+        "Multi-seat workspace accountability and fraud investigation"
+      ]
+    }
+  ]
+}

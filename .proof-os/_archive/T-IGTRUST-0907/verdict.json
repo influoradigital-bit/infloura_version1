@@ -1,0 +1,18 @@
+{
+  "verdict": "proved",
+  "isolation": "oracle",
+  "done_when": "npx vitest run <each affected test file> exits 0 and npx tsc --noEmit exits 0",
+  "evidence": {
+    "oracle": "tsc",
+    "command": "npx tsc --noEmit && npx vitest run && bash .proof-os/gates/meta-authpath-explicit.sh",
+    "result": "tsc exit 0; vitest exit 0 with Test Files 210 passed (210), Tests 1209 passed (1209); gate exit 0 PROVED",
+    "where": "src/lib/api.ts:5384"
+  },
+  "not_checked": [
+    "whether more creators actually complete the Instagram connect in production — nothing here measures the funnel",
+    "whether the Meta OAuth dialog itself behaves as expected for a real creator on either path; no live Meta handshake was performed",
+    "the creator-profile, deal-room and callback surfaces were not clicked in a live browser (they need the backend API, which is not running locally) — they rest on tests, tsc and vite build",
+    "whether a creator finds these four trust lines persuasive; only that each one is true of the scopes the code requests"
+  ],
+  "skipped": []
+}

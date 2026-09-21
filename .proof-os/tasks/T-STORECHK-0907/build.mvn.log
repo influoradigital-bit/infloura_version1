@@ -1,0 +1,10 @@
+· heap-bounded mode: MAVEN_OPTS pinned to -Xmx2g by PROOF_MVN_HEAP
+  in this mode an OutOfMemoryError IS a finding (exit 1): the budget was declared and the build exceeded it.
+· tests SKIPPED (-DskipTests; set PROOF_MVN_TESTS=1 to run them) — goal: compile
+· 1 JVM crash dump(s) already present in this directory:
+    hs_err_pid14132.log — Out of Memory Error (arena.cpp:168), pid=14132, tid=2068
+  These are host-capacity facts, not code findings (F-0038).
+· mvn -q -o compile  (offline; budget 600s)
+VERDICT: aligned (proved) — the module compiles
+NOT CHECKED: tests (skipped by -DskipTests — no test regression can be caught in this mode); runtime behaviour, data correctness, security, static analysis; 1 past crash dump(s) remain on disk
+build.mvn.sh EXIT=0

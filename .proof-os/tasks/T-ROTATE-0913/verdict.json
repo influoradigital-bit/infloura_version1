@@ -1,0 +1,16 @@
+{"verdict": "proved",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "the stale-identifier-on-rotate class has a gate naming F-0519, F-0520, F-0766 and F-0816, each integration's reversion turns it RED independently, and a new integration carrying the same shape is caught",
+ "evidence": {"oracle": "script",
+              "command": "bash .proof-os/gates/F-0519-rotate-keeps-identifier.sh plus five reversions run one at a time and restored between",
+              "result": "each of the three integration reversions reds independently and names its integration; a synthetic fifth integration the gate had never seen is caught; the unmutated tree is green. The Meta reversion was reproduced independently by the dispatcher after a first attempt that mutated the wrong line and proved nothing.",
+              "where": ".proof-os/gates/F-0519-rotate-keeps-identifier.sh:2"},
+ "not_checked": [
+   "no points-to analysis proves a rotate call's argument slot could not coincidentally be some other in-scope variable; the three behavioural reconnect tests are what actually exercise the write path",
+   "the UNIQUE(shop_domain)/UNIQUE(site_url) collision case - reconnecting to an identifier a different, now-revoked workspace previously held - is pre-existing, unhandled, and declared rather than fixed",
+   "the gate does not check class-file freshness across all of com.influora; it assumes mvn -o test, never surefire:test against stale bytecode",
+   "nothing was run live: no OAuth reconnect against a real Shopify, WooCommerce or Meta account was performed, so this is proved at the persistence layer and not end to end",
+   "my own first reproduction of the Meta reversion mutated applyIgBusinessAccountId instead of the assignment inside rotateToken and was therefore meaningless; it is only the second attempt that carries any weight"
+ ],
+ "skipped": []}

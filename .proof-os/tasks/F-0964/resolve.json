@@ -1,0 +1,34 @@
+{
+ "text": "fix F-0964 public profile shows unverified metrics as verified",
+ "verb": "FIX",
+ "resolution": "proved",
+ "verbs_matched": [
+  "FIX"
+ ],
+ "modifiers": {},
+ "target": {
+  "kind": "ledger",
+  "id": "F-0964",
+  "resolution": "proved",
+  "note": "unverified-as-verified",
+  "status": "open"
+ },
+ "scope": [
+  "influora-api/src/main/java/com/influora/service/PublicCreatorService.java"
+ ],
+ "scope_from": "ledger.where",
+ "owner": "vikram",
+ "reviewer": "kabir",
+ "oracles": [],
+ "oracle_first": false,
+ "exit_gate": null,
+ "done_when": null,
+ "ask": "F-0964 has no `fix` recorded \u2014 what must be true for it to be closed?",
+ "refused": null,
+ "prior_failures": [
+  "F-0964"
+ ],
+ "dispatch": "ask",
+ "oracles_skipped_no_toolchain": [],
+ "graph_nodes": 928
+}

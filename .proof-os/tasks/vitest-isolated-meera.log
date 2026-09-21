@@ -1,0 +1,414 @@
+▲ [WARNING] Duplicate key "baseUrl" in object literal [duplicate-object-key]
+
+    ../../tsconfig.json:21:4:
+      21 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+  The original key "baseUrl" is here:
+
+    ../../tsconfig.json:20:4:
+      20 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Sage world/Downloads/New Influora Ai/New Influora[39m
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mreports exactly one crash, carrying componentStack (the throw-site field)
+[22m[39mError: render exploded
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'render exploded'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: render exploded
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mdedupes the same crash (same message + pathname) to a single report
+[22m[39mError: same crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'same crash'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: same crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+Error: same crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'same crash'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: same crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mdoes NOT dedupe a different message on the same pathname
+[22m[39mError: crash A
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'crash A'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: crash A
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+Error: crash B
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'crash B'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: crash B
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mdoes NOT dedupe the same message on a different pathname
+[22m[39mError: cross-route crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'cross-route crash'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: cross-route crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+Error: cross-route crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'cross-route crash'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: cross-route crash
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mstill renders the fallback when the report call REJECTS
+[22m[39mError: reject case
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'reject case'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: reject case
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2mstill renders the fallback when the report call THROWS synchronously
+[22m[39mError: throw case
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'throw case'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: throw case
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2m"Try again" still works after a report failure
+[22m[39mError: retry after failure
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'retry after failure'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: retry after failure
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+[90mstderr[2m | src/components/ErrorBoundary.test.tsx[2m > [22m[2mErrorBoundary — CR-11 crash reporting[2m > [22m[2m"Try again" still works after a report failure
+[22m[39mError: retry after failure
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  [stack]: [36m[Getter/Setter][39m,
+  [message]: [32m'retry after failure'[39m
+}
+
+The above error occurred in the <Bomb> component.
+
+React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary.
+
+[ErrorBoundary] Uncaught render error: Error: retry after failure
+    at Bomb [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\components\ErrorBoundary.test.tsx:52:9[90m)[39m
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25904:20[90m)[39m
+    at renderWithHooks [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:7662:22[90m)[39m
+    at updateFunctionComponent [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:10166:19[90m)[39m
+    at beginWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:11778:18[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at performUnitOfWork [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17641:22[90m)[39m
+    at workLoopSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17469:41[90m)[39m
+    at renderRootSync [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:17450:11[90m)[39m
+    at performWorkOnRoot [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:16583:35[90m)[39m {
+  componentStack: [32m'\n'[39m +
+    [32m'    at Bomb (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.test.tsx:24:17)\n'[39m +
+    [32m'    at ErrorBoundary (C:\\Users\\Sage world\\Downloads\\New Influora Ai\\New Influora\\src\\components\\ErrorBoundary.tsx:8:5)'[39m
+}
+
+ [32m✓[39m src/components/ErrorBoundary.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[32m 162[2mms[22m[39m
+ [32m✓[39m src/pages/creator-meta-callback.test.tsx [2m([22m[2m18 tests[22m[2m)[22m[33m 718[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m25 passed[39m[22m[90m (25)[39m
+[2m   Start at [22m 13:42:25
+[2m   Duration [22m 3.79s[2m (transform 459ms, setup 736ms, collect 1.13s, tests 879ms, environment 2.34s, prepare 307ms)[22m
+
+ISOLATED_EXIT_CODE=0

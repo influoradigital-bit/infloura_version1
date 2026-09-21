@@ -1,0 +1,1169 @@
+▲ [WARNING] Duplicate key "baseUrl" in object literal [duplicate-object-key]
+
+    ../../tsconfig.json:21:4:
+      21 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+  The original key "baseUrl" is here:
+
+    ../../tsconfig.json:20:4:
+      20 │     "baseUrl": ".",
+         ╵     ~~~~~~~~~
+
+
+[1m[46m RUN [49m[22m [36mv3.2.7 [39m[90mC:/Users/Sage world/Downloads/New Influora Ai/New Influora[39m
+
+[90mstderr[2m | src/pages/creator-settings-change-password.test.tsx[2m > [22m[2mCreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22m[2msubmits the entered passwords to api.auth.changePassword and confirms success
+[22m[39mFailed to load creator phone TypeError: Cannot read properties of null (reading 'phone')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-settings.tsx:149:31
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+
+ [32m✓[39m src/pages/creator-meta-callback.session-restore.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 1417[2mms[22m[39m
+   [33m[2m✓[22m[39m creator meta callback — session restore before the one-time code is spent[2m > [22mrestores the session BEFORE exchanging the code when memory holds no token [33m 337[2mms[22m[39m
+   [33m[2m✓[22m[39m creator meta callback — session restore before the one-time code is spent[2m > [22mdoes not spend a refresh when a token is already in memory [33m 318[2mms[22m[39m
+   [33m[2m✓[22m[39m creator meta callback — session restore before the one-time code is spent[2m > [22mleaves mock mode untouched — no bootstrap, exchange as before [33m 302[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — deal-room proposal[2m > [22m[2msends the proposal as a counter with the collected terms
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — deal-room proposal[2m > [22m[2msurfaces a DEAL_NOT_NEGOTIABLE conflict instead of failing silently
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-onboarding-duplicate-409.test.tsx[2m > [22m[2mBrandOnboardingPage — duplicate phone/email 409 handling (PHONE-0904 Q6)[2m > [22m[2ma duplicate-phone 409 lands the user back on step 1 with a field-adjacent message, and does not advance
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at nextStep (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:57:14)
+    at Timeout._onTimeout (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\onboarding\onboarding-steps.tsx:534:26)
+    at listOnTimeout (node:internal/timers:588:17)
+    at processTimers (node:internal/timers:523:7) [90mundefined[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — deal-room proposal[2m > [22m[2mhides Send Proposal once the deal is past negotiation
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2maccepts the creator's offer as the brand
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2msurfaces a failed accept instead of leaving the click silent
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/creator-settings-change-password.test.tsx[2m > [22m[2mCreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22m[2mrejects a submit with any field left empty, client-side, without calling the API
+[22m[39mFailed to load creator phone TypeError: Cannot read properties of null (reading 'phone')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-settings.tsx:149:31
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2msurfaces a failed accept instead of leaving the click silent
+[22m[39mFailed to accept proposal ApiError: This deal cannot be accepted in its current state
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat-proposal.test.tsx:269:7
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:20 {
+  code: [32m'DEAL_NOT_ACCEPTABLE'[39m,
+  status: [33m409[39m,
+  details: [90mundefined[39m,
+  linkedCreatorProfileId: [90mundefined[39m,
+  field: [90mundefined[39m,
+  fields: [90mundefined[39m
+}
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2moffers Counter but not Accept on the brand's own offer
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2mhides both controls once the deal has left negotiation
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-onboarding-duplicate-409.test.tsx[2m > [22m[2mBrandOnboardingPage — duplicate phone/email 409 handling (PHONE-0904 Q6)[2m > [22m[2ma duplicate-phone 409 lands the user back on step 1 with a field-adjacent message, and does not advance
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleCompanySaveAndNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:124:16)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at listOnTimeout (node:internal/timers:549:9)
+    at processTimers (node:internal/timers:523:7) [90mundefined[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2mreplaces a settled card republished under its original id, retiring the buttons
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2mre-reads the deal on a system frame, closing the gate with the card untouched
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2msurfaces a failed deal refresh instead of leaving a stale gate silent
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/creator-settings-change-password.test.tsx[2m > [22m[2mCreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22m[2mrejects mismatched new/confirm passwords client-side without calling the API
+[22m[39mFailed to load creator phone TypeError: Cannot read properties of null (reading 'phone')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-settings.tsx:149:31
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2msurfaces a failed deal refresh instead of leaving a stale gate silent
+[22m[39mFailed to refresh deal deal_1 Error: network down
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat-proposal.test.tsx:378:32
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1787:3[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-proposal.test.tsx[2m > [22m[2mBrandChatPage — responding to a proposal[2m > [22m[2mopens the proposal wizard when Counter is clicked
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/pages/brand-chat-proposal.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[33m 7374[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — deal-room proposal[2m > [22msends the proposal as a counter with the collected terms [33m 2064[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — deal-room proposal[2m > [22msurfaces a DEAL_NOT_NEGOTIABLE conflict instead of failing silently [33m 1153[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22maccepts the creator's offer as the brand [33m 474[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22msurfaces a failed accept instead of leaving the click silent [33m 635[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22mreplaces a settled card republished under its original id, retiring the buttons [33m 396[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22mre-reads the deal on a system frame, closing the gate with the card untouched [33m 504[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22msurfaces a failed deal refresh instead of leaving a stale gate silent [33m 380[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22mopens the proposal wizard when Counter is clicked [33m 504[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — responding to a proposal[2m > [22msuppresses the failure toast when a newer refresh already succeeded, but still logs [33m 533[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-onboarding-duplicate-409.test.tsx[2m > [22m[2mBrandOnboardingPage — duplicate phone/email 409 handling (PHONE-0904 Q6)[2m > [22m[2ma duplicate-email 409 is distinguishable from the phone message and is also field-adjacent on step 1
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at nextStep (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:57:14)
+    at Timeout._onTimeout (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\onboarding\onboarding-steps.tsx:534:26)
+    at listOnTimeout (node:internal/timers:588:17)
+    at processTimers (node:internal/timers:523:7) [90mundefined[39m
+
+ [32m✓[39m src/components/brand/campaigns/campaigns-list.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 8959[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — server-side pagination (D-2)[2m > [22mrequests page 1 at the 100-row server ceiling, shows the total count, and renders a Load more control instead of silently truncating [33m 4188[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — server-side pagination (D-2)[2m > [22mLoad more fetches page 2 and appends the previously-unreachable 101st campaign [33m 4768[2mms[22m[39m
+ [32m✓[39m src/admin/components/moderation/FlagQueue.test.tsx [2m([22m[2m30 tests[22m[2m)[22m[33m 9125[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mStatus Filter[2m > [22mshould list ESCALATED as a selectable status filter option [33m 661[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mSearch Filter[2m > [22mshould call setFilters when search input changes [33m 499[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mSortable Columns[2m > [22mshould call setSort when clicking sortable column header [33m 446[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mFlag Detail Drawer[2m > [22mshould show content preview in drawer [33m 313[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mFlag Detail Drawer[2m > [22mshould show reviewed metadata when available [33m 346[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould open reason dialog, accept reason, and call moderationApi.actionFlag for REMOVE [33m 922[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould open reason dialog and call moderationApi.actionFlag for REJECT (dismiss) [33m 1026[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould open reason dialog and call moderationApi.actionFlag for ESCALATE, and never allow submission without a reason [33m 973[2mms[22m[39m
+   [33m[2m✓[22m[39m FlagQueue Component[2m > [22mModeration Action Flow (P2 CRITICAL)[2m > [22mshould disable action button when reason is empty [33m 311[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-settings-change-password.test.tsx[2m > [22m[2mCreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22m[2mrejects a too-short new password client-side without calling the API
+[22m[39mFailed to load creator phone TypeError: Cannot read properties of null (reading 'phone')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-settings.tsx:149:31
+
+[90mstderr[2m | src/pages/brand-onboarding-duplicate-409.test.tsx[2m > [22m[2mBrandOnboardingPage — duplicate phone/email 409 handling (PHONE-0904 Q6)[2m > [22m[2ma duplicate-email 409 is distinguishable from the phone message and is also field-adjacent on step 1
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleCompanySaveAndNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:131:16) [90mundefined[39m
+
+ [32m✓[39m src/admin/components/users/BrandProfile.test.tsx [2m([22m[2m29 tests[22m[2m)[22m[33m 10832[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mKYC Action Flow (P1 CRITICAL)[2m > [22mshould show Approve/Reject KYC buttons only when status is PENDING [33m 504[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mKYC Action Flow (P1 CRITICAL)[2m > [22mshould NOT show Approve/Reject KYC buttons when status is APPROVED [33m 384[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mKYC Action Flow (P1 CRITICAL)[2m > [22mshould open dialog, accept justification, and call verifyKyc(APPROVE) on Approve flow [33m 1824[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mKYC Action Flow (P1 CRITICAL)[2m > [22mshould open dialog, accept reason, and call verifyKyc(REJECT) on Reject flow [33m 2036[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mSuspend/Reinstate Flow[2m > [22mshould open dialog, accept reason, and call suspend on Suspend flow [33m 1299[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandProfile Component[2m > [22mSuspend/Reinstate Flow[2m > [22mshould open dialog, accept reason, and call reinstate on Reinstate flow [33m 1945[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-settings-change-password.test.tsx[2m > [22m[2mCreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22m[2msurfaces the server error message on a rejected current password, and keeps the dialog open
+[22m[39mFailed to load creator phone TypeError: Cannot read properties of null (reading 'phone')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-settings.tsx:149:31
+
+ [32m✓[39m src/pages/__tests__/brand-settings-account-phone.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 7437[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number (PHONE-0904 Q1)[2m > [22mrenders the saved number from GET /users/me [33m 609[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number (PHONE-0904 Q1)[2m > [22ma valid edit sends the normalized value to PATCH /users/me [33m 1377[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number (PHONE-0904 Q1)[2m > [22ma pasted "+91 98765 43210" is accepted, not rejected client-side [33m 880[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number (PHONE-0904 Q1)[2m > [22mthe field cannot be cleared and saved [33m 520[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number (PHONE-0904 Q1)[2m > [22mPHONE_ALREADY_EXISTS renders its own distinct inline message on the field [33m 1305[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number (PHONE-0904 Q1)[2m > [22mINVALID_PHONE renders its own distinct inline message on the field [33m 1489[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number (PHONE-0904 Q1)[2m > [22mPHONE_REQUIRED renders its own distinct inline message on the field [33m 1253[2mms[22m[39m
+ [32m✓[39m src/pages/creator-chat-bare-invite.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 11022[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mshows the invite-response card (not "No messages yet") for a zero-message, still-acceptable PRICED deal, and wires Accept to api.deals.accept [33m 2528[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mwires Decline to api.deals.reject with the real deal id [33m 1169[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mregression: a deal WITH a real proposal message still shows the original priced proposal card, not the bare-invite fallback [33m 1178[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mCR-02: does NOT show the bare-invite card (or any Accept control) for the creator's own zero-message APPLIED application [33m 767[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — bare-invite Accept/Decline fallback[2m > [22mCR-02: does NOT show the bare-invite card for an already-settled, zero-message TERMS_AGREED deal — falls back to the plain empty state [33m 648[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — F-0670: bare-invite card does not offer a guaranteed-409 Accept[2m > [22mdisables Accept on a rate-less INVITED deal, explains why, and still offers a working Counter [33m 1058[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — F-0670: bare-invite card does not offer a guaranteed-409 Accept[2m > [22mstill offers a working Accept on a priced bare invite (dealValue set) [33m 1142[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — F-0670: bare-invite card does not offer a guaranteed-409 Accept[2m > [22mgives AGREED_RATE_REQUIRED actionable copy instead of the generic stale/refresh message [33m 1042[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — F-0291: the invite card survives a non-empty room[2m > [22mstill offers Accept when the invite wrote its own timeline rows [33m 1055[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — F-0291: the invite card survives a non-empty room[2m > [22mstands down once a real proposal card exists, so Accept is not offered twice [33m 426[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-onboarding-duplicate-409.test.tsx[2m > [22m[2mBrandOnboardingPage — PHONE_REQUIRED / INVALID_PHONE handling (PHONE-0904 Q1)[2m > [22m[2ma PHONE_REQUIRED 400 lands the user back on step 1 with a field-adjacent message, and does not advance
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at nextStep (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:57:14)
+    at Timeout._onTimeout (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\onboarding\onboarding-steps.tsx:534:26)
+    at listOnTimeout (node:internal/timers:588:17)
+    at processTimers (node:internal/timers:523:7) [90mundefined[39m
+
+[90mstderr[2m | src/pages/creator-settings-change-password.test.tsx[2m > [22m[2mCreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22m[2msurfaces the server error message on a rejected current password, and keeps the dialog open
+[22m[39mFailed to change password Error: Current password is incorrect
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-settings-change-password.test.tsx:182:38
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1787:3[90m)[39m
+
+ [32m✓[39m src/pages/creator-settings-change-password.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 13133[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22msubmits the entered passwords to api.auth.changePassword and confirms success [33m 4546[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22mrejects a submit with any field left empty, client-side, without calling the API [33m 1947[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22mrejects mismatched new/confirm passwords client-side without calling the API [33m 2728[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22mrejects a too-short new password client-side without calling the API [33m 1564[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Change Password (CR-87 / F-0108)[2m > [22msurfaces the server error message on a rejected current password, and keeps the dialog open [33m 2343[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-onboarding-duplicate-409.test.tsx[2m > [22m[2mBrandOnboardingPage — PHONE_REQUIRED / INVALID_PHONE handling (PHONE-0904 Q1)[2m > [22m[2ma PHONE_REQUIRED 400 lands the user back on step 1 with a field-adjacent message, and does not advance
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleCompanySaveAndNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:143:16) [90mundefined[39m
+
+ [32m✓[39m src/pages/creator-portfolio-editor.f0694-declare-platform.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 9011[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorPortfolioEditorPage — F-0694 a creator with no Meta connection can declare a platform[2m > [22mthe Add control is live — clicking it actually reaches api.portfolio.declarePlatform [33m 2213[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorPortfolioEditorPage — F-0694 a creator with no Meta connection can declare a platform[2m > [22msends the follower count as a number with separators stripped, never a string or NaN [33m 1872[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorPortfolioEditorPage — F-0694 a creator with no Meta connection can declare a platform[2m > [22mre-reads the page after declaring, so the new row renders instead of stale client state [33m 1737[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorPortfolioEditorPage — F-0694 a creator with no Meta connection can declare a platform[2m > [22mrefuses honestly when a Meta sync already owns that platform, instead of saying "try again" [33m 2162[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorPortfolioEditorPage — F-0694 a creator with no Meta connection can declare a platform[2m > [22mdoes not call the API at all when the handle is blank [33m 1022[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — completion destination (F-0275)[2m > [22m[2mroutes to /creator/dashboard on completion, not /creator/deals
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:260:14)
+    at executeDispatch (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19116:9)
+    at runWithFiberInDEV (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+    at processDispatchQueue (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19166:19)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19767:9
+    at batchedUpdates$1 (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:3255:40)
+    at dispatchEventForPluginEventSystem (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19320:7)
+    at dispatchEvent (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:23585:11) [90mundefined[39m
+
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — completion destination (F-0275)[2m > [22m[2mroutes to /creator/dashboard on completion, not /creator/deals
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleSaveProfileAndNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:226:14) [90mundefined[39m
+
+ [32m✓[39m src/pages/__tests__/brand-auth-identity.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 4986[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandLoginPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after login, not a null/placeholder identity [33m 838[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandLoginPage — F-0320 populates the shared auth store[2m > [22man absent backend displayName falls back to an honest empty string, never a fabricated placeholder [33m 594[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — F-0320 populates the shared auth store[2m > [22ma real backend displayName reaches useAuthStore().user after registration [33m 3546[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-onboarding-duplicate-409.test.tsx[2m > [22m[2mBrandOnboardingPage — PHONE_REQUIRED / INVALID_PHONE handling (PHONE-0904 Q1)[2m > [22m[2man INVALID_PHONE 400 lands the user back on step 1 with a field-adjacent message, and does not advance
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at nextStep (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:57:14)
+    at Timeout._onTimeout (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\onboarding\onboarding-steps.tsx:534:26)
+    at listOnTimeout (node:internal/timers:588:17)
+    at processTimers (node:internal/timers:523:7) [90mundefined[39m
+
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2mrenders the Mobile number field with a +91 prefix
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:260:14)
+    at executeDispatch (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19116:9)
+    at runWithFiberInDEV (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+    at processDispatchQueue (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19166:19)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19767:9
+    at batchedUpdates$1 (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:3255:40)
+    at dispatchEventForPluginEventSystem (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19320:7)
+    at dispatchEvent (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:23585:11) [90mundefined[39m
+
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2mblocks Continue on an invalid mobile number and does not call saveCreatorProfile
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:260:14)
+    at executeDispatch (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19116:9)
+    at runWithFiberInDEV (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+    at processDispatchQueue (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19166:19)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19767:9
+    at batchedUpdates$1 (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:3255:40)
+    at dispatchEventForPluginEventSystem (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19320:7)
+    at dispatchEvent (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:23585:11) [90mundefined[39m
+
+[90mstderr[2m | src/pages/__tests__/brand-onboarding-sends-phone.test.tsx[2m > [22m[2mBrandOnboardingPage — phone reaches api.auth.brandRegister (F-0779, caller 2)[2m > [22m[2msends the NORMALIZED 10-digit phone, not the raw pasted string
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at nextStep (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:57:14)
+    at Timeout._onTimeout (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\components\brand\onboarding\onboarding-steps.tsx:534:26)
+    at listOnTimeout (node:internal/timers:588:17)
+    at processTimers (node:internal/timers:523:7) [90mundefined[39m
+
+ [32m✓[39m src/pages/__tests__/brand-wallet.load-states.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 4715[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0324 loading/error/empty are three distinct states per region[2m > [22mregion 1 — loadWallet (Balance Cards, Transactions tab, Payouts tab)[2m > [22mpending fetch renders a loading affordance, never a fabricated ₹0 [33m 458[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0324 loading/error/empty are three distinct states per region[2m > [22mregion 1 — loadWallet (Balance Cards, Transactions tab, Payouts tab)[2m > [22mrejected fetch renders a visible error with a working retry, never the empty copy [33m 554[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0324 loading/error/empty are three distinct states per region[2m > [22mregion 1 — loadWallet (Balance Cards, Transactions tab, Payouts tab)[2m > [22mresolved-empty renders a genuine ₹0, distinct from loading/error [33m 368[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0324 loading/error/empty are three distinct states per region[2m > [22mregion 2 — loadEscrow (Active Escrow Holdings)[2m > [22mpending escrow fetch renders a loading affordance under the Escrow tab [33m 516[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0324 loading/error/empty are three distinct states per region[2m > [22mregion 2 — loadEscrow (Active Escrow Holdings)[2m > [22mrejected escrow fetch renders an error with a working retry [33m 859[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0324 loading/error/empty are three distinct states per region[2m > [22mregion 2 — loadEscrow (Active Escrow Holdings)[2m > [22mresolved-empty renders the genuine empty state, not the loading/error copy [33m 544[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0324 loading/error/empty are three distinct states per region[2m > [22mregion 3 — loadFundableCampaigns (Fund Campaign Escrow card)[2m > [22mpending campaigns fetch renders a loading affordance, never the empty copy [33m 363[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0324 loading/error/empty are three distinct states per region[2m > [22mregion 3 — loadFundableCampaigns (Fund Campaign Escrow card)[2m > [22mrejected campaigns fetch renders an error with a working retry, not the silent empty copy [33m 712[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0324 loading/error/empty are three distinct states per region[2m > [22mregion 3 — loadFundableCampaigns (Fund Campaign Escrow card)[2m > [22mresolved-empty renders the genuine empty state [33m 332[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2mincludes a valid mobile number in the saveCreatorProfile payload
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:260:14)
+    at executeDispatch (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19116:9)
+    at runWithFiberInDEV (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+    at processDispatchQueue (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19166:19)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19767:9
+    at batchedUpdates$1 (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:3255:40)
+    at dispatchEventForPluginEventSystem (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19320:7)
+    at dispatchEvent (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:23585:11) [90mundefined[39m
+
+[90mstderr[2m | src/pages/brand-onboarding-duplicate-409.test.tsx[2m > [22m[2mBrandOnboardingPage — PHONE_REQUIRED / INVALID_PHONE handling (PHONE-0904 Q1)[2m > [22m[2man INVALID_PHONE 400 lands the user back on step 1 with a field-adjacent message, and does not advance
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleCompanySaveAndNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:150:16)
+    at runNextTicks (node:internal/process/task_queues:65:5)
+    at listOnTimeout (node:internal/timers:549:9)
+    at processTimers (node:internal/timers:523:7) [90mundefined[39m
+
+ [32m✓[39m src/pages/brand-onboarding-duplicate-409.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 18363[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandOnboardingPage — duplicate phone/email 409 handling (PHONE-0904 Q6)[2m > [22ma duplicate-phone 409 lands the user back on step 1 with a field-adjacent message, and does not advance [33m 6004[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandOnboardingPage — duplicate phone/email 409 handling (PHONE-0904 Q6)[2m > [22ma duplicate-email 409 is distinguishable from the phone message and is also field-adjacent on step 1 [33m 4128[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandOnboardingPage — PHONE_REQUIRED / INVALID_PHONE handling (PHONE-0904 Q1)[2m > [22ma PHONE_REQUIRED 400 lands the user back on step 1 with a field-adjacent message, and does not advance [33m 3963[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandOnboardingPage — PHONE_REQUIRED / INVALID_PHONE handling (PHONE-0904 Q1)[2m > [22man INVALID_PHONE 400 lands the user back on step 1 with a field-adjacent message, and does not advance [33m 4265[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2mincludes a valid mobile number in the saveCreatorProfile payload
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleSaveProfileAndNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:226:14) [90mundefined[39m
+
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2maccepts a pasted "+91 9876543210" number and normalizes it before sending (PHONE-0904 parity fix)
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:260:14)
+    at executeDispatch (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19116:9)
+    at runWithFiberInDEV (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+    at processDispatchQueue (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19166:19)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19767:9
+    at batchedUpdates$1 (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:3255:40)
+    at dispatchEventForPluginEventSystem (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19320:7)
+    at dispatchEvent (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:23585:11) [90mundefined[39m
+
+ [32m✓[39m src/pages/__tests__/creator-chat.dispute-entry.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 18441[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — creator dispute entry point (F-0301)[2m > [22mthe "Deal options" trigger is not hard-disabled once a deal is loaded [33m 1467[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — creator dispute entry point (F-0301)[2m > [22mescrow not funded: the menu explains why, with no clickable dispute item [33m 1586[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — creator dispute entry point (F-0301)[2m > [22mescrow funded: opens the menu, opens the dialog, and reaches creatorDisputes.open with the typed reason [33m 7357[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — creator dispute entry point (F-0301)[2m > [22ma rejected creatorDisputes.open surfaces the server error inline instead of failing silently [33m 8017[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2maccepts a pasted "+91 9876543210" number and normalizes it before sending (PHONE-0904 parity fix)
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleSaveProfileAndNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:226:14) [90mundefined[39m
+
+[90mstderr[2m | src/pages/__tests__/brand-onboarding-sends-phone.test.tsx[2m > [22m[2mBrandOnboardingPage — phone reaches api.auth.brandRegister (F-0779, caller 2)[2m > [22m[2msends the NORMALIZED 10-digit phone, not the raw pasted string
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at nextStep (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:57:14)
+    at handleCompanySaveAndNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\brand-onboarding.tsx:109:7) [90mundefined[39m
+
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2maccepts a pasted "09876543210" (leading trunk 0) number and normalizes it before sending
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:260:14)
+    at executeDispatch (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19116:9)
+    at runWithFiberInDEV (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+    at processDispatchQueue (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19166:19)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19767:9
+    at batchedUpdates$1 (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:3255:40)
+    at dispatchEventForPluginEventSystem (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19320:7)
+    at dispatchEvent (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:23585:11) [90mundefined[39m
+
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2maccepts a pasted "09876543210" (leading trunk 0) number and normalizes it before sending
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleSaveProfileAndNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:226:14) [90mundefined[39m
+
+ [32m✓[39m src/pages/creator-profile.field-errors.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 3892[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorProfilePage — F-0668 ApiError.fields wired to the edit-profile form[2m > [22mshows the server-named field errors on their matching inputs instead of one generic toast [33m 1220[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorProfilePage — F-0668 ApiError.fields wired to the edit-profile form[2m > [22mclears a field error the moment its own input changes, without touching the others [33m 668[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorProfilePage — F-0668 ApiError.fields wired to the edit-profile form[2m > [22ma save that fails for a non-field reason still falls back to the generic toast path (no field highlighted) [33m 521[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorProfilePage — F-0681 no validation error is silently swallowed[2m > [22mhighlights a categories violation inline — the field F-0668 left unwired and reachable [33m 437[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorProfilePage — F-0681 no validation error is silently swallowed[2m > [22mmaps a per-item violation named `categories[0]` onto the categories control [33m 601[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorProfilePage — F-0681 no validation error is silently swallowed[2m > [22mnames a field it cannot highlight instead of claiming a highlight that does not exist [33m 440[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2mshows the duplicate-phone message on a PHONE_ALREADY_EXISTS 409 and does not advance to step 3
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:260:14)
+    at executeDispatch (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19116:9)
+    at runWithFiberInDEV (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+    at processDispatchQueue (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19166:19)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19767:9
+    at batchedUpdates$1 (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:3255:40)
+    at dispatchEventForPluginEventSystem (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19320:7)
+    at dispatchEvent (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:23585:11) [90mundefined[39m
+
+ [32m✓[39m src/pages/__tests__/brand-onboarding-sends-phone.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 7468[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandOnboardingPage — phone reaches api.auth.brandRegister (F-0779, caller 2)[2m > [22mstarts at step 1 on a cold entry, so the register call is actually made [33m 322[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandOnboardingPage — phone reaches api.auth.brandRegister (F-0779, caller 2)[2m > [22msends the NORMALIZED 10-digit phone, not the raw pasted string [33m 5790[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandOnboardingPage — phone reaches api.auth.brandRegister (F-0779, caller 2)[2m > [22mblocks client-side and fires NO register call when phone is left empty [33m 1354[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-onboarding.test.tsx[2m > [22m[2mCreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22m[2mdoes NOT show the phone message on a differently-coded 409 (code-based branch, not status)
+[22m[39mError: Not implemented: window.scrollTo
+    at module.exports (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\not-implemented.js:9:17)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\jsdom\lib\jsdom\browser\Window.js:960:7
+    at handleNext (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\src\pages\creator-onboarding.tsx:260:14)
+    at executeDispatch (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19116:9)
+    at runWithFiberInDEV (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:874:13)
+    at processDispatchQueue (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19166:19)
+    at C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19767:9
+    at batchedUpdates$1 (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:3255:40)
+    at dispatchEventForPluginEventSystem (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:19320:7)
+    at dispatchEvent (C:\Users\Sage world\Downloads\New Influora Ai\New Influora\node_modules\react-dom\cjs\react-dom-client.development.js:23585:11) [90mundefined[39m
+
+ [32m✓[39m src/pages/creator-onboarding.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 7500[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorOnboardingPage — completion destination (F-0275)[2m > [22mroutes to /creator/dashboard on completion, not /creator/deals [33m 1529[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22mblocks Continue on an invalid mobile number and does not call saveCreatorProfile [33m 1087[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22mincludes a valid mobile number in the saveCreatorProfile payload [33m 989[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22maccepts a pasted "+91 9876543210" number and normalizes it before sending (PHONE-0904 parity fix) [33m 859[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22maccepts a pasted "09876543210" (leading trunk 0) number and normalizes it before sending [33m 947[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22mshows the duplicate-phone message on a PHONE_ALREADY_EXISTS 409 and does not advance to step 3 [33m 1099[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorOnboardingPage — Mobile number field (PHONE-0904)[2m > [22mdoes NOT show the phone message on a differently-coded 409 (code-based branch, not status) [33m 848[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-register.consent-links.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 3923[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — consent links reachable (F-0255)[2m > [22mrenders Terms of Service and Privacy Policy as real, focusable links to routes this app serves [33m 2334[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — consent links reachable (F-0255)[2m > [22mdoes not render Terms of Service / Privacy Policy as a dead <button type="button"> [33m 1585[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-register-sends-phone.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 8782[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — phone reaches api.auth.brandRegister (F-0780)[2m > [22msends the NORMALIZED 10-digit phone, not the raw pasted string [33m 3624[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — phone reaches api.auth.brandRegister (F-0780)[2m > [22mblocks client-side and fires NO network call when phone is left empty [33m 2619[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — phone reaches api.auth.brandRegister (F-0780)[2m > [22mputs a PHONE_ALREADY_EXISTS rejection on the phone field, not only in the form banner [33m 2535[2mms[22m[39m
+ [32m✓[39m src/pages/creator-portfolio-editor.f0434-collabs-drop.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 2925[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorPortfolioEditorPage — F-0434 collab display-mode genuinely persists[2m > [22mthe per-collab display-mode control is enabled — not the old disabled/"coming soon" state [33m 650[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorPortfolioEditorPage — F-0434 collab display-mode genuinely persists[2m > [22mpicking a new display mode and saving sends the UPDATED value in the collabs PATCH body [33m 1060[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorPortfolioEditorPage — F-0434 collab display-mode genuinely persists[2m > [22msave -> reload round trip: the new display mode survives a fresh mount reading it back from the API [33m 1211[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/consent-link-preserves-form.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 3434[2mms[22m[39m
+   [33m[2m✓[22m[39m brand-register.tsx — consent links do not destroy in-progress form state (F-0293)[2m > [22mTerms/Privacy links open in a new tab instead of navigating this document away [33m 2616[2mms[22m[39m
+   [33m[2m✓[22m[39m creator-register.tsx — consent links do not destroy in-progress form state (F-0293)[2m > [22mTerms/Privacy links open in a new tab instead of navigating this document away [33m 813[2mms[22m[39m
+ [32m✓[39m src/admin/pages/FestivalMetricsPage.caveat.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 2347[2mms[22m[39m
+   [33m[2m✓[22m[39m FestivalMetricsPage — measurement caveat (M-1/M-2)[2m > [22mrenders the server's caveat verbatim once metrics load [33m 1113[2mms[22m[39m
+   [33m[2m✓[22m[39m FestivalMetricsPage — measurement caveat (M-1/M-2)[2m > [22mshows the caveat in the same view as the number it qualifies [33m 607[2mms[22m[39m
+   [33m[2m✓[22m[39m FestivalMetricsPage — measurement caveat (M-1/M-2)[2m > [22mlabels it as not verified, not merely "not a sale" [33m 623[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-settings-account-phone-response-trust.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 3467[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number: save repaints from the PATCH response (F-0635)[2m > [22mafter save, the card shows the phone exactly as the server returned it — not the locally-typed value [33m 1731[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number: save repaints from the PATCH response (F-0635)[2m > [22ma successful save does not re-fetch GET /users/me [33m 1732[2mms[22m[39m
+[90mstderr[2m | src/pages/__tests__/creator-wallet.money-buckets.test.tsx[2m > [22m[2mCreatorWalletPage — absent is not zero (F-0260 class)[2m > [22m[2ma failed wallet fetch renders "—" on all three tiles, not a fabricated ₹0
+[22m[39mFailed to load wallet balance Error: network down
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\__tests__\creator-wallet.money-buckets.test.tsx:164:37
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1787:3[90m)[39m
+
+ [32m✓[39m src/pages/__tests__/creator-wallet.money-buckets.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 3463[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — F-0336 escrow figure is no longer a permanent zero[2m > [22mrenders a non-zero "Secured" figure for a creator with FUNDED milestone money [33m 706[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — F-0281 each label matches the bucket beside it[2m > [22m"Secured" is defined as brand-funded, not-yet-approved money — not a withdrawal in flight [33m 855[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — F-0281 each label matches the bucket beside it[2m > [22m"Pending Payouts" is defined as a withdrawal already requested and in flight — not escrowed money [33m 537[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — F-0281 each label matches the bucket beside it[2m > [22m"Available Balance" is defined as already released and withdrawable now [33m 494[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — absent is not zero (F-0260 class)[2m > [22ma failed wallet fetch renders "—" on all three tiles, not a fabricated ₹0 [33m 445[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — absent is not zero (F-0260 class)[2m > [22ma creator who genuinely has no money at all sees a real ₹0, distinct from the unavailable "—" state [33m 420[2mms[22m[39m
+ [32m✓[39m src/components/brand/settings/__tests__/store-integration-webhook-url.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 4434[2mms[22m[39m
+   [33m[2m✓[22m[39m WooCommerce Delivery URL shown to brands[2m > [22mis DERIVED from VITE_API_BASE_URL, not hardcoded [33m 4063[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/__tests__/creator-discovery-server-filters.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 7145[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0405 — discovery filters reach the server search request (live mode)[2m > [22msends language, engagement range, verified-only and sort order as query params [33m 2592[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0410 — the displayed count is the server total, not the page length (live mode)[2m > [22mshows the server total alongside a short page, not the page length alone [33m 578[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0409 — an unpriced creator survives a touched price filter (mock mode)[2m > [22mkeeps the unpriced creator once the price slider is moved above every priced row [33m 3967[2mms[22m[39m
+ [32m✓[39m src/components/creator/creator-layout-mobile-account-menu.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 3505[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile avatar menu accessible name (F-0169)[2m > [22mhas a real, fixed accessible name before identity has resolved [33m 2464[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile avatar menu accessible name (F-0169)[2m > [22mkeeps the same accessible name once identity has resolved (not overridden by initials) [33m 396[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile avatar menu accessible name (F-0169)[2m > [22mopens the dropdown menu on click (control is still functional, not just labeled) [33m 639[2mms[22m[39m
+ [32m✓[39m src/components/creator/MeeraSettingsSection.roundtrip.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 2313[2mms[22m[39m
+   [33m[2m✓[22m[39m MeeraSettingsSection — currency & timezone round-trip[2m > [22mrenders the persisted currency symbol, not a hardcoded ₹ [33m 641[2mms[22m[39m
+   [33m[2m✓[22m[39m MeeraSettingsSection — currency & timezone round-trip[2m > [22mchanges currency and timezone, sends both (and only those PUT-eligible fields) in the payload, and reflects the saved response back [33m 1668[2mms[22m[39m
+ [32m✓[39m src/components/brand/deal-room/__tests__/deal-contract-tab-honest-terms.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 3468[2mms[22m[39m
+   [33m[2m✓[22m[39m DealContractTab download — F-0669 no fabricated legal terms[2m > [22mnever renders the fabricated usage-rights value ("6 months on social media platforms") [33m 808[2mms[22m[39m
+   [33m[2m✓[22m[39m DealContractTab download — F-0669 no fabricated legal terms[2m > [22mnever renders the fabricated exclusivity value ("As per campaign brief") [33m 578[2mms[22m[39m
+   [33m[2m✓[22m[39m DealContractTab download — F-0669 no fabricated legal terms[2m > [22mnever renders a fabricated revision cap ("up to 2 revision rounds") [33m 484[2mms[22m[39m
+   [33m[2m✓[22m[39m DealContractTab download — F-0669 no fabricated legal terms[2m > [22mnever renders a fabricated deadline (14 days from today) [33m 543[2mms[22m[39m
+   [33m[2m✓[22m[39m DealContractTab download — F-0669 no fabricated legal terms[2m > [22mrenders an honest "Not specified" for each term the app was not given [33m 532[2mms[22m[39m
+   [33m[2m✓[22m[39m DealContractTab download — F-0669 no fabricated legal terms[2m > [22mstill renders the real, known fields (contractId, creator, campaign, amount) — this is not a vacuous check [33m 520[2mms[22m[39m
+ [32m✓[39m src/pages/creator-register.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 13571[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage - required mobile number (PHONE-0906)[2m > [22mblocks submit and shows an inline error when the mobile number is empty [33m 1814[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage - required mobile number (PHONE-0906)[2m > [22mrejects a malformed number client-side, before any network call [33m 1313[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage - required mobile number (PHONE-0906)[2m > [22mnormalizes a pasted +91 number to 10 digits on the wire [33m 1295[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage - required mobile number (PHONE-0906)[2m > [22mputs a duplicate-number 409 on the phone field, not in the generic banner [33m 1189[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage - required mobile number (PHONE-0906)[2m > [22mdoes not send a second OTP when a phone rejection bounces the user back to the form [33m 1868[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage — email OTP gate[2m > [22mregisters directly when the server does not require OTP [33m 1269[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage — email OTP gate[2m > [22msends and verifies an OTP before registering when the server requires it [33m 1292[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage — email OTP gate[2m > [22mkeeps the user on the form when the OTP cannot be delivered [33m 1230[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage — invite claim (Q5.5)[2m > [22mforwards the invite_token query param to creatorRegister [33m 1157[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorRegisterPage — invite claim (Q5.5)[2m > [22mregisters with no inviteToken when there is no invite in the URL [33m 1101[2mms[22m[39m
+ [32m✓[39m src/pages/creator-wallet-withdraw-idempotency.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 3702[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — withdraw Idempotency-Key lifecycle (P-4)[2m > [22mreuses the same Idempotency-Key when the user retries after a failed withdrawal [33m 1433[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — withdraw Idempotency-Key lifecycle (P-4)[2m > [22mdoes not fire a second request with a different key when Withdraw is clicked again before the first response returns [33m 956[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorWalletPage — withdraw Idempotency-Key lifecycle (P-4)[2m > [22mmints a fresh Idempotency-Key for a new withdrawal after a prior one succeeded [33m 1306[2mms[22m[39m
+ [32m✓[39m src/components/brand/settings/__tests__/team-members-panel.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 3387[2mms[22m[39m
+   [33m[2m✓[22m[39m TeamMembersPanel — F-0443 workspace team management[2m > [22mlists the workspace members and the outstanding invites [33m 340[2mms[22m[39m
+   [33m[2m✓[22m[39m TeamMembersPanel — F-0443 workspace team management[2m > [22msends an invite with the chosen email and role, then refreshes the lists [33m 1462[2mms[22m[39m
+   [33m[2m✓[22m[39m TeamMembersPanel — F-0443 workspace team management[2m > [22mputs a server-named field error on the email input instead of one generic toast [33m 784[2mms[22m[39m
+   [33m[2m✓[22m[39m TeamMembersPanel — F-0443 workspace team management[2m > [22mremoves a member, and never offers to remove the OWNER or yourself [33m 373[2mms[22m[39m
+ [32m✓[39m src/pages/brand-campaign-detail.contract-ui.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 5727[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — contract controls (live mode)[2m > [22mdeep-links a contracted deal to that exact contract, not the contracts list [33m 1240[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — contract controls (live mode)[2m > [22moffers Generate contract only at TERMS_AGREED with no contract, and POSTs the deal id [33m 1714[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — contract controls (live mode)[2m > [22msays "No contract yet" rather than offering a control the server would reject [33m 990[2mms[22m[39m
+   [33m[2m✓[22m[39m campaign detail — contract controls (live mode)[2m > [22msurfaces a 403 in the operator’s own words instead of a generic failure [33m 1780[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-settings-workspace-description-roundtrip.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 3863[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — F-0468 a workspace save must not clear the brand bio[2m > [22mcarries the bio through a save that only edits the workspace name [33m 2211[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — F-0468 a workspace save must not clear the brand bio[2m > [22mcarries the other three unsurfaced fields too — F-0462 fixed these, F-0468 must not undo them [33m 1644[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-wallet.release-hold.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 3203[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0489 release control for a milestone-less FUNDED hold[2m > [22mrenders a Release button for a FUNDED hold with no milestoneId [33m 977[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0489 release control for a milestone-less FUNDED hold[2m > [22mdoes NOT render a Release button for a FUNDED hold that carries a milestoneId (deal-room territory) [33m 611[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0489 release control for a milestone-less FUNDED hold[2m > [22mclicking Release calls releasePayout with { escrowHoldId } for that row, then refreshes [33m 715[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0489 release control for a milestone-less FUNDED hold[2m > [22msurfaces a server refusal without crashing and re-enables the button [33m 897[2mms[22m[39m
+ [32m✓[39m src/components/brand/onboarding/__tests__/onboarding-steps.site-analysis.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 3811[2mms[22m[39m
+   [33m[2m✓[22m[39m CompanyDetailsStep — website field tells the brand we will read the site[2m > [22mpromises nothing until a link is given [33m 468[2mms[22m[39m
+   [33m[2m✓[22m[39m CompanyDetailsStep — website field tells the brand we will read the site[2m > [22mnames the site and the no-JavaScript limitation once a link is entered [33m 3012[2mms[22m[39m
+[90mstderr[2m | src/__tests__/creator-protected-route.test.tsx
+[22m[39mTHREE.WARNING: Multiple instances of Three.js being imported.
+
+ [32m✓[39m src/__tests__/creator-protected-route.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 46013[2mms[22m[39m
+ [32m✓[39m src/pages/creator-settings-phone-409.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 4587[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Mobile Number dialog keys off ApiError.code (PHONE-0904 Q6)[2m > [22mshows the duplicate-phone message on a PHONE_ALREADY_EXISTS 409 [33m 2614[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — Mobile Number dialog keys off ApiError.code (PHONE-0904 Q6)[2m > [22mdoes NOT show the phone message on a USERNAME_TAKEN 409 — falls back to the generic toast [33m 1965[2mms[22m[39m
+ [32m✓[39m src/pages/brand-register.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 11285[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — email OTP gate[2m > [22mregisters directly when the server does not require OTP [33m 4378[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — email OTP gate[2m > [22msends and verifies an OTP before registering when the server requires it [33m 3412[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandRegisterPage — email OTP gate[2m > [22mreturns to the form when registration fails after verification [33m 3490[2mms[22m[39m
+ [32m✓[39m src/admin/pages/CreatorConnectionsPage.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 6160[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorConnectionsPage — Invite dialog[2m > [22mdisables the invite submit button until a valid email is entered [33m 2462[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorConnectionsPage — Invite dialog[2m > [22mshows the "Invitation sent to {email}" toast and closes the dialog on a real success (Q4.1) [33m 1041[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorConnectionsPage — Invite dialog[2m > [22msurfaces res.error and keeps the dialog open when apiRequest resolves { success: false } (Q4.1) [33m 983[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorConnectionsPage — Invite dialog[2m > [22msurfaces a network failure via onError and keeps the dialog open (Q4.1) [33m 1289[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorConnectionsPage — null admin-connection fields (Q4.5)[2m > [22mrenders a row with null brandName/requestedByEmail/igUsername/creatorStatus without crashing, using em-dash fallbacks [33m 376[2mms[22m[39m
+ [32m✓[39m src/pages/brand-campaign-detail-active-edit-gate.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 5969[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mdisables Edit with a clear reason for an ACTIVE campaign [33m 1348[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mleaves Edit fully working (enabled, navigable) for a PAUSED campaign [33m 1011[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mleaves Edit fully working (enabled, navigable) for a DRAFT campaign [33m 821[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mstill hides Edit entirely for a COMPLETED campaign (pre-existing behavior, unchanged) [33m 1073[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandCampaignDetailPage — header Edit gated by ACTIVE status[2m > [22mPause/Resume status-change action for an ACTIVE campaign is untouched by the Edit gate [33m 1712[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-disputes.test.tsx[2m > [22m[2mCreatorDisputesPage[2m > [22m[2mopens a dispute via api.creatorDisputes.open with trimmed reason
+[22m[39mSelect is changing from uncontrolled to controlled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.
+
+ [32m✓[39m src/components/brand/discover/creator-discovery.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 8163[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — invite vs priced offer[2m > [22msends a priced offer via deals.create when a budget is set [33m 2283[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — invite vs priced offer[2m > [22mfalls back to creators.invite when the budget is cleared to zero [33m 3735[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — invite vs priced offer[2m > [22mexplains a COLLABORATION_EXISTS conflict instead of asking the brand to retry [33m 2141[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/__tests__/creator-discovery-invite-handoff.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 4737[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0257 — invite → create-campaign handoff no longer over-promises[2m > [22mdoes not claim the creator will be pre-selected on the new-campaign page [33m 3048[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0257 — invite → create-campaign handoff no longer over-promises[2m > [22mstill navigates to the campaign wizard when the brand confirms [33m 1685[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/__tests__/creator-discovery-facets.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 5686[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — F-0660 real category facets[2m > [22mcalls the real facets endpoint for its main results, never the plain (facet-less) one [33m 920[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — F-0660 real category facets[2m > [22mrenders the real category facet counts, replacing the hardcoded list entirely once resolved [33m 1654[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — F-0660 real category facets[2m > [22mfalls back to the hardcoded category list (no fabricated counts) when the facet comes back empty [33m 855[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — F-0660 real category facets[2m > [22mselecting a real facet category sends its exact lowercase id back as `verticals` [33m 1473[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — F-0660 real category facets[2m > [22mnever claims a city or language facet that does not exist on the backend [33m 780[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-disputes.test.tsx[2m > [22m[2mCreatorDisputesPage[2m > [22m[2mopens a dispute via api.creatorDisputes.open with trimmed reason
+[22m[39mSelect is changing from controlled to uncontrolled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.
+
+[90mstderr[2m | src/pages/creator-disputes.test.tsx[2m > [22m[2mCreatorDisputesPage[2m > [22m[2msurfaces DISPUTE_ALREADY_OPEN from open() — no silent second-active UX
+[22m[39mSelect is changing from uncontrolled to controlled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.
+
+ [32m✓[39m src/pages/creator-disputes.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 6716[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDisputesPage[2m > [22mrenders heading inside creator layout and loads via api.creatorDisputes [33m 661[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDisputesPage[2m > [22mrenders all five lifecycle labels correctly [33m 454[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDisputesPage[2m > [22mopens a dispute via api.creatorDisputes.open with trimmed reason [33m 2819[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDisputesPage[2m > [22msurfaces DISPUTE_ALREADY_OPEN from open() — no silent second-active UX [33m 1925[2mms[22m[39m
+ [32m✓[39m src/admin/components/AdminLayout.test.tsx [2m([22m[2m33 tests[22m[2m)[22m[33m 6038[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mComponent Initialization[2m > [22mshould render children content in main area [33m 306[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mNavigation Items[2m > [22mshould render all 6 navigation sections [33m 403[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Navigation Toggle[2m > [22mshould close mobile nav when close button clicked [33m 339[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Navigation Toggle[2m > [22mshould close mobile nav when overlay is clicked [33m 315[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Navigation Toggle[2m > [22mshould close mobile nav when any nav link is clicked [33m 397[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Nav Keyboard Accessibility (Cycle 3 Fix)[2m > [22mshould close mobile nav when Escape key is pressed [33m 413[2mms[22m[39m
+   [33m[2m✓[22m[39m AdminLayout Component[2m > [22mMobile Nav Keyboard Accessibility (Cycle 3 Fix)[2m > [22mshould return focus to menu trigger when mobile nav closes [33m 377[2mms[22m[39m
+ [32m✓[39m src/pages/creator-login.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 4601[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLoginPage — post-login destination (F-0275)[2m > [22mroutes an onboarded creator to /creator/dashboard, not the dead-end /creator/inbox [33m 1209[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLoginPage — post-login destination (F-0275)[2m > [22mstill sends a creator who has not finished onboarding to /creator/onboarding [33m 734[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLoginPage — unverified-email recovery (F-0601)[2m > [22moffers a way to verify instead of a dead-end error, and signs in once verified [33m 1034[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLoginPage — unverified-email recovery (F-0601)[2m > [22mlets the user back out to the sign-in form [33m 712[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLoginPage — unverified-email recovery (F-0601)[2m > [22mstill shows an ordinary error inline — only EMAIL_NOT_VERIFIED opens the panel [33m 895[2mms[22m[39m
+ [32m✓[39m src/components/brand/dashboard/__tests__/dashboard-page.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 2951[2mms[22m[39m
+   [33m[2m✓[22m[39m DashboardPage — F-0245 loading/error/empty are three distinct states[2m > [22mpending fetch renders skeletons, never the zero/empty copy [33m 591[2mms[22m[39m
+   [33m[2m✓[22m[39m DashboardPage — F-0245 loading/error/empty are three distinct states[2m > [22mrejected fetch renders a visible error with retry, never the zero/empty copy [33m 313[2mms[22m[39m
+   [33m[2m✓[22m[39m DashboardPage — F-0245 loading/error/empty are three distinct states[2m > [22mresolved-empty renders the real empty state [33m 332[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandLayout sidebar — F-0246 no fabricated identity in live mode[2m > [22mGET /workspaces/me resolves: shows the real workspace identity, never the fabricated one [33m 1040[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandLayout sidebar — F-0246 no fabricated identity in live mode[2m > [22mGET /workspaces/me rejects: degrades honestly, never renders the fabricated identity [33m 668[2mms[22m[39m
+ [32m✓[39m src/components/brand/contracts/__tests__/contracts-and-deliverables.signature.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 4448[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0253 — signature dialog submits exactly what it promises[2m > [22mrenders no <canvas> signature pad anywhere in the Sign Contract dialog [33m 1217[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0253 — signature dialog submits exactly what it promises[2m > [22msubmits only the typed name and an agreedAt timestamp — no image/bitmap field [33m 2268[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0253 — signature dialog submits exactly what it promises[2m > [22mthe legal notice describes the typed name, not a drawn mark [33m 960[2mms[22m[39m
+ [32m✓[39m src/components/creator/creator-layout-desktop-account-trigger.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 6228[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — desktop sidebar account trigger accessible name (F-0170)[2m > [22mhas a non-empty accessible name before identity has resolved [33m 4093[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — desktop sidebar account trigger accessible name (F-0170)[2m > [22maccessible name contains the visible display name once identity resolves — not overridden [33m 1007[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — desktop sidebar account trigger accessible name (F-0170)[2m > [22mF-0179: composed accessible name excludes the decorative avatar initials [33m 1123[2mms[22m[39m
+ [32m✓[39m src/pages/creator-settings-logout.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 5339[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — logout clears the full creator session (CR-32)[2m > [22mrenders the Danger Zone logout control [33m 1229[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — logout clears the full creator session (CR-32)[2m > [22mremoves every creator_* key, not just the token [33m 1390[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — logout clears the full creator session (CR-32)[2m > [22mdoes not leave a name for the next creator to inherit [33m 1419[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — logout clears the full creator session (CR-32)[2m > [22mstill clears the local session when the server logout call fails [33m 1278[2mms[22m[39m
+ [32m✓[39m src/pages/creator-chat-visibility-resync.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 5391[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — foreground resync (CR-93 / F-0110 — creator half)[2m > [22mdoes nothing on the initial mount beyond the normal load [33m 1789[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — foreground resync (CR-93 / F-0110 — creator half)[2m > [22mrefetches messages and the deal on becoming visible again [33m 1476[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — foreground resync (CR-93 / F-0110 — creator half)[2m > [22mF-0192: switching deals clears the previous deal's thread instead of bleeding it into the new deal [33m 2109[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — foreground resync (CR-93 / F-0110 — brand half)[2m > [22m[2mdoes nothing on the initial mount beyond the normal load
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — foreground resync (CR-93 / F-0110 — brand half)[2m > [22m[2mrefetches messages and the deal on becoming visible again
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0151: a background resync (foreground visibility) never replaces an already-rendered thread with the loading spinner
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0152: a slower earlier request cannot overwrite a faster, newer request's result
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/components/creator/deal-room/deliverable-submission.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 4160[2mms[22m[39m
+   [33m[2m✓[22m[39m DeliverableSubmission — CR-53 retry-only-submit after successful upload[2m > [22mkeeps the file/caption and offers "Retry Submit" when the error is tagged uploaded:true [33m 1923[2mms[22m[39m
+   [33m[2m✓[22m[39m DeliverableSubmission — CR-53 retry-only-submit after successful upload[2m > [22mshows the generic error (no "Retry Submit" label) when the error is not tagged uploaded [33m 1010[2mms[22m[39m
+   [33m[2m✓[22m[39m DeliverableSubmission — CR-53 retry-only-submit after successful upload[2m > [22mclears the retry-only state once a new file is picked [33m 1210[2mms[22m[39m
+ [32m✓[39m src/components/brand/deals/deal-room-dashboard-actor-refresh.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 4656[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — actor-side refresh (CR-98 / F-0112)[2m > [22mrefetches messages (not just deals) after the brand accepts its own proposal [33m 1574[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — actor-side refresh (CR-98 / F-0112)[2m > [22mrefetches messages after the brand rejects its own proposal [33m 1355[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — actor-side refresh (CR-98 / F-0112)[2m > [22mrefetches messages after the brand sends a counter offer [33m 1722[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0152: a failed background resync leaves the already-rendered thread alone instead of wiping it
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/pages/__tests__/brand-settings-account-phone-partial-merge.test.tsx [2m([22m[2m1 test[22m[2m)[22m[33m 2611[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Account Mobile Number: phone-only save preserves other profile fields (F-0634)[2m > [22ma phone-only save does not clear the other profile fields [33m 2606[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0192: switching deals clears the previous deal's thread instead of bleeding it into the new deal
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+ [32m✓[39m src/components/creator/creator-layout-logout.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 3266[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — sidebar logout (CR-90 / F-0109)[2m > [22mcalls the server logout endpoint before clearing local session state [33m 2047[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — sidebar logout (CR-90 / F-0109)[2m > [22mstill clears local session and navigates away even when the server call fails [33m 1207[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22m[2mF-0192: switching deals clears the previous deal's thread instead of bleeding it into the new deal
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0195: loadDeliverables must not be corrupted by a stale, out-of-order response[2m > [22m[2mF-0195: a slow, stale deliverables response for a previously-selected deal cannot overwrite a newer deal's freshly-loaded rows
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0195: loadDeliverables must not be corrupted by a stale, out-of-order response[2m > [22m[2mF-0195: a slow, stale deliverables response for a previously-selected deal cannot overwrite a newer deal's freshly-loaded rows
+[22m[39mFailed to load shipment status TypeError: Cannot read properties of undefined (reading 'get')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1066:42
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\brand-chat.tsx:1075:10
+    at Object.react_stack_bottom_frame [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:25989:20[90m)[39m
+    at runWithFiberInDEV [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:874:13[90m)[39m
+    at commitHookEffectListMount [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13249:29[90m)[39m
+    at commitHookPassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:13336:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15484:13[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+    at commitPassiveMountOnFiber [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15718:11[90m)[39m
+    at recursivelyTraversePassiveMountEffects [90m(C:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39mnode_modules\[4mreact-dom[24m\cjs\react-dom-client.development.js:15439:11[90m)[39m
+
+[90mstderr[2m | src/pages/brand-chat-visibility-resync.test.tsx[2m > [22m[2mBrandChatPage — F-0195: loadDeliverables must not be corrupted by a stale, out-of-order response[2m > [22m[2mF-0195: a slow, stale deliverables response for a previously-selected deal cannot overwrite a newer deal's freshly-loaded rows
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/pages/brand-chat-visibility-resync.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 5708[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — foreground resync (CR-93 / F-0110 — brand half)[2m > [22mdoes nothing on the initial mount beyond the normal load [33m 722[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — foreground resync (CR-93 / F-0110 — brand half)[2m > [22mrefetches messages and the deal on becoming visible again [33m 491[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22mF-0151: a background resync (foreground visibility) never replaces an already-rendered thread with the loading spinner [33m 444[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22mF-0152: a slower earlier request cannot overwrite a faster, newer request's result [33m 373[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22mF-0152: a failed background resync leaves the already-rendered thread alone instead of wiping it [33m 470[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0151/F-0152: background resync must not blank or corrupt an already-rendered thread[2m > [22mF-0192: switching deals clears the previous deal's thread instead of bleeding it into the new deal [33m 1175[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandChatPage — F-0195: loadDeliverables must not be corrupted by a stale, out-of-order response[2m > [22mF-0195: a slow, stale deliverables response for a previously-selected deal cannot overwrite a newer deal's freshly-loaded rows [33m 2028[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/__tests__/creator-discovery-invite-campaigns.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 3583[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0256 — invite campaign selector never seeds fabricated campaigns in live mode[2m > [22mstarts empty/disabled while the real campaign list is in flight, then shows only real campaigns [33m 1906[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0256 — invite campaign selector never seeds fabricated campaigns in live mode[2m > [22mnever lets the brand submit against a fabricated campaign id [33m 1662[2mms[22m[39m
+ [32m✓[39m src/components/brand/deals/deal-room-dashboard-view-recorded.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 4338[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — opening one deal records a brand view (F-0328)[2m > [22mdoes NOT call deals.get merely from rendering the list [33m 730[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — opening one deal records a brand view (F-0328)[2m > [22mcalls deals.get('brand', id) for the specific deal the brand opens by clicking it [33m 1863[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — opening one deal records a brand view (F-0328)[2m > [22mcalls deals.get('brand', id) when a deal is opened via deep link (/brand/deals/:id) [33m 617[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — opening one deal records a brand view (F-0328)[2m > [22ma failed deals.get must not block the deal from being shown [33m 1112[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/creator-discovery-redirect.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 6057[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — redirect to the conversation it just opened[2m > [22msends a priced offer, then redirects to THAT creator’s deal room [33m 2867[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — redirect to the conversation it just opened[2m > [22msends an unpriced invite, then redirects to THAT creator’s deal room [33m 3151[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-settings-connected-accounts.test.tsx[2m > [22m[2mCreatorSettingsPage — ConnectedAccounts mount (CR-101 / F-0114)[2m > [22m[2mrenders the Connected Accounts card
+[22m[39mFailed to load creator phone TypeError: Cannot read properties of null (reading 'phone')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-settings.tsx:149:31
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+
+ [32m✓[39m src/components/brand/deal-room/__tests__/demo-sign-flow-alive.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 9016[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0272 — demo mode: mock contracts.get resolves a real fixture (not null)[2m > [22mrenders the mock fixture milestones instead of "Contract terms are not available" [33m 2465[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0272 — demo mode: mock contracts.get resolves a real fixture (not null)[2m > [22mcan reach and use the Sign control end to end (the demo sign flow is not dead) [33m 5599[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0272 control — live mode with a failing/absent contract stays honest, never fabricated[2m > [22mshows the unavailable state (not the mock fixture) when the live contract resolves null [33m 665[2mms[22m[39m
+[90mstderr[2m | src/pages/__tests__/brand-settings-account-phone-load-errors.test.tsx[2m > [22m[2mBrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22m[2man expired session (401) gets its own message and a Sign In action, not Retry
+[22m[39mFailed to load account mobile number ApiError: Token expired
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\__tests__\brand-settings-account-phone-load-errors.test.tsx:110:34
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+[90m    at processTicksAndRejections (node:internal/process/task_queues:105:5)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m {
+  code: [32m'UNAUTHENTICATED'[39m,
+  status: [33m401[39m,
+  details: [90mundefined[39m,
+  linkedCreatorProfileId: [90mundefined[39m,
+  field: [90mundefined[39m,
+  fields: [90mundefined[39m
+}
+
+ [32m✓[39m src/admin/pages/UsersPage.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 3388[2mms[22m[39m
+   [33m[2m✓[22m[39m UsersPage — Brands table (F7 phone columns)[2m > [22mrenders both phone columns with the Workspace/Owner vocabulary [33m 1180[2mms[22m[39m
+   [33m[2m✓[22m[39m UsersPage — Brands table (F7 phone columns)[2m > [22mshows "— Not provided" for each field independently when null [33m 398[2mms[22m[39m
+   [33m[2m✓[22m[39m UsersPage — Brands table (F7 phone columns)[2m > [22mshows "— Not provided" for both fields when both are null (pre-PHONE-0904 brand) [33m 301[2mms[22m[39m
+   [33m[2m✓[22m[39m UsersPage — Brands table (F7 phone columns)[2m > [22mrenders one distinguishable value per row when owner and workspace numbers differ [33m 676[2mms[22m[39m
+   [33m[2m✓[22m[39m UsersPage — Brands table (F7 phone columns)[2m > [22mrenders 8 skeleton cells per loading row, matching the 8-column header [33m 432[2mms[22m[39m
+[90mstderr[2m | src/pages/__tests__/brand-settings-account-phone-load-errors.test.tsx[2m > [22m[2mBrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22m[2ma server error (500) gets its own message and a Retry action
+[22m[39mFailed to load account mobile number ApiError: boom
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\__tests__\brand-settings-account-phone-load-errors.test.tsx:126:34
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1787:3[90m)[39m {
+  code: [32m'INTERNAL_ERROR'[39m,
+  status: [33m500[39m,
+  details: [90mundefined[39m,
+  linkedCreatorProfileId: [90mundefined[39m,
+  field: [90mundefined[39m,
+  fields: [90mundefined[39m
+}
+
+ [32m✓[39m src/pages/__tests__/brand-settings.disclaimer.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 8643[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Notifications persistence copy (F-0262)[2m > [22mdoes not claim the whole notifications card is session-only / non-persisting [33m 2244[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Notifications persistence copy (F-0262)[2m > [22mflipping Email Notifications PATCHes the server immediately in live mode [33m 1704[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Notifications persistence copy (F-0262)[2m > [22mflipping Campaign Alerts PATCHes every eventType in its group immediately [33m 1934[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Notifications persistence copy (F-0262)[2m > [22mflipping Bid Notifications PATCHes every eventType in its group immediately [33m 1919[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Notifications persistence copy (F-0262)[2m > [22mPush Notifications and Weekly Digest still individually disclose they are unavailable [33m 838[2mms[22m[39m
+ [32m✓[39m src/components/brand/__tests__/command-bar.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 8174[2mms[22m[39m
+   [33m[2m✓[22m[39m CommandBar — Cmd/Ctrl+K chord (F-0261)[2m > [22mopens on the first press and closes on the second, despite a conflicting window-level listener [33m 2192[2mms[22m[39m
+   [33m[2m✓[22m[39m CommandBar — advertised shortcuts (F-0261)[2m > [22madvertises no keyboard shortcut hint for quick actions (none is implemented) [33m 1418[2mms[22m[39m
+   [33m[2m✓[22m[39m CommandBar — advertised shortcuts (F-0261)[2m > [22mpressing Cmd+W while the bar is open does not trigger any command-bar handler [33m 939[2mms[22m[39m
+   [33m[2m✓[22m[39m CommandBar — Escape closes the dialog (F-0261)[2m > [22mcloses when Escape is pressed [33m 1491[2mms[22m[39m
+   [33m[2m✓[22m[39m CommandBar — all 15 destinations reachable (F-0261)[2m > [22mrenders every destination title in the "Go To" group [33m 1700[2mms[22m[39m
+   [33m[2m✓[22m[39m CommandBar — all 15 destinations reachable (F-0261)[2m > [22m"Discover" (Find Creators destination) is present, bringing the total to 15 [33m 405[2mms[22m[39m
+[90mstderr[2m | src/pages/creator-settings-connected-accounts.test.tsx[2m > [22m[2mCreatorSettingsPage — ConnectedAccounts mount (CR-101 / F-0114)[2m > [22m[2mreflects real connection status from useMetaConnection, not a static placeholder
+[22m[39mFailed to load creator phone TypeError: Cannot read properties of null (reading 'phone')
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\creator-settings.tsx:149:31
+
+[90mstderr[2m | src/pages/__tests__/brand-settings-account-phone-load-errors.test.tsx[2m > [22m[2mBrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22m[2ma dropped network connection (fetch rejecting, not an ApiError) gets its own offline message
+[22m[39mFailed to load account mobile number TypeError: Failed to fetch
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\__tests__\brand-settings-account-phone-load-errors.test.tsx:144:34
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1787:3[90m)[39m
+
+ [32m✓[39m src/pages/creator-settings-connected-accounts.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 8533[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — ConnectedAccounts mount (CR-101 / F-0114)[2m > [22mrenders the Connected Accounts card [33m 5072[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorSettingsPage — ConnectedAccounts mount (CR-101 / F-0114)[2m > [22mreflects real connection status from useMetaConnection, not a static placeholder [33m 3453[2mms[22m[39m
+[90mstderr[2m | src/pages/__tests__/brand-settings-account-phone-load-errors.test.tsx[2m > [22m[2mBrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22m[2man unrecognized ApiError falls back to the pre-existing generic message with a Retry action
+[22m[39mFailed to load account mobile number ApiError: unexpected
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\__tests__\brand-settings-account-phone-load-errors.test.tsx:158:34
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1787:3[90m)[39m {
+  code: [32m'WEIRD_CODE'[39m,
+  status: [33m418[39m,
+  details: [90mundefined[39m,
+  linkedCreatorProfileId: [90mundefined[39m,
+  field: [90mundefined[39m,
+  fields: [90mundefined[39m
+}
+
+[90mstderr[2m | src/pages/__tests__/brand-settings-account-phone-load-errors.test.tsx[2m > [22m[2mBrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22m[2mRetry on the offline case re-invokes GET /users/me and recovers once it succeeds
+[22m[39mFailed to load account mobile number TypeError: Failed to fetch
+    at [90mC:\Users\Sage world\Downloads\New Influora Ai\New Influora\[39msrc\pages\__tests__\brand-settings-account-phone-load-errors.test.tsx:167:38
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:155:11
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:752:26
+    at [90mfile:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1897:20
+    at new Promise (<anonymous>)
+    at runWithTimeout [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1863:10[90m)[39m
+    at runTest [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1574:12[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runSuite [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1729:8[90m)[39m
+    at runFiles [90m(file:///C:/Users/Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/[39mnode_modules/[4m@vitest[24m/runner/dist/chunk-hooks.js:1787:3[90m)[39m
+
+ [32m✓[39m src/components/creator/connected-accounts.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 3016[2mms[22m[39m
+   [33m[2m✓[22m[39m ConnectedAccounts — Granted permissions (CR-104)[2m > [22mrenders only the scopes the backend reports as actually granted, not a fixed requested set [33m 345[2mms[22m[39m
+   [33m[2m✓[22m[39m ConnectedAccounts — Granted permissions (CR-104)[2m > [22mscopes === null (backend permissions check failed) renders an honest "could not verify" message, not a full-grant list [33m 317[2mms[22m[39m
+   [33m[2m✓[22m[39m ConnectedAccounts — disconnect (CR-102 / F-0115)[2m > [22mshows a confirmation dialog before disconnecting — a click alone does not call the API [33m 583[2mms[22m[39m
+   [33m[2m✓[22m[39m ConnectedAccounts — disconnect (CR-102 / F-0115)[2m > [22mthe confirmation copy makes only the claim the code actually backs — syncing stops, not brand visibility [33m 395[2mms[22m[39m
+   [33m[2m✓[22m[39m ConnectedAccounts — disconnect (CR-102 / F-0115)[2m > [22mcalls api.metaOAuth.disconnect and refreshes status on confirm [33m 329[2mms[22m[39m
+   [33m[2m✓[22m[39m ConnectedAccounts — disconnect (CR-102 / F-0115)[2m > [22ma failed disconnect shows an error toast and keeps the dialog open for retry [33m 697[2mms[22m[39m
+ [32m✓[39m src/pages/__tests__/brand-settings-account-phone-load-errors.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 6848[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22man expired session (401) gets its own message and a Sign In action, not Retry [33m 2737[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22ma server error (500) gets its own message and a Retry action [33m 1084[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22ma dropped network connection (fetch rejecting, not an ApiError) gets its own offline message [33m 966[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22man unrecognized ApiError falls back to the pre-existing generic message with a Retry action [33m 677[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandSettingsPage — Mobile Number load failures are distinguishable (F-0636)[2m > [22mRetry on the offline case re-invokes GET /users/me and recovers once it succeeds [33m 1376[2mms[22m[39m
+ [32m✓[39m src/pages/creator-onboarding.trust.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 5333[2mms[22m[39m
+   [33m[2m✓[22m[39m Connect asks about the Facebook Page before handing the browser to Meta[2m > [22mdoes not start OAuth on the first click — it asks which configuration applies [33m 1309[2mms[22m[39m
+   [33m[2m✓[22m[39m Connect asks about the Facebook Page before handing the browser to Meta[2m > [22msends a creator with no Facebook Page down INSTAGRAM_LOGIN, not the Page-required path [33m 1170[2mms[22m[39m
+   [33m[2m✓[22m[39m Connect asks about the Facebook Page before handing the browser to Meta[2m > [22msends a creator who has a Page down FACEBOOK_LOGIN explicitly [33m 668[2mms[22m[39m
+   [33m[2m✓[22m[39m Connect asks about the Facebook Page before handing the browser to Meta[2m > [22mdrops the onboarding resume marker so the callback returns here, not to Settings [33m 834[2mms[22m[39m
+   [33m[2m✓[22m[39m Connect asks about the Facebook Page before handing the browser to Meta[2m > [22mclears the resume marker when authorize fails, so a retry is not misrouted [33m 638[2mms[22m[39m
+ [32m✓[39m src/components/brand/contracts/__tests__/contracts-sign-reachability.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 7352[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0248 — Sign Contract is reachable in live mode[2m > [22mrenders a clickable Sign Contract button for a contract awaiting the brand signature [33m 2016[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0248 — Sign Contract is reachable in live mode[2m > [22mrenders a clickable Sign Contract button for a freshly-generated DRAFT contract (brand-first path) [33m 743[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0248 — Sign Contract is reachable in live mode[2m > [22mdoes NOT show the Sign button once the brand has already signed (awaiting creator instead) [33m 1020[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0267 — every mapped status is reachable or explained for an unsigned brand[2m > [22mDRAFT (-> 'draft') gives a brand who hasn't signed a reachable path or an explanation [33m 450[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0267 — every mapped status is reachable or explained for an unsigned brand[2m > [22mPENDING_SIGNATURES (-> 'pending_signature') gives a brand who hasn't signed a reachable path or an explanation [33m 596[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0267 — every mapped status is reachable or explained for an unsigned brand[2m > [22mACTIVE (-> 'signed') gives a brand who hasn't signed a reachable path or an explanation [33m 804[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0267 — every mapped status is reachable or explained for an unsigned brand[2m > [22mCANCELLED (-> 'cancelled') gives a brand who hasn't signed a reachable path or an explanation [33m 1031[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0269 — demo-mode mock fixtures are signable[2m > [22mcontract-3 (was status "pending_review", now "draft") renders a clickable Sign Contract button [33m 668[2mms[22m[39m
+ [32m✓[39m src/components/brand/discover/creator-discovery.instagram.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 10616[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — Instagram creators tab[2m > [22mrenders the "Unverified with Influora" badge and connects via the dialog [33m 3257[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — Instagram creators tab[2m > [22mrenders "Verified with Influora" and a create-campaign link for a JOINED creator [33m 1196[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — Instagram creators tab[2m > [22mrenders the unavailable state with no cards on a 503 from the list [33m 741[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — Instagram creators tab[2m > [22mrenders an error state with Retry on a 502 from the list — never the empty state (Q2.4) [33m 1092[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — Instagram creators tab[2m > [22mrenders the error state (not empty) when the list fetch rejects with a network error, not an ApiError (Q2.4) [33m 888[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — Instagram creators tab[2m > [22msearch box passes q= through to GET /creators/external (Q1.5) [33m 1139[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorDiscovery — Instagram creators tab[2m > [22mthe follower-range control exists and is wired to state, never hard-coded (Q1.5) [33m 2297[2mms[22m[39m
+[90mstderr[2m | src/components/creator/creator-layout-mobile-menu.test.tsx[2m > [22m[2mCreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22m[2maccessible name and aria-expanded flip to the open state on click
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/creator/creator-layout-mobile-menu.test.tsx[2m > [22m[2mCreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22m[2mclosing the sheet (Escape) reverts the accessible name and aria-expanded
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/components/creator/creator-layout-mobile-menu.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 2087[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22mhas a real accessible name in the closed state, discoverable by role [33m 603[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22maccessible name and aria-expanded flip to the open state on click [33m 590[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorLayout — mobile hamburger menu accessible name (F-0167)[2m > [22mclosing the sheet (Escape) reverts the accessible name and aria-expanded [33m 891[2mms[22m[39m
+ [32m✓[39m src/components/brand/campaigns/__tests__/campaign-form-f0290-draft-invite-guard.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 3923[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignForm — DRAFT save must not invite the Discover handoff creator (Q6.2)[2m > [22mhandleSubmit(DRAFT): never calls api.creators.invite, and stashes the handoff instead [33m 2585[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignForm — DRAFT save must not invite the Discover handoff creator (Q6.2)[2m > [22ma later publish of that same (now-edited) draft consumes the stash exactly once [33m 1335[2mms[22m[39m
+ [32m✓[39m src/components/creator/MeeraCopilotChat.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 3859[2mms[22m[39m
+   [33m[2m✓[22m[39m MeeraCopilotChat outage recovery[2m > [22mrecovers from a heartbeat timeout instead of hanging in sending forever [33m 2347[2mms[22m[39m
+   [33m[2m✓[22m[39m MeeraCopilotChat outage recovery[2m > [22mnever renders the raw transport error string for CONNECTION_ERROR [33m 1177[2mms[22m[39m
+   [33m[2m✓[22m[39m MeeraCopilotChat outage recovery[2m > [22moffers a working retry instead of "refresh to try again" when the initial connect fails [33m 331[2mms[22m[39m
+ [32m✓[39m src/components/brand/deals/deal-room-dashboard-accept-rollback.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 6839[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — failed accept keeps a retry path (F-0440)[2m > [22mkeeps the View Proposal dialog open with the error visible when accept fails [33m 3762[2mms[22m[39m
+   [33m[2m✓[22m[39m DealRoomDashboard — failed accept keeps a retry path (F-0440)[2m > [22mcloses the dialog once a retried accept actually succeeds [33m 3074[2mms[22m[39m
+ [32m✓[39m src/components/brand/contracts/__tests__/contracts-and-deliverables.frozen-escrow.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 5414[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0273 — a FROZEN milestone reads as frozen, not ordinary funded escrow[2m > [22mEscrow Status tile shows Frozen — never the green "Locked" label — when a milestone is FROZEN [33m 1928[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0273 — a FROZEN milestone reads as frozen, not ordinary funded escrow[2m > [22mPayment Schedule renders the FROZEN milestone distinctly from a merely-pending one [33m 1444[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0273 — a FROZEN milestone reads as frozen, not ordinary funded escrow[2m > [22man all-FUNDED contract with no dispute still reads as ordinary Locked (no regression) [33m 1124[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0273 — a FROZEN milestone reads as frozen, not ordinary funded escrow[2m > [22ma contract with no held milestones still reads Not Locked (no regression) [33m 911[2mms[22m[39m
+[90mstderr[2m | src/pages/brand-new-hype-campaign.end-brand-fields.test.tsx[2m > [22m[2mBrandNewHypeCampaignPage — end-brand fields (A2)[2m > [22m[2msends endBrandName/endBrandCategory on create once both are filled in
+[22m[39mSelect is changing from uncontrolled to controlled. Components should not switch from controlled to uncontrolled (or vice versa). Decide between using a controlled or uncontrolled value for the lifetime of the component.
+
+ [32m✓[39m src/components/brand/campaigns/campaigns-list-active-edit-gate.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 6728[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — Edit gated by ACTIVE status[2m > [22mdisables Edit with a clear reason for an ACTIVE campaign [33m 3123[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — Edit gated by ACTIVE status[2m > [22mleaves Edit fully working for a PAUSED campaign (no regression) [33m 842[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — Edit gated by ACTIVE status[2m > [22mleaves Edit fully working for a DRAFT campaign (no regression) [33m 1694[2mms[22m[39m
+   [33m[2m✓[22m[39m CampaignsList — Edit gated by ACTIVE status[2m > [22mPause/Resume status-change control for an ACTIVE campaign is untouched by the Edit gate [33m 1065[2mms[22m[39m
+ [32m✓[39m src/pages/brand-new-hype-campaign.end-brand-fields.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 7436[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandNewHypeCampaignPage — end-brand fields (A2)[2m > [22mrenders End Brand Name and End Brand Category inputs [33m 1170[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandNewHypeCampaignPage — end-brand fields (A2)[2m > [22mblocks launch with a client-side error when End Brand Name is empty, and never calls create [33m 2392[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandNewHypeCampaignPage — end-brand fields (A2)[2m > [22msends endBrandName/endBrandCategory on create once both are filled in [33m 3869[2mms[22m[39m
+ [32m✓[39m src/pages/creator-copilot-meera-consent.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 4092[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorCopilotPage — Meera consent gate (A6/A10)[2m > [22mshows the consent screen before the chat panel on first open [33m 2535[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorCopilotPage — Meera consent gate (A6/A10)[2m > [22mopens the chat panel after accepting consent [33m 1554[2mms[22m[39m
+ [32m✓[39m src/pages/creator-chat-refresh.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 7271[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — refreshDeal staleness guard (CR-29 / W2-L1)[2m > [22mmounts the room for the deal named in ?deal= [33m 2808[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — refreshDeal staleness guard (CR-29 / W2-L1)[2m > [22mtoasts a failed refresh when it is still the newest one [33m 2481[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — refreshDeal staleness guard (CR-29 / W2-L1)[2m > [22msuppresses the failure toast when a newer refresh already succeeded, but still logs [33m 1977[2mms[22m[39m
+[90mstderr[2m | src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx[2m > [22m[2mContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mnever renders the fabricated human name ("Priya Sharma")
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx[2m > [22m[2mContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mnever renders the hardcoded past deadline ("2024-02-15" / its formatted form)
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx[2m > [22m[2mContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mnever renders the fabricated usage-rights value ("6 months on social media platforms")
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx[2m > [22m[2mContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mnever renders the fabricated exclusivity value ("No exclusivity agreement")
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx[2m > [22m[2mContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mnever renders a fabricated revision cap ("up to 2 revision rounds")
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx[2m > [22m[2mContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mrenders an honest "Not specified" for each term the app was not given, and a neutral (non-person) label for the creator
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/pages/creator-chat-unmatched-deal-id.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 4274[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — an unmatched ?deal= id must not substitute a different deal[2m > [22mshows "Deal not found" (not the generic "No deals yet"), and not the first real deal, when the id in the URL matches nothing [33m 1772[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — an unmatched ?deal= id must not substitute a different deal[2m > [22mF-0639: shows the genuine "No deals yet" copy (not "Deal not found") when the creator has zero deals ever [33m 1051[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — an unmatched ?deal= id must not substitute a different deal[2m > [22mstill falls back to the first deal when NO id is requested at all [33m 1448[2mms[22m[39m
+[90mstderr[2m | src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx[2m > [22m[2mContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mstill renders the real, known fields (contractId, campaign, amount) — this is not a vacuous check
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx[2m > [22m[2mContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app WAS given a real creatorName and deadline[2m > [22m[2mrenders the real creator name instead of any fallback or the fabricated one
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx[2m > [22m[2mContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app WAS given a real creatorName and deadline[2m > [22m[2mrenders the real deadline instead of the hardcoded past date
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/components/brand/timeline/panels/__tests__/contract-panel-honest-terms.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 1443[2mms[22m[39m
+   [33m[2m✓[22m[39m ContractPanel download — F-0669 no fabricated legal terms[2m > [22mwhen the app was not given creatorName/deadline (only amount)[2m > [22mnever renders the fabricated human name ("Priya Sharma") [33m 616[2mms[22m[39m
+ [32m✓[39m src/pages/creator-chat-verified-badge.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 4718[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — "Verified Brand" badge honesty (M-1, BrandF.md §83c/§87)[2m > [22mdoes NOT render "Verified Brand" for an UNVERIFIED brand [33m 2520[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — "Verified Brand" badge honesty (M-1, BrandF.md §83c/§87)[2m > [22mdoes NOT render "Verified Brand" for a PENDING brand [33m 935[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — "Verified Brand" badge honesty (M-1, BrandF.md §83c/§87)[2m > [22mdoes NOT render "Verified Brand" when the field is null (brand counterparty missing/unresolved) [33m 425[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorChatPage — "Verified Brand" badge honesty (M-1, BrandF.md §83c/§87)[2m > [22mDOES render "Verified Brand" for a VERIFIED brand [33m 835[2mms[22m[39m
+[90mstderr[2m | src/components/creator/deal-room/__tests__/creator-contract-panel-honest-terms.test.tsx[2m > [22m[2mCreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mnever renders the hardcoded past deadline ("2024-02-15" / its formatted form)
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/creator/deal-room/__tests__/creator-contract-panel-honest-terms.test.tsx[2m > [22m[2mCreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mnever renders the fabricated usage-rights value ("6 months on social media platforms")
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/creator/deal-room/__tests__/creator-contract-panel-honest-terms.test.tsx[2m > [22m[2mCreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mnever renders the fabricated exclusivity value ("No exclusivity agreement")
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/creator/deal-room/__tests__/creator-contract-panel-honest-terms.test.tsx[2m > [22m[2mCreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mnever renders a fabricated revision cap ("up to 2 revision rounds")
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/pages/__tests__/brand-wallet.dead-controls.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 2297[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0264 dead money controls[2m > [22mExport is disabled and gives a reason [33m 568[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0264 dead money controls[2m > [22mDownload Form 16A is disabled and its accessible name states why [33m 468[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0264 dead money controls[2m > [22mDownload GST Summary is disabled and its accessible name states why [33m 517[2mms[22m[39m
+   [33m[2m✓[22m[39m BrandWalletPage — F-0264 dead money controls[2m > [22mnone of the three dead controls carry a bare onClick that would fire on a stray click [33m 741[2mms[22m[39m
+[90mstderr[2m | src/components/creator/deal-room/__tests__/creator-contract-panel-honest-terms.test.tsx[2m > [22m[2mCreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mrenders an honest "Not specified" for each term the app was not given, and the honest "You (Creator)" self-view label
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/creator/deal-room/__tests__/creator-contract-panel-honest-terms.test.tsx[2m > [22m[2mCreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app was not given creatorName/deadline (only amount)[2m > [22m[2mstill renders the real, known fields (contractId, brand, campaign, amount) — this is not a vacuous check
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/components/brand/deal-room/deal-payments-tab.f0222.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[33m 2597[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0224 — the brand can release a funded milestone[2m > [22mcalls the release endpoint with that milestone id [33m 595[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0224 — the brand can release a funded milestone[2m > [22msurfaces the server refusal verbatim rather than a generic failure [33m 712[2mms[22m[39m
+[90mstderr[2m | src/components/creator/deal-room/__tests__/creator-contract-panel-honest-terms.test.tsx[2m > [22m[2mCreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app WAS given a real creatorName and deadline[2m > [22m[2mrenders the real creator name instead of the hardcoded "You (Creator)" label
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+[90mstderr[2m | src/components/creator/deal-room/__tests__/creator-contract-panel-honest-terms.test.tsx[2m > [22m[2mCreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22m[2mwhen the app WAS given a real creatorName and deadline[2m > [22m[2mrenders the real deadline instead of the hardcoded past date
+[22m[39mWarning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent}.
+
+ [32m✓[39m src/components/creator/deal-room/__tests__/creator-contract-panel-honest-terms.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 2513[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22mwhen the app was not given creatorName/deadline (only amount)[2m > [22mnever renders the hardcoded past deadline ("2024-02-15" / its formatted form) [33m 442[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22mwhen the app was not given creatorName/deadline (only amount)[2m > [22mnever renders the fabricated exclusivity value ("No exclusivity agreement") [33m 316[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22mwhen the app was not given creatorName/deadline (only amount)[2m > [22mnever renders a fabricated revision cap ("up to 2 revision rounds") [33m 409[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22mwhen the app WAS given a real creatorName and deadline[2m > [22mrenders the real creator name instead of the hardcoded "You (Creator)" label [33m 398[2mms[22m[39m
+   [33m[2m✓[22m[39m CreatorContractPanel download — F-0669 no fabricated legal terms[2m > [22mwhen the app WAS given a real creatorName and deadline[2m > [22mrenders the real deadline instead of the hardcoded past date [33m 315[2mms[22m[39m
+ [32m✓[39m src/components/brand/contracts/__tests__/contracts-and-deliverables.payments-truthful.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 5713[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0251 — live mode, no milestone data: the tab tells the truth instead of fabricating[2m > [22mrenders the real escrow summary and an honest "not available" note — never the invented 50/50 schedule [33m 1923[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0251 — live mode, no milestone data: the tab tells the truth instead of fabricating[2m > [22man unlocked (no escrow) contract with no milestones says so plainly [33m 1074[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0251 — demo mode: the same honesty applies to mockContracts fixtures, not just live records[2m > [22mcontract-3 (draft, unsigned, escrowLocked: false, escrowAmount: 0) is never shown as half paid [33m 1574[2mms[22m[39m
+   [33m[2m✓[22m[39m F-0251 — demo mode: the same honesty applies to mockContracts fixtures, not just live records[2m > [22mcontract-1 (escrowLocked: true, escrowAmount: 45000) shows the real held amount, not an invented 50% split [33m 1139[2mms[22m[39m
+
+[31m⎯⎯⎯⎯[39m[1m[41m Unhandled Rejection [49m[22m[31m⎯⎯⎯⎯⎯[39m
+[31m[1mError[22m: Channel closed[39m
+[90m [2m❯[22m target.send node:internal/child_process:[2m753:16[22m[39m
+[90m [2m❯[22m ProcessWorker.send ../../../../Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/node_modules/tinypool/dist/index.js:[2m140:41[22m[39m
+[90m [2m❯[22m MessagePort.<anonymous> ../../../../Sage%20world/Downloads/New%20Influora%20Ai/New%20Influora/node_modules/tinypool/dist/index.js:[2m149:62[22m[39m
+[90m [2m❯[22m [nodejs.internal.kHybridDispatch] node:internal/event_target:[2m827:20[22m[39m
+[90m [2m❯[22m MessagePort.<anonymous> node:internal/per_context/messageport:[2m23:28[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[22m[39m
+[31m[1mSerialized Error:[22m[39m [90m{ code: 'ERR_IPC_CHANNEL_CLOSED' }[39m
+
+
+
+VITEST_EXIT_CODE=1

@@ -1,0 +1,19 @@
+{
+  "verdict": "believed",
+  "oracle": "vitest",
+  "isolation": "fresh-context",
+  "done_when": "On /creator/analytics, /brand/creators/:id/analytics and /brand/analytics no card calls a per-post average a total: the reach and impressions cards are labelled as per-post averages, the duplicate 'Avg. Views Per Post' card (same field as impressions) is gone, and the roster aggregate is labelled as combined per-post averages; demographics empty state names Meta's 100+ follower rule; proved by vitest on those pages' tests exiting 0 with a test that fails on the old labels, reviewed by kabir in a fresh context",
+  "evidence": {
+    "oracle": "vitest",
+    "command": "bash .proof-os/gates/f0951-f0954-creator-analytics.sh",
+    "result": "VERDICT: proved; Test Files 8 passed, Tests 24 passed; mvn 0 failures",
+    "where": ".proof-os/gates/f0951-f0954-creator-analytics.sh:1"
+  },
+  "not_checked": [
+    "F-0958 missing averages render 0",
+    "F-0959 brand trend chart labels",
+    "F-0960 unweighted combined engagement rate",
+    "trend-chart series on creator/brand-creator pages still say 'Reach' for per-snapshot averages (LOW)"
+  ],
+  "skipped": []
+}

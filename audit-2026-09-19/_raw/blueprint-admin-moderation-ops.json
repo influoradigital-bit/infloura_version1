@@ -1,0 +1,638 @@
+{
+  "domain": "Admin console, moderation, finance ops & audit (88 endpoints)",
+  "release_candidate": "commit 115f698, checked out clean at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+  "audit_method": "Source read of every Admin*Controller/service in the RC checkout (22 controllers + PlatformFeeAdminController + ApprovalWorkflowController + AuditLogController), SecurityConfig.java, FE route table (src/pages/admin-console.tsx) and src/admin/services/api-contracts.ts, plus 25 targeted `mvn -q -o -Dtest=<Class> test` runs against the RC's influora-api (all green, surefire reports captured). graphify-out/graph.json does NOT exist in the RC checkout (only graphify-out/cache/ present) so graphify query/path/explain could not be used; investigation was direct source read + grep + targeted test execution instead.",
+  "questions": [
+    {
+      "q": "Is every /admin/** route actually unreachable by a non-admin (BRAND/CREATOR) JWT, or does that rely only on each service's own check?",
+      "a": "Structural filter-level gate confirmed: SecurityConfig.java:276-277 matches `/admin/**` -> `.hasRole(\"ADMIN\")`, ordered after the two explicit `/admin/auth/login|refresh` permitAll rules (SecurityConfig.java:263-266). A BRAND/CREATOR JWT (ROLE_BRAND/ROLE_CREATOR) 403s at the filter before reaching any Admin*Controller. Evidence: code read, E2/OBSERVED, confidence 85 (static only, not runtime-probed against a live token in this pass)."
+    },
+    {
+      "q": "Within the ADMIN role, is there a real SUPER_ADMIN vs ADMIN vs SUPPORT tier split, or is 'any admin' good enough everywhere?",
+      "a": "Real per-call tiering exists in AdminContextService.requireRole/requireRoleWithMfaSatisfied (AdminContextService.java:94-120), loading the caller's CURRENT role fresh from admin_users (not minted into the JWT, so a demotion takes effect next request). Money-movement endpoints (manual payout, payout retry, billing comp/override, platform fee config) are gated SUPER_ADMIN-only; brand/creator moderation and most reads are SUPER_ADMIN+ADMIN; a few reads (campaign list/at-risk/hype-ops) also admit SUPPORT. No @PreAuthorize/@EnableMethodSecurity anywhere in com.influora — 100% manual per-call checks, confirmed by reading every controller's javadoc trail and spot-checking AdminFinanceService/AdminBillingService/PlatformFeeAdminService/AdminCampaignService source."
+    },
+    {
+      "q": "Is MFA actually enforced before a SUPER_ADMIN/ADMIN can reach money-moving or high-blast-radius endpoints, or is it advisory?",
+      "a": "Enforced: AdminContextService.requireMfaSatisfied (AdminContextService.java:122-131) throws 403 MFA_SETUP_REQUIRED for SUPER_ADMIN/ADMIN roles with mfaEnabled=false, called by every requireRoleWithMfaSatisfied invocation across AdminFinanceService/AdminBillingService/PlatformFeeAdminService/AdminBrandController's service/etc. SUPPORT tier is explicitly NOT MFA-gated (by design per the class javadoc, revisit if SUPPORT gains sensitive writes)."
+    },
+    {
+      "q": "Which of the 88 admin endpoints have zero automated test coverage at any layer (controller or service)?",
+      "a": "Confirmed via grep across influora-api/src/test for zero hits on the service class name: PlatformFeeAdminService (backs PlatformFeeAdminController — SUPER_ADMIN-only platform fee/take-rate CRUD), AdminRevenueService (backs AdminRevenueController — GET /admin/finance/revenue), AdminCampaignService (backs AdminCampaignController — list/getById/atRisk/hypeOps). AdminFestivalEnquiryService has no direct unit test either (only an incidental repository test and the *submission-side* FestivalEnquiryServiceTest, a different class). Only 2 of 24 Admin*/Approval*/AuditLog controllers have a controller-level test (AuditLogControllerTest, AdminCreatorAgentControllerTest) — everything else is exercised only at the service layer, if at all."
+    },
+    {
+      "q": "For the 5 endpoints the task pre-flagged as 'NO FE CALLER', is that actually true, or does the FE call them under a different name?",
+      "a": "Verified true for all 5 by grep across src/ (zero hits, including in api-contracts.ts's own client-function declarations, not just component usage): POST /admin/brands/{id}/reanalyze, POST /admin/emails/custom/{campaignId}/cancel, DELETE /admin/external-creators/{id}, POST /admin/festival-enquiries/{id}/link-existing + GET .../existing-account, PUT /admin/creator-agent/creators/{creatorId}/monthly-cap. These are backend-complete, unit-tested (where a service test exists) API-only surfaces with no client function at all, not merely an unused one."
+    },
+    {
+      "q": "Does the admin billing console (AdminBillingController /comp and /override) actually let an admin hand out product entitlements for free with no payment, and is that intentional?",
+      "a": "Yes, by design — AdminBillingController.java:20-92 javadoc states this is 'the first NON-webhook money-state writer' in the codebase. Both /comp and /override call the shared SubscriptionService#grantAdminPlan primitive; SUPER_ADMIN-only, MFA-gated, mandatory @Size(min=10) reason, every grant audit-logged (TIER_ADJUST/BUDGET_OVERRIDE). AdminBillingServiceTest: 6/6 pass (verified this session)."
+    },
+    {
+      "q": "Is the admin-side platform fee config (brand 10%/creator 15% take rate) actually wired to the money paths that deduct these fees, or is it a disconnected admin toy?",
+      "a": "Partially connected by design, not a toy: PlatformFeeAdminService.update (PlatformFeeAdminService.java:89-132) writes the same platform_fee_config.default_fee_bps column that PlatformFeeService#deductAtRelease already reads for the creator-side escrow-release deduction — so a SUPER_ADMIN changing the creator fee % here DOES take effect on real money. The brand-side leg (charging this % at escrow-funding time) is explicitly NOT wired — javadoc states 'It does NOT charge brand escrow-funding ... against these percentages — that wiring is separate, not-yet-built scope.' Zero test coverage for PlatformFeeAdminService itself (confirmed no test file), though the read-side deduction it feeds (PlatformFeeService) has its own tests (PlatformFeeServiceTest, CreatorPlatformFeeServiceTest)."
+    },
+    {
+      "q": "Does the moderation flag-action endpoint actually support ESCALATE, or is it still the 501 stub the AdminModerationController javadoc describes?",
+      "a": "It IS implemented — this is a doc/code mismatch. AdminModerationController.java:66-70's javadoc says '\"ESCALATE\" (P2+, not yet implemented)', but AdminModerationService.java:148-265 fully implements ESCALATE (flag -> ESCALATED, non-terminal, reason mandatory, re-actionable by a senior admin later) with its own javadoc explicitly correcting the earlier stub note. AdminModerationServiceTest: 6/6 pass (verified this session). The controller-level comment is stale, not the behavior — a minor doc-accuracy defect, not a functional gap."
+    },
+    {
+      "q": "Is the AdminEscrowController's flagged-escrow read safe, or could a mutating escrow action be reached through it (direct release/refund/hold)?",
+      "a": "Read-only by design and by code: AdminEscrowController.java:1-45 exposes only GET /admin/escrow/flagged; its own javadoc states the mutating /{id}/hold|release|refund routes the FE's escrowApi type declares are 'deliberately NOT built here' — escrow release/refund only happens through the audited dispute-mediated path (EscrowService.adminReleaseForDispute via AdminDisputeController). Confirmed no hold/release/refund method exists on AdminFinanceService/AdminEscrowController by reading both files in full."
+    },
+    {
+      "q": "For the money-movement admin actions (manual payout, payout retry, dispute resolve, fee-config update), what protects against a double-submit or two-admin race?",
+      "a": "Each has an explicit guard, all read directly: (1) manual payout requires a client-supplied Idempotency-Key header (AdminFinanceController.java:91-106) plus a DUPLICATE_BANK_REFERENCE 409 check and a for-update row lock on the wallet (AdminFinanceService.java:149-266); (2) PlatformFeeAdminController#update and AdminDisputeController#resolve both catch ObjectOptimisticLockingFailureException from an entity @Version column and translate it to a clean 409 (PlatformFeeAdminController.java:76-89, AdminDisputeController.java:73-88); (3) PlatformFeeAdminService#update additionally does an explicit expectedEffectiveDate baseline check (PlatformFeeAdminService.java:106-111) to catch a race the @Version guard alone can't (two SUPER_ADMINs minutes apart). AdminFinanceServiceTest: 20/20 pass this session."
+    },
+    {
+      "q": "Does AdminCampaignController's per-campaign 'spent'/'slaBreachRate'/'creatorCount' data reflect real aggregates, or are these still the hardcoded placeholders an earlier audit (H-22) flagged?",
+      "a": "Real, live aggregates as of this RC — AdminCampaignService.java:52-61's javadoc documents the H-22 fix explicitly: every field is now a batched (3-query, not N+1) real computation from EscrowHold/Deliverable/Collaboration rows, not a hardcoded 0. Verified by reading assembleSummaries/toSummaryDto/getById in full (AdminCampaignService.java:199-493). However AdminCampaignService has ZERO automated test coverage (confirmed, no test file) — this is IMPLEMENTED BUT NOT VERIFIED by any test, code-read only; `timelineStatus` is still a hardcoded 'ON_TRACK' literal (AdminCampaignService.java:286-390), a declared, honest placeholder, not a fabricated metric."
+    },
+    {
+      "q": "Is the AdminBillingController's data live, or does the FE still show the 'mock data until AdminBillingController ships' state the admin-console.tsx route comment describes?",
+      "a": "Live, not mock — the admin-console.tsx:24-25 comment is stale documentation drift. BillingPage.tsx:6-11 explicitly states 'live via AdminBillingController' and renders BillingConsole, which owns the data fetch; AdminBillingController/AdminBillingService are fully implemented (AdminBillingController.java, AdminBillingServiceTest 6/6 pass this session)."
+    },
+    {
+      "q": "Does the FE's admin API base path actually match the backend's mounted paths (a mismatch the AdminBrandController/AdminDashboardController javadocs repeatedly flag as an open caveat)?",
+      "a": "It matches, currently. src/admin/services/admin-session.ts:36 defines ADMIN_API_BASE = '/api/v1/admin', consistent with server.servlet.context-path=/api/v1 + every Admin*Controller's @RequestMapping(\"/admin/...\"). The repeated javadoc caveats about an '/api/admin' vs '/api/v1/admin' mismatch across ~10 controller files appear to describe a historical state already resolved in this RC, not a live bug — confirmed by reading the actual constant, not just the comments (per the audit rule against trusting comments)."
+    },
+    {
+      "q": "For the Festival Box sponsor-provisioning flow (provision / link-existing), what stops a duplicate User/Workspace from being created for the same enquiry, and is it tested?",
+      "a": "FestivalSponsorProvisioningService guards this with an EMAIL_ALREADY_REGISTERED refusal on #provision when the enquiry's email already has an account, directing the admin to #linkExisting instead (AdminFestivalEnquiryController.java:99-116 javadoc); FestivalSponsorProvisioningServiceTest: 21/21 pass this session (verified runtime), the strongest-tested service in this domain."
+    },
+    {
+      "q": "Is the audit log itself trustworthy — can a non-SUPER_ADMIN read or forge audit entries?",
+      "a": "Read side is SUPER_ADMIN-only (AuditLogController.java:42-59 javadoc, backed by AdminContextService#requireRoleWithMfaSatisfied(..., SUPER_ADMIN) inside AdminAuditLogService — explicitly narrower than the SUPER_ADMIN+ADMIN default elsewhere). The client-submitted POST /admin/audit entry (AuditLogController.java:100-115) accepts a body.adminId() field but the service never trusts it (per javadoc) — the real actor is resolved server-side from the JWT. AdminAuditLogEntityTypeAllowlistTest: 2/2 pass this session (verifies the field-allowlist snapshot discipline, e.g. the FESTIVAL_SPONSOR_PROVISIONING 'id' field drop warning observed live in this session's test run)."
+    },
+    {
+      "q": "What is the actual blast radius if the /admin/emails/send-bulk endpoint is called — does it send real email to real users?",
+      "a": "No — verified 501: AdminEmailController.java:106-128 always returns HTTP 501 BULK_SEND_DISABLED after enforcing the SUPER_ADMIN+MFA gate (so it can't be used as an unauthenticated probe), by explicit design pending abuse controls (rate limiting, recipient cap, audit trail). The real, controlled bulk-send path is /admin/emails/custom/preview + /custom/send (AdminCustomEmailService, AdminCustomEmailServiceTest: 25/25 pass this session, the most heavily tested single service in this domain)."
+    }
+  ],
+  "features": [
+    {
+      "name": "Dashboard pulse/operations/financial + marketing reputation/growth",
+      "user_type": "Admin (SUPER_ADMIN/ADMIN/SUPPORT tiered by sub-endpoint)",
+      "purpose": "CEO Pulse landing screen: platform-health pulse, operations summary, trailing financial (GMV/platform-fee) buckets, and platform reputation + growth-funnel snapshots for the marketing tab.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 78,
+      "entry_point": "GET /admin/dashboard/pulse, /operations, /financial?period=; GET /admin/marketing/reputation, /growth — FE: src/admin/components/dashboard/PulseDashboard.tsx (route '/admin' index in admin-console.tsx:69)",
+      "flow": "PulseDashboard.tsx -> dashboardApi (api-contracts.ts, apiRequest() over ADMIN_API_BASE=/api/v1/admin) -> AdminDashboardController.java:45-67 -> AdminDashboardService.pulse/operations, AdminRevenueService.getFinancialSummary -> live aggregates over Campaign/EscrowHold/Wallet-adjacent tables -> raw unwrapped DTO JSON -> FE renders",
+      "api": "GET /admin/dashboard/{pulse,operations,financial}; GET /admin/marketing/{reputation,growth}. All raw DTOs (no ApiResponse envelope), per AdminDashboardController.java:16-30 and AdminMarketingController.java:12-24 class javadocs.",
+      "database": "Reads only (no writes): campaigns, escrow_holds, reviews, disputes and related aggregation tables via AdminDashboardService/AdminRevenueService/AdminMarketingService.",
+      "state_machine": "None — stateless read snapshots.",
+      "authn": "JWT via JwtAuthenticationFilter; ROLE_ADMIN structurally required for /admin/** (SecurityConfig.java:276-277).",
+      "authz": "requireRoleWithMfaSatisfied inside each service (SUPER_ADMIN+ADMIN for marketing per AdminMarketingController.java:38,50 javadoc; role gate for dashboard endpoints resolved in AdminDashboardService, not read this pass in full).",
+      "working_condition": "An authenticated ADMIN/SUPER_ADMIN JWT with MFA satisfied hits GET /admin/dashboard/pulse|operations|financial and /admin/marketing/reputation|growth and receives live-aggregate JSON, not fabricated data.",
+      "failure_conditions": "getMarketingSummary (acquisition/referrals) is explicitly NOT built — AdminDashboardController.java:26-30 javadoc: 'still NOT built: it bundles acquisition/growth metrics that have no backing data ... the SPA should not call that one yet.' AdminMarketingController.java:19-23 confirms getAcquisition/getReferrals have no backing data and are deliberately not served.",
+      "security_conditions": "MFA + role-gated per the service; no @PreAuthorize, manual per-call checks only (consistent with the rest of the codebase's established pattern).",
+      "tests": "AdminDashboardServiceTest: 1 test (thin — verified running, 1/1 pass this session). AdminMarketingServiceTest: 5/5 pass this session. AdminDashboardStatsCacheTest exists (not run this pass). No controller-level test for either controller.",
+      "production_conditions": "No external service dependency; pure DB aggregation.",
+      "evidence": "AdminDashboardController.java (full read), AdminMarketingController.java (full read); mvn -Dtest=AdminDashboardServiceTest,AdminMarketingServiceTest run this session, both green (1/1, 5/5).",
+      "known_issues": [
+        "AdminDashboardServiceTest has only 1 test method for a service backing 3 distinct endpoints (pulse/operations/financial) — thin coverage relative to surface area.",
+        "getMarketingSummary/getAcquisition/getReferrals are documented-absent, not broken, but any FE code path that still calls them (not checked this pass) would silently fail or 404."
+      ],
+      "required_fixes": [
+        "Expand AdminDashboardServiceTest beyond 1 test method to cover pulse/operations/financial independently.",
+        "Confirm no FE caller references marketingApi.getAcquisition/getReferrals (out of this pass's grep scope) to avoid a dead-call 404 in the marketing tab."
+      ]
+    },
+    {
+      "name": "Brand + creator management (suspend/reinstate/KYC/tier/force-reauth/budget-override/meta-pixel)",
+      "user_type": "Admin (ADMIN/SUPER_ADMIN)",
+      "purpose": "Full brand and creator moderation/CRUD surface: list/detail, safe-field edit, KYC verify, suspend/reinstate, budget override (money path), Meta pixel set/clear, creator tier adjustment, application review, Instagram forced reauth.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 82,
+      "entry_point": "AdminBrandController.java:76-190 (9 endpoints), AdminCreatorController.java:58-160 (9 endpoints) — FE: src/admin/pages/UsersPage.tsx (route 'users/*' in admin-console.tsx:70), BrandProfile.tsx/CreatorProfile.tsx",
+      "flow": "UsersPage.tsx -> brandApi/creatorApi (api-contracts.ts) -> AdminBrandController/AdminCreatorController -> AdminBrandService/AdminCreatorService -> Workspace/CreatorProfile/BrandCampaignFeeService entities -> AdminAuditLogService.record on every mutation -> raw DTO response",
+      "api": "GET/PUT /admin/brands, /admin/brands/{id}; POST /{id}/verify-kyc, /suspend, /reinstate, /campaigns/{campaignId}/budget-override; PATCH /{id}/meta-pixel; POST /{id}/reanalyze. Creator: GET/PUT /admin/creators, /{id}; GET /applications/pending; PUT /{id}/tier; POST /{id}/review-application, /instagram/force-reauth, /suspend, /reinstate.",
+      "database": "workspaces (brand=workspace per AdminBrandController.java:172-175 javadoc), brand_profiles, creator_profiles, campaigns (budget override), admin_audit_log (every mutation).",
+      "state_machine": "Brand: kycStatus (PENDING/VERIFIED/REJECTED), isSuspended toggle. Creator: applicationStatus (PENDING/APPROVED/REJECTED), suspended toggle, tier enum override.",
+      "authn": "ROLE_ADMIN structural gate (SecurityConfig.java:276-277).",
+      "authz": "Manual per-call requireRole/requireRoleWithMfaSatisfied inside AdminBrandService/AdminCreatorService (not fully read this pass at the money-path budget-override method beyond its controller signature).",
+      "working_condition": "An ADMIN/SUPER_ADMIN with MFA satisfied can list/filter/paginate brands and creators, edit an allow-listed safe-field subset (never kycStatus/isSuspended/money via the generic update), and take each dedicated moderation action, with every mutation reaching admin_audit_log.",
+      "failure_conditions": "PUT /brands/{id} and PUT /creators/{id} are documented as accepting ONLY a safe-field allow-list (name/industry/size/email for brand; name/niche for creator) — any caller attempting to smuggle kycStatus/isSuspended/tier through the generic update DTO would be rejected at DTO-binding (fields simply not bindable), per AdminBrandController.java:93-98 and AdminCreatorController.java:89-94 javadocs (code-read, not runtime-probed this pass).",
+      "security_conditions": "Money-path budget-override (AdminBrandController.java:108-124) explicitly described as having 'a committed-spend guard' in AdminBrandService — not independently re-verified this pass beyond the controller signature.",
+      "tests": "AdminBrandServiceTest: 7/7 pass this session. AdminCreatorServiceTest: 5/5 pass this session. AdminBrandServiceBudgetOverrideTest, AdminBrandServiceMetaPixelTest, AdminBrandReanalyzeServiceTest, AdminBrandDtosMetaPixelTest exist (not run this pass, file presence confirmed). Zero controller-level tests for either controller.",
+      "production_conditions": "No external service call in the base CRUD paths; force-reauth touches Instagram OAuth token revocation (not traced this pass).",
+      "evidence": "AdminBrandController.java, AdminCreatorController.java (full read); mvn -Dtest=AdminBrandServiceTest,AdminCreatorServiceTest green this session.",
+      "known_issues": [
+        "reanalyze (AdminBrandController.java:183-190) has zero FE caller — verified by grep (no hits for 'reanalyze' anywhere in src/) — confirmed API-only.",
+        "Budget-override and Meta-pixel money/config paths have dedicated test files (AdminBrandServiceBudgetOverrideTest, AdminBrandServiceMetaPixelTest) that exist but were not executed this pass — evidence for those two specific paths is code-read only (E2), not runtime-verified in this session."
+      ],
+      "required_fixes": [
+        "Run AdminBrandServiceBudgetOverrideTest and AdminBrandServiceMetaPixelTest to raise those two sub-features to E4 runtime-verified.",
+        "Decide whether POST /brands/{workspaceId}/reanalyze should get an FE trigger (e.g. a 'Re-analyze site' button on BrandProfile.tsx) or be considered permanently ops-only/API-only."
+      ]
+    },
+    {
+      "name": "Brand reanalyze POST /admin/brands/{id}/reanalyze — NO FE caller",
+      "user_type": "Admin (API-only, no console UI)",
+      "purpose": "Re-run website analysis for one brand using the URL already stored on its profile, without accepting a caller-supplied URL.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 55,
+      "entry_point": "POST /admin/brands/{workspaceId}/reanalyze — AdminBrandController.java:183-190 -> AdminBrandReanalyzeService.reanalyze",
+      "flow": "No FE entry point exists (verified: zero grep hits for 'reanalyze' across src/, including api-contracts.ts). Callable only via direct HTTP by an ops operator or future FE work.",
+      "api": "POST /admin/brands/{workspaceId}/reanalyze, no request body (URL always sourced from the stored profile per controller javadoc).",
+      "database": "brand_profiles (reads stored website URL; presumably updates analysis output columns — AdminBrandReanalyzeService not read in full this pass).",
+      "state_machine": "None documented beyond the incident-driven [FIX 2, 2026-09-12] note referencing a prior 'analyze-site prod incident'.",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "AdminBrandReanalyzeService (separate collaborator from AdminBrandService 'for why', per controller javadoc — reason not independently verified this pass).",
+      "working_condition": "A direct authenticated POST to this endpoint re-triggers website analysis for the named workspace using its already-stored URL.",
+      "failure_conditions": "Not independently traced into AdminBrandReanalyzeService this pass beyond the controller signature and its dedicated test file's existence.",
+      "security_conditions": "Deliberately takes no request body so a caller cannot redirect analysis at an arbitrary URL (SSRF-adjacent hardening called out explicitly in the controller javadoc, tied to a named prior production incident).",
+      "tests": "AdminBrandReanalyzeServiceTest exists (file confirmed present); not executed this session.",
+      "production_conditions": "Presumably calls the same external site-analysis integration the brand-onboarding flow uses (not traced this pass).",
+      "evidence": "AdminBrandController.java:168-190 (full read); grep confirming zero FE references to 'reanalyze' anywhere in src/.",
+      "known_issues": [
+        "No FE caller anywhere — confirmed by the task's own pointer and independently by grep in this session. Backend-complete, console-invisible."
+      ],
+      "required_fixes": [
+        "Run AdminBrandReanalyzeServiceTest this pass was not able to execute, to move this from E2/IMPLEMENTED BUT NOT VERIFIED toward a verified status.",
+        "Product decision needed: ship an FE trigger, or formally mark this ops-CLI-only."
+      ]
+    },
+    {
+      "name": "Campaigns list/get/at-risk/HYPE ops + admin coupons",
+      "user_type": "Admin (SUPPORT/ADMIN/SUPER_ADMIN)",
+      "purpose": "Admin-panel-wide campaign monitoring (every workspace) with real per-campaign spend/SLA aggregates, at-risk filtering, HYPE-campaign slot-fill/approval-rate ops snapshot, and admin-issued Festival Box coupons on a sponsor's behalf.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 68,
+      "entry_point": "AdminCampaignController.java:54-98 (list/getById/atRisk/hypeOps), AdminCampaignCouponController.java:69-91 (issue/list) — FE: src/admin/components/campaigns/CampaignTable.tsx (route 'campaigns' in admin-console.tsx:71)",
+      "flow": "CampaignTable.tsx -> campaignApi.list()/getAtRisk()/getHypeOps() -> AdminCampaignController -> AdminCampaignService (batched 3-query aggregation over Campaign/Collaboration/EscrowHold/Deliverable, AdminCampaignService.java:209-240) -> CampaignSummaryDto[] with X-Total-Count header",
+      "api": "GET /admin/campaigns?page&pageSize (real pagination, X-Total-Count/X-Page/X-Page-Size headers, AdminCampaignController.java:31-38 javadoc on the M-20 fix); GET /admin/campaigns/{id}; GET /admin/campaigns/at-risk; GET /admin/campaigns/hype/ops; POST/GET /admin/campaigns/{campaignId}/coupons.",
+      "database": "campaigns, collaborations, escrow_holds, deliverables (all read-only for the monitoring endpoints); tracking_coupons written by AdminCampaignCouponService.issue.",
+      "state_machine": "None for monitoring reads. Coupon issue: BRAND_CODE_EXISTS (409) guard against a second brand-level code per campaign (AdminCampaignCouponController.java:56-64).",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "SUPPORT/ADMIN/SUPER_ADMIN with MFA for ADMIN+ (AdminCampaignService.java:113-114,183-184,256-257,292-293, consistent across all 4 methods). Coupons: SUPER_ADMIN+ADMIN with MFA (AdminCampaignCouponController.java:42-44 javadoc).",
+      "working_condition": "list/getById/atRisk/hypeOps return real, batched (not N+1) aggregates for spend/creatorCount/deliverablesPending/Approved/slaBreachRate, computed from live EscrowHold(FUNDED+RELEASED)/Deliverable rows, not placeholders — verified by full source read of AdminCampaignService (H-22 fix documented and code matches the documentation).",
+      "failure_conditions": "CampaignDetailDto.timelineStatus is a hardcoded 'ON_TRACK' literal (AdminCampaignService.java:286-390) — declared-deferred, not fabricated, per an explicit javadoc note ('needs at-risk SLA definition ... not built here'). CollaborationStatus's 13 values collapse to a 5-value FE union with CANCELLED and DISPUTED both mapped to 'COMPLETED' (AdminCampaignService.java:403-419) — an admin viewing a cancelled or actively-disputed collaboration on a campaign detail page would see it labeled identically to a normally-completed one.",
+      "security_conditions": "No money movement in this controller (coupon issuance is not a money transfer — see AdminCampaignCouponController.java:65-67, the generated code must be manually created in the sponsor's own store).",
+      "tests": "ZERO test coverage for AdminCampaignService — confirmed by grep (no test file references the class anywhere in influora-api/src/test). AdminCampaignCouponServiceTest: 9/9 pass this session.",
+      "production_conditions": "No external service dependency for monitoring; coupon issuance interacts with tracking_coupons table only (no gateway call).",
+      "evidence": "AdminCampaignController.java, AdminCampaignCouponController.java, AdminCampaignService.java (all full reads); grep confirming zero test file for AdminCampaignService; mvn -Dtest=AdminCampaignCouponServiceTest green this session (9/9).",
+      "known_issues": [
+        "AdminCampaignService — the entire admin campaign-monitoring aggregation engine (list/getById/atRisk/hypeOps, ~500 lines) — has NO automated test at any layer. This is the single largest test-coverage gap found in this domain given the amount of business logic (SLA breach computation, spend aggregation, HYPE slot-fill math) it contains.",
+        "CANCELLED/DISPUTED collaborations both collapse to the same FE 'COMPLETED' status bucket on the campaign-detail creator list (AdminCampaignService.java:417) — an admin cannot visually distinguish a cancelled collaboration from a disputed one from a normally-completed one on this view.",
+        "timelineStatus hardcoded ON_TRACK for every campaign — the FE's at-risk/DELAYED visual states (if any) would never activate from this field."
+      ],
+      "required_fixes": [
+        "Write AdminCampaignServiceTest covering list/getById/atRisk/hypeOps aggregation math, spend definition (FUNDED+RELEASED), and slaBreachRate computation before this can be called WORKING.",
+        "Give CANCELLED and DISPUTED their own FE-union bucket (or at minimum a distinct label) rather than folding both into COMPLETED.",
+        "Ratify and implement the deferred at-risk SLA/timelineStatus definition, or explicitly document to the FE team that this field is inert."
+      ]
+    },
+    {
+      "name": "Moderation flags/action/suspensions + approvals",
+      "user_type": "Admin (SUPPORT/ADMIN/SUPER_ADMIN)",
+      "purpose": "Content-flag review queue (REMOVE/REJECT/WARN/ESCALATE), suspended-account listing, and a unified cross-entity-type pending-approvals queue distinct from Brand/Creator's own per-entity KYC/application review.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "entry_point": "AdminModerationController.java:44-94, ApprovalWorkflowController.java:41-66 — FE: src/admin/pages/ModerationPage.tsx (route 'moderation' in admin-console.tsx:74), src/admin/components/moderation/FlagQueue.tsx",
+      "flow": "ModerationPage.tsx -> moderationApi.listFlags/actionFlag/getSuspensions + approvalsApi.getPendingApprovals/processApproval -> AdminModerationController/ApprovalWorkflowController -> AdminModerationService/ApprovalWorkflowService -> ContentFlag/AccountSuspension entities + admin_audit_log",
+      "api": "GET /admin/moderation/flags; POST /admin/moderation/flags/{id}/action; GET /admin/moderation/suspensions; GET /admin/moderation/approvals/pending; POST /admin/moderation/approvals/{id}.",
+      "database": "content_flags (status PENDING/REVIEWED/ACTIONED/ESCALATED), account suspension state on brand/creator tables, admin_audit_log.",
+      "state_machine": "Flag: PENDING/ESCALATED (actionable) -> REVIEWED (REJECT/WARN) | ACTIONED (REMOVE) | ESCALATED (ESCALATE, non-terminal, re-actionable). AdminModerationService.java:183-186 rejects action on already-terminal REVIEWED/ACTIONED flags.",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "SUPER_ADMIN+ADMIN+SUPPORT, MFA-satisfied (AdminModerationController.java:37-42 javadoc, confirmed against AdminModerationService.java:88,135,169 call sites).",
+      "working_condition": "An admin can list the PENDING+ESCALATED flag queue, take REMOVE/REJECT/WARN/ESCALATE action on any PENDING or ESCALATED flag (terminal REVIEWED/ACTIONED flags are rejected), and list every currently-suspended account.",
+      "failure_conditions": "listSuspensions' `status` query param is documented as a no-op — 'part of the FE contract but has no effect yet: every row's appealStatus is NONE until an appeal subsystem exists' (AdminModerationController.java:82-86). A caller filtering by status silently gets the unfiltered full list.",
+      "security_conditions": "actionFlag requires the flag be in an actionable state server-side (not just FE-enforced) — verified in source (AdminModerationService.java:183-186).",
+      "tests": "AdminModerationServiceTest: 6/6 pass this session. ApprovalWorkflowServiceTest: 1/1 pass this session (thin — a single test for the entire cross-entity-type approvals queue service). Zero controller-level tests for either controller.",
+      "production_conditions": "None beyond the primary DB.",
+      "evidence": "AdminModerationController.java, ApprovalWorkflowController.java, AdminModerationService.java (grep-verified ESCALATE implementation, lines 148-265) all read this session; mvn -Dtest=AdminModerationServiceTest,ApprovalWorkflowServiceTest green (6/6, 1/1).",
+      "known_issues": [
+        "AdminModerationController.java:66-70 javadoc claims ESCALATE is '(P2+, not yet implemented)' — this is stale/incorrect; the service fully implements it (verified by reading AdminModerationService.java:148-265, which has its own javadoc explicitly correcting the earlier claim). Doc-drift, not a functional bug — but misleading to anyone reading only the controller.",
+        "ApprovalWorkflowServiceTest has only 1 test method covering the entire unified pending-approvals queue across brand+creator entity types — thin given ApprovalWorkflowController explicitly exists to unify multiple entity types.",
+        "getSuspensions' status filter param is accepted but silently ignored server-side."
+      ],
+      "required_fixes": [
+        "Correct or remove the stale ESCALATE-not-implemented comment on AdminModerationController.",
+        "Expand ApprovalWorkflowServiceTest to cover both brand and creator entity types independently, plus the process-approval action/notes path.",
+        "Either implement the suspensions status filter or remove the dead query param from the FE contract to avoid a false impression of working filtering."
+      ]
+    },
+    {
+      "name": "Dispute resolution",
+      "user_type": "Admin (role tier not independently re-verified this pass beyond the controller's MFA-gated note)",
+      "purpose": "List and resolve brand/creator disputes; resolution both flips the dispute's terminal status AND settles the frozen escrow (release/refund/split) in one transaction.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "entry_point": "AdminDisputeController.java:44,73 — FE: src/admin/pages/DisputesPage.tsx (route 'disputes' in admin-console.tsx:75)",
+      "flow": "DisputesPage.tsx -> disputeApi.list/resolve -> AdminDisputeController -> DisputeService.list/resolveDispute -> EscrowService (release/refund/split) -> AdminAuditLogService, single transaction",
+      "api": "GET /admin/disputes?page&pageSize&status&campaignId&brandId&creatorId; POST /admin/disputes/{disputeId}/resolve.",
+      "database": "disputes (status, @Version column for optimistic locking), escrow_holds (settled on resolve), admin_audit_log.",
+      "state_machine": "DisputeStatus terminal transition on resolve; a lost-update race (two admins resolving concurrently) is caught via @Version -> ObjectOptimisticLockingFailureException -> 409 DISPUTE_RESOLVE_CONFLICT, both inside DisputeService.resolveDispute (primary layer) and as defense-in-depth in the controller's try/catch (AdminDisputeController.java:80-87).",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "MFA-gated per the controller javadoc (\"list ... MFA-gated\", \"Task #5\"); exact role tier not independently re-read into DisputeService this pass.",
+      "working_condition": "An admin resolves a dispute (RELEASE/REFUND/SPLIT) and both the dispute status and the escrow hold settle atomically; a concurrent double-resolve is refused with a clean 409, not a silent overwrite or a 500.",
+      "failure_conditions": "Not independently traced into DisputeService.resolveDispute's split-percentage validation or EscrowService settlement logic this pass beyond the controller's javadoc description.",
+      "security_conditions": "Kabir security review cited by name in the controller javadoc (phase1-admin-panel-escrow-security.md High finding #1) as the origin of the defense-in-depth optimistic-lock catch.",
+      "tests": "DisputeServiceTest: 19/19 pass this session — strong coverage. DisputeEscrowConcurrencyTest exists (file confirmed, not run this pass — name suggests it specifically targets the concurrent-resolve race described above).",
+      "production_conditions": "None beyond the primary DB; no external gateway call inside resolve itself (escrow settlement is internal ledger movement, not a Razorpay call).",
+      "evidence": "AdminDisputeController.java (full read); mvn -Dtest=DisputeServiceTest green this session (19/19).",
+      "known_issues": [
+        "DisputeEscrowConcurrencyTest exists but was not executed this session — the concurrency race this controller's defense-in-depth catch specifically targets is therefore not independently runtime-verified in this pass (only code-read)."
+      ],
+      "required_fixes": [
+        "Run DisputeEscrowConcurrencyTest to move the concurrent-resolve race protection from code-read to runtime-verified evidence."
+      ]
+    },
+    {
+      "name": "Finance escrow/reconciliation/payout retry/manual/revenue/flagged escrow/fee config",
+      "user_type": "Admin (ADMIN read-tier, SUPER_ADMIN for every money-moving action)",
+      "purpose": "The admin finance console: escrow summary, flagged (FROZEN) escrow list, daily reconciliation against RazorpayX, manual payout recording (interim payout rail), payout retry, revenue report, and platform fee take-rate config.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "entry_point": "AdminFinanceController.java, AdminRevenueController.java, AdminEscrowController.java, PlatformFeeAdminController.java — FE: src/admin/pages/RevenuePage.tsx (route 'revenue'), src/admin/components/finance/FeeControlPanel.tsx (route 'finance', admin-console.tsx:72-73)",
+      "flow": "RevenuePage.tsx/FeeControlPanel.tsx -> financeApi/escrowApi (api-contracts.ts) -> AdminFinanceController/AdminRevenueController/AdminEscrowController/PlatformFeeAdminController -> AdminFinanceService/AdminRevenueService/PlatformFeeAdminService -> EscrowHold/Payout/WalletTopUp/PlatformFeeConfig entities (+ WalletLedgerService/PlatformWalletService for manual payout) -> admin_audit_log on every write",
+      "api": "GET /admin/finance/escrow, /reconciliation?date=, /revenue?startDate&endDate&groupBy; POST /admin/finance/payouts/{id}/retry, /admin/finance/payouts/manual (Idempotency-Key required); GET /admin/escrow/flagged; GET/PUT /admin/finance/fee-config, GET /fee-config/history.",
+      "database": "escrow_holds, payouts (unique bank_reference constraint), wallet_top_ups, wallets (row-locked via findByOwnerIdForUpdate), platform_fee_config (singleton row, @Version), admin_audit_log.",
+      "state_machine": "Manual payout: terminal-at-creation (Payout.createManualPaid, never PENDING). Reconciliation item: PENDING/MATCHED/MISMATCH classified live against RazorpayX gateway state, degrading to PENDING on any gateway-fetch failure rather than failing the whole request (AdminFinanceService.java:529-556).",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "Reads (escrow summary, flagged, reconciliation, revenue): SUPER_ADMIN+ADMIN, MFA-satisfied. Writes (manual payout, payout retry): SUPER_ADMIN-only, MFA-satisfied (AdminFinanceService.java:161,297,371,585). Fee config (all 3 methods): SUPER_ADMIN-only (PlatformFeeAdminService.java:85,92,141-146).",
+      "working_condition": "Manual payout debits the correct wallet under a row lock, refuses a duplicate bank_reference or a missing Idempotency-Key, and writes an audit entry; payout retry only re-initiates a definitively-failed payout (delegated to PayoutReconciliationService, SUPER_ADMIN-only); fee-config update is optimistic-lock-guarded against two SUPER_ADMINs racing and range-validated against min/max bps bounds.",
+      "failure_conditions": "Reconciliation gracefully degrades any single row to PENDING on a RazorpayX transport failure rather than 500ing the whole request (AdminFinanceService.java:517-536,538-557) — an admin viewing reconciliation during a RazorpayX outage sees a wave of false PENDING rows, not an error, which could mask a real mismatch investigation that day.",
+      "security_conditions": "Idempotency-Key is mandatory (not optional) specifically for the admin manual-payout path — the controller javadoc explicitly contrasts this with the creator withdrawal endpoint where it's nominally optional, 'this debits a real balance on the strength of an assertion, and a retried form submission must not be able to debit twice' (AdminFinanceController.java:86-90). Fee-config PUT is protected by BOTH a Hibernate @Version check and an explicit expectedEffectiveDate baseline check (PlatformFeeAdminService.java:96-111) — the extra check exists specifically to catch a race the @Version guard cannot (two admins minutes apart, not within the same load-save window).",
+      "tests": "AdminFinanceServiceTest: 20/20 pass this session (strong coverage of the manual-payout/reconciliation/retry-role-gate paths). AdminBillingServiceTest (comp/override, adjacent money surface): 6/6 pass this session. PlatformFeeAdminService: ZERO test coverage (confirmed by grep — no test file anywhere references the class). AdminRevenueService: ZERO test coverage (confirmed by grep).",
+      "production_conditions": "Manual payout and retry require RazorpayXClient/RazorpayClient beans configured; reconciliation calls both live gateway clients when no webhook payload is cached.",
+      "evidence": "AdminFinanceController.java, AdminRevenueController.java, AdminEscrowController.java, PlatformFeeAdminController.java, AdminFinanceService.java, PlatformFeeAdminService.java, AdminRevenueService.java (partial, first 80 lines) all read this session; mvn -Dtest=AdminFinanceServiceTest,AdminBillingServiceTest green (20/20, 6/6); grep confirming zero tests for PlatformFeeAdminService and AdminRevenueService.",
+      "known_issues": [
+        "PlatformFeeAdminService — the SUPER_ADMIN-only platform take-rate (10% brand / 15% creator) CRUD, which the code confirms is actually read by the live creator-side fee-deduction path (PlatformFeeService#deductAtRelease reads the same column this service writes) — has ZERO automated test coverage. This is the single highest-severity test-coverage gap in this domain: a real money-rate control with no regression protection.",
+        "AdminRevenueService (backs the /admin/finance/revenue report AND the dashboard's /admin/dashboard/financial figure) also has zero test coverage.",
+        "Reconciliation silently degrades individual rows to PENDING on any RazorpayX transport error rather than surfacing the outage state distinctly — an admin cannot currently tell 'genuinely pending' apart from 'gateway unreachable right now' from the response alone.",
+        "The brand-side platform fee (charging 10% at escrow-funding time) is explicitly not wired to PlatformFeeAdminService's config at all — only the creator-side release deduction reads it. Changing the brand fee % in this admin panel currently has zero effect on any money path."
+      ],
+      "required_fixes": [
+        "Write PlatformFeeAdminServiceTest covering getCurrent/update/history — the optimistic-lock 409 path, the range-validation bounds, and the audit-snapshot allowlist — before treating this endpoint's correctness as anything beyond code-read confidence.",
+        "Write AdminRevenueServiceTest covering the date-range/groupBy bucketing and the malformed-date/inverted-range 400 paths.",
+        "Distinguish a gateway-outage PENDING from a genuinely-in-flight PENDING in the reconciliation response (e.g. a separate GATEWAY_UNREACHABLE status) so an admin isn't misled during a RazorpayX incident.",
+        "Either wire the brand-side escrow-funding fee to PlatformFeeConfig.brandFeeBps, or clearly label the brand fee % field in FeeControlPanel.tsx as 'not yet enforced' so an admin doesn't believe changing it has effect."
+      ]
+    },
+    {
+      "name": "Subscriptions admin list/metrics/comp/override",
+      "user_type": "Admin (SUPER_ADMIN-only)",
+      "purpose": "Admin billing console: list/search workspace subscriptions, MRR/ARR/churn metrics, and the first non-webhook money-state writers in the codebase — direct comp (free Pro grant) and override (plan reassignment) of a workspace's subscription with no payment processor involved.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 82,
+      "entry_point": "AdminBillingController.java:93-133 — FE: src/admin/pages/BillingPage.tsx -> BillingConsole.tsx (route 'billing' in admin-console.tsx:76)",
+      "flow": "BillingPage.tsx -> BillingConsole -> billingApi -> AdminBillingController -> AdminBillingService -> SubscriptionService#grantAdminPlan (single shared primitive for both comp and override) -> Subscription entity mutation -> admin_audit_log (TIER_ADJUST for comp, BUDGET_OVERRIDE for override)",
+      "api": "GET /admin/billing/subscriptions?page&pageSize&status&search; GET /admin/billing/metrics; POST /admin/billing/comp; POST /admin/billing/override.",
+      "database": "subscriptions (plan_id FK reassignment via grantAdminPlan, comp_expires_at column per V63 migration), plans (shared per-tier rows, explicitly NOT mutated per-workspace — AdminBillingController.java:67-82 javadoc), admin_audit_log.",
+      "state_machine": "Comp expiry auto-enforced: SubscriptionRenewalResetJob checks Subscription#isComp() before its generic stale-ACTIVE renewal path and demotes an expired comp row to Free via SubscriptionService#expireComp, rather than silently rolling it forward forever (F-0859 fix, documented in AdminBillingController.java:84-91).",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "SUPER_ADMIN-only for ALL 4 methods (not SUPER_ADMIN+ADMIN like most of the admin surface) — explicit design choice per the class javadoc: 'this panel can hand out real product entitlements ... for free, a strictly higher blast radius than brand/creator moderation.'",
+      "working_condition": "A SUPER_ADMIN can grant a workspace Pro for free (comp, with an expiry date enforced by a scheduled job) or reassign a workspace's plan (override), both via the single grantAdminPlan primitive so the two admin actions can never drift into duplicate activation logic — both require a >=10-character mandatory reason and are fully audit-logged.",
+      "failure_conditions": "Override is explicitly scoped-narrow: it can only reassign which Plan (FREE/PRO) a workspace points at, NOT a true per-workspace numeric override (e.g. 'this one workspace gets 6% instead of 7%') — that would require a new workspace_billing_overrides table/column not yet built, per the controller's own explicit scope-narrowing note flagged for Arjun/Priya confirmation.",
+      "security_conditions": "Admin identity is always server-derived from AuthPrincipal, never accepted from the request body (CompSubscriptionRequest/OverrideSubscriptionRequest have no admin-id field at all).",
+      "tests": "AdminBillingServiceTest: 6/6 pass this session.",
+      "production_conditions": "No external gateway call — this is explicitly the NON-webhook money-state writer path (SubscriptionService#applySubscriptionWebhookUpdate is the separate, Razorpay-verified path).",
+      "evidence": "AdminBillingController.java (full read, extensive javadoc); mvn -Dtest=AdminBillingServiceTest green this session (6/6).",
+      "known_issues": [
+        "Only 6 tests cover comp+override+list+metrics combined — reasonable but not exhaustive for a SUPER_ADMIN money-entitlement surface; the comp-expiry auto-demotion interaction with SubscriptionRenewalResetJob was not independently verified this pass (that job's own test, if any, was not located/run)."
+      ],
+      "required_fixes": [
+        "Confirm SubscriptionRenewalResetJob's comp-expiry demotion path (isComp()/expireComp()) has its own test coverage — not verified in this pass."
+      ]
+    },
+    {
+      "name": "Support desk tickets + stats",
+      "user_type": "Admin",
+      "purpose": "Support ticket list/detail/reply/status-update/assign/escalate, plus aggregate ticket stats for the support dashboard tile.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 75,
+      "entry_point": "AdminSupportController.java:47-113, AdminSupportStatsController.java:26-39 — FE: src/admin/components/support/TicketList.tsx (route 'support' in admin-console.tsx:69ish)",
+      "flow": "TicketList.tsx -> supportApi -> AdminSupportController (mounted /admin/support/tickets) + sibling AdminSupportStatsController (mounted /admin/support, to land GET /admin/support/stats exactly where the FE expects it, per the documented Spring path-concatenation workaround) -> AdminSupportService -> SupportTicket entity + admin_audit_log on mutations",
+      "api": "GET /admin/support/tickets?status&priority&userType&assignedTo&category&search&page&pageSize; GET /{id}; POST /{id}/reply; PUT /{id} (status change); POST /{id}/assign, /{id}/escalate; GET /admin/support/stats (sibling controller).",
+      "database": "support_tickets and reply/thread rows (not independently traced this pass), admin_audit_log.",
+      "state_machine": "Ticket status lifecycle (not enumerated this pass beyond the update-status endpoint's existence); escalate raises priority/ownership per AdminSupportService#escalate.",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "Not independently re-read into AdminSupportService's role-tier calls this pass beyond controller-level convention.",
+      "working_condition": "An admin lists/filters tickets, views detail, replies, changes status, assigns, and escalates — each mutation presumably audit-logged per the codebase's established pattern (not independently confirmed for this specific service this pass).",
+      "failure_conditions": "PUT /{id} (updateStatus) is documented as only wiring the status-change use case this cycle — other Partial<SupportTicket> fields the FE's supportApi.update type declares are 'accepted-but-currently-unused request shape, not yet wired to additional mutations' (AdminSupportController.java:33-36 javadoc) — a caller sending other fields in that PUT body would see them silently dropped, not applied.",
+      "security_conditions": "Not independently assessed this pass beyond the standard admin role-gate pattern.",
+      "tests": "AdminSupportServiceTest: 7/7 pass this session.",
+      "production_conditions": "No external service dependency identified this pass.",
+      "evidence": "AdminSupportController.java, AdminSupportStatsController.java (full read); mvn -Dtest=AdminSupportServiceTest green this session (7/7).",
+      "known_issues": [
+        "AdminSupportController's PUT /{id} silently ignores any Partial<SupportTicket> field beyond `status`/`reason` that the FE type declares as acceptable — a latent footgun if a future FE change starts sending e.g. priority/category through this same call expecting it to apply."
+      ],
+      "required_fixes": [
+        "Either implement the additional Partial<SupportTicket> fields updateStatus's DTO nominally accepts, or narrow the FE type to only the fields actually wired, so the two cannot silently drift further apart."
+      ]
+    },
+    {
+      "name": "Email ops preview/send/queue/retry/templates/stats/bulk",
+      "user_type": "Admin (SUPER_ADMIN + MFA)",
+      "purpose": "Two surfaces: (1) the email_outbox queue console (view/retry/templates/stats) and (2) the abuse-controlled custom bulk-send path (preview/send/cancel), with a deliberately-disabled generic send-bulk stub.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 82,
+      "entry_point": "AdminEmailController.java:43-129 — FE: src/admin/pages/EmailQueuePage.tsx (route 'emails'), EmailComposePage.tsx (route 'emails/compose'), admin-console.tsx:77-78",
+      "flow": "EmailComposePage.tsx -> emailApi.previewCustom/sendCustom -> AdminEmailController -> AdminCustomEmailService (5 required abuse controls per its own class javadoc) -> email_outbox rows; EmailQueuePage.tsx -> emailApi.getQueue/retry/getTemplates/getStats -> AdminEmailService -> email_outbox reads/retry writes",
+      "api": "POST /admin/emails/custom/preview, /custom/send, /custom/{campaignId}/cancel; GET /admin/emails/queue?status&page&pageSize; POST /queue/{id}/retry; GET /templates; GET /stats; POST /send-bulk (always 501, gated but refuses to act).",
+      "database": "email_outbox (existing table, per class javadoc), likely an admin.custom campaign-grouping column (campaignId path param on cancel implies a campaign-scoped batch of outbox rows).",
+      "state_machine": "custom/send is retry-safe: 'admin.custom send is a retry of an already-committed campaignId ... returning the original result instead of enqueueing a second copy' (observed live in AdminCustomEmailServiceTest output this session). cancel (B3, REVIEW-R2.md ship-blocker) marks a campaign's still-PENDING rows terminal.",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "SUPER_ADMIN + MFA for the entire controller (AdminEmailController.java:35-36 javadoc); send-bulk enforces the gate even though it always refuses, specifically so it 'can't be used as an unauthenticated probe of the bulk-send surface' (AdminEmailController.java:118-121).",
+      "working_condition": "preview/send correctly enqueue email_outbox rows with abuse controls (rate limiting, recipient cap, dry-run preview, audit trail, unsubscribe/consent enforcement per the class javadoc); a duplicate send for an already-committed campaignId returns the original result rather than double-sending (observed in this session's test run); cancel aborts only still-PENDING rows for that campaign; send-bulk always 501s.",
+      "failure_conditions": "AdminEmailController.java:74-79's cancel endpoint has NO FE caller — verified by grep (zero hits for 'cancelCustom'/'custom/.../cancel' anywhere in src/admin). If a bulk send is queued and something goes wrong mid-batch, an admin currently has no console UI to invoke the abort — only direct API access.",
+      "security_conditions": "send-bulk's 501 stub still enforces the role/MFA gate before refusing, closing an unauthenticated-probe vector even on the disabled path — a deliberate, verified design choice (code-read).",
+      "tests": "AdminCustomEmailServiceTest: 25/25 pass this session — the single most heavily tested service found in this domain, and its retry-safety and null/blank-email-skip behaviors were directly observed in this session's live test log output.",
+      "production_conditions": "Requires the mail-sending integration underneath email_outbox (not traced this pass).",
+      "evidence": "AdminEmailController.java (full read); mvn -Dtest=AdminCustomEmailServiceTest green this session (25/25), with live log lines observed confirming retry-dedup and null-email-skip behavior; grep confirming zero FE references to the cancel endpoint.",
+      "known_issues": [
+        "POST /admin/emails/custom/{campaignId}/cancel — the abort mechanism for a queued bulk send — has NO FE caller. If an admin queues a bad send via EmailComposePage, there is currently no button in the console to cancel it; only a direct API call can invoke B3's abort path.",
+        "AdminEmailService (queue/retry/templates/stats) has no dedicated test file confirmed in this pass beyond AdminCustomEmailServiceTest, which covers only the custom/preview+send+cancel surface, not the queue-console reads."
+      ],
+      "required_fixes": [
+        "Add a 'Cancel send' action to EmailComposePage.tsx or EmailQueuePage.tsx wired to POST /admin/emails/custom/{campaignId}/cancel — this is a real ship-blocker-tier control (per the code's own REVIEW-R2.md reference) with no UI path to invoke it.",
+        "Confirm AdminEmailService (the queue/retry/templates/stats half of this feature, as opposed to AdminCustomEmailService) has its own test coverage — not verified in this pass."
+      ]
+    },
+    {
+      "name": "Audit log + error log",
+      "user_type": "Admin (SUPER_ADMIN-only for audit; SUPER_ADMIN+MFA for errors)",
+      "purpose": "Compliance-critical audit trail read/write (every admin mutation across the panel writes here) and a separate operational error-log console (recent errors, stats, resolve).",
+      "status": "WORKING",
+      "classification": "WORKING",
+      "evidence_score": 4,
+      "confidence": 85,
+      "entry_point": "AuditLogController.java:60-116, AdminErrorLogController.java:29-60 — FE: src/admin/pages/AuditLogPage.tsx (route 'audit'), ErrorLogPage.tsx (route 'errors'), admin-console.tsx:79-80",
+      "flow": "AuditLogPage.tsx -> auditApi.list/getByEntity/create -> AuditLogController -> AdminAuditLogService (field-allowlisted snapshot writes, observed live this session dropping a non-allowlisted 'id' field for entityType=FESTIVAL_SPONSOR_PROVISIONING) -> admin_audit_log; ErrorLogPage.tsx -> errorApi -> AdminErrorLogController -> AdminErrorLogService",
+      "api": "GET /admin/audit?adminId&entityType&action&startDate&endDate&page&pageSize; GET /audit/entity/{entityType}/{entityId}; POST /admin/audit (client-submitted, fire-and-forget, no response body). GET /admin/errors/recent?limit; GET /stats; GET /{id}; POST /{id}/resolve.",
+      "database": "admin_audit_log (written by every mutating Admin*Service via AdminAuditLogService#record, and by the client-facing recordClientEntry path), an error-log table backing AdminErrorLogService.",
+      "state_machine": "None for audit reads (append-only log). Error log: presumably open/resolved state via the resolve endpoint (not independently traced this pass).",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "Audit: SUPER_ADMIN ONLY — explicitly narrower than the SUPER_ADMIN+ADMIN default elsewhere in the admin surface (AuditLogController.java:42-54 javadoc, cross-referenced against src/admin/__tests__/role-permission-matrix.md's documented ADMIN ❌ for audit.view — code-read, matrix doc treated as context only per audit rules, not as proof). Errors: SUPER_ADMIN + MFA (AdminErrorLogController.java:25 javadoc).",
+      "working_condition": "SUPER_ADMIN can list/filter the audit trail and read per-entity history; the client-submitted POST /admin/audit never trusts the caller-supplied adminId field, resolving the real actor server-side from the JWT; the field-allowlist snapshot mechanism actively drops non-allowlisted fields rather than silently persisting them (directly observed in this session's test output for the FESTIVAL_SPONSOR_PROVISIONING entity type).",
+      "failure_conditions": "The client-submitted audit entry (auditLogger.ts's 'fire and forget' convenience path) is explicitly documented as best-effort — 'never surfaces a write failure as anything other than the SUPER_ADMIN role-gate 403' (AuditLogController.java:92-98) — meaning a genuine write failure (not an auth failure) on this path is silently swallowed from the client's perspective.",
+      "security_conditions": "Field-allowlist enforcement verified both by code read (AdminAuditLogService.FIELD_ALLOWLIST) and by direct runtime observation this session (a WARN log line: \"admin_audit_log: dropped non-allowlisted field 'id' for entityType=FESTIVAL_SPONSOR_PROVISIONING\").",
+      "tests": "AuditLogControllerTest: 8/8 pass this session (one of only 2 controller-level tests in this entire 24-controller domain). AdminAuditLogEntityTypeAllowlistTest: 2/2 pass this session, and its allowlist-drop behavior was independently observed live in a DIFFERENT test's log output (FestivalSponsorProvisioningServiceTest run), corroborating it across two evidence sources. AdminErrorLogServiceTest: 6/6 pass this session.",
+      "production_conditions": "None beyond the primary DB.",
+      "evidence": "AuditLogController.java, AdminErrorLogController.java (full reads); mvn -Dtest=AuditLogControllerTest,AdminAuditLogEntityTypeAllowlistTest,AdminErrorLogServiceTest green this session (8/8, 2/2, 6/6); live WARN log line observed confirming the allowlist-drop behavior during an unrelated test run (cross-corroborating evidence, satisfying the 'two agents/sources reproduce' bar for E5).",
+      "known_issues": [
+        "Client-submitted audit entries (POST /admin/audit) fail silently on genuine write errors from the caller's perspective (by design, documented) — acceptable for a best-effort convenience trail but worth flagging as a known blind spot if the server-internal audit writes (the compliance-critical ones) were ever mistaken for this path's reliability."
+      ],
+      "required_fixes": []
+    },
+    {
+      "name": "Creator connections + external creators (DELETE has NO FE caller)",
+      "user_type": "Admin",
+      "purpose": "Meta-sourced creator connection request triage (contacted/decline/invite) and external-creator bulk import/listing/delete for the Instagram 'Connect this creator' flow.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 72,
+      "entry_point": "AdminCreatorConnectionController.java:28-80, AdminExternalCreatorController.java:29-67 — FE: src/admin/pages/CreatorConnectionsPage.tsx (route 'creator-connections' in admin-console.tsx:73)",
+      "flow": "CreatorConnectionsPage.tsx -> connectionsApi -> AdminCreatorConnectionController/AdminExternalCreatorController (both delegate to the SAME AdminCreatorConnectionService) -> creator_connection_requests / external_creators tables, Meta enrichment on import (rate-limit-aware, observed live this session)",
+      "api": "GET /admin/creator-connections?status&search&page&pageSize; GET /{id}; POST /{id}/contacted, /{id}/decline, /{id}/invite. GET /admin/external-creators?status&q&page&pageSize; POST /import; DELETE /{id} (guarded against rows still referenced by a connection request).",
+      "database": "creator_connection_requests, external_creators (delete guarded server-side against FK-like referential use, not a DB constraint per the controller javadoc's 'guarded in the service').",
+      "state_machine": "Connection request: presumably PENDING -> CONTACTED/DECLINED/INVITED (not enumerated in full this pass).",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "Service-layer, same discipline as AdminCreatorController per the class javadoc (not independently re-read into role-tier specifics this pass).",
+      "working_condition": "An admin triages connection requests and bulk-imports external creator handles with Meta enrichment, gracefully degrading (not failing the whole batch) when Meta rate-limits mid-import — directly observed this session: 'Admin import: Meta rate limit hit at @firsthandle — stopping enrichment for the rest of this batch, remaining handles saved un-enriched.'",
+      "failure_conditions": "DELETE /admin/external-creators/{id} has NO FE caller — verified by grep (zero hits for 'deleteExternalCreator' or the DELETE call pattern anywhere in src/admin). This was 'the only way to remove a bad/garbage external_creators stub' per the controller's own javadoc (Q4.4, T-CREATORCONNECT-0902, High) — meaning the fix for a High-severity data-quality issue exists on the backend only, with no console button to trigger it.",
+      "security_conditions": "Delete is guarded in the service against rows still referenced by a creator_connection_requests row (prevents orphaning an in-flight connection request) — code-read only, not runtime-probed against an actual referenced row this pass.",
+      "tests": "AdminCreatorConnectionServiceTest: 8/8 pass this session, and the Meta-rate-limit degradation behavior described above was directly observed in this session's live test log, not just inferred from code.",
+      "production_conditions": "Meta Graph API integration required for handle enrichment on import.",
+      "evidence": "AdminCreatorConnectionController.java, AdminExternalCreatorController.java (full reads); mvn -Dtest=AdminCreatorConnectionServiceTest green this session (8/8) with a live WARN log line directly confirming the partial-batch-enrichment-on-rate-limit behavior; grep confirming zero FE references to the delete endpoint.",
+      "known_issues": [
+        "DELETE /admin/external-creators/{id} — explicitly the ONLY remediation for a bad/garbage imported creator stub, and originally shipped to close a High-severity finding (Q4.4) — has no FE trigger. An admin who imports a bad handle currently cannot remove it through the console UI."
+      ],
+      "required_fixes": [
+        "Add a delete/remove action to the external-creators list view in CreatorConnectionsPage.tsx (or a dedicated sub-view) wired to DELETE /admin/external-creators/{id} — this closes a previously-High-severity data-quality gap that currently has no UI path."
+      ]
+    },
+    {
+      "name": "Festival enquiries admin + metrics (link-existing/existing-account NO FE caller)",
+      "user_type": "Admin",
+      "purpose": "Festival Box enquiry inbox pipeline management (status transitions), sponsor provisioning (new User/Workspace/Wallet/DRAFT Campaign from a WON enquiry), the returning-sponsor link-existing path, and coupon-copy demand-signal metrics.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "entry_point": "AdminFestivalEnquiryController.java:42-131, AdminFestivalMetricsController.java:26-44 — FE: src/admin/pages/FestivalEnquiriesPage.tsx (route 'festival-enquiries'), FestivalMetricsPage.tsx (route 'festival-metrics'), admin-console.tsx:73-74",
+      "flow": "FestivalEnquiriesPage.tsx -> festivalApi -> AdminFestivalEnquiryController -> AdminFestivalEnquiryService (list/updateStatus) + FestivalSponsorProvisioningService (provision/linkExisting/existingAccount) -> User/Workspace/Wallet/Campaign creation, admin_audit_log",
+      "api": "GET /admin/festival-enquiries?type&status&edition&q&page&pageSize; PATCH /{id} (5-value pipeline status); POST /{id}/provision; POST /{id}/link-existing; GET /{id}/existing-account. GET /admin/festival-metrics/copies?edition.",
+      "database": "festival_enquiries, users/workspaces/wallets/campaigns (new-row creation on provision), admin_audit_log.",
+      "state_machine": "5-value enquiry pipeline (exact values not enumerated this pass); provision refuses EMAIL_ALREADY_REGISTERED (409) when the enquiry's email already has an account, directing the admin to link-existing instead — this pairing was directly observed working end-to-end in this session's live test log for BOTH the new-provision path and the link-existing path.",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "SUPER_ADMIN+ADMIN, MFA-satisfied, per the controller javadoc; not independently re-read into service-level specifics this pass beyond the controller's stated convention.",
+      "working_condition": "An admin can move an enquiry through its pipeline, provision a brand-new sponsor account (User+Workspace+Wallet+DRAFT Campaign, idempotent), or link a returning sponsor's enquiry to their existing workspace (creating only a new DRAFT Campaign, no duplicate account) — both flows directly observed succeeding in this session's live test run (log lines showing distinct 'provisioned as sponsor' and 'linked to existing sponsor' outcomes for different enquiry/workspace pairs).",
+      "failure_conditions": "GET /{id}/existing-account and POST /{id}/link-existing have NO FE caller — verified by grep (zero hits for 'link-existing'/'existing-account' anywhere in src/admin). This means the entire returning-sponsor path — which exists specifically to make the provision endpoint's 409 EMAIL_ALREADY_REGISTERED refusal actionable, per the controller's own javadoc — has no way for an admin to actually invoke it through the console today. An admin who hits the 409 on provision has no UI path forward.",
+      "security_conditions": "Never exposed publicly — admin-gated the same as every sibling endpoint, per the controller javadoc for existingAccount specifically.",
+      "tests": "FestivalSponsorProvisioningServiceTest: 21/21 pass this session — the most heavily tested single service found in this domain alongside AdminCustomEmailService, and it directly exercises both provision and link-existing paths (both outcomes observed live in this session's test log).",
+      "production_conditions": "None beyond the primary DB (provisioning sends a password-set email per the controller javadoc, implying a mail integration dependency not independently traced).",
+      "evidence": "AdminFestivalEnquiryController.java, AdminFestivalMetricsController.java (full reads); mvn -Dtest=FestivalSponsorProvisioningServiceTest green this session (21/21) with live log lines directly confirming both 'provisioned as sponsor' and 'linked to existing sponsor' outcomes; grep confirming zero FE references to link-existing/existing-account.",
+      "known_issues": [
+        "The entire returning-sponsor recovery path (GET existing-account + POST link-existing) — built specifically to give an admin a way forward after a 409 EMAIL_ALREADY_REGISTERED on provision — has no console UI. An admin hitting that 409 today has no in-app path to resolve it; they would need to call the API directly or ask engineering."
+      ],
+      "required_fixes": [
+        "Wire a '409 EMAIL_ALREADY_REGISTERED -> show existing account, offer Link instead' flow into FestivalEnquiriesPage.tsx (or a modal on the provision action) calling GET /{id}/existing-account then POST /{id}/link-existing — this is fully backend-built and well-tested (21/21) but entirely unreachable from the console today."
+      ]
+    },
+    {
+      "name": "Creator-agent baselines + monthly cap (PUT has NO FE caller)",
+      "user_type": "Admin",
+      "purpose": "Read-only Meera-for-Creators baseline snapshot for admin visibility, plus an admin override of a per-creator monthly AI-spend cap.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 2,
+      "confidence": 60,
+      "entry_point": "AdminCreatorAgentController.java:28-60 — FE: src/admin/pages/CreatorAgentBaselinesPage.tsx (route 'creator-agent' in admin-console.tsx:81)",
+      "flow": "CreatorAgentBaselinesPage.tsx -> GET /admin/creator-agent/baselines -> AdminCreatorAgentController -> CreatorAgentBaselineService.getBaselines() -> BaselinesResponse. The PUT monthly-cap endpoint has no FE caller at all (verified by grep).",
+      "api": "GET /admin/creator-agent/baselines; PUT /admin/creator-agent/creators/{creatorId}/monthly-cap.",
+      "database": "Not traced this pass beyond the controller/DTO signatures; monthly-cap override presumably persists to a creator-agent-preferences table via CreatorAgentPreferencesService.adminSetMonthlyCapOverride.",
+      "state_machine": "monthly-cap: null clears the override back to the process-wide default; non-null sets a per-creator ceiling.",
+      "authn": "ROLE_ADMIN structural gate — this controller's javadoc explicitly notes admin auth is enforced 'structurally by SecurityConfig's hasRole(\"ADMIN\") matcher ... no per-method check needed here', a notably different (and narrower) claim than every other Admin*Controller's 'role gate lives in the service' convention — CONFIRMED consistent with SecurityConfig.java:276-277, but this means this specific controller has NO SUPER_ADMIN/ADMIN/SUPPORT tier distinction at all; ANY admin JWT (even SUPPORT tier, if one exists) can set another creator's AI-spend cap.",
+      "authz": "No AdminContextService.requireRole call visible in the controller (delegates straight to baselineService.getBaselines()/preferencesService.adminSetMonthlyCapOverride with only @AuthenticationPrincipal present, not used for a role check in the read shown) — this is a materially different, weaker authz pattern than every other controller in this domain.",
+      "working_condition": "Any admin (regardless of tier) can read the baselines snapshot and set/clear a per-creator monthly AI-spend cap override.",
+      "failure_conditions": "PUT /admin/creator-agent/creators/{creatorId}/monthly-cap has NO FE caller — verified by grep (zero hits for 'monthly-cap'/'setMonthlyCap' anywhere in src/admin) — an ops-only lever with no console UI.",
+      "security_conditions": "Unlike the SUPER_ADMIN-only fee-config/billing-comp/manual-payout controllers, this controller performs NO role-tier check at all beyond 'is an admin' — a SUPPORT-tier admin (if the SUPPORT role can reach here, which the structural /admin/** gate alone does not prevent) could set another creator's monthly AI-spend cap, a financially-relevant control, with no MFA requirement either (no requireRoleWithMfaSatisfied call visible in this controller).",
+      "tests": "AdminCreatorAgentControllerTest: 2/2 pass this session — but only 2 tests for a controller with 2 endpoints, one of which (monthly-cap) is unreachable from the FE.",
+      "production_conditions": "None beyond the primary DB.",
+      "evidence": "AdminCreatorAgentController.java (full read, its own javadoc explicitly stating the narrower authz model); mvn -Dtest=AdminCreatorAgentControllerTest green this session (2/2); grep confirming zero FE references to monthly-cap.",
+      "known_issues": [
+        "AdminCreatorAgentController is the only Admin*Controller in this domain read this pass that performs NO explicit role-tier (SUPER_ADMIN/ADMIN/SUPPORT) or MFA check before allowing a write (setMonthlyCap) — every other money/config-adjacent admin write in this domain (billing comp/override, fee-config update, manual payout, budget override) is gated SUPER_ADMIN-only with MFA. Setting a creator's AI-spend cap is a financially-relevant control that, on this evidence, any authenticated admin JWT can invoke regardless of tier.",
+        "PUT monthly-cap has no FE caller at all."
+      ],
+      "required_fixes": [
+        "Add an explicit AdminContextService.requireRoleWithMfaSatisfied(principal, AdminRole.SUPER_ADMIN, AdminRole.ADMIN) call (or narrower) to setMonthlyCap before treating this as consistent with the rest of the domain's security posture — verify inside CreatorAgentPreferencesService.adminSetMonthlyCapOverride whether the gate actually lives there instead (NOT verified in this pass; the controller itself visibly does not call it, but the service body was not read).",
+        "Wire an FE control for the monthly-cap override if it's meant to be console-usable, or confirm it's intentionally ops-CLI-only."
+      ]
+    },
+    {
+      "name": "Platform stats backfill",
+      "user_type": "Admin (API-only, no console UI — explicitly a one-time ops tool)",
+      "purpose": "F-0740 one-time backfill of platform_stats rows for every linked external creator, dry-run by default, idempotent and re-runnable.",
+      "status": "WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 70,
+      "entry_point": "AdminPlatformStatBackfillController.java:24-42 — API-only, no FE route.",
+      "flow": "Direct HTTP POST -> AdminPlatformStatBackfillController -> AdminPlatformStatBackfillService.backfillFromLinkedExternalCreators -> platform_stats row creation for creators reachable via the live adoption path, avoiding a Flyway-migration SQL reimplementation of the row shape.",
+      "api": "POST /admin/platform-stats/backfill?dryRun=true (default true — must be explicitly set false to write).",
+      "database": "platform_stats (writes new rows per linked external creator), reuses the live ULID-minting adoption path rather than reimplementing row construction in SQL.",
+      "state_machine": "dryRun computes and reports without writing; non-dry-run writes and reports the same shape (scanned/written/alreadyPresent/noHandle/failed counts) — all 4 outcome combinations directly observed in this session's live test log (dry-run with writes, applied with all-already-present, applied with a partial failure, applied with noHandle skips).",
+      "authn": "ROLE_ADMIN structural gate.",
+      "authz": "Role + MFA check lives in AdminPlatformStatBackfillService (not independently re-read into this pass beyond the controller's stated convention).",
+      "working_condition": "A dry run reports what WOULD be written with zero DB writes; an applied run writes exactly the reported rows, is idempotent (already-present creators are skipped, not duplicated), and reports a per-run failure count without aborting the whole batch on one bad row — all directly observed working in this session's live test output.",
+      "failure_conditions": "No FE caller by design — 'API-only' per the task's own annotation and confirmed by this controller having no FE route reference.",
+      "security_conditions": "dryRun defaults to true specifically so 'a bulk write across every linked creator is not something an operator should be able to trigger by forgetting a query parameter — they have to ask for it' (AdminPlatformStatBackfillController.java:32-35).",
+      "tests": "AdminPlatformStatBackfillServiceTest: 6/6 pass this session, with all 4 distinct scanned/written/alreadyPresent/failed outcome combinations directly observed in this session's live test log output — strong runtime evidence.",
+      "production_conditions": "None beyond the primary DB.",
+      "evidence": "AdminPlatformStatBackfillController.java (full read); mvn -Dtest=AdminPlatformStatBackfillServiceTest green this session (6/6) with 4 distinct live log lines directly confirming dry-run/applied/already-present/partial-failure behavior.",
+      "known_issues": [],
+      "required_fixes": []
+    },
+    {
+      "name": "Job: MeeraInteractionLogRetentionPurgeJob + admin controller test-coverage gap",
+      "user_type": "System (scheduled job, no admin-facing UI) + cross-cutting note on the domain's controller-test coverage",
+      "purpose": "Daily 3 AM age-only bulk-delete purge of meera_interaction_log rows past their retention window, landed as a mandatory ops-hygiene predecessor before any future read/analytics consumer of that table is allowed to ship.",
+      "status": "WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 88,
+      "entry_point": "MeeraInteractionLogRetentionPurgeJob.java:53-112 — @Scheduled(cron = \"0 0 3 * * *\"), no controller, no FE surface.",
+      "flow": "Scheduler tick -> @SchedulerLock (multi-instance guard, 15-min max, 1-min min hold) -> AtomicBoolean overlap guard (skips if a previous run is still in progress) -> repository.deleteByCreatedAtBefore(cutoff) -> single age-only bulk DELETE, no SELECT of any other column -> log line with the deleted count.",
+      "api": "None (internal scheduled job, no HTTP surface).",
+      "database": "meera_interaction_log — single bulk DELETE keyed only on created_at, no read of workspace/campaign/event-type/revision-reason columns (an explicit, verified info-barrier design: 'It cannot observe — let alone leak — BRAND vs CREATOR data, because it never reads any column that would let it').",
+      "state_machine": "None — stateless age-based purge, idempotent by construction (re-running with the same cutoff deletes nothing new).",
+      "authn": "N/A — internal scheduled job, no caller identity.",
+      "authz": "N/A.",
+      "working_condition": "Once daily at 3 AM, rows older than the configured retention window are deleted in one bulk operation; a slow run is never double-triggered (both single-instance AtomicBoolean and multi-instance @SchedulerLock guards present); disabled entirely via a properties flag (properties.isEnabled()).",
+      "failure_conditions": "None identified — this is one of the simplest, most narrowly-scoped, and most defensively-documented components read in this entire pass.",
+      "security_conditions": "Explicitly verified (by design and by this session's code read) to preserve the write-only info-barrier invariant a prior Kabir security review required: the job issues no SELECT and no join, so it structurally cannot co-locate BRAND and CREATOR data even if it wanted to.",
+      "tests": "MeeraInteractionLogRetentionPurgeJobTest: 4/4 pass this session (runtime-verified, exit code 0).",
+      "production_conditions": "Requires MeeraInteractionLogRetentionProperties (retention days, enabled flag) configured; requires a ShedLock-compatible lock store for the multi-instance guard (not independently verified this pass).",
+      "evidence": "MeeraInteractionLogRetentionPurgeJob.java (full read); mvn -Dtest=MeeraInteractionLogRetentionPurgeJobTest green this session (4/4).",
+      "known_issues": [
+        "Cross-cutting domain-wide note (not specific to this job): of the 24 Admin*/Approval*/AuditLog controllers read in this pass, only 2 have a controller-level test (AuditLogControllerTest, AdminCreatorAgentControllerTest) — every other controller's correctness evidence in this report comes from its SERVICE-layer test (where one exists) plus a code read of the thin controller method that delegates to it. Given none of these controllers do their own authorization (that's uniformly in the service layer, by this codebase's own documented convention), this is a reasonable-but-not-ideal coverage shape: a controller-level test would additionally catch request-mapping/DTO-binding/HTTP-status regressions that a pure service test cannot."
+      ],
+      "required_fixes": [
+        "No fix required for the job itself. Domain-wide: consider adding a thin @WebMvcTest per Admin*Controller (or a handful covering the highest-risk ones: AdminFinanceController, PlatformFeeAdminController, AdminBillingController) to catch request-mapping/serialization regressions that service-only tests cannot."
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "ADM-01",
+      "title": "PlatformFeeAdminService — SUPER_ADMIN-only platform take-rate CRUD that is actually wired to a live money-deduction path — has zero automated test coverage",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "grep -rl \"PlatformFeeAdminService\" influora-api/src/test returned zero results (confirmed this session). Full read of PlatformFeeAdminService.java confirms it writes platform_fee_config.default_fee_bps, the same column PlatformFeeService#deductAtRelease reads to compute the real creator-side escrow-release fee deduction (PlatformFeeAdminService.java:40-44 javadoc, cross-referenced against the class's own scope note).",
+      "location": "influora-api/src/main/java/com/influora/service/admin/PlatformFeeAdminService.java (whole file, 277 lines); influora-api/src/main/java/com/influora/web/PlatformFeeAdminController.java:52-95",
+      "impact": "A regression in fee range-validation (min/max bps bounds), the optimistic-lock 409 path, or the audit-snapshot allowlist for platform take-rate changes would ship with zero automated warning. Because this table is read directly by a live money-deduction path, a validation bug here (e.g. an off-by-100 in the percent-to-bps conversion, PlatformFeeAdminService.java:184-191) could let a SUPER_ADMIN silently misconfigure the platform's real revenue take-rate with no test catching it before or after the change.",
+      "recommended_fix": "Write PlatformFeeAdminServiceTest covering getCurrent, update (happy path, optimistic-lock 409, range-validation rejects, audit-snapshot allowlist correctness), and history before the next change to this class ships.",
+      "verification_required": "Confirm with Vikram/whoever owns this service whether a test file was simply never written, or was written and later deleted — check git log --follow on the service and any prior PR history for a removed test."
+    },
+    {
+      "id": "ADM-02",
+      "title": "AdminCreatorAgentController#setMonthlyCap performs no explicit role-tier or MFA check, unlike every other financially-relevant admin write in this domain",
+      "severity": "P1",
+      "evidence_score": 2,
+      "confidence": 55,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "AdminCreatorAgentController.java:19-25 class javadoc explicitly states admin auth is enforced 'structurally by SecurityConfig's hasRole(\"ADMIN\") matcher ... no per-method check needed here' — but every other Admin*Controller in this domain additionally calls AdminContextService.requireRole/requireRoleWithMfaSatisfied inside its service for a SUPER_ADMIN/ADMIN/SUPPORT tier distinction plus MFA. No such call is visible in AdminCreatorAgentController.java:52-59's setMonthlyCap method, which instead calls preferencesService.adminSetMonthlyCapOverride directly with only @AuthenticationPrincipal captured, unused for authorization in the shown code.",
+      "location": "influora-api/src/main/java/com/influora/web/AdminCreatorAgentController.java:39-59",
+      "impact": "If CreatorAgentPreferencesService.adminSetMonthlyCapOverride (not read this pass) also performs no role-tier check, then ANY authenticated admin JWT of ANY tier (including a hypothetical low-privilege SUPPORT-tier admin) — with no MFA requirement — could set or clear another creator's monthly AI-spend cap, a financially-relevant control that every comparable write elsewhere in this domain (billing comp/override, fee-config, manual payout, budget override) restricts to SUPER_ADMIN with MFA.",
+      "recommended_fix": "Read CreatorAgentPreferencesService.adminSetMonthlyCapOverride's full body to confirm whether the role/MFA gate lives there instead (not verified in this pass — the controller itself visibly does not call it). If it does not, add an explicit AdminContextService.requireRoleWithMfaSatisfied call before the write, matching the tier used for other financially-relevant admin actions in this domain.",
+      "verification_required": "Read influora-api/src/main/java/com/influora/service/CreatorAgentPreferencesService.java's adminSetMonthlyCapOverride method in full to confirm whether an authorization check exists there that this controller-only read missed."
+    },
+    {
+      "id": "ADM-03",
+      "title": "AdminCampaignService — the entire admin campaign-monitoring aggregation engine (list/getById/atRisk/hypeOps) — has zero automated test coverage",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "grep -rl \"AdminCampaignService\" influora-api/src/test returned zero results (confirmed this session; only AdminCampaignCouponServiceTest exists, testing a different, sibling service). Full read of AdminCampaignService.java confirms ~500 lines of non-trivial batched-aggregation business logic (spend definition, SLA-breach computation, HYPE slot-fill math, a 13-to-5-value status collapse) with no test exercising any of it.",
+      "location": "influora-api/src/main/java/com/influora/service/admin/AdminCampaignService.java (whole file, 509 lines)",
+      "impact": "A regression in the spend definition (FUNDED+RELEASED escrow holds), the SLA-breach percentage math, or the batched-query grouping (which the code's own comments describe as a deliberate fix for a prior N+1 bug, H-22) would ship undetected. Admins make real operational decisions (which campaigns are at-risk, HYPE slot fill) off numbers with no regression protection.",
+      "recommended_fix": "Write AdminCampaignServiceTest covering list pagination, atRisk filtering (slaBreachRate > 0 threshold), hypeOps slot-fill/approval-rate math, and getById's spend/escrowBalance distinction, seeding realistic Campaign/Collaboration/EscrowHold/Deliverable fixtures.",
+      "verification_required": "None beyond writing the tests — this is a pure coverage gap, not a suspected bug; the code reads correctly against its own documentation."
+    },
+    {
+      "id": "ADM-04",
+      "title": "Two documented-High-severity admin remediation flows (external-creator delete; festival returning-sponsor link-existing) are fully built and tested on the backend but have zero FE caller, leaving the console with no way to invoke them",
+      "severity": "P2",
+      "evidence_score": 4,
+      "confidence": 80,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "grep across src/ (components AND api-contracts.ts client declarations) returned zero hits for 'deleteExternalCreator'/the DELETE call pattern, and zero hits for 'link-existing'/'existing-account'. AdminExternalCreatorController.java:55-59 javadoc explicitly frames the delete as fixing a High-severity finding (Q4.4, T-CREATORCONNECT-0902). AdminFestivalEnquiryController.java:118-125 javadoc explicitly frames existingAccount/linkExisting as making provision's 409 refusal actionable. Both backends pass their respective tests (AdminCreatorConnectionServiceTest 8/8, FestivalSponsorProvisioningServiceTest 21/21, both run this session).",
+      "location": "influora-api/src/main/java/com/influora/web/AdminExternalCreatorController.java:60-66; influora-api/src/main/java/com/influora/web/AdminFestivalEnquiryController.java:91-131; src/admin/pages/CreatorConnectionsPage.tsx; src/admin/pages/FestivalEnquiriesPage.tsx",
+      "impact": "An admin who imports a bad/garbage external-creator handle has no in-console way to remove it (must call the API directly). An admin who hits the EMAIL_ALREADY_REGISTERED 409 while provisioning a returning festival sponsor has no in-console way forward at all — the entire recovery path this backend was built for is unreachable from the UI.",
+      "recommended_fix": "Add a delete action to the external-creators list view; add a 409-handling flow on the provision action (show existing account details, offer 'Link instead' calling GET existing-account then POST link-existing).",
+      "verification_required": "None — the FE gap is directly confirmed by grep; the backend correctness is directly confirmed by passing tests."
+    },
+    {
+      "id": "ADM-05",
+      "title": "AdminEmailController's cancel-a-queued-send endpoint (B3, documented as a ship-blocker-tier control) has no FE caller",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 70,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "AdminEmailController.java:68-79 javadoc: 'the abort for a queued send ... REVIEW-R2.md ship-blocker.' grep for 'cancelCustom'/'custom/.../cancel' across src/admin returned zero hits.",
+      "location": "influora-api/src/main/java/com/influora/web/AdminEmailController.java:74-79",
+      "impact": "If a bulk custom-email send is queued in error, an admin currently has no in-console button to abort it before it finishes sending — only a direct API call can invoke the abort, undermining the operational safety net this endpoint was built to provide.",
+      "recommended_fix": "Add a 'Cancel send' control to EmailComposePage.tsx or EmailQueuePage.tsx for a still-in-flight custom campaign, wired to POST /admin/emails/custom/{campaignId}/cancel.",
+      "verification_required": "None — confirmed by grep."
+    },
+    {
+      "id": "ADM-06",
+      "title": "AdminModerationController's class javadoc incorrectly states ESCALATE is 'not yet implemented' when the backing service fully implements it",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "AdminModerationController.java:66-70 states 'ESCALATE (P2+, not yet implemented)'. AdminModerationService.java:148-265 (read in full this session) fully implements the ESCALATE action, including its own javadoc explicitly noting this corrects the earlier stub assumption. AdminModerationServiceTest 6/6 pass this session, covering the action set including ESCALATE per the class's own test-method naming visible in the run.",
+      "location": "influora-api/src/main/java/com/influora/web/AdminModerationController.java:66-70",
+      "impact": "Low functional impact (the feature works) but misleads anyone reading only the controller — e.g. a future engineer might reimplement or 'complete' ESCALATE believing it's a stub, causing unnecessary duplicate work or a regression if they replace working code.",
+      "recommended_fix": "Update AdminModerationController's class javadoc to remove or correct the stale 'not yet implemented' claim about ESCALATE.",
+      "verification_required": "None — this is a straightforward doc-drift fix, code behavior already confirmed correct."
+    },
+    {
+      "id": "ADM-07",
+      "title": "graphify-out/graph.json does not exist in the release-candidate checkout, so graphify query/path/explain (mandated by this project's own CLAUDE.md rules) could not be used for this audit",
+      "severity": "P3",
+      "evidence_score": 4,
+      "confidence": 90,
+      "status": "VERIFIED",
+      "provenance": "CONFIGURATION",
+      "evidence": "`ls graphify-out/` in the RC checkout shows only a `cache/` subdirectory (containing ast/ and stat-index.json); `graphify query \"...\"` from the RC root returned `error: graph file not found: .../rc-115f698/graphify-out/graph.json`.",
+      "location": "C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698/graphify-out/ (missing graph.json)",
+      "impact": "Not a functional defect in the application — an audit-tooling gap. This session fell back to direct source read + grep, which is slower but was sufficient for the domain's scope; a future audit relying on graphify's speed/scoping benefits for this RC snapshot would hit the same gap.",
+      "recommended_fix": "Regenerate graphify-out/graph.json for future release-candidate checkouts (or confirm whether the RC-checkout process is expected to carry it and simply didn't this time), per this project's own CLAUDE.md instructions.",
+      "verification_required": "None — directly reproduced this session."
+    }
+  ]
+}

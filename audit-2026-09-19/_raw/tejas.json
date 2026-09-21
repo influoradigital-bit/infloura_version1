@@ -1,0 +1,280 @@
+{
+  "role": "Tejas — CMO, marketing-claims audit (RC 115f698)",
+  "summary": "Audited every customer-facing claim on the RC's marketing surface (index.html, landing.tsx, pricing.tsx, TrustBar/trust-items, about.tsx, features/* pages, how-it-works pages, legal/*.md, llms.txt, creator-onboarding.tsx) against the RC's own source, checked out clean at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698, commit 115f698. The site's copy discipline is unusually high in places — PROOF_POINTS explicitly documents removing fabricated traction stats (8,915 creators / Rs4.3Cr paid / 24h) for ASCI/consumer-law exposure, and multiple pages carry inline 'banned phrase' lists (no 'escrow', no 'RBI-licensed', no 'guaranteed') enforced by comments referencing a named CEO/CTO ruling. But the single most load-bearing regulatory claim on the site — 'held by a licensed, RBI-authorized Payment Aggregator' / 'Influora never pools Campaign funds in its own bank account' — is directly contradicted by the money-movement code itself: EscrowService's only real backend (LedgerEscrowBackend) moves funds between three Influora-owned Wallet rows (brand -> platform 'clearing wallet' -> creator) via an internal ledger, and that class's own javadoc calls this 'today's pooled-wallet-balance model,' explicitly incompatible with a real Razorpay Route (true segregated-transfer) implementation that does not exist yet. The word 'nodal' appears zero times anywhere in the Java backend. A second compounding issue: the specific legal document making the strongest version of this claim (escrow-and-refund-policy.md) is headed 'v0 DRAFT — PENDING INDIAN LEGAL COUNSEL / CA REVIEW. NOT LEGALLY BINDING' yet is rendered live to any visitor (noindex only blocks search engines, not people). A third: 'TDS on payouts' / 'TDS shown on invoices' is asserted repeatedly, but the automated payout path (Payout.createPending / Payout.createQueued, the only factories used by real gateway payouts) never sets tdsAmount — only Payout.createManualPaid (admin-only, out-of-band bank transfers) does, and no TDS-calculation service exists anywhere in the payout/fee/invoice code. On the positive side: the Deal-Room/escrow release-on-approval mechanic, the Hype Campaign slot/rate math (server-derived, never client-supplied), the Meera human-confirm-before-money gate (ConfirmLaunchExecutor rejects confirming launch without a FUNDED escrow), the signed-webhook sales-tracking infrastructure (dedicated ConversionWebhookSignatureVerifier + secret entity), the Meta App Review scope claim (scopes in MetaOAuthService match the code's own claim, no publish/DM scope requested), and the Instagram-stat-sync infrastructure (PlatformStatsAggregationJob, a verified flag gated to Meta-sourced writes only) are all real, traceable mechanisms — not vaporware. Net: the product mechanics the copy describes mostly exist; the specific regulatory/custody language describing HOW those mechanics are backed overclaims relative to the actual architecture, and that overclaim is the single highest-severity item in this audit.",
+  "questions": [
+    {
+      "question": "Does Influora's money-custody architecture route brand funds through a real RBI-licensed Payment Aggregator's segregated/nodal account, or only through Razorpay as a standard collection gateway into Influora's own settlement account with 'escrow' simulated by internal ledger rows?",
+      "why_it_matters": "This is the single most repeated and most specific regulatory claim on the site (index.html, landing.tsx, every how-it-works/features page, and 4 legal docs). If false, it's a consumer-protection/RBI-guideline misrepresentation, not just weak copy.",
+      "answer": "The latter. LedgerEscrowBackend.fund/release/refund (influora-api/src/main/java/com/influora/service/escrow/LedgerEscrowBackend.java) moves money between three Wallet rows Influora itself owns and creates (brand wallet, a single hardcoded 'platform-clearing-wallet' via PlatformWalletService.java:22-40, and the creator wallet) using WalletLedgerService.post — an internal double-entry ledger inside Influora's own database. The class's own javadoc states this is 'today's pooled-wallet-balance model,' explicitly 'architecturally incompatible' with a real Razorpay Route-based per-payment-transfer implementation, which 'does not exist' and is 'out of scope.' A repo-wide search for the word 'nodal' returns zero hits in influora-api/src/main.",
+      "evidence": "influora-api/src/main/java/com/influora/service/escrow/LedgerEscrowBackend.java:1-95; influora-api/src/main/java/com/influora/service/PlatformWalletService.java:22-58; influora-api/src/main/java/com/influora/service/escrow/EscrowBackend.java:1-25 (interface javadoc naming the missing RouteEscrowBackend); zero matches for 'nodal' in influora-api/src/main",
+      "evidence_score": 4,
+      "confidence": 78,
+      "remaining_uncertainty": "Source review cannot see Influora's actual bank/Razorpay merchant agreement, which is a contractual fact outside the repo. It is possible Razorpay's own back-end settlement classifies Influora's collection account under a PA structure at the bank level even though the app-level model is a pooled ledger. But the code's own comment explicitly says the CEO's payments-decision doc assumed a 'zero rework' Route swap-in and that this was 'false' — i.e., engineering itself has already flagged the gap between the payments narrative and the implementation."
+    },
+    {
+      "question": "Is TDS actually deducted and recorded for real (automated, gateway-driven) creator payouts, or only for manually-recorded admin payouts?",
+      "why_it_matters": "Marketing and legal copy assert 'TDS shown on invoices' / 'TDS on payouts' / 'deducting TDS under Section 194-O' as a standing platform behavior, which is a tax-compliance claim, not just a UX claim.",
+      "answer": "Only for manual admin payouts. Payout.createManualPaid (called only from AdminFinanceService.java:230, an admin-entered out-of-band bank transfer) is the only factory that ever sets tdsAmount. Payout.createPending (PayoutService.java:463 — the real RazorpayX gateway payout path) and Payout.createQueued (WalletService.java:402) take no tdsAmount parameter at all, so it stays null for every automated payout. No TDS-calculation logic exists in PayoutService.java, PlatformFeeService.java, or CampaignServiceInvoiceService.java (all three greped clean for 'tds').",
+      "evidence": "influora-api/src/main/java/com/influora/domain/entity/Payout.java:84-85 (tdsAmount column), 126-171 (createPending, no tds param), 172-190 (createQueued, no tds param), 205-240 (createManualPaid, only place tdsAmount is set); influora-api/src/main/java/com/influora/service/PayoutService.java:463; influora-api/src/main/java/com/influora/service/WalletService.java:402; influora-api/src/main/java/com/influora/service/admin/AdminFinanceService.java:230",
+      "evidence_score": 3,
+      "confidence": 74,
+      "remaining_uncertainty": "TDS might be computed and remitted in an entirely separate downstream accounting process not represented as code in this repo (e.g., a manual CA-run monthly reconciliation), in which case the marketing copy's careful 'any recorded TDS' hedge in some pages (index.html, landing.tsx) would be technically defensible even though functionally hollow for the automated flow. That would not, however, rescue the more direct 'deducting TDS under Section 194-O' framing in privacy-policy.md."
+    },
+    {
+      "question": "Can an ordinary customer read the 'v0 DRAFT — NOT LEGALLY BINDING' escrow-and-refund-policy.md as if it were Influora's actual, binding policy?",
+      "why_it_matters": "A document explicitly marked not-yet-reviewed-by-counsel is making the site's strongest RBI/custody claims; if it's reachable by real users, that draft language is functioning as the live policy.",
+      "answer": "Yes. src/lib/legal/legal-docs.ts dynamically loads every .md file under src/content/legal by filename-derived slug, and src/pages/legal/LegalPage.tsx renders whichever slug the route requests verbatim, with the only mitigation being <Seo ... noindex />, which affects search-engine indexing, not human reachability. The page's own top-of-file comment confirms this is the intended, current behavior ('these are v0 drafts pending legal counsel review... not published legal text' — App.tsx:737-742, 849), i.e., engineering has flagged the same risk internally without gating actual access.",
+      "evidence": "src/lib/legal/legal-docs.ts:15-57; src/pages/legal/LegalPage.tsx:16,44; src/App.tsx:737-742,849; src/content/legal/escrow-and-refund-policy.md:1-3 (draft banner)",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "Did not trace whether the production nginx/CDN config or a build step strips draft docs from the deployed bundle before go-live; this is a source-level finding, not a live-site reproduction."
+    },
+    {
+      "question": "Does the creator-facing 'Payout typically inside 24 hours' claim have operational backing?",
+      "why_it_matters": "It's a concrete time promise creators will use to plan cash flow; if false, it's a direct trust breach the first time a payout is slow.",
+      "answer": "Partially plausible, not proven. RazorpayXClient.resolvePayoutMode selects IMPS (near-real-time settlement) for amounts under a cap and NEFT above it, which is consistent with fast payouts for most deal sizes. But the only literal '24 hour' references found anywhere in the backend are an unrelated fraud-prevention cooldown before a newly-added bank account can receive its FIRST payout (CreatorBankAccountService.java:44,181; RazorpayFundAccountService.java:68-72) — not a statement about processing latency after that. No SLA constant, log-based latency metric, or test asserts a 24h payout turnaround.",
+      "evidence": "influora-api/src/main/java/com/influora/integration/razorpay/RazorpayXClient.java:48-50,132,300-305 (resolvePayoutMode); influora-api/src/main/java/com/influora/service/payout/CreatorBankAccountService.java:44,181; influora-api/src/main/java/com/influora/service/payout/RazorpayFundAccountService.java:68-72; claim at src/components/site/trust-items.ts:23",
+      "evidence_score": 2,
+      "confidence": 42,
+      "remaining_uncertainty": "IMPS transactions in practice usually do land within minutes to a few hours, so the claim is unlikely to be wildly false, but 'typically' implies a measured operational baseline this audit found no evidence of (no dashboard, log sample, or metric)."
+    },
+    {
+      "question": "Is 'Permissions approved by Meta App Review' (creator-onboarding.tsx) still an accurate, current claim?",
+      "why_it_matters": "It's a specific platform-standing assertion the code itself flags as time-bound and legally sensitive (its own comment says a lapsed Advanced Access grant must be pulled 'the same day').",
+      "answer": "Consistent with the last recorded state, not independently re-verifiable from source. The claim's own audit-trail comment cites app 850102124044922 with Advanced Access on 4 scopes 'confirmed 2026-09-02,' and the actual requested scopes in MetaOAuthService.java (instagram_basic, instagram_manage_insights, pages_show_list, instagram_business_basic, instagram_business_manage_insights) match that description and contain no publish (instagram_content_publish/pages_manage_posts) or messaging (instagram_manage_messages) scope, backing the adjacent 'never posts or DMs' claim.",
+      "evidence": "src/pages/creator-onboarding.tsx:486-530 (claim + its own audit-trail comment); influora-api/src/main/java/com/influora/integration/meta/oauth/MetaOAuthService.java:37-60 (REQUIRED_SCOPES / INSTAGRAM_LOGIN_SCOPES, and a comment confirming pages_read_engagement was deliberately removed after being 'requested and granted but' unused)",
+      "evidence_score": 3,
+      "confidence": 62,
+      "remaining_uncertainty": "A static, read-only code audit of a checked-out commit cannot call the live Meta Graph API to confirm Advanced Access has not lapsed since 2026-09-02; the code's own comment treats this as a real, live risk, not a hypothetical one."
+    },
+    {
+      "question": "Do the Hype Campaign mechanics described on the site (up to 100 creators, one flat rate, 72-hour window, auto-release on verified post) match server-side implementation, or is the number just UI copy?",
+      "why_it_matters": "'100 creators. One sound. 72 hours' is the single most specific, quantified claim on the homepage below the fold; if the backend doesn't actually enforce it, it's a false product-capability claim, not just marketing color.",
+      "answer": "The core math is real and server-authoritative: CampaignService/CampaignValidator derive a HYPE campaign's budget strictly from perReelRate x slotCap on the server, explicitly never trusting a client-supplied total (CampaignService.java:190-197, 462-506), and Campaign.java's own comment independently documents a '72h live-until' field as part of the stored HypeConfigDto JSON. The escrow-per-slot funding and the specific verified-post-triggers-auto-release job were not traced end-to-end to a scheduler class in this pass.",
+      "evidence": "influora-api/src/main/java/com/influora/service/CampaignService.java:190-197,462-518; influora-api/src/main/java/com/influora/service/CampaignValidator.java:127-137; influora-api/src/main/java/com/influora/domain/entity/Campaign.java:98 (comment naming '72h live-until')",
+      "evidence_score": 2,
+      "confidence": 58,
+      "remaining_uncertainty": "Did not open the specific job/service that verifies a posted reel and triggers the per-slot auto-release; the 'auto-release automatically once the post is verified' half of the claim is inferred from adjacent escrow-release plumbing (EscrowService's FUNDED->RELEASED state machine) rather than directly opened for the Hype-specific trigger path."
+    },
+    {
+      "question": "Is 'Meera proposes. You approve. Money only moves on your confirmation' backed by an actual human-confirmation gate before any fund movement?",
+      "why_it_matters": "This is the central AI-safety/trust claim for the AI co-pilot feature; an AI that could move money without a human click would be a P0 product-safety issue as well as a false-advertising one.",
+      "answer": "Yes, at the code level. ConfirmLaunchExecutor.java explicitly rejects a launch-confirmation call when the campaign has no secured payment in FUNDED status ('Campaign has no secured payment in FUNDED status — cannot confirm launch,' line ~275), meaning the funding step and the human confirm step are distinct, server-enforced gates rather than something Meera can skip.",
+      "evidence": "influora-api/src/main/java/com/influora/service/meera/tool/ConfirmLaunchExecutor.java:110,275",
+      "evidence_score": 3,
+      "confidence": 70,
+      "remaining_uncertainty": "Did not fully trace every Meera tool (only ConfirmLaunchExecutor) to confirm no other Meera-invoked executor can move money without this same gate; the landing-page comment itself notes '4/6 tools incl analytics silently 403' in an unrelated onbehalf-scope bug reference, suggesting the tool-permission surface has had real bugs before."
+    },
+    {
+      "question": "Is the sales-tracking claim ('unique tracking link and coupon code... your store reports orders back over a signed webhook... not screenshots or estimates') backed by real signature verification, or just a plausible-sounding description?",
+      "why_it_matters": "This is a data-integrity claim brands will rely on to trust the revenue numbers Influora shows them; if the webhook isn't actually signature-verified, a brand (or a bad actor) could spoof conversion data.",
+      "answer": "Real infrastructure exists. A dedicated ConversionWebhookSignatureVerifier class, a ConversionWebhookSecret entity + repository, and a ConversionWebhookSecretController for issuing/rotating per-brand secrets all exist, which is the correct shape for HMAC-style signed-webhook verification (not just a description with no backing class).",
+      "evidence": "influora-api/src/main/java/com/influora/integration/tracking/webhook/ConversionWebhookSignatureVerifier.java; influora-api/src/main/java/com/influora/domain/entity/ConversionWebhookSecret.java; influora-api/src/main/java/com/influora/web/ConversionWebhookController.java; influora-api/src/main/java/com/influora/web/ConversionWebhookSecretController.java",
+      "evidence_score": 3,
+      "confidence": 66,
+      "remaining_uncertainty": "Did not open the verifier's method body in this pass to confirm the signature check is actually invoked and enforced (not bypassable) on every inbound request path, only that the class exists and is wired into a controller."
+    },
+    {
+      "question": "Are the Free (Rs0) / Pro (Rs4,999/month, 400 AI credits, 5 seats) prices and limits consistent across the page copy, the SoftwareApplicationSchema JSON-LD, and public/llms.txt, as the code's own comment says they must be?",
+      "why_it_matters": "landing.tsx's own comment states these three copies are hand-duplicated with 'nothing enforc[ing] agreement between them' — an AI answer engine or Google Rich Result reading stale structured data would quote a wrong price.",
+      "answer": "Consistent in this snapshot: landing.tsx's JSON-LD offers (Free Rs0 / Pro Rs4,999), pricing.tsx's cards and JSON-LD (same figures, 400 AI credits/month, 5 seats), and the referenced public/llms.txt line all agree as read. The risk is prospective (future edits), not a current defect.",
+      "evidence": "src/pages/landing.tsx:236-277 (comment + offers array); src/pages/pricing.tsx:160,219,341,399,415,426,429,438",
+      "evidence_score": 2,
+      "confidence": 55,
+      "remaining_uncertainty": "No automated gate found (beyond code comments asking a human to 're-read the others before committing') that would catch a future drift; this is a process-risk observation, not a currently-reproduced inconsistency."
+    },
+    {
+      "question": "Is 'Instagram-verified profiles with real engagement stats... synced from your platforms, not self-reported' true, or could a creator self-report their own numbers?",
+      "why_it_matters": "This is the core trust claim brands rely on before paying a creator; if stats can be self-entered and displayed as 'verified,' it's a direct product-integrity issue as well as a false claim.",
+      "answer": "Backed by a real verified-flag gate. PortfolioService.java's upsertPlatformStat has two call sites — one that always passes verified=true (fed by the real Meta-synced path, PortfolioService.java:517-527) and one that always passes verified=false (PortfolioService.java:500) — and an internal comment (CR-119) states the sync job is 'the only thing allowed to set PlatformStat.verified,' i.e., there is a code-level separation between synced and self-reported data, not a single mutable flag a creator's own form submission could set to true.",
+      "evidence": "influora-api/src/main/java/com/influora/service/portfolio/PortfolioService.java:349-363,436-443,500,517-552",
+      "evidence_score": 3,
+      "confidence": 68,
+      "remaining_uncertainty": "Did not open PlatformStatsAggregationJob itself to confirm it truly only writes from a genuine Meta Graph API response (vs. some other unverified path also calling the verified=true branch)."
+    }
+  ],
+  "findings": [
+    {
+      "id": "TEJAS-01",
+      "title": "Core payment-custody claim ('licensed, RBI-authorized Payment Aggregator holds funds'; 'Influora never pools Campaign funds in its own bank account') is contradicted by the actual pooled-wallet escrow architecture",
+      "severity": "P0",
+      "evidence_score": 4,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "LedgerEscrowBackend (the only EscrowBackend implementation) moves money between three Influora-owned Wallet database rows via an internal ledger (WalletLedgerService.post): brand wallet -> a single hardcoded 'platform-clearing-wallet' (PlatformWalletService.PLATFORM_CLEARING_WALLET_OWNER_ID) -> creator/payee wallet. The class's own javadoc states this is 'today's pooled-wallet-balance model,' explicitly incompatible with a real Razorpay Route-based per-payment-transfer implementation, which does not exist ('Building that Route implementation is explicitly out of scope here'). A repo-wide search of influora-api/src/main for 'nodal' returns zero hits.",
+      "location": "influora-api/src/main/java/com/influora/service/escrow/LedgerEscrowBackend.java:1-30,33-63; influora-api/src/main/java/com/influora/service/PlatformWalletService.java:22-58; influora-api/src/main/java/com/influora/service/escrow/EscrowBackend.java:1-25; claim text at index.html:177-180, src/pages/landing.tsx:91, src/pages/features/secure-payments.tsx:97,210, src/pages/how-it-works-brands.tsx:96,525, src/content/legal/escrow-and-refund-policy.md:5,13, src/content/legal/terms-of-service.md:24, public/llms.txt:12,34",
+      "impact": "This is the site's single most repeated regulatory claim, appearing on the homepage, every features/how-it-works page, 4 legal documents, and the AI-answer-engine-facing llms.txt. If the actual custody model is an internal pooled ledger rather than genuine PA-segregated/nodal custody, the claim is a specific, false regulatory representation under RBI's Payment Aggregator / Payment Gateway guidelines — exactly the kind of claim ASCI/consumer-protection exposure the team's own PROOF_POINTS comment says it is trying to avoid elsewhere on the same page.",
+      "recommended_fix": "Route this through Priya (CTO) and legal counsel before next go-live: either (a) confirm with Razorpay/legal that the current settlement arrangement genuinely satisfies PA-PG nodal-account rules despite the app-level pooled-wallet abstraction, and cite that basis in an internal decision doc, or (b) soften every instance of 'never pools Campaign funds in its own bank account' to match what is actually true today, consistent with the same discipline already applied to remove fabricated traction stats in PROOF_POINTS.",
+      "verification_required": "Legal/compliance review of the actual Razorpay merchant/settlement agreement (outside this repo) to determine whether the bank-level structure independently satisfies PA-PG custody requirements regardless of the app-level ledger model; that determination cannot be made from source code alone."
+    },
+    {
+      "id": "TEJAS-02",
+      "title": "'TDS shown on invoices' / 'TDS on payouts' is not computed anywhere in the automated (real, gateway-driven) creator payout path",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 74,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "Payout.createPending (used by PayoutService, the real RazorpayX payout path) and Payout.createQueued (used by WalletService) accept no tdsAmount parameter, so the column stays null for every automated payout. Only Payout.createManualPaid — called exclusively from AdminFinanceService for admin-entered, out-of-band bank transfers — ever sets tdsAmount. No TDS-calculation logic exists in PayoutService.java, PlatformFeeService.java, or CampaignServiceInvoiceService.java.",
+      "location": "influora-api/src/main/java/com/influora/domain/entity/Payout.java:84-85,126-171,172-190,205-240; influora-api/src/main/java/com/influora/service/PayoutService.java:463; influora-api/src/main/java/com/influora/service/WalletService.java:402; influora-api/src/main/java/com/influora/service/admin/AdminFinanceService.java:230; claim text at index.html, src/pages/pricing.tsx:399,415,438, src/content/legal/privacy-policy.md:34, src/content/legal/kyc-policy.md:13",
+      "impact": "A brand or creator relying on 'TDS on payouts' as an active platform behavior (rather than an admin-manual exception) may believe Section 194-O withholding is being handled automatically when it is not for the normal, automated deal flow — a tax-compliance and trust-integrity gap, not just a copy nuance.",
+      "recommended_fix": "Either implement real TDS computation in the automated payout path (PayoutService/PlatformFeeService) so tdsAmount is genuinely populated on every gateway payout, or change customer-facing copy to accurately describe current behavior (e.g., only guarantee TDS handling for the flows that actually compute it) until the automated path exists.",
+      "verification_required": "Confirm with backend/finance whether TDS withholding happens in a downstream system this repo doesn't represent (e.g., a manual CA/accounting reconciliation) — if so, the customer-facing promise of automatic, per-payout TDS handling is still unsupported by the product itself and should be corrected regardless."
+    },
+    {
+      "id": "TEJAS-03",
+      "title": "Draft, not-legally-binding escrow/refund policy is served live to real customers with no access gate beyond SEO noindex",
+      "severity": "P1",
+      "evidence_score": 3,
+      "confidence": 78,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "src/content/legal/escrow-and-refund-policy.md is headed '⚠️ v0 DRAFT — PENDING INDIAN LEGAL COUNSEL / CA REVIEW. NOT LEGALLY BINDING. Ships noindex until validated.' It is loaded generically by slug (src/lib/legal/legal-docs.ts) and rendered verbatim by LegalPage.tsx, whose only stated safeguard is <Seo noindex />, which affects search-engine crawling, not human visitor access. App.tsx's own comments (lines 737-742, 849) confirm this is the intended, current state for all legal drafts, not a bug limited to this one document.",
+      "location": "src/content/legal/escrow-and-refund-policy.md:1-3; src/lib/legal/legal-docs.ts:15-57; src/pages/legal/LegalPage.tsx:16,44; src/App.tsx:737-742,849",
+      "impact": "Any brand or creator who follows a footer/legal link before the document is reviewed by counsel is reading unvalidated legal language — including the site's strongest RBI/custody claims (finding TEJAS-01) — as if it were the actual, binding policy. If a dispute arises, this draft could be read back against Influora as its own representation, whether or not counsel later changes it.",
+      "recommended_fix": "Gate draft legal documents behind an explicit 'draft, not yet legally binding' interstitial or banner rendered in the page itself (not just a head-only noindex meta tag that a human visitor never sees), or withhold routing to them entirely until CA/legal review completes.",
+      "verification_required": "Confirm whether escrow-and-refund-policy.md is actually linked from any live navigation/footer component reachable pre-login (a targeted check of SiteFooter.tsx and any /legal index page was not completed in this pass)."
+    },
+    {
+      "id": "TEJAS-04",
+      "title": "Creator-facing 'Payout typically inside 24 hours' has no operational evidence behind it",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 42,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "The only '24 hour' references in the payout-adjacent backend are an unrelated fraud-prevention cooldown before a newly added bank account's FIRST payout is allowed (CreatorBankAccountService.java:44,181; RazorpayFundAccountService.java:68-72), not a statement about turnaround time after that. RazorpayXClient.resolvePayoutMode does select IMPS for smaller amounts (near-real-time), which makes the claim plausible, but no SLA constant, metric, or test enforces 'typically 24h.'",
+      "location": "src/components/site/trust-items.ts:23 (claim); influora-api/src/main/java/com/influora/integration/razorpay/RazorpayXClient.java:48-50,132,300-305; influora-api/src/main/java/com/influora/service/payout/CreatorBankAccountService.java:44,181",
+      "impact": "A creator planning around a same-day payout promise who instead waits longer (e.g., an NEFT-routed larger payout, or a gateway delay) experiences a broken trust promise on the platform's own creator-safety trust bar.",
+      "recommended_fix": "Either instrument and publish an actual measured payout-latency percentile to back the claim, or soften it to describe the mechanism (IMPS-first payout routing) rather than a specific time bound.",
+      "verification_required": "Pull real payout-latency data from production RazorpayX transaction logs (out of scope for a static source read)."
+    },
+    {
+      "id": "TEJAS-05",
+      "title": "'Permissions approved by Meta App Review' is a time-bound platform-standing claim this RC cannot confirm is still current",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 62,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "The claim's own inline comment states it 'HAS AN EXPIRY' and 'must come down the same day' if Meta's Advanced Access lapses or a scope is removed at re-review, citing app 850102124044922 with Advanced Access confirmed 2026-09-02. The requested scopes in MetaOAuthService.java match the claim (no publishing/messaging scope), which supports the claim being accurate as of that date, but nothing in a static source checkout can confirm Meta's grant is still valid today.",
+      "location": "src/pages/creator-onboarding.tsx:486-530; influora-api/src/main/java/com/influora/integration/meta/oauth/MetaOAuthService.java:37-60",
+      "impact": "If Advanced Access has lapsed since 2026-09-02 (the code comment itself treats this as a live operational risk, not hypothetical), the onboarding screen is making a false platform-endorsement claim to every creator connecting Instagram.",
+      "recommended_fix": "Add an automated recurring check (or a manual pre-release checklist item) that reverifies Meta App Review / Advanced Access status before each release and fails a build/gate if it cannot confirm current standing, rather than relying on a comment instructing a human to remember.",
+      "verification_required": "A live call to the Meta Graph API / App Dashboard for app 850102124044922 to confirm Advanced Access is still granted on all 4 cited scopes as of the current date — out of scope for this source-only, no-live-account audit."
+    },
+    {
+      "id": "TEJAS-06",
+      "title": "Unlabeled illustrative creator-portfolio example card reads like a real customer profile/testimonial, inconsistent with the site's own no-testimonials policy",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 52,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "The landing page's creator-portfolio mock ('Ananya', 218K followers, 47 brand collabs, 4.9-star avg rating, 98% on-time delivery, landing.tsx:625-656) carries no 'illustrative' disclosure, unlike the adjacent Sales Tracking mock on the same page which explicitly states 'Illustrative numbers. Yours come from your own store's webhook.' (landing.tsx:591-593). TrustBar.tsx's own comment states the team deliberately avoids customer logos/quotes because 'we do not have signed permission to display any.'",
+      "location": "src/pages/landing.tsx:600-660 (portfolio mock, no illustrative label) vs. src/pages/landing.tsx:591-593 (sales tracking mock, explicitly labeled); src/components/site/TrustBar.tsx:19-24 (stated no-testimonials policy)",
+      "impact": "A visitor could reasonably read the specific, realistic-looking stats (4.9 stars, 47 collabs, 98% on-time) as a real creator's real numbers, which is the exact substantiation risk the team explicitly avoided elsewhere on the same page (PROOF_POINTS) and the exact reason TrustBar says it avoids logos/testimonials.",
+      "recommended_fix": "Add the same 'Illustrative example' caption used on the Sales Tracking mock to the creator-portfolio mock card, or replace the specific numbers with round, obviously-illustrative placeholders.",
+      "verification_required": "None beyond a visual re-check after the label is added; this is a straightforward copy fix."
+    },
+    {
+      "id": "TEJAS-07",
+      "title": "Pricing/feature facts (₹0/₹4,999, 400 AI credits, 5 seats) are hand-duplicated across 3 files with no enforced sync",
+      "severity": "P2",
+      "evidence_score": 2,
+      "confidence": 55,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "landing.tsx's own comment states the SoftwareApplicationSchema offers, the pricing.tsx cards, and public/llms.txt's cost entry are 'independently maintained in two places... a third hand-written copy of the same facts' and that 'nothing enforces agreement between them.' As read in this snapshot the three copies are consistent, but the mechanism preventing future drift is a code comment asking a human to re-read the others before committing.",
+      "location": "src/pages/landing.tsx:236-277; src/pages/pricing.tsx:160,219,341,399,415,426,429,438; public/llms.txt (referenced)",
+      "impact": "A future edit to one copy (e.g., a price change or credit-limit change) that misses the other two would cause Google Rich Results or an AI answer engine to quote a stale price — a factual, publicly-visible discrepancy with no automated gate to catch it.",
+      "recommended_fix": "Extract a single shared PRICING_OFFERS constant (as the comment itself suggests exists as a gap) consumed by landing.tsx, pricing.tsx, and a script that regenerates the relevant llms.txt section, removing the hand-duplication.",
+      "verification_required": "None beyond implementing the fix; the current-state consistency was directly confirmed by reading all three sources."
+    }
+  ],
+  "features": [
+    {
+      "name": "Escrow-style fund/release/refund on deal approval",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 65,
+      "evidence": "EscrowService enforces a real PENDING->FUNDED->RELEASED/REFUNDED state machine and LedgerEscrowBackend performs real double-entry ledger postings on fund/release/refund; release requires approval per the state machine's guard methods. Not runtime-exercised in this pass (source-only audit).",
+      "user_type": "brand, creator"
+    },
+    {
+      "name": "Custody via a licensed, RBI-authorized Payment Aggregator holding brand funds outside Influora's own bank account",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 4,
+      "confidence": 78,
+      "evidence": "LedgerEscrowBackend/PlatformWalletService implement a pooled internal wallet ledger, not segregated PA custody; see TEJAS-01.",
+      "user_type": "brand, creator"
+    },
+    {
+      "name": "Automatic TDS computation on every creator payout",
+      "status": "NOT IMPLEMENTED",
+      "evidence_score": 3,
+      "confidence": 74,
+      "evidence": "Only the manual admin payout path ever sets tdsAmount; see TEJAS-02.",
+      "user_type": "creator"
+    },
+    {
+      "name": "Hype Campaign server-authoritative slot/rate math",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 60,
+      "evidence": "CampaignService/CampaignValidator derive HYPE budget strictly server-side from perReelRate x slotCap; a stored 72h window field is referenced in Campaign.java's own comment. Auto-release-on-verified-post trigger not fully traced to a scheduler class in this pass.",
+      "user_type": "brand, creator"
+    },
+    {
+      "name": "Meera human-confirmation gate before money moves",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 68,
+      "evidence": "ConfirmLaunchExecutor rejects a launch confirmation without a FUNDED escrow; only one of Meera's tool executors was opened in this pass.",
+      "user_type": "brand"
+    },
+    {
+      "name": "Signed-webhook sales/conversion tracking",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 65,
+      "evidence": "Dedicated ConversionWebhookSignatureVerifier + ConversionWebhookSecret entity/repository/controller exist and are wired to ConversionWebhookController; verifier body not opened to confirm it's enforced on every path.",
+      "user_type": "brand"
+    },
+    {
+      "name": "Instagram-synced (non-self-reported) creator stats with a verified flag",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 66,
+      "evidence": "PortfolioService.upsertPlatformStat has separate verified=true (Meta-sync path) and verified=false (other path) call sites, with a comment (CR-119) asserting the sync job is the only writer of verified=true. PlatformStatsAggregationJob itself not opened.",
+      "user_type": "creator, brand"
+    },
+    {
+      "name": "Meta App Review-approved OAuth scopes, no publish/DM permission",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 62,
+      "evidence": "MetaOAuthService.REQUIRED_SCOPES/INSTAGRAM_LOGIN_SCOPES match the onboarding page's claim and contain no publish/messaging scope; current live standing with Meta cannot be confirmed from static source.",
+      "user_type": "creator"
+    },
+    {
+      "name": "Honest, non-fabricated homepage proof points (no invented traction stats)",
+      "status": "VERIFIED WORKING",
+      "evidence_score": 3,
+      "confidence": 80,
+      "evidence": "proof-points.ts documents the removal of previously-hardcoded traction figures (8,915 creators / Rs4.3Cr paid / 24h avg payout) specifically for ASCI/consumer-law and AI-answer-engine-propagation risk, replacing them with non-numeric, true-by-construction statements, and references a build gate (F-SEO-marketing-surface.sh) intended to block a numeric literal from being reintroduced there.",
+      "user_type": "brand, creator"
+    }
+  ],
+  "area": {
+    "name": "Marketing claims and go-to-market copy (RC 115f698)",
+    "status": "Mixed — product-mechanism claims mostly hold up; the core payment-custody regulatory claim does not match the implemented architecture",
+    "evidence_level": 3,
+    "confidence": 70,
+    "main_evidence": "Direct source review of the RC's marketing pages, legal docs, and the backend services those pages describe (EscrowService/LedgerEscrowBackend/PlatformWalletService for payment claims, Payout.java/PayoutService/WalletService for TDS claims, MetaOAuthService for the Meta App Review claim, PortfolioService for creator-stat claims, ConversionWebhookSignatureVerifier for sales-tracking claims, CampaignService/CampaignValidator for Hype Campaign claims).",
+    "main_uncertainty": "This is a static, read-only, source-level audit of one checked-out commit; no live runtime reproduction, no live Meta/Razorpay API calls, and several call chains (Hype auto-release scheduler, webhook verifier enforcement, PlatformStatsAggregationJob internals) were traced only partway due to time-boxing.",
+    "limitations": "Read-only per audit rules; no account creation, login, form submission, or live system calls performed. Evidence drawn exclusively from the clean RC checkout at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698 (commit 115f698); code comments were used as orientation only, never as standalone proof — every load-bearing claim above is backed by the actual class/method logic cited, not by the comment describing it."
+  },
+  "extra": "CLAIM TABLE (exact text | file:line | code that would have to exist | verdict | evidence score | confidence)\n\n1. \"Hire verified Indian creators, agree terms in one Deal Room, pay only on approval\" | index.html:20-23 (meta description), og/twitter tags same file | EscrowService FUNDED->RELEASED gated on brand approval | VERIFIED | E3 | 72\n\n2. \"Influora holds the brand's payment with a licensed payment partner from the moment the contract is signed, and releases it to the creator only after the brand approves\" | index.html:177-180; src/pages/landing.tsx:91; public/llms.txt:12,34 | A real licensed-PA-held, segregated (nodal) custody arrangement | NOT SUPPORTED | E4 | 78 (see TEJAS-01)\n\n3. \"Influora never pools Campaign funds in its own bank account\" | src/content/legal/escrow-and-refund-policy.md:13 | Same as above | NOT SUPPORTED | E4 | 78 (see TEJAS-01)\n\n4. \"Backed by a licensed, RBI-authorized Payment Aggregator\" (repeated variant) | src/pages/features/secure-payments.tsx:97,210; src/pages/how-it-works-brands.tsx:96,525; src/pages/features/deal-room.tsx:46,100; src/pages/features/hype.tsx:44; src/pages/how-it-works-creators.tsx:41,89 | Same as above | NOT SUPPORTED (as a custody-location claim) / PARTIALLY VERIFIED (as a \"Razorpay is RBI-authorized\" fact, which is true of Razorpay generically) | E3 | 65\n\n5. \"TDS shown on invoices\" / \"TDS on payouts\" / \"deducting TDS under Section 194-O\" | index.html:177 area; src/pages/pricing.tsx:399,415,438; src/content/legal/privacy-policy.md:34; src/content/legal/kyc-policy.md:13 | TDS computed and recorded on real gateway payouts | NOT SUPPORTED for automated path | E3 | 74 (see TEJAS-02)\n\n6. \"Payments held by a licensed gateway\" (softer homepage TrustBar variant) | src/components/site/trust-items.ts:19 | Same custody question as #2-4 | PARTIALLY VERIFIED (Razorpay genuinely is a licensed gateway/PA; the \"held by\" framing still implies segregated custody not present) | E2 | 55\n\n7. \"Payout typically inside 24 hours\" | src/components/site/trust-items.ts:23 | Measured payout-latency SLA | UNVERIFIED | E2 | 42 (see TEJAS-04)\n\n8. \"TDS invoice generated for you\" (creator trust item) | src/components/site/trust-items.ts:25 | Same as #5 | NOT SUPPORTED for automated path | E3 | 70\n\n9. \"Meera... Every brand workspace comes with Meera built in... Proposes the funding step — you confirm every money step\" | src/pages/landing.tsx:144-155,457-468 | ConfirmLaunchExecutor human-confirm gate | VERIFIED (structurally) | E3 | 70\n\n10. \"100 creators. One sound. 72 hours\" / Hype 6-step flow | src/pages/landing.tsx:159-164,485-514 | Server-derived slotCap/perReelRate math, stored 72h window | PARTIALLY VERIFIED | E2-3 | 60\n\n11. \"Each accepted slot is funded and payment-protected automatically, so every creator who accepts is guaranteed the rate if they deliver\" | src/pages/features/hype.tsx:99 | Per-slot escrow funding tied to acceptance | PARTIALLY VERIFIED | E2 | 55 (funding mechanism plausible via EscrowService; per-slot auto-trigger not fully traced)\n\n12. \"Your store reports orders back over a signed webhook, so the scoreboard shows real transactions — not screenshots or estimates\" | src/pages/landing.tsx:170 | Real signature-verified webhook ingestion | VERIFIED (infrastructure exists) | E3 | 66\n\n13. \"Illustrative numbers. Yours come from your own store's webhook.\" (sales tracking demo disclaimer) | src/pages/landing.tsx:591-593 | N/A — self-disclosed as illustrative | VERIFIED (honest disclosure present) | E5 | 95\n\n14. Creator-portfolio mock (\"Ananya\", 218K followers, 47 collabs, 4.9-star rating, 98% on-time) with NO illustrative label | src/pages/landing.tsx:625-656 | Should either be a real, permissioned example or be labeled illustrative like #13 | NOT SUPPORTED (undisclosed mock) | E2 | 52 (see TEJAS-06)\n\n15. \"Every creator gets a page brands can trust... built from synced platform stats and real campaign history, not self-reported numbers\" | src/pages/landing.tsx:207-216 | PortfolioService verified-flag separation, Meta-sync job | VERIFIED (mechanism exists) | E3 | 68\n\n16. \"Instagram-verified profiles with real engagement stats, rate cards, and past collab history\" | src/pages/landing.tsx:113-114 | Same as #15 | VERIFIED | E3 | 68\n\n17. \"Free to start · no subscription\" (Free tier) / \"Fee only when a campaign goes live\" | src/pages/landing.tsx:338-339,700-719,747 | BrandCampaignFeeService.chargeOnPublish (fee charged once, on publish, not per-deal) — referenced by the code's own top-of-file content rule, not independently opened by this auditor in the Java service body | PARTIALLY VERIFIED | E2 | 58\n\n18. \"₹4,999/mo — 400 AI credits/month, 5 seats, unlimited tracked creators\" (Pro tier) | src/pages/landing.tsx:709-712; src/pages/pricing.tsx:160,219,426,429 | A billing/subscription config matching these numbers | PARTIALLY VERIFIED (internally consistent across 3 copies; underlying Razorpay Subscription plan config not independently opened) | E2 | 55\n\n19. \"Do creators pay to join Influora? No... Influora takes a commission only when a deal actually pays out\" | src/pages/landing.tsx:99-102 | PlatformFeeService.deductAtRelease (fee taken at release, not on signup) | PARTIALLY VERIFIED (deductAtRelease call site confirmed inside LedgerEscrowBackend.release; standalone Java service body not independently opened) | E2 | 60\n\n20. \"Permissions approved by Meta App Review\" | src/pages/creator-onboarding.tsx:526 | Meta Advanced Access on requested scopes | PARTIALLY VERIFIED (see TEJAS-05) | E3 | 62\n\n21. \"v0 DRAFT — NOT LEGALLY BINDING\" escrow/refund policy served live | src/content/legal/escrow-and-refund-policy.md:1-3 | A gate preventing draft legal text reaching real customers | NOT SUPPORTED (no such gate found) | E3 | 78 (see TEJAS-03)\n\n22. \"We are a facilitator, not a party to the underlying marketing arrangement... we do not guarantee the quality, timeliness, or outcome of any Campaign\" | src/content/legal/terms-of-service.md:28 | Standard marketplace-facilitator disclaimer | VERIFIED (reasonable, standard disclaimer language, no contradicting code found) | E2 | 65\n\nWHAT CAN BE HONESTLY PROMISED TODAY: a real Deal Room negotiation/e-sign/escrow-release-on-approval flow; real server-derived (non-client-trusted) Hype Campaign economics; a real human-confirmation gate before Meera can move money; real signature-verified sales-tracking webhooks; real Meta-synced (non-self-reported) creator stats with a verified flag; a deliberately fabrication-free homepage stats strip. What CANNOT currently be honestly promised as worded: that brand funds sit outside Influora's own bank account under segregated PA custody (they sit in an internal pooled wallet ledger); that TDS is deducted/recorded on ordinary automated payouts (only manual admin payouts populate it); that the escrow/refund policy a customer reads is Influora's actual, binding policy (it is self-labeled a legal-review draft).\n\nHARD-TO-EXPLAIN CAPABILITIES: the brand-fee-on-publish vs. creator-commission-at-release distinction (two different charge mechanics under similar 'fee' language, which the code's own top-of-file comment in landing.tsx treats as an easy-to-get-wrong nuance for anyone editing copy without reading the service code); the Route-vs-ledger escrow distinction itself, which is an internal architecture fact that nonetheless directly determines whether the RBI custody claim is true — this is exactly the kind of plumbing a CMO cannot verify by inspection of the UI and must get sign-off on from engineering/legal before publishing.\n\nTRUST SIGNALS PRESENT: mechanism-based TrustBar items (no fake logos/testimonials, explicitly by policy per TrustBar.tsx's own comment); an honest, self-correcting proof-points history (removed inflated stats); explicit 'facilitator, not guarantor' language in Terms; visible dispute-resolution process references; e-signed contracts; per-creator revenue breakdown framed as coming from the brand's own webhook (not Influora's assertion).\nTRUST SIGNALS MISSING OR WEAK: no permissioned customer logos or testimonials at all (acknowledged gap, not filled with anything, including neutral options like anonymized aggregate metrics); the one persona-style example card (Ananya) that reads like a testimonial is not labeled as illustrative, undermining the otherwise-disciplined no-testimonials stance; no visible security/compliance badges (ISO/SOC) claimed anywhere — which is actually consistent with the site's own internal 'banned phrase' list refusing invented certifications, but leaves the trust strip thinner than competitors who do hold real certifications.\n\nCONVERSION FRICTION IN SIGNUP: the homepage intentionally reduced the hero to a single primary CTA ('Launch a campaign') per a documented CRO decision (landing.tsx:316-331) to stop splitting intent between brand and creator visitors — a sound, evidenced UX call, not a defect. The creator path is preserved as a secondary link under the primary CTA and in the header. No forms were submitted during this audit (per safety rules), so actual signup-form friction (field count, validation UX, OTP flow drop-off) was not measured; that would require a live/E2E pass (Neha) rather than a source-only marketing-claims audit.\n\nREGULATORY-RISK FLAGS (summary): (1) RBI Payment Aggregator custody claim vs. pooled-wallet implementation — P0, see TEJAS-01; (2) TDS/Section 194-O claims vs. TDS-only-on-manual-payouts — P1, see TEJAS-02; (3) draft, non-binding legal policy making claim (1) served live to consumers — P1, see TEJAS-03; (4) Meta App Review claim is accurate as of a cited date but time-decaying with no recheck gate — P2, see TEJAS-05; (5) unlabeled quasi-testimonial creator example — P3, see TEJAS-06. No 'guaranteed results,' no fabricated statistics, and no unpermissioned customer logos were found anywhere on the marketing surface — the team's own banned-phrase discipline (escrow/RBI-licensed/guaranteed wording lists embedded as comments in about.tsx, features/deal-room.tsx, features/hype.tsx, how-it-works-brands.tsx, how-it-works-creators.tsx, blog/index.tsx) is real and mostly followed; the payment-custody and TDS claims are the exceptions that slipped past that same discipline."
+}

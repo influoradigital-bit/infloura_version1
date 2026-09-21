@@ -1,0 +1,11 @@
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+WARNING: A Java agent has been loaded dynamically (C:\Users\Sage world\.m2\repository\net\bytebuddy\byte-buddy-agent\1.14.19\byte-buddy-agent-1.14.19.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+11:58:04.985 [main] WARN com.influora.service.creatorcopilot.CreatorMetaOAuthService -- CreatorMetaOAuthService: granted-permissions check failed for creator 01HCREATOR123456789AB: Meta API call failed
+11:58:05.107 [main] WARN com.influora.service.creatorcopilot.CreatorMetaOAuthService -- CreatorMetaOAuthService: FB app-scoped user id resolution failed for creator 01HCREATOR123456789AB: me lookup failed
+11:58:05.134 [main] WARN com.influora.service.creatorcopilot.CreatorMetaOAuthService -- CreatorMetaOAuthService: IG business account resolution failed for creator 01HCREATOR123456789AB: igResolution failed
+11:58:05.263 [main] WARN com.influora.service.creatorcopilot.CreatorMetaOAuthService -- CreatorMetaOAuthService: Meta long-lived token exchange for creator 01HCREATOR123456789AB omitted expires_in; falling back to the documented ~60-day default instead of storing an already-expired token
+11:58:07.074 [main] WARN com.influora.service.creatorcopilot.CreatorNudgeService -- CreatorNudgeService: AI suggestion call errored for creator=01HCREATORPROFILE100000000: influora-ai unreachable

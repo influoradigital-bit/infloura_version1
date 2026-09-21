@@ -1,0 +1,251 @@
+{
+  "role": "vikram-backend-api-audit",
+  "summary": "Endpoint-by-endpoint audit of influora-api's REST surface at RC commit 115f698 (clean checkout, C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698). Counted 91 real @RestController classes (343 distinct verb+path mappings after normalizing path variables); GlobalExceptionHandler (@RestControllerAdvice) and two javadoc-only mentions were excluded from the 91. All 91 controllers follow one consistent, thin-controller pattern: resolve principal -> context.require*() ownership/role check -> delegate to a service -> wrap in ApiResponse. Zero @PreAuthorize usage anywhere in the codebase (confirmed by grep and by controllers' own javadoc, e.g. AuditLogController.java:51); role separation is enforced entirely at SecurityConfig's filter chain (hasRole(\"ADMIN\") on /admin/**, hasRole(\"CREATOR\") on /creator/**, an explicit ~20-route permitAll allowlist naming exact verb+paths, anyRequest().authenticated() otherwise) plus per-service ownership checks (BrandContextService.requireMember/requireRole, CreatorContextService.requireCreator). No wildcard-permitAll or missing-authuser findings surfaced. graphify-out/graph.json does not exist in the RC tree (verified with ls), so graphify could not be used; proceeded via direct grep/read per the task's own fallback. FE cross-reference: extracted 194 distinct verb+path calls from src/lib/api.ts's client.request() family and diffed against the 343-route backend inventory -- zero stale calls (FE referencing a route that does not exist). Extracted the admin console's 78 distinct apiRequest() calls from src/admin/services/api-contracts.ts and diffed against the 90 distinct /admin/** backend routes -- 8 backend admin routes confirmed to have no caller anywhere in src/admin/ (grepped with multiple search terms per route, not just the automated regex). Four main-app routes (GET /wallet/balance, POST /wallet/escrow/payout, POST /contracts/{id}/amend, POST /contracts/{id}/cancel) were confirmed to have zero caller anywhere in src/ (whole-tree grep), beyond the one (POST /wallet/escrow/refund) the codebase itself documents as an intentional non-FE operator primitive. One concrete validation-bypass bug was found and traced end-to-end: CampaignController.update (PATCH /campaigns/{campaignId}) takes @RequestBody without @Valid, so CampaignPatchRequest's @Size(min=5,max=300) on title and @Valid on nested BudgetDto/TimelineDto are never enforced by Spring; CampaignService.update does re-validate budget/timeline manually but never re-checks title length, and Campaign.applyPatch sets title with only a null-check -- an empty or absurdly long title can be persisted (over 300 chars trips a DataIntegrityViolationException, surfaced as a generic 409 rather than a field-level 400). A second, self-documented gap was verified in the Meera AI-to-backend trust boundary: the on-behalf JWT (OnBehalfTokenService, 120s TTL) mints a jti claim that nothing ever consumes -- OnBehalfAuthResolver's own javadoc states single-use/replay enforcement is not yet implemented, confirmed absent in code. Money-moving endpoints (topup/withdraw/fund/release/refund) consistently require Idempotency-Key end-to-end, including a previously-flagged VARCHAR(128) idempotency-key-length risk that is now defended in code (IdempotencyService.MAX_RESERVATION_KEY_LENGTH, validated before any DB write) -- this appears RESOLVED at this commit, not a new finding. Overall the codebase shows unusually heavy prior audit investment (extensive Kabir/Priya-attributed fix commentary throughout services), which narrows what a fresh code-only pass can still find; the concrete new findings here are narrower in scope (one validation gap, one auth-replay gap, 12 unconnected endpoints) rather than systemic. No runtime testing was performed (read-only, static/code audit only) so no endpoint can be marked VERIFIED WORKING under this task's evidence rules.",
+  "questions": [
+    {
+      "question": "How many @RestController classes exist in influora-api, and are they all reachable from some frontend in this repo?",
+      "why_it_matters": "Defines the true size of the API surface being shipped and whether any controller is orphaned/dead code that should not exist in production.",
+      "answer": "91 confirmed @RestController classes (grep -rlE '^\\s*@RestController\\s*$|^\\s*@RestController\\(' across influora-api/src/main/java, minus GlobalExceptionHandler which is @RestControllerAdvice and 2 javadoc-only mentions). Every controller has at least one reachable caller across src/lib/api.ts, src/lib/meera-api.ts, or src/admin/services/api-contracts.ts, EXCEPT the specific unconnected endpoints listed in findings VIK-02/03/04 (12 total individual routes, not whole controllers).",
+      "evidence": "grep inventory in /tmp/controllers.txt (91 files) cross-referenced against extracted FE call lists from api.ts (194 calls) and api-contracts.ts (78 calls).",
+      "evidence_score": 3,
+      "confidence": 85,
+      "remaining_uncertainty": "meera-api.ts and a handful of raw-fetch call sites (auth/refresh, client-errors, deals SSE stream, festival coupon-copy) were only spot-checked, not exhaustively regex-extracted, so a small number of additional connected routes may exist that my automated pass missed as false negatives (all spot-checks so far confirmed the route WAS connected, never a new gap)."
+    },
+    {
+      "question": "Is method-level authorization (@PreAuthorize) used anywhere, and if not, how is admin/creator/brand role separation actually enforced?",
+      "why_it_matters": "If role checks are inconsistent or missing at even one endpoint, that is a direct privilege-escalation risk (e.g. a creator hitting an admin-only mutation).",
+      "answer": "Zero @PreAuthorize usage in the entire codebase -- the only 14 grep hits for the string are javadoc comments explicitly documenting the absence. Role separation is enforced in exactly one place, SecurityConfig's authorizeHttpRequests chain: requestMatchers(\"/admin/**\").hasRole(\"ADMIN\") and requestMatchers(\"/creator/**\").hasRole(\"CREATOR\"), both ordered after an explicit permitAll allowlist, with anyRequest().authenticated() as the default. This is backed by per-endpoint ownership checks inside services (BrandContextService.requireMember/requireRole, CreatorContextService.requireCreator) that were consistent in every controller I opened in depth (Wallet, Escrow, Campaign, Deal, Contract, Meera).",
+      "evidence": "influora-api/src/main/java/com/influora/config/SecurityConfig.java:263-299 (full authorizeHttpRequests block); grep -rn \"@PreAuthorize\" returned 14 comment-only hits.",
+      "evidence_score": 3,
+      "confidence": 88,
+      "remaining_uncertainty": "I read this pattern in depth for ~10 of 91 controllers; did not exhaustively verify that every one of the remaining ~81 controllers' service layer actually calls a require*() ownership check on every path-id parameter it accepts (an IDOR would require a controller-by-controller service audit beyond this task's time budget)."
+    },
+    {
+      "question": "Do all money-moving endpoints require an Idempotency-Key, and is the key namespacing safe against cross-tenant/cross-scope collisions?",
+      "why_it_matters": "A missing or collidable idempotency key on a payment endpoint is a direct double-charge/double-payout risk.",
+      "answer": "Yes for the ones inspected. /wallet/topup and /wallet/escrow/{fund,release,refund} reject a missing header with 400 at the controller. /wallet/withdraw accepts a missing header at the controller (required=false) but WalletService.requestCreatorWithdrawal re-checks and 400s if blank, then namespaces it as 'creator-withdraw:'+userId+':'+key before handing it to IdempotencyService, which composites scope+workspaceId+key and validates the composite against a 128-char DB column BEFORE writing (IdempotencyService.MAX_RESERVATION_KEY_LENGTH), so the previously-known VARCHAR(64) truncation class of bug is defended in code at this commit. /wallet/escrow/payout and admin manual-payout derive their own key deterministically from milestoneId server-side rather than taking a client header, which is an equally-safe alternative pattern, not a gap.",
+      "evidence": "influora-api/src/main/java/com/influora/web/WalletController.java:95-126; influora-api/src/main/java/com/influora/service/WalletService.java:250-318; influora-api/src/main/java/com/influora/service/IdempotencyService.java:80-131; influora-api/src/main/java/com/influora/web/EscrowController.java:68-173; influora-api/src/main/java/com/influora/service/PayoutService.java:199-219.",
+      "evidence_score": 3,
+      "confidence": 82,
+      "remaining_uncertainty": "Code-level guarantee only -- no concurrency/load test was run to actually prove the DB UNIQUE constraint wins a real race; PayoutService's own javadoc documents a separate, already-mitigated non-transactional-debit risk (orphaned-debit sweep job) that I read but did not independently re-verify runs correctly."
+    },
+    {
+      "question": "Are there endpoints where @Valid is missing from a @RequestBody parameter AND the DTO actually carries Bean Validation constraints that get silently skipped?",
+      "why_it_matters": "A missing @Valid is only a real bug if the annotated constraints would otherwise have blocked bad data; otherwise it's cosmetic.",
+      "answer": "One confirmed case with real impact: CampaignController.update (PATCH /campaigns/{campaignId}) -- CampaignPatchRequest carries @Size(min=5,max=300) on title and @Valid on nested BudgetDto/TimelineDto, none of which run because the controller method has no @Valid. CampaignService.update separately re-validates budget and timeline via CampaignValidator, so that part of the gap is covered in practice, but title length is never re-checked anywhere (Campaign.applyPatch just does 'if (title != null) this.title = title;'), so an empty-but-non-null title or a title beyond 300 chars can reach the database (the latter throws DataIntegrityViolationException, caught by GlobalExceptionHandler and turned into a generic 409, not a clean 400). I additionally checked 15 other @RequestBody-without-@Valid call sites (an automated regex flagged 16 total); all the others turned out to have DTOs with zero constraint annotations and/or manual validation already in the service (e.g. CreatorDeliverableController.markPosted's livePostUrl is manually required+format-checked in the service despite no @Valid), so they are not real gaps.",
+      "evidence": "influora-api/src/main/java/com/influora/web/CampaignController.java:72-77; influora-api/src/main/java/com/influora/web/dto/campaign/CampaignDtos.java:97-122; influora-api/src/main/java/com/influora/domain/entity/Campaign.java:410-451; influora-api/src/main/java/com/influora/service/CampaignService.java:238-260; influora-api/src/main/resources/db/migration/V4__campaigns.sql:4 (title VARCHAR(300) NOT NULL).",
+      "evidence_score": 3,
+      "confidence": 85,
+      "remaining_uncertainty": "Not runtime-reproduced (no live PATCH call was actually sent); the DataIntegrityViolationException path is inferred from MySQL VARCHAR truncation behavior + the registered @ExceptionHandler, not observed in a running instance."
+    },
+    {
+      "question": "Which backend endpoints exist with literally no frontend caller anywhere in this repository?",
+      "why_it_matters": "An unconnected endpoint is either dead code (attack surface with no product justification) or a missing UI affordance the team believes exists; both are worth a product/ops decision.",
+      "answer": "12 confirmed via whole-tree grep with multiple search terms per route: main app -- GET /wallet/balance (WalletController.java:61, superseded by GET /wallet), POST /wallet/escrow/payout (EscrowController.java:168), POST /contracts/{id}/amend and POST /contracts/{id}/cancel (ContractController.java:125,144); admin console -- DELETE /admin/external-creators/{id}, PUT /admin/creator-agent/creators/{id}/monthly-cap, POST /admin/brands/{id}/reanalyze, POST /admin/auth/mfa/reset/{id}, POST /admin/emails/custom/{id}/cancel, GET /admin/festival-enquiries/{id}/existing-account, POST /admin/festival-enquiries/{id}/link-existing, POST /admin/platform-stats/backfill. One additional route, POST /wallet/escrow/refund, is also uncalled but the codebase explicitly documents this as intentional (EscrowController.java:138-151: policy says refunds only happen via the dispute-resolution flow).",
+      "evidence": "Full-tree grep (src/ and src/admin/) for each route's literal path fragment and for plausible camelCase service/hook names; zero matches for all 12 beyond their own backend definition and, for admin ones, api-contracts.ts's own javadoc referencing the route.",
+      "evidence_score": 3,
+      "confidence": 78,
+      "remaining_uncertainty": "This repo may not be the only frontend (e.g. a native mobile client, if one exists, was not in scope/found); cannot rule out an out-of-repo caller."
+    },
+    {
+      "question": "Does src/lib/api.ts (the main brand/creator app's API client) call any backend route that does not exist, i.e. a stale contract?",
+      "why_it_matters": "A stale FE call is a guaranteed 404 the moment a user hits that code path -- the single most direct 'broken feature' signal available from static analysis.",
+      "answer": "No stale calls found. Extracted 194 distinct (verb, path) pairs from every .request/.requestWithMeta/.requestOrNull call in src/lib/api.ts, normalized ${...} template segments to {}, and diffed against the full 343-route backend inventory (also normalized) -- 0 of 194 FE calls failed to match an existing backend verb+path.",
+      "evidence": "Automated diff (extract_fe.py + extract_be.py + diff_routes.py, run against the RC tree) -- 'FE calls with NO matching BE route' printed count: 0.",
+      "evidence_score": 3,
+      "confidence": 80,
+      "remaining_uncertainty": "The automated extraction only covers the '.request(VERB, path)' calling convention; a small number of raw fetch()/EventSource call sites (auth/refresh, client-errors, deals SSE stream) are outside this pattern and were checked manually instead, not by the automated diff -- all manually-checked ones matched a real backend route."
+    },
+    {
+      "question": "Is there a security gap in the Meera 'on-behalf' trust boundary that lets the Python AI service execute tool calls (create_campaign, request_payment, confirm_launch, etc.) as a human brand user?",
+      "why_it_matters": "This is the one place a non-human actor (the LLM/tool loop) can trigger real campaign-creation and payment-request side effects; a replay or forgery here is a direct money/data-integrity risk.",
+      "answer": "The chain is well-layered (InternalServiceTokenFilter mesh HMAC auth -> OnBehalfAuthResolver JWT re-validation + workspace-match + role/scope checks -> ToolCallValidator tier whitelist), and I found no defect in any of those three layers. However, OnBehalfAuthResolver's own javadoc states 'jti single-use/replay is not yet enforced', which I confirmed in code: OnBehalfTokenService mints a jti claim (a 120-second-TTL token) but nothing in OnBehalfAuthResolver or OnBehalfTokenService ever records or checks a consumed jti. A captured on-behalf token could in principle be replayed against a different tool call within its 120s window.",
+      "evidence": "influora-api/src/main/java/com/influora/security/OnBehalfAuthResolver.java:44-49 (javadoc) and full class body (no jti check present); influora-api/src/main/java/com/influora/service/meera/OnBehalfTokenService.java:36-43 (jti minted, TTL=120s, comment 'consumed-jti replay store itself is a separate fix ... NOT implemented').",
+      "evidence_score": 3,
+      "confidence": 75,
+      "remaining_uncertainty": "Not runtime-reproduced (no live replay attempt was made); actual exploitability also depends on whether an attacker can realistically capture the header in transit (it travels server-to-server between the Python mesh service and this API, not through the browser), which narrows the practical attack surface versus a browser-exposed token."
+    },
+    {
+      "question": "Are pagination/filter parameters bounded against abuse (e.g. can a caller request limit=999999 and force an unbounded query)?",
+      "why_it_matters": "Unbounded pagination is a common, easy DoS/performance vector missed by functional testing.",
+      "answer": "Not fully verified -- out of the time budget for a full 91-controller pass. Spot-checked WalletController.transactions/payouts: the controller signature only has @RequestParam(defaultValue) with no @Max/clamp annotation, so any upper-bound enforcement would have to live in WalletService, which I did not open for this specific check.",
+      "evidence": "influora-api/src/main/java/com/influora/web/WalletController.java:141-183 (page/limit params, no visible upper bound at the controller).",
+      "evidence_score": 1,
+      "confidence": 30,
+      "remaining_uncertainty": "This is an open question, not a finding -- a follow-up pass should grep every @RequestParam(defaultValue = ...) int limit across all 91 controllers and check the corresponding service for a Math.min/@Max clamp."
+    },
+    {
+      "question": "Do any controllers contain real business logic (validation branching, calculations, DB access) instead of pure delegation to a service?",
+      "why_it_matters": "Business logic living in the web layer usually means it's untested by the service-layer unit test suite and duplicated across controllers.",
+      "answer": "No, in every controller read in depth (Wallet, Escrow, Campaign, Deal, Contract, MeeraInternal, ~10 of 91 total) the pattern is uniformly thin: resolve principal, call one or two context.require*() guard methods, delegate the actual work to exactly one service call, wrap the result in ApiResponse. This is a positive architectural finding, not a gap.",
+      "evidence": "Direct reads of the 10 controllers listed above; no controller body exceeded a handful of guard-check lines before delegating.",
+      "evidence_score": 2,
+      "confidence": 65,
+      "remaining_uncertainty": "Only ~10 of 91 controllers were read in full; the remaining 81 were only seen via their method signatures/annotations in the grep inventory, not their full bodies, so a controller with embedded business logic could exist among them undetected."
+    },
+    {
+      "question": "Was the release candidate actually a clean checkout of commit 115f698 as the task specified?",
+      "why_it_matters": "Every finding in this audit is only valid against the stated commit; if the checkout were dirty, findings could reflect an uncommitted/unreviewed state.",
+      "answer": "Confirmed clean. `git log -1` in the RC directory reported 115f698b9df0ca2735e9cb2f2c5fe656daf07b66, and `git status --porcelain` returned 0 lines (no local changes).",
+      "evidence": "Bash: git log -1 --format=\"%H %s\" and git status --porcelain | wc -l, both run against C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698.",
+      "evidence_score": 4,
+      "confidence": 98,
+      "remaining_uncertainty": "None material."
+    },
+    {
+      "question": "Could graphify be used to orient this audit as the repo's own instructions mandate?",
+      "why_it_matters": "The project's CLAUDE.md and a runtime hook both assert graphify-out/graph.json exists and must be queried before grepping; if that's false for the RC tree, it matters for anyone relying on the same automated hook message.",
+      "answer": "No -- graphify-out/ does not exist anywhere under the RC checkout (confirmed with `ls`), despite a repeating PreToolUse hook message claiming it does. This audit proceeded via direct grep/Read per the task's explicit fallback ('you may run graphify... to orient, then confirm in source' -- optional, and the tool was unavailable). The hook's claim was not treated as an instruction overriding the directly-observed filesystem state.",
+      "evidence": "Bash: ls \"$RC/graphify-out\" 2>/dev/null && echo EXISTS || echo \"NO GRAPHIFY\" -> printed NO GRAPHIFY.",
+      "evidence_score": 4,
+      "confidence": 95,
+      "remaining_uncertainty": "None material to this audit's findings; noted only because the hook's automated claim was directly contradicted by the filesystem."
+    }
+  ],
+  "findings": [
+    {
+      "id": "VIK-01",
+      "title": "PATCH /campaigns/{campaignId} accepts @RequestBody without @Valid, silently skipping CampaignPatchRequest's title length constraint",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 85,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "CampaignController.java:72-77 has `@RequestBody CampaignPatchRequest body` with no @Valid. CampaignDtos.java:97-98 declares `@Size(min = 5, max = 300) String title` on that same record. CampaignService.update (CampaignService.java:238-260) re-validates budget/timeline manually but never re-checks title. Campaign.applyPatch (Campaign.java:410-432) does only `if (title != null) this.title = title;`. V4__campaigns.sql:4 defines `title VARCHAR(300) NOT NULL`.",
+      "location": "influora-api/src/main/java/com/influora/web/CampaignController.java:72-77",
+      "impact": "A brand can PATCH a campaign's title to an empty string or (if past 300 chars) trigger a DataIntegrityViolationException that GlobalExceptionHandler turns into a generic 409 CONFLICT instead of a clean 400 field-level validation error -- both a data-quality bug and a confusing error UX for a case the DTO was explicitly designed to prevent.",
+      "recommended_fix": "Add @Valid to the update(...) method's @RequestBody CampaignPatchRequest parameter, and/or add an explicit title length check in CampaignService.update alongside the existing budget/timeline validation.",
+      "verification_required": "Send a live PATCH /campaigns/{id} with title=\"\" and with a >300-char title against a running instance and confirm the actual response codes/persisted state."
+    },
+    {
+      "id": "VIK-02",
+      "title": "Four fully-implemented endpoints (escrow payout, contract amend, contract cancel, plus the already-documented escrow refund) have no caller anywhere in the frontend",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 78,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "grep -rn across src/ for 'escrow/payout', 'contracts/${...}/amend', 'contracts/${...}/cancel' returned zero matches outside their own backend definitions. EscrowController.java:138-151 documents /refund as an intentional operator-only primitive with no FE caller by design; no equivalent comment exists for /payout, /amend, or /cancel.",
+      "location": "influora-api/src/main/java/com/influora/web/EscrowController.java:168 (payout); influora-api/src/main/java/com/influora/web/ContractController.java:125,144 (amend, cancel)",
+      "impact": "A brand or creator currently has no in-product way to amend or cancel a signed contract, and no way to manually trigger an escrow-to-bank payout, even though the backend fully implements ownership checks, idempotency and state transitions for all three. Either the UI is missing a real feature, or this is dead code that should be flagged/removed.",
+      "recommended_fix": "Confirm with product/Arjun whether contract amend/cancel and manual escrow payout are intended to ship; if yes, wire FE callers in src/lib/api.ts; if no, mark the endpoints with the same explicit 'no FE caller by design' javadoc EscrowController already uses for /refund.",
+      "verification_required": "Product confirmation of intended UX for contract amendment/cancellation and manual payout triggering."
+    },
+    {
+      "id": "VIK-03",
+      "title": "GET /wallet/balance has no frontend caller (superseded by GET /wallet)",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "grep -rn \"wallet/balance\" src/ returned zero matches; src/lib/api.ts's wallet.getSummary() calls GET /wallet (api.ts:3700) which already returns full balance data via WalletSummaryResponse.",
+      "location": "influora-api/src/main/java/com/influora/web/WalletController.java:61-70",
+      "impact": "Low -- unreachable/duplicate API surface, not a functional gap since /wallet already covers the same data. Minor unnecessary attack surface and maintenance cost.",
+      "recommended_fix": "Either remove GET /wallet/balance if truly redundant, or confirm a planned caller (e.g. a lighter-weight balance-only widget) exists.",
+      "verification_required": "None blocking; low-priority cleanup item."
+    },
+    {
+      "id": "VIK-04",
+      "title": "8 admin-console backend endpoints have no caller anywhere in the admin frontend",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 78,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "Extracted all 78 distinct apiRequest() call paths from src/admin/services/api-contracts.ts and diffed against the 90 distinct /admin/** backend routes; the following 8 backend routes matched no FE call, each independently confirmed with a second, path-specific grep across all of src/admin/ (component/hook/page files, not just api-contracts.ts): DELETE /admin/external-creators/{id} (AdminExternalCreatorController.java:60), PUT /admin/creator-agent/creators/{id}/monthly-cap (AdminCreatorAgentController.java:52), POST /admin/brands/{id}/reanalyze (AdminBrandController.java:183), POST /admin/auth/mfa/reset/{targetAdminId} (AdminAuthController.java:135), POST /admin/emails/custom/{campaignId}/cancel (AdminEmailController.java:74), GET /admin/festival-enquiries/{id}/existing-account (AdminFestivalEnquiryController.java:126), POST /admin/festival-enquiries/{id}/link-existing (AdminFestivalEnquiryController.java:108), POST /admin/platform-stats/backfill (AdminPlatformStatBackfillController.java:36).",
+      "location": "See per-route file:line list in evidence field",
+      "impact": "Admin operators cannot, from the console UI: delete a bad external-creator import; set a creator's Meera monthly spend cap; force a brand's site to be re-analyzed; reset another admin's MFA after a lockout; cancel an already-queued custom email blast; or link/attach an existing sponsor account during festival-enquiry review. Each of these looks operationally important (especially MFA reset and email-blast cancel), so this is most likely a missing UI affordance, not intentionally dead code (none carry an EscrowController-style 'no FE caller by design' comment).",
+      "recommended_fix": "Wire admin UI actions for each of the 8 routes, prioritizing MFA reset (account-recovery blocker) and email-campaign cancel (a stuck send has no in-app kill switch).",
+      "verification_required": "Confirm with Arjun/product whether these 8 are deliberately ops-only (curl/Postman) tools or missing UI work."
+    },
+    {
+      "id": "VIK-05",
+      "title": "Meera on-behalf JWT has no jti single-use/replay enforcement (self-documented, confirmed absent in code)",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "OnBehalfAuthResolver.java:44-49 javadoc: '...and jti single-use/replay is not yet enforced. See the design doc §3 for the exact gap.' OnBehalfTokenService.java:36-43 mints a jti claim (comment: 'random -- single-use tracking key; the consumed-jti replay store itself is a separate fix, design doc §2/§5, NOT implemented') with MAX_TTL_SECONDS = 120. Grepped both files for 'jti' -- the only hits are these two comments; no code path reads/records/checks the claim.",
+      "location": "influora-api/src/main/java/com/influora/security/OnBehalfAuthResolver.java:44-49; influora-api/src/main/java/com/influora/service/meera/OnBehalfTokenService.java:36-43",
+      "impact": "Within a 120-second window, a captured on-behalf JWT (which authorizes the Python Meera service to call /internal/meera/* tools as a specific brand user) could be replayed to invoke a different tool call than originally intended, since the token proves 'this workspace, this role' but not 'this specific tool invocation, once.' The blast radius is narrowed by the 120s TTL and by the mesh-level HMAC gate (InternalServiceTokenFilter) that must also be defeated or the token must be captured server-to-server, not from a browser.",
+      "recommended_fix": "Implement the jti consumed-token store the codebase's own comments describe as a queued, not-yet-done fix (design doc §2/§5).",
+      "verification_required": "This is the team's own documented, not-yet-scheduled gap; no independent runtime replay test was performed for this audit."
+    },
+    {
+      "id": "VIK-06",
+      "title": "(Positive/informational) Zero stale FE-to-BE contract mismatches found in the main app's API client",
+      "severity": "P3",
+      "evidence_score": 3,
+      "confidence": 80,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "194 distinct (verb, path) calls extracted from src/lib/api.ts's client.request()/requestWithMeta()/requestOrNull() family, normalized and diffed against the full 343-route backend inventory extracted from all 91 controllers' @{Get,Post,Put,Patch,Delete}Mapping annotations -- 0 mismatches.",
+      "location": "src/lib/api.ts (whole file, 7037 lines)",
+      "impact": "None (this is a positive finding, not a defect) -- indicates the main app's FE/BE contract is being kept in sync, likely helped by the project's own automated contract gate (.proof-os/gates/fe_be_endpoints.py, present in the RC tree but not independently exercised for this audit).",
+      "recommended_fix": "N/A -- recorded as evidence for the 'stale contract' question the task asked, not an action item.",
+      "verification_required": "None; informational."
+    }
+  ],
+  "features": [
+    {
+      "name": "Wallet & creator payout API (WalletController, PayoutService)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "Code-level review of withdraw/topup/payout-methods flows: idempotency, pessimistic locking, KYC precondition, per-day withdrawal caps, and a documented orphaned-debit reconciliation job are all present and internally consistent. No live run or test execution performed.",
+      "user_type": "creator, brand"
+    },
+    {
+      "name": "Escrow fund/release/refund API (EscrowController, EscrowService)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "Fund amount is always server-derived (never client-supplied), release/refund payee resolution is server-side, idempotency enforced. /refund and /payout confirmed to have no FE caller (see VIK-02).",
+      "user_type": "brand"
+    },
+    {
+      "name": "Campaign CRUD API (CampaignController, CampaignService)",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 80,
+      "evidence": "create/list/get/delete/duplicate are validated and ownership-checked; update (PATCH) has the confirmed @Valid gap in VIK-01 that lets an invalid title bypass its own constraint.",
+      "user_type": "brand"
+    },
+    {
+      "name": "Contract lifecycle API (ContractController, ContractService)",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 78,
+      "evidence": "generate/list/get/sign are called from the FE (grep-confirmed); amend and cancel are fully implemented server-side but have zero FE caller (VIK-02), so those two lifecycle transitions are unreachable from the product today.",
+      "user_type": "brand, creator"
+    },
+    {
+      "name": "Admin console API surface (23 Admin*Controller classes)",
+      "status": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 76,
+      "evidence": "78 of 90 distinct /admin/** routes have a confirmed admin-FE caller; 8 do not (VIK-04).",
+      "user_type": "admin"
+    },
+    {
+      "name": "Meera AI tool-call bridge (MeeraInternalController, OnBehalfAuthResolver, ToolCallValidator)",
+      "status": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 72,
+      "evidence": "Three-layer defense (mesh HMAC + on-behalf JWT + tool-tier whitelist) is well-designed and internally consistent; one self-documented, code-confirmed gap remains (VIK-05, jti replay).",
+      "user_type": "brand (via Meera AI on their behalf)"
+    }
+  ],
+  "area": {
+    "name": "API layer (influora-api Spring REST controllers)",
+    "status": "Mostly sound, thin-controller architecture with consistent auth pattern; a handful of concrete gaps found",
+    "evidence_level": 3,
+    "confidence": 78,
+    "main_evidence": "91 @RestController classes, 343 endpoint mappings, all following one consistent thin-delegation pattern; role authorization enforced centrally in SecurityConfig (no @PreAuthorize anywhere, by design) with an explicit, narrow permitAll allowlist; money-moving endpoints consistently idempotency-gated; FE/BE contract for the main app (api.ts, 194 calls) has zero stale references against the full backend route inventory.",
+    "main_uncertainty": "This audit read ~10 of 91 controllers in full depth (Wallet, Escrow, Campaign, Deal, Contract, MeeraInternal, plus lighter passes on Admin*, Auth, Billing); the remaining ~80 were inventoried by signature/annotation only, not by full-body review, so controller-embedded business logic, IDOR gaps, or additional missing-@Valid cases could exist among them undetected. No runtime testing was performed at all.",
+    "limitations": "Read-only, static/code audit only, against a clean checkout of commit 115f698. graphify was unavailable (graphify-out/ does not exist in the RC tree). Pagination/rate-limit bounding was not systematically checked across all 91 controllers (time-boxed out, flagged as an open question). No live server was started and no HTTP requests were actually sent."
+  },
+  "extra": "ENDPOINT INVENTORY SUMMARY\n91 @RestController classes | 343 distinct verb+path mappings (path vars normalized to {})\n\nPer-controller endpoint counts (name|count):\nMetaPlatformCallbackController|2\nRazorpayWebhookController|1\nAccountController|2\nAdminAuthController|7\nAdminBillingController|4\nAdminBrandController|9\nAdminCampaignController|4\nAdminCampaignCouponController|2\nAdminCreatorAgentController|2\nAdminCreatorConnectionController|5\nAdminCreatorController|9\nAdminDashboardController|3\nAdminDisputeController|2\nAdminEmailController|8\nAdminErrorLogController|4\nAdminEscrowController|1\nAdminExternalCreatorController|3\nAdminFestivalEnquiryController|5\nAdminFestivalMetricsController|1\nAdminFinanceController|4\nAdminMarketingController|2\nAdminModerationController|3\nAdminPlatformStatBackfillController|1\nAdminRevenueController|1\nAdminSupportController|7\nAdminSupportStatsController|1\nAnalyticsController|4\nApprovalWorkflowController|2\nAuditLogController|3\nAuthController|12\nBillingController|6\nBrandDeliverableController|5\nBrandDisputeController|1\nBrandInvoicingController|4\nBrandPlatformFeeController|1\nBrandReviewController|3\nCampaignController|7\nCampaignTemplateController|4\nCampaignTrackingController|4\nClientErrorController|1\nContractController|8\nConversionWebhookController|3\nConversionWebhookSecretController|2\nCreatorAffiliateEarningController|1\nCreatorAgentController|7\nCreatorAnalyticsController|4\nCreatorApplicationController|2\nCreatorCampaignController|3\nCreatorController|9\nCreatorCopilotController|3\nCreatorCouponController|1\nCreatorDeliverableController|9\nCreatorDisputeController|2\nCreatorInvoicingController|4\nCreatorMeeraController|5\nCreatorOnboardingController|4\nCreatorPlatformFeeController|1\nCreatorReviewController|3\nDashboardController|2\nDealController|16\nEscrowController|6\nExternalCreatorController|4\nFestivalCouponCopyController|1\nFestivalEnquiryController|2\nHealthController|1\nJwksController|1\nMeCreatorProfileController|2\nMeTaxIdentityController|1\nMeeraController|7\nMeeraInteractionController|1\nMeeraInternalController|11\nMetaOAuthController|4\nNotificationController|6\nOnboardingController|5\nPlatformFeeAdminController|3\nPortfolioController|8\nPublicConfigController|2\nPublicCreatorController|1\nReportExportController|1\nShopifyConnectController|2\nShopifyWebhookController|1\nStoreIntegrationStatusController|2\nSupportController|4\nTrendSparkController|3\nUploadController|1\nUserController|2\nWalletController|9\nWooCommerceConnectController|1\nWooCommerceWebhookController|1\nWorkspaceController|4\nWorkspaceMemberController|7\n\n====================================================================================================\nDETAILED TABLE -- HIGH-RISK / FINANCIAL / SECURITY-CRITICAL ENDPOINTS\nColumns: Route | Method | AuthN | AuthZ/ownership | Validation | ReqDTO->RespDTO | Status codes | DB writes | Txn boundary | Idempotency | Pagination | Rate limit | FE caller | Notes\n====================================================================================================\nPOST /wallet/topup | JWT (brand) | brandContext.requireRole via WalletTopUpService (OWNER/ADMIN) | @Valid WalletTopUpRequest | WalletTopUpRequest->WalletTopUpResponse | 200/400 | wallet_topups insert, Razorpay order | service @Transactional | Idempotency-Key REQUIRED (400 if missing) | N/A | AuthRateLimitFilter (mesh-wide) | src/lib/api.ts wallet.topUp | Amount validated server + client; no fee cut here (B1 separate wave).\nPOST /wallet/withdraw | JWT (creator) | creatorContext.requireCreator | @Valid CreatorWithdrawRequest | ->CreatorWithdrawResponse | 201/400/409/429 | wallet_transactions, payouts, RazorpayX call | NOT single @Transactional across debit+gateway call by design; separate PayoutOrphanedDebitSweepJob reconciles | Idempotency-Key optional at controller, REQUIRED by service (400 if blank); composite-key length validated before DB write | N/A | daily withdrawal count cap (service-level) | src/lib/api.ts wallet.withdraw | KYC precondition + primary bank account required; pessimistic row lock on wallet.\nPOST /wallet/escrow/fund | JWT (brand) | brandContext.requireBrandWorkspace + role gate inside EscrowService | @Valid EscrowFundRequest (NO amount field -- server-derived) | ->EscrowFundResponse | 200/400 | escrow_holds insert, Razorpay order | service @Transactional | Idempotency-Key REQUIRED | N/A | mesh-wide filter | src/lib/api.ts + meera-api.ts (fundEscrow) | Amount always re-derived server-side from campaign/milestone -- cannot be client-supplied.\nPOST /wallet/escrow/release | JWT (brand) | brandContext.requireBrandWorkspace; payee resolved server-side from collaboration | @Valid EscrowReleaseRequest (exactly one of milestoneId/escrowHoldId) | ->EscrowStatusResponse | 200/400 | escrow_holds update, wallet credit | service @Transactional | Idempotency-Key REQUIRED | N/A | mesh-wide filter | src/lib/api.ts | Payee never accepted from request body.\nPOST /wallet/escrow/refund | JWT (brand) | brandContext.requireBrandWorkspace; OWNER/ADMIN + FUNDED-only enforced in EscrowService.refund | @Valid EscrowRefundRequest | ->EscrowStatusResponse | 200/400 | escrow_holds update | service @Transactional | Idempotency-Key REQUIRED | N/A | mesh-wide filter | NONE -- documented intentional operator-only route (EscrowController.java:138-151) | Policy: refunds only via dispute flow in-product.\nPOST /wallet/escrow/payout | JWT (brand) | brandContext.requireMember + requireRole(OWNER,ADMIN) in PayoutService | @Valid PayoutRequest | ->PayoutResponse | 200/400 | payouts insert, wallet debit, RazorpayX call | debit and gateway call are in separate transactions BY DESIGN (see VIK note); validation runs before idempotency reservation | Deterministic key derived server-side: 'payout:'+milestoneId (no client header needed) | N/A | mesh-wide filter | NONE FOUND (VIK-02) | Ownership checked before RELEASED-state check to avoid cross-tenant state oracle.\nPATCH /campaigns/{id} | JWT (brand) | brandContext.requireMember + requireRole(OWNER,ADMIN,MANAGER); loadOwnedForUpdate row-locks | @RequestBody WITHOUT @Valid (VIK-01 -- CampaignPatchRequest's @Size/@Valid constraints skipped) | CampaignPatchRequest->CampaignResponse | 200 | campaigns update, possible brand_fee charge on DRAFT/PAUSED->ACTIVE | service @Transactional, row-locked load | N/A (not a payment-initiating call itself) | N/A | mesh-wide filter | src/lib/api.ts campaigns.update | Publish-time fee charged exactly once on the real transition, snapshotted before mutation.\nPOST /contracts/{id}/sign | JWT (brand or creator) | ContractService ownership check (brandContext) | @Valid(required=false) ContractSignRequest | ->ContractResponse | 200 | contracts update, milestone activation | service @Transactional | N/A | N/A | mesh-wide filter | src/lib/api.ts contracts.sign | —\nPOST /contracts/{id}/amend | JWT (brand) | ContractService ownership check | @Valid ContractAmendRequest | ->ContractResponse | 200 | contracts update | service @Transactional | N/A | N/A | mesh-wide filter | NONE FOUND (VIK-02) | Fully implemented, unreachable from FE today.\nPOST /contracts/{id}/cancel | JWT (brand or creator) | ContractService ownership check | @Valid(required=false) ContractCancelRequest | ->ContractResponse | 200 | contracts update, possible escrow reversal | service @Transactional | N/A | N/A | mesh-wide filter | NONE FOUND (VIK-02) | Fully implemented, unreachable from FE today.\nPOST /internal/meera/create_campaign | Dual: InternalServiceTokenFilter mesh HMAC + X-Onbehalf-Authorization JWT | OnBehalfAuthResolver.resolveForWorkspace + ToolCallValidator tier gate (Commit-tier) | tool-input specific validation inside CreateCampaignExecutor | raw tool input -> CreateCampaignResult | 200/401/403 | campaigns insert (as the on-behalf brand) | tool-call scoped, per-tool idempotency via meera_tool_calls.idempotency_key (V14 UNIQUE) | meera_tool_calls unique idempotency key (V14) | N/A | mesh HMAC filter | influora-ai/app/clients/spring.py (Python service, not in this repo's src/) | VIK-05: on-behalf JWT jti replay not enforced (120s TTL bounds exposure).\nPOST /internal/meera/request_payment | Dual: mesh HMAC + on-behalf JWT | OnBehalfAuthResolver + Commit-tier gate; returns PENDING_CONFIRM only -- never moves money itself | tool-input specific | ->RequestPaymentResult | 200/401/403 | none (proposal only) | N/A | meera_tool_calls unique key | N/A | mesh HMAC filter | influora-ai (Python) | 'Meera proposes; Spring disposes; the human commits money' -- actual money movement is the separate public escrow/fund endpoint the browser calls on human click.\nPOST /admin/auth/mfa/reset/{targetAdminId} | JWT (ROLE_ADMIN, filter-level) | No further per-call role tiering found (single ADMIN role for all admin actions, per filter) | @Valid? not captured in this pass | -> MessageResponse | 200 | admin_users MFA fields reset | service-level | N/A | N/A | mesh-wide filter | NONE FOUND (VIK-04) | No admin-console UI action wired to this route.\nPUT /admin/creator-agent/creators/{id}/monthly-cap | JWT (ROLE_ADMIN) | filter-level ADMIN only | @Valid SetMonthlyCapRequest | ->MonthlyCapResponse | 200 | creator_agent config update | service-level | N/A | N/A | mesh-wide filter | NONE FOUND (VIK-04) | —\n\n====================================================================================================\nFE <-> BE CROSS-REFERENCE RESULTS\n====================================================================================================\napi.ts: 194 distinct (verb,path) calls extracted; 0 stale (no match in 343-route BE inventory).\napi-contracts.ts (admin): 78 distinct calls extracted; 8 BE /admin/** routes with no match (VIK-04).\nmeera-api.ts: spot-checked (not exhaustively regex-extracted) -- sessions, messages, credits, brand-profile, escrow status/fund, workspace meera interactions, voice speak/transcribe (raw fetch) all confirmed connected to an existing controller method.\nUnconnected main-app routes (whole-tree grep, zero hits beyond own definition): GET /wallet/balance, POST /wallet/escrow/payout, POST /wallet/escrow/refund (documented intentional), POST /contracts/{id}/amend, POST /contracts/{id}/cancel.\nUnconnected admin routes (whole src/admin/ grep, zero hits beyond own definition): DELETE /admin/external-creators/{id}, PUT /admin/creator-agent/creators/{id}/monthly-cap, POST /admin/brands/{id}/reanalyze, POST /admin/auth/mfa/reset/{id}, POST /admin/emails/custom/{id}/cancel, GET /admin/festival-enquiries/{id}/existing-account, POST /admin/festival-enquiries/{id}/link-existing, POST /admin/platform-stats/backfill."
+}

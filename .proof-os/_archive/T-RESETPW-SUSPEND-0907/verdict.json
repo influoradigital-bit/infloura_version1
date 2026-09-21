@@ -1,0 +1,18 @@
+{
+  "verdict": "believed",
+  "oracle": "mvn",
+  "isolation": "fresh-context",
+  "done_when": "resetPassword refuses a SUSPENDED or DEACTIVATED account with ACCOUNT_SUSPENDED 403 and mutates nothing, still allows ACTIVE and PENDING_VERIFICATION accounts through, and mvn test run with cwd influora-api exits 0",
+  "not_checked": [
+    "the reachable suspension flags: an admin-suspended brand or creator has users.status ACTIVE and passes this guard, so a product-suspended account CAN still rotate its password — declined deliberately, not covered",
+    "changePassword rotates a password hash with no status guard at all; left open and flagged separately",
+    "a password-reset token minted before account soft-deletion still resolves and writes a hash onto the anonymized row — AccountController revokes refresh tokens but not reset tokens",
+    "the three mirror guards at brandLogin/creatorLogin/refresh were not re-proven by this change",
+    "no HTTP/integration proof that AuthController surfaces 403 ACCOUNT_SUSPENDED, or that the transaction rolls back — these are Mockito unit tests and the 15 skipped are the Testcontainers classes",
+    "the check ordering (valid status + bad token, locked + bad token) was read from source, not pinned by a test",
+    "whether an operator ever actually sets users.status by hand — the only route that makes any of these four guards fire — was assumed from the F-0601 repair practice, not verified against ops history"
+  ],
+  "skipped": [
+    {"step": "re-running the full 2624-test suite after the final comment correction", "reason": "the only change after the green full run was comment text inside one method; the gate re-ran afterwards and compiled the whole main tree plus 53 auth tests, so behaviour could not have moved"}
+  ]
+}

@@ -1,0 +1,76 @@
+{
+ "rows": [
+  {
+   "subject": "F-0725 gate (.proof-os/gates/store-webhook-terminal-outcome-acked.sh)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/store-webhook-terminal-outcome-acked.sh",
+    "result": "exit 0 - PROVED: terminal redemption outcomes are acknowledged 200 and transient ones still surface non-2xx, on both store webhooks",
+    "where": ".proof-os/gates/store-webhook-terminal-outcome-acked.sh:80"
+   }
+  },
+  {
+   "subject": "F-0725 gate sensitivity (falsification probe)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "isTerminal() forced to return false (behaviourally identical to the pre-fix rethrow), then mvn -o test -Dtest=ShopifyWebhookControllerTest,WooCommerceWebhookControllerTest",
+    "result": "the gate correctly returns non-zero against pre-fix behaviour, detecting all 8 parameterized terminal cases plus both cross-tenant tests; the transient test stays green, which is the expected pre-fix behaviour",
+    "where": ".proof-os/tasks/T-F0725-0907/prefix-probe.log:1"
+   }
+  },
+  {
+   "subject": "influora-api full test suite (blast radius)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "MAVEN_OPTS=-Xmx2g mvn -o test (cwd influora-api)",
+    "result": "BUILD SUCCESS - 2673 tests ran and all passed; 15 more were not executed locally (Testcontainers classes, no Docker on this host)",
+    "where": ".proof-os/tasks/T-F0725-0907/fullsuite.log:9693"
+   }
+  },
+  {
+   "subject": "ShopifyWebhookController terminal-outcome handling",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o test -Dtest=ShopifyWebhookControllerTest",
+    "result": "18 tests ran and all passed, including the 4 new terminal-outcome cases and the transient case",
+    "where": "influora-api/src/main/java/com/influora/web/ShopifyWebhookController.java:179"
+   }
+  },
+  {
+   "subject": "WooCommerceWebhookController terminal-outcome handling",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o test -Dtest=WooCommerceWebhookControllerTest",
+    "result": "21 tests ran and all passed, including the 4 new terminal-outcome cases and the transient case",
+    "where": "influora-api/src/main/java/com/influora/web/WooCommerceWebhookController.java:266"
+   }
+  },
+  {
+   "subject": "ConversionWebhookController (deliberately unchanged)",
+   "owner": "vikram",
+   "status": "partial",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "read of the third RedemptionService.redeem call site against the F-0725 rationale",
+    "result": "left returning 4xx by design because its caller is the brand's own server reading our response, not a platform retry engine; if a brand implements its own retry the same storm shape is possible there and is not covered by this gate",
+    "where": "influora-api/src/main/java/com/influora/web/ConversionWebhookController.java:1"
+   }
+  }
+ ]
+}

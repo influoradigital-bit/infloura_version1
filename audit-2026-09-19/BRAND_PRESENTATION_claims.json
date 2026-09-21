@@ -1,0 +1,486 @@
+{
+  "presentation": "BRAND_PRESENTATION.pptx",
+  "release_candidate": "115f698",
+  "ceo_decision": {
+    "decision": "NO-GO",
+    "evidence_level": 3,
+    "confidence": 75
+  },
+  "prepared_by": "Riya (Sage presentation design)",
+  "date": "2026-09-19",
+  "method": "Every capability claim on the deck is drawn from _raw/merged-register.json \"features\" status (WORKING/VERIFIED WORKING -> Available now, PARTIALLY WORKING/CONFIGURATION DEPENDENT/INCOMPLETE -> In development, NOT IMPLEMENTED/PLACEHOLDER/NOT VERIFIED -> Planned or omitted) and cross-checked against _raw/final-decision.json and _raw/verification-and-review.json for any EV that changes a status. Claims tied to a false/removed marketing claim in the audit (e.g. payment custody, TDS) are explicitly omitted from the deck rather than shown as Planned.",
+  "slide_count": 12,
+  "claims": [
+    {
+      "slide": 2,
+      "area": "Problem framing",
+      "claim_text": "Creator campaigns commonly run on spreadsheets/WhatsApp/email with no shared record, manual creator discovery, and payment as a trust exercise.",
+      "status_on_slide": "context (industry framing, not a product capability claim)",
+      "evidence_ids": [],
+      "confidence": null,
+      "notes": "General market-problem framing echoing Influora's own honest homepage copy (\"Influora replaces the spreadsheet-WhatsApp-invoice mess\"). No customer counts, revenue, or market-size figures invented, per merged-register feature \"Honest, non-fabricated homepage proof points\" (VERIFIED WORKING, E5/C88)."
+    },
+    {
+      "slide": 3,
+      "area": "Discover pillar",
+      "claim_text": "Brands can browse and shortlist creators in a marketplace (apply/detail flows).",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 85,
+      "notes": "merged-register.json features: \"Creator marketplace browse/detail/apply\" = WORKING, E4/C85."
+    },
+    {
+      "slide": 3,
+      "area": "Collaborate pillar",
+      "claim_text": "Brands and creators brief, chat and track deliverables in a per-deal room.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 90,
+      "notes": "features: \"Deal-room messaging incl. SSE stream\" = WORKING E4/C90; \"Creator deliverables: list/bulk/upload/status/submit/metrics/proof/mark-posted/verify\" = WORKING E5/C90."
+    },
+    {
+      "slide": 3,
+      "area": "Pay on approval pillar",
+      "claim_text": "Campaign funds are held in the brand's Influora wallet and released to the creator after approval.",
+      "status_on_slide": "In development",
+      "evidence_ids": [
+        "EV-002"
+      ],
+      "confidence": 77,
+      "notes": "features: \"Escrow funding\" = PARTIALLY WORKING E5/C77, related_ev EV-002 (re-funding a funded/released milestone can double-debit — verified by verification-and-review.json). The approval→release step itself is WORKING (E5/C83, EV-019/EV-021) and is called out separately on the Payments & Trust slide."
+    },
+    {
+      "slide": 4,
+      "area": "Journey: Create & verify workspace",
+      "claim_text": "Brand sign-up (email OTP) and KYC verification.",
+      "status_on_slide": "In development",
+      "evidence_ids": [
+        "EV-016"
+      ],
+      "confidence": 70,
+      "notes": "features: \"Brand email-OTP signup/verify/register/login\" PARTIALLY WORKING E3/C70; \"Brand onboarding + KYC\" PARTIALLY WORKING E5/C79, related EV-016 (admins cannot view uploaded KYC docs / are not notified)."
+    },
+    {
+      "slide": 4,
+      "area": "Journey: Discover & shortlist",
+      "claim_text": "Creator discovery/search and filtering.",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 70,
+      "notes": "features: \"Creator discovery\" PARTIALLY WORKING E4/C70 (marketplace browse/apply itself is WORKING and shown on Slide 3/5)."
+    },
+    {
+      "slide": 4,
+      "area": "Journey: Launch & fund",
+      "claim_text": "Campaign creation/publish and wallet funding.",
+      "status_on_slide": "In development",
+      "evidence_ids": [
+        "EV-005",
+        "EV-002"
+      ],
+      "confidence": 72,
+      "notes": "features: \"Campaign CRUD / publish\" PARTIALLY WORKING E5/C72 (EV-005: create() can reach ACTIVE without the funding/fee gate that update() enforces); \"Escrow funding\" PARTIALLY WORKING E5/C77 (EV-002)."
+    },
+    {
+      "slide": 4,
+      "area": "Journey: Collaborate",
+      "claim_text": "Deal-room chat between brand and creator.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 90,
+      "notes": "features: \"Deal-room messaging incl. SSE stream\" WORKING E4/C90."
+    },
+    {
+      "slide": 4,
+      "area": "Journey: Approve & release payment",
+      "claim_text": "Brand approves a deliverable and payment releases to the creator.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [
+        "EV-019",
+        "EV-021"
+      ],
+      "confidence": 83,
+      "notes": "features: \"Deliverable approval -> payment release\" WORKING E5/C83. Note: final-decision.json flags a role-gate gap (EV-021) on who can trigger approval, masked today only because release itself was not yet auto-wired (EV-019); this is a backend authorization hardening item, tracked for fix, not shown on the customer-facing slide."
+    },
+    {
+      "slide": 5,
+      "area": "Creator Marketplace",
+      "claim_text": "Browse creator profiles and apply.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 85,
+      "notes": "features: \"Creator marketplace browse/detail/apply\" WORKING E4/C85."
+    },
+    {
+      "slide": 5,
+      "area": "Deal Room",
+      "claim_text": "Live chat and briefs per deal.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 90,
+      "notes": "features: \"Deal-room messaging incl. SSE stream\" WORKING E4/C90."
+    },
+    {
+      "slide": 5,
+      "area": "Deliverable Tracking",
+      "claim_text": "Creators submit, and brands verify/mark-posted, deliverables.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 90,
+      "notes": "features: \"Creator deliverables: list/bulk/upload/status/submit/metrics/proof/mark-posted/verify\" WORKING E5/C90."
+    },
+    {
+      "slide": 5,
+      "area": "Two-way Reviews",
+      "claim_text": "Brands and creators submit and receive reviews.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 80,
+      "notes": "features: \"Two-way reviews: submit / received / flag\" WORKING E4/C80."
+    },
+    {
+      "slide": 5,
+      "area": "Tracking Links",
+      "claim_text": "Brand-facing tracking links and campaign coupons.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 90,
+      "notes": "features: \"Tracking links + campaign coupons (brand-facing)\" WORKING E4/C90."
+    },
+    {
+      "slide": 5,
+      "area": "Team Workspaces",
+      "claim_text": "Invite/accept/remove team members with roles.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 92,
+      "notes": "features: \"Team members — invite / accept / remove / list / invites / revoke / switch\" WORKING E5/C92."
+    },
+    {
+      "slide": 5,
+      "area": "Auto-drafted Contracts",
+      "claim_text": "Contracts are generated per deal.",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 79,
+      "notes": "features: \"Contracts\" PARTIALLY WORKING E4/C79; \"Contract cancel / amend\" PARTIALLY WORKING E3/C70."
+    },
+    {
+      "slide": 5,
+      "area": "Creator Analytics",
+      "claim_text": "Creator performance analytics/dashboards.",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 80,
+      "notes": "features: \"Creator analytics\" PARTIALLY WORKING E3/C80."
+    },
+    {
+      "slide": 6,
+      "area": "Wallet fund holding",
+      "claim_text": "Campaign budgets are held against the workspace wallet.",
+      "status_on_slide": "In development",
+      "evidence_ids": [
+        "EV-002"
+      ],
+      "confidence": 77,
+      "notes": "features: \"Escrow funding\" PARTIALLY WORKING E5/C77. EV-002 (P0, E4/C85): re-funding a FUNDED/RELEASED milestone can double-debit; must-fix before this is presented as fully reliable."
+    },
+    {
+      "slide": 6,
+      "area": "Approval-gated release",
+      "claim_text": "Payment releases to the creator only after the brand approves the deliverable.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [
+        "EV-019",
+        "EV-021"
+      ],
+      "confidence": 83,
+      "notes": "features: \"Deliverable approval -> payment release\" WORKING E5/C83."
+    },
+    {
+      "slide": 6,
+      "area": "Dispute resolution",
+      "claim_text": "A dispute-resolution flow exists for deal disagreements.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 80,
+      "notes": "features: \"Dispute resolution\" WORKING E4/C80."
+    },
+    {
+      "slide": 6,
+      "area": "GST-ready invoicing",
+      "claim_text": "GST invoices are generated for campaign/platform-fee spend.",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 82,
+      "notes": "features: \"GST invoices\" PARTIALLY WORKING E4/C82."
+    },
+    {
+      "slide": 6,
+      "area": "Regulatory/custody disclaimer",
+      "claim_text": "Influora facilitates payments; it is not a licensed payment aggregator and does not claim custody of funds.",
+      "status_on_slide": "Factual disclaimer (required correction)",
+      "evidence_ids": [
+        "EV-007",
+        "XR-ROHAN-01"
+      ],
+      "confidence": 85,
+      "notes": "final-decision.json: EV-007 (P0) found live copy falsely claiming an RBI-authorized PA holds funds and \"never pools\", while code pools funds in an Influora-owned wallet; XR-ROHAN-01 flags an unconditional \"Guaranteed payment\" claim. Required action: remove custody/RBI-PA/guaranteed claims and replace with a factual facilitator description — this slide follows that instruction and the standing rule that \"escrow\" and custody-license language are banned from brand/creator-facing copy (F-0851)."
+    },
+    {
+      "slide": 7,
+      "area": "Meera: campaign brief chat",
+      "claim_text": "Brands chat with Meera to plan/draft a campaign.",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 78,
+      "notes": "features: \"Brand Meera chat / turns\" PARTIALLY WORKING E5/C78; \"Meera create_campaign\" PARTIALLY WORKING E5/C76."
+    },
+    {
+      "slide": 7,
+      "area": "Meera: creator recommendations",
+      "claim_text": "Meera can surface creator recommendations in chat.",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 70,
+      "notes": "features: \"Meera show_creators\" PARTIALLY WORKING E3/C70."
+    },
+    {
+      "slide": 7,
+      "area": "Meera: budget estimate tool",
+      "claim_text": "Meera can calculate a campaign budget on request.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 75,
+      "notes": "features: \"calculate_budget tool (rate-band based)\" VERIFIED WORKING E3/C75."
+    },
+    {
+      "slide": 7,
+      "area": "Meera: voice",
+      "claim_text": "Voice conversations with Meera (speech-to-text/text-to-speech).",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 57,
+      "notes": "features: \"Meera voice STT/TTS\" PARTIALLY WORKING E5/C57 (lower confidence flagged in register)."
+    },
+    {
+      "slide": 7,
+      "area": "Meera: money-tool safety",
+      "claim_text": "Meera's tools are scoped and cannot move money directly; write actions run on an on-behalf, reviewed token.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 85,
+      "notes": "features: \"Money-tool exclusion + on-behalf scoped token\" VERIFIED WORKING E4/C85; \"Meera tool schemas (Anthropic-valid, no combinators)\" VERIFIED WORKING E4/C90; \"Prompt-injection isolation\" VERIFIED WORKING E3/C75. Note: the deck deliberately does not claim Meera can launch or fund a campaign end-to-end — \"Meera confirm_launch / AI campaign launch\" is CONFIGURATION DEPENDENT (E3/C69) and a related funding link is flagged broken in final-decision.json (EV-024), so that capability is intentionally omitted rather than shown as available."
+    },
+    {
+      "slide": 8,
+      "area": "WooCommerce integration",
+      "claim_text": "Brands can connect a WooCommerce store.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 72,
+      "notes": "features: \"WooCommerce integration\" WORKING E4/C72."
+    },
+    {
+      "slide": 8,
+      "area": "Shopify integration",
+      "claim_text": "Brands can connect a Shopify store.",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 74,
+      "notes": "features: \"Shopify integration\" PARTIALLY WORKING E4/C74."
+    },
+    {
+      "slide": 8,
+      "area": "Tracking links & coupons",
+      "claim_text": "Sales are attributed back to a creator's link or coupon.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 90,
+      "notes": "features: \"Tracking links + campaign coupons (brand-facing)\" WORKING E4/C90; \"Click redirect + conversion/redemption webhooks\" WORKING E4/C87."
+    },
+    {
+      "slide": 8,
+      "area": "Creator analytics",
+      "claim_text": "Performance dashboards per creator/campaign.",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 80,
+      "notes": "features: \"Creator analytics\" PARTIALLY WORKING E3/C80; \"Dashboard pulse/operations/financial + marketing reputation/growth\" PARTIALLY WORKING E3/C78."
+    },
+    {
+      "slide": 9,
+      "area": "Free tier price",
+      "claim_text": "No subscription cost on the Free tier.",
+      "status_on_slide": "Available now (figure)",
+      "evidence_ids": [],
+      "confidence": 55,
+      "notes": "Confirmed live in src/pages/pricing.tsx (₹0 tier, \"no subscription on Free\"). merged-register EV-100 (P2) flags that this figure is hand-duplicated across 3 files with no automated sync check — shown here as the currently documented/coded figure, not independently re-verified at runtime for this RC."
+    },
+    {
+      "slide": 9,
+      "area": "Free tier included features",
+      "claim_text": "Discover/shortlist, deal room, deliverable tracking and dispute resolution are on Free.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 80,
+      "notes": "Matches WORKING features already cited on Slides 3 & 5 (marketplace, deal room, deliverables, dispute resolution)."
+    },
+    {
+      "slide": 9,
+      "area": "Publish/platform fee rate",
+      "claim_text": "10% platform fee on Free, 7% on Pro, charged when a campaign is published.",
+      "status_on_slide": "Available now (figure)",
+      "evidence_ids": [
+        "EV-087",
+        "EV-060"
+      ],
+      "confidence": 80,
+      "notes": "EV-087 (E2/C80, code-confirmed): BrandCampaignFeeService.chargeOnPublish uses default brand fee 1000 bps (10%), Pro plan override 700 bps (7%). EV-060 (P2, E3/C85) flags the fee is resolved from 4 divergent sources across the codebase (yml default 15%, DB seed 10%, PRO override, one FE hardcode of 15%) — presented here using the DB-seeded/plan rates that BrandCampaignFeeService actually charges, not the unused yml default; this inconsistency is a code-hygiene item for engineering, not shown on the slide."
+    },
+    {
+      "slide": 9,
+      "area": "Pro plan price",
+      "claim_text": "₹4,999/month for Pro.",
+      "status_on_slide": "Available now (figure)",
+      "evidence_ids": [],
+      "confidence": 55,
+      "notes": "Confirmed live in src/pages/pricing.tsx (price: 4999). Same EV-100 sync caveat as the Free tier price."
+    },
+    {
+      "slide": 9,
+      "area": "Pro plan inclusions",
+      "claim_text": "400 AI credits/month and 5 team seats on Pro.",
+      "status_on_slide": "Available now (figure)",
+      "evidence_ids": [],
+      "confidence": 55,
+      "notes": "Confirmed live in src/pages/pricing.tsx copy (\"400 AI credits a month\", \"5 team seats\"). Same EV-100 caveat."
+    },
+    {
+      "slide": 9,
+      "area": "Self-serve Pro upgrade",
+      "claim_text": "Brands can subscribe/upgrade to Pro themselves.",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 58,
+      "notes": "features: \"Subscription billing\" PARTIALLY WORKING E3/C58."
+    },
+    {
+      "slide": 9,
+      "area": "TDS on payouts (deliberately omitted)",
+      "claim_text": "Not claimed on this deck.",
+      "status_on_slide": "Omitted / not shown as available",
+      "evidence_ids": [
+        "EV-031"
+      ],
+      "confidence": null,
+      "notes": "The live pricing/FAQ copy currently states \"TDS shown on payouts,\" but final-decision.json EV-031 (P1) found no TDS computation on the automated payout path and no Form 16A code; merged-register lists \"TDS on creator payouts\" as NOT IMPLEMENTED. Per the CEO decision this claim must be removed from customer-facing copy, so it is intentionally left off this deck rather than labelled Planned."
+    },
+    {
+      "slide": 10,
+      "area": "Create workspace & invite team",
+      "claim_text": "Combines brand sign-up (In development) with team invites (Available).",
+      "status_on_slide": "In development",
+      "evidence_ids": [],
+      "confidence": 70,
+      "notes": "features: \"Brand email-OTP signup/verify/register/login\" PARTIALLY WORKING E3/C70; underlying \"Team members ...\" invite flow is WORKING E5/C92, but sign-up itself gates the step so it is shown as In development."
+    },
+    {
+      "slide": 10,
+      "area": "Verify business (KYC)",
+      "claim_text": "Brand KYC verification step.",
+      "status_on_slide": "In development",
+      "evidence_ids": [
+        "EV-016"
+      ],
+      "confidence": 79,
+      "notes": "features: \"Brand onboarding + KYC\" PARTIALLY WORKING E5/C79, EV-016."
+    },
+    {
+      "slide": 10,
+      "area": "Browse marketplace",
+      "claim_text": "Browse the creator marketplace.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 85,
+      "notes": "features: \"Creator marketplace browse/detail/apply\" WORKING E4/C85."
+    },
+    {
+      "slide": 10,
+      "area": "Launch first campaign",
+      "claim_text": "Create/publish a campaign, optionally via Meera.",
+      "status_on_slide": "In development",
+      "evidence_ids": [
+        "EV-005"
+      ],
+      "confidence": 72,
+      "notes": "features: \"Campaign CRUD / publish\" PARTIALLY WORKING E5/C72; \"Meera create_campaign\" PARTIALLY WORKING E5/C76."
+    },
+    {
+      "slide": 10,
+      "area": "Fund campaign wallet",
+      "claim_text": "Fund a campaign from the workspace wallet.",
+      "status_on_slide": "In development",
+      "evidence_ids": [
+        "EV-002"
+      ],
+      "confidence": 70,
+      "notes": "features: \"Wallet top-up\" PARTIALLY WORKING E4/C70; \"Escrow funding\" PARTIALLY WORKING E5/C77, EV-002."
+    },
+    {
+      "slide": 10,
+      "area": "Collaborate & release payment",
+      "claim_text": "Deal-room collaboration through approval and payment release.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [
+        "EV-019",
+        "EV-021"
+      ],
+      "confidence": 83,
+      "notes": "Same basis as Slide 4/6: deal-room messaging WORKING, deliverable approval -> payment release WORKING E5/C83."
+    },
+    {
+      "slide": 11,
+      "area": "Roadmap: NOW column",
+      "claim_text": "Marketplace, deal rooms, deliverable tracking, reviews, dispute resolution, tracking links/coupons.",
+      "status_on_slide": "Available now",
+      "evidence_ids": [],
+      "confidence": 85,
+      "notes": "Rollup of WORKING/VERIFIED WORKING features already cited on Slides 3, 5, 6, 8."
+    },
+    {
+      "slide": 11,
+      "area": "Roadmap: NEXT column",
+      "claim_text": "KYC/launch/funding reliability, Meera co-pilot, Shopify, creator analytics.",
+      "status_on_slide": "In development",
+      "evidence_ids": [
+        "EV-016",
+        "EV-005",
+        "EV-002"
+      ],
+      "confidence": 74,
+      "notes": "Rollup of PARTIALLY WORKING / CONFIGURATION DEPENDENT features already cited on Slides 4, 6, 7, 8."
+    },
+    {
+      "slide": 11,
+      "area": "Roadmap: LATER column",
+      "claim_text": "Dedicated support, exportable reports, automated payout tax documentation, end-to-end AI launch.",
+      "status_on_slide": "Planned",
+      "evidence_ids": [
+        "EV-012",
+        "EV-031"
+      ],
+      "confidence": null,
+      "notes": "features: \"User support tickets\" NOT IMPLEMENTED (EV-012); \"Campaign report export\" NOT VERIFIED; \"TDS on creator payouts\" NOT IMPLEMENTED (EV-031, and a claim the CEO decision requires removing from live copy today); \"Meera confirm_launch / AI campaign launch\" CONFIGURATION DEPENDENT E3/C69, with its funding link flagged broken (EV-024) — listed here as a future direction, not an available capability."
+    },
+    {
+      "slide": 12,
+      "area": "CTA contact info",
+      "claim_text": "Contact info@influora.in / influora.in",
+      "status_on_slide": "n/a (contact details)",
+      "evidence_ids": [],
+      "confidence": null,
+      "notes": "Verified as the company's existing, real support/contact address used across live legal pages (terms-of-service.md, privacy-policy.md, dispute-resolution-policy.md, etc. all list Support: info@influora.in) and the influora.in domain used throughout the codebase (e.g. cdn.influora.in, app.influora.in). Not an invented contact."
+    }
+  ]
+}

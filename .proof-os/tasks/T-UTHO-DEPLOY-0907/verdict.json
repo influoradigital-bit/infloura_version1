@@ -1,0 +1,36 @@
+{
+ "verdict": "believed",
+ "oracle": "model",
+ "isolation": "fresh-context",
+ "done_when": "Priya's report answers all five questions; every claim cites a specific file:line or a quoted line from live-state.txt; and the report ends with an explicit GO or NO-GO on deploying Influora application changes to the Utho box, with conditions attached.",
+ "not_checked": [
+  "whether any of the nine ordered steps actually works - none was executed, so no rollback in the plan has been tested",
+  "which compose file owns the running influora-api and influora-ai containers - neither sets container_name and both images are local tags, so a repo-side compose up would build a parallel stack rather than update these; Steps 4 and 5 are not executable until Step 0 answers this",
+  "whether the JS bundle now served from /var/www/influora actually calls ai.influora.in - not read, so the blast radius of the Meera route change is unmeasured",
+  "swap and disk headroom on the box - the ordering assumes Step 0 will report them",
+  "whether the live facts are current - every one is a transcription of output the human pasted at a single moment on 2026-09-07, not a live re-read; the box has at least one other operator",
+  "whether influora-api's own env agrees with the nginx topology - its DATASOURCE, allowed-origins and public-chat-url were never read"
+ ],
+ "skipped": [
+  {
+   "step": "gates/frontend.sh",
+   "reason": "resolver offered it; it lints src/ and cannot observe a remote nginx topology, a container port binding or a runbook's disagreement with a live box - the entire subject of this task"
+  },
+  {
+   "step": "gates/build.sh",
+   "reason": "same - a green repo build says nothing about whether deploy/utho/ is safe to apply to 150.241.245.242"
+  },
+  {
+   "step": "gates/build.mvn.sh",
+   "reason": "same - no Java source was changed by this task"
+  },
+  {
+   "step": "gates/build.node.sh",
+   "reason": "same - no frontend source was changed by this task"
+  },
+  {
+   "step": "live re-read of the box",
+   "reason": "every live fact is a transcription the human pasted once on 2026-09-07; the review was explicitly forbidden from running commands against production, so no fact here was re-verified at review time"
+  }
+ ]
+}

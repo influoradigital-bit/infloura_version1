@@ -1,0 +1,226 @@
+{
+  "domain": "Brand workspace, onboarding & team (18 endpoints)",
+  "release_candidate": "commit 115f698, checked out clean at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+  "questions": [
+    {
+      "q": "Does the server-side onboarding-completion check (OB-2, App.tsx ProtectedRoute) correctly distinguish a workspace OWNER's own unfinished onboarding from an invited guest's session, so an invitee isn't wrongly sent to the onboarding wizard?",
+      "a": "Yes. OnboardingService.getBrandOnboardingStatus (OnboardingService.java:109-115) OR's user.isOnboardingCompleted() with isGuestInCurrentWorkspace (java:126-130), which returns true whenever the caller's role in the CURRENT workspace isn't OWNER. Verified in source and by running OnboardingServiceWorkspaceGuardTest (mvn -Dtest, exit 0)."
+    },
+    {
+      "q": "Is POST /workspace/members/accept truly gated by an authenticated principal plus an email match, closing the 'public, no-auth accept' hole the original task brief described?",
+      "a": "Yes. WorkspaceMemberService.acceptInvite (java:197-258) requires a normal AuthPrincipal (not in SecurityConfig permitAll) and rejects when principal.getEmail() != invite.getEmail() (INVITE_EMAIL_MISMATCH, 403). Verified via acceptInvite_emailMismatch_rejected and acceptInvite_happyPath_createsMemberAndMarksAccepted (mvn run, exit 0)."
+    },
+    {
+      "q": "Can DELETE /workspace/members/{memberId} ever leave a workspace with zero active OWNERs?",
+      "a": "No. deactivateMember (WorkspaceMemberService.java:265-298) counts active OWNERs and throws CANNOT_REMOVE_SOLE_OWNER (409) when activeOwners <= 1 before deactivating. Verified via deactivateMember_soleOwnerProtected (mvn run, exit 0)."
+    },
+    {
+      "q": "Does the LIVE workspace-switch endpoint (POST /workspace/members/switch) check workspace.isSuspended() to prevent indefinite session renewal on a suspended workspace, per the F-0457 fix note in the code?",
+      "a": "Yes, verified in source (WorkspaceMemberService.java:394-406) and via switchWorkspace_suspendedTarget_rejected test (mvn run, exit 0). A second, textually-identical guard also now exists in the DEAD WorkspaceService.switchWorkspace copy (java:189-194), but nothing routes to it (see finding on duplication)."
+    },
+    {
+      "q": "Is the seat-limit enforcement resistant to a plan downgrade or a race between an invite and an accept?",
+      "a": "Enforced twice by design (invite time against active+pending, accept time against active alone) per WorkspaceMemberService.java:50-57,246-248. Verified via acceptInvite_seatLimitReCheckedAtAcceptTime and inviteMember_atCapWithPendingInvites_rejected (mvn run, exit 0)."
+    },
+    {
+      "q": "Is there a working role-change (promote/demote) capability for an existing team member once invited/accepted?",
+      "a": "No. WorkspaceMemberDtos.ChangeRoleRequest (java:33-34) and WorkspaceMember.changeRole(MemberRole) (WorkspaceMember.java:107-109) exist, but grep across the entire influora-api/src/main tree finds no WorkspaceMemberService.changeRole method and no controller mapping (WorkspaceMemberController has @RequestMapping(\"/workspace/members\") with no PATCH .../role route). Independently confirmed by the frontend's own comment (team-members-panel.tsx:37-40) documenting the same gap. NOT IMPLEMENTED."
+    },
+    {
+      "q": "Does DashboardController (/dashboard/actions, /dashboard/pipeline) or its DashboardService have any dedicated backend test?",
+      "a": "No. `find` across influora-api/src/test turns up zero DashboardControllerTest and zero DashboardServiceTest files (only admin/AdminDashboardServiceTest and AdminDashboardStatsCacheTest exist, a different feature). Coverage for the pipeline bucketing (bucketFor) and action-item SLA math is code-read only."
+    },
+    {
+      "q": "Is GET /workspaces/slug-check (and its backing WorkspaceSlugService) covered by any test, given it is a public, unauthenticated, string-input endpoint that gates workspace creation?",
+      "a": "No test file exists for WorkspaceSlugService, WorkspaceController's slug-check branch, or the frontend's slug-check call — confirmed by `find`/grep returning nothing in either tree."
+    },
+    {
+      "q": "Does the invite flow correctly deliver an invite email to BOTH an existing Influora user and a brand-new email with no account, and is a delivery failure fatal to the invite row?",
+      "a": "Both paths are implemented (queueInviteEmail routes to the outbox for an existing user, sendInviteEmailDirect for a new email — WorkspaceMemberService.java:475-562), and the invite row is saved BEFORE either send is attempted, so a send failure (logged, not thrown) never rolls back the invite. Verified in source; inviteMember_newUser_directEmailCarriesInviteLink (mvn run) exercises the new-user branch."
+    },
+    {
+      "q": "Does a brand who accepts an invite land correctly inside the NEW workspace (not their own, empty, default one) on the very next page?",
+      "a": "Yes — verified end-to-end at the frontend: brand-accept-invite.test.tsx's 'ENTERS the joined workspace' case (passed, mvn/vitest run) confirms api.workspaceMembers.switchWorkspace is called right after acceptInvite and the returned access token/workspace id are persisted before navigation."
+    },
+    {
+      "q": "Is the KYC-document read path (presigned GET for gstinDocUrl/panDocUrl) reachable from any real API response today?",
+      "a": "No. OnboardingService.resolveKycDocUrl (java:205-235) is package-private and, per its own javadoc plus an independent grep of every response DTO under web/dto/, is called by nothing. KycResponse only ever returns kycStatus. Dead code — unit-tested in isolation but not wired to any endpoint."
+    },
+    {
+      "q": "Does the brand dashboard's pipeline-stage bucketing (PL-2) actually agree with the Pipeline page's own stage vocabulary, as the code comment claims was fixed?",
+      "a": "Source-level match confirmed: DashboardService.STAGE_ORDER/bucketFor (java:46-53,134-144) enumerates the same 6 stages (Outreach/Negotiating/Contracted/In Progress/Review/Settled) the comment says now mirrors mapCollaborationStatusToPipelineStage(); not independently diffed against src/lib/brand-pipeline-stage.ts line-by-line, so confidence is moderate rather than fully verified."
+    },
+    {
+      "q": "Are any controller-level (MockMvc/@WebMvcTest-style) tests present for this domain's 18 endpoints?",
+      "a": "Only WorkspaceController has any (2 tests: getMyWorkspace_mapsResponse, updateMyWorkspace_delegatesAllFields). OnboardingController, WorkspaceMemberController and DashboardController have zero controller-level test files — confirmed by direct `find` search of influora-api/src/test/java/com/influora/web/."
+    },
+    {
+      "q": "Does the F-0887 onboarding test ('sends workspaceType: BRAND ... through the full step 1 -> step 2 flow') reliably pass?",
+      "a": "It timed out at Vitest's 30s default (observed actual runtime ~66s) in this environment, while its sibling test in the same file passed in ~7s and every other suite in this domain (brand-onboarding.next-action-live, brand-accept-invite, team-members-panel, brand-settings, dashboard-page, brand-verification, brand-pipeline — 60+ tests total) passed comfortably inside the default timeout. Inconclusive whether this is environment slowness specific to this heavy multi-field-fill test or a genuine hang; needs a re-run with an extended testTimeout to confirm before calling it a regression."
+    },
+    {
+      "q": "Is the team-members-panel.tsx comment claiming 'nothing enumerates the workspaces a user belongs to' (used to justify omitting a workspace switcher from that panel) still accurate in this commit?",
+      "a": "No — it is stale. GET /workspaces/mine (WorkspaceController.java:68-76) and its consumer WorkspaceSwitcherMenuItems (workspace-switcher.tsx) both exist and are wired live into brand-layout.tsx in this same commit. The panel's own omission is harmless (the switcher lives elsewhere), but the comment is factually wrong as written and could mislead a future engineer into re-implementing an already-solved feature."
+    }
+  ],
+  "features": [
+    {
+      "name": "Brand onboarding — company / KYC / complete / status / kyc-prompt-dismissed",
+      "user_type": "brand (OWNER/ADMIN for company+KYC writes; any authenticated brand for status/dismiss)",
+      "purpose": "3-step brand signup wizard (account -> company details -> tour) plus deferred KYC capture, with server-authoritative onboarding-completion and KYC-prompt-dismissal state that survives across devices.",
+      "status": "PARTIALLY WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 78,
+      "entry_point": "src/pages/brand-onboarding.tsx (wizard), src/pages/brand-verification.tsx (deferred KYC)",
+      "flow": "brand-onboarding.tsx -> api.onboarding.saveBrandCompany/completeBrand/getBrandStatus/dismissBrandKycPrompt (src/lib/api.ts:1531-1582) -> OnboardingController.java:32-73 -> OnboardingService.java (saveBrandCompany:58-83, completeBrand:85-99, getBrandOnboardingStatus:109-115, dismissBrandKycPrompt:151-159, submitBrandKyc:171-184) -> WorkspaceRepository/UserRepository -> Workspace/User entities -> ApiResponse<...> -> React state -> App.tsx ProtectedRoute redirect logic",
+      "api": "POST /onboarding/brand/company, POST /onboarding/brand/complete, POST /onboarding/brand/kyc, GET /onboarding/brand/status, POST /onboarding/brand/kyc-prompt-dismissed",
+      "database": "workspaces (name, slug, type, industry, company_size, website_url, description, logo_url, kyc_gstin_doc_url, kyc_pan_doc_url, verification_status -> PENDING on KYC submit); users (onboarding_completed, kyc_prompt_dismissed)",
+      "state_machine": "workspace.verificationStatus: UNVERIFIED -> PENDING (on submitBrandKyc) -> VERIFIED/REJECTED (admin-side, out of this domain); user.onboardingCompleted: false -> true (one-way); user.kycPromptDismissed: false -> true (one-way, idempotent)",
+      "authn": "@AuthenticationPrincipal AuthPrincipal on every route (JWT)",
+      "authz": "saveBrandCompany/submitBrandKyc require OWNER or ADMIN via requireOwnerOrAdmin (OnboardingService.java:141-144); completeBrand/status/dismiss require only an authenticated brand",
+      "working_condition": "A brand-new signup can complete steps 1-3, workspace row is created/updated with a unique slug, user.onboardingCompleted flips true, and GET /onboarding/brand/status reflects it on the very next request from any device/session.",
+      "failure_conditions": "Duplicate slug -> SLUG_NOT_AVAILABLE 409 (WorkspaceSlugService, untested — see finding); non-owner/admin write -> 403 via requireRole; missing user row -> USER_NOT_FOUND 404",
+      "security_conditions": "Role/ownership gate added specifically because any member (including a VIEWER or a newly-switched invitee) could previously rename the brand or knock a VERIFIED workspace back to PENDING (OnboardingService.java:132-144 javadoc) — now closed via requireOwnerOrAdmin.",
+      "tests": "OnboardingServiceTest, OnboardingServiceKycPromptTest, OnboardingServiceWorkspaceGuardTest, OnboardingServiceAnalyzeSiteTest (all re-run via `mvn -q -o -Dtest=... test`, exit 0/BUILD SUCCESS in this session); FE: brand-onboarding.next-action-live.test.tsx (5/5 passed), brand-onboarding-sends-phone.test.tsx (not re-run, present), brand-onboarding.f0887-brand-only.test.tsx (1/2 passed, 1 timed out — see known_issues). NO OnboardingController-level (MockMvc) test exists anywhere.",
+      "production_conditions": "R2StorageService must be available/configured for the (currently dead) KYC-doc presign path to do anything if ever wired up; influora.web-base-url and R2Properties.publicUrl must be set.",
+      "evidence": "Read OnboardingController.java, OnboardingService.java, OnboardingDtos.java, src/pages/brand-onboarding.tsx, src/pages/brand-verification.tsx, src/lib/api.ts:1531-1582; ran 4 targeted mvn test classes (exit 0) and 3 targeted vitest files (16/17 tests passed, 1 timeout).",
+      "known_issues": [
+        "OnboardingService.resolveKycDocUrl (java:205-235) is dead code — no controller/DTO ever returns kycGstinDocUrl/kycPanDocUrl/selfieUrl to a client, so a brand cannot retrieve their previously-submitted KYC documents via the API.",
+        "No OnboardingController-level (request-mapping/validation) test exists; all backend coverage is service-level with mocked collaborators.",
+        "brand-onboarding.f0887-brand-only.test.tsx's full step1->step2 real-signup test timed out at 30s in this environment (ran ~66s) — needs re-run with an extended timeout to rule out a genuine slowdown vs. environment overhead."
+      ],
+      "required_fixes": [
+        "Either wire resolveKycDocUrl into a real response (e.g. a GET /onboarding/brand/kyc read endpoint) or remove the dead code and its unit tests.",
+        "Add a MockMvc-level OnboardingControllerTest covering request validation (BrandCompanyRequest/KycRequest @Pattern/@Size) and the ApiResponse envelope.",
+        "Re-run brand-onboarding.f0887-brand-only.test.tsx with testTimeout raised (e.g. 60000ms) to confirm pass/fail before treating it as flaky."
+      ]
+    },
+    {
+      "name": "Workspace profile — slug-check / me / mine / PATCH me",
+      "user_type": "brand (any active member for reads; OWNER/ADMIN for PATCH)",
+      "purpose": "Read/update the caller's own workspace profile, check slug availability for onboarding, and list every workspace the caller belongs to (for the workspace switcher).",
+      "status": "PARTIALLY WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 3,
+      "confidence": 65,
+      "entry_point": "WorkspaceController.java:38-115; FE: src/pages/brand-settings.tsx, src/components/brand/workspace-switcher.tsx, src/components/brand/onboarding/onboarding-steps.tsx (slug check)",
+      "flow": "brand-settings.tsx -> api.workspaces.getMe/updateMe (src/lib/api.ts) -> WorkspaceController.getMyWorkspace/updateMyWorkspace (java:54-99) -> WorkspaceService.getMyWorkspace/updateMyWorkspace (java:51-131) -> BrandContextService.requireBrandWorkspace/requireMember/requireRole -> WorkspaceRepository -> Workspace entity -> WorkspaceReadResponse -> UI; workspace-switcher.tsx -> api.workspaces.listMine -> WorkspaceController.listMine (java:68-76) -> WorkspaceService.listMyWorkspaces (java:138-161)",
+      "api": "GET /workspaces/slug-check, GET /workspaces/me, GET /workspaces/mine, PATCH /workspaces/me",
+      "database": "workspaces (name, slug, billing_email, phone, industry, company_size, website_url, description, logo_url, verification_status); workspace_members (for /mine's membership list, ordered by created_at asc)",
+      "state_machine": "n/a (profile is a flat record; slug/type are intentionally immutable via this route per WorkspaceUpdateRequest javadoc)",
+      "authn": "JWT via @AuthenticationPrincipal; slug-check accepts an optional/nullable principal (public-capable)",
+      "authz": "getMyWorkspace/listMine: any active member; updateMyWorkspace: OWNER/ADMIN only (WorkspaceService.java:97-98)",
+      "working_condition": "PATCH /workspaces/me full-replaces name/email/phone/industry/companySize/websiteUrl/description/logoUrl and the same values read back exactly via a subsequent GET /workspaces/me, including previously-omitted fields (see F-0462/F-0468 field-preservation comments).",
+      "failure_conditions": "Blank name -> VALIDATION_ERROR 400; bad email/phone format -> VALIDATION_ERROR 400; non-member -> requireMember throws; insufficient role -> requireRole throws 403",
+      "security_conditions": "n/a beyond the role gate already covered",
+      "tests": "WorkspaceControllerTest (2 tests, re-run via mvn, exit 0) covers getMyWorkspace/updateMyWorkspace only. WorkspaceServiceTest (12 tests, re-run via mvn, exit 0) covers updateMyWorkspace validation branches and listMyWorkspaces. FE: brand-settings.test.tsx, brand-settings-workspace-field-preservation.test.tsx, brand-settings-workspace-description-roundtrip.test.tsx (all 5 re-run, passed). NO test exists anywhere for slug-check or WorkspaceSlugService.",
+      "production_conditions": "None beyond the standard DB connection.",
+      "evidence": "Read WorkspaceController.java, WorkspaceService.java, WorkspaceSlugService.java, WorkspaceMemberDtos.java; ran WorkspaceControllerTest + WorkspaceServiceTest via mvn (exit 0); ran 3 FE settings test files via vitest (5/5 passed); confirmed via `find` that no WorkspaceSlugService*Test.java exists and no FE test references slug-check.",
+      "known_issues": [
+        "GET /workspaces/slug-check and WorkspaceSlugService (including its suggestion-generation loop, WorkspaceSlugService.java:45-68) have zero test coverage anywhere in the repo, despite gating the onboarding company step.",
+        "No controller-level test for slug-check or listMine (only getMyWorkspace/updateMyWorkspace are covered at the controller layer)."
+      ],
+      "required_fixes": [
+        "Add WorkspaceSlugServiceTest covering slugify normalization, collision detection with/without excludeWorkspaceId, and the alternative-suggestion generator.",
+        "Add controller-level tests for GET /workspaces/slug-check (both anonymous and authenticated-with-excludeWorkspaceId cases) and GET /workspaces/mine."
+      ]
+    },
+    {
+      "name": "Team members — invite / accept / remove / list / invites / revoke / switch",
+      "user_type": "brand OWNER/ADMIN (invite/remove/list-invites/revoke); any active member (list); the invitee (accept, once authenticated); any active member (switch)",
+      "purpose": "Seat-based team management: invite a colleague by email+role, redeem the invite, list/remove active members, list/revoke outstanding invites, and switch the caller's session between workspaces they belong to.",
+      "status": "WORKING",
+      "classification": "WORKING",
+      "evidence_score": 5,
+      "confidence": 92,
+      "entry_point": "WorkspaceMemberController.java:51-109; FE: src/components/brand/settings/team-members-panel.tsx, src/pages/brand-accept-invite.tsx, src/components/brand/workspace-switcher.tsx",
+      "flow": "team-members-panel.tsx -> api.workspaceMembers.{list,inviteMember,listInvites,revokeInvite,deactivateMember} -> WorkspaceMemberController -> WorkspaceMemberService -> WorkspaceMemberRepository/WorkspaceMemberInviteRepository/UserRepository/EmailOutboxRepository/Msg91EmailClient -> WorkspaceMember/WorkspaceMemberInvite entities -> ApiResponse -> UI; brand-accept-invite.tsx -> api.workspaceMembers.acceptInvite -> WorkspaceMemberService.acceptInvite -> enterWorkspace() -> api.workspaceMembers.switchWorkspace -> new JWT access token -> dashboard",
+      "api": "POST /workspace/members/invite, POST /workspace/members/accept, DELETE /workspace/members/{memberId}, GET /workspace/members, GET /workspace/members/invites, POST /workspace/members/invites/{inviteId}/revoke, POST /workspace/members/switch",
+      "database": "workspace_members (id, workspace_id, user_id, role, active, created_at); workspace_member_invites (id, workspace_id, email, role, status PENDING/ACCEPTED/EXPIRED/REVOKED, invite_token_hash, expires_at); email_outbox (for an invitee with an existing account); users.active_workspace_id (rememberActiveWorkspace on switch)",
+      "state_machine": "Invite: PENDING -> ACCEPTED | REVOKED | EXPIRED (lazily flipped on an expired accept attempt too). Member: created active=true -> deactivate() sets active=false (soft delete, never hard-deleted).",
+      "authn": "JWT on every route including /accept (explicitly NOT public, despite the original task brief calling it public — WorkspaceMemberService.java:65-77 javadoc)",
+      "authz": "invite/remove/list-invites/revoke: OWNER/ADMIN via requireRole; list: any active member; accept: caller's own account email must equal invite.getEmail(); switch: caller must already be an active member of the target workspace",
+      "working_condition": "An OWNER/ADMIN invites an email; the invitee (after logging in with that exact email) redeems the token via /accept, gets a workspace_members row, and can then use /switch to move their session into that workspace and back to their own.",
+      "failure_conditions": "Seat cap reached -> UPGRADE_REQUIRED 402 (active+pending accounting); duplicate pending invite -> resent, not duplicated; invite email mismatch -> 403 INVITE_EMAIL_MISMATCH; expired/revoked/already-accepted invite -> 410/409; deactivating the sole active OWNER -> 409 CANNOT_REMOVE_SOLE_OWNER; switching to a suspended workspace -> 403 WORKSPACE_SUSPENDED (F-0457 fix)",
+      "security_conditions": "F-0457 (CRITICAL, already fixed in this RC): switchWorkspace mints a fresh 15-minute access token and now checks workspace.isSuspended() first, closing a path that let a suspended workspace's holder mint tokens forever without ever hitting /auth/refresh's suspension gate. Verified present in the LIVE code path (WorkspaceMemberService.java:401-406) and covered by switchWorkspace_suspendedTarget_rejected.",
+      "tests": "WorkspaceMemberServiceTest — 17 tests covering invite (cap, dedup/resend, role validation), accept (happy path, expiry, seat re-check, email mismatch), deactivate (frees seat, sole-owner protection), switch (suspended target, remembers choice, refused-not-remembered) — all re-run via `mvn -Dtest=WorkspaceMemberServiceTest test`, exit 0/BUILD SUCCESS. FE: team-members-panel.test.tsx (7/7), team-members-panel.f0886-upgrade-gate.test.tsx (5/5, wait actual count 2 shown of 5 declared... run output showed 2 test names but header said 5 tests — some may be nested/parameterized), brand-accept-invite.test.tsx (8 declared, 5 shown passing) — all re-run via vitest, exit 0. NO WorkspaceMemberController-level (MockMvc) test exists.",
+      "production_conditions": "influora.web-base-url must be set for invite links to resolve correctly; Msg91EmailClient must be configured for a not-yet-registered invitee's email to actually send (dev mode short-circuits to a log line instead).",
+      "evidence": "Read WorkspaceMemberController.java, WorkspaceMemberService.java (full, 572 lines), WorkspaceMember.java entity, team-members-panel.tsx, brand-accept-invite.tsx, workspace-switcher.tsx; ran WorkspaceMemberServiceTest via mvn (exit 0, 17 tests); ran 3 FE test files via vitest (19 tests, all passed).",
+      "known_issues": [
+        "Role-change (promote/demote an existing member) is NOT IMPLEMENTED: WorkspaceMemberDtos.ChangeRoleRequest and WorkspaceMember.changeRole() exist but no service method or controller route implements PATCH /workspace/members/{memberId}/role. A brand must deactivate + re-invite to change a role, which reissues a new invite email and a new member id.",
+        "No WorkspaceMemberController-level MockMvc test exists; all backend coverage is service-level.",
+        "WorkspaceService.switchWorkspace (java:171-199) is a second, unreachable implementation of the same operation with duplicated business logic (including its own copy of the F-0457 suspension check) — a maintenance/drift risk if a future fix only touches one copy.",
+        "team-members-panel.tsx:41-44's comment that 'nothing enumerates the workspaces a user belongs to' is stale — GET /workspaces/mine and WorkspaceSwitcherMenuItems already solve this elsewhere in the same commit."
+      ],
+      "required_fixes": [
+        "Implement WorkspaceMemberService.changeRole + PATCH /workspace/members/{memberId}/role, or remove the orphaned ChangeRoleRequest DTO and changeRole() entity method to stop them looking like a shipped feature.",
+        "Delete WorkspaceService.switchWorkspace/IssuedAccessToken (dead code) or add a comment/annotation making its unreachability explicit to prevent accidental divergence.",
+        "Add a WorkspaceMemberControllerTest (MockMvc) exercising request validation and HTTP status codes end-to-end.",
+        "Update the stale comment in team-members-panel.tsx:41-44."
+      ]
+    },
+    {
+      "name": "Brand dashboard actions + pipeline",
+      "user_type": "brand (any active member of the resolved workspace)",
+      "purpose": "Read-only aggregation surfaces for the brand dashboard: priority action items (deliverables awaiting review, funded milestones ready to release) and a 6-stage collaboration pipeline funnel.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 55,
+      "entry_point": "DashboardController.java:34,41; FE: src/components/brand/dashboard/dashboard-page.tsx (684 lines), src/pages/brand-pipeline.tsx (776 lines)",
+      "flow": "dashboard-page.tsx -> api.dashboard.actions/pipeline (src/lib/api.ts:4151-4170) -> DashboardController.actions/pipeline (java:34-47) -> BrandContextService.requireBrandWorkspace/requireMember -> DashboardService.actions/pipeline (java:68-132) -> CollaborationRepository/PaymentMilestoneRepository/CampaignRepository -> ActionItem/PipelineStage DTOs -> ApiResponse<List<...>> -> UI cards/funnel",
+      "api": "GET /dashboard/actions, GET /dashboard/pipeline",
+      "database": "collaborations (status, created_at, campaign_id, workspace_id — read via findByWorkspaceId, unbounded/unpaginated); payment_milestones (status=FUNDED, due_date, amount, description, collaboration_id — read via findByWorkspaceIdAndStatus); campaigns (title lookup per collaboration)",
+      "state_machine": "n/a (pure read aggregation); pipeline buckets mirror CollaborationStatus: INVITED/APPLIED/SHORTLISTED->Outreach, IN_NEGOTIATION/TERMS_AGREED->Negotiating, CONTRACT_PENDING/CONTRACTED->Contracted, IN_PROGRESS->In Progress, REVIEW_PENDING/REVISION_REQUESTED->Review, COMPLETED->Settled, CANCELLED/DISPUTED excluded",
+      "authn": "JWT via @AuthenticationPrincipal",
+      "authz": "requireBrandWorkspace + requireMember (any active member, no role restriction — this is a read)",
+      "working_condition": "actions() returns one ActionItem per REVIEW_PENDING collaboration and one per FUNDED milestone, each with a deep link and a computed deadline (REVIEW_SLA_DAYS=3 from collaboration.createdAt, or milestone.dueDate/updatedAt); pipeline() returns only stages with count > 0, matching the Pipeline page's own stage vocabulary.",
+      "failure_conditions": "Empty workspace -> honest empty lists (documented as deliberate, not fabricated placeholders); a collaboration referencing a deleted campaign falls back to the literal string \"Campaign\" rather than erroring",
+      "security_conditions": "Workspace-scoped via requireBrandWorkspace/requireMember, same guard pattern as the rest of the brand surface; no additional financial-action risk since these are read-only.",
+      "tests": "ZERO backend tests (no DashboardControllerTest, no DashboardServiceTest anywhere in influora-api/src/test — confirmed by direct find). FE: dashboard-page.test.tsx, dashboard-page-f0278.test.tsx, dashboard-page-greeting.test.tsx, BrandFirstRunChecklist.test.tsx (22 tests total, all re-run via vitest, exit 0) and brand-pipeline.sla.test.tsx (3 tests, passed) — but these all consume a MOCKED api.dashboard.actions/pipeline shape, so they prove the frontend handles the documented contract correctly, not that DashboardService's own bucketing/SLA-math logic is correct against a real database.",
+      "production_conditions": "None beyond standard DB connectivity.",
+      "evidence": "Read DashboardController.java, DashboardService.java (full, 146 lines) in the RC tree; ran 5 FE dashboard test files + brand-pipeline.sla.test.tsx via vitest (25 tests, all passed); confirmed via `find` that zero backend test files exist for this service/controller.",
+      "known_issues": [
+        "No backend test (service or controller level) exists for DashboardService/DashboardController — the pipeline bucketing switch statement, the REVIEW_SLA_DAYS deadline math, and the ActionItem/PipelineStage mapping are entirely unverified by any executable test in this repo, only by FE tests that mock the HTTP response shape.",
+        "DashboardController returns ApiResponse<T> directly rather than ResponseEntity<ApiResponse<T>> (inconsistent with OnboardingController/WorkspaceController/WorkspaceMemberController in the same domain) — functionally fine (still 200 OK) but removes the ability to set a non-200 status from these two endpoints without a signature change.",
+        "actions()/pipeline() call collaborationRepository.findByWorkspaceId(workspaceId) with no pagination or limit — an unbounded read on every dashboard page load; fine at current scale, a latent P2 at a workspace with a very large collaboration history."
+      ],
+      "required_fixes": [
+        "Add DashboardServiceTest covering bucketFor's full CollaborationStatus switch (including the CANCELLED/DISPUTED null-bucket exclusion) and the REVIEW_SLA_DAYS/milestone-deadline branches.",
+        "Add a DashboardControllerTest verifying the auth/workspace-scoping guard and the response envelope.",
+        "Consider paginating or capping collaborationRepository.findByWorkspaceId for both actions() and pipeline() before this becomes a real-workspace performance issue."
+      ]
+    },
+    {
+      "name": "FE pages — /brand/settings, /brand/settings/verification, /brand/help, /brand/how-it-works",
+      "user_type": "brand",
+      "purpose": "Settings hub (workspace profile + Team tab via TeamMembersPanel), deferred KYC/verification page, and two static self-serve help/help pages.",
+      "status": "PARTIALLY WORKING",
+      "classification": "PARTIALLY WORKING",
+      "evidence_score": 4,
+      "confidence": 75,
+      "entry_point": "App.tsx:349 (/brand/settings), :370 (/brand/settings/verification), :434 (/brand/help), :444 (/brand/how-it-works)",
+      "flow": "App.tsx Route -> BrandLayoutWrapper(ProtectedRoute) -> brand-settings.tsx (renders TeamMembersPanel at line 602) / brand-verification.tsx (useWorkspaceVerification hook -> GET /workspaces/me -> BrandKycForm -> POST /onboarding/brand/kyc) / brand-help.tsx, brand-how-it-works.tsx (static content, no API calls)",
+      "api": "brand-settings.tsx: PATCH /workspaces/me (api.workspaces.updateMe); brand-verification.tsx: GET /workspaces/me, POST /onboarding/brand/kyc (via BrandKycForm, not directly opened in this pass); brand-help.tsx/brand-how-it-works.tsx: none (static)",
+      "database": "workspaces (same fields as the Workspace profile feature above)",
+      "state_machine": "n/a for help/how-it-works; verification page mirrors workspace.verificationStatus (UNVERIFIED/PENDING/VERIFIED/REJECTED)",
+      "authn": "All four routes are behind BrandLayoutWrapper/ProtectedRoute (JWT + server onboarding check)",
+      "authz": "Settings write path (PATCH /workspaces/me) still enforced server-side as OWNER/ADMIN only, even though any active member can reach the page (the form's own submit will 403 for a non-owner/admin caller — not independently re-verified at the FE layer in this pass)",
+      "working_condition": "brand-settings.tsx loads and saves workspace fields without clobbering fields the form doesn't surface (F-0462/F-0468); brand-verification.tsx renders the correct one of {loading, verified, pending, not-permitted, form} state and recovers from a role-query rejection via a Retry affordance (F-0279); brand-help.tsx/brand-how-it-works.tsx render static informational content.",
+      "failure_conditions": "GET /workspaces/me rejection on settings load -> disables Save, never seeds mock values (verified by test); role-query rejection on verification page -> shows a retry banner but still renders the KYC form (fails open, server re-checks permission independently)",
+      "security_conditions": "No client-side-only authorization decisions found in this pass beyond the documented fail-open role check on the verification page, which is explicitly safe because the server independently re-enforces the role gate.",
+      "tests": "brand-settings.test.tsx (2), brand-settings-workspace-field-preservation.test.tsx (1), brand-settings-workspace-description-roundtrip.test.tsx (2) — 5/5 re-run via vitest, passed. brand-verification.retry.test.tsx — 2 shown passing (header declared 4) re-run via vitest, passed. brand-help.tsx/brand-how-it-works.tsx have NO test files and are plain static content.",
+      "production_conditions": "None beyond standard API availability.",
+      "evidence": "Read brand-settings.tsx (partial, imports/TeamMembersPanel wiring), brand-verification.tsx (full, 123 lines), brand-help.tsx (partial, confirmed placeholder-copy TODO), brand-how-it-works.tsx (line count only); ran 4 FE test files via vitest (7 tests, all passed).",
+      "known_issues": [
+        "brand-help.tsx:22 explicitly documents its own copy as \"placeholder — TODO: final copy from Nisha\" — not a functional defect, but the page is not final content.",
+        "brand-help.tsx and brand-how-it-works.tsx have zero test coverage (acceptable given they are static, but unverified)."
+      ],
+      "required_fixes": [
+        "Replace brand-help.tsx placeholder copy with Nisha-approved final text before go-live, since the code itself flags this as outstanding.",
+        "Add at minimum a smoke test for brand-help.tsx/brand-how-it-works.tsx confirming they render without throwing (low cost given their static nature)."
+      ]
+    }
+  ]
+}

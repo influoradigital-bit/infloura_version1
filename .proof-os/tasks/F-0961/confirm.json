@@ -1,0 +1,41 @@
+{
+  "text": "fix F-0961 analytics headline figures read creator-reported rows",
+  "verb": "FIX",
+  "resolution": "proved",
+  "verbs_matched": [
+    "FIX"
+  ],
+  "modifiers": {},
+  "target": {
+    "kind": "ledger",
+    "id": "F-0961",
+    "resolution": "proved",
+    "note": "unverified-as-verified",
+    "status": "open"
+  },
+  "scope": [
+    "influora-api/src/main/java/com/influora/service/analytics/AnalyticsService.java",
+    "PortfolioService.java"
+  ],
+  "scope_from": "ledger.where",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "oracles": [],
+  "oracle_first": false,
+  "exit_gate": "mvn -o test -Dtest=AnalyticsService*Test",
+  "done_when": "AnalyticsService.buildMetricsResponse computes followers, the per-post averages, engagement, follower growth and the trend only from creator_metrics rows whose isPlatformVerified() is true (Meta-synced); a newer CREATOR_REPORTED row never becomes the headline figure or a growth/trend point; a creator with only creator-reported rows gets the empty response (0 followers, no trend); proved by `mvn -o test -Dtest=AnalyticsService*Test` exiting 0 with tests that fail when the verified filter is removed from either the headline or the window path, reviewed by kabir in a fresh context",
+  "ask": "F-0961 has no `fix` recorded \u2014 what must be true for it to be closed?",
+  "refused": null,
+  "prior_failures": [
+    "F-0140",
+    "F-0155",
+    "F-0421",
+    "F-0497",
+    "F-0498",
+    "F-0588"
+  ],
+  "dispatch": "agents",
+  "oracles_skipped_no_toolchain": [],
+  "graph_nodes": 928,
+  "human_answer": "Continue (user, 2026-09-19): take the analytics follow-ups next"
+}

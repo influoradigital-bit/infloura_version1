@@ -1,0 +1,36 @@
+{
+ "text": "fix F-0902 Meera credit paywall dead end",
+ "verb": "FIX",
+ "resolution": "proved",
+ "verbs_matched": [
+  "FIX"
+ ],
+ "modifiers": {},
+ "target": {
+  "kind": "ledger",
+  "id": "F-0902",
+  "resolution": "proved",
+  "note": "paywall-dead-end",
+  "status": "open"
+ },
+ "scope": [
+  "src/components/feature/meera/MeeraChatPanel.tsx",
+  "src/components/feature/meera/StageFunding.tsx"
+ ],
+ "scope_from": "ledger.where",
+ "owner": "ananya",
+ "reviewer": "kavya",
+ "oracles": [],
+ "oracle_first": false,
+ "exit_gate": null,
+ "done_when": null,
+ "ask": "F-0902 has no `fix` recorded \u2014 what must be true for it to be closed?",
+ "refused": null,
+ "prior_failures": [
+  "F-0209",
+  "F-0902"
+ ],
+ "dispatch": "ask",
+ "oracles_skipped_no_toolchain": [],
+ "graph_nodes": 928
+}

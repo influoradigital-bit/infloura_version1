@@ -1,0 +1,122 @@
+{
+  "reviewer": "kavya (QA Lead — correctness & test-evidence lens, cross-team review)",
+  "rc_commit": "115f698",
+  "rc_dir": "C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+  "rc_clean_at_audit_time": true,
+  "questions": [
+    {
+      "q": "Does the RC actually fail to boot, and would any test in the committed suite have caught the TrendPullJob DI-wiring defect before this audit?",
+      "answer": "Yes it fails to boot (confirmed by direct read: TrendPullJob.java declares a public 5-arg constructor at line 156 AND a package-private 7-arg constructor at line 175, neither @Autowired, no no-arg constructor — this is exactly the ambiguous-constructor shape Spring rejects with 'No default constructor found'). No: TrendPullJobTest.java's 17 @Test methods all build the job via `new TrendPullJob(...)` using the 7-arg test-seam constructor (line 160), never the public constructor Spring actually calls, so the entire existing unit-test file is structurally blind to this exact bug class. Agrees with and strengthens EV-001."
+    },
+    {
+      "q": "Were the 22 skipped Testcontainers suites (EV-038) actually never exercised anywhere, or only in this audit's local sandbox?",
+      "answer": "Only in the local sandbox. AbstractIntegrationTest.java's own javadoc documents that these tests spin up their OWN Testcontainers MySQL (independent of the MySQL service container backend-tests.yml injects), require a reachable Docker daemon, and states plainly they failed at Testcontainers' own isDockerAvailable() check on the Windows sandbox used for this audit ('docker ps ... failed to connect to the docker API'). Separately, that same javadoc cites a REAL prior CI run — 'backend-ci.yml run 34027735091' — where these same tests DID execute against Docker on GitHub's ubuntu-latest runner and failed with HikariPool/connection-refused errors from container-lifecycle churn (multiple @Testcontainers-managed containers colliding), which the class says was fixed by switching to a shared singleton container. backend-ci.yml (plain `mvn -B test`, no -o, ubuntu-latest with its default Docker daemon) is the workflow that would run them; EV-038's registrants only ran `mvn -o test` (offline, Windows, no daemon). Weaker/reframed vs EV-038."
+    },
+    {
+      "q": "Are the unit tests around Meera's self-invoked @Transactional methods (MeeraSessionServiceTest, CreateCampaignExecutorTest) structurally capable of observing the non-atomicity defect (EV-037)?",
+      "answer": "No — they mock the repositories, so a partial-write scenario (save #2 throwing after save #1 committed) can never be constructed; TransactionalOnlyOnPublicMethodsTest's own KNOWN_INERT allowlist is the team's documented admission of the defect, and its class javadoc explicitly states the test 'does NOT catch self-invocation... the other half of the same family.' Agrees with EV-037 at ES5/C90; the KNOWN_INERT test is a real, honestly-scoped check, not vacuous."
+    },
+    {
+      "q": "Is AdminAuthServiceTest's 5/5 green result representative of AdminAuthService's actual surface (EV-053)?",
+      "answer": "No. Confirmed by direct read: exactly 5 @Test methods in the file (lines 82, 98, 116, 133, 153), all clustered around resetMfaForAdmin per the register's own citation. login/refresh/logout/me/setupMfa/verifyMfa (AdminAuthService.java:107-306) have zero tests. Agrees with EV-053."
+    },
+    {
+      "q": "Is EV-119's framing that 'an error-strict CI lint gate fails at the RC' accurate?",
+      "answer": "No — overstated. Confirmed by reading all 10 files under .github/workflows/: none of them (including frontend-checks.yml, the FE CI job that runs typecheck/build/test) invoke `npm run lint` or `eslint` anywhere. There is no CI lint gate today, strict or otherwise, so nothing in CI is currently 'red' from these 7 errors — they ship with zero CI signal. Disagreement filed as XR-KAVYA-01 below; the 7 errors themselves are correctly identified and real."
+    },
+    {
+      "q": "Is the AffiliateEarningReconciliationJobTest flake (EV-121) a real concurrency defect in the job or a test-harness artifact?",
+      "answer": "Test-harness artifact, and the register already shows this rigorously: 3/3 isolated reruns passed, and the production compareAndSet-then-guarded-call ordering was read and confirmed correct. Agrees with EV-121 as filed (ES4/C55, correctly conservative confidence for a P3)."
+    },
+    {
+      "q": "For the save()-inside-catch(DataIntegrityViolationException) pattern (EV-047), does the defect cause data corruption, or only an imprecise error code?",
+      "answer": "Only an imprecise error code / wrong FE message. The deferred INSERT still executes at flush/commit inside the same Spring transaction, and the transaction still rolls back on the DIVE (GlobalExceptionHandler maps the escaped exception to a generic 409) — no double-row is persisted. This is a caller-experience defect (generic 409 instead of e.g. COLLABORATION_EXISTS), not a money/data-integrity defect. I maintain my original P3 rating (KAV-06) over the P2 the register settled on; see disagreement below."
+    },
+    {
+      "q": "Do any P0 money-correctness findings (EV-002 double-fund, EV-003 lock-then-call-Razorpay, EV-011 ENUM gap) have any test evidence beyond code-reading?",
+      "answer": "No, and the register is honest about this — all three are code+config analysis (ES3-5 via multiple independent readers, not a single agent's claim), correctly capped short of E4/runtime since no live repro was attempted. No disagreement; this is appropriately conservative and exactly the failure class EV-038 documents as untestable locally."
+    },
+    {
+      "q": "Is there any controller-level test in the RC that would catch a validation-annotation regression on a money-writing endpoint, given EV-111 (46/91 controllers untested) and EV-064 (PATCH /campaigns/{id} missing @Valid)?",
+      "answer": "Confirmed no — CampaignController has no *ControllerTest file (cited directly in EV-111's own evidence), so a regression identical in kind to EV-064 on any other campaign-mutating field would ship silently. Agrees with EV-111."
+    },
+    {
+      "q": "Does WalletTopUpServiceTest (EV-142) at least exercise the RazorpayClient boundary where a real top-up bug would live, or does it mock past that layer entirely?",
+      "answer": "It mocks RazorpayClient directly (WalletTopUpServiceTest.java:49, @Mock RazorpayClient), so any wire-format/signature-verification defect at the actual Razorpay boundary is untestable by this file by construction — consistent with this repo's documented 'mock stubs the layer the bug lives in' failure class. This sharpens EV-142's impact: the gap is not just 'thin coverage of business rules,' it also structurally cannot catch a Razorpay-integration defect. Agrees with and adds detail to EV-142."
+    },
+    {
+      "q": "Is EV-048's 'runtime' evidence_type tag accurate for the untested job claim?",
+      "answer": "Partially misleading. The cited runtime evidence (mvn surefire runs, 215/215 and 3621 passing) proves OTHER tests ran, not that IdempotencyReservationReaperJob/CreatorThemeTaggingJob/SubscriptionDunningJob etc. were ever executed — the actual claim (these classes have zero tests) is a code/filesystem-search fact (grep/find returning zero hits), which is evidence_type 'code', not 'runtime'. Filed as missing_evidence below; does not change the finding's correctness, only its evidence-type labeling."
+    },
+    {
+      "q": "Does the register's EV-096 (DisputeService/DealService list-query test gap) overclaim its INFERRED bug, or is ES2/C55/INFERRED appropriately conservative?",
+      "answer": "Appropriately conservative — the finder correctly flags the escrowFunded-scope-vs-hasFundedUnreleasedEscrow-scope divergence as a hypothesis requiring a constructed test case, and rates it INFERRED/ES2 rather than claiming a confirmed bug. No disagreement; this is a model example of honest calibration other findings should match."
+    }
+  ],
+  "agreements": [
+    "EV-001 — confirmed by direct read of TrendPullJob.java:156,175 (two constructors, neither @Autowired, no no-arg ctor) plus TrendPullJobTest.java:160 (all 17 unit tests use the non-Spring 7-arg seam, so the suite is structurally blind to this bug class). ES5/C95 fully justified.",
+    "EV-037 — confirmed via TransactionalOnlyOnPublicMethodsTest.java's own KNOWN_INERT list and its honestly-scoped javadoc ('does NOT catch self-invocation'); the mocked-repository unit tests (MeeraSessionServiceTest, CreateCampaignExecutorTest) cannot observe the partial-write defect by construction. ES5/C90 justified.",
+    "EV-048 — confirmed by filesystem search: zero test files for IdempotencyReservationReaperJob, CreatorThemeTaggingJob, SubscriptionDunningJob, SubscriptionRenewalResetJob, AICreditResetJob. Agree with the finding itself; evidence_type mislabeling noted separately under missing_evidence.",
+    "EV-052 — agree; a repo with zero CI reference to Playwright cannot claim e2e smoke coverage.",
+    "EV-053 — confirmed by direct read: exactly 5 @Test methods in AdminAuthServiceTest.java (lines 82/98/116/133/153), all clustered on resetMfaForAdmin; login/refresh/logout/me/MFA-at-login are untested.",
+    "EV-055 — register's own re-run evidence (3x isolation) is solid; a 120s import-the-whole-App hook timeout hiding a security-relevant test (F-0459 remember-me split) is a real go-live risk for CI trust, correctly P2.",
+    "EV-056 — agree; confirmed no *CommissionInvoice*/*BrandPlatformFee*/*TaxIdentity* test files via the same class of search used elsewhere in the register.",
+    "EV-057 — agree; a 0/15 and 0/10 'NOT RUN' eval exit code is unambiguous, and hand-authored-looking brand-safety fixtures (repeated boilerplate rationale, snap-to values) is a fair inference from the cited pattern.",
+    "EV-111 — confirmed CampaignController has no matching *ControllerTest (cited in the finding's own evidence); this is a real, broad HTTP-binding blind spot layered on top of good service-level coverage.",
+    "EV-112 — the register's own methodology (3 isolated reruns, distinguishing a real flake from a functional defect) is exactly the standard this audit should hold every timing-sensitive test claim to; agree it is a harness flake, not a heartbeat-code defect.",
+    "EV-119 (the 7 errors themselves, not the CI-gate framing) — confirmed by direct grep: BrandProfile.tsx:39-40 imports Radio and Check with zero other uses in the file (both appear only in the import statement in the grep). The unused-vars errors are real.",
+    "EV-121 — agree, correctly conservative confidence (C55) for a demonstrated-flaky-but-logically-sound guard.",
+    "EV-142 — agree, and see the sharpened q&a above: WalletTopUpServiceTest mocks RazorpayClient directly, so the gap is structural, not just numerical thinness.",
+    "EV-096 — agree with the INFERRED/ES2 calibration; a good example of a finder correctly not overclaiming a hypothesis."
+  ],
+  "disagreements": [
+    {
+      "ev": "EV-038",
+      "position": "The framing 'no executed test runs against real MySQL or a full Spring context' should be scoped to this audit's local sandbox, not stated as a fact about the release candidate's test evidence in general. AbstractIntegrationTest.java's own javadoc documents a real prior CI run (backend-ci.yml run 34027735091) where these Testcontainers suites DID execute against a real Docker daemon on GitHub's ubuntu-latest runner and failed with HikariPool/connection-refused errors from container-lifecycle churn — which the class says was subsequently fixed via a shared singleton-container pattern. The 'skipped' result the register cites (meera-db, swapnil) came from `mvn -o test` (offline flag) on a Windows sandbox with no Docker daemon at all — a different, harsher environment than backend-ci.yml's ubuntu-latest (Docker present by default, no -o flag).",
+      "evidence": "influora-api/src/test/java/com/influora/testsupport/AbstractIntegrationTest.java class javadoc (read directly at the RC): documents the isDockerAvailable() check, the sandbox's 'failed to connect to the docker API' failure mode, AND separately cites 'backend-ci.yml run 34027735091's Connection refused / Communications link failure / HikariPool total=0,active=0,idle=0 failures in DatabaseConstraintIntegrationTest and FestivalBoxCouponConstraintIntegrationTest' as the reason the class moved to a singleton-container pattern. .github/workflows/backend-ci.yml (read directly): plain `mvn -B test` on ubuntu-latest, no -o flag, no explicit Docker-availability gate — i.e. the workflow that would actually exercise Testcontainers.",
+      "evidence_score": 3,
+      "confidence": 65,
+      "proposed_change": "Reframe EV-038 to: 'This audit's local sandbox could not exercise the 22 Testcontainers suites (no Docker daemon); whether they currently pass in the RC's actual CI (backend-ci.yml) is unverified by this audit, and the suites' own documented history shows real container-lifecycle flakiness there (not a clean pass) before a singleton-container fix was applied.' This is a materially different, and arguably more actionable, finding than 'never executed anywhere' — it points at CI flakiness/observability (is backend-ci.yml currently green on main?) rather than at a structural test-infra absence. Recommend Kabir/Meera pull the actual latest backend-ci.yml run status from GitHub Actions to close this out with real evidence rather than sandbox inference."
+    },
+    {
+      "ev": "EV-119",
+      "position": "The finding conflates 'these 7 errors would fail an error-strict CI lint gate' (true, hypothetically) with 'an error-strict CI lint gate fails at the RC' (false — no such gate exists to fail). I read all 10 files under .github/workflows/ and package.json directly: no workflow invokes `npm run lint` or `eslint` at any step, including frontend-checks.yml (the FE job that does run typecheck/build/test). This is a materially different problem: it is not that CI is currently red over these 7 errors, it is that CI has zero lint signal at all, so these (and any future) lint errors ship with no gate whatsoever.",
+      "evidence": ".github/workflows/*.yml (all 10 files, read/grepped directly at the RC): zero matches for 'eslint' or 'lint'. package.json:10 defines the `lint` script (`eslint .`) but nothing in CI calls it. frontend-checks.yml steps confirmed as: typecheck (tsc --noEmit), a money-flag build-wiring check, and `npm test` only.",
+      "evidence_score": 3,
+      "confidence": 90,
+      "proposed_change": "Split into two findings: keep EV-119 for the 7 real, fixable no-unused-vars errors, and add a distinct (and arguably more important) finding that no CI workflow runs eslint at all — filed below as XR-KAVYA-01 — so both the existing errors and the total absence of enforcement are separately actionable and don't get conflated as 'lint gate currently fails.'"
+    },
+    {
+      "ev": "EV-047",
+      "position": "I originally rated this P3 (KAV-06); the register settled on P2 per meera-db and vikram-pay. I maintain P3. The escaped DataIntegrityViolationException still propagates out of the (still-open, un-flushed-early) Spring-managed transaction and rolls it back at commit — no duplicate row is ever persisted, and no money/ledger state is corrupted. The user-visible defect is strictly a wrong/generic error code (409 DATA_INTEGRITY_VIOLATION instead of e.g. COLLABORATION_EXISTS/ALREADY_APPLIED/USERNAME_TAKEN) and a missing FE-specific message under a race that is itself rare (two near-simultaneous duplicate submissions). That is a real bug worth fixing, but it does not fit this audit's own P2 bar ('important') over P3 ('improvement') as cleanly as a defect that actually corrupts data or double-charges would.",
+      "evidence": "GlobalExceptionHandler.java:110-115 (cited in the register's own evidence) maps the escaped DataIntegrityViolationException to a generic 409 — i.e. the framework's normal transaction-rollback/exception-translation machinery already contains the blast radius to 'wrong error code', not 'corrupted state'. This is consistent across all ~12 cited call sites (CreatorCampaignService, DealService, WalletLedgerService, etc.) since none of them have a compensating side-effect that runs between the deferred INSERT and the rollback that itself needs cleanup.",
+      "evidence_score": 3,
+      "confidence": 55,
+      "proposed_change": "Keep as P2 if the team weighs 'ledger idempotent replay' and 'all ledger postings' (cited in EV-047's affected_features) as inherently P2-worthy regardless of corruption risk, since it does touch the money surface — but if so, note explicitly in the writeup that no corruption/double-write was found or claimed, only an imprecise error code, so downstream readers (e.g. Swapnil) don't over-read this as a money-safety defect equivalent to EV-002/EV-003."
+    }
+  ],
+  "missing_evidence": [
+    "EV-048: evidence_type is tagged ['code','runtime','test'], but the 'runtime' evidence cited (mvn surefire runs of 215/215 and 3621 tests) proves OTHER tests executed, not that IdempotencyReservationReaperJob/CreatorThemeTaggingJob/SubscriptionDunningJob/SubscriptionRenewalResetJob/AICreditResetJob were ever run. The actual proof for this finding is a filesystem/grep search returning zero test files — evidence_type 'code' only. Does not change the finding's correctness, only mislabels the evidence category, which matters for anyone later trying to reproduce 'the runtime evidence' and finding none exists for the specific classes named.",
+    "EV-038: 'skipped' is asserted from a single environment (local, offline, no Docker) corroborated by two agents who ran the SAME kind of local check, not from an independent check of the RC's actual CI run history (GitHub Actions logs for backend-ci.yml on main/115f698 were not pulled by anyone in the register). Two agents agreeing on a local sandbox result is not the same evidence strength as one agent checking the actual CI logs. See disagreement above.",
+    "EV-052 and EV-055 both correctly note zero CI enforcement / a deterministic local timeout, but neither checked whether the two-tier distinction (frontend-checks.yml calls `npm test`, which is vitest, not playwright) means the Playwright specs (EV-052) are ALSO simply outside frontend-checks.yml's scope by design (a separate, never-created e2e workflow) rather than a broken existing one — worth confirming with Arjun/Priya whether e2e-in-CI was ever actually planned for this RC or is out-of-scope-by-design, which changes whether this is a 'regression' or a 'never built' gap.",
+    "No agent in the register (including my own earlier KAV-* pass) pulled actual GitHub Actions run history/status for any of the 10 workflows on this commit or its ancestors — every CI-related claim in the register (EV-009 prerender, EV-052 e2e, EV-119 lint, EV-038 Testcontainers) is inferred from reading workflow YAML + local reproduction, never from an actual CI dashboard. This is a systemic evidence gap across the whole audit, not specific to one finding: 'this workflow file would/wouldn't catch X' is being used as a proxy for 'CI is currently green/red on main', which are different claims."
+  ],
+  "missed_issues": [
+    {
+      "id": "XR-KAVYA-01",
+      "title": "No CI workflow runs eslint at all — the FE lint script exists only in package.json and is never invoked from any of the 10 GitHub Actions workflows, so EV-119's 7 real errors (and any future ones) ship with zero CI signal, not merely a 'currently red' gate",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 88,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "Grepped all 10 files under .github/workflows/*.yml for 'lint' and 'eslint': zero matches in any file. Read frontend-checks.yml (the only FE CI job) in full: its steps are Typecheck (tsc --noEmit), a money-flag build-wiring check (F-0390), and `npm test` (vitest) — no lint step. package.json:10 defines `\"lint\": \"eslint .\"` but nothing in CI ever runs `npm run lint`.",
+      "location": ".github/workflows/frontend-checks.yml (no lint step); package.json:10 (lint script defined but orphaned in CI)",
+      "impact": "Lint is effectively decorative for this RC: a developer must remember to run it locally. EV-119's 7 real no-unused-vars errors are the visible symptom, but the actual gap is structural — any future lint regression, including one masking a real bug (an unused variable that should have been used, e.g. the deal-payments-tab.tsx unused deliverablesDone/deliverablesTotal params EV-119 already flags as 'unfinished deliverables display') will merge to main with a fully green CI run.",
+      "recommended_fix": "Add a `lint` step (`npm run lint`) to frontend-checks.yml as its own job or a step before/parallel to typecheck, matching the pattern already used for tsc and vitest in the same workflow.",
+      "verification_required": "After adding the step, push a PR that reintroduces one of the 7 known errors and confirm the workflow goes red.",
+      "affected_features": ["Frontend CI"],
+      "reproduction": "grep -rn 'lint\\|eslint' .github/workflows/*.yml from the RC root returns no matches."
+    }
+  ]
+}

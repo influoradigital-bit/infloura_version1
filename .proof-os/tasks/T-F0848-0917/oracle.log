@@ -1,0 +1,78 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ---------------------< com.influora:influora-api >----------------------
+[INFO] Building influora-api 0.1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- clean:3.3.2:clean (default-clean) @ influora-api ---
+[INFO] Deleting C:\Users\Sage world\Downloads\New Influora Ai\New Influora\influora-api\target
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ influora-api ---
+[INFO] Copying 3 resources from src\main\resources to target\classes
+[INFO] Copying 134 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ influora-api ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 824 source files with javac [debug parameters release 21] to target\classes
+[INFO] /C:/Users/Sage world/Downloads/New Influora Ai/New Influora/influora-api/src/main/java/com/influora/integration/ai/MeeraVoiceAiClient.java: Some input files use or override a deprecated API.
+[INFO] /C:/Users/Sage world/Downloads/New Influora Ai/New Influora/influora-api/src/main/java/com/influora/integration/ai/MeeraVoiceAiClient.java: Recompile with -Xlint:deprecation for details.
+[INFO] /C:/Users/Sage world/Downloads/New Influora Ai/New Influora/influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java: Some input files use unchecked or unsafe operations.
+[INFO] /C:/Users/Sage world/Downloads/New Influora Ai/New Influora/influora-api/src/main/java/com/influora/service/CreatorDiscoveryService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ influora-api ---
+[INFO] Copying 1 resource from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ influora-api ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 340 source files with javac [debug parameters release 21] to target\test-classes
+[INFO] /C:/Users/Sage world/Downloads/New Influora Ai/New Influora/influora-api/src/test/java/com/influora/web/WooCommerceWebhookIdempotencyTest.java: C:\Users\Sage world\Downloads\New Influora Ai\New Influora\influora-api\src\test\java\com\influora\web\WooCommerceWebhookIdempotencyTest.java uses or overrides a deprecated API.
+[INFO] /C:/Users/Sage world/Downloads/New Influora Ai/New Influora/influora-api/src/test/java/com/influora/web/WooCommerceWebhookIdempotencyTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /C:/Users/Sage world/Downloads/New Influora Ai/New Influora/influora-api/src/test/java/com/influora/integration/ai/BrandSafetyAiClientTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /C:/Users/Sage world/Downloads/New Influora Ai/New Influora/influora-api/src/test/java/com/influora/integration/ai/BrandSafetyAiClientTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ influora-api ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.influora.architecture.CampaignActivationPathTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.500 s -- in com.influora.architecture.CampaignActivationPathTest
+[INFO] Running com.influora.service.BrandFeePublishPathConformanceTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.050 s -- in com.influora.service.BrandFeePublishPathConformanceTest
+[INFO] Running com.influora.service.CampaignActivationGatesTest
+WARNING: A Java agent has been loaded dynamically (C:\Users\Sage world\.m2\repository\net\bytebuddy\byte-buddy-agent\1.14.19\byte-buddy-agent-1.14.19.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.323 s -- in com.influora.service.CampaignActivationGatesTest
+[INFO] Running com.influora.service.CampaignActivationGuardTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.008 s -- in com.influora.service.CampaignActivationGuardTest
+15:19:53.934 [main] INFO org.testcontainers.dockerclient.DockerClientProviderStrategy -- Loaded org.testcontainers.dockerclient.NpipeSocketClientProviderStrategy from ~/.testcontainers.properties, will try it first
+15:19:54.023 [main] INFO org.testcontainers.dockerclient.DockerMachineClientProviderStrategy -- docker-machine executable was not found on PATH ([C:\Users\Sage world\bin, C:\Program Files\Git\mingw64\bin, C:\Program Files\Git\usr\local\bin, C:\Program Files\Git\usr\bin, C:\Program Files\Git\usr\bin, C:\Program Files\Git\mingw64\bin, C:\Program Files\Git\usr\bin, C:\Users\Sage world\bin, C:\Program Files (x86)\Common Files\Oracle\Java\java8path, C:\Program Files (x86)\Common Files\Oracle\Java\javapath, C:\Program Files\Microsoft\jdk-21.0.11.10-hotspot\bin, C:\Program Files\Eclipse Adoptium\jdk-21.0.9.10-hotspot\bin, C:\Python313\Scripts, C:\Python313, C:\Users\Sage world\AppData\Local\Programs\cursor\resources\app\bin, C:\Users\Sage world\AppData\Local\Programs\Python\Python311\Scripts, C:\Users\Sage world\AppData\Local\Programs\Python\Python311, C:\windows\system32, C:\windows, C:\windows\System32\Wbem, C:\windows\System32\WindowsPowerShell\v1.0, C:\windows\System32\OpenSSH, C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common, C:\Program Files\NVIDIA Corporation\NVIDIA NvDLISR, C:\Program Files (x86)\Microsoft SQL Server\160\Tools\Binn, C:\Program Files\Microsoft SQL Server\160\Tools\Binn, C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn, C:\Program Files\Microsoft SQL Server\160\DTS\Binn, C:\Program Files (x86)\Microsoft SQL Server\160\DTS\Binn, C:\Program Files\Microsoft SQL Server\150\Tools\Binn, C:\Program Files\dotnet, C:\Users\Sage world\AppData\Local\Programs\Python\Python310\Scripts, C:\Users\Sage world\AppData\Local\Programs\Python\Pytho, C:\Program Files\MySQL\MySQL Server 8.0\bin, C:\WINDOWS\system32, C:\WINDOWS, C:\WINDOWS\System32\Wbem, C:\WINDOWS\System32\WindowsPowerShell\v1.0, C:\WINDOWS\System32\OpenSSH, C:\Program Files\nodejs, C:\ProgramData\chocolatey\bin, C:\Program Files\Git\cmd, C:\Program Files (x86)\cloudflared, C:\Program Files\Docker\Docker\resources\bin, C:\Users\Sage world\.local\bin, C:\Program Files\Azure Data Studio\bin, C:\Program Files\cursor\resources\app\bin, C:\Users\Sage world\AppData\Local\agy\bin, C:\Program Files\MySQL\MySQL Shell 8.0\bin, C:\Users\Sage world\AppData\Local\Programs\Python\Python310, C:\Users\Sage world\AppData\Local\Microsoft\WindowsApps, C:\Program Files\Azure Data Studio\bin, C:\Users\Sage world\.dotnet\tools, C:\Users\Sage world\AppData\Local\Programs\Microsoft VS Code\bin, C:\Users\Sage world\AppData\Local\Programs\Ollama, C:\Users\Sage world\AppData\Roaming\npm, C:\Users\Sage world\AppData\Local\Microsoft\WinGet\Packages\Schniz.fnm_Microsoft.Winget.Source_8wekyb3d8bbwe, C:\Users\Sage world\AppData\Local\Programs\Antigravity\bin, C:\Users\Sage world\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1-full_build\bin, C:\Users\Sage world\AppData\Local\Programs\Antigravity IDE\bin, C:\Users\Sage world\AppData\Local\cursor-agent, C:\Users\Sage world\AppData\Roaming\Python\Python313\Scripts, C:\Users\Sage world\AppData\Roaming\Python\Python313\Scripts, C:\Users\Sage world\tools\apache-maven-3.9.9\bin, C:\Users\Sage world\AppData\Local\Microsoft\WinGet\Packages\Gitleaks.Gitleaks_Microsoft.Winget.Source_8wekyb3d8bbwe, C:\Users\Sage world\AppData\Local\Programs\Python\Python310, C:\Program Files\nodejs, C:\Python313, C:\Program Files\Git\mingw64\bin, C:\Program Files\Git\usr\bin\vendor_perl, C:\Program Files\Git\usr\bin\core_perl, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\b66976d0-d58d-4e93-84e6-9997f7df1500\rpm\plugin_012ABz1xjgtJYWKrcJkXW6ad\bin, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\b66976d0-d58d-4e93-84e6-9997f7df1500\rpm\plugin_014WxCYbLf7f3uw2isHFR9US\bin, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\b66976d0-d58d-4e93-84e6-9997f7df1500\rpm\plugin_0155zZVATbJU3jHUmPP9NvMC\bin, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\b66976d0-d58d-4e93-84e6-9997f7df1500\rpm\plugin_017FSfZwAM3GF7xTpsbDUHoA\bin, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\b66976d0-d58d-4e93-84e6-9997f7df1500\rpm\plugin_01BnEF97nKc8pyi8gL7qpsSM\bin, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\b66976d0-d58d-4e93-84e6-9997f7df1500\rpm\plugin_01Eeb9y5m4iFuY3yRtytYfdc\bin, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\b66976d0-d58d-4e93-84e6-9997f7df1500\rpm\plugin_01TCTU1agbgrzqYq3xo1Z2Db\bin, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\b66976d0-d58d-4e93-84e6-9997f7df1500\rpm\plugin_01VTbvGZYaCVU2CNSvhDCnkg\bin, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\b66976d0-d58d-4e93-84e6-9997f7df1500\rpm\plugin_01XXJmxLXPEhPMmnxmrgntNw\bin, C:\Users\Sage world\AppData\Roaming\Claude\local-agent-mode-sessions\skills-plugin\b66976d0-d58d-4e93-84e6-9997f7df1500\3a613ffb-5d5c-4472-8b3e-6aa41ae4204d\bin])
+15:19:54.025 [main] ERROR org.testcontainers.dockerclient.DockerClientProviderStrategy -- Could not find a valid Docker environment. Please check configuration. Attempted configurations were:
+As no valid configuration was found, execution cannot continue.
+See https://java.testcontainers.org/on_failure.html for more details.
+[INFO] Running com.influora.service.CampaignActivationLedgerIntegrationTest
+[WARNING] Tests run: 1, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.002 s -- in com.influora.service.CampaignActivationLedgerIntegrationTest
+[INFO] Running com.influora.service.CampaignAuthzTest
+[INFO] Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.769 s -- in com.influora.service.CampaignAuthzTest
+[INFO] Running com.influora.service.CampaignCreateStatusGateTest
+[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.203 s -- in com.influora.service.CampaignCreateStatusGateTest
+[INFO] Running com.influora.service.CampaignServiceTest
+[INFO] Tests run: 35, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.162 s -- in com.influora.service.CampaignServiceTest
+[INFO] Running com.influora.service.meera.tool.ConfirmLaunchExecutorTest
+[INFO] Tests run: 9, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.281 s -- in com.influora.service.meera.tool.ConfirmLaunchExecutorTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[WARNING] Tests run: 80, Failures: 0, Errors: 0, Skipped: 1
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:09 min
+[INFO] Finished at: 2026-09-17T15:19:56+05:30
+[INFO] ------------------------------------------------------------------------

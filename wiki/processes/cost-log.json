@@ -34,5 +34,31 @@
       "dry_run_ceiling": 5,
       "provisional_full_backfill_ceiling": 100
     }
-  }
+  },
+  "workstreams": [
+    {
+      "workstream_id": "phase1-creator-copilot-safety-0915-0917",
+      "date_range": "2026-09-15 to 2026-09-17",
+      "tickets_closed": ["F-0784", "F-0785", "F-0786", "F-0825", "F-0826", "F-0827"],
+      "status": "DONE -- Kabir PASS re-review 2026-09-17 (commit d3a2491, F-0784 on ab87c46)",
+      "dispatches": [
+        { "agent": "vikram", "task": "F-0784 word-boundary matching fix (ThemeMatchService + n8n tagger)", "subagent_tokens": 146535, "tool_uses": 41, "wall_clock_minutes": null },
+        { "agent": "kavya", "task": "F-0784 QA gate", "subagent_tokens": 159053, "tool_uses": 37, "wall_clock_minutes": null },
+        { "agent": "vikram", "task": "F-0786 content filter + F-0785 daily-cap race, initial build", "subagent_tokens": 253726, "tool_uses": 75, "wall_clock_minutes": 38.6 },
+        { "agent": "kabir", "task": "F-0786/F-0785 security review -- BLOCKED (2 High + 2 Medium + 2 Low, ledgered F-0825/826/827/828)", "subagent_tokens": 144827, "tool_uses": 31, "wall_clock_minutes": 8.9 },
+        { "agent": "vikram", "task": "fix Kabir's F-0825/826/827 findings (resumed across a 2-day session gap)", "subagent_tokens": 259582, "tool_uses": 44, "wall_clock_minutes": 19.2 },
+        { "agent": "kabir", "task": "F-0825/826/827 re-review -- PASSED", "subagent_tokens": 213841, "tool_uses": 66, "wall_clock_minutes": 17.5 }
+      ],
+      "totals": {
+        "subagent_tokens": 1177564,
+        "tool_uses": 294,
+        "wall_clock_minutes_reported": 84.2,
+        "wall_clock_note": "Only the 4 F-0786/F-0785 loop dispatches had wall-clock time reported at dispatch; the F-0784 arc (Vikram build + Kavya QA) logged tokens/tool-uses only, no minutes given -- not invented here.",
+        "dollar_cost": "$0 marginal -- all agents ran under the flat $100/mo Claude Max Plan, which covers all Anthropic API agents regardless of token volume. No per-token billing applies to this workstream."
+      },
+      "pattern_flag": "The F-0786 fix-and-re-review loop (Vikram fix 259,582 tok/44 tool uses/19.2 min + Kabir re-review 213,841 tok/66 tool uses/17.5 min = 473,423 tok/110 tool uses/36.7 min) cost almost as much as Vikram's original F-0786+F-0785 build (253,726 tok/75 tool uses/38.6 min). One Kabir BLOCKED verdict on a security-relevant change roughly doubled the phase's effective cost. Recommend to Swapnil/Priya: dispatch Kabir earlier or in parallel on any change touching creator-facing content safety, or budget for a fix loop up front instead of treating Kabir's pass as a formality after the build is 'done'.",
+      "logged_by": "rohan",
+      "logged_date": "2026-09-17"
+    }
+  ]
 }

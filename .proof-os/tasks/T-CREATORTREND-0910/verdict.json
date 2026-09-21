@@ -1,0 +1,21 @@
+{"verdict": "proved",
+ "oracle": "gates/citations.py",
+ "isolation": "oracle",
+ "done_when": "the answer cites file:line for each claim it makes",
+ "evidence": {
+   "oracle": "gates/citations.py",
+   "command": "python gates/citations.py .proof-os/tasks/T-CREATORTREND-0910/answer.md .",
+   "result": "citations checked: 18, quotations verified: 18, failed: 0 (exit 0)",
+   "where": ".proof-os/tasks/T-CREATORTREND-0910/answer.md:1"
+ },
+ "not_checked": [
+   "whether the Creator AI Co-pilot actually returns a suggestion at runtime - no boot, no curl, no live DB",
+   "whether CREATOR_COPILOT_ENABLED is true on the live Utho host - the live stack is /usr/local/App/docker-compose.prod.yml, not deploy/utho/, and was not read",
+   "whether the n8n trend-pull workflow is deployed and running anywhere, so whether the trends table has any rows at all",
+   "whether NEWSAPI_KEY is provisioned in any real environment",
+   "whether a cited line that exists and is quoted correctly actually supports the claim - citations.py verifies textual presence, never entailment"
+ ],
+ "skipped": [
+   {"step": "dispatch a fresh-context checker (work.md section 6)",
+    "reason": "no model judgment was scored here - the done_when is a citation check answered by a deterministic gate, so a fresh-context reviewer would add an echo, not evidence"}
+ ]}

@@ -1,0 +1,336 @@
+<title>Build Ledger</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root{
+    --paper:#FBF7EE; --paper-raised:#FFFFFF; --paper-sunk:#F3EDDD;
+    --ink:#16241F; --ink-soft:#4E5F57; --ink-faint:#8B968E;
+    --line:#E4D9C2; --line-strong:#D2C4A3;
+    --marigold:#B96A18; --marigold-ink:#7A480F; --marigold-soft:#F3DFC0; --marigold-bg:#FBEEDA;
+    --teal:#276358; --teal-soft:#DCEDE7; --teal-bg:#EEF6F3;
+    --brick:#9C4438; --brick-soft:#F3E1DE; --brick-bg:#FBEEEC;
+    --amber:#8A6415; --amber-soft:#F1E4C4; --amber-bg:#FBF3DD;
+    --shadow: 22 36 31;
+    --focus:#1D5FD1;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#101A16; --paper-raised:#16241E; --paper-sunk:#0C1512;
+      --ink:#F1EADC; --ink-soft:#B7C2BA; --ink-faint:#71807A;
+      --line:#28362E; --line-strong:#374739;
+      --marigold:#EEA65C; --marigold-ink:#F6C388; --marigold-soft:#3A2A14; --marigold-bg:#231A0F;
+      --teal:#79C6AF; --teal-soft:#173029; --teal-bg:#12241F;
+      --brick:#E08D7C; --brick-soft:#2E1D1A; --brick-bg:#241713;
+      --amber:#E3C167; --amber-soft:#332911; --amber-bg:#26200E;
+      --shadow: 0 0 0;
+      --focus:#7DAAFF;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#101A16; --paper-raised:#16241E; --paper-sunk:#0C1512;
+    --ink:#F1EADC; --ink-soft:#B7C2BA; --ink-faint:#71807A;
+    --line:#28362E; --line-strong:#374739;
+    --marigold:#EEA65C; --marigold-ink:#F6C388; --marigold-soft:#3A2A14; --marigold-bg:#231A0F;
+    --teal:#79C6AF; --teal-soft:#173029; --teal-bg:#12241F;
+    --brick:#E08D7C; --brick-soft:#2E1D1A; --brick-bg:#241713;
+    --amber:#E3C167; --amber-soft:#332911; --amber-bg:#26200E;
+    --shadow: 0 0 0;
+    --focus:#7DAAFF;
+  }
+
+  *{box-sizing:border-box;}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:'Public Sans', -apple-system, 'Segoe UI', sans-serif;
+    font-size:15px; line-height:1.55;
+    background-image: radial-gradient(circle at 1px 1px, rgba(22,36,31,0.055) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+  h1,h2,h3{font-family:'Fraunces', 'Iowan Old Style', Georgia, serif; text-wrap:balance; margin:0;}
+  code, .mono{font-family:'IBM Plex Mono','SFMono-Regular',Menlo,monospace;}
+  a{color:inherit;}
+  ::selection{background:var(--marigold-soft); color:var(--ink);}
+  *:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:4px;}
+
+  .page{max-width:1180px; margin:0 auto; padding:28px 28px 64px;}
+
+  .topbar{display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:12px; padding-bottom:18px; border-bottom:1px solid var(--line);}
+  .brand-mark{font-family:'Fraunces',serif; font-weight:600; font-size:1.05rem; letter-spacing:-0.01em;}
+  .brand-mark span{font-weight:400; color:var(--ink-faint); font-size:0.92em;}
+  .date-line{font-family:'IBM Plex Mono',monospace; font-size:0.76rem; color:var(--ink-faint);}
+
+  .lede{margin:20px 0 30px; max-width:72ch; color:var(--ink-soft); font-size:0.98rem;}
+  .lede strong{color:var(--ink); font-weight:600;}
+
+  section.card{background:var(--paper-raised); border:1px solid var(--line); border-radius:16px; padding:24px 26px; box-shadow:0 1px 3px rgba(var(--shadow)/0.06); margin-bottom:26px;}
+  .card h2{font-size:1.02rem; font-weight:600; margin-bottom:4px;}
+  .card .sub{font-size:0.83rem; color:var(--ink-faint); margin-bottom:18px;}
+
+  /* ---- headline tiles ---- */
+  .headline-grid{display:flex; flex-wrap:wrap; border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:26px;}
+  .headline-tile{background:var(--paper-raised); padding:20px 22px; flex:1 1 200px; min-width:200px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); margin:-1px 0 0 -1px;}
+  .headline-num{font-family:'Fraunces',serif; font-weight:700; font-size:2.4rem; letter-spacing:-0.02em; font-variant-numeric:tabular-nums; display:flex; align-items:baseline; gap:6px;}
+  .headline-num .of{font-size:1.1rem; font-weight:400; color:var(--ink-faint);}
+  .headline-label{font-size:0.72rem; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-faint); font-weight:600; margin-top:6px;}
+  .headline-note{font-size:0.78rem; color:var(--ink-soft); margin-top:6px;}
+  .headline-tile.accent .headline-num{color:var(--marigold-ink);}
+  :root[data-theme="dark"] .headline-tile.accent .headline-num{color:var(--marigold);}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .headline-tile.accent .headline-num{color:var(--marigold);}}
+
+  /* ---- phase table ---- */
+  .phase-row{display:grid; grid-template-columns:150px 1fr auto; align-items:center; gap:16px; padding:13px 0; border-bottom:1px solid var(--line);}
+  .phase-row:last-child{border-bottom:0;}
+  .phase-name{font-weight:600; font-size:0.9rem;}
+  .phase-sub{font-size:0.76rem; color:var(--ink-faint); margin-top:1px;}
+  .phase-track{height:8px; border-radius:5px; background:var(--paper-sunk); overflow:hidden; position:relative;}
+  .phase-fill{height:100%; border-radius:5px; background:var(--line-strong);}
+  .phase-fill.has-progress{background:linear-gradient(90deg, var(--amber), var(--marigold));}
+  .phase-count{font-family:'IBM Plex Mono',monospace; font-size:0.8rem; color:var(--ink-soft); white-space:nowrap; text-align:right; min-width:52px;}
+
+  /* ---- pills ---- */
+  .pill{display:inline-flex; align-items:center; gap:5px; font-size:0.72rem; font-weight:600; padding:3px 9px; border-radius:100px; white-space:nowrap;}
+  .pill-open{color:var(--brick); background:var(--brick-bg); border:1px solid var(--brick-soft);}
+  .pill-fixed{color:var(--teal); background:var(--teal-bg); border:1px solid var(--teal-soft);}
+  .pill-new{color:var(--amber); background:var(--amber-bg); border:1px solid var(--amber-soft);}
+  .pill-blocker{color:var(--brick); background:var(--brick-bg); border:1px solid var(--brick-soft);}
+
+  /* ---- ticket board ---- */
+  .tgrid{display:grid; grid-template-columns:1fr; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden;}
+  .trow{display:grid; grid-template-columns:76px 1fr auto; gap:14px; align-items:center; padding:11px 16px; background:var(--paper-raised); font-size:0.85rem;}
+  .trow .tid{font-family:'IBM Plex Mono',monospace; color:var(--ink-faint); font-weight:500;}
+  .trow .tdesc{color:var(--ink-soft);}
+  .trow .tdesc b{color:var(--ink); font-weight:600;}
+  .filter-row{display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;}
+  .filter-btn{appearance:none; border:1px solid var(--line-strong); background:var(--paper-sunk); color:var(--ink-soft); font-size:0.76rem; font-weight:600; padding:5px 12px; border-radius:100px; cursor:pointer;}
+  .filter-btn.is-active{background:var(--ink); color:var(--paper); border-color:var(--ink);}
+  :root[data-theme="dark"] .filter-btn.is-active{background:var(--marigold); color:var(--paper-sunk); border-color:var(--marigold);}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .filter-btn.is-active{background:var(--marigold); color:var(--paper-sunk); border-color:var(--marigold);}}
+  .trow[data-hidden="1"]{display:none;}
+
+  /* ---- honesty panel ---- */
+  .honesty{background:var(--teal-bg); border-color:var(--teal-soft);}
+  .honesty ul{margin:0; padding-left:20px; display:flex; flex-direction:column; gap:9px; font-size:0.88rem; color:var(--ink-soft);}
+  .honesty li b{color:var(--ink);}
+  .honesty li code{font-size:0.76rem; color:var(--teal); background:var(--teal-soft); padding:1px 6px; border-radius:4px;}
+
+  /* ---- rulings needed ---- */
+  .rulings{background:var(--marigold-bg); border-color:var(--marigold-soft);}
+  .ruling-item{display:flex; gap:12px; padding:12px 0; border-bottom:1px dashed var(--marigold-soft);}
+  .ruling-item:last-child{border-bottom:0;}
+  .ruling-num{font-family:'Fraunces',serif; font-weight:600; font-size:1.1rem; color:var(--marigold-ink); flex:none; width:22px;}
+  :root[data-theme="dark"] .ruling-num{color:var(--marigold);}
+  @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .ruling-num{color:var(--marigold);}}
+  .ruling-body b{color:var(--ink);}
+  .ruling-body{font-size:0.88rem; color:var(--ink-soft);}
+  .ruling-blocks{font-size:0.76rem; color:var(--ink-faint); margin-top:3px; font-family:'IBM Plex Mono',monospace;}
+
+  .foot{margin-top:36px; padding-top:20px; border-top:1px solid var(--line); font-size:0.78rem; color:var(--ink-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;}
+  .foot code{color:var(--ink-soft);}
+
+  @media (max-width:620px){
+    .phase-row{grid-template-columns:1fr; row-gap:6px;}
+    .trow{grid-template-columns:1fr; row-gap:4px;}
+  }
+</style>
+
+<h1 class="sr-only">Build Ledger — Creator Co-pilot and Profile Metrics, current state against the phase plan</h1>
+
+<div class="page">
+  <header class="topbar">
+    <div class="brand-mark">Influora <span>· Build Ledger</span></div>
+    <div class="date-line">2026-09-15 · re-verified after a 2-day gap</div>
+  </header>
+
+  <p class="lede">For Swapnil. Grounded in what's actually on disk right now, not in what was planned —
+  <strong>every number below was re-checked today</strong>, including a fresh test run and a fresh
+  ledger pull, after two days of heavy concurrent commits in this tree. One exposure found and
+  closed in the course of that check: see the note under the ticket board.</p>
+
+  <div class="headline-grid">
+    <div class="headline-tile">
+      <div class="headline-num">0<span class="of">of 27</span></div>
+      <div class="headline-label">Phase tasks shipped</div>
+      <div class="headline-note">1 partially resolved — see Phase 0</div>
+    </div>
+    <div class="headline-tile">
+      <div class="headline-num">0<span class="of">of 23</span></div>
+      <div class="headline-label">Tickets formally closed</div>
+      <div class="headline-note">closing needs a promoted gate, not just a fix</div>
+    </div>
+    <div class="headline-tile accent">
+      <div class="headline-num">3</div>
+      <div class="headline-label">Tickets fixed &amp; committed today</div>
+      <div class="headline-note">F-0775 · F-0776 · F-0777</div>
+    </div>
+    <div class="headline-tile">
+      <div class="headline-num">39</div>
+      <div class="headline-label">Tests passing</div>
+      <div class="headline-note">re-run fresh today, 0 failures</div>
+    </div>
+    <div class="headline-tile">
+      <div class="headline-num">0<span class="of">of 3</span></div>
+      <div class="headline-label">Rulings made</div>
+      <div class="headline-note">all three block a phase</div>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>Phase progress</h2>
+    <div class="sub">27 tasks across 6 phases, from <code>wiki/processes/task-creator-profile-and-copilot.md</code></div>
+
+    <div class="phase-row">
+      <div><div class="phase-name">0 · Unblock</div><div class="phase-sub">4 tasks</div></div>
+      <div class="phase-track"><div class="phase-fill has-progress" style="width:12%"></div></div>
+      <div class="phase-count">0.1 partial</div>
+    </div>
+    <div class="phase-row">
+      <div><div class="phase-name">1 · Safety</div><div class="phase-sub">3 tasks · non-negotiable</div></div>
+      <div class="phase-track"><div class="phase-fill" style="width:0%"></div></div>
+      <div class="phase-count">0 / 3</div>
+    </div>
+    <div class="phase-row">
+      <div><div class="phase-name">2 · Profile metrics</div><div class="phase-sub">4 tasks · zero Meta dependency</div></div>
+      <div class="phase-track"><div class="phase-fill" style="width:0%"></div></div>
+      <div class="phase-count">0 / 4</div>
+    </div>
+    <div class="phase-row">
+      <div><div class="phase-name">2.5 · Brand surface</div><div class="phase-sub">5 tasks</div></div>
+      <div class="phase-track"><div class="phase-fill" style="width:0%"></div></div>
+      <div class="phase-count">0 / 5</div>
+    </div>
+    <div class="phase-row">
+      <div><div class="phase-name">3 · Trend supply</div><div class="phase-sub">3 tasks · design complete, unwritten</div></div>
+      <div class="phase-track"><div class="phase-fill" style="width:0%"></div></div>
+      <div class="phase-count">0 / 3</div>
+    </div>
+    <div class="phase-row">
+      <div><div class="phase-name">4 · Category &amp; language</div><div class="phase-sub">4 tasks · the actual product promise</div></div>
+      <div class="phase-track"><div class="phase-fill" style="width:0%"></div></div>
+      <div class="phase-count">0 / 4</div>
+    </div>
+    <div class="phase-row">
+      <div><div class="phase-name">5 · Enablement</div><div class="phase-sub">4 tasks · flag stays off until this closes</div></div>
+      <div class="phase-track"><div class="phase-fill" style="width:0%"></div></div>
+      <div class="phase-count">0 / 4</div>
+    </div>
+  </section>
+
+  <section class="card rulings">
+    <h2>What's actually blocking progress</h2>
+    <div class="sub">Not engineering time. Three decisions, all yours.</div>
+
+    <div class="ruling-item">
+      <div class="ruling-num">1</div>
+      <div class="ruling-body"><b>Engagement-rate formula</b> — reach-based or follower-based? Brands
+        will compare our number against other platforms'; once published we cannot quietly switch.
+        <div class="ruling-blocks">blocks Task 2.1 → all of Phase 2</div></div>
+    </div>
+    <div class="ruling-item">
+      <div class="ruling-num">2</div>
+      <div class="ruling-body"><b>Creator category — declared or derived?</b> Deriving from captions
+        rebuilds the English-only trap (F-0783) with extra steps. Recommendation on record: declared
+        at onboarding.
+        <div class="ruling-blocks">blocks Task 0.3 → all of Phase 4</div></div>
+    </div>
+    <div class="ruling-item">
+      <div class="ruling-num">3</div>
+      <div class="ruling-body"><b>What does a brand see pre-consent?</b> Full audience detail today
+        happens only after a connection exists — nothing replaces it during discovery, which is when
+        the buying decision is made.
+        <div class="ruling-blocks">blocks Task 2.5b → Tasks 2.5c/d/e</div></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Ticket board</h2>
+    <div class="sub">23 tickets touching this workstream's files. 0 closed — closing needs a promoted gate.</div>
+    <div class="filter-row">
+      <button class="filter-btn is-active" data-filter="all">All 23</button>
+      <button class="filter-btn" data-filter="fixed">Fixed &amp; committed (3)</button>
+      <button class="filter-btn" data-filter="open">Open (20)</button>
+    </div>
+    <div class="tgrid" id="tgrid"></div>
+  </section>
+
+  <section class="card honesty">
+    <h2>What "0 of 27" does not mean</h2>
+    <div class="sub">This work stopped a worse outcome twice and caught a live exposure once.</div>
+    <ul>
+      <li><b>Blocked enabling a dead pipeline.</b> The Co-pilot's only trend writer is an inactive
+        n8n workflow. Flipping the flag before this was found would have shipped a feature that
+        looks live and says nothing to every creator. <code>F-0774</code></li>
+      <li><b>Blocked buying three API keys for a feature that can't serve its own pitch.</b> The
+        40-theme vocabulary has zero finance, food or business themes; a finance creator can never
+        match. Found before a single rupee was spent. <code>F-0782</code></li>
+      <li><b>Caught a same-day attribution and exposure risk.</b> Two files sat untracked for two
+        days across many intervening commits — the exact class already logged in this project's own
+        memory. Found and committed within the hour, not after another loss. <code>F-0817</code></li>
+      <li><b>Two errors caught in the CTO's own draft spec</b> before anyone built against it — a
+        false "no endpoint exists" claim, and a workspace-only assumption about Meera's context that
+        turned out to have a creator-side counterpart.</li>
+    </ul>
+  </section>
+
+  <footer class="foot">
+    <span>Companion to <code>Creator Profile Lens</code> — same design system, different question.</span>
+    <span>Source: <code>wiki/processes/task-creator-profile-and-copilot.md</code></span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var TICKETS = [
+    ['F-0774','fixed:false','dependency-not-deployed — the only trend writer is an inactive n8n workflow'],
+    ['F-0775','fixed','missing-test — CreatorNudgeService had zero coverage; 34 tests added, committed'],
+    ['F-0776','fixed','silent behaviour change — score threshold mutated <= vs <, reverted, falsified 13→0'],
+    ['F-0777','fixed','all-or-nothing config gate — one missing key disabled every source; fixed to per-source'],
+    ['F-0778','open','FK RESTRICT breaks the bulk expiry purge once suggestions exist'],
+    ['F-0781','open','TREND_INGEST_ENABLED is wired everywhere and gates nothing — no consumer exists'],
+    ['F-0782','open','category promise undelivered — one fixed NewsAPI category for every creator'],
+    ['F-0783','open','non-Latin scripts unsupported — theme matching is Latin-only substring containment'],
+    ['F-0784','open','unanchored matching — "onam" fires inside "Sonam", "holi" inside "holiday"'],
+    ['F-0785','open','daily-cap race — the exception handler is dead code, concurrent opens 500'],
+    ['F-0786','open','fallback copy injects raw news headlines with no content filter'],
+    ['F-0787','open','CREATOR_COPILOT_ENABLED absent from the live shared-box compose entirely'],
+    ['F-0789','open','account enumeration — other lane, not this workstream'],
+    ['F-0790','open','untracked file invisible to audit — half-closed by today’s commit, ledger still open'],
+    ['F-0791','open','dev watcher scope too wide — other lane, not this workstream'],
+    ['F-0792','open','metrics collected into media_metrics are exposed through no creator/brand DTO'],
+    ['F-0793','open','avgEngagementRate is never computed — permanently null by construction, not bug'],
+    ['F-0794','open','no fetch triggered on connect — up to ~24h of an empty profile'],
+    ['F-0795','open','brand page hardcodes demographics null, citing a stale "no endpoint" comment'],
+    ['F-0796','open','richer creator metrics unreachable until after a brand has already connected'],
+    ['F-0797','open','Meera’s quantitative picture of a creator is a follower count, nothing else'],
+    ['F-0798','open','a complete, permission-clean analytics pipeline exists and is never called'],
+    ['F-0817','open','trend-ingest wiring landed inside an unrelated OTP commit — history attribution lost']
+  ];
+
+  var grid = document.getElementById('tgrid');
+  grid.innerHTML = TICKETS.map(function(t){
+    var id=t[0], status=t[1], desc=t[2];
+    var pillClass = status==='fixed' ? 'pill-fixed' : 'pill-open';
+    var pillText = status==='fixed' ? 'FIXED & COMMITTED' : 'OPEN';
+    return '<div class="trow" data-status="'+(status==='fixed'?'fixed':'open')+'">'+
+           '<span class="tid">'+id+'</span>'+
+           '<span class="tdesc">'+desc+'</span>'+
+           '<span class="pill '+pillClass+'">'+pillText+'</span>'+
+           '</div>';
+  }).join('');
+
+  var btns = document.querySelectorAll('.filter-btn');
+  var rows = document.querySelectorAll('.trow');
+  btns.forEach(function(b){
+    b.addEventListener('click', function(){
+      btns.forEach(function(x){x.classList.remove('is-active');});
+      b.classList.add('is-active');
+      var f = b.getAttribute('data-filter');
+      rows.forEach(function(r){
+        var show = f==='all' || r.getAttribute('data-status')===f;
+        r.setAttribute('data-hidden', show ? '0' : '1');
+      });
+    });
+  });
+})();
+</script>

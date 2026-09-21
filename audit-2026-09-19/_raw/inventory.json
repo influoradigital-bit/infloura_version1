@@ -1,0 +1,1004 @@
+{
+ "rc": "115f698",
+ "rc_dir": "C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698",
+ "controller_count": 91,
+ "endpoint_count": 342,
+ "route_count": 114,
+ "route_breakdown": {
+  "src/App.tsx": 92,
+  "src/pages/admin-console.tsx (nested /admin/*)": 18,
+  "src/admin/pages/UsersPage.tsx (nested /admin/users/*)": 4,
+  "redirect_only_routes": 4,
+  "dev_only_routes": 1
+ },
+ "ai_service_route_count": 10,
+ "scheduled_job_count": 24,
+ "scheduled_jobs": [
+  {
+   "name": "AffiliateEarningReconciliationJob",
+   "schedule": "0 15 * * * *",
+   "where": "influora-api/src/main/java/com/influora/job/AffiliateEarningReconciliationJob.java:82",
+   "shedlock": true
+  },
+  {
+   "name": "AffiliateSettlementJob",
+   "schedule": "0 0 5 1 * *",
+   "where": "influora-api/src/main/java/com/influora/job/AffiliateSettlementJob.java:131",
+   "shedlock": true
+  },
+  {
+   "name": "AICreditResetJob",
+   "schedule": "0 0 2 1 * ? UTC",
+   "where": "influora-api/src/main/java/com/influora/job/AICreditResetJob.java:63",
+   "shedlock": true
+  },
+  {
+   "name": "AudienceDemographicsJob",
+   "schedule": "0 30 3 * * SUN",
+   "where": "influora-api/src/main/java/com/influora/job/AudienceDemographicsJob.java:96",
+   "shedlock": true
+  },
+  {
+   "name": "CreatorCaptionSyncJob",
+   "schedule": "${influora.creator-copilot.caption-sync-cron:0 0 2 * * *} UTC",
+   "where": "influora-api/src/main/java/com/influora/job/CreatorCaptionSyncJob.java:88",
+   "shedlock": true
+  },
+  {
+   "name": "CreatorConnectNudgeJob",
+   "schedule": "${influora.creator-connect-nudge.cron:0 30 9 * * *} Asia/Kolkata",
+   "where": "influora-api/src/main/java/com/influora/job/CreatorConnectNudgeJob.java:86",
+   "shedlock": true
+  },
+  {
+   "name": "CreatorThemeTaggingJob",
+   "schedule": "${influora.creator-copilot.theme-tag-batch-cron:0 0 3 * * *} UTC",
+   "where": "influora-api/src/main/java/com/influora/job/CreatorThemeTaggingJob.java:69",
+   "shedlock": true
+  },
+  {
+   "name": "DeliverableCleanupJob#1",
+   "schedule": "0 0 2 * * *",
+   "where": "influora-api/src/main/java/com/influora/job/DeliverableCleanupJob.java:104",
+   "shedlock": true
+  },
+  {
+   "name": "DeliverableCleanupJob#2",
+   "schedule": "0 30 2 * * *",
+   "where": "influora-api/src/main/java/com/influora/job/DeliverableCleanupJob.java:164",
+   "shedlock": true
+  },
+  {
+   "name": "DeliverableVerificationJob",
+   "schedule": "0 30 */6 * * *",
+   "where": "influora-api/src/main/java/com/influora/job/DeliverableVerificationJob.java:56",
+   "shedlock": true
+  },
+  {
+   "name": "IdempotencyReservationReaperJob",
+   "schedule": "0 */10 * * * *",
+   "where": "influora-api/src/main/java/com/influora/job/IdempotencyReservationReaperJob.java:66",
+   "shedlock": true
+  },
+  {
+   "name": "MeeraInteractionLogRetentionPurgeJob",
+   "schedule": "0 0 3 * * *",
+   "where": "influora-api/src/main/java/com/influora/job/MeeraInteractionLogRetentionPurgeJob.java:76",
+   "shedlock": true
+  },
+  {
+   "name": "MetaTokenRefreshService",
+   "schedule": "0 30 2 * * *",
+   "where": "influora-api/src/main/java/com/influora/job/MetaTokenRefreshService.java:64",
+   "shedlock": true
+  },
+  {
+   "name": "MetricsPollingJob",
+   "schedule": "0 0 */6 * * * UTC",
+   "where": "influora-api/src/main/java/com/influora/job/MetricsPollingJob.java:129",
+   "shedlock": true
+  },
+  {
+   "name": "PayoutOrphanedDebitSweepJob",
+   "schedule": "0 */10 * * * *",
+   "where": "influora-api/src/main/java/com/influora/job/PayoutOrphanedDebitSweepJob.java:74",
+   "shedlock": true
+  },
+  {
+   "name": "PlatformStatsAggregationJob",
+   "schedule": "0 45 3 * * *",
+   "where": "influora-api/src/main/java/com/influora/job/PlatformStatsAggregationJob.java:85",
+   "shedlock": true
+  },
+  {
+   "name": "ScoreCalculationJob",
+   "schedule": "0 0 4 * * * UTC",
+   "where": "influora-api/src/main/java/com/influora/job/ScoreCalculationJob.java:135",
+   "shedlock": true
+  },
+  {
+   "name": "StaleTokenCleanupJob",
+   "schedule": "0 0 4 * * *",
+   "where": "influora-api/src/main/java/com/influora/job/StaleTokenCleanupJob.java:62",
+   "shedlock": true
+  },
+  {
+   "name": "SubscriptionDunningJob",
+   "schedule": "0 0 3 * * * UTC",
+   "where": "influora-api/src/main/java/com/influora/job/SubscriptionDunningJob.java:107",
+   "shedlock": true
+  },
+  {
+   "name": "SubscriptionRenewalResetJob",
+   "schedule": "0 30 3 * * * UTC",
+   "where": "influora-api/src/main/java/com/influora/job/SubscriptionRenewalResetJob.java:188",
+   "shedlock": true
+  },
+  {
+   "name": "TrendPullJob",
+   "schedule": "${influora.trend-ingest.pull-cron:0 0 5 * * *} UTC",
+   "where": "influora-api/src/main/java/com/influora/job/TrendPullJob.java:191",
+   "shedlock": true
+  },
+  {
+   "name": "WalletTopUpReconciliationJob",
+   "schedule": "0 35 * * * *",
+   "where": "influora-api/src/main/java/com/influora/job/WalletTopUpReconciliationJob.java:74",
+   "shedlock": true
+  },
+  {
+   "name": "CampaignServiceInvoiceService backfill",
+   "schedule": "fixedDelay 300000",
+   "where": "influora-api/src/main/java/com/influora/service/CampaignServiceInvoiceService.java:374",
+   "shedlock": true
+  },
+  {
+   "name": "EmailWorker.processOutbox",
+   "schedule": "fixedDelay 30000",
+   "where": "influora-api/src/main/java/com/influora/service/notification/EmailWorker.java:197",
+   "shedlock": true
+  }
+ ],
+ "domains": [
+  {
+   "key": "auth-accounts",
+   "name": "Auth, accounts & platform identity",
+   "features": [
+    "Brand email-OTP signup/verify/register/login (POST /auth/brand/send-email-otp|verify-email|register|login) - AuthController.java:51-81; FE /brand/login, /brand/register - IMPLEMENTED BUT NOT VERIFIED (AuthControllerTest exists, not executed in this pass)",
+    "Creator email-OTP signup/verify/register/login (POST /auth/creator/*) - AuthController.java:91-116; FE /creator/login, /creator/register - IMPLEMENTED BUT NOT VERIFIED",
+    "Token refresh + logout (POST /auth/refresh, /auth/logout) - AuthController.java:131,153 - IMPLEMENTED BUT NOT VERIFIED",
+    "Forgot/reset password (POST /auth/forgot-password, /auth/reset-password) - AuthController.java:163,170; FE /brand/forgot-password, /creator/forgot-password, /reset-password - IMPLEMENTED BUT NOT VERIFIED",
+    "Account self-service: delete account (DELETE /me/account), change password (POST /me/password), profile (GET/PATCH /users/me) - AccountController.java:79,125, UserController.java:27,32 (UserController has no test referencing it) - IMPLEMENTED BUT NOT VERIFIED",
+    "Admin login/refresh/logout/me + TOTP MFA setup/verify (POST /admin/auth/*) - AdminAuthController.java:69-120; FE /admin/login - IMPLEMENTED BUT NOT VERIFIED (no test references AdminAuthController)",
+    "Admin MFA reset for another admin (POST /admin/auth/mfa/reset/{targetAdminId}) - AdminAuthController.java:135 - NO FE CALLER found in src/admin/services/api-contracts.ts (API-only)",
+    "JWKS publication for AI service token verification (GET /.well-known/jwks.json) - JwksController.java:55, JwksControllerTest - IMPLEMENTED BUT NOT VERIFIED",
+    "Public config / health (GET /config/public, GET /health) - PublicConfigController.java:57, HealthController.java:25 - IMPLEMENTED BUT NOT VERIFIED",
+    "Security filter chain: permitAll list + /admin/** hasRole(ADMIN) + /creator/** hasRole(CREATOR) + anyRequest().authenticated() - config/SecurityConfig.java:83-280; dead matcher GET /auth/verify-email permitAll (SecurityConfig.java:93) has no controller endpoint",
+    "Scheduled: StaleTokenCleanupJob (0 0 4 * * *), IdempotencyReservationReaperJob (every 10 min) - job/*.java, both @SchedulerLock"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/AuthController.java, AdminAuthController.java, AccountController.java, UserController.java, JwksController.java, PublicConfigController.java, HealthController.java; config/SecurityConfig.java; security/*; FE src/pages/brand-login.tsx, brand-register.tsx, creator-login/register, brand-forgot-password.tsx, brand-reset-password.tsx, admin-login.tsx; src/lib/auth-session.ts; src/admin/services/admin-session.ts",
+   "endpoint_count": 26,
+   "endpoints": [
+    "DELETE /api/v1/me/account (AccountController.java:79)",
+    "POST /api/v1/me/password (AccountController.java:125)",
+    "POST /api/v1/admin/auth/login (AdminAuthController.java:69)",
+    "POST /api/v1/admin/auth/refresh (AdminAuthController.java:83)",
+    "POST /api/v1/admin/auth/logout (AdminAuthController.java:101)",
+    "GET /api/v1/admin/auth/me (AdminAuthController.java:109)",
+    "POST /api/v1/admin/auth/mfa/setup (AdminAuthController.java:114)",
+    "POST /api/v1/admin/auth/mfa/verify (AdminAuthController.java:120)",
+    "POST /api/v1/admin/auth/mfa/reset/{targetAdminId} (AdminAuthController.java:135) [no FE literal caller]",
+    "POST /api/v1/auth/brand/send-email-otp (AuthController.java:51)",
+    "POST /api/v1/auth/brand/verify-email (AuthController.java:63)",
+    "POST /api/v1/auth/brand/register (AuthController.java:70)",
+    "POST /api/v1/auth/brand/login (AuthController.java:81)",
+    "POST /api/v1/auth/creator/send-email-otp (AuthController.java:91)",
+    "POST /api/v1/auth/creator/verify-email (AuthController.java:99)",
+    "POST /api/v1/auth/creator/register (AuthController.java:106)",
+    "POST /api/v1/auth/creator/login (AuthController.java:116)",
+    "POST /api/v1/auth/refresh (AuthController.java:131)",
+    "POST /api/v1/auth/logout (AuthController.java:153)",
+    "POST /api/v1/auth/forgot-password (AuthController.java:163)",
+    "POST /api/v1/auth/reset-password (AuthController.java:170)",
+    "GET /api/v1/health (HealthController.java:25) [no FE literal caller]",
+    "GET /api/v1/.well-known/jwks.json (JwksController.java:55) [no FE literal caller]",
+    "GET /api/v1/config/public (PublicConfigController.java:57)",
+    "GET /api/v1/users/me (UserController.java:27)",
+    "PATCH /api/v1/users/me (UserController.java:32)"
+   ]
+  },
+  {
+   "key": "brand-workspace-team",
+   "name": "Brand workspace, onboarding & team",
+   "features": [
+    "Brand onboarding: company, KYC, complete, status, KYC prompt dismiss (POST /onboarding/brand/company|kyc|complete|kyc-prompt-dismissed, GET /onboarding/brand/status) - OnboardingController.java:32-69; FE /brand/onboarding - IMPLEMENTED BUT NOT VERIFIED",
+    "Workspace profile + slug check + list mine (GET /workspaces/slug-check|me|mine, PATCH /workspaces/me) - WorkspaceController.java:38-84, WorkspaceControllerTest - IMPLEMENTED BUT NOT VERIFIED",
+    "Team members: invite, accept, remove, list, pending invites, revoke, switch workspace (/workspace/members/*) - WorkspaceMemberController.java:51-104; FE /brand/invite, /brand/settings - IMPLEMENTED BUT NOT VERIFIED",
+    "Brand dashboard actions + pipeline (GET /dashboard/actions, /dashboard/pipeline) - DashboardController.java:34,41 (no controller test); FE /brand/dashboard, /brand/pipeline - IMPLEMENTED BUT NOT VERIFIED",
+    "FE brand pages: /brand/settings, /brand/settings/verification, /brand/help, /brand/how-it-works (App.tsx:349-451)"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/OnboardingController.java, WorkspaceController.java, WorkspaceMemberController.java, DashboardController.java; service/OnboardingService.java, WorkspaceMemberService; FE src/pages/brand-onboarding.tsx, brand-accept-invite.tsx, brand-settings.tsx, brand-verification.tsx, brand-dashboard.tsx, brand-pipeline.tsx",
+   "endpoint_count": 18,
+   "endpoints": [
+    "GET /api/v1/dashboard/actions (DashboardController.java:34)",
+    "GET /api/v1/dashboard/pipeline (DashboardController.java:41)",
+    "POST /api/v1/onboarding/brand/company (OnboardingController.java:32)",
+    "POST /api/v1/onboarding/brand/complete (OnboardingController.java:39)",
+    "POST /api/v1/onboarding/brand/kyc (OnboardingController.java:45)",
+    "GET /api/v1/onboarding/brand/status (OnboardingController.java:57)",
+    "POST /api/v1/onboarding/brand/kyc-prompt-dismissed (OnboardingController.java:69)",
+    "GET /api/v1/workspaces/slug-check (WorkspaceController.java:38)",
+    "GET /api/v1/workspaces/me (WorkspaceController.java:54)",
+    "GET /api/v1/workspaces/mine (WorkspaceController.java:68)",
+    "PATCH /api/v1/workspaces/me (WorkspaceController.java:84)",
+    "POST /api/v1/workspace/members/invite (WorkspaceMemberController.java:51)",
+    "POST /api/v1/workspace/members/accept (WorkspaceMemberController.java:59)",
+    "DELETE /api/v1/workspace/members/{memberId} (WorkspaceMemberController.java:66)",
+    "GET /api/v1/workspace/members (WorkspaceMemberController.java:74)",
+    "GET /api/v1/workspace/members/invites (WorkspaceMemberController.java:85)",
+    "POST /api/v1/workspace/members/invites/{inviteId}/revoke (WorkspaceMemberController.java:96)",
+    "POST /api/v1/workspace/members/switch (WorkspaceMemberController.java:104)"
+   ]
+  },
+  {
+   "key": "campaigns-discovery",
+   "name": "Campaigns, templates & creator discovery",
+   "features": [
+    "Campaign CRUD + duplicate + analytics (GET/POST /campaigns, GET/PATCH/DELETE /campaigns/{id}, POST /campaigns/{id}/duplicate, GET /campaigns/{id}/analytics) - CampaignController.java:45-97 (no test references CampaignController; CampaignServiceTest covers service); FE /brand/campaigns, /brand/campaigns/new, /brand/campaigns/:id, /brand/campaigns/:id/edit - IMPLEMENTED BUT NOT VERIFIED",
+    "HYPE campaign creation flow (FE /brand/campaigns/new/hype, App.tsx:268) backed by POST /campaigns - IMPLEMENTED BUT NOT VERIFIED",
+    "Campaign templates (GET/POST/DELETE /campaign-templates) - CampaignTemplateController.java:41-62, plan-gated (PlanGateInterceptorTest) - IMPLEMENTED BUT NOT VERIFIED",
+    "Campaign report export (GET /campaigns/{id}/export?format=) - ReportExportController.java:37; api.ts:4452 - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator discovery: list/search/featured/suggestions/similar/by-id/profile/save/invite (/creators/*) - CreatorController.java:40-176 (no controller test); FE /brand/discover, /brand/creators/:id - IMPLEMENTED BUT NOT VERIFIED",
+    "External (non-member) creators: list, lookup, connect request, connection-requests (/creators/external/*) - ExternalCreatorController.java:37-68 (no test) - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator-side campaign marketplace: browse, detail, apply (GET /creator/campaigns, GET /creator/campaigns/{id}, POST /creator/campaigns/{id}/apply) - CreatorCampaignController.java:40-60, CreatorCampaignControllerTest; FE /creator/campaigns, /creator/campaigns/:id - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator applications + history (GET /creator/applications, /creator/applications/{dealId}/history) - CreatorApplicationController.java:33,45 (no test); FE /creator/applications - IMPLEMENTED BUT NOT VERIFIED",
+    "Scheduled: ScoreCalculationJob (0 0 4 * * * UTC) feeds discovery ranking - job/ScoreCalculationJob.java:135"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/CampaignController.java, CampaignTemplateController.java, ReportExportController.java, CreatorController.java, ExternalCreatorController.java, CreatorCampaignController.java, CreatorApplicationController.java; service/CampaignService.java; FE src/pages/brand-campaigns.tsx, brand-new-campaign.tsx, brand-new-hype-campaign.tsx, brand-campaign-detail.tsx, brand-edit-campaign.tsx, brand-discover.tsx, brand-creator-profile.tsx, creator-campaigns.tsx, creator-campaign-detail.tsx, creator-applications.tsx",
+   "endpoint_count": 30,
+   "endpoints": [
+    "GET /api/v1/campaigns (CampaignController.java:45)",
+    "GET /api/v1/campaigns/{campaignId} (CampaignController.java:58)",
+    "POST /api/v1/campaigns (CampaignController.java:64)",
+    "PATCH /api/v1/campaigns/{campaignId} (CampaignController.java:72)",
+    "DELETE /api/v1/campaigns/{campaignId} (CampaignController.java:80)",
+    "POST /api/v1/campaigns/{campaignId}/duplicate (CampaignController.java:86)",
+    "GET /api/v1/campaigns/{campaignId}/analytics (CampaignController.java:97)",
+    "GET /api/v1/campaign-templates (CampaignTemplateController.java:41)",
+    "GET /api/v1/campaign-templates/{templateId} (CampaignTemplateController.java:47)",
+    "POST /api/v1/campaign-templates (CampaignTemplateController.java:54)",
+    "DELETE /api/v1/campaign-templates/{templateId} (CampaignTemplateController.java:62)",
+    "GET /api/v1/creator/applications (CreatorApplicationController.java:33)",
+    "GET /api/v1/creator/applications/{dealId}/history (CreatorApplicationController.java:45)",
+    "GET /api/v1/creator/campaigns (CreatorCampaignController.java:40)",
+    "GET /api/v1/creator/campaigns/{campaignId} (CreatorCampaignController.java:54)",
+    "POST /api/v1/creator/campaigns/{campaignId}/apply (CreatorCampaignController.java:60)",
+    "GET /api/v1/creators (CreatorController.java:40)",
+    "GET /api/v1/creators/search (CreatorController.java:81)",
+    "GET /api/v1/creators/featured (CreatorController.java:127)",
+    "POST /api/v1/creators/suggestions (CreatorController.java:136)",
+    "GET /api/v1/creators/{username}/similar (CreatorController.java:144)",
+    "GET /api/v1/creators/{creatorId} (CreatorController.java:153)",
+    "GET /api/v1/creators/profile/{usernameOrId} (CreatorController.java:159)",
+    "POST /api/v1/creators/{creatorId}/save (CreatorController.java:166)",
+    "POST /api/v1/creators/{creatorId}/invite (CreatorController.java:176)",
+    "GET /api/v1/creators/external (ExternalCreatorController.java:37)",
+    "GET /api/v1/creators/external/lookup (ExternalCreatorController.java:52)",
+    "POST /api/v1/creators/external/{id}/connect (ExternalCreatorController.java:58)",
+    "GET /api/v1/creators/external/connection-requests (ExternalCreatorController.java:68)",
+    "GET /api/v1/campaigns/{campaignId}/export (ReportExportController.java:37)"
+   ]
+  },
+  {
+   "key": "deals-contracts-content",
+   "name": "Deals, contracts, deliverables, shipments, disputes & reviews",
+   "features": [
+    "Deal lifecycle: list/get/create/accept/reject/counter (/deals, /deals/{id}/accept|reject|counter) - DealController.java:65-104, DealControllerTest; FE /brand/deals, /brand/deals/:id, /creator/deals - IMPLEMENTED BUT NOT VERIFIED",
+    "Deal room messaging: list, send, mark-read, SSE stream (GET /deals/{id}/messages/stream text/event-stream) - DealController.java:114-169; api.ts:2780 fetch-stream; FE /brand/messages, /brand/chat, /creator/chat - IMPLEMENTED BUT NOT VERIFIED",
+    "Product shipments: shipping address, create shipment, confirm receipt, get shipment (/deals/{id}/shipping-address|shipment|shipment/confirm-receipt) - DealController.java:199-226 - IMPLEMENTED BUT NOT VERIFIED",
+    "Contracts: create, list, unsigned, get, sign, PDF download URL (/contracts/*) - ContractController.java:40-158, ContractControllerTest; FE /brand/contracts - IMPLEMENTED BUT NOT VERIFIED",
+    "Contract cancel + amend (POST /contracts/{id}/cancel, /contracts/{id}/amend) - ContractController.java:125,144, ContractCancelAmendTest - NO FE CALLER in src/lib/api.ts (API-only)",
+    "Brand deliverable review: get, approve, revise, reject, safety review (/deliverables/{id}/*) - BrandDeliverableController.java:39-81, BrandDeliverableControllerTest - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator deliverables: list, bulk, upload, status, submit, metrics, proof, mark-posted, verify (/creator/deliverables/*) - CreatorDeliverableController.java:48-135, CreatorDeliverableControllerTest - IMPLEMENTED BUT NOT VERIFIED",
+    "Disputes: raise (POST /deals/{id}/disputes), brand list (GET /brand/disputes/list), creator list + eligible deals (GET /creator/disputes, /creator/disputes/eligible-deals) - DealController.java:186, BrandDisputeController.java:40, CreatorDisputeController.java:33,45; FE /brand/disputes, /creator/disputes - IMPLEMENTED BUT NOT VERIFIED",
+    "Two-way reviews: submit, received, flag (/brand/reviews*, /creator/reviews*) - BrandReviewController.java:36-51, CreatorReviewController.java:36-51 (no controller tests); FE /brand/reviews, /creator/reviews - IMPLEMENTED BUT NOT VERIFIED",
+    "Scheduled: DeliverableVerificationJob (0 30 */6 * * *), DeliverableCleanupJob x2 (0 0 2 / 0 30 2 * * *) - job/*.java"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/DealController.java, ContractController.java, BrandDeliverableController.java, CreatorDeliverableController.java, BrandDisputeController.java, CreatorDisputeController.java, BrandReviewController.java, CreatorReviewController.java; service/Deal*, Contract*, Deliverable*, DisputeService; FE src/pages/brand-deals.tsx, brand-chat.tsx, brand-messages.tsx, brand-contracts.tsx, brand-disputes.tsx, brand-reviews.tsx, creator-chat.tsx, creator-deals, creator-disputes, creator-reviews; src/lib/api.ts (messages.stream at 2729)",
+   "endpoint_count": 47,
+   "endpoints": [
+    "GET /api/v1/deliverables/{deliverableId} (BrandDeliverableController.java:39)",
+    "POST /api/v1/deliverables/{deliverableId}/approve (BrandDeliverableController.java:46)",
+    "POST /api/v1/deliverables/{deliverableId}/revise (BrandDeliverableController.java:53)",
+    "POST /api/v1/deliverables/{deliverableId}/reject (BrandDeliverableController.java:64)",
+    "GET /api/v1/deliverables/{deliverableId}/safety-review (BrandDeliverableController.java:81)",
+    "GET /api/v1/brand/disputes/list (BrandDisputeController.java:40)",
+    "POST /api/v1/brand/reviews (BrandReviewController.java:36)",
+    "GET /api/v1/brand/reviews/received (BrandReviewController.java:45)",
+    "POST /api/v1/brand/reviews/{reviewId}/flag (BrandReviewController.java:51)",
+    "POST /api/v1/contracts (ContractController.java:40)",
+    "GET /api/v1/contracts (ContractController.java:48)",
+    "GET /api/v1/contracts/unsigned (ContractController.java:60)",
+    "GET /api/v1/contracts/{contractId} (ContractController.java:70)",
+    "POST /api/v1/contracts/{contractId}/sign (ContractController.java:80)",
+    "POST /api/v1/contracts/{contractId}/cancel (ContractController.java:125) [no FE literal caller]",
+    "POST /api/v1/contracts/{contractId}/amend (ContractController.java:144) [no FE literal caller]",
+    "GET /api/v1/contracts/{contractId}/pdf-download-url (ContractController.java:158)",
+    "GET /api/v1/creator/deliverables (CreatorDeliverableController.java:48)",
+    "GET /api/v1/creator/deliverables/bulk (CreatorDeliverableController.java:63)",
+    "POST /api/v1/creator/deliverables/{deliverableId}/upload (CreatorDeliverableController.java:72)",
+    "GET /api/v1/creator/deliverables/{deliverableId}/status (CreatorDeliverableController.java:87)",
+    "POST /api/v1/creator/deliverables/{deliverableId}/submit (CreatorDeliverableController.java:94)",
+    "POST /api/v1/creator/deliverables/{deliverableId}/metrics (CreatorDeliverableController.java:103)",
+    "POST /api/v1/creator/deliverables/{deliverableId}/proof (CreatorDeliverableController.java:112)",
+    "POST /api/v1/creator/deliverables/{deliverableId}/mark-posted (CreatorDeliverableController.java:121)",
+    "POST /api/v1/creator/deliverables/{deliverableId}/verify (CreatorDeliverableController.java:135)",
+    "GET /api/v1/creator/disputes (CreatorDisputeController.java:33)",
+    "GET /api/v1/creator/disputes/eligible-deals (CreatorDisputeController.java:45)",
+    "POST /api/v1/creator/reviews (CreatorReviewController.java:36)",
+    "GET /api/v1/creator/reviews/received (CreatorReviewController.java:45)",
+    "POST /api/v1/creator/reviews/{reviewId}/flag (CreatorReviewController.java:51)",
+    "GET /api/v1/deals (DealController.java:65)",
+    "GET /api/v1/deals/{id} (DealController.java:72)",
+    "POST /api/v1/deals (DealController.java:78)",
+    "POST /api/v1/deals/{id}/accept (DealController.java:86)",
+    "POST /api/v1/deals/{id}/reject (DealController.java:94)",
+    "POST /api/v1/deals/{id}/counter (DealController.java:104)",
+    "GET /api/v1/deals/{dealId}/messages (DealController.java:114)",
+    "GET /api/v1/deals/{dealId}/messages/stream (DealController.java:141)",
+    "POST /api/v1/deals/{dealId}/messages (DealController.java:160)",
+    "POST /api/v1/deals/{dealId}/messages/read (DealController.java:169)",
+    "GET /api/v1/deals/{dealId}/deliverables (DealController.java:179)",
+    "POST /api/v1/deals/{dealId}/disputes (DealController.java:186)",
+    "POST /api/v1/deals/{id}/shipping-address (DealController.java:199)",
+    "POST /api/v1/deals/{id}/shipment (DealController.java:208)",
+    "POST /api/v1/deals/{id}/shipment/confirm-receipt (DealController.java:217)",
+    "GET /api/v1/deals/{id}/shipment (DealController.java:226)"
+   ]
+  },
+  {
+   "key": "wallet-payments-billing",
+   "name": "Wallet, escrow, Razorpay, invoices & subscription billing",
+   "features": [
+    "Wallet summary, balance, transactions (GET /wallet, /wallet/balance, /wallet/transactions) - WalletController.java:61-141; GET /wallet/balance has NO FE CALLER (FE uses GET /wallet at api.ts:3700) - IMPLEMENTED BUT NOT VERIFIED",
+    "Wallet top-up via Razorpay order (POST /wallet/topup, idempotency key) - WalletController.java:95; api.ts:3715; FE /brand/wallet - IMPLEMENTED BUT NOT VERIFIED",
+    "Razorpay webhook (POST /webhooks/razorpay, HMAC verified, permitAll SecurityConfig.java:105) - RazorpayWebhookController.java:88, RazorpayWebhookControllerTest - IMPLEMENTED BUT NOT VERIFIED",
+    "Escrow: list, fund, get, release (/wallet/escrow, /wallet/escrow/fund, /wallet/escrow/{id}, /wallet/escrow/release) - EscrowController.java:58-107, EscrowControllerTest; called from api.ts:3842/4098/4139 and meera-api.ts:684 - IMPLEMENTED BUT NOT VERIFIED",
+    "Escrow refund + escrow payout (POST /wallet/escrow/refund, /wallet/escrow/payout) - EscrowController.java:152,168 - NO FE CALLER (API-only)",
+    "Subscription billing: plan, invoices, usage, invoice PDF, checkout, cancel (/billing/*) - BillingController.java:86-193; FE /brand/settings/billing - IMPLEMENTED BUT NOT VERIFIED",
+    "Campaign + commission invoices with PDF (brand /billing/campaign-invoices*, /billing/commission-invoices*; creator /creator/campaign-invoices*, /creator/commission-invoices*) - BrandInvoicingController.java:48-79, CreatorInvoicingController.java:49-80 (no controller tests) - IMPLEMENTED BUT NOT VERIFIED",
+    "Platform fee display (GET /brand/platform-fee, /creator/platform-fee), Razorpay public key (GET /config/razorpay), tax identity (POST /me/tax-identity) - BrandPlatformFeeController.java:29, CreatorPlatformFeeController.java:28, PublicConfigController.java:69, MeTaxIdentityController.java:36 - IMPLEMENTED BUT NOT VERIFIED",
+    "Scheduled: WalletTopUpReconciliationJob (0 35 * * * *), SubscriptionDunningJob (0 0 3 UTC), SubscriptionRenewalResetJob (0 30 3 UTC), CampaignServiceInvoiceService backfill (fixedDelay 5m, CampaignServiceInvoiceService.java:374), AICreditResetJob (monthly)"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/WalletController.java, EscrowController.java, RazorpayWebhookController.java, BillingController.java, BrandInvoicingController.java, CreatorInvoicingController.java, BrandPlatformFeeController.java, CreatorPlatformFeeController.java, MeTaxIdentityController.java; service/EscrowService.java, WalletService, SubscriptionService, CampaignServiceInvoiceService.java; FE src/pages/brand-wallet.tsx, brand-billing-settings.tsx, creator-wallet.tsx; src/lib/razorpay.ts",
+   "endpoint_count": 29,
+   "endpoints": [
+    "POST /api/v1/webhooks/razorpay (RazorpayWebhookController.java:88) [no FE literal caller]",
+    "GET /api/v1/billing/plan (BillingController.java:86)",
+    "GET /api/v1/billing/invoices (BillingController.java:96)",
+    "GET /api/v1/billing/usage (BillingController.java:116)",
+    "GET /api/v1/billing/invoices/{invoiceId}/pdf (BillingController.java:157)",
+    "POST /api/v1/billing/checkout (BillingController.java:180)",
+    "POST /api/v1/billing/cancel (BillingController.java:193)",
+    "GET /api/v1/billing/campaign-invoices (BrandInvoicingController.java:48)",
+    "GET /api/v1/billing/campaign-invoices/{invoiceId}/pdf (BrandInvoicingController.java:59)",
+    "GET /api/v1/billing/commission-invoices (BrandInvoicingController.java:68)",
+    "GET /api/v1/billing/commission-invoices/{invoiceId}/pdf (BrandInvoicingController.java:79)",
+    "GET /api/v1/brand/platform-fee (BrandPlatformFeeController.java:29)",
+    "GET /api/v1/creator/campaign-invoices (CreatorInvoicingController.java:49)",
+    "GET /api/v1/creator/campaign-invoices/{invoiceId}/pdf (CreatorInvoicingController.java:60)",
+    "GET /api/v1/creator/commission-invoices (CreatorInvoicingController.java:69)",
+    "GET /api/v1/creator/commission-invoices/{invoiceId}/pdf (CreatorInvoicingController.java:80)",
+    "GET /api/v1/creator/platform-fee (CreatorPlatformFeeController.java:28)",
+    "GET /api/v1/wallet/escrow (EscrowController.java:58)",
+    "POST /api/v1/wallet/escrow/fund (EscrowController.java:68)",
+    "GET /api/v1/wallet/escrow/{escrowHoldId} (EscrowController.java:91)",
+    "POST /api/v1/wallet/escrow/release (EscrowController.java:107)",
+    "POST /api/v1/wallet/escrow/refund (EscrowController.java:152) [no FE literal caller]",
+    "POST /api/v1/wallet/escrow/payout (EscrowController.java:168) [no FE literal caller]",
+    "POST /api/v1/me/tax-identity (MeTaxIdentityController.java:36)",
+    "GET /api/v1/config/razorpay (PublicConfigController.java:69)",
+    "GET /api/v1/wallet/balance (WalletController.java:61) [no FE literal caller]",
+    "GET /api/v1/wallet (WalletController.java:73)",
+    "POST /api/v1/wallet/topup (WalletController.java:95)",
+    "GET /api/v1/wallet/transactions (WalletController.java:141)"
+   ]
+  },
+  {
+   "key": "payouts-affiliate-commerce",
+   "name": "Creator payouts, affiliate tracking & store integrations",
+   "features": [
+    "Creator withdrawals + payout history + payout methods (POST /wallet/withdraw, GET /wallet/payouts, GET/POST /wallet/payout-methods, PUT /wallet/payout-methods/{id}/primary) - WalletController.java:116-223, WalletControllerPayoutMethodsTest; FE /creator/wallet - IMPLEMENTED BUT NOT VERIFIED",
+    "Tracking links + campaign coupons (POST/GET /campaigns/{id}/tracking-links, /campaigns/{id}/coupons) - CampaignTrackingController.java:67-113, CampaignTrackingControllerTest; FE /brand/campaigns/:campaignId/tracking - IMPLEMENTED BUT NOT VERIFIED",
+    "Click tracking redirect (GET /track/click/{utmCampaignId}, permitAll) + conversion/redemption webhooks (POST /webhooks/conversion, /webhooks/redemption) - ConversionWebhookController.java:198-308, ConversionWebhookControllerTest - IMPLEMENTED BUT NOT VERIFIED",
+    "Brand conversion-webhook secret generate/delete (POST /webhook-secret/generate, DELETE /webhook-secret) - ConversionWebhookSecretController.java:50,63 (no test) - IMPLEMENTED BUT NOT VERIFIED",
+    "Shopify OAuth connect + webhooks (GET /shopify/oauth/authorize|callback, POST /webhooks/shopify) - ShopifyConnectController.java:76,112, ShopifyWebhookController.java:122; FE /brand/settings/shopify/callback - IMPLEMENTED BUT NOT VERIFIED",
+    "WooCommerce connect + webhook (POST /woocommerce/connect, /webhooks/woocommerce) - WooCommerceConnectController.java:61, WooCommerceWebhookController.java:192 - IMPLEMENTED BUT NOT VERIFIED",
+    "Store integration status/disconnect (GET /integrations/store/status, DELETE /integrations/store/disconnect) - StoreIntegrationStatusController.java:79,120 - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator affiliate earnings + coupons (GET /creator/affiliate-earnings, /creator/coupons) - CreatorAffiliateEarningController.java:30, CreatorCouponController.java:29; FE /creator/affiliate, /creator/coupons - IMPLEMENTED BUT NOT VERIFIED",
+    "Scheduled: PayoutOrphanedDebitSweepJob (every 10 min), AffiliateEarningReconciliationJob (hourly :15), AffiliateSettlementJob (0 0 5 1 * * monthly) - job/*.java"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/WalletController.java (payout half), CampaignTrackingController.java, ConversionWebhookController.java, ConversionWebhookSecretController.java, ShopifyConnectController.java, ShopifyWebhookController.java, WooCommerceConnectController.java, WooCommerceWebhookController.java, StoreIntegrationStatusController.java, CreatorAffiliateEarningController.java, CreatorCouponController.java; integration/shopify/*; job/AffiliateSettlementJob.java, AffiliateEarningReconciliationJob.java, PayoutOrphanedDebitSweepJob.java; FE src/pages/brand-campaign-tracking.tsx, brand-shopify-callback.tsx, creator-affiliate-earnings.tsx, creator-wallet.tsx",
+   "endpoint_count": 23,
+   "endpoints": [
+    "POST /api/v1/campaigns/{campaignId}/tracking-links (CampaignTrackingController.java:67)",
+    "GET /api/v1/campaigns/{campaignId}/tracking-links (CampaignTrackingController.java:85)",
+    "POST /api/v1/campaigns/{campaignId}/coupons (CampaignTrackingController.java:94)",
+    "GET /api/v1/campaigns/{campaignId}/coupons (CampaignTrackingController.java:113)",
+    "POST /api/v1/webhooks/redemption (ConversionWebhookController.java:198) [no FE literal caller]",
+    "POST /api/v1/webhooks/conversion (ConversionWebhookController.java:266) [no FE literal caller]",
+    "GET /api/v1/track/click/{utmCampaignId} (ConversionWebhookController.java:308) [no FE literal caller]",
+    "POST /api/v1/webhook-secret/generate (ConversionWebhookSecretController.java:50)",
+    "DELETE /api/v1/webhook-secret (ConversionWebhookSecretController.java:63)",
+    "GET /api/v1/creator/affiliate-earnings (CreatorAffiliateEarningController.java:30)",
+    "GET /api/v1/creator/coupons (CreatorCouponController.java:29)",
+    "GET /api/v1/shopify/oauth/authorize (ShopifyConnectController.java:76)",
+    "GET /api/v1/shopify/oauth/callback (ShopifyConnectController.java:112)",
+    "POST /api/v1/webhooks/shopify (ShopifyWebhookController.java:122) [no FE literal caller]",
+    "GET /api/v1/integrations/store/status (StoreIntegrationStatusController.java:79)",
+    "DELETE /api/v1/integrations/store/disconnect (StoreIntegrationStatusController.java:120)",
+    "POST /api/v1/wallet/withdraw (WalletController.java:116)",
+    "GET /api/v1/wallet/payouts (WalletController.java:175)",
+    "GET /api/v1/wallet/payout-methods (WalletController.java:191)",
+    "POST /api/v1/wallet/payout-methods (WalletController.java:207)",
+    "PUT /api/v1/wallet/payout-methods/{id}/primary (WalletController.java:223)",
+    "POST /api/v1/woocommerce/connect (WooCommerceConnectController.java:61)",
+    "POST /api/v1/webhooks/woocommerce (WooCommerceWebhookController.java:192)"
+   ]
+  },
+  {
+   "key": "creator-onboarding-meta-analytics-portfolio",
+   "name": "Creator onboarding, Meta connect, analytics & portfolio",
+   "features": [
+    "Creator onboarding: socials, profile, KYC, complete (POST /onboarding/creator/*) - CreatorOnboardingController.java:37-57, CreatorOnboardingControllerTest; FE /creator/onboarding - IMPLEMENTED BUT NOT VERIFIED",
+    "Meta (Instagram/Facebook) OAuth authorize/callback/status/disconnect (/meta/oauth/*) - MetaOAuthController.java:65-184, MetaOAuthControllerTest; FE /creator/settings/meta/callback - IMPLEMENTED BUT NOT VERIFIED",
+    "Meta platform callbacks: deauthorize + data-deletion (POST /webhooks/meta/*, permitAll SecurityConfig.java:134-137) - MetaPlatformCallbackController.java:137,206, MetaPlatformCallbackControllerTest - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator analytics (brand view /analytics/creators/{id}/metrics|scores|demographics|media; creator self /creator/analytics/me/*) - AnalyticsController.java:61-101, CreatorAnalyticsController.java:37-65; FE /brand/analytics, /brand/analytics/:creatorId, /creator/analytics - IMPLEMENTED BUT NOT VERIFIED",
+    "Portfolio: public page, contact form, own portfolio get/patch/sync/platforms/cover/analytics (/portfolio/{username}, /me/portfolio/*) - PortfolioController.java:40-101 (no controller test); FE /:handle (App.tsx:882), /creator/portfolio - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator profile (GET/PATCH /me/creator-profile) + public verified metrics (GET /public/creators/{username}/verified) - MeCreatorProfileController.java:27,33, PublicCreatorController.java:36; FE /creator/profile, /c/:username/verified - IMPLEMENTED BUT NOT VERIFIED",
+    "Scheduled: MetricsPollingJob (every 6h UTC), AudienceDemographicsJob (Sun 03:30), MetaTokenRefreshService (0 30 2), PlatformStatsAggregationJob (0 45 3), CreatorConnectNudgeJob (flag CREATOR_CONNECT_NUDGE_ENABLED default false, application.yml:322)"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/CreatorOnboardingController.java, MetaOAuthController.java, MetaPlatformCallbackController.java, AnalyticsController.java, CreatorAnalyticsController.java, PortfolioController.java, MeCreatorProfileController.java, PublicCreatorController.java; service/portfolio/PortfolioService.java, service/analytics/AnalyticsService.java, PublicCreatorService.java; job/MetricsPollingJob.java, MetaTokenRefreshService.java; FE src/pages/creator-onboarding, creator-analytics.tsx, creator-portfolio-editor.tsx, creator-portfolio-public.tsx, brand-analytics.tsx, brand-creator-analytics.tsx",
+   "endpoint_count": 29,
+   "endpoints": [
+    "POST /api/v1/webhooks/meta/deauthorize (MetaPlatformCallbackController.java:137) [no FE literal caller]",
+    "POST /api/v1/webhooks/meta/data-deletion (MetaPlatformCallbackController.java:206) [no FE literal caller]",
+    "GET /api/v1/analytics/creators/{creatorId}/metrics (AnalyticsController.java:61)",
+    "GET /api/v1/analytics/creators/{creatorId}/scores (AnalyticsController.java:74)",
+    "GET /api/v1/analytics/creators/{creatorId}/demographics (AnalyticsController.java:84)",
+    "GET /api/v1/analytics/creators/{creatorId}/media (AnalyticsController.java:101)",
+    "GET /api/v1/creator/analytics/me/metrics (CreatorAnalyticsController.java:37)",
+    "GET /api/v1/creator/analytics/me/scores (CreatorAnalyticsController.java:48)",
+    "GET /api/v1/creator/analytics/me/demographics (CreatorAnalyticsController.java:54)",
+    "GET /api/v1/creator/analytics/me/media (CreatorAnalyticsController.java:65)",
+    "POST /api/v1/onboarding/creator/socials (CreatorOnboardingController.java:37)",
+    "POST /api/v1/onboarding/creator/profile (CreatorOnboardingController.java:44)",
+    "POST /api/v1/onboarding/creator/complete (CreatorOnboardingController.java:51)",
+    "POST /api/v1/onboarding/creator/kyc (CreatorOnboardingController.java:57)",
+    "GET /api/v1/me/creator-profile (MeCreatorProfileController.java:27)",
+    "PATCH /api/v1/me/creator-profile (MeCreatorProfileController.java:33)",
+    "GET /api/v1/meta/oauth/authorize (MetaOAuthController.java:65)",
+    "GET /api/v1/meta/oauth/callback (MetaOAuthController.java:130)",
+    "GET /api/v1/meta/oauth/status (MetaOAuthController.java:171)",
+    "POST /api/v1/meta/oauth/disconnect (MetaOAuthController.java:184)",
+    "GET /api/v1/portfolio/{username} (PortfolioController.java:40)",
+    "POST /api/v1/portfolio/{username}/contact (PortfolioController.java:55)",
+    "GET /api/v1/me/portfolio (PortfolioController.java:63)",
+    "PATCH /api/v1/me/portfolio (PortfolioController.java:69)",
+    "POST /api/v1/me/portfolio/sync (PortfolioController.java:76)",
+    "POST /api/v1/me/portfolio/platforms (PortfolioController.java:87)",
+    "POST /api/v1/me/portfolio/cover (PortfolioController.java:94)",
+    "GET /api/v1/me/portfolio/analytics (PortfolioController.java:101)",
+    "GET /api/v1/public/creators/{username}/verified (PublicCreatorController.java:36)"
+   ]
+  },
+  {
+   "key": "admin-moderation-ops",
+   "name": "Admin console, moderation, finance ops & audit",
+   "features": [
+    "Admin dashboard pulse/operations/financial + marketing reputation/growth (/admin/dashboard/*, /admin/marketing/*) - AdminDashboardController.java:45-62, AdminMarketingController.java:40,53; FE /admin (index) - IMPLEMENTED BUT NOT VERIFIED",
+    "User management: brands list/get/update/budget-override/meta-pixel/verify-KYC/suspend/reinstate; creators list/pending applications/get/update/tier/review-application/force-reauth/suspend/reinstate (/admin/brands/*, /admin/creators/*) - AdminBrandController.java:76-159, AdminCreatorController.java:58-153; FE /admin/users, /admin/users/brands/:brandId, /admin/users/creators/:creatorId - IMPLEMENTED BUT NOT VERIFIED",
+    "Admin brand re-analyze (POST /admin/brands/{workspaceId}/reanalyze) - AdminBrandController.java:183 - NO FE CALLER",
+    "Admin campaigns list/get/at-risk/HYPE ops + admin coupons (/admin/campaigns/*) - AdminCampaignController.java:54-96, AdminCampaignCouponController.java:69,87; FE /admin/campaigns - IMPLEMENTED BUT NOT VERIFIED",
+    "Moderation flags/action/suspensions + approval workflow (/admin/moderation/*) - AdminModerationController.java:58-88, ApprovalWorkflowController.java:51,58; FE /admin/moderation - IMPLEMENTED BUT NOT VERIFIED",
+    "Disputes resolution (GET /admin/disputes, POST /admin/disputes/{id}/resolve) - AdminDisputeController.java:44,73; FE /admin/disputes - IMPLEMENTED BUT NOT VERIFIED",
+    "Finance: escrow overview, reconciliation, payout retry/manual payout, revenue, flagged escrow, fee config + history (/admin/finance/*, /admin/escrow/flagged) - AdminFinanceController.java:50-91, AdminRevenueController.java:36, AdminEscrowController.java:41, PlatformFeeAdminController.java:62-91; FE /admin/finance, /admin/revenue - IMPLEMENTED BUT NOT VERIFIED",
+    "Subscriptions admin: list, metrics, comp, override (/admin/billing/*) - AdminBillingController.java:103-126; FE /admin/billing - IMPLEMENTED BUT NOT VERIFIED",
+    "Support desk: tickets list/get/reply/update/assign/escalate + stats (/admin/support/*) - AdminSupportController.java:57-105, AdminSupportStatsController.java:35; FE /admin/support - IMPLEMENTED BUT NOT VERIFIED",
+    "Email ops: custom preview/send/cancel, queue, retry, templates, stats, bulk send (/admin/emails/*) - AdminEmailController.java:56-116; FE /admin/emails, /admin/emails/compose; POST /admin/emails/custom/{campaignId}/cancel has NO FE CALLER - IMPLEMENTED BUT NOT VERIFIED",
+    "Audit log list/entity/write + error log recent/stats/get/resolve (/admin/audit*, /admin/errors/*) - AuditLogController.java:70-100, AdminErrorLogController.java:37-55; FE /admin/audit, /admin/errors - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator connections + external creators import/delete (/admin/creator-connections/*, /admin/external-creators*) - AdminCreatorConnectionController.java:36-72, AdminExternalCreatorController.java:37-60; FE /admin/creator-connections; DELETE /admin/external-creators/{id} has NO FE CALLER - IMPLEMENTED BUT NOT VERIFIED",
+    "Festival enquiries admin: list/patch/provision/link-existing/existing-account + festival metrics (/admin/festival-enquiries/*, /admin/festival-metrics/copies) - AdminFestivalEnquiryController.java:55-126, AdminFestivalMetricsController.java:39; FE /admin/festival-enquiries, /admin/festival-metrics; link-existing + existing-account have NO FE CALLER - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator-agent (Meera for creators) baselines + monthly cap (/admin/creator-agent/*) - AdminCreatorAgentController.java:39,52, AdminCreatorAgentControllerTest; FE /admin/creator-agent; PUT monthly-cap has NO FE CALLER - IMPLEMENTED BUT NOT VERIFIED",
+    "Platform stats backfill (POST /admin/platform-stats/backfill) - AdminPlatformStatBackfillController.java:36 - API-only ops endpoint, no FE caller",
+    "Scheduled: MeeraInteractionLogRetentionPurgeJob (0 0 3 * * *) - job/MeeraInteractionLogRetentionPurgeJob.java:76"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/Admin*Controller.java (22 classes), ApprovalWorkflowController.java, AuditLogController.java, PlatformFeeAdminController.java; FE src/pages/admin-console.tsx (18 nested routes), src/admin/pages/UsersPage.tsx (4 nested routes), src/admin/services/api-contracts.ts (ADMIN_API_BASE=/api/v1/admin, admin-session.ts:36), src/admin/components/*",
+   "endpoint_count": 88,
+   "endpoints": [
+    "GET /api/v1/admin/billing/subscriptions (AdminBillingController.java:103)",
+    "GET /api/v1/admin/billing/metrics (AdminBillingController.java:113)",
+    "POST /api/v1/admin/billing/comp (AdminBillingController.java:118)",
+    "POST /api/v1/admin/billing/override (AdminBillingController.java:126)",
+    "GET /api/v1/admin/brands (AdminBrandController.java:76)",
+    "GET /api/v1/admin/brands/{id} (AdminBrandController.java:87)",
+    "PUT /api/v1/admin/brands/{id} (AdminBrandController.java:99)",
+    "POST /api/v1/admin/brands/{id}/campaigns/{campaignId}/budget-override (AdminBrandController.java:115)",
+    "PATCH /api/v1/admin/brands/{id}/meta-pixel (AdminBrandController.java:132)",
+    "POST /api/v1/admin/brands/{id}/verify-kyc (AdminBrandController.java:141)",
+    "POST /api/v1/admin/brands/{id}/suspend (AdminBrandController.java:150)",
+    "POST /api/v1/admin/brands/{id}/reinstate (AdminBrandController.java:159)",
+    "POST /api/v1/admin/brands/{workspaceId}/reanalyze (AdminBrandController.java:183) [no FE literal caller]",
+    "GET /api/v1/admin/campaigns (AdminCampaignController.java:54)",
+    "GET /api/v1/admin/campaigns/{id} (AdminCampaignController.java:72)",
+    "GET /api/v1/admin/campaigns/at-risk (AdminCampaignController.java:85)",
+    "GET /api/v1/admin/campaigns/hype/ops (AdminCampaignController.java:96)",
+    "POST /api/v1/admin/campaigns/{campaignId}/coupons (AdminCampaignCouponController.java:69)",
+    "GET /api/v1/admin/campaigns/{campaignId}/coupons (AdminCampaignCouponController.java:87)",
+    "GET /api/v1/admin/creator-agent/baselines (AdminCreatorAgentController.java:39)",
+    "PUT /api/v1/admin/creator-agent/creators/{creatorId}/monthly-cap (AdminCreatorAgentController.java:52) [no FE literal caller]",
+    "GET /api/v1/admin/creator-connections (AdminCreatorConnectionController.java:36)",
+    "GET /api/v1/admin/creator-connections/{id} (AdminCreatorConnectionController.java:46)",
+    "POST /api/v1/admin/creator-connections/{id}/contacted (AdminCreatorConnectionController.java:52)",
+    "POST /api/v1/admin/creator-connections/{id}/decline (AdminCreatorConnectionController.java:62)",
+    "POST /api/v1/admin/creator-connections/{id}/invite (AdminCreatorConnectionController.java:72)",
+    "GET /api/v1/admin/creators (AdminCreatorController.java:58)",
+    "GET /api/v1/admin/creators/applications/pending (AdminCreatorController.java:75)",
+    "GET /api/v1/admin/creators/{id} (AdminCreatorController.java:83)",
+    "PUT /api/v1/admin/creators/{id} (AdminCreatorController.java:95)",
+    "PUT /api/v1/admin/creators/{id}/tier (AdminCreatorController.java:108)",
+    "POST /api/v1/admin/creators/{id}/review-application (AdminCreatorController.java:117)",
+    "POST /api/v1/admin/creators/{id}/instagram/force-reauth (AdminCreatorController.java:135)",
+    "POST /api/v1/admin/creators/{id}/suspend (AdminCreatorController.java:144)",
+    "POST /api/v1/admin/creators/{id}/reinstate (AdminCreatorController.java:153)",
+    "GET /api/v1/admin/dashboard/pulse (AdminDashboardController.java:45)",
+    "GET /api/v1/admin/dashboard/operations (AdminDashboardController.java:50)",
+    "GET /api/v1/admin/dashboard/financial (AdminDashboardController.java:62)",
+    "GET /api/v1/admin/disputes (AdminDisputeController.java:44)",
+    "POST /api/v1/admin/disputes/{disputeId}/resolve (AdminDisputeController.java:73)",
+    "POST /api/v1/admin/emails/custom/preview (AdminEmailController.java:56)",
+    "POST /api/v1/admin/emails/custom/send (AdminEmailController.java:62)",
+    "POST /api/v1/admin/emails/custom/{campaignId}/cancel (AdminEmailController.java:74) [no FE literal caller]",
+    "GET /api/v1/admin/emails/queue (AdminEmailController.java:81)",
+    "POST /api/v1/admin/emails/queue/{id}/retry (AdminEmailController.java:90)",
+    "GET /api/v1/admin/emails/templates (AdminEmailController.java:96)",
+    "GET /api/v1/admin/emails/stats (AdminEmailController.java:101)",
+    "POST /api/v1/admin/emails/send-bulk (AdminEmailController.java:116)",
+    "GET /api/v1/admin/errors/recent (AdminErrorLogController.java:37)",
+    "GET /api/v1/admin/errors/stats (AdminErrorLogController.java:44)",
+    "GET /api/v1/admin/errors/{id} (AdminErrorLogController.java:49)",
+    "POST /api/v1/admin/errors/{id}/resolve (AdminErrorLogController.java:55)",
+    "GET /api/v1/admin/escrow/flagged (AdminEscrowController.java:41)",
+    "GET /api/v1/admin/external-creators (AdminExternalCreatorController.java:37)",
+    "POST /api/v1/admin/external-creators/import (AdminExternalCreatorController.java:47)",
+    "DELETE /api/v1/admin/external-creators/{id} (AdminExternalCreatorController.java:60) [no FE literal caller]",
+    "GET /api/v1/admin/festival-enquiries (AdminFestivalEnquiryController.java:55)",
+    "PATCH /api/v1/admin/festival-enquiries/{id} (AdminFestivalEnquiryController.java:75)",
+    "POST /api/v1/admin/festival-enquiries/{id}/provision (AdminFestivalEnquiryController.java:91)",
+    "POST /api/v1/admin/festival-enquiries/{id}/link-existing (AdminFestivalEnquiryController.java:108) [no FE literal caller]",
+    "GET /api/v1/admin/festival-enquiries/{id}/existing-account (AdminFestivalEnquiryController.java:126) [no FE literal caller]",
+    "GET /api/v1/admin/festival-metrics/copies (AdminFestivalMetricsController.java:39)",
+    "GET /api/v1/admin/finance/escrow (AdminFinanceController.java:50)",
+    "GET /api/v1/admin/finance/reconciliation (AdminFinanceController.java:60)",
+    "POST /api/v1/admin/finance/payouts/{id}/retry (AdminFinanceController.java:72)",
+    "POST /api/v1/admin/finance/payouts/manual (AdminFinanceController.java:91)",
+    "GET /api/v1/admin/marketing/reputation (AdminMarketingController.java:40)",
+    "GET /api/v1/admin/marketing/growth (AdminMarketingController.java:53)",
+    "GET /api/v1/admin/moderation/flags (AdminModerationController.java:58)",
+    "POST /api/v1/admin/moderation/flags/{id}/action (AdminModerationController.java:72)",
+    "GET /api/v1/admin/moderation/suspensions (AdminModerationController.java:88) [no FE literal caller]",
+    "POST /api/v1/admin/platform-stats/backfill (AdminPlatformStatBackfillController.java:36) [no FE literal caller]",
+    "GET /api/v1/admin/finance/revenue (AdminRevenueController.java:36)",
+    "GET /api/v1/admin/support/tickets (AdminSupportController.java:57)",
+    "GET /api/v1/admin/support/tickets/{id} (AdminSupportController.java:72)",
+    "POST /api/v1/admin/support/tickets/{id}/reply (AdminSupportController.java:78)",
+    "PUT /api/v1/admin/support/tickets/{id} (AdminSupportController.java:87)",
+    "POST /api/v1/admin/support/tickets/{id}/assign (AdminSupportController.java:96)",
+    "POST /api/v1/admin/support/tickets/{id}/escalate (AdminSupportController.java:105)",
+    "GET /api/v1/admin/support/stats (AdminSupportStatsController.java:35)",
+    "GET /api/v1/admin/moderation/approvals/pending (ApprovalWorkflowController.java:51) [no FE literal caller]",
+    "POST /api/v1/admin/moderation/approvals/{id} (ApprovalWorkflowController.java:58)",
+    "GET /api/v1/admin/audit (AuditLogController.java:70)",
+    "GET /api/v1/admin/audit/entity/{entityType}/{entityId} (AuditLogController.java:84)",
+    "POST /api/v1/admin/audit (AuditLogController.java:100)",
+    "GET /api/v1/admin/finance/fee-config (PlatformFeeAdminController.java:62)",
+    "PUT /api/v1/admin/finance/fee-config (PlatformFeeAdminController.java:76)",
+    "GET /api/v1/admin/finance/fee-config/history (PlatformFeeAdminController.java:91)"
+   ]
+  },
+  {
+   "key": "meera-ai",
+   "name": "Meera AI (brand + creator), TrendSpark & Creator Copilot",
+   "features": [
+    "Brand Meera chat sessions/messages, credits, brand profile, voice speak/transcribe (/meera/*) - MeeraController.java:95-279, MeeraControllerTest; FE /brand/meera, /brand/chat; meera-api.ts:484 basePath(role) - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator Meera sessions/messages/voice (/creator/meera/*) - CreatorMeeraController.java:138-277, CreatorMeeraControllerTest; FE /creator/chat - IMPLEMENTED BUT NOT VERIFIED",
+    "Streaming chat goes browser -> influora-ai POST /chat directly (MeeraStreamProperties.java:25 default http://localhost:8000/chat; prod binds ${MEERA_PUBLIC_CHAT_URL} application-prod.yml:109) - IMPLEMENTED BUT NOT VERIFIED",
+    "Meera tool callbacks from AI service (11 x POST /internal/meera/*: context, show_creators, calculate_budget, create_campaign, request_payment, confirm_launch, get_campaign_performance, messages, turns/release, analyze_site_result, interaction-log) - MeeraInternalController.java:156-406; callers influora-ai/app/clients/spring.py:225-374 and app/tools/schemas.py:79-84; auth via X-On-Behalf JWT + InternalServiceTokenFilter - IMPLEMENTED BUT NOT VERIFIED",
+    "Meera option-tapped telemetry (POST /workspaces/{workspaceId}/meera/interactions/option-tapped; FE sends literal \"me\", path var unused) - MeeraInteractionController.java:46, meera-api.ts:897 - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator agent preferences, consent grant/withdraw, conversation list/export/delete (/creator/agent-preferences/*) - CreatorAgentController.java:63-109, CreatorAgentControllerTest - IMPLEMENTED BUT NOT VERIFIED",
+    "TrendSpark brand nudges: get/click/purchase (/brand/trendspark/nudge*) - TrendSparkController.java:40-59 (no controller test); AI route POST /internal/trendspark/nudge (influora-ai/app/routes/trendspark.py:170) via TrendSparkAiClient.java:49 - IMPLEMENTED BUT NOT VERIFIED",
+    "Creator Copilot daily suggestion/dismiss/acted (/creator/copilot/*) - CreatorCopilotController.java:42-63 (no controller test); AI route /internal/creator-suggestion (creator_suggestion.py:201); FE /creator/copilot; gated CREATOR_COPILOT_ENABLED default false (application.yml:542) - IMPLEMENTED BUT NOT VERIFIED",
+    "AI service (FastAPI influora-ai/app/main.py): /healthz, /readyz, /chat, /analyze-site, /voice/speak, /voice/transcribe, /internal/brand-safety, /internal/trendspark/nudge, /internal/trendspark/tag, /internal/creator-suggestion (10 routes; last 4 registered only if import succeeds, main.py:79-106)",
+    "AI jobs/workflows: TrendPullJob (TREND_INGEST_ENABLED default false, application.yml:570), CreatorCaptionSyncJob, CreatorThemeTaggingJob, AICreditResetJob; n8n trendspark/n8n/trend-pull-workflow.json (TMDb/NewsAPI/YouTube + Google Trends STUB code node + MySQL insert/expire); brand-safety review of deliverables via BrandSafetyAiClient.java:44; site analysis via AnalyzeSiteAiClient.java:42"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/MeeraController.java, CreatorMeeraController.java, MeeraInternalController.java, MeeraInteractionController.java, CreatorAgentController.java, TrendSparkController.java, CreatorCopilotController.java; service/meera/**; integration/ai/*AiClient.java; influora-ai/app/{main.py,routes/*,clients/spring.py,tools/schemas.py}; trendspark/n8n/*; FE src/lib/meera-api.ts, src/pages/brand-meera.tsx, brand-chat.tsx, creator-chat.tsx, src/components/feature/meera/*",
+   "endpoint_count": 37,
+   "endpoints": [
+    "GET /api/v1/creator/agent-preferences (CreatorAgentController.java:63)",
+    "PUT /api/v1/creator/agent-preferences (CreatorAgentController.java:70)",
+    "POST /api/v1/creator/agent-preferences/consent (CreatorAgentController.java:78)",
+    "DELETE /api/v1/creator/agent-preferences/consent (CreatorAgentController.java:90)",
+    "GET /api/v1/creator/agent-preferences/conversations (CreatorAgentController.java:96)",
+    "GET /api/v1/creator/agent-preferences/conversations/{conversationId}/export (CreatorAgentController.java:102)",
+    "DELETE /api/v1/creator/agent-preferences/conversations/{conversationId} (CreatorAgentController.java:109)",
+    "GET /api/v1/creator/copilot/suggestion/today (CreatorCopilotController.java:42)",
+    "POST /api/v1/creator/copilot/suggestion/{id}/dismiss (CreatorCopilotController.java:54)",
+    "POST /api/v1/creator/copilot/suggestion/{id}/acted (CreatorCopilotController.java:63)",
+    "POST /api/v1/creator/meera/sessions (CreatorMeeraController.java:138)",
+    "POST /api/v1/creator/meera/sessions/{conversationId}/messages (CreatorMeeraController.java:176)",
+    "GET /api/v1/creator/meera/sessions/{conversationId}/messages (CreatorMeeraController.java:212)",
+    "POST /api/v1/creator/meera/voice/speak (CreatorMeeraController.java:245) [no FE literal caller]",
+    "POST /api/v1/creator/meera/voice/transcribe (CreatorMeeraController.java:277) [no FE literal caller]",
+    "POST /api/v1/meera/sessions (MeeraController.java:95)",
+    "POST /api/v1/meera/sessions/{conversationId}/messages (MeeraController.java:117)",
+    "GET /api/v1/meera/sessions/{conversationId}/messages (MeeraController.java:166)",
+    "GET /api/v1/meera/credits (MeeraController.java:181)",
+    "GET /api/v1/meera/brand-profile (MeeraController.java:199)",
+    "POST /api/v1/meera/voice/speak (MeeraController.java:237) [no FE literal caller]",
+    "POST /api/v1/meera/voice/transcribe (MeeraController.java:279) [no FE literal caller]",
+    "POST /api/v1/workspaces/{workspaceId}/meera/interactions/option-tapped (MeeraInteractionController.java:46) [no FE literal caller]",
+    "POST /api/v1/internal/meera/context (MeeraInternalController.java:156) [no FE literal caller]",
+    "POST /api/v1/internal/meera/show_creators (MeeraInternalController.java:188) [no FE literal caller]",
+    "POST /api/v1/internal/meera/calculate_budget (MeeraInternalController.java:203) [no FE literal caller]",
+    "POST /api/v1/internal/meera/create_campaign (MeeraInternalController.java:215) [no FE literal caller]",
+    "POST /api/v1/internal/meera/request_payment (MeeraInternalController.java:245) [no FE literal caller]",
+    "POST /api/v1/internal/meera/confirm_launch (MeeraInternalController.java:271) [no FE literal caller]",
+    "POST /api/v1/internal/meera/get_campaign_performance (MeeraInternalController.java:300) [no FE literal caller]",
+    "POST /api/v1/internal/meera/messages (MeeraInternalController.java:319) [no FE literal caller]",
+    "POST /api/v1/internal/meera/turns/release (MeeraInternalController.java:354) [no FE literal caller]",
+    "POST /api/v1/internal/meera/analyze_site_result (MeeraInternalController.java:379) [no FE literal caller]",
+    "POST /api/v1/internal/meera/interaction-log (MeeraInternalController.java:406) [no FE literal caller]",
+    "GET /api/v1/brand/trendspark/nudge (TrendSparkController.java:40)",
+    "POST /api/v1/brand/trendspark/nudge/{nudgeId}/click (TrendSparkController.java:50)",
+    "POST /api/v1/brand/trendspark/nudge/{nudgeId}/purchase (TrendSparkController.java:59)"
+   ]
+  },
+  {
+   "key": "notifications-support-uploads",
+   "name": "Notifications, email, support tickets, uploads & client error reporting",
+   "features": [
+    "In-app notifications list/read/read-all + preferences (/notifications*) - NotificationController.java:82-270, NotificationControllerTest; FE /brand/notifications, /creator/notifications - IMPLEMENTED BUT NOT VERIFIED",
+    "Email unsubscribe link (GET /notifications/unsubscribe-link, permitAll; reached from email links, not FE) - NotificationController.java:192 - IMPLEMENTED BUT NOT VERIFIED",
+    "Email outbox worker (EmailWorker fixedDelay 30s, @SchedulerLock EmailWorker_processOutbox) - service/notification/EmailWorker.java:197 - IMPLEMENTED BUT NOT VERIFIED",
+    "User support tickets create/list/get/message (POST/GET /support/tickets, GET /support/tickets/{id}, POST /support/tickets/{id}/messages) - SupportController.java:47-69 - NO FE CALLER outside src/admin; public FE /support is a placeholder StaticPage \"being set up\" (App.tsx:861-869) - UNWIRED",
+    "File uploads (POST /uploads) - UploadController.java:42, UploadControllerTest; src/lib/upload.ts - IMPLEMENTED BUT NOT VERIFIED",
+    "Client crash reporting (POST /client-errors, permitAll, rate-limited bucket) - ClientErrorController.java:85, ClientErrorControllerTest, AuthRateLimitFilterClientErrorsBucketTest; api.ts:6967 - IMPLEMENTED BUT NOT VERIFIED"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/NotificationController.java, SupportController.java, UploadController.java, ClientErrorController.java; service/notification/EmailWorker.java; FE src/pages/brand-notifications.tsx, creator notifications, src/lib/upload.ts, src/components ErrorBoundary",
+   "endpoint_count": 12,
+   "endpoints": [
+    "POST /api/v1/client-errors (ClientErrorController.java:85)",
+    "GET /api/v1/notifications (NotificationController.java:82)",
+    "POST /api/v1/notifications/read (NotificationController.java:103)",
+    "POST /api/v1/notifications/read-all (NotificationController.java:133)",
+    "GET /api/v1/notifications/unsubscribe-link (NotificationController.java:192) [no FE literal caller]",
+    "GET /api/v1/notifications/preferences (NotificationController.java:253)",
+    "POST /api/v1/notifications/preferences (NotificationController.java:270)",
+    "POST /api/v1/support/tickets (SupportController.java:47)",
+    "GET /api/v1/support/tickets (SupportController.java:55)",
+    "GET /api/v1/support/tickets/{id} (SupportController.java:62)",
+    "POST /api/v1/support/tickets/{id}/messages (SupportController.java:69) [no FE literal caller]",
+    "POST /api/v1/uploads (UploadController.java:42)"
+   ]
+  },
+  {
+   "key": "marketing-festival-public",
+   "name": "Marketing site, festival box & public pages",
+   "features": [
+    "Festival Box enquiry with OTP (POST /festival-enquiries/send-otp, POST /festival-enquiries - only unauthenticated INSERT) - FestivalEnquiryController.java:48,62; api.ts:6899,6920; FE /festival-box - IMPLEMENTED BUT NOT VERIFIED",
+    "Festival coupon-copied telemetry (POST /festival/coupon-copied, permitAll) - FestivalCouponCopyController.java:42 (no test); festival-box-edition.tsx:163; FE /festival-box/:edition - IMPLEMENTED BUT NOT VERIFIED",
+    "Marketing pages: /, /pricing, /about, /contact, /how-it-works/brands, /how-it-works/creators, /meera-for-creators, /features/secure-payments|deal-room|hype (+ /features/escrow redirect) - App.tsx:688-721 - static FE",
+    "Blog: /blog, /blog/category/:category, /blog/:slug (+ legacy escrow slug redirect) - App.tsx:722-734",
+    "Legal/policy static pages: /terms, /privacy, /refund-policy, /disputes, /grievance, /kyc, /tds, /disclosure, /meta-data-policy, /support (placeholder) - App.tsx:744-869",
+    "Public creator surfaces: /c/:username/verified, /:handle (single-segment catch-all portfolio, App.tsx:882), * NotFound (App.tsx:883); dev-only /dev/motion-skills gated by import.meta.env.DEV (App.tsx:691)"
+   ],
+   "pointers": "influora-api/src/main/java/com/influora/web/FestivalEnquiryController.java, FestivalCouponCopyController.java; FE src/App.tsx:688-883, src/pages/{about,contact,pricing,festival-box,festival-box-edition,blog/*}.tsx, src/components/site/SiteHeader/SiteFooter.tsx, src/lib/seo",
+   "endpoint_count": 3,
+   "endpoints": [
+    "POST /api/v1/festival/coupon-copied (FestivalCouponCopyController.java:42)",
+    "POST /api/v1/festival-enquiries/send-otp (FestivalEnquiryController.java:48)",
+    "POST /api/v1/festival-enquiries (FestivalEnquiryController.java:62)"
+   ]
+  }
+ ],
+ "questions": [
+  {
+   "q": "How many REST controllers/endpoints ship in the RC, and under what base path?",
+   "a": "91 @RestController classes, 342 method-level endpoints (342 @Get/@Post/@Put/@Delete/@PatchMapping lines, 0 method-level @RequestMapping); all under server.servlet.context-path /api/v1 (application.yml:119). GlobalExceptionHandler is @RestControllerAdvice, not counted.",
+   "evidence": 3,
+   "confidence": 90,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "Does every backend endpoint have a real caller (FE, AI service, provider webhook, email link)?",
+   "a": "No. 13 endpoints have no caller anywhere in the RC: POST /admin/auth/mfa/reset/{id}, POST /admin/brands/{id}/reanalyze, PUT /admin/creator-agent/creators/{id}/monthly-cap, POST /admin/emails/custom/{id}/cancel, DELETE /admin/external-creators/{id}, POST /admin/festival-enquiries/{id}/link-existing, GET /admin/festival-enquiries/{id}/existing-account, POST /admin/platform-stats/backfill, POST /contracts/{id}/cancel, POST /contracts/{id}/amend, POST /wallet/escrow/refund, POST /wallet/escrow/payout, GET /wallet/balance; plus the whole user SupportController (4 endpoints) whose only literal matches are admin-relative paths in src/admin/services/api-contracts.ts.",
+   "evidence": 3,
+   "confidence": 80,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "Can a user raise a support ticket from the UI?",
+   "a": "No. SupportController.java:47-69 exists but no non-admin FE file references /support/tickets; the public /support route renders a StaticPage saying support resources are being set up (App.tsx:861-869). The admin support desk (FE /admin/support) therefore only sees tickets created via API/Meera, if any.",
+   "evidence": 3,
+   "confidence": 85,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "Which endpoints are reachable without a JWT?",
+   "a": "SecurityConfig.java:83-280 permits /health, POST /auth/**, GET /config/public, GET /workspaces/slug-check, POST /webhooks/{razorpay,shopify,woocommerce,conversion,redemption,meta/deauthorize,meta/data-deletion}, GET /.well-known/jwks.json, GET /notifications/unsubscribe-link, GET /track/click/**, GET /portfolio/*, POST /portfolio/*/contact, GET /public/creators/*/verified, POST /client-errors, POST /festival-enquiries(+send-otp), POST /festival/coupon-copied, POST /admin/auth/login|refresh. /admin/** requires ROLE_ADMIN, /creator/** ROLE_CREATOR, everything else authenticated. GET /auth/verify-email is permitted but no such endpoint exists (dead matcher, SecurityConfig.java:93).",
+   "evidence": 2,
+   "confidence": 75,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "Are brand-only endpoints (/creators/**, /campaigns/**, /deals/**, /wallet/**) role-gated at the filter level?",
+   "a": "Not at the filter chain: only /admin/** and /creator/** have role matchers; brand endpoints fall under anyRequest().authenticated() (SecurityConfig.java ~272-280). Any role enforcement for brand routes must come from service-layer checks (e.g. BrandContextService.requireBrandWorkspace as in MeeraInteractionController.java:52). Not verified per endpoint in this inventory pass.",
+   "evidence": 2,
+   "confidence": 70,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "How many scheduled jobs run, and are they safe on multiple instances?",
+   "a": "24 @Scheduled methods in 23 classes (22 in job/ + CampaignServiceInvoiceService + EmailWorker); every one carries @SchedulerLock (per-file counts equal), ShedLock JDBC provider in config/SchedulerLockConfig.java:33, table from V68__shedlock.sql; @EnableScheduling in config/TaskSchedulerConfig.java. TrendPullJob, CreatorConnectNudgeJob and copilot jobs are flag-gated default false (application.yml:322,542,570).",
+   "evidence": 3,
+   "confidence": 85,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "How many FE routes exist and where?",
+   "a": "114 route declarations: 92 path= entries in src/App.tsx (incl. 4 Navigate redirects, /admin/* splat, * NotFound, dev-only /dev/motion-skills) + 18 nested in src/pages/admin-console.tsx:69-87 + 4 nested in src/admin/pages/UsersPage.tsx:745-748. src/app contains only globals.css (no Next.js routes).",
+   "evidence": 3,
+   "confidence": 88,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "Which AI workflows exist and how are they wired?",
+   "a": "influora-ai FastAPI: 10 routes (main.py:137,191; routes/*.py). Spring->AI clients: AnalyzeSiteAiClient(/analyze-site), BrandSafetyAiClient(/internal/brand-safety), CreatorSuggestionAiClient(/internal/creator-suggestion), MeeraVoiceAiClient(/voice/speak|transcribe), TrendSparkAiClient(/internal/trendspark/nudge). AI->Spring: 11 /internal/meera/* tool/context endpoints (clients/spring.py, tools/schemas.py). Browser->AI: /chat stream (MEERA_PUBLIC_CHAT_URL). n8n: trend-pull-workflow.json calls /internal/trendspark/tag and writes MySQL directly.",
+   "evidence": 3,
+   "confidence": 80,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "Would a broken optional AI router be caught by readiness?",
+   "a": "No. main.py:79-106 swallows import failures for trendspark, brand_safety, trend_tag, creator_suggestion routers (logger.exception only); /readyz (main.py:191-220) checks keys + Redis only, so ready=200 while /internal/brand-safety etc. return 404.",
+   "evidence": 2,
+   "confidence": 80,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "Is TrendSpark trend ingestion real?",
+   "a": "Partially. n8n workflow has a node literally named \"Google Trends (pytrends/SerpAPI - STUB)\" of type code; Java TrendPullJob is disabled by default (TREND_INGEST_ENABLED:false, application.yml:570). No runtime evidence either path runs in prod.",
+   "evidence": 2,
+   "confidence": 70,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "How much of the controller layer has a direct test?",
+   "a": "45 of 91 controllers are referenced by name in at least one of 358 test files; 46 have none (all 22 Admin* controllers except AdminCreatorAgent/AuditLog/AdminBilling-by-service, plus CampaignController, CreatorController, PortfolioController, SupportController, TrendSparkController, UserController, DashboardController, BrandReviewController, CreatorReviewController, CreatorCopilotController, ...). Tests were NOT executed in this pass.",
+   "evidence": 3,
+   "confidence": 80,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "Does the public /:handle catch-all hide 404s?",
+   "a": "Yes for single-segment paths: App.tsx:882 routes any unmatched /<x> to CreatorPortfolioPublicPage, which renders its own \"Page not found\" after the API lookup fails (creator-portfolio-public.tsx:208,278); only multi-segment paths reach NotFoundPage (App.tsx:883). This costs one API call per mistyped URL and returns HTTP 200 for SPA 404s.",
+   "evidence": 2,
+   "confidence": 70,
+   "status": "OBSERVED"
+  },
+  {
+   "q": "Are all features in this inventory from committed code?",
+   "a": "Yes: every citation is from the clean RC checkout at commit 115f698 (git status showed 0 changes). Provenance COMMITTED for all items. No runtime/test execution was performed, so no feature is marked VERIFIED WORKING.",
+   "evidence": 3,
+   "confidence": 90,
+   "status": "OBSERVED"
+  }
+ ],
+ "findings": [
+  {
+   "id": "INV-01",
+   "title": "User support-ticket API has no UI; /support is a placeholder",
+   "severity": "P2",
+   "evidence": 3,
+   "confidence": 85,
+   "status": "OBSERVED",
+   "provenance": "COMMITTED",
+   "where": [
+    "influora-api/src/main/java/com/influora/web/SupportController.java:47-69",
+    "src/App.tsx:861-869"
+   ],
+   "affected": [
+    "POST/GET /support/tickets",
+    "GET /support/tickets/{id}",
+    "POST /support/tickets/{id}/messages",
+    "admin support desk /admin/support"
+   ]
+  },
+  {
+   "id": "INV-02",
+   "title": "Backend endpoints with no caller in the RC (dead or API-only surface)",
+   "severity": "P3",
+   "evidence": 3,
+   "confidence": 78,
+   "status": "OBSERVED",
+   "provenance": "COMMITTED",
+   "where": [
+    "AdminAuthController.java:135",
+    "AdminBrandController.java:183",
+    "AdminCreatorAgentController.java:52",
+    "AdminEmailController.java:74",
+    "AdminExternalCreatorController.java:60",
+    "AdminFestivalEnquiryController.java:108,126",
+    "AdminPlatformStatBackfillController.java:36",
+    "ContractController.java:125,144",
+    "EscrowController.java:152,168",
+    "WalletController.java:61"
+   ],
+   "affected": [
+    "admin MFA reset",
+    "brand reanalyze",
+    "creator-agent monthly cap",
+    "custom email cancel",
+    "external creator delete",
+    "festival link-existing",
+    "platform stats backfill",
+    "contract cancel/amend",
+    "escrow refund/payout",
+    "wallet balance"
+   ]
+  },
+  {
+   "id": "INV-03",
+   "title": "Optional AI routers fail silently and /readyz still reports ready",
+   "severity": "P2",
+   "evidence": 2,
+   "confidence": 78,
+   "status": "OBSERVED",
+   "provenance": "COMMITTED",
+   "where": [
+    "influora-ai/app/main.py:79-106",
+    "influora-ai/app/main.py:191-220"
+   ],
+   "affected": [
+    "TrendSpark nudges",
+    "deliverable brand-safety review",
+    "trend tagger (n8n)",
+    "Creator Copilot suggestions"
+   ]
+  },
+  {
+   "id": "INV-04",
+   "title": "Dead permitAll matcher GET /auth/verify-email (no endpoint)",
+   "severity": "P3",
+   "evidence": 2,
+   "confidence": 80,
+   "status": "OBSERVED",
+   "provenance": "COMMITTED",
+   "where": [
+    "influora-api/src/main/java/com/influora/config/SecurityConfig.java:93"
+   ],
+   "affected": [
+    "auth"
+   ]
+  },
+  {
+   "id": "INV-05",
+   "title": "Brand endpoints have no role gate at the filter chain (authenticated only); creator tokens reach /campaigns, /wallet, /creators unless each service checks",
+   "severity": "P2",
+   "evidence": 2,
+   "confidence": 55,
+   "status": "INFERRED",
+   "provenance": "COMMITTED",
+   "where": [
+    "influora-api/src/main/java/com/influora/config/SecurityConfig.java:272-280"
+   ],
+   "affected": [
+    "all non-/admin, non-/creator authenticated endpoints"
+   ],
+   "note": "Needs per-service authz verification by the security lane; not a confirmed defect."
+  },
+  {
+   "id": "INV-06",
+   "title": "Google Trends source in n8n trend pull is a stub",
+   "severity": "P3",
+   "evidence": 2,
+   "confidence": 75,
+   "status": "OBSERVED",
+   "provenance": "COMMITTED",
+   "where": [
+    "trendspark/n8n/trend-pull-workflow.json (node \"Google Trends (pytrends/SerpAPI - STUB)\")"
+   ],
+   "affected": [
+    "TrendSpark nudges"
+   ]
+  },
+  {
+   "id": "INV-07",
+   "title": "46/91 controllers have no test referencing them",
+   "severity": "P3",
+   "evidence": 3,
+   "confidence": 80,
+   "status": "OBSERVED",
+   "provenance": "COMMITTED",
+   "where": [
+    "influora-api/src/test/java (358 files)"
+   ],
+   "affected": [
+    "AdminAuthController",
+    "AdminBrandController",
+    "AdminCampaignController",
+    "AdminCampaignCouponController",
+    "AdminCreatorConnectionController",
+    "AdminCreatorController",
+    "AdminDashboardController",
+    "AdminDisputeController",
+    "AdminEmailController",
+    "AdminErrorLogController",
+    "AdminEscrowController",
+    "AdminExternalCreatorController",
+    "AdminFestivalEnquiryController",
+    "AdminFestivalMetricsController",
+    "AdminFinanceController",
+    "AdminMarketingController",
+    "AdminModerationController",
+    "AdminPlatformStatBackfillController",
+    "AdminRevenueController",
+    "AdminSupportController",
+    "AdminSupportStatsController",
+    "ApprovalWorkflowController",
+    "BrandDisputeController",
+    "BrandInvoicingController",
+    "BrandPlatformFeeController",
+    "BrandReviewController",
+    "CampaignController",
+    "ConversionWebhookSecretController",
+    "CreatorAffiliateEarningController",
+    "CreatorApplicationController",
+    "CreatorController",
+    "CreatorCopilotController",
+    "CreatorInvoicingController",
+    "CreatorReviewController",
+    "DashboardController",
+    "ExternalCreatorController",
+    "FestivalCouponCopyController",
+    "HealthController",
+    "MeeraInteractionController",
+    "MeTaxIdentityController",
+    "PlatformFeeAdminController",
+    "PortfolioController",
+    "PublicConfigController",
+    "SupportController",
+    "TrendSparkController",
+    "UserController"
+   ]
+  },
+  {
+   "id": "INV-08",
+   "title": "Single-segment unknown URLs render the portfolio page (API call + HTTP 200) instead of NotFound",
+   "severity": "P3",
+   "evidence": 2,
+   "confidence": 70,
+   "status": "OBSERVED",
+   "provenance": "COMMITTED",
+   "where": [
+    "src/App.tsx:882",
+    "src/pages/creator-portfolio-public.tsx:208"
+   ],
+   "affected": [
+    "public site 404 handling / SEO"
+   ]
+  }
+ ],
+ "method": "Python regex over influora-api/src/main/java for ^@RestController classes and @Get/Post/Put/Delete/PatchMapping (cross-checked: 342 mapping lines == 342 endpoints; 85 class-level @RequestMapping); FE callers found by literal/template-string extraction from src/**/*.ts(x) excluding tests (admin paths prefixed /admin, meera-api basePath expanded), then manual grep of every no-caller endpoint.",
+ "readiness_note": "No tests or runtime were executed; every feature is at most IMPLEMENTED BUT NOT VERIFIED. All provenance COMMITTED."
+}

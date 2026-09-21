@@ -1,0 +1,333 @@
+UTHO VPS 150.241.245.242 — VERBATIM COMMAND OUTPUT, captured 2026-09-07.
+Transcription only. No analysis, no conclusions, no interpretation.
+
+$ ls -la /etc/nginx/sites-enabled/
+lrwxrwxrwx 1 root root 39 May 22 10:36 grafana-test -> /etc/nginx/sites-available/grafana-test
+lrwxrwxrwx 1 root root 38 Aug 20 18:29 influora.in  -> /etc/nginx/sites-available/influora.in
+lrwxrwxrwx 1 root root 38 May 12 19:23 snapsby.com  -> /etc/nginx/sites-available/snapsby.com
+
+$ grep -Rh server_name /etc/nginx/sites-enabled/
+server_name 150.241.245.242;
+    server_name _;
+    server_name snapsby.com www.snapsby.com;
+    #server_name snapsby.com www.snapsby.com;
+        server_name snapsby.com;
+    server_name influora.in www.influora.in;
+    server_name influora.in www.influora.in;
+
+$ ls /etc/letsencrypt/live/
+bysnaps.com   influora.in   README   snapsby.com
+
+$ docker ps
+NAMES            IMAGE                     PORTS                          STATUS
+influora-api     influora-api:latest       (none)                         Up 24 hours
+influora-ai      influora-ai:latest        (none)                         Up 12 hours (healthy)
+influora-redis   redis:7-alpine            127.0.0.1:6380->6379/tcp       Up 13 days
+snaps-backend    app-backend               0.0.0.0:8081->8080/tcp         Up 10 days (healthy)
+n8n              docker.n8n.io/n8nio/n8n   0.0.0.0:5678->5678/tcp         Up 8 weeks
+grafana          grafana/grafana:latest    0.0.0.0:3000->3000/tcp         Up 9 days
+loki             grafana/loki:latest       0.0.0.0:3100->3100/tcp         Up 9 days
+promtail         grafana/promtail:latest   (none)                         Up 9 days
+
+$ ss -ltnp     (selected rows, verbatim)
+LISTEN 0 2048        0.0.0.0:8000  users:(("uvicorn",pid=4031544,fd=11))
+LISTEN 0 151         0.0.0.0:3306  users:(("mysqld",pid=1029,fd=42))
+LISTEN 0 70          0.0.0.0:33060 users:(("mysqld",pid=1029,fd=19))
+LISTEN 0 100               *:8082  users:(("java",pid=1609031,fd=14))
+LISTEN 0 100               *:8080  users:(("java",pid=2658,fd=45))
+LISTEN 0 1   [::ffff:127.0.0.1]:8005 users:(("java",pid=2658,fd=159))
+LISTEN 0 511       127.0.0.1:6379  users:(("redis-server",pid=874,fd=6))
+LISTEN 0 4096      127.0.0.1:6380  users:(("docker-proxy",pid=3815381,fd=7))
+LISTEN 0 4096        0.0.0.0:8081  users:(("docker-proxy",pid=260543,fd=7))
+LISTEN 0 4096        0.0.0.0:5678  users:(("docker-proxy",pid=1881,fd=7))
+LISTEN 0 4096        0.0.0.0:3000  users:(("docker-proxy",pid=397187,fd=7))
+LISTEN 0 4096        0.0.0.0:3100  users:(("docker-proxy",pid=397030,fd=7))
+LISTEN 0 511         0.0.0.0:80    users:(("nginx",pid=1143,fd=7))
+LISTEN 0 511         0.0.0.0:443   users:(("nginx",pid=1143,fd=9))
+
+$ cat /etc/nginx/sites-available/influora.in     (head -30, verbatim)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name influora.in www.influora.in;
+    return 301 https://$host$request_uri;
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name influora.in www.influora.in;
+    root /var/www/influora;
+    index index.html;
+    ssl_certificate /etc/letsencrypt/live/influora.in/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/influora.in/privkey.pem;
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:8082;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+$ ls -la /usr/local/App/
+-rw-r--r-- 1 root root     3738 May 28 00:57 docker-compose.prod.yml
+-rw-r--r-- 1 root root      883 May 22 00:37 docker-compose.yml
+-rw-r--r-- 1 root root      409 May 28 00:31 Dockerfile
+-rw------- 1 root root     3295 Aug 21 19:42 .env
+-rw------- 1 root root     3295 May 28 00:11 .env.prod
+drwxr-xr-x 3 root root     4096 Sep  6 21:13 influora
+drwxr-xr-x 3 root root     4096 Aug 25 19:36 influora-ai
+-rw-r--r-- 1 root root 13298436 Feb 17  2026 apache-tomcat-9.0.97.zip
+-rw-r--r-- 1 root root 82027091 Aug 28 15:38 snapsbyugc-backend.jar
+   (+9 further dated snapsbyugc-backend.jar copies, ~800 MB total)
+drwxr-xr-x 9 root root     4096 Nov  7  2024 tomcat9
+
+$ cat /usr/local/App/docker-compose.prod.yml     (verbatim, abridged only where marked)
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: snaps-backend
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      MYSQL_USER:            ${MYSQL_USER}
+      MYSQL_PASSWORD:        ${MYSQL_PASSWORD}
+      JWT_SECRET:            ${JWT_SECRET}
+      CORS_ORIGINS:          ${CORS_ORIGINS:-https://snapsby.com,https://www.snapsby.com}
+      FRONTEND_URL:          ${FRONTEND_URL:-https://snapsby.com}
+      CLOUDFLARE_R2_ENABLED:      true
+      [... R2 / ANTHROPIC / GEMINI / SARVAM / MSG91 / MAIL / RAZORPAY / INDEXNOW vars ...]
+      FORWARD_HEADERS_STRATEGY: native
+    ports:
+      - "8081:8080"
+    volumes:
+      - local_videos:/app/local_videos
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+volumes:
+  local_videos:
+   (this file declares exactly ONE service; no other service is present in it)
+
+$ curl -sI https://influora.in/ | head -1
+HTTP/2 200
+
+$ curl -sI https://influora.in/api/v1/health | head -1
+HTTP/2 200
+
+$ external TCP reachability probe from a residential connection outside the VPS
+port 8000  blocked/filtered
+port 3306  blocked/filtered
+port 3000  blocked/filtered
+port 5678  REACHABLE
+
+$ ssh root@150.241.245.242
+   authentication succeeded by PASSWORD; no public key in ~/.ssh reachable this box
+
+=== SECOND CAPTURE, same box, 2026-09-07 (appended) ===
+
+$ ls -la /usr/local/App/influora/ /usr/local/App/influora-ai/
+/usr/local/App/influora/:
+drwxr-xr-x 3 root root     4096 Sep  6 21:13 .
+drwxr-xr-x 5 root root     4096 Aug 28 15:37 ..
+drwxr-xr-x 2 root root     4096 Sep  6 17:43 Backup_Project
+-rw-r--r-- 1 root root      148 Aug 25 12:57 Dockerfile
+-rw-r--r-- 1 root root 88436194 Sep  6 17:43 influora-api.jar
+-rw-r--r-- 1 root root     4871 Sep  6 17:52 influora.env
+
+/usr/local/App/influora-ai/:
+drwxr-xr-x 3 root root   4096 Aug 25 19:36 .
+drwxr-xr-x 5 root root   4096 Aug 28 15:37 ..
+drwxrwxrwx 5 root root   4096 Aug 25 19:43 influora-ai
+-rw-r--r-- 1 root root 466132 Aug 25 19:34 influora-ai.zip
+
+$ find /usr/local/App/influora /usr/local/App/influora-ai -maxdepth 2 -name docker-compose*.yml -exec cat {} +
+   (no output — no compose file exists under either directory at depth <= 2)
+
+=== THIRD CAPTURE, same box, 2026-09-07 (appended) ===
+
+$ chmod 600 /usr/local/App/influora/influora.env
+$ chmod -R go-w /usr/local/App/influora-ai
+$ ls -la /usr/local/App/influora/influora.env
+-rw------- 1 root root 4871 Sep  6 17:52 /usr/local/App/influora/influora.env
+$ ls -ld /usr/local/App/influora-ai/influora-ai
+drwxr-xr-x 5 root root 4096 Aug 25 19:43 /usr/local/App/influora-ai/influora-ai
+
+$ cat /usr/local/App/influora/Dockerfile
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY influora-api.jar /app/influora-api.jar
+ENTRYPOINT ["java","-Xmx1024m","-jar","/app/influora-api.jar"]
+
+$ docker inspect influora-api influora-ai --format "..."
+   PowerShell stripped the quotes around --format; docker received each
+   template fragment as a separate object name. Container NAMES did print:
+   /influora-api
+   /influora-ai
+   NetworkMode, Image, RestartPolicy and Binds remain UNREAD.
+
+=== FOURTH CAPTURE — Step 0 complete, over key auth, 2026-09-07 ===
+NOTE: one line of this capture is redacted here; see F-0724.
+
+$ docker inspect influora-api influora-ai --format ...
+/influora-api net=host img=influora-api:latest restart=unless-stopped binds=[]
+/influora-ai  net=host img=influora-ai:latest  restart=unless-stopped binds=[]
+   compose labels: project=[] files=[]  on BOTH  -> confirmed hand-run, no compose
+
+$ docker inspect influora-api --format '{{json .Config.Env}}'   (75 vars; selected)
+SERVER_PORT=8082
+CORS_ALLOWED_ORIGINS=https://influora.in/          <-- trailing slash
+SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/influora?allowPublicKeyRetrieval=true&serverTimezone=UTC
+SPRING_DATASOURCE_USERNAME=influora_app
+SPRING_DATASOURCE_PASSWORD=***REDACTED - SEE F-0724, ROTATE***
+
+$ docker exec influora-ai env
+SPRING_JWKS_URL=http://localhost:8080/api/v1/.well-known/jwks.json
+SPRING_INTERNAL_BASE_URL=http://localhost:8080/api/v1
+REDIS_URL=redis://localhost:6380
+MEERA_ALLOWED_ORIGINS=https://app.influora.com     <-- .com, not .in
+
+$ free -h / swapon / df -h /
+Mem 7.3Gi total, 4.4Gi used, 2.8Gi available
+Swap 4.0Gi total, 1.5Gi USED   (/swapfile exists - README's "Swap: 0B" is stale)
+/ 77G, 31G used, 44G avail, 41%
+
+$ dig +short  (all four already point at this box)
+ai.influora.in app.influora.in api.influora.in influora.in -> 150.241.245.242
+influora.com -> 44.232.173.249 52.40.42.113   (third-party, NOT this deployment)
+api.influora.com / app.influora.com -> NXDOMAIN
+
+$ ls -la /var/www/influora/  -> built 2026-09-07 00:09 (fresh, not stale)
+$ grep -c in /var/www/influora/assets/index-Dl65C8NZ.js
+   api.influora.in  = 0      api.influora.com = 1
+   ai.influora.in   = 0      app.influora.in  = 1
+$ grep -ohE 'https?://...influora.../api/v1'
+   3 x  https://influora.in/api/v1        <-- the live bundle's real API base
+   ( .env.production says https://api.influora.in/api/v1 -- disagrees, see F-0721 )
+
+$ openssl s_client -servername api.influora.in
+subject=CN=snapsby.com                              <-- confirmed fall-through
+
+=== FIFTH CAPTURE — three fixes applied 2026-09-07 ===
+
+F-0721  .env.production:38  https://api.influora.in/api/v1 -> https://influora.in/api/v1
+        (comment block above it rewritten; the old prose argued FOR api.influora.in)
+F-0723  /usr/local/App/influora/influora.env:9
+        was: CORS_ALLOWED_ORIGINS=https://influora.in/
+        now: CORS_ALLOWED_ORIGINS=https://influora.in,https://www.influora.in
+F-0722  /usr/local/App/influora-ai/influora-ai/influora-ai.env:10
+        was: MEERA_ALLOWED_ORIGINS=https://app.influora.com
+        now: MEERA_ALLOWED_ORIGINS=https://influora.in,https://www.influora.in
+
+Backups: *.bak.20260907 beside each, mode 600. All four files verified 600.
+NO container was restarted. Docker bakes env at container CREATION, so the two
+running processes STILL HOLD THE OLD VALUES. The files are correct; the runtime
+is not, and will not be until influora-api / influora-ai are recreated.
+Post-change: influora-api Up 25 hours, influora-ai Up 12 days, healthy.
+curl -sI https://influora.in/api/v1/health -> HTTP/2 200
+
+=== SIXTH CAPTURE — nginx fallback + neighbour cert, 2026-09-07 ===
+
+$ grep -Rn default_server /etc/nginx/sites-enabled/ /etc/nginx/nginx.conf
+/etc/nginx/sites-enabled/snapsby.com:26:    listen 80 default_server;
+/etc/nginx/sites-enabled/snapsby.com:27:    listen [::]:80 default_server;
+/etc/nginx/sites-enabled/snapsby.com:42:    listen 443 ssl http2 default_server;
+/etc/nginx/sites-enabled/snapsby.com:43:    listen [::]:443 ssl http2 default_server;
+
+$ grep -n "include.*sites-enabled" /etc/nginx/nginx.conf
+61:	include /etc/nginx/sites-enabled/*;
+$ ls -1 /etc/nginx/sites-enabled/
+grafana-test
+influora.in
+snapsby.com
+
+$ openssl x509 -in /etc/letsencrypt/live/snapsby.com/fullchain.pem -noout -subject -enddate -ext subjectAltName
+subject=CN=snapsby.com
+notAfter=Dec  1 11:34:26 2026 GMT
+X509v3 Subject Alternative Name: DNS:snapsby.com, DNS:www.snapsby.com
+
+$ curl -sI https://snapsby.com | head -1        -> HTTP/2 200
+$ curl -sI https://www.snapsby.com | head -1    -> HTTP/2 200
+
+=== REPO-SIDE CHANGES MADE 2026-09-07, already applied ===
+New gates, all three falsified red-on-defect / green-on-fix / green-on-repo:
+  .proof-os/gates/cors-origin-wellformed.py
+  .proof-os/gates/allowlist-domain-owned.py
+  .proof-os/gates/api-base-url-served.py
+  .proof-os/gates/owned-domains.txt   (declares: influora.in)
+.env.production:38 VITE_API_BASE_URL now https://influora.in/api/v1
+
+=== SEVENTH CAPTURE — Meera works end to end, 2026-09-08 ===
+
+influora-ai rebuilt from HEAD and recreated (image e8233a8b34e3, was 6712c82bfa5c
+from 2026-08-25). 45 python modules, up from 41; the 4 that were missing are present.
+Boot log proves the new code is live:
+  "creator monthly cap scope: shared (workers=1, redis=configured)"   <- worker_guard.py
+
+A REAL creator turn, driven in a browser on production:
+
+  POST /api/v1/creator/meera/sessions            -> 201
+  POST /api/v1/internal/meera/context            -> 200   (F-0758 CLEARED)
+     AUDIENCE_PRINCIPAL_MISMATCH occurrences:       0
+     meera_context_fetch_failed occurrences:        0
+  POST https://api.anthropic.com/v1/messages     -> 200 OK  (F-0760 resolved:
+     a workspace-scoped key replaced the org-scoped one that returned 400)
+  POST /chat  (ai.influora.in)                   -> 200
+
+Meera's reply carried real Block B context - "0 active deals and 0 completed deals",
+"Travel & Adventure, Food & Cooking, and Fashion & Lifestyle", "1,942 followers in
+Mumbai" - so the context fetch is not merely 200, it is being USED.
+
+Persisted, not just rendered:
+  ai_messages for the conversation:  ASSISTANT 2, USER 3
+  meera_creator_conversations.message_count: 2
+The rollup only counts COMPLETED turns (MeeraSessionService doPersistAssistantWriteback),
+so the assistant write-back path works - the exact path Priya's ruling said Option C
+would have silently broken.
+
+STREAMING PROVED, by sampling the DOM every 400ms during a turn:
+  t=0ms      878 chars
+  t=2015ms   884
+  t=2418ms  1007
+  t=3223ms  1112
+  t=4029ms  1207
+  t=4834ms  1310   final
+Six distinct lengths, ~100-char increments over 4.8s. A buffered response would show a
+single 878 -> 1310 jump. proxy_buffering off / proxy_cache off / Connection '' in
+ai-influora.conf are working end to end, not merely configured.
+
+=== EIGHTH CAPTURE — creator Co-pilot enabled, 2026-09-08 ===
+
+F-0762 root cause, proved by forcing a run rather than waiting for 02:00 UTC:
+  07:00:00.023  CreatorCaptionSyncJob: disabled
+                (influora.creator-copilot.enabled=false), skipping run
+The job fired exactly on schedule and did nothing. CREATOR_COPILOT_ENABLED was set
+NOWHERE - not in influora.env, not in the container - so application.yml:497 defaulted
+it to false. The same flag gates CreatorThemeTaggingJob, MeeraInteractionLogRetentionPurgeJob
+and the onCreatorConnected handler (CreatorCaptionSyncJob:152), so a disconnect/reconnect
+of Instagram would ALSO have produced nothing - and would have cost a live Meta token.
+
+Enabled 2026-09-08 on the user's instruction. First run, observed:
+  07:35:01  CreatorCaptionSyncJob: completed run - 1 creators processed,
+            25 captions inserted, 0 skipped
+  creator_captions: 0 -> 25   (creator 01M11V2C3B4AZW5T7QK0AK3RVW)
+  no Meta API errors during the run
+
+Temporary cron (0 */5 * * * *) used to observe the run; reverted to 0 0 2 * * * and the
+running container re-verified as carrying the nightly value. influora.in/api/v1/health 200,
+snapsby.com 200 throughout.
+
+NOT CHECKED: whether a SUGGESTION is now produced for the creator. That is downstream of
+CreatorThemeTaggingJob (03:00 UTC), which has not run since the flag was enabled. The
+Co-pilot empty state may therefore still show until tomorrow's tagging pass - captions
+landing is necessary, not sufficient.

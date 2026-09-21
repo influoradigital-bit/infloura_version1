@@ -1,0 +1,36 @@
+{
+  "text": "fix F-0965 creator follower total includes self-declared platforms",
+  "verb": "FIX",
+  "resolution": "proved",
+  "verbs_matched": [
+    "FIX"
+  ],
+  "modifiers": {},
+  "target": {
+    "kind": "ledger",
+    "id": "F-0965",
+    "resolution": "proved",
+    "note": "unverified-as-verified",
+    "status": "open"
+  },
+  "scope": [
+    "influora-api/src/main/java/com/influora/job/ScoreCalculationJob.java"
+  ],
+  "scope_from": "ledger.where",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "oracles": [],
+  "oracle_first": false,
+  "exit_gate": "mvn -o test -Dtest=FollowerTotals*Test,PlatformStatsAggregationJob*Test,ExternalCreatorLink*Test,ScoreCalculationJob*Test",
+  "done_when": "Per the user's ruling (2026-09-19, option a + 'separate imported total'): platform_stats records its source (META_API / IMPORTED / CREATOR_REPORTED) and every writer sets it (PlatformStatsAggregationJob, PortfolioService, ExternalCreatorLinkService); CreatorProfile.totalFollowers and engagementRate are computed by ONE shared rule: the sum over META_API platform stats if any exist (provenance VERIFIED), else the IMPORTED stat (provenance IMPORTED), else 0 (provenance NONE) - a CREATOR_REPORTED stat never counts; the provenance is stored on the profile and returned to discovery, whose creator card labels an IMPORTED total 'imported, not verified'; a Flyway migration adds both columns and backfills existing rows by the same rule; ScoreCalculationJob scores only from META_API rows; proved by mvn tests for the shared rule (every provenance case), each writer, ScoreCalculationJob, and an H2 test of the migration's backfill SQL, plus a vitest test of the discovery label, all exiting 0 with tests that fail on the pre-fix code, reviewed by kabir in a fresh context",
+  "ask": "F-0965 has no `fix` recorded \u2014 what must be true for it to be closed?",
+  "refused": null,
+  "prior_failures": [
+    "F-0606",
+    "F-0965"
+  ],
+  "dispatch": "agents",
+  "oracles_skipped_no_toolchain": [],
+  "graph_nodes": 928,
+  "human_answer": "Option a; external creators keep a separate imported total labelled 'imported, not verified' (user, 2026-09-19)"
+}

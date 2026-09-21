@@ -1,0 +1,35 @@
+{
+  "text": "fix F-0964 public profile shows unverified metrics as verified",
+  "verb": "FIX",
+  "resolution": "proved",
+  "verbs_matched": [
+    "FIX"
+  ],
+  "modifiers": {},
+  "target": {
+    "kind": "ledger",
+    "id": "F-0964",
+    "resolution": "proved",
+    "note": "unverified-as-verified",
+    "status": "open"
+  },
+  "scope": [
+    "influora-api/src/main/java/com/influora/service/PublicCreatorService.java"
+  ],
+  "scope_from": "ledger.where",
+  "owner": "vikram",
+  "reviewer": "kabir",
+  "oracles": [],
+  "oracle_first": false,
+  "exit_gate": "mvn -o test -Dtest=PublicCreatorService*Test",
+  "done_when": "PublicCreatorService builds verified_metrics only from the creator's newest META_API creator_metrics row (via findByCreatorProfileIdAndDataSourceOrderByTimeDesc); a newer CREATOR_REPORTED row never appears there, and with no Meta row followers/reach_30d/engagement_rate/verified_at are all omitted rather than filled from CreatorProfile's cross-platform totals; the public page (creator-verified-metrics.tsx) renders a missing follower count as 'Not available yet'; proved by `mvn -o test -Dtest=PublicCreatorService*Test` and `npx vitest run src/pages/creator-verified-metrics*` exiting 0 with tests that fail on the pre-fix code, reviewed by kabir in a fresh context",
+  "ask": "F-0964 has no `fix` recorded \u2014 what must be true for it to be closed?",
+  "refused": null,
+  "prior_failures": [
+    "F-0964"
+  ],
+  "dispatch": "agents",
+  "oracles_skipped_no_toolchain": [],
+  "graph_nodes": 928,
+  "human_answer": "Continue (user, 2026-09-19): take the analytics follow-ups next"
+}

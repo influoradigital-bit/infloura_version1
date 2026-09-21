@@ -1,0 +1,29 @@
+{"verdict": "broken",
+ "oracle": "mvn",
+ "isolation": "fresh-context",
+ "done_when": "each available oracle ran over the scope and its raw output is recorded",
+ "evidence": {
+   "oracle": "mvn",
+   "command": "cd influora-api && mvn clean test -Dtest=com.influora.service.creatorcopilot.*Test,ConfigurationPropertiesRegistrationTest -DfailIfNoSpecifiedTests=false ; npx tsc --noEmit",
+   "result": "BUILD SUCCESS from a wiped target/, 816 main + 315 test sources compiled. CreatorNudgeServiceTest 34 run / 0 failures / 0 errors / 0 SKIPPED; CreatorMetaOAuthServiceTest 9/0/0/0; CreatorCopilotConfigWiringTest 4/0/0/0; ConfigurationPropertiesRegistrationTest 1/0/0/0 loading a real Spring context. tsc exit 0. BROKEN is not an oracle failure: F-0774 (no deployed writer for trends) and F-0778 (FK RESTRICT makes the expiry purge impossible) both remain open.",
+   "where": ".proof-os/tasks/T-COPILOT-ON-0910/verify3.log:1"
+ },
+ "not_checked": [
+   "the application was never booted - ConfigurationPropertiesRegistrationTest loads a context but full startup with the new trend-ingest block was not exercised, and there is no Docker here",
+   "the full 315-source test suite was never run; only the creatorcopilot package plus the registration test, so a regression elsewhere would not have been caught",
+   "Testcontainers/Docker-backed classes did not execute at all",
+   "docker compose config was not run on any of the four compose files - they were validated by YAML parse only, so real compose-time interpolation is unproven",
+   "FK RESTRICT behaviour for F-0778 is read from migration SQL, never observed against a running MySQL with a referencing row present",
+   "whether NEWSAPI_KEY/TMDB_API_KEY/YOUTUBE_API_KEY exist in any host .env - committed files only were searched",
+   "the live Utho host was never reached; no MCP for it from this session",
+   "whether the n8n on 150.241.245.242 currently holds the trend-pull workflow pointed at our MySQL - that is config inside a web UI, unanswerable from the repo",
+   "the pre-existing gitleaks baseline of 7 historical leaks, plus real-looking unrotated keys at influora-api/env.example:51,67,71 - confirmed pre-existing and left untouched"
+ ],
+ "skipped": [
+   {"step": "flipping CREATOR_COPILOT_ENABLED or TREND_INGEST_ENABLED to true",
+    "reason": "F-0774 and F-0781 both make it a no-op: there is no deployed writer for trends and no consumer of TrendIngestProperties, so the switch would look live and do nothing"},
+   {"step": "writing TrendPullJob",
+    "reason": "the design is recovered and adversarially reviewed but names TrendPullProperties while TrendIngestProperties already shipped; reconciling the two is a decision for the user, not a silent choice"},
+   {"step": "committing any of this",
+    "reason": "not requested; all changes remain working-tree only"}
+ ]}

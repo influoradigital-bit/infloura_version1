@@ -1,0 +1,64 @@
+{
+ "rows": [
+  {
+   "subject": "F-0726 gate (.proof-os/gates/shopify-webhook-shop-binding.sh)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "script",
+    "command": "bash .proof-os/gates/shopify-webhook-shop-binding.sh",
+    "result": "exit 0 - PROVED: the shop-binding check holds across all three pinned suites, including the transient-retry and no-coupon-skip paths",
+    "where": ".proof-os/gates/shopify-webhook-shop-binding.sh:96"
+   }
+  },
+  {
+   "subject": "F-0726 gate sensitivity (falsification probe)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "controller ownership check bypassed (behaviourally identical to pre-fix), then mvn -o test -Dtest=ShopifyWebhookControllerTest",
+    "result": "the gate correctly returns non-zero against pre-fix behaviour, detecting exactly the two tests that assert the check exists; the no-coupon skip test stays green, which is the expected pre-fix behaviour",
+    "where": ".proof-os/tasks/T-F0726-0907/prefix-probe.log:1"
+   }
+  },
+  {
+   "subject": "influora-api full test suite (blast radius of the new constructor arg)",
+   "owner": "meera",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "MAVEN_OPTS=-Xmx2g mvn -o test (cwd influora-api)",
+    "result": "BUILD SUCCESS - 2684 tests ran and all passed, up from 2673 before this change; 15 more were not executed locally (Testcontainers classes, no Docker on this host)",
+    "where": ".proof-os/tasks/T-F0726-0907/fullsuite.log:1"
+   }
+  },
+  {
+   "subject": "ShopifyOrderOwnershipVerifier input guards",
+   "owner": "vikram",
+   "status": "aligned",
+   "isolation": "oracle",
+   "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o test -Dtest=ShopifyOrderOwnershipVerifierTest",
+    "result": "8 tests ran and all passed, covering 6 hostile order-id forms, a non-myshopify host, and a revoked token",
+    "where": "influora-api/src/main/java/com/influora/integration/shopify/ShopifyOrderOwnershipVerifier.java:64"
+   }
+  },
+  {
+   "subject": "Shopify Admin API 404 contract for a foreign order",
+   "owner": "vikram",
+   "status": "missing",
+   "isolation": "fresh-context",
+   "evidence": {
+    "oracle": "model",
+    "command": "attempted to verify Shopify's documented order-lookup response offline",
+    "result": "unverified: no live Shopify credentials or store exist in any environment, every test mocks at the verifier boundary, and the repo pins no Admin API fixture; the fix assumes a 404 for an order absent from a shop",
+    "where": "influora-api/src/main/java/com/influora/integration/shopify/ShopifyOrderOwnershipVerifier.java:129"
+   }
+  }
+ ]
+}

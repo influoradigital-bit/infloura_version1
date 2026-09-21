@@ -1,0 +1,20 @@
+{
+  "verdict": "believed",
+  "oracle": "mvn",
+  "isolation": "fresh-context",
+  "done_when": "MetricsAuthorizationService.resolveAuthorizedCreatorProfileId authorizes a brand workspace for a creator profile exactly when that workspace has a collaboration with that creator that the CREATOR agreed to (source APPLICATION and not CANCELLED, or status TERMS_AGREED or later incl. DISPUTED) or an existing workspace-scoped Meta pairing row; a brand-only INVITED / unanswered brand offer / CANCELLED collaboration is refused; proved by `mvn -o test -Dtest=MetricsAuthorizationServiceTest,AnalyticsService*Test` exiting 0 with a case per allowed and refused status, and reviewed by kabir in a fresh context",
+  "evidence": {
+    "oracle": "mvn",
+    "command": "mvn -o -B test -Dtest=MetricsAuthorizationServiceTest,AnalyticsService*Test,CollaborationRepositoryWorkspaceCreatorQueryTest",
+    "result": "Tests run: 45, Failures: 0, Errors: 0 BUILD SUCCESS",
+    "where": "influora-api/src/test/java/com/influora/service/MetricsAuthorizationServiceTest.java:1"
+  },
+  "not_checked": [
+    "the brand-side Meta pairing path (MetaConnectionService has other-lane uncommitted edits)",
+    "access never expires after COMPLETED/DISPUTED (per ruling, no revocation exists)",
+    "Collaboration.transitionTo is unguarded: a future brand-side write of TERMS_AGREED+ would widen access",
+    "frontend brand analytics rendering with real creator data at runtime",
+    "the pre-consent band view (tracked in F-0878)"
+  ],
+  "skipped": []
+}

@@ -1,0 +1,40 @@
+{
+  "rows": [
+    {
+      "subject": "influora-api/src/main/java/com/influora/service/AuthService.java",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": "mvn -o test (influora-api, full suite)",
+        "result": "BUILD SUCCESS: 2624 tests, 0 failures, 0 errors, 15 skipped; gate re-run green after the comment correction",
+        "where": "influora-api/src/main/java/com/influora/service/AuthService.java:656"
+      }
+    },
+    {
+      "subject": "influora-api/src/test/java/com/influora/service/AuthServiceTest.java",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "oracle",
+      "evidence": {
+        "oracle": "mvn",
+        "command": ".proof-os/gates/forgot-password-reset-verifies.sh (AuthServiceTest#testResetPassword*)",
+        "result": "PROVED, gate exit 0; same gate exits 1 with the guard removed",
+        "where": "influora-api/src/test/java/com/influora/service/AuthServiceTest.java:1084"
+      }
+    },
+    {
+      "subject": "reachability of emailVerified=false with status other than PENDING_VERIFICATION",
+      "owner": "vikram",
+      "status": "aligned",
+      "isolation": "shared-context",
+      "evidence": {
+        "oracle": "grep",
+        "command": "grep -rn 'SUSPENDED|DEACTIVATED|setStatus|Modifying' influora-api/src/main/",
+        "result": "no write of either state anywhere in src/main; User exposes no setStatus; status reaches ACTIVE only inside setEmailVerified",
+        "where": "influora-api/src/main/java/com/influora/domain/entity/User.java:280"
+      }
+    }
+  ]
+}

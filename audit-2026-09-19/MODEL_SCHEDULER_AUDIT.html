@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model &amp; Scheduler Audit — 115f698</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --text: #1a1d23;
+    --muted: #5b6472;
+    --border: #e2e5ea;
+    --accent: #2f5fda;
+    --working: #16794f;
+    --working-bg: #e5f6ee;
+    --partial: #9a6a00;
+    --partial-bg: #fdf3d9;
+    --notverified: #5b6472;
+    --notverified-bg: #eceef1;
+    --broken: #b8202c;
+    --broken-bg: #fbe6e7;
+    --code-bg: #f0f1f4;
+    --shadow: 0 1px 2px rgba(20,20,30,0.06), 0 1px 12px rgba(20,20,30,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161b;
+      --panel: #1c1f26;
+      --text: #e7e9ee;
+      --muted: #9aa3b2;
+      --border: #2b2f38;
+      --accent: #7ea1ff;
+      --working: #3fd18f;
+      --working-bg: #103726;
+      --partial: #e8b954;
+      --partial-bg: #3a2f0d;
+      --notverified: #b7bfcb;
+      --notverified-bg: #262a32;
+      --broken: #ff6b75;
+      --broken-bg: #3a1418;
+      --code-bg: #12141a;
+      --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 1px 12px rgba(0,0,0,0.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161b;
+    --panel: #1c1f26;
+    --text: #e7e9ee;
+    --muted: #9aa3b2;
+    --border: #2b2f38;
+    --accent: #7ea1ff;
+    --working: #3fd18f;
+    --working-bg: #103726;
+    --partial: #e8b954;
+    --partial-bg: #3a2f0d;
+    --notverified: #b7bfcb;
+    --notverified-bg: #262a32;
+    --broken: #ff6b75;
+    --broken-bg: #3a1418;
+    --code-bg: #12141a;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4), 0 1px 12px rgba(0,0,0,0.3);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.45;
+    padding: 16px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; }
+  header { margin-bottom: 20px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 0.92rem; }
+  .topbar { display:flex; justify-content: space-between; align-items:flex-start; gap: 12px; flex-wrap: wrap; }
+  .theme-toggle {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: 8px; padding: 6px 12px; font-size: 0.85rem; cursor: pointer;
+  }
+  .caveat {
+    background: var(--partial-bg); color: var(--partial); border: 1px solid var(--partial);
+    border-radius: 10px; padding: 12px 16px; font-size: 0.88rem; margin: 16px 0 24px;
+  }
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .stat-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; box-shadow: var(--shadow);
+  }
+  .stat-num { font-size: 1.7rem; font-weight: 700; }
+  .stat-label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  .stat-working .stat-num { color: var(--working); }
+  .stat-partial .stat-num { color: var(--partial); }
+  .stat-notverified .stat-num { color: var(--notverified); }
+  .stat-broken .stat-num { color: var(--broken); }
+  .bar {
+    height: 14px; border-radius: 8px; overflow: hidden; display: flex; border: 1px solid var(--border);
+    margin: 6px 0 24px;
+  }
+  .bar > div { height: 100%; }
+  .bar .b-working { background: var(--working); }
+  .bar .b-partial { background: var(--partial); }
+  .bar .b-notverified { background: var(--notverified); }
+  .bar .b-broken { background: var(--broken); }
+  section { margin-bottom: 28px; }
+  h2 { font-size: 1.15rem; margin: 0 0 10px; }
+  .finding-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 12px; box-shadow: var(--shadow);
+  }
+  .finding-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .finding-id { color: var(--muted); font-size: 0.8rem; font-family: monospace; }
+  .finding-title { font-weight: 600; }
+  .sev-badge { font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+  .sev-p0 { background: var(--broken-bg); color: var(--broken); }
+  .sev-p1 { background: var(--broken-bg); color: var(--broken); }
+  .sev-p2 { background: var(--partial-bg); color: var(--partial); }
+  .sev-p3 { background: var(--notverified-bg); color: var(--notverified); }
+  .finding-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 0.78rem; margin-bottom: 8px; }
+  .finding-loc { margin-bottom: 8px; }
+  .finding-loc code { background: var(--code-bg); padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; word-break: break-all; }
+  .finding-section { font-size: 0.86rem; margin-bottom: 6px; }
+  .finding-section.muted { color: var(--muted); }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .controls select, .controls input {
+    border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: 8px; padding: 6px 10px; font-size: 0.85rem;
+  }
+  .controls input { flex: 1; min-width: 160px; }
+  .table-wrap {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    overflow-x: auto; box-shadow: var(--shadow);
+  }
+  table { border-collapse: collapse; width: 100%; min-width: 900px; font-size: 0.83rem; }
+  th, td { padding: 9px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  tr:last-child td { border-bottom: none; }
+  .cat-badge { font-size: 0.7rem; font-weight: 600; padding: 2px 7px; border-radius: 6px; }
+  .cat-entity { background: var(--notverified-bg); color: var(--notverified); }
+  .cat-job { background: #dde6ff; color: var(--accent); }
+  :root[data-theme="dark"] .cat-job, @media (prefers-color-scheme: dark) { }
+  .name-cell { font-weight: 600; white-space: nowrap; }
+  .num-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .wiring-cell { font-family: monospace; font-size: 0.74rem; color: var(--muted); min-width: 220px; }
+  .note-cell { min-width: 280px; color: var(--text); }
+  .status-pill { display: inline-block; font-size: 0.74rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .st-working { background: var(--working-bg); color: var(--working); }
+  .st-partial { background: var(--partial-bg); color: var(--partial); }
+  .st-notverified { background: var(--notverified-bg); color: var(--notverified); }
+  .st-broken { background: var(--broken-bg); color: var(--broken); }
+  footer { color: var(--muted); font-size: 0.78rem; margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--border); }
+  ul.notes { font-size: 0.85rem; color: var(--muted); padding-left: 20px; }
+  ul.notes li { margin-bottom: 6px; }
+  .hidden { display: none !important; }
+  @media (max-width: 640px) {
+    h1 { font-size: 1.25rem; }
+    .stat-num { font-size: 1.35rem; }
+    table { font-size: 0.76rem; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="topbar">
+      <div>
+        <h1>Model &amp; Scheduler Audit</h1>
+        <div class="subtitle">Release candidate commit <code>115f698</code> &middot; audited 2026-09-19 &middot; 87 entities + 23 scheduled/background jobs = 110 features</div>
+      </div>
+      <button class="theme-toggle" onclick="toggleTheme()">Toggle theme</button>
+    </div>
+  </header>
+
+  <div class="caveat">
+    <b>Read this before trusting the percentages below.</b> These figures are computed straight from the per-row
+    evidence scores and confidence values in the table — they are <b>not</b> a claim that 16% of the codebase works
+    and 82% is broken. Most rows are capped at &quot;IMPLEMENTED BUT NOT VERIFIED&quot; because this was a
+    <b>static, read-only audit</b> of a checked-out commit: code, tests and one <code>mvn compile</code>/<code>mvn
+    surefire:test</code> run were used as evidence, but the running application was never exercised end-to-end.
+    The 18 jobs marked WORKING are the only rows backed by an actual executed test run in this session (257 tests,
+    0 failures). Every other row's evidence score and confidence are shown so you can judge for yourself how much
+    weight it deserves — sort/filter the table and read the "wiring" and "note" columns, not just the color.
+  </div>
+
+  <div class="stat-grid">
+    <div class="stat-card stat-working"><div class="stat-num">16.4%</div><div class="stat-label">Working (18 rows, test-verified)</div></div>
+    <div class="stat-card stat-partial"><div class="stat-num">1.8%</div><div class="stat-label">Partially working (2 rows)</div></div>
+    <div class="stat-card stat-notverified"><div class="stat-num">81.8%</div><div class="stat-label">Implemented, not verified (90 rows)</div></div>
+    <div class="stat-card stat-broken"><div class="stat-num">0.0%</div><div class="stat-label">Broken / not implemented (0 rows)</div></div>
+  </div>
+  <div class="bar" title="Composition of all 110 rows">
+    <div class="b-working" style="width:16.4%"></div>
+    <div class="b-partial" style="width:1.8%"></div>
+    <div class="b-notverified" style="width:81.8%"></div>
+    <div class="b-broken" style="width:0.0%"></div>
+  </div>
+
+  <section>
+    <h2>Verified findings (3)</h2>
+    
+    <div class="finding-card">
+      <div class="finding-head">
+        <span class="sev-badge sev-p1">P1</span>
+        <span class="finding-id">MSA-01</span>
+        <span class="finding-title">BrandOwnContentService silently defaults Instagram auth path to FACEBOOK_LOGIN, reproducing the F-0950 class of bug on a code path F-0950 did not fix</span>
+      </div>
+      <div class="finding-meta">
+        <span>Evidence E3</span>
+        <span>Confidence 78%</span>
+        <span>Status OBSERVED</span>
+        <span>Provenance COMMITTED</span>
+      </div>
+      <div class="finding-loc"><code>influora-api/src/main/java/com/influora/service/trendspark/BrandOwnContentService.java:112</code></div>
+      <div class="finding-section"><b>Evidence:</b> InstagramInsightsClient (integration/meta/client/InstagramInsightsClient.java:50-67) exposes both a 3-arg getMedia(igUserId, accessToken, limit) that hardcodes MetaAuthPath.FACEBOOK_LOGIN (line 62), and a 4-arg overload that takes the real auth path. PortfolioService.java:401 and DeliverableVerificationService.java:215/245 were fixed (per their own F-0950/F-0126 comments) to pass tokenRow.getAuthPath()/authPath explicitly. BrandOwnContentService.java fetches a real MetaOAuthToken at line 88-89 (which exposes getAuthPath(), used identically in MetaConnectionService.java:106) but at line 112 calls the 3-arg getMedia(igBusinessAccountId, accessToken.get(), RECENT_MEDIA_LIMIT) overload, never reading token.getAuthPath(). Any brand connected via INSTAGRAM_LOGIN (no linked Facebook Page) will have this call routed to graph.facebook.com and fail with Meta error 190 &#x27;Cannot parse access token&#x27; — the exact symptom PortfolioService&#x27;s own comment describes for its pre-fix state.</div>
+      <div class="finding-section"><b>Impact:</b> TrendSpark&#x27;s brand-own-content feature (BrandOwnContentService) is unusable for any brand onboarded via INSTAGRAM_LOGIN; only FACEBOOK_LOGIN-connected brands see their own content sync succeed.</div>
+      <div class="finding-section"><b>Recommended fix:</b> Change BrandOwnContentService.java:112 to call instagramInsightsClient.getMedia(igBusinessAccountId, accessToken.get(), RECENT_MEDIA_LIMIT, token.getAuthPath()).</div>
+      <div class="finding-section muted"><b>Still needed to confirm:</b> Runtime call against an INSTAGRAM_LOGIN-connected brand token, or a unit test mocking InstagramInsightsClient and asserting the 4-arg overload is invoked with the token&#x27;s real authPath.</div>
+    </div>
+    <div class="finding-card">
+      <div class="finding-head">
+        <span class="sev-badge sev-p2">P2</span>
+        <span class="finding-id">MSA-02</span>
+        <span class="finding-title">Three scheduled jobs touching payment/financial-compliance data paths have zero test coverage</span>
+      </div>
+      <div class="finding-meta">
+        <span>Evidence E3</span>
+        <span>Confidence 70%</span>
+        <span>Status OBSERVED</span>
+        <span>Provenance COMMITTED</span>
+      </div>
+      <div class="finding-loc"><code>influora-api/src/main/java/com/influora/job/IdempotencyReservationReaperJob.java; influora-api/src/main/java/com/influora/job/CreatorThemeTaggingJob.java; influora-api/src/main/java/com/influora/service/CampaignServiceInvoiceService.java:374 (retryFailedInvoiceFailures)</code></div>
+      <div class="finding-section"><b>Evidence:</b> grep -rl across influora-api/src/test/java for each class/method name returns zero hits for all three. Confirmed via `mvn -o surefire:test` against every job test class in src/test/java/com/influora/job (215/215 pass) plus EmailWorkerTest/PayoutReconciliationServiceTest/DeliverableVerificationServiceTest (42/42 pass) — none of these three units appears in any passing (or failing) suite because none exists. IdempotencyReservationReaperJob reclaims stuck idempotency-key reservations (a double-charge guard); CampaignServiceInvoiceService.retryFailedInvoiceFailures is the automated recovery path for GST Doc#2 invoices that failed to generate at escrow release (a documented compliance gap, F-0390 D1).</div>
+      <div class="finding-section"><b>Impact:</b> Both jobs are wired, compiled, cron-scheduled and @SchedulerLock-protected (infra is sound) but their actual per-row logic has never been exercised by any test — a regression in either would not be caught by `mvn test` today.</div>
+      <div class="finding-section"><b>Recommended fix:</b> Add a dedicated *JobTest for IdempotencyReservationReaperJob and CreatorThemeTaggingJob, and a CampaignServiceInvoiceServiceTest covering retryFailedInvoiceFailures&#x27;s PDF_RENDER and invoice-create retry branches.</div>
+      <div class="finding-section muted"><b>Still needed to confirm:</b> New unit tests plus a review of whether the missing tests reflect an intentional scope cut or an oversight.</div>
+    </div>
+    <div class="finding-card">
+      <div class="finding-head">
+        <span class="sev-badge sev-p3">P3</span>
+        <span class="finding-id">MSA-03</span>
+        <span class="finding-title">SchedulerLockConfig javadoc cites the wrong migration number for the shedlock table</span>
+      </div>
+      <div class="finding-meta">
+        <span>Evidence E2</span>
+        <span>Confidence 90%</span>
+        <span>Status OBSERVED</span>
+        <span>Provenance COMMITTED</span>
+      </div>
+      <div class="finding-loc"><code>influora-api/src/main/java/com/influora/config/SchedulerLockConfig.java (javadoc says &#x27;V66 migration&#x27;); actual file is influora-api/src/main/resources/db/migration/V68__shedlock.sql</code></div>
+      <div class="finding-section"><b>Evidence:</b> Direct file listing: only V68__shedlock.sql exists under db/migration; SchedulerLockConfig.java&#x27;s class javadoc says &#x27;the shedlock table, V66 migration&#x27;.</div>
+      <div class="finding-section"><b>Impact:</b> Cosmetic only (comments are not proof and do not affect runtime), but will mislead the next engineer who greps for V66.</div>
+      <div class="finding-section"><b>Recommended fix:</b> Update the javadoc to say V68.</div>
+      <div class="finding-section muted"><b>Still needed to confirm:</b> None — trivial text fix.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>All features (110)</h2>
+    <div class="controls">
+      <input id="search" type="text" placeholder="Filter by name, note or wiring...">
+      <select id="catFilter">
+        <option value="">All categories</option>
+        <option value="Entity">Entities (87)</option>
+        <option value="Job">Scheduled jobs (23)</option>
+      </select>
+      <select id="statusFilter">
+        <option value="">All statuses</option>
+        <option value="WORKING">WORKING</option>
+        <option value="PARTIALLY WORKING">PARTIALLY WORKING</option>
+        <option value="IMPLEMENTED BUT NOT VERIFIED">IMPLEMENTED BUT NOT VERIFIED</option>
+        <option value="BROKEN">BROKEN</option>
+        <option value="NOT IMPLEMENTED">NOT IMPLEMENTED</option>
+      </select>
+    </div>
+    <div class="table-wrap">
+      <table id="featTable">
+        <thead>
+          <tr>
+            <th>Type</th><th>Name</th><th>Status</th><th>Evidence</th><th>Confidence</th><th>Wiring chain</th><th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AbuseThrottleCounter</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(3)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AdminAuditLog</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; FE(1) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AdminEmailCampaign</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AdminEmailSendLock</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(2)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AdminRefreshToken</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; ZERO test coverage found</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AdminUser</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(7) -&gt; controller(3) -&gt; FE(5) -&gt; tests(16)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AffiliateEarning</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; no controller (internal-only?) -&gt; FE(6) -&gt; tests(5)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AffiliateSettlementBatch</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(3)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AiConversation</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; controller(3) -&gt; no FE reference found (grep on class name) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AiMessage</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; controller(2) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">ApplicationHistoryEvent</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(4) -&gt; controller(1) -&gt; FE(5) -&gt; tests(8)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AudienceDemographics</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; controller(2) -&gt; FE(10) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">AuditLogEntry</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E1</td>
+      <td class="num-cell">35%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; controller(1) -&gt; FE(6) -&gt; ZERO test coverage found</td>
+      <td class="note-cell">Repository/service/controller chain present in source, but zero test files reference this entity anywhere in influora-api/src/test — no test or runtime evidence of correctness.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">BrandAiCredit</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(5) -&gt; controller(1) -&gt; no FE reference found (grep on class name) -&gt; tests(10)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">BrandProfile</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(13) -&gt; controller(3) -&gt; FE(20) -&gt; tests(7)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Campaign</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(49) -&gt; controller(11) -&gt; FE(177) -&gt; tests(46)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CampaignIntent</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(3) -&gt; controller(1) -&gt; FE(1) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CampaignServiceInvoice</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E1</td>
+      <td class="num-cell">35%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; controller(2) -&gt; FE(5) -&gt; ZERO test coverage found</td>
+      <td class="note-cell">Repository/service/controller chain present in source, but zero test files reference this entity anywhere in influora-api/src/test — no test or runtime evidence of correctness.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CampaignTemplate</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(4) -&gt; no controller (internal-only?) -&gt; FE(3) -&gt; tests(4)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Collaboration</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(34) -&gt; controller(8) -&gt; FE(54) -&gt; tests(47)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">ContentFlag</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(3) -&gt; controller(2) -&gt; FE(8) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Contract</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(14) -&gt; controller(3) -&gt; FE(105) -&gt; tests(13)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">ConversionWebhookSecret</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; controller(1) -&gt; FE(3) -&gt; tests(1)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CouponCode</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(7) -&gt; controller(2) -&gt; FE(7) -&gt; tests(9)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CouponRedemption</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(5) -&gt; controller(3) -&gt; FE(1) -&gt; tests(8)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CreatorAgentPreferences</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(3) -&gt; controller(2) -&gt; FE(6) -&gt; tests(4)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CreatorBankAccount</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(5) -&gt; controller(2) -&gt; FE(2) -&gt; tests(4)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CreatorCaptionCache</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CreatorConnectionRequest</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(4) -&gt; no controller (internal-only?) -&gt; FE(3) -&gt; tests(7)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CreatorMetric</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(9) -&gt; controller(2) -&gt; FE(24) -&gt; tests(13)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CreatorNudgeLog</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(2)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CreatorProfile</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(46) -&gt; controller(11) -&gt; FE(48) -&gt; tests(46)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">CreatorScore</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(6) -&gt; controller(2) -&gt; FE(19) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">DealMessage</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(6) -&gt; controller(3) -&gt; FE(16) -&gt; tests(6)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Deliverable</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(15) -&gt; controller(2) -&gt; FE(88) -&gt; tests(17)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">DeliverableMetric</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(6) -&gt; controller(2) -&gt; FE(5) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Dispute</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(5) -&gt; controller(4) -&gt; FE(43) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">EmailOtpChallenge</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(2)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">EmailOutbox</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(10) -&gt; controller(1) -&gt; no FE reference found (grep on class name) -&gt; tests(6)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">EmailPreference</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; controller(1) -&gt; FE(1) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">ErrorLog</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; no controller (internal-only?) -&gt; FE(10) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">EscrowHold</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(16) -&gt; controller(5) -&gt; FE(3) -&gt; tests(15)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">ExternalCreator</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(6) -&gt; controller(1) -&gt; FE(6) -&gt; tests(10)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">FeaturedCreator</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; FE(2) -&gt; tests(2)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">FestivalCouponCopy</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; FE(2) -&gt; tests(3)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">FestivalEnquiry</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(3) -&gt; controller(1) -&gt; FE(5) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">FileUpload</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">HsnSacCode</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(2)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">IdempotencyKeyRecord</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(5)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Invoice</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(8) -&gt; controller(2) -&gt; FE(18) -&gt; tests(2)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">InvoiceNumberSequence</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; ZERO test coverage found</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">MediaMetric</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(6) -&gt; controller(2) -&gt; FE(2) -&gt; tests(9)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">MeeraCreatorConversation</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(2)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">MeeraInteractionLog</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; controller(1) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">MeeraToolCall</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(3) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(2)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">MetaOAuthToken</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(7) -&gt; no controller (internal-only?) -&gt; FE(2) -&gt; tests(17)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Notification</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; controller(2) -&gt; FE(20) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">NudgeLog</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(2)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">PasswordResetToken</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(3)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">PaymentMilestone</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(10) -&gt; controller(1) -&gt; FE(3) -&gt; tests(14)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Payout</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(4) -&gt; controller(2) -&gt; FE(52) -&gt; tests(6)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Plan</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(11) -&gt; controller(3) -&gt; FE(16) -&gt; tests(21)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">PlatformCommissionInvoice</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E1</td>
+      <td class="num-cell">35%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(3) -&gt; controller(3) -&gt; FE(5) -&gt; ZERO test coverage found</td>
+      <td class="note-cell">Repository/service/controller chain present in source, but zero test files reference this entity anywhere in influora-api/src/test — no test or runtime evidence of correctness.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">PlatformFeeConfig</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(4) -&gt; controller(2) -&gt; FE(4) -&gt; tests(2)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">PlatformStat</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(11) -&gt; controller(1) -&gt; FE(14) -&gt; tests(8)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">PortfolioEvent</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">RefreshToken</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Review</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(6) -&gt; controller(3) -&gt; FE(80) -&gt; tests(2)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">SavedCreator</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; FE(1) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Shipment</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; controller(2) -&gt; FE(5) -&gt; tests(1)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">ShopifyIntegration</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; controller(3) -&gt; no FE reference found (grep on class name) -&gt; tests(4)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">SnapsbyCatalogVideo</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; ZERO test coverage found</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Subscription</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(7) -&gt; controller(3) -&gt; FE(10) -&gt; tests(14)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">SupportTicket</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(4) -&gt; controller(2) -&gt; FE(5) -&gt; tests(2)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">SupportTicketMessage</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; controller(1) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Trend</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(7) -&gt; controller(1) -&gt; FE(42) -&gt; tests(4)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">UsageCounter</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">UsageCounterDetail</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; no controller (internal-only?) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">User</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(27) -&gt; controller(6) -&gt; FE(122) -&gt; tests(30)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">UtmCampaign</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(8) -&gt; controller(5) -&gt; FE(1) -&gt; tests(7)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Wallet</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(16) -&gt; controller(3) -&gt; FE(56) -&gt; tests(16)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">WalletTopUp</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(2) -&gt; controller(1) -&gt; FE(4) -&gt; tests(1)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">WalletTransaction</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">45%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(5) -&gt; no controller (internal-only?) -&gt; FE(4) -&gt; tests(6)</td>
+      <td class="note-cell">No REST controller references this entity directly — likely internal/job/admin-only usage (not confirmed as intentional for every row).</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">WooCommerceIntegration</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; controller(3) -&gt; no FE reference found (grep on class name) -&gt; tests(3)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">Workspace</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(62) -&gt; controller(21) -&gt; FE(59) -&gt; tests(71)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">WorkspaceMember</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(13) -&gt; controller(2) -&gt; FE(4) -&gt; tests(26)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Entity">
+      <td class="cat-cell"><span class="cat-badge cat-entity">Entity</span></td>
+      <td class="name-cell">WorkspaceMemberInvite</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">60%</td>
+      <td class="wiring-cell">entity -&gt; repository -&gt; service(1) -&gt; controller(1) -&gt; no FE reference found (grep on class name) -&gt; tests(1)</td>
+      <td class="note-cell">Static evidence only: repository+service+controller present and referenced by at least one test file, but this audit did not execute those tests individually or trace the full request-&gt;DB-&gt;response path, so this is code-reading evidence, not runtime/E2E proof.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">AffiliateEarningReconciliationJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">82%</td>
+      <td class="wiring-cell">cron: 0 15 * * * *</td>
+      <td class="note-cell">Hourly. @SchedulerLock present. AffiliateEarningReconciliationJobTest: 5/5 pass (mvn surefire, this session).</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">AffiliateSettlementJob (+AffiliateSettlementWriter)</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">82%</td>
+      <td class="wiring-cell">cron: 0 0 5 1 * *</td>
+      <td class="note-cell">Monthly settlement, writes via a separate @Component (AffiliateSettlementWriter) per its own javadoc&#x27;d W1-7 fix. AffiliateSettlementJobTest 9/9, AffiliateSettlementWriterNullCollaboratorLogTest 2/2, CreatorAffiliateEarningSettlementTest 3/3 all pass (14/14 total, this session).</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">AICreditResetJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">80%</td>
+      <td class="wiring-cell">cron: 0 0 2 1 * ? (UTC)</td>
+      <td class="note-cell">Monthly AI-credit reset. AICreditResetJobTest 7/7 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">AudienceDemographicsJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">80%</td>
+      <td class="wiring-cell">cron: 0 30 3 * * SUN</td>
+      <td class="note-cell">Weekly. Delegates to InstagramInsightsClient#getAudienceDemographics. AudienceDemographicsJobTest 13/13 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">CreatorCaptionSyncJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">78%</td>
+      <td class="wiring-cell">cron: ${...caption-sync-cron:0 0 2 * * *} UTC</td>
+      <td class="note-cell">Nightly caption cache sync feeding CreatorThemeTaggingJob. CreatorCaptionSyncJobTest 13/13 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">CreatorConnectNudgeJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">78%</td>
+      <td class="wiring-cell">cron: ${...cron:0 30 9 * * *} Asia/Kolkata</td>
+      <td class="note-cell">CreatorConnectNudgeJobTest 9/9 pass.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">CreatorThemeTaggingJob</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E2</td>
+      <td class="num-cell">42%</td>
+      <td class="wiring-cell">cron: ${...theme-tag-batch-cron:0 0 3 * * *} UTC</td>
+      <td class="note-cell">Compiles, scheduled, @SchedulerLock present, but NO dedicated test file exists (src/test has none). It is only ever mentioned inside javadoc comments of CreatorCopilotConfigWiringTest and CreatorCaptionSyncJobTest — those comments describe it, they do not instantiate or invoke it. Zero direct or transitive test execution found.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">DeliverableCleanupJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">80%</td>
+      <td class="wiring-cell">cron: 0 0 2 * * * + 0 30 2 * * * (2 sweeps)</td>
+      <td class="note-cell">Two @Scheduled methods (cleanupSupersededRevisions, cleanupAbandonedDrafts), each with its own @SchedulerLock. DeliverableCleanupJobTest 11/11 pass.</td>
+    </tr>
+    <tr class="frow" data-status="PARTIALLY WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">DeliverableVerificationJob</td>
+      <td><span class="status-pill st-partial">PARTIALLY WORKING</span></td>
+      <td class="num-cell">E3</td>
+      <td class="num-cell">58%</td>
+      <td class="wiring-cell">cron: 0 30 */6 * * *</td>
+      <td class="note-cell">Job class itself has no dedicated test file, but it is a thin wrapper delegating to DeliverableVerificationService.verify(), which IS covered: DeliverableVerificationServiceTest 16/16 pass (run this session). The job&#x27;s own overlap-guard/pagination/tally logic (runVerificationSweep/sweep) is untested in isolation.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">IdempotencyReservationReaperJob</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E1</td>
+      <td class="num-cell">32%</td>
+      <td class="wiring-cell">cron: 0 */10 * * * *</td>
+      <td class="note-cell">Reclaims stuck payment-idempotency reservations (a financial-safety mechanism per the idempotency-key architecture). Compiles, scheduled, @SchedulerLock present. Zero references anywhere in influora-api/src/test (verified by grep across the whole test tree) — no test exercises this class at all.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">MeeraInteractionLogRetentionPurgeJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">76%</td>
+      <td class="wiring-cell">cron: 0 0 3 * * *</td>
+      <td class="note-cell">MeeraInteractionLogRetentionPurgeJobTest 4/4 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">MetaTokenRefreshService</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">80%</td>
+      <td class="wiring-cell">cron: 0 30 2 * * *</td>
+      <td class="note-cell">MetaTokenRefreshServiceTest 13/13 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">MetricsPollingJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">84%</td>
+      <td class="wiring-cell">cron: 0 0 */6 * * * (UTC)</td>
+      <td class="note-cell">Largest job test suite in the app: MetricsPollingJobTest 37/37 pass.</td>
+    </tr>
+    <tr class="frow" data-status="PARTIALLY WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">PayoutOrphanedDebitSweepJob</td>
+      <td><span class="status-pill st-partial">PARTIALLY WORKING</span></td>
+      <td class="num-cell">E3</td>
+      <td class="num-cell">56%</td>
+      <td class="wiring-cell">cron: 0 */10 * * * *</td>
+      <td class="note-cell">No dedicated test file for the job itself, but it delegates entirely to PayoutReconciliationService (PayoutReconciliationServiceTest 18/18 pass, run this session) and PayoutServiceTest references the exact orphaned-debit state it sweeps. Job-level scheduling/guard logic untested in isolation.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">PlatformStatsAggregationJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">78%</td>
+      <td class="wiring-cell">cron: 0 45 3 * * *</td>
+      <td class="note-cell">PlatformStatsAggregationJobTest 13/13 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">ScoreCalculationJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">76%</td>
+      <td class="wiring-cell">cron: 0 0 4 * * * (UTC)</td>
+      <td class="note-cell">ScoreCalculationJobTest 7/7 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">StaleTokenCleanupJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">76%</td>
+      <td class="wiring-cell">cron: 0 0 4 * * *</td>
+      <td class="note-cell">StaleTokenCleanupJobTest 5/5 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">SubscriptionDunningJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">74%</td>
+      <td class="wiring-cell">cron: 0 0 3 * * * (UTC)</td>
+      <td class="note-cell">SubscriptionDunningJobTest 4/4 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">SubscriptionRenewalResetJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">82%</td>
+      <td class="wiring-cell">cron: 0 30 3 * * * (UTC)</td>
+      <td class="note-cell">SubscriptionRenewalResetJobTest 28/28 + SubscriptionRenewalResetJobEmailDeliveryTest 4/4 = 32/32 pass, the second-largest suite in the app.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">TrendPullJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">78%</td>
+      <td class="wiring-cell">cron: ${...pull-cron:0 0 5 * * *} UTC</td>
+      <td class="note-cell">TrendPullJobTest 20/20 pass.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">WalletTopUpReconciliationJob</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">78%</td>
+      <td class="wiring-cell">cron: 0 35 * * * *</td>
+      <td class="note-cell">WalletTopUpReconciliationJobTest 8/8 pass.</td>
+    </tr>
+    <tr class="frow" data-status="IMPLEMENTED BUT NOT VERIFIED" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">CampaignServiceInvoiceService.retryFailedInvoiceFailures</td>
+      <td><span class="status-pill st-notverified">IMPLEMENTED BUT NOT VERIFIED</span></td>
+      <td class="num-cell">E1</td>
+      <td class="num-cell">30%</td>
+      <td class="wiring-cell">cron: fixedDelay 300000ms (5 min)</td>
+      <td class="note-cell">[F-0390 D1] Scheduled retry for GST Doc#2 invoice failures (escrow_invoice_failures table) — the automated recovery half of the previously-known &#x27;invoice can silently go missing at release&#x27; gap. @SchedulerLock present, compiles. Zero references to retryFailedInvoiceFailures anywhere in src/test (verified by grep) — the retry path that is supposed to close this financial-compliance gap has no test proving it actually retries/clears a failure row.</td>
+    </tr>
+    <tr class="frow" data-status="WORKING" data-cat="Job">
+      <td class="cat-cell"><span class="cat-badge cat-job">Job</span></td>
+      <td class="name-cell">EmailWorker.processOutbox</td>
+      <td><span class="status-pill st-working">WORKING</span></td>
+      <td class="num-cell">E4</td>
+      <td class="num-cell">80%</td>
+      <td class="wiring-cell">cron: fixedDelay 30000ms (30s)</td>
+      <td class="note-cell">Outbox email dispatch (OTP, password reset, admin notifications). EmailWorkerTest 8/8 pass (run this session), test explicitly exercises processOutbox() including the auth.otp/auth.password_reset prioritization path.</td>
+    </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Methodology &amp; scope notes</h2>
+    <ul class="notes">
+      <li>RC audited: commit 115f698, clean checkout at C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698 (git status clean, verified).</li><li>graphify-out/graph.json does NOT exist in the RC (only graphify-out/cache/ is present) — graphify query/path/explain were unavailable; this audit fell back to direct source reading, grep and `mvn` as instructed by the fallback rule in CLAUDE.md.</li><li>`mvn -o compile` and `mvn -o test-compile` both succeeded (BUILD SUCCESS, offline, from Maven-local cache) on the RC — the shedlock-spring/shedlock-provider-jdbc-template coordinates DO resolve and compile, superseding the &#x27;UNVERIFIED — needs mvn verify&#x27; note in SchedulerLockConfig.java&#x27;s own javadoc.</li><li>All 23 scheduled/background job units were checked for @SchedulerLock: 100% have it (verified by grep across job/ and service/), giving real distributed-locking coverage against the shedlock table (V68__shedlock.sql, schema matches the library&#x27;s required column shape).</li><li>18 of 23 scheduled jobs have a dedicated *JobTest (or equivalent) that was actually executed in this session via `mvn -o surefire:test`: 215 job-package tests + 42 supporting-service tests, 257 total, 0 failures, 0 errors. These are scored WORKING at evidence 4 / confidence ~75-85.</li><li>The 88-entity table is built primarily from static cross-referencing (repository/service/controller/frontend/test file presence via grep) inside the RC, corrected for known naming/subpackage false negatives that were manually spot-checked (see raw counts per row). Because this audit did not execute a full application, hit live endpoints, or trace every entity&#x27;s actual request path end-to-end, essentially every entity row is capped at IMPLEMENTED BUT NOT VERIFIED (or lower) per the audit&#x27;s own evidence rules — code presence, even with a same-named test file, is not proof the wiring works at runtime.</li><li>Percentages below are computed straight from these 111 rows and are only as strong as each row&#x27;s own evidence score/confidence shown in the table — treat the &#x27;WORKING&#x27; share as a floor set almost entirely by the job subsystem&#x27;s real test runs, and the &#x27;not verified&#x27; share as the honest default for code that compiles and looks wired but was not executed in this audit.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Model-Scheduler audit &middot; read-only, static + compile/test evidence only &middot; no source was modified in
+    either tree &middot; raw data: <code>_raw/msa.json</code>
+  </footer>
+</div>
+
+<script>
+function toggleTheme() {
+  var root = document.documentElement;
+  var cur = root.getAttribute('data-theme');
+  if (cur === 'dark') { root.setAttribute('data-theme', 'light'); }
+  else if (cur === 'light') { root.removeAttribute('data-theme'); }
+  else { root.setAttribute('data-theme', 'dark'); }
+}
+(function() {
+  var search = document.getElementById('search');
+  var catFilter = document.getElementById('catFilter');
+  var statusFilter = document.getElementById('statusFilter');
+  var rows = Array.prototype.slice.call(document.querySelectorAll('#featTable tbody tr'));
+  function applyFilters() {
+    var q = (search.value || '').toLowerCase();
+    var cat = catFilter.value;
+    var status = statusFilter.value;
+    rows.forEach(function(r) {
+      var text = r.textContent.toLowerCase();
+      var matchQ = !q || text.indexOf(q) !== -1;
+      var matchCat = !cat || r.getAttribute('data-cat') === cat;
+      var matchStatus = !status || r.getAttribute('data-status') === status;
+      r.classList.toggle('hidden', !(matchQ && matchCat && matchStatus));
+    });
+  }
+  search.addEventListener('input', applyFilters);
+  catFilter.addEventListener('change', applyFilters);
+  statusFilter.addEventListener('change', applyFilters);
+})();
+</script>
+</body>
+</html>

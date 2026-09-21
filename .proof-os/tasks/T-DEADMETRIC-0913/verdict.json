@@ -1,0 +1,16 @@
+{"verdict": "proved",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "the dead-metric class has a gate in .proof-os/gates/ naming its failure ids, and that gate goes RED when a new dead metric appears - including one added as the LAST enum constant",
+ "evidence": {"oracle": "script",
+              "command": "bash .proof-os/gates/F-0490-dead-metric.sh plus ten probes, each run alone and restored",
+              "result": "a dead meter added as the last enum constant is now caught where it previously was not; one in the middle, a new unassigned entity field, and a removed baseline entry each turn it red; the unmutated tree is green. The false positive that had been written into the baseline is gone while the genuinely dead meter is still reported.",
+              "where": ".proof-os/gates/F-0490-dead-metric.sh:2"},
+ "not_checked": [
+   "THE SIX METRICS ARE STILL DEAD IN CODE. This gate closes DETECTION of the class, not the instances (RETENTION 4) - they sit in the ratchet baseline and are tracked as repair record F-0815. A brand's tracked-creator plan limit still rests on a meter that is permanently zero.",
+   "RULE 1 follows exactly ONE local-variable hop; a constant reaching a write through two or more hops still reads as dead. Declared in the gate's own NOT CHECKED block.",
+   "RULE 3 catches only a bare numeric literal flowing into a stats constructor - not a literal reached through an intermediate variable, a builder, or an if/else with two literal branches",
+   "the A3 probe could not be run in full: the second write path goes through UsageCounterService.java, which a concurrent session owns, so only the EntitlementService call site was mutated and the other was reasoned about rather than tested",
+   "metric fields not named avg/total/count/sum are outside RULE 2 entirely, and no rule covers a metric that is written but written WRONG"
+ ],
+ "skipped": []}

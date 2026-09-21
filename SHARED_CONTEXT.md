@@ -1,7 +1,91 @@
 # SHARED CONTEXT — Active Pipeline
 
-**Last update:** 2026-09-07 by Ananya (Frontend)
+**Last update:** 2026-09-08 by Arjun (Engineering Lead)
+
+> ### ⚠️ THIS REPO NOW HAS TWO WORKING TREES — check which one you are in
+> | Tree | Branch | What lives here |
+> |---|---|---|
+> | `New Influora/` (this one) | `feat/meera-creator-phase-e` | everything except Meera Phase B0 |
+> | `../influora-b0/` | `feat/meera-creator-phase-b0` | **Meera Phase B0 only** — board, spec, CI-gate repair |
+>
+> Two agent sessions share this checkout and have collided four times. On 2026-09-08 a
+> Shopify commit landed on the Phase B0 branch because the tree was switched underneath a
+> live session; it was cherry-picked back as `d328cf9` and nothing was lost. **Phase B0 work
+> happens in `../influora-b0/`, not here.** Its bus entry is in that tree's SHARED_CONTEXT.md.
+> **The B0 worktree is dependency-ready as of 2026-09-08.** All three gates were run there and
+> pass: `tsc --noEmit` exit 0 · `pytest` collects 856 tests, the schema + drift suites 25/25 green ·
+> `mvn -o compile` exit 0, 1,449 classes. Maven needs no per-tree install — `~/.m2` is user-global.
+> Python needs **both** `requirements.txt` and `requirements-dev.txt`; the second one carries pytest
+> and is easy to miss, and without it the test gate cannot run even though pip exits 0.
+
 **Current tasks:**
+0. **MEERA PHASE B0** — **Wave 3 COMMITTED** (`a33f07e`). Waves 0-3 done; 2 items still on Swapnil. Board: `../influora-b0/.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/TASKS-B0.md`
+
+### ⚙️ MEERA PHASE B0 — WAVE 3 PRICING AND RISK, COMMITTED 2026-09-12
+**FROM:** Arjun **TO:** Swapnil, Priya
+**COMMIT:** `a33f07e` on `feat/meera-creator-phase-b0` in `../influora-b0`. 86 files, +12,708.
+**WHAT A CREATOR CAN DO NOW:** ask what a package is worth and what is wrong with a deal, and see both in the chat and on the deal page. Four of six B0 tools live. Nothing drafted, nothing sent.
+**GATE (Meera):** mvn clean test 2974 / 0 fail / 25 skipped (all Docker-gated) · pytest 913 / 0 skipped · tsc 0 · vitest 217 files 1260 passed · build 0.
+**QA REJECTED IT ONCE, on two blockers, both correct.**
+- **The card library was unwired** — ~500 lines nothing imported. The chat wiring was pulled forward from Wave 6 rather than shipping dead UI as "integrated".
+- **Vague-deliverables fired on ~100% of deals in negotiation.** Deliverable rows only exist after a contract is drafted, so a negotiation read as zero deliverables. A flag that always fires trains creators to dismiss the whole panel and devalues the other thirteen rules. Now gated to the brief target.
+**THREE SPEC ERRORS CAUGHT BY READING THE CODE:**
+- Usage channels are **comma-separated, not JSON**. The JSON parser swallows the error and returns empty, so the perpetual-usage rule would have been silently dead on every deal.
+- The below-floor rule priced a three-reel package as one reel pre-contract. On the fixture: no flag at 12,000 → CRITICAL at 36,000.
+- The perpetuity add-on as literally specified would have billed 3.5x, not 2.5x.
+**PROCESS WARNINGS for anyone in this tree:** a calibration file from an earlier session had **never been run** — one assertion compared the wrong tier's figure and two security assertions threw on JSON serialisation before asserting anything. Grep for bare `new ObjectMapper()` in any test touching `java.time`. And selecting a nested test class without a trailing wildcard reports zero tests run, reading as a vacuous suite.
+**NOT PROVEN:** Docker still absent. Nothing in B0 has run against a real MySQL or a real Spring boot cycle.
+**TWO FOLLOW-UPS ON TOP OF WAVE 3, both committed 2026-09-12:**
+- `92c81be` **perf(security)** — the on-behalf JWT was verified twice per creator tool call (`resolveForWorkspace` then `requireScope`, both calling `parseOrReject`). At ~1.2-1.8 ms per ES256 verify that was pure waste on the legitimate path. Now one verify per call; public signatures unchanged so no controller edits. The javadoc had claimed re-parsing was "cheap… no caching needed", which is why it survived review; it now carries the measurement. **Not** the Wave-2 unauthenticated amplifier, which was in `AuthRateLimitFilter` and is separately fixed.
+- `c22b00e` **fix(risk)** — superseded Wave 3's vague-deliverables target guard. The guard removed a false positive by removing the signal; the real defect was that `viewOf` read deliverables only from contract rows, which do not exist pre-contract. `evaluateDeal` now resolves the package once from the proposal card and feeds both the view and the quote, so they cannot disagree. Guard removed, `isDealTarget` deleted. The floor fallback on the deal path moved from 12,000 to 36,000 on the fixture; the seam test was **re-stated, not deleted**, and a further test pins a quoted floor the fallback cannot produce so the seam stays sharp. Flag copy is now target-aware ("the proposal" on a deal, "the brief" on a brief).
+**Suite after both: 2988 run, 0 failures, 25 skipped, all Docker-gated.**
+
+### ⚙️ PHASE 1 COMMITTED — `df20091` (2026-09-15): a pasted brief becomes a summary, a price and risk flags
+**FROM:** Arjun **TO:** Swapnil, Priya, Kavya
+**COMMIT:** `df20091` on `feat/meera-creator-phase-b0` in `../influora-b0`. 44 files, +5,495, 17 new. **Suite 3060 / 0 / 25 (all Docker-gated), python 941.**
+**WHAT WORKS:** paste → raw text committed first → extraction with a labelled deterministic fallback → risk flags + package quote. Backend `CreatorBriefService` + controller, creator-scoped AI client, fallback extractor, paste rate bucket, offer-history at the four write points, plus the AI-service route, schema and its own spend-gate key.
+**FOUR THINGS CORRECTED DURING THE PHASE.** (1) The spec claimed all four offer-history write points hold the collaboration row lock — **only reject does**, so two concurrent counters would have hit the unique key as a 500; `recordOffer` now locks, and throws `IllegalStateException` not a 404, because the global handler returns for that code **without logging or recording**, making the 404 the quieter path. (2) The Meera-drafted flag came from an **unvalidated client string on a mutual route**, and a green test was driving a BRAND to a Meera-drafted counter — so the counterparty could inflate the share the launch decision reads. Now derived server-side, both consumers filter by actor. (3) The AI call sat **inside an open transaction** with timeouts never set in yaml: 20s of held pool connection per paste, 10/window/creator, i.e. pool exhaustion on a slow provider. Now outside the boundary, writes in their own, timeouts bound. (4) The floor-barrier control caught the brief response as transitively floor-bearing; the brand refusal the allow-list took on trust is now a real test.
+**THE LESSON:** Priya's required row-lock guard was, when checked, **pinned by nothing** — deleting it left all 3,059 tests green. It would have shipped protected only by its own comment.
+**NOT PROVEN, all needing a real DB:** that the unique key is unique rather than a plain index; that the new transaction boundary lets a committed paste survive a rollback; that the actor clause excludes brand rows rather than merely being passed.
+**NOT DONE:** no screen calls any of it. `POST /creator/briefs` has no frontend caller — the paste card is Ananya's. This is an API a test can call, not a feature a person can use.
+**OUTSTANDING:** Priya and Kavya signed off on code that changed underneath them during the repair; a re-check is owed before Phase 2.
+
+### ⚙️ BOTH HIGH DEFECTS CLOSED, TESTER-PASSED — `948f10f` + `ff4ed40` (2026-09-12)
+**FROM:** Arjun **TO:** Swapnil, Priya
+**D-01 floor barrier:** PASS first time. `FloorBarrierTest` walks the declared type graph reflectively from every controller, default-deny, three exemptions audited against `SecurityConfig`. Kavya falsified it three ways the author had not (bare field, JSON-name-only, two hops through a generic) — all red, and the scan found three handlers nobody had listed.
+**D-02 send gate:** PASS on the fourth attempt, shipping as a **documented partial control with seven declared gaps**. Kavya failed it three times and each time found a real bypass: the `path=` attribute alias, then a single-controller scope (the hole the sibling test had already closed), then string equality on return types. Severity corrected HIGH → MEDIUM on the 120-second token TTL — **but the reason was also wrong**: the token is returned to the browser and replay protection is not implemented, so it is a browser-visible credential replayable for two minutes, not a confined server-side one.
+**The lesson, for every future gate:** the detector was sound after round one; the *scope* was the hole twice more. What finally held was a control on the control — an assertion that the detector matches by subtype rather than by name. Also found: the previous assertion was **unsatisfiable** (`isEmpty()`), so a correctly gated route could only ever have shipped by deleting the check.
+**Suite: 2997 run, 0 failures, 25 skipped, all Docker-gated.** Four MEDIUM defects remain, none blocking Wave 4.
+
+**PENDING SHEET (Priya, 2026-09-12):** `../influora-b0/.proof-os/tasks/T-MEERA-CREATOR-PHASE-B/PENDING-0912.md` — every open item with an owner and a stage, from the 30-question audit (`QA-SWAPNIL-0912.md`, `QA-TECH-0912.md`). Five items outrank the remaining waves: **push the branch** (7 commits on no remote, all four B0 waves), the **marketing page promising three unbuilt features**, the **regulated-category flag that cannot fire**, **no flag being dismissible on any screen**, and the **Phase A deploy**. Six audit defects assigned, 2 HIGH. Seven rulings back to Swapnil. Priority before Wave 4 is the send-permission deploy-order rule.
+
+**NEXT:** Wave 4 — brief extraction route, AI client, deterministic fallback extractor, `CreatorBriefService`, paste card. That is the wave that makes "paste a brief" actually work. It does not start before D-02 lands.
+
+
+### ⚙️ MEERA PHASE B0 — WAVE 2 TOOL SURFACE, COMMITTED 2026-09-10
+**FROM:** Arjun **TO:** Swapnil, Priya
+**COMMIT:** `d851c87` on `feat/meera-creator-phase-b0` in `../influora-b0`. 47 files, +5,080.
+**WHAT WORKS NOW:** Meera can read a creator's own deals and metrics through tools, gated at the server on feature flag, audience, consent, scope and level. Nothing is drafted and nothing reaches a brand.
+**DELIBERATE SCOPE CUT:** two executors, not five. `get_brief`, `estimate_my_rate` and `check_deal_risks` need services that land in Waves 3-4, so their routes do not exist and `tools_enabled` does not name them. The model is never offered a tool the server cannot answer.
+**GATE (Meera):** mvn 2765 run / 0 fail / 25 skipped (all Docker-gated) · pytest 913 / 0 skipped · tsc 0 · vitest 1218 · build 0.
+**THREE REVIEWS REJECTED IT BEFORE IT PASSED.**
+- **Kabir, HIGH:** the new rate-limit branch ran a signature verify pre-auth and before the counter check, on a path nginx proxies straight through. Measured a ~230x unauthenticated CPU amplifier, ~660 rps to down the API; the feature flag did not mitigate it. Now ~1.4x, re-measured.
+- **Kabir, MEDIUM x2:** scope clamped *upward* on a bad approval level, granting the widest scope including a send tool; and five reachable rejection paths wrote no audit row, so probing another creator's workspace id left no trace.
+- **AI audit:** the spec's own code would have handed all six tools to every legacy-Spring turn, because absent context read as "everything". Block A also described six tools then printed a shorter real offer underneath.
+- **Kavya:** flagged `tools_enabled` unwired. It had been wired minutes earlier, but the test its own comment cited did not exist — so the seam was real, just already closed. That test now exists and was falsified.
+**NOT PROVEN:** Docker is still absent. No B0 code has run against a real MySQL or a real Spring boot cycle; all 64 new backend tests are mock-level.
+**NEXT:** Wave 3 — `RateQuoteService` with the §14.1 pricing corrections, `RateAddOns`, `DealRiskService` and its fourteen rules, `/deals/{id}/risks`, and the frontend risk and quote cards.
+
+
+### ⚙️ MEERA PHASE B0 — WAVE 1 FOUNDATION, COMMITTED 2026-09-08
+**FROM:** Arjun **TO:** Swapnil, Priya
+**COMMIT:** `e54c071` on `feat/meera-creator-phase-b0`, in the `../influora-b0` worktree. 43 files, +2,898.
+**WHO DID WHAT:** Vikram B0-09/10/11/12/13/14/15 · Ananya B0-16 · Kavya B0-18 QA · Meera B0-17/19 gate.
+**GATE (Meera, the only `proved` ceiling on this board):** mvn 2698 run / 0 fail / 25 skipped · pytest 856 passed / 0 skipped · tsc 0 · vitest 1218 passed · vite build 0. All 25 skips are Docker-gated Testcontainers classes, itemised.
+**QA REJECTED IT ONCE, CORRECTLY.** Kavya found `assignHoldout` with zero call sites — the mutator shipped unwired, so 100% of creators would have sat outside the 20% holdout experiment while two comments claimed otherwise. No mocked test can see a missing call. She also caught TypeScript declaring `NON_NULL`-omitted Java fields as required arrays, which passes `tsc` and throws at runtime. Both fixed and falsified before re-passing.
+**NOT PROVEN — do not record as boot-verified:** Docker is absent on this machine, so `ddl-auto=validate` has never run against a real MySQL. Wave 1's schema rests on a static entity-vs-migration diff done twice, by hand and by script. `MeeraPhaseB0BootValidationTest` exists and skips cleanly; treat the schema as unproven until it reports 0 skipped on a Docker host.
+**NEXT:** Wave 2 (creator tool scopes, validator, controller skeleton, five read executors, AI-service dispatch, tool-result cards). Not blocked by the 3 Swapnil items.
+
 1. **STITCH PORT — about + blog** — READY FOR QA (see entry below)
 2. **BRAND LIFECYCLE FILM** — built, needs CEO sign-off before it goes on the site
 3. FIX-WAVE-0828 ✅ DONE (awaiting Swapnil commit decision)
@@ -833,3 +917,166 @@ VERIFIED: `mvn -o clean -Dtest=AuthServiceTest test` → 44/44 pass. `mvn -o -Dt
 NOTE: I also had to update `AuthControllerTest.java` (mechanical arg-count fixes for the changed `writeRefreshCookie`/`RefreshRotation` signatures) and `AuthController.java` itself — both outside my stated file scope but required for the build to compile; flagging for visibility, not asking permission after the fact.
 NEXT: frontend (Ananya) needs to send `rememberMe` on `POST /auth/{brand,creator}/login` for this to have any user-visible effect — currently no caller sets it, so every login defaults to remembered (today's behavior, unchanged) until the login form wires a checkbox through.
 STATUS: DONE.
+
+## dev - F-0779 gate repair (F-0780 caller-2 leg) - 2026-09-12
+FIXED: .proof-os/gates/F-0780-brand-register-sends-phone.sh caller-2 leg pointed at onboarding-steps.persistence.test.tsx, which never renders brand-onboarding.tsx and never references brandRegister - the "BOTH callers" banner was unearned (kavya). Caller-2 leg is now src/pages/__tests__/brand-onboarding-sends-phone.test.tsx (NEW, git-added), which renders the page cold (localStorage cleared -> hasBrandToken() false -> step 1 -> the :72 branch that registers), drives step1 form + email OTP + step2 company details to submit, and asserts the object passed to the mocked api.auth.brandRegister has phone matching /^\d{10}$/.
+ALSO: blank PASS receipt fixed - vitest 3.2.7 ANSI escapes made grep -E "Tests +[0-9]+ passed" never match; logs are ANSI-stripped, the count is printed, and a leg is RED if the count drops below the case count it was written with (verified: forcing min=99 gives SHRUNK + exit 1). Header now attributes each falsification to a caller.
+FALSIFIED (caller 2, run by me): brand-onboarding.tsx:94 phone: normalizePhone(data.phone) -> phone: ''; gate exit 1 on the caller-2 leg, "AssertionError: expected '' to match /^\d{10}$/". Reverted; git diff --quiet clean and normalizePhone(data.phone) back at :94.
+CLEAN RUN: gate exit 0, both legs "Tests 3 passed". tsc --noEmit exit 0. Not committed, not pushed.
+STATUS: DONE.
+
+## MEERA → ARJUN | Stage 4 local verification, 5-lane concurrent session | 2026-09-12
+SCOPE: one-time build+test+falsify pass across all 5 lanes' uncommitted changes (analytics, campaign, session, chatpanel, onboard) per the ownership map. Nothing committed/staged/reverted. `application.yml`/`env.example`/`InfluoraApiApplication.java`/`CreatorNudgeService.java`/`App.tsx`/`RouteAnalytics.tsx`/`site-tags.js`/`_headers`/`index.html`/`nginx.conf.template`/`deploy/**`/`.proof-os/**` NOT reviewed (concurrent 3rd session / pre-existing, per instructions).
+
+### BUILD RESULTS
+- Java (`influora-api`, cwd inside module, `clean compile` then `test`): compile ✅ BUILD SUCCESS (21s, 816 files). Full suite: **Tests run: 2747, Failures: 0, Errors: 3, Skipped: 19** — BUILD FAILURE.
+  - Skipped 19 = 5 Testcontainers classes (`CreatorConversationPersistIntegrationTest` 4, `DatabaseConstraintIntegrationTest` 3, `FestivalBoxCouponConstraintIntegrationTest` 3, `MeeraCreatorPhaseABootValidationTest` 2, `EscrowReleaseGateIntegrationTest` 7) — did NOT run locally, not a pass.
+  - `config/TrendIngestProperties.java` exists on disk — the known pre-existing untracked-file boot-blocker did NOT reproduce this run; compile was clean.
+- Frontend: `npm run typecheck` ✅ 0 errors. `npm run build` ✅ (prerender 29/29 routes). `npm run test` (vitest): **Test Files 1 failed | 216 passed (217); Tests 1 failed | 1249 passed (1250)**.
+- Python (`influora-ai`): `python -m pytest` → **861 passed**, 23 warnings, 80.98s. `test_chat_money_path.py` (lane session) specifically: 15/15 passed.
+
+### FAILURES — exact text, attributed
+**1. lane session (P1-6/P1-14) — `MeeraSessionServiceTest.java`, 3 ERRORS (test bug, not production-code bug):**
+```
+MeeraSessionServiceTest.testSendTurnDoesNotReleasePriorTurnStillInsideGraceWindow:944->userTurnAged:884 » UnfinishedStubbing
+MeeraSessionServiceTest.testSendTurnDoesNotReleasePriorTurnWhoseReplyAlreadyPersisted:966->userTurnAged:884 » UnfinishedStubbing
+MeeraSessionServiceTest.testSendTurnReleasesPriorTurnThatWasChargedAndNeverAnswered:914->userTurnAged:884 » UnfinishedStubbing
+```
+Root cause: the shared helper `userTurnAged(id, age)` (line 882-888) is called INSIDE the argument list of an outer, still-open `when(messageRepository.findTopByConversationIdOrderByCreatedAtDesc(...))...thenReturn(Optional.of(userTurnAged(...)))`. `userTurnAged` itself does `mock(AiMessage.class)` + `lenient().when(...)`, which is a second mock interaction happening before the outer `when()`'s `.thenReturn()` completes — Mockito detects the outer stub as unfinished and throws. This is a real defect in the NEW test code itself (all 3 are new tests per the diff), not in `MeeraSessionService.java`. Fix is mechanical: build the `AiMessage` mock in a local variable BEFORE the outer `when(...)` call, not inline inside `.thenReturn(...)`.
+
+**2. lane onboard (P1-13) — `StageSnapshot.site-analysis.test.tsx` (untracked, new file), 1 FAIL:**
+```
+FAIL src/components/feature/meera/StageSnapshot.site-analysis.test.tsx > StageSnapshot — states that must not regress > still renders the ready snapshot with its products
+ReferenceError: IntersectionObserver is not defined
+  at initIntersectionObserver .../node_modules/framer-motion/dist/es/motion/features/viewport/observers.mjs:35:34
+```
+Not a StageSnapshot logic bug — jsdom has no `IntersectionObserver`, and every OTHER test file in this repo that renders a `motion.*`/`StaggerContainer` tree stubs it locally (`brand-creator-profile-provenance.test.tsx`, `creator-campaign-detail-stale-response.test.tsx`, `festival-box-edition.pixel-teardown.test.tsx`, etc. — see the "Same stub as..." comments). This new test file is missing that same stub. One-line fix (add the `MockIntersectionObserver`/`global.IntersectionObserver` stub used everywhere else in this repo).
+
+### UNTRACKED TEST FILES (on disk, never `git add`ed — will not exist on the pushed branch)
+```
+src/components/brand/onboarding/__tests__/onboarding-steps.site-analysis.test.tsx   (lane onboard, 10 tests, ran+passed here)
+src/components/feature/meera/StageSnapshot.site-analysis.test.tsx                   (lane onboard, 6 tests, 1 FAILS here — see above)
+src/components/feature/meera/__tests__/MeeraChatPanel.test.tsx                      (lane chatpanel, 8 tests, ran+passed here)
+src/hooks/useBrandProfile.poll-budget.test.tsx                                      (lane onboard, 3 tests, ran+passed here)
+influora-api/src/test/java/com/influora/service/creatorcopilot/CreatorNudgeServiceTest.java   (NOT OURS — belongs to the untouched CreatorNudgeService.java; 34 tests, ran+passed here)
+influora-api/src/test/java/com/influora/service/meera/MeeraContextCampaignIdSeamTest.java     (lane analytics territory, 4 tests, ran+passed here)
+```
+None of these were `git add`ed by me. Local green on all of them (except the StageSnapshot one) proves nothing about the branch that actually gets pushed.
+
+### FALSIFICATION (pre-fix production file swapped in isolation — real working-tree source files were NEVER touched; verified via `git status` before/after every swap)
+Method: Java — compiled the `git show HEAD:<path>` version of the ONE file under test into an isolated output dir, swapped only the compiled `.class` in `target/classes` (never the `.java` source) ahead of `mvn test -Dtest=<Class>`, then restored the original `.class` and re-ran the full pair to confirm byte-identical results to the very first run (33/13 tests, same 3 errors/0 failures — confirmed via md5sum). Python — copied `app/`+`tests/`+`pytest.ini` into an isolated scratch dir, overwrote only `chat.py` there, ran pytest from that copy (real tree never touched). Frontend — placed the 4 pre-fix files under a temp `src/_falsify_tmp/` (needed for Vite's node_modules resolution), pointed a throwaway `vitest.meera-falsify.config.ts` alias at them, ran each new test file against it, then deleted both (confirmed clean via `git status`).
+
+- lane campaign, `CreateCampaignExecutorTest`: `testTemplatePathPopulatesPlatformsContentTypesAndObjectives` — **RED vs pre-fix** (`expected: <["INSTAGRAM","TIKTOK"]> but was: <null>`). `testTemplateWithEmptyColumnsFallsBackToAiComposedValues` — **RED vs pre-fix** (`expected: <["INSTAGRAM"]> but was: <null>`). Both GREEN post-fix. Real falsification.
+- lane session, `MeeraSessionServiceTest` (the 3 non-broken new tests; the other 3 are the Mockito-bug tests above and can't be meaningfully falsified until that bug is fixed):
+  - `testListMessagesWithoutAfterIsCappedToTheMostRecentPage` — **RED vs pre-fix** (`expected: <100> but was: <137>`). Real falsification.
+  - `testListMessagesWithAfterCursorIsNotCapped` — **UNVERIFIED / DOES NOT FALSIFY.** Passes against BOTH pre-fix and post-fix `MeeraSessionService.java`. Does not prove the claimed behavior.
+  - `testSendTurnCreatorDoesNotSweepBrandCreditLedger` — **UNVERIFIED / DOES NOT FALSIFY.** Passes against BOTH pre-fix and post-fix. Same false-confidence pattern flagged before in this repo (feedback_falsify_gates_against_wrong_fix.md).
+- lane session (Python), `test_chat_money_path.py`, 5 new tests:
+  - `test_spend_gate_block_releases_the_send_time_charge` — **RED vs pre-fix** (`AssertionError: Expected release_turn_credit to have been awaited once. Awaited 0 times.`)
+  - `test_brand_context_unauthorized_releases_the_send_time_charge` — **RED vs pre-fix**, same assertion shape.
+  - `test_failure_before_the_stream_starts_releases_the_send_time_charge` — **RED vs pre-fix** (uncaught `RuntimeError: prompt assembly blew up` escapes `chat()` — exactly the "no refund, no structured error" bug the test's own docstring describes).
+  - `test_early_release_never_fires_on_a_client_supplied_turn_id` — **UNVERIFIED / DOES NOT FALSIFY.** Passes against both.
+  - `test_early_release_never_fires_on_a_creator_turn` — **UNVERIFIED / DOES NOT FALSIFY.** Passes against both.
+- lane chatpanel, `MeeraChatPanel.test.tsx`, 7 P1-7/P1-8 tests — **all 7 RED vs pre-fix** (analyze_site rendering/forwarding/error-surfacing, scope-rejected request_payment/confirm_launch routing, funding-control link, "Secure Payments not escrow" copy). The 8th test in the file (unlabeled, pre-existing contract guard) passes both ways — expected, not a new-behavior claim.
+- lane onboard, `onboarding-steps.site-analysis.test.tsx`, all 10 tests — **RED vs pre-fix** (real assertion failures — missing copy/components that don't exist pre-fix, not crashes).
+- lane onboard, `useBrandProfile.poll-budget.test.tsx`, all 3 tests — **RED vs pre-fix** (`ANALYSIS_POLL_BUDGET_MS`/`analysisTimedOut`/`restartAnalysisPoll` don't exist pre-fix).
+- lane onboard, `StageSnapshot.site-analysis.test.tsx`: 4 of 6 — **RED vs pre-fix** (real assertions on the new terminal-timeout UI). 1 of 6 (the IntersectionObserver one, see FAILURES above) fails on BOTH pre-fix and post-fix — broken test tooling, not a falsification either way. 1 of 6 (pre-existing "still shows spinner" guard) passes both, as expected.
+
+### VERDICT
+**❌ NOT CLEAN — do not ship as-is.** Two concrete blockers, both mechanical/small:
+1. lane session must fix the `userTurnAged` mock-construction-inside-`thenReturn` bug in `MeeraSessionServiceTest.java` (3 errors) before that class can report a real result.
+2. lane onboard must add the same `IntersectionObserver` jsdom stub every other test file in this repo already uses to `StageSnapshot.site-analysis.test.tsx` (1 failure).
+Everything else that ran, passed, and 12 of 14 new-behavior tests correctly falsify. 4 tests across 2 lanes (`testListMessagesWithAfterCursorIsNotCapped`, `testSendTurnCreatorDoesNotSweepBrandCreditLedger`, `test_early_release_never_fires_on_a_client_supplied_turn_id`, `test_early_release_never_fires_on_a_creator_turn`) pass unchanged against pre-fix code and should not be trusted as proof of the behavior they claim to guard — not blocking, but flagged so nobody cites them as coverage.
+Separately: 6 new test files across 3 lanes are on disk but never `git add`ed (listed above) — whatever gets pushed today ships without them unless someone stages them first.
+NEXT: routing back to Arjun for the 2 mechanical fixes + a staging decision on the 6 untracked test files.
+STATUS: BLOCKED pending lane session + lane onboard fixes.
+
+---
+
+**FROM:** Arjun → **TO:** Vikram | **TASK:** Phase 1 safety fixes (F-0786+F-0785, F-0784) |
+**FILES:** `influora-api/src/main/java/com/influora/service/creatorcopilot/CreatorNudgeService.java`,
+`influora-api/src/main/java/com/influora/service/trendspark/ThemeMatchService.java`,
+`trendspark/n8n/trend-pull-workflow.json` | **STATUS:** DISPATCHED 2026-09-15 |
+**NEXT:** Kabir blocking gate on F-0786 once it lands; Kavya QA + Meera verify on all three;
+Priya sign-off; Rohan cost log. Three rulings that were blocking Phase 2/4/2.5b are LOCKED —
+see `wiki/decisions/2026-09-15-*.md`. Phase 1 was never blocked; routing now on Swapnil's word.
+
+---
+
+**FROM:** Arjun → **TO:** Kavya | **TASK:** QA gate on F-0784 (word-boundary theme matching) |
+**FILES:** commit `de35f63` — `ThemeMatchService.java`, `ThemeMatchServiceWordBoundaryTest.java`,
+`theme-tagger.js`, `trend-pull-workflow.json` | **STATUS:** F-0784 committed 2026-09-15, verified
+independently by Arjun (fresh compile, isolated surefire:test, re-falsified from scratch —
+mutation reverted anchors, 3/12 red, restored, 12/12 green; both JS self-tests green) — QA
+dispatched fresh, told to trust nothing on the commit's word | **NEXT:** Kabir blocking gate still
+queued on F-0786 once Vikram's combined F-0786+F-0785 changeset lands; Meera full verify once the
+test tree's unrelated pre-existing break (F-0819, AnalyticsControllerTest.java vs
+ContentPerformanceResponse shape drift — not this workstream's doing) is resolved by whoever owns
+it.
+
+---
+
+**FROM:** Arjun → **TO:** Kabir | **TASK:** blocking security gate on F-0786 (+ F-0785 alongside) |
+**FILES:** commit `ab87c46` | **STATUS:** All three Phase 1 tickets now committed. Arjun
+independently verified before commit: fresh 58/58 test run, hand-traced the whole-token matching
+algorithm against the claimed bypasses (issue/pursue/audience confirmed safe by direct code
+reading), confirmed `@Transactional` genuinely removed + `saveAndFlush` genuinely present, confirmed
+the daily-cap knob really can't be honestly wired past =1 without touching 2 files outside the
+permitted scope. F-0785's live-race claim is UNPROVEN here (Docker unreachable, integration test
+skips cleanly — F-0822) — unit-level mechanism is real and falsified, the actual MySQL race needs a
+Docker-capable CI run. Three residuals ledgered for Kabir: F-0824 (AI path unfiltered), F-0823
+(`parseThemeJson` unvalidated vs `themesForText`), plus two timezone edge cases found in passing,
+untouched. | **NEXT:** Kabir's verdict decides whether Phase 1 is done or needs a fix-and-re-test
+loop. Once PASS: Meera full verify (also re-checks F-0819, the unrelated pre-existing test-tree
+break) → Priya sign-off → Rohan cost log.
+
+---
+
+**FROM:** Arjun → **TO:** Vikram | **TASK:** fix Kabir's 4 blocking findings (F-0825/826/827,
+LOW-6) on commit `ab87c46` | **FILES:** `CreatorNudgeService.java` (3rd pass today),
+`CreatorSuggestionAiClient.java`, `CreatorSuggestionAiDtos.java` if needed | **STATUS:** DISPATCHED
+2026-09-15 — instructed to reproduce Kabir's structural fix (gate the persisted copy in
+`getSuggestion()`, not just `templatedFallback`'s input — closes F-0825 + MEDIUM-4 + LOW-5 in one
+move), close 22 named term-list bypasses without turning the list unbounded, NFKC-normalize +
+confusables-fold against the 14 Unicode evasions, and falsify every single bypass individually
+(red-then-green), not just claim a fix. | **NEXT:** Kabir RE-REVIEWS with his own bypass strings —
+not accepted on Vikram's word. Phase 1 stays BLOCKED until that pass returns PASS.
+
+---
+
+**FROM:** Arjun → **TO:** Kabir | **TASK:** RE-review of the fix to your own F-0825/826/827
+blocking findings | **FILES:** commit `d3a2491` | **STATUS:** Arjun independently verified before
+routing — fresh 119/119 test run (up from 58), commit scope exactly 4 files, spot-checked the
+phrase-rescue grep claim and the unsafe-theme design extension directly, both confirmed. Flagged
+for you specifically: the implementer caught their own phonetic-vs-visual homoglyph fixture bug —
+check whether your ORIGINAL bypass string was phonetic or visual before judging whether it passing
+now is a regression or by design. | **NEXT:** your verdict decides whether Phase 1 finally closes
+or loops back to Vikram again. Three new residuals disclosed and ledgered (F-0829/830/831),
+none hidden — judge their severity yourself rather than trusting Arjun's "not blocking" read.
+
+---
+
+**FROM:** Meera → **TO:** Arjun | **TASK:** T-GOLIVE-0918-R2, lane DEPLOY, repair round 3 (Kabir's
+round-1 verdict against `a28ae79`) | **FILES:** `deploy/utho/generate-env.sh`,
+`deploy/utho/docker-compose.utho.yml`, `deploy/utho/docker-compose.utho-shared.yml`,
+`wiki/processes/go-live-0918.md` | **STATUS:** DONE, committed `39c829b` (base `27ca63b`). Fixed
+every HIGH/MEDIUM Kabir raised on DEPLOY round 1: (a) `generate-env.sh:55` still generated the OLD
+brand-safety var name, breaking the R2 compose fix end to end (and the script failed outright,
+exit 1/0-byte output, from two pre-existing live-shell-syntax bugs in its own unquoted heredoc —
+fixed both); (b) `influora-ai` redeploy nested instead of replacing on 2nd+ deploys — fixed with
+`ssh ... rm -rf` before every `scp -r`; (c) `influora-ai` backup (§1.5) / rollback (§5) paths
+disagreed with the real on-box layout and with each other — rewrote to share one timestamp and
+`cd` into the actual env-file directory; (d) `CREATOR_COPILOT_AI_BASE_URL` guidance told the
+operator to blindly overwrite a value already working in prod — now check-and-keep first; (e) 3
+intentionally-non-placeholder vars now carry an explicit marker. `TREND_INGEST_CLASSIFIER_WORKSPACE_ID`
+checked against `application.yml` at HEAD (`27ca63b`) — not yet bound there, so not added, per the
+task's own conditional instruction. Verified from a clean `git archive 39c829b`: keyset gate exits
+0 (96/97 keys), `generate-env.sh` exits 0 and produces a complete env, `docker compose config` on
+both files resolves `BRAND_SAFETY_SERVICE_TOKEN_SECRET` with no "not set" warning. Only my lane's 4
+files touched — no other lane's uncommitted work read, staged or altered. | **NEXT:** independent
+re-review of `39c829b` against the round-1 DEPLOY verdict; no live-box action taken (deploy-config +
+runbook authorship only, per lane scope).
+
+- **[tara 2026-09-19] AUDIT-0919 report** | wrote `audit-2026-09-19/FINAL_PRODUCTION_AUDIT.md` (51 sections; RC 115f698 NO-GO E3/C75; 9 P0 / 21 P1 / 77 P2 / 70 P3; EV-034 refuted, EV-026 excluded) | **NEXT:** must-fix list in section 51.
+
+- **[tara 2026-09-19] EV-001 remediation recorded in audit deliverables** | Updated `audit-2026-09-19/FINAL_PRODUCTION_AUDIT.md` (new top-of-file "Remediation log"; exec summary; evidence register EV-001 row + new EV-175 row; P0 findings §36 EV-001 entry + new EV-175 entry; readiness matrix Architecture/Backend rows + their evidence rows; go-live checklist item; final assessment §50; next actions §51 item 3) and `audit-2026-09-19/TEST_REPORT.md` (boot-result rows 3d-3f, summary table) with targeted edits only, structure unchanged. **Per the explicit PROVENANCE RULE, EV-001 is NOT closed**: fix + new `TrendPullJobWiringTest` exist only in uncommitted worktree `C:/Users/Sage world/AppData/Local/Temp/claude/fix-ev001` (on `f076c0f`), reviewed APPROVE_WITH_NOTES by Kavya + Priya, boot-verified by Meera (E5/C95) — and that same verify pass found the backend **still does not boot**: 3 sibling `TrendSourceClient` classes share the identical defect, now registered as new finding **EV-175 (P0)**. EV-001 status is worded exactly: "FIXED — VERIFIED IN FIX WORKTREE, NOT YET COMMITTED (NOT CONFIRMED FOR PRODUCTION until committed and re-verified from the commit)". Decision unchanged: **NO-GO** (other P0s EV-002/004/005/006/007/008/015 untouched; P0 count now 10). Did not edit `INVESTOR_COMMUNICATION.md` or any `.html` file per the task's explicit exclusion — those, plus `CREATOR_PRESENTATION_claims.json` and the `_raw/*.json` inputs, still describe EV-001 as an open, unfixed P0 and were not updated. | **NEXT:** Arjun/Vikram to apply the identical `@Autowired` fix + per-class wiring tests to the 3 EV-175 classes, then commit the whole EV-001+EV-175 fix and re-verify boot from that commit before any doc claims "backend boots".

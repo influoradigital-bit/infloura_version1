@@ -1,0 +1,17 @@
+{"verdict": "believed",
+ "oracle": "script",
+ "isolation": "oracle",
+ "done_when": "a Shopify order webhook whose order does not exist in the shop named by X-Shopify-Shop-Domain performs no write, and the test proving it fails against the pre-fix controller",
+ "evidence": {"oracle": "script",
+   "command": "bash .proof-os/gates/shopify-webhook-shop-binding.sh",
+   "result": "exit 0 - PROVED: the shop-binding check holds across all three pinned suites",
+   "where": ".proof-os/gates/shopify-webhook-shop-binding.sh:96"},
+ "not_checked": [
+   "the load-bearing assumption itself: that Shopify's Admin API answers 404 for an order absent from a shop. No live credentials or store exist in any environment, the repo pins no Admin API fixture, and every test mocks at the verifier boundary — so the control is proven to RUN, not proven to WORK. This needs one live smoke test before Shopify is enabled",
+   "the real HTTP path through RestClient — status mapping, header name, and URL shape were never exercised against a server, only read",
+   "added latency and Shopify rate-limit headroom: one Admin API call now happens per attributable order, unmeasured",
+   "the 15 Testcontainers tests, which did not execute on this host (no Docker), so no Spring-context wiring regression from the new constructor argument could have been caught by this run",
+   "whether the same unsigned-selector shape exists on other webhook surfaces beyond the two store ones reviewed"],
+ "skipped": [
+   {"step": "gates/e2e.sh", "reason": "no Shopify store is connected in any environment; F-0729 (no credentials) and F-0730 (no webhook subscription) both remain open, so there is no live path to exercise"},
+   {"step": "gates/frontend.sh", "reason": "this fix touches only Java; the frontend gate's findings were recorded in T-STORECHK-0907 and are unrelated"}]}

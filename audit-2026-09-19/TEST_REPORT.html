@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Report — Influora RC 115f698</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --bg-elev: #ffffff;
+    --text: #1a1d23;
+    --text-dim: #545b66;
+    --border: #dfe3e8;
+    --accent: #2f5fd6;
+    --p0: #b3261e;
+    --p0-bg: #fdeceb;
+    --p1: #b5540a;
+    --p1-bg: #fdf1e3;
+    --p2: #8a6d00;
+    --p2-bg: #fbf6de;
+    --p3: #3a6b35;
+    --p3-bg: #eaf5e8;
+    --covered-bg: #e6f4ea;
+    --covered-fg: #1e7a34;
+    --notcovered-bg: #fbe9e7;
+    --notcovered-fg: #b3261e;
+    --unknown-bg: #eef0f3;
+    --unknown-fg: #545b66;
+    --pass-bg: #e6f4ea;
+    --pass-fg: #1e7a34;
+    --fail-bg: #fbe9e7;
+    --fail-fg: #b3261e;
+    --code-bg: #eef0f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14161a;
+      --bg-elev: #1c1f25;
+      --text: #e7e9ee;
+      --text-dim: #a4abb8;
+      --border: #33383f;
+      --accent: #7ea2ff;
+      --p0: #ff6b63;
+      --p0-bg: #3a1c1b;
+      --p1: #ffa557;
+      --p1-bg: #3a2a12;
+      --p2: #e3cd4c;
+      --p2-bg: #383018;
+      --p3: #7fd177;
+      --p3-bg: #1d2f1b;
+      --covered-bg: #17301d;
+      --covered-fg: #7fd177;
+      --notcovered-bg: #3a1c1b;
+      --notcovered-fg: #ff6b63;
+      --unknown-bg: #262a31;
+      --unknown-fg: #a4abb8;
+      --pass-bg: #17301d;
+      --pass-fg: #7fd177;
+      --fail-bg: #3a1c1b;
+      --fail-fg: #ff6b63;
+      --code-bg: #23262c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161a;
+    --bg-elev: #1c1f25;
+    --text: #e7e9ee;
+    --text-dim: #a4abb8;
+    --border: #33383f;
+    --accent: #7ea2ff;
+    --p0: #ff6b63;
+    --p0-bg: #3a1c1b;
+    --p1: #ffa557;
+    --p1-bg: #3a2a12;
+    --p2: #e3cd4c;
+    --p2-bg: #383018;
+    --p3: #7fd177;
+    --p3-bg: #1d2f1b;
+    --covered-bg: #17301d;
+    --covered-fg: #7fd177;
+    --notcovered-bg: #3a1c1b;
+    --notcovered-fg: #ff6b63;
+    --unknown-bg: #262a31;
+    --unknown-fg: #a4abb8;
+    --pass-bg: #17301d;
+    --pass-fg: #7fd177;
+    --fail-bg: #3a1c1b;
+    --fail-fg: #ff6b63;
+    --code-bg: #23262c;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55; font-size: 15px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 80px; }
+  header.top {
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; margin-bottom: 24px;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 6px; }
+  h2 { font-size: 1.25rem; margin: 40px 0 12px; padding-top: 8px; border-top: 1px solid var(--border); }
+  h2:first-of-type { border-top: none; }
+  h3 { font-size: 1.02rem; margin: 24px 0 8px; color: var(--text); }
+  h4 { font-size: 0.92rem; margin: 16px 0 6px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; }
+  p { margin: 8px 0; }
+  .meta { color: var(--text-dim); font-size: 0.88rem; }
+  .meta code { font-size: 0.85em; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--code-bg); border-radius: 4px; padding: 1px 5px; font-size: 0.88em; }
+  a { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 22px; font-size: 0.87rem; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--code-bg); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-weight: 700; font-size: 0.78rem; white-space: nowrap; }
+  .P0 { color: var(--p0); background: var(--p0-bg); }
+  .P1 { color: var(--p1); background: var(--p1-bg); }
+  .P2 { color: var(--p2); background: var(--p2-bg); }
+  .P3 { color: var(--p3); background: var(--p3-bg); }
+  .COVERED, .PASS { color: var(--covered-fg); background: var(--covered-bg); }
+  .NOTCOVERED, .FAIL { color: var(--notcovered-fg); background: var(--notcovered-bg); }
+  .UNKNOWN, .PARTIAL { color: var(--unknown-fg); background: var(--unknown-bg); }
+  .decision-box {
+    background: var(--p0-bg); border: 1px solid var(--p0); border-radius: 10px; padding: 18px 20px; margin: 18px 0;
+  }
+  .decision-box .headline { font-size: 1.3rem; font-weight: 800; color: var(--p0); margin: 0 0 6px; }
+  .stat-row { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
+  .stat {
+    flex: 1 1 150px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .stat .num { font-size: 1.5rem; font-weight: 800; }
+  .stat .label { color: var(--text-dim); font-size: 0.78rem; text-transform: uppercase; letter-spacing: .03em; }
+  .note-box {
+    background: var(--unknown-bg); border-left: 3px solid var(--text-dim); border-radius: 6px;
+    padding: 10px 14px; margin: 12px 0; font-size: 0.9rem;
+  }
+  ol, ul { padding-left: 22px; }
+  li { margin: 4px 0; }
+  .toc { columns: 2; column-gap: 24px; }
+  .toc li { break-inside: avoid; font-size: 0.9rem; }
+  footer { margin-top: 40px; color: var(--text-dim); font-size: 0.8rem; text-align: center; }
+  .theme-toggle {
+    position: fixed; top: 14px; right: 14px; z-index: 10;
+    background: var(--bg-elev); border: 1px solid var(--border); border-radius: 20px;
+    padding: 6px 12px; font-size: 0.8rem; cursor: pointer; color: var(--text);
+  }
+  @media (max-width: 640px) {
+    .toc { columns: 1; }
+    table { font-size: 0.78rem; }
+    th, td { padding: 6px 7px; }
+    h1 { font-size: 1.3rem; }
+  }
+</style>
+</head>
+<body>
+<button class="theme-toggle" onclick="try{const r=document.documentElement;const cur=r.getAttribute('data-theme');const next=cur==='dark'?'light':(cur==='light'?null:'dark');if(next){r.setAttribute('data-theme',next);}else{r.removeAttribute('data-theme');}localStorage.setItem('tr-theme',next||'');}catch(e){}">Toggle theme</button>
+<div class="wrap">
+
+<header class="top">
+  <h1>Test Report — Influora RC <span class="mono">115f698</span></h1>
+  <p class="meta">Prepared by: Tester (Sage Team) &middot; Date: 2026-09-19 &middot; RC commit: <code>115f698b9df0ca2735e9cb2f2c5fe656daf07b66</code></p>
+  <p class="meta">RC checkout used for all commands: <code>C:/Users/Sage world/AppData/Local/Temp/claude/rc-115f698</code> (clean, git-status-clean)</p>
+  <p class="meta">Inputs: <code>meera-run.json</code>, <code>neha.json</code>, <code>kavya.json</code>, <code>kabir.json</code>, <code>ash.json</code>, <code>perf.json</code>, <code>blueprint-*.json</code>, <code>merged-register.json</code> (174 deduped findings, EV-001..EV-174), <code>verification-and-review.json</code> (36 adversarially re-checked verdicts), <code>final-decision.json</code>.</p>
+
+  <div class="decision-box">
+    <p class="headline">Final decision: NO-GO</p>
+    <p>Evidence level <strong>E = 3</strong>. Confidence <strong>75</strong>. (Not this report's call — restated from <code>final-decision.json</code>, decided by Swapnil, CEO.)</p>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat"><div class="num">3621</div><div class="label">Java unit tests, 0 fail</div></div>
+    <div class="stat"><div class="num">22</div><div class="label">Testcontainers tests skipped (no Docker)</div></div>
+    <div class="stat"><div class="num">1348 / 2</div><div class="label">Vitest pass / fail</div></div>
+    <div class="stat"><div class="num">874 / 1</div><div class="label">Pytest pass / fail (flaky)</div></div>
+    <div class="stat"><div class="num">136 / 136</div><div class="label">Flyway migrations applied</div></div>
+    <div class="stat"><div class="num">0</div><div class="label">Backend boot attempts that reached "Started"</div></div>
+    <div class="stat"><div class="num">8 / 28</div><div class="label">P0 / P1 findings in merged register</div></div>
+  </div>
+
+  <p>Two confidences are deliberately <strong>not averaged</strong> (<code>final-decision.json</code>): confidence the NO-GO itself is correct is <strong>~97</strong> (rests on EV-001 alone, reproduced at runtime twice, independently). Confidence that this register is a complete, correctly-weighted readiness picture is <strong>~75 at E3</strong> — held down by zero end-to-end runtime proof of any money/auth/API flow (the backend never booted), 22 skipped Testcontainers suites, several green tests that mock the exact layer where the bug lives, unverified live prod env, a working tree that diverges from the RC under concurrent edits, and 9 recorded (not averaged) reviewer disagreements.</p>
+</header>
+
+<h2 id="commands">1. Exact commands and results</h2>
+
+<h3>1.1 Backend — influora-api (Java / Maven / MySQL)</h3>
+<table>
+<thead><tr><th>#</th><th>Command</th><th>Exit</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>mvn -B clean test</code></td><td>0</td><td><strong>BUILD SUCCESS.</strong> Tests run: <strong>3621</strong>, Failures: 0, Errors: 0, <strong>Skipped: 22</strong>. 11:10 min.</td></tr>
+<tr><td>2</td><td><code>docker info; docker ps</code></td><td>n/a</td><td>Docker Desktop daemon <strong>down</strong>. CLI present (v29.6.1), no engine.</td></tr>
+<tr><td>2b</td><td><code>mvn flyway:migrate</code> against throwaway MySQL 8 (substitute for Testcontainers)</td><td>0</td><td><strong>BUILD SUCCESS.</strong> All <strong>136 migrations</strong> applied cleanly, 1:39 min. DB dropped after, confirmed empty.</td></tr>
+<tr><td>3a</td><td><code>mvn spring-boot:run</code> (default profile)</td><td>1</td><td><strong>BUILD FAILURE</strong> ~80s: GSTIN placeholder validation fails closed (correct behavior outside prod env).</td></tr>
+<tr><td>3b</td><td><code>mvn spring-boot:run</code> (<code>SPRING_PROFILES_ACTIVE=dev</code>)</td><td>1</td><td>Flyway/Hibernate/security chain init OK, then <strong>BeanCreationException</strong> on <code>trendPullJob</code> → context never starts, Tomcat never serves a request. Reproduced deterministically twice. This is <strong>EV-001 (P0)</strong>.</td></tr>
+<tr><td>3c</td><td>curl health / 401-on-protected / register / login</td><td>—</td><td><strong>NOT PERFORMED</strong> — no live port ever existed. The boot failure is the finding.</td></tr>
+</tbody>
+</table>
+
+<h3>1.2 Frontend — Vite/React</h3>
+<table>
+<thead><tr><th>#</th><th>Command</th><th>Exit</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>4a</td><td><code>npx tsc --noEmit</code></td><td>0</td><td><strong>0 errors.</strong></td></tr>
+<tr><td>4b</td><td><code>npx eslint .</code></td><td>1</td><td><strong>226 problems: 7 errors, 219 warnings.</strong> Warnings match the documented react-hooks-v7 warn-only policy. 7 real <code>no-unused-vars</code> errors would fail a strict CI gate. No CI workflow currently runs lint at all.</td></tr>
+<tr><td>4c</td><td><code>npx vitest run</code> (under load)</td><td>1</td><td><strong>2 failed / 1348 passed / 3 skipped</strong> of 1353. Failure 1: deterministic 120s timeout in <code>creator-protected-route.test.tsx</code> (3/3 reproductions) — F-0459 remember-me guard <strong>never executes</strong> (EV-055). Failure 2: <code>brand-chat-accept-recovery.test.tsx</code> — confirmed load-induced flake, passes 2/2 in isolation.</td></tr>
+<tr><td>4d</td><td><code>npx vite build</code></td><td>0</td><td>Success, 6 min, 4905 modules. Two chunks exceed 500 kB warning: main entry 3.37 MB / 899 KB gzip (EV-039, zero route-level code splitting).</td></tr>
+</tbody>
+</table>
+
+<h3>1.3 AI service — influora-ai (Python / pytest)</h3>
+<table>
+<thead><tr><th>#</th><th>Command</th><th>Exit</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>5a</td><td><code>pip install -r requirements.txt</code></td><td>1</td><td><strong>FAILED on playwright</strong>: Windows long-path (&gt;260 char) limit — environment defect, not code, reproduced twice.</td></tr>
+<tr><td>5b</td><td>Installed all other pinned deps directly, excluding playwright</td><td>0</td><td>OK. No test file imports playwright directly, so nothing was skipped by this exclusion.</td></tr>
+<tr><td>5c</td><td><code>python -m pytest -q</code></td><td>1</td><td><strong>874 passed, 1 failed</strong>, 166.55s. Failure is an SSE heartbeat timing test; re-run 3× in isolation: FAIL, FAIL, PASS — confirmed timing-flaky, not a deterministic code defect.</td></tr>
+</tbody>
+</table>
+<p class="meta">Ash additionally ran: offline evals (5 datasets PASS, 2 datasets NOT RUN — zero fixtures), 670 AI-related Java tests on a scratch RC copy (BUILD SUCCESS), n8n TrendSpark tagger sync check (ALL PASS).</p>
+
+<h3>1.4 E2E (Playwright)</h3>
+<div class="note-box">
+<strong>Could not run at all.</strong> <code>npx playwright test</code> → <code>Cannot find module '@playwright/test'</code>. The dependency is absent from <code>package.json</code> despite both spec files importing it. No file under <code>.github/workflows/*.yml</code> (10 files checked) references playwright — this suite is apparently never executed in CI (NEH-02, evidence 4/confidence 92).
+</div>
+<p>Neha additionally live-tested the deployed site (<code>https://influora.in</code>, not the RC): public pages render cleanly, zero JS errors. Findings: any unmatched URL soft-404s with HTTP 200 (NEH-01, P2); favicon.ico fix (F-0709) confirmed live; live bundle hashes don't match a same-day RC build, moderate confidence the deployed frontend predates the RC (NEH-03); no CSP header served anywhere (NEH-04, P3).</p>
+
+<h3>1.5 Database migrations</h3>
+<p><strong>136/136 Flyway migrations apply cleanly</strong> to a real MySQL 8.0 engine — runtime-proven. This only proves schema <em>apply</em>, not schema <em>correctness against app logic</em>: <strong>EV-011</strong> (affiliate ENUM never widened — every affiliate posting fails on real MySQL) and <strong>EV-014</strong> (withdrawal idempotency key overflows VARCHAR(64) — every real withdrawal fails) both pass their Java tests because those tests run against H2, not real strict-mode MySQL (<strong>EV-038</strong>).</p>
+
+<h2 id="counts">2. Pass / fail / skip counts</h2>
+<table>
+<thead><tr><th>Suite</th><th>Pass</th><th>Fail</th><th>Skip / Not run</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>influora-api <code>mvn test</code></td><td>3621</td><td>0</td><td>22</td><td>Skips = every Testcontainers/full-context test, incl. EscrowReleaseGateIntegrationTest(7), DatabaseConstraintIntegrationTest(3), AICreditRaceIntegrationTest(1) — no Docker.</td></tr>
+<tr><td>influora-api boot</td><td>0</td><td>2/2 attempts</td><td>—</td><td>Never reaches "Started"; 0 HTTP requests served.</td></tr>
+<tr><td>Flyway migrations</td><td>136</td><td>0</td><td>0</td><td>Runtime-proven against real MySQL 8.</td></tr>
+<tr><td>Frontend tsc</td><td>pass</td><td>—</td><td>—</td><td>0 errors.</td></tr>
+<tr><td>Frontend eslint</td><td>—</td><td>7 errors</td><td>—</td><td>Plus 219 warn-policy warnings.</td></tr>
+<tr><td>Frontend vitest</td><td>1348</td><td>2</td><td>3</td><td>1 deterministic timeout, 1 confirmed load-flake.</td></tr>
+<tr><td>Frontend vite build</td><td>pass</td><td>—</td><td>—</td><td>0 errors; 2 oversized chunks (warning only).</td></tr>
+<tr><td>influora-ai pytest</td><td>874</td><td>1</td><td>0</td><td>Confirmed timing-flaky (2 fail / 1 pass over 3 isolated reruns).</td></tr>
+<tr><td>influora-ai offline evals</td><td>5 datasets</td><td>2 datasets (exit 1)</td><td>—</td><td>Zero-fixture datasets — coverage gap, not regression.</td></tr>
+<tr><td>AI-adjacent Java tests (Ash)</td><td>670</td><td>0</td><td>0</td><td>BUILD SUCCESS, scratch copy of RC.</td></tr>
+<tr><td>n8n TrendSpark tagger sync</td><td>ALL</td><td>0</td><td>—</td><td>—</td></tr>
+<tr><td>E2E Playwright</td><td>0</td><td>—</td><td>2 spec files (4 tests)</td><td>Cannot load — missing dependency, not wired into any CI workflow.</td></tr>
+<tr><td>Money-domain suites (blueprints)</td><td>mostly PASS</td><td>1 named (<code>testOverlapGuardPreventsConcurrentRuns</code>)</td><td>several classes not re-run this session (time-budgeted)</td><td>All against mocked/H2, not real MySQL — see §1.5.</td></tr>
+</tbody>
+</table>
+<p><strong>Aggregate:</strong> ~5,500+ automated tests run this pass, 3 confirmed genuine failures (all flaky/timing) + 3 tests structurally unable to run (F-0459) + 1 concurrency-guard test failure (affiliate reconciliation) + 2 full E2E specs and 22 Testcontainers classes that never executed at all.</p>
+
+<h2 id="not-run">3. What could not run, and why</h2>
+<table>
+<thead><tr><th>Item</th><th>Why</th><th>Consequence</th></tr></thead>
+<tbody>
+<tr><td>22 Testcontainers/@SpringBootTest tests (incl. EscrowReleaseGateIntegrationTest, DatabaseConstraintIntegrationTest, AICreditRaceIntegrationTest)</td><td>Docker daemon down</td><td>These are the only tests that exercise a full Spring context + real MySQL together — exactly the class that would have caught EV-001, EV-011, EV-014 before this audit.</td></tr>
+<tr><td>Live boot + curl probes</td><td>Boot fails (EV-001)</td><td>Zero runtime proof exists for any API, auth, or money flow on this RC. Every money-path finding is a code trace (E3–E4), not an observation.</td></tr>
+<tr><td>playwright pip install</td><td>Windows long-path limit</td><td>Environment limitation; worked around, no tests actually skipped by it.</td></tr>
+<tr><td>@playwright/test E2E suite</td><td>Dependency not declared; MODULE_NOT_FOUND</td><td>No evidence this suite has ever passed in CI (not referenced by any of 10 workflow files).</td></tr>
+<tr><td>Real GitHub Actions run history</td><td>Not fetched by any agent</td><td>CI status is inferred from YAML, not observed as a real green run.</td></tr>
+<tr><td>Live prod env (VPS .env, GH secrets, RazorpayX account, untracked compose file)</td><td>Out of scope</td><td>Live-edge claims (e.g. EV-010 CSP/HSTS) downgraded to E2/C30.</td></tr>
+<tr><td>Full fund→approve→release→refund money cycle</td><td>Backend never boots</td><td>No agent could exercise the escrow/wallet state machine end-to-end.</td></tr>
+<tr><td>Several controller/job tests "present, not run this session"</td><td>Time-budgeted out</td><td>Their PASS status is asserted from file presence/prior runs, not re-executed here.</td></tr>
+</tbody>
+</table>
+
+<h2 id="matrix">4. Per-critical-feature &times; 8-test-dimension coverage matrix</h2>
+<p class="meta">Legend: <span class="badge COVERED">COVERED</span> a specific test exercises this dimension and result is known &middot; <span class="badge NOTCOVERED">NOT COVERED</span> untested, or tested behavior is a confirmed defect &middot; <span class="badge UNKNOWN">UNKNOWN</span> no evidence located.</p>
+
+<h3>4.1 Escrow fund / release / refund (EscrowService) — money core</h3>
+<table>
+<thead><tr><th>Dimension</th><th>Status</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Happy path</td><td><span class="badge COVERED">COVERED (mocked only)</span></td><td>EscrowServiceTest 38/38 PASS (H2). Real-context proof (EscrowReleaseGateIntegrationTest, 7 tests) SKIPPED — no Docker.</td></tr>
+<tr><td>Invalid input</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>No cited test for malformed fund/release payloads.</td></tr>
+<tr><td>Unauthorized</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td><strong>EV-015 (P0)</strong>: brand OWNER/ADMIN self-refunds a FUNDED hold post-approval. <strong>EV-021 (P1)</strong>: any member incl. VIEWER can approve/trigger release.</td></tr>
+<tr><td>External failure (gateway)</td><td><span class="badge PARTIAL">PARTIAL</span></td><td>Release-path test for the Doc#2 invoice-creation failure branch confirms it does not roll back (known, accepted gap).</td></tr>
+<tr><td>Duplicate (re-fund)</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td><strong>EV-002 (P0)</strong>: re-funds an already-FUNDED/RELEASED/REFUNDED milestone. Verifier: "no existing test covers re-funding."</td></tr>
+<tr><td>Concurrent</td><td><span class="badge UNKNOWN">UNKNOWN / NOT RUN</span></td><td>EscrowReleaseGateIntegrationTest (the test named for this) is Docker-skipped.</td></tr>
+<tr><td>Partial failure</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td>EV-002's orphaned-hold behavior; no UNIQUE/CHECK on milestone_id in schema.</td></tr>
+<tr><td>Recovery</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td>No mechanism or test restores correct state after a re-fund.</td></tr>
+</tbody>
+</table>
+
+<h3>4.2 Campaign create / activate (CampaignService)</h3>
+<table>
+<thead><tr><th>Dimension</th><th>Status</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Happy path</td><td><span class="badge COVERED">COVERED</span></td><td>CampaignServiceTest 35/35 green, 11 dedicated HYPE tests.</td></tr>
+<tr><td>Invalid input</td><td><span class="badge PARTIAL">PARTIAL</span></td><td>CampaignActivationGatesTest (3 tests) covers only update()'s ACTIVE-escrow gate.</td></tr>
+<tr><td>Unauthorized</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>Not specifically cited for create().</td></tr>
+<tr><td>External failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Duplicate (retry → 2 campaigns)</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td>KAV-02: CreateCampaignExecutor.doExecute (inert @Transactional) — "a retry can create a duplicate campaign." No regression test.</td></tr>
+<tr><td>Concurrent</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Partial failure</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td>Same KAV-02 root cause — multi-write sequence has no atomicity.</td></tr>
+<tr><td>Recovery</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td>No compensating logic or test.</td></tr>
+<tr><td><strong>Additional (most severe)</strong></td><td><span class="badge NOTCOVERED">NOT COVERED (P0 defect)</span></td><td><strong>EV-005</strong>: create() lets a brand go directly to ACTIVE with no requireFundedEscrow/chargeOnPublish — "zero test coverage on that path."</td></tr>
+</tbody>
+</table>
+
+<h3>4.3 Creator withdrawal / payout (WalletService)</h3>
+<table>
+<thead><tr><th>Dimension</th><th>Status</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Happy path</td><td><span class="badge PARTIAL">Mocked pass / real-DB NOT COVERED</span></td><td>WalletServiceTest PASS (H2). <strong>EV-014 (P1)</strong>: real MySQL VARCHAR(64) overflow — every real withdrawal fails at commit.</td></tr>
+<tr><td>Invalid input</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Unauthorized</td><td><span class="badge COVERED">COVERED</span></td><td>PayoutRepositoryCreatorScopingTest RUN, PASS.</td></tr>
+<tr><td>External failure (RazorpayX)</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td><strong>EV-003 (P0)</strong>: gateway call inside open transaction, locks held, before any durable Payout row.</td></tr>
+<tr><td>Duplicate (double-submit)</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td>EV-003: idempotency marked COMPLETED before outer transaction commits.</td></tr>
+<tr><td>Concurrent</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>No payout-specific concurrency test found.</td></tr>
+<tr><td>Partial failure</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td>EV-003 is precisely this dimension.</td></tr>
+<tr><td>Recovery</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td>No retry/reconciliation test cited.</td></tr>
+</tbody>
+</table>
+<p class="meta">Note: withdrawals are off by default in production (EV-020) — limits live blast radius, doesn't fix the test gap.</p>
+
+<h3>4.4 Affiliate settlement (AffiliateSettlementJob / Writer)</h3>
+<table>
+<thead><tr><th>Dimension</th><th>Status</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Happy path</td><td><span class="badge NOTCOVERED">Test passes / real behavior FAILS</span></td><td>AffiliateSettlementJobTest PASS (mocked). <strong>EV-011 (P1, real-MySQL-confirmed)</strong>: ENUM lacks AFFILIATE_* values — every real posting fails.</td></tr>
+<tr><td>Invalid input</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Unauthorized</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>External failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Duplicate / concurrent run</td><td><span class="badge FAIL">NOT COVERED (test FAILED)</span></td><td>AffiliateEarningReconciliationJobTest: 21/22 PASS, <strong>1 FAILURE in testOverlapGuardPreventsConcurrentRuns</strong>.</td></tr>
+<tr><td>Partial failure</td><td><span class="badge NOTCOVERED">NOT COVERED (defect)</span></td><td><strong>EV-033 (P1)</strong>: no brand-side debit, uncapped clearing-wallet liability.</td></tr>
+<tr><td>Recovery</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+</tbody>
+</table>
+<p class="meta">Note: EV-025 (P1) — commission credited to a wallet keyed by creator_profiles.id, not users.id.</p>
+
+<h3>4.5 /internal/** service-mesh gate (Meera turn credit release)</h3>
+<table>
+<thead><tr><th>Dimension</th><th>Status</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Happy path</td><td><span class="badge COVERED">COVERED</span></td><td>MeeraInternalController*Test classes RUN and PASS (5/5, 4/4, 2/2).</td></tr>
+<tr><td>Invalid input</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Unauthorized</td><td><span class="badge FAIL">NOT COVERED (P0 defect, runtime-reproduced)</span></td><td><strong>EV-004</strong>: InternalServiceTokenFilter matches raw undecoded URI. Percent-encoded path skips the gate; verifier reproduced against RC's exact jar versions. No slice test exists.</td></tr>
+<tr><td>External failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Duplicate</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Concurrent</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Partial failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Recovery</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+</tbody>
+</table>
+
+<h3>4.6 Brand deliverable approve &rarr; escrow release (BrandDeliverableService)</h3>
+<table>
+<thead><tr><th>Dimension</th><th>Status</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Happy path (unit)</td><td><span class="badge COVERED">COVERED</span></td><td>BrandDeliverableServiceTest 32/32, ControllerTest 4/4 PASS.</td></tr>
+<tr><td>Happy path (business outcome: approve &rarr; money moves)</td><td><span class="badge FAIL">NOT COVERED (P1 defect)</span></td><td><strong>EV-019</strong>: Deliverable.milestoneId never populated — approval never actually releases payment; needs a second manual action.</td></tr>
+<tr><td>Invalid input</td><td><span class="badge PARTIAL">PARTIAL</span></td><td>Controller test covers approve/revise/getDetail/getSafetyReview but not reject.</td></tr>
+<tr><td>Unauthorized</td><td><span class="badge FAIL">NOT COVERED (P1 defect)</span></td><td><strong>EV-021</strong>: any member incl. VIEWER can approve; would release escrow once EV-019 is fixed. Currently masked only by EV-019.</td></tr>
+<tr><td>External failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Duplicate</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Concurrent</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Partial failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Recovery</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+</tbody>
+</table>
+
+<h3>4.7 Auth: login / JWT / refresh / password reset (AuthService)</h3>
+<table>
+<thead><tr><th>Dimension</th><th>Status</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Happy path</td><td><span class="badge COVERED">COVERED</span></td><td>AuthServiceTest 64/64 pass; AuthControllerTest covers creator flows and refresh/logout directly.</td></tr>
+<tr><td>Invalid input</td><td><span class="badge PARTIAL">PARTIAL</span></td><td>AuthControllerTest has zero tests for brandRegister/brandLogin/sendBrandEmailOtp at controller level.</td></tr>
+<tr><td>Unauthorized</td><td><span class="badge PARTIAL">PARTIAL / disputed</span></td><td><strong>EV-099</strong> (register P2, Kabir argues P1, unresolved): no BRAND role matcher at the filter-chain level.</td></tr>
+<tr><td>External failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>Not tested this pass; OTP deliverability separately documented in project memory.</td></tr>
+<tr><td>Duplicate</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Concurrent</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Partial failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Recovery (forgot/reset password)</td><td><span class="badge FAIL">NOT COVERED</span></td><td>No forgotPassword/resetPassword controller-level test found.</td></tr>
+</tbody>
+</table>
+
+<h3>4.8 Admin MFA (AdminAuthService)</h3>
+<table>
+<thead><tr><th>Dimension</th><th>Status</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>Happy path (MFA reset by super-admin)</td><td><span class="badge COVERED">COVERED</span></td><td>AdminAuthServiceTest 5/5 PASS, all scoped to resetMfaForAdmin.</td></tr>
+<tr><td>Invalid input</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Unauthorized (self re-enroll while MFA on)</td><td><span class="badge FAIL">NOT COVERED (P1 defect)</span></td><td><strong>EV-022</strong>: admin token can silently replace an enabled MFA secret with no current-TOTP or password re-check.</td></tr>
+<tr><td>External failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Duplicate</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Concurrent</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Partial failure</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+<tr><td>Recovery</td><td><span class="badge UNKNOWN">UNKNOWN</span></td><td>—</td></tr>
+</tbody>
+</table>
+<p class="meta">Related: admin login has no IP rate limit (KAB-05); on the deploy/utho topology, the proxy chain collapses every client IP, making the existing limiter effectively global (KAB-06).</p>
+
+<h2 id="missing">5. Missing tests (ranked by the P0/P1 findings they would have caught)</h2>
+<ol>
+<li><strong>Non-Docker @SpringBootTest context-load smoke test</strong> (H2 acceptable) — would have failed on EV-001 without needing Docker (XR-PRIYA-02, required by the CEO decision).</li>
+<li><strong>EscrowService: re-fund of an already-FUNDED/RELEASED/REFUNDED milestone</strong> — no test exists (EV-002).</li>
+<li><strong>EscrowService: brand self-refund of a FUNDED hold after approval/no dispute</strong> — no test exists (EV-015).</li>
+<li><strong>CampaignService.create() with status=ACTIVE</strong> — zero coverage on the direct-to-ACTIVE path (EV-005).</li>
+<li><strong>Security-filter slice test for a percent-encoded /internal/... path</strong>, asserting 401/403 (EV-004 — explicitly missing per the verifier).</li>
+<li><strong>BrandDeliverableService.approve() called by a VIEWER-role member</strong> — no authorization test (EV-021).</li>
+<li><strong>WalletService withdrawal against a real MySQL schema</strong> (VARCHAR(64) column) — current tests mock past it (EV-014).</li>
+<li><strong>WalletService withdrawal: gateway succeeds, DB commit fails</strong> (or vice-versa) — no partial-failure/rollback test (EV-003).</li>
+<li><strong>AffiliateSettlementWriter posting against a real MySQL ENUM column</strong> — current tests mock past the mismatch (EV-011).</li>
+<li><strong>AffiliateEarningReconciliationJobTest.testOverlapGuardPreventsConcurrentRuns</strong> — exists, currently FAILING, needs a fix.</li>
+<li><strong>AdminAuthService: re-enroll MFA while already enabled, without current TOTP</strong> — no test exists (EV-022).</li>
+<li><strong>A CI job that actually runs @playwright/test</strong> — dependency, CI wiring, and any pass/fail signal are all absent (NEH-02).</li>
+<li><strong>A CI lint gate</strong> — 7 real eslint errors, no workflow enforces it (XR-KAVYA-01).</li>
+<li><strong>A regression test for F-0459</strong> that doesn't time out importing @/App (EV-055).</li>
+<li><strong>22 Testcontainers integration tests</strong> need a CI environment with Docker and a documented green run URL attached to the next go/no-go (EV-038).</li>
+<li>Controller-level tests for: BrandPlatformFeeController, MeTaxIdentityController, campaign report export (zero tests at any layer), ShipmentService (zero tests — confirmed via <code>mvn -Dtest=ShipmentServiceTest</code> &rarr; "No tests matching pattern"), TrendSparkController, CreatorCopilotController.</li>
+</ol>
+
+<h2 id="defects">6. Merged defects — one per root cause (with EV IDs)</h2>
+<p><code>merged-register.json</code> deduplicated <strong>240 raw findings from 21 agents into 174</strong> register entries (EV-001..EV-174), grouped into <strong>16 root causes</strong> (RC-01..RC-16). Severity split: <strong>8 &times; P0, 28 &times; P1, 68 &times; P2, 70 &times; P3</strong>. 36 of the most consequential entries were adversarially re-verified: 20 CONFIRMED, 5 CONFIRMED-RUNTIME, 1 UPGRADED, 8 DOWNGRADED, 1 UNRESOLVED, 1 REFUTED (EV-034, dropped).</p>
+
+<table>
+<thead><tr><th>Root cause</th><th>Description</th><th>EV IDs</th></tr></thead>
+<tbody>
+<tr><td><strong>RC-01</strong></td><td>Escrow/milestone state not enforced server-side — funding/refund/release trust client idempotency keys and caller discipline instead of state guards.</td><td>EV-002, EV-015, EV-019, EV-084, EV-098</td></tr>
+<tr><td><strong>RC-02</strong></td><td>Money-path transaction design: self-invoked @Transactional inert, deferred save(), external gateway calls inside open transactions, oversized idempotency keys.</td><td>EV-003, EV-014 (+ related)</td></tr>
+<tr><td><strong>RC-03</strong></td><td>Verification blind spot: H2-only tests; every full-context/MySQL test is Docker-gated and was skipped.</td><td>EV-001, EV-011, EV-014, EV-038</td></tr>
+<tr><td><strong>RC-04</strong></td><td>Campaign activation rules duplicated across create(), update(), PAUSED&rarr;ACTIVE, Meera confirm_launch with no entity-level guard.</td><td>EV-005, EV-018</td></tr>
+<tr><td><strong>RC-05</strong></td><td>Authorization is per-service and inconsistent: workspace-claim trust, missing role/MFA checks, internal-path gate trusts raw URIs.</td><td>EV-004, EV-021, EV-022, EV-036, EV-099</td></tr>
+<tr><td><strong>RC-06</strong></td><td>Deploy configuration drift: committed compose/nginx/Docker config isn't what runs live.</td><td>EV-006, EV-009, EV-010, EV-017, EV-093</td></tr>
+<tr><td><strong>RC-07</strong></td><td>Built-but-not-wired: backend exists and passes tests but has no caller/UI.</td><td>EV-012, EV-016, EV-024</td></tr>
+<tr><td><strong>RC-08</strong></td><td>Production defaults leave features off or unsafe.</td><td>EV-013, EV-020, EV-044</td></tr>
+<tr><td><strong>RC-09</strong></td><td>CreatorMetric provenance not filtered on verified/headline reads — self-declared numbers present as Meta-verified.</td><td>EV-008</td></tr>
+<tr><td><strong>RC-10</strong></td><td>RC and working tree diverge: money-core rewrites uncommitted, concurrent-session edits, conflicting stash.</td><td>EV-018</td></tr>
+<tr><td><strong>RC-11</strong></td><td>Customer-facing claims run ahead of implementation (RBI PA custody, TDS, 24h payouts, draft legal live).</td><td>EV-007, EV-031 (+ XR-ROHAN-01)</td></tr>
+<tr><td><strong>RC-12</strong></td><td>Missing outbound resilience: no timeouts/circuit breakers, unbounded async executor.</td><td>EV-045 (+ PERF-03/06/07)</td></tr>
+<tr><td><strong>RC-13</strong></td><td>Single-instance in-memory state behind an IP-collapsing proxy: rate limits/nonces become global.</td><td>EV-062, EV-157 (+ KAB-05/06)</td></tr>
+<tr><td><strong>RC-14</strong></td><td>Stale/wrong comments and defaults that misdirect engineers.</td><td>cross-cutting, see full register</td></tr>
+<tr><td><strong>RC-15</strong></td><td>No controller/job-level test convention: 46/91 controllers and several money/compliance jobs untested.</td><td>EV-012, EV-048 (+ item 16 above)</td></tr>
+<tr><td><strong>RC-16</strong></td><td>Affiliate settlement pipeline broken end-to-end.</td><td>EV-011, EV-025, EV-033</td></tr>
+</tbody>
+</table>
+
+<h3>The 8 surviving P0s</h3>
+<table>
+<thead><tr><th>EV</th><th>Title</th><th>Evidence / Confidence</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td class="mono">EV-001</td><td>influora-api cannot boot in any Spring profile (TrendPullJob bean-wiring)</td><td>E5/C98</td><td>CONFIRMED-RUNTIME (reproduced twice)</td></tr>
+<tr><td class="mono">EV-002</td><td>Escrow initiateFund re-funds an already-FUNDED/RELEASED/REFUNDED milestone</td><td>E5/C85</td><td>VERIFIED</td></tr>
+<tr><td class="mono">EV-003</td><td>Withdrawal calls RazorpayX inside an open DB transaction; idempotency marked COMPLETED before commit</td><td>E5/C72 (Priya disputes to E3, unresolved)</td><td>CONFIRMED</td></tr>
+<tr><td class="mono">EV-004</td><td>/internal/** gate bypassed by a percent-encoded path</td><td>E4/C85</td><td>VERIFIED (runtime-reproduced)</td></tr>
+<tr><td class="mono">EV-005</td><td>CampaignService.create() skips funded-escrow/fee checks entirely</td><td>E4/C85</td><td>OBSERVED</td></tr>
+<tr><td class="mono">EV-006</td><td>Live-format provider keys committed in tracked env.example files, in git history</td><td>E4/C80</td><td>OBSERVED</td></tr>
+<tr><td class="mono">EV-007</td><td>Payment-custody copy contradicts pooled clearing-wallet implementation (breaches F-0851)</td><td>E4/C80 (Rohan/Tejas rate E5)</td><td>OBSERVED</td></tr>
+<tr><td class="mono">EV-008</td><td>Self-declared follower counts render as Meta-verified</td><td>E3/C85</td><td>VERIFIED — fixed post-RC, not yet re-verified as part of a new RC</td></tr>
+</tbody>
+</table>
+
+<h2 id="pattern">7. "Green tests, red reality" pattern</h2>
+<p>This RC repeatedly shows the pattern this team has previously flagged as systemic risk: a mocked/H2 test suite is green while real MySQL or a real external gateway behaves differently.</p>
+<ul>
+<li>AffiliateSettlementJobTest PASS, but real MySQL rejects the ENUM value the job writes (EV-011).</li>
+<li>WalletServiceTest PASS, but the real VARCHAR(64) column overflows on real withdrawal idempotency keys (EV-014).</li>
+<li>3621/3621 Java unit tests green, but the application cannot boot at all (EV-001) — none load a full Spring context.</li>
+<li>BrandDeliverableServiceTest 32/32 PASS, but the tested "approve" flow does not actually release money in production (EV-019) — unit tests never assert the cross-service linkage.</li>
+</ul>
+
+<h2 id="escore">8. Evidence level and confidence</h2>
+<p><strong>E = 3, confidence = 75</strong> (as given by the CEO decision). See the decision box at the top for the split rationale. This report does not alter, re-derive, or second-guess that number — it consolidates the test evidence the number is built on.</p>
+
+<footer>
+  Influora RC 115f698 Test Report &middot; generated 2026-09-19 &middot; sources: audit-2026-09-19/_raw/*.json
+</footer>
+</div>
+<script>
+(function(){
+  try {
+    var saved = localStorage.getItem('tr-theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+  } catch(e) {}
+})();
+</script>
+</body>
+</html>

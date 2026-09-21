@@ -1,0 +1,381 @@
+{
+  "domain": "Creator payouts, affiliate tracking & store integrations (23 endpoints)",
+  "questions": [
+    {
+      "q": "Do INFLUORA_SHOPIFY_APIKEY/APISECRET/WEBHOOKSIGNINGSECRET/TOKENENCRYPTIONKEY actually carry real values in the live deploy, or does Shopify connect remain permanently 503 in production?",
+      "a": "Code-only: application.yml:490-493 binds all four to real ${INFLUORA_SHOPIFY_*} env vars (not fictional names -- confirmed a real placeholder exists, unlike the stale in-code comment claiming otherwise), and ShopifyProperties.isConfigured() correctly gates /authorize to 503 when any is blank/REPLACE_WITH_ prefixed. Whether ops has actually set these in the live env cannot be answered from source -- CONFIGURATION-dependent, unverified from this tree."
+    },
+    {
+      "q": "Is there a controller-level test proving auth/workspace-scoping for ConversionWebhookSecretController's generate/revoke endpoints, given the task brief flagged 'no test' for it?",
+      "a": "Confirmed by file listing: no ConversionWebhookSecretControllerTest exists (grep of src/test/java/com/influora/web/*Controller*Test.java). ConversionWebhookSecretServiceTest exists and (run, exit 0) covers the service layer (encrypt/rotate/revoke/decrypt), but the HTTP-layer wiring (@AuthenticationPrincipal -> requireBrandWorkspace -> service) in the controller itself has no dedicated test. IMPLEMENTED BUT NOT VERIFIED at the controller layer."
+    },
+    {
+      "q": "Does AffiliateEarningReconciliationJobTest's overlap-guard test reliably pass in CI, or is it flaky under batched execution?",
+      "a": "VERIFIED: running it together with 3 other job/repo test classes in one mvn -Dtest=A,B,C,D invocation produced 1 failure (testOverlapGuardPreventsConcurrentRuns expected 1 call to findOrphanedWithoutAffiliateEarning, observed 2). Re-running the SAME test method in isolation 3/3 times passed cleanly. The production AtomicBoolean guard logic in PayoutOrphanedDebitSweepJob/AffiliateEarningReconciliationJob is sound on inspection (CAS strictly precedes the guarded call), so this reads as a real-Thread+sleep test timing artifact surfaced only under host contention from co-running JVMs/test classes, not a demonstrated production defect -- but it is a real, reproduced CI-flakiness finding."
+    },
+    {
+      "q": "Is the flat 10% DEFAULT_COMMISSION_RATE in AffiliateEarningsService acceptable for go-live, or does every creator's affiliate commission need to be per-campaign-configurable first?",
+      "a": "OBSERVED in code: AffiliateEarningsService.java:102 hardcodes 10% with an explicit TODO(follow-up) javadoc admitting it is a placeholder pending a schema column + product sign-off. Every affiliate commission credited by this domain today uses this single flat rate regardless of campaign/brand agreement -- a real product gap, not a coded defect."
+    },
+    {
+      "q": "Does AffiliateSettlementJob settle only the earnings incurred during periodYearMonth, or could a months-old backlog of never-settled earnings get folded into whatever month the job currently runs in?",
+      "a": "OBSERVED in code: AffiliateSettlementJob.settleOneCreator calls affiliateEarningRepository.findByCreatorIdAndStatusIn(creatorId, PENDING/FAILED) with NO date filter at all -- periodYearMonth is only a label on the batch/idempotency key, not a query bound. A creator whose earnings failed to settle for several months would have all of them swept into a single current-period batch. Money-safety is preserved (idempotency key + status transition prevent double-settlement), but the per-period reporting semantics documented in the class javadoc ('settles the PREVIOUS calendar month') do not match what the query actually scopes."
+    },
+    {
+      "q": "Has the RazorpayX payout call chain (WalletService.doProcessWithdrawal -> RazorpayFundAccountService -> RazorpayXClient) ever been exercised against a real/sandbox RazorpayX account, or only against a mocked client in unit tests?",
+      "a": "Code-only from this tree: WalletServiceTest (run, exit 0) mocks RazorpayXClient; no Testcontainers/live-gateway test for this path exists in the file listing. Prior project memory (Meta + Razorpay live 0913) records a real Rs 1,000 wallet CREDIT proven live, but that is the top-up direction, not this withdrawal/payout direction -- unverified from this checkout whether a real RazorpayX payout has ever landed."
+    },
+    {
+      "q": "Is UTM click-based conversion attribution (as opposed to coupon-code redemption) ever wired from either store integration, or is store-order revenue attribution coupon-only for both Shopify and WooCommerce?",
+      "a": "OBSERVED in code: both ShopifyWebhookController and WooCommerceWebhookController javadocs and code explicitly scope themselves to discount-code/coupon-code redemption only; there is no code path anywhere in this tree that threads a UtmCampaign ULID through a merchant's Shopify/WooCommerce order back into ConversionTrackingService#recordConversion. This is a documented, deliberate cut, not a bug -- but it means the CampaignROICard 'clicks -> conversions' funnel on brand-campaign-tracking.tsx can only ever show conversions that came in via the separate public /webhooks/conversion custom-checkout path, never via a connected Shopify/WooCommerce store's own checkout."
+    },
+    {
+      "q": "Does AuthRateLimitFilter's per-IP-only 'tracking' bucket (shared by /webhooks/shopify, /webhooks/woocommerce, /webhooks/redemption, /webhooks/conversion) allow a bad actor behind a shared NAT/CDN edge to throttle every brand's legitimate webhook deliveries?",
+      "a": "OBSERVED in code (per WooCommerceWebhookController's own javadoc, citing a prior Kabir red-team probe): this is a documented, already-known, unresolved limitation shared by every webhook surface in that bucket, contingent on an unverified X-Forwarded-For assumption. It is repeated, not newly introduced, by each controller reviewed here -- a real go-live consideration, still open."
+    },
+    {
+      "q": "Given ShopifyOrderOwnershipVerifier calls Shopify's own Admin API synchronously on every coupon-bearing order webhook, what happens on a timeout or Shopify Admin API degradation -- does the webhook fail closed (retried) or silently drop the redemption?",
+      "a": "Not verified from source read alone in this pass -- ShopifyOrderOwnershipVerifier's own exception-handling/timeout behavior was not traced end-to-end. Given ShopifyWebhookController's outer try/catch only catches ApiException (terminal redemption outcomes) and IdempotencyService's replay exceptions, an unchecked exception (e.g. a client timeout) from orderBelongsToShop would propagate as a 5xx, which Shopify DOES retry -- but this needs direct code confirmation, flagged here as a gap in this pass's coverage rather than a resolved answer."
+    },
+    {
+      "q": "Is there a real KYC-approval workflow that ever moves CreatorProfile.identityKycStatus to VERIFIED, or does WalletService.requireIdentityKycSubmitted gate on 'submitted' (PENDING) forever, permanently?",
+      "a": "OBSERVED and self-documented in code: WalletService.java's own javadoc (lines 332-352) explicitly states no admin KYC review/approve endpoint exists anywhere in this codebase, and gates on 'submitted' rather than VERIFIED specifically because VERIFIED is provably unreachable today. This is a genuine, already-flagged (by the codebase's own authors) product gap, not a newly discovered defect."
+    },
+    {
+      "q": "Can a creator bypass the 24h bank-account cool-down by adding a new fraudulent instrument, then immediately calling setPrimary to make it the active payout destination?",
+      "a": "VERIFIED by code trace: CreatorBankAccountService.setPrimary only flips the isPrimary flag and never touches CreatorBankAccount.usableAt (the cool-down timestamp, fixed at row-creation time). But RazorpayFundAccountService.resolveFundAccountId -- called from WalletService.doProcessWithdrawal for whichever bank account is actually being paid out to -- independently re-checks bankAccount.isUsableAt(now) on that SPECIFIC account before ever calling RazorpayX, and throws BANK_COOLDOWN_ACTIVE if it has not elapsed, regardless of when it became primary. The cool-down protection holds even through an immediate setPrimary call -- this is NOT a bypass."
+    },
+    {
+      "q": "Is the 'one integration per workspace' assumption in StoreIntegrationStatusController (Shopify checked before WooCommerce) enforced at the DB layer, or could a workspace end up with both connected and WooCommerce silently hidden from status?",
+      "a": "OBSERVED in code: the controller's own javadoc (lines 74-78) states this assumption explicitly and flags it as unenforced ('only one can be connected at a time per workspace today -- if that assumption changes, this will need to return a list or prioritize one'). No unique constraint or connect-time cross-check was found preventing a workspace from independently completing both a Shopify OAuth connect and a WooCommerce connect call; GET /status would then report only Shopify, forever hiding the WooCommerce connection from the UI (though its webhook receiver would still function). Plausible edge case, not verified as reproducible without a live DB probe."
+    }
+  ],
+  "features": [
+    {
+      "name": "Withdraw / payout history / payout methods / set primary",
+      "user_type": "creator",
+      "purpose": "Creator withdraws available wallet balance to a bank/UPI account via RazorpayX, views payout history from the real payouts table (not derived from ledger), and manages/selects which encrypted bank/UPI instrument receives future payouts.",
+      "status": "PARTIALLY WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 88,
+      "entry_point": "creator-wallet.tsx -> src/lib/api.ts wallet.withdraw/payouts/getPayoutMethods/addPayoutMethod/setPrimaryPayoutMethod -> POST/GET /wallet/* (WalletController.java:61-229)",
+      "flow": "creator-wallet.tsx UI -> api.ts wallet.withdraw(amount, idempotencyKey) -> POST /wallet/withdraw (WalletController:116) -> WalletController.withdraw -> WalletService.requestCreatorWithdrawal(userId, amount, idempotencyKey) -> validateCreatorWithdrawalAmount -> findByOwnerIdForUpdate (pessimistic lock) -> daily-rate-limit check (WalletTransactionRepository.countByWalletIdAndTypeAndCreatedAtAfter) -> findByCreatorUserIdAndPrimaryTrue (CreatorBankAccountRepository) -> requireIdentityKycSubmitted (CreatorProfileRepository) -> IdempotencyService.executeOnce(scopedKey) -> doProcessWithdrawal: WalletLedgerService.post(WITHDRAWAL) debits wallet into platform clearing wallet -> RazorpayFundAccountService.resolveFundAccountId (checks 24h cool-down, lazily provisions Razorpay Contact+FundAccount, decrypts bank details via CreatorBankPiiCipher) -> RazorpayXClient.initiatePayout -> PayoutRepository.save(Payout.createQueued) -> response payoutId. GET /wallet/payouts reads directly from `payouts` table (not derived from ledger debits) via WalletService.getPayoutsForCreator, computing `failed` from PayoutReconciliationService.FAILURE_STATUSES. GET/POST /wallet/payout-methods and PUT /wallet/payout-methods/{id}/primary route to CreatorBankAccountService (AES-GCM encrypted persistence, first-instrument-auto-primary, row-locking against concurrent first-adds/setPrimary races, DB unique index backstop).",
+      "api": "POST /wallet/withdraw (201), GET /wallet/payouts (paged), GET /wallet/payout-methods, POST /wallet/payout-methods (201), PUT /wallet/payout-methods/{id}/primary -- WalletController.java:116-229",
+      "database": "wallets (balance debited via double-entry wallet_transactions row, WITHDRAWAL/DEBIT), payouts (new row per withdrawal, STATUS_PENDING then updated by webhook reconciliation), creator_bank_accounts (AES-GCM ciphertext columns only, uq_creator_bank_accounts_primary_marker unique index backstop, razorpay_fund_account_id/razorpay_contact_id cache columns)",
+      "state_machine": "Payout: PENDING (queued, debit committed, RazorpayX call in flight) -> processed/reversed/rejected/cancelled via webhook (PayoutReconciliationService) -> confirmedAt stamped on every terminal state. CreatorBankAccount: added (non-primary unless first) -> cool-down window (24h, immutable from creation) -> usable for payout once elapsed regardless of primary-flag timing (setPrimary does not reset cool-down, and cannot bypass it since resolveFundAccountId re-checks the SPECIFIC account's own cool-down at payout time).",
+      "authn": "JWT AuthPrincipal, creatorContext.requireCreator(principal) on every endpoint",
+      "authz": "Owner id always taken from principal.getUserId(), never a request param (Kabir Task #11 pattern, confirmed at every WalletController method). GET /wallet/payouts explicitly returns 403 (not empty list) for a brand principal by requiring creatorContext.requireCreator.",
+      "working_condition": "A creator with balance >= amount, a primary bank/UPI account on file whose 24h cool-down has elapsed, identity KYC submitted (not UNVERIFIED/REJECTED/null), under the daily withdrawal cap (3/day), and a fresh Idempotency-Key header receives a real RazorpayX payout id and a durable payouts row; GET /wallet/payouts then reflects it with the correct failed/settledAt semantics.",
+      "failure_conditions": "Missing/blank Idempotency-Key -> 400 IDEMPOTENCY_KEY_REQUIRED (mandatory here, unlike /wallet/topup's optional-key handling elsewhere in the codebase). amount < Rs 500 or > Rs 100,000 -> 400. >=3 withdrawals in the trailing 24h window -> 429 WITHDRAWAL_RATE_LIMIT. No primary bank account -> 409 BANK_ACCOUNT_NOT_FOUND. KYC not submitted -> 409 IDENTITY_KYC_REQUIRED. New (<24h) bank account -> 425 BANK_COOLDOWN_ACTIVE (via resolveFundAccountId, thrown AFTER the ledger debit already posted within the same @Transactional boundary -- requestCreatorWithdrawal's own @Transactional, invoked through the Spring proxy from the controller, wraps the whole call chain including the self-invoked doProcessWithdrawal, so this exception rolls back the debit correctly rather than leaving an orphaned debit under normal operation). A genuine crash between the debit commit and the RazorpayX response being recorded is the specific scenario PayoutOrphanedDebitSweepJob exists to catch.",
+      "security_conditions": "Bank/UPI account+IFSC stored as AES-GCM ciphertext only, decrypted only inside RazorpayFundAccountService at payout time. Idempotency-Key is namespaced per-user+endpoint before being handed to IdempotencyService/ledger (never used raw), closing the earlier double-debit-on-retry-with-no-header class of bug the javadoc documents as already fixed [B10/M-6]. Concurrent withdrawal requests for the same creator are serialized via a pessimistic row lock (findByOwnerIdForUpdate).",
+      "tests": "WalletServiceTest (RUN in this audit: PASS, exit 0), WalletControllerTest, WalletControllerPayoutMethodsTest (RUN: PASS), PayoutRepositoryCreatorScopingTest (RUN: PASS), WalletLedgerServiceTest, WalletTopUpServiceTest, PayoutServiceTest, PayoutReconciliationServiceTest, creator-wallet.tsx FE tests (creator-wallet.test.tsx, creator-wallet-payouts.test.tsx, creator-wallet-withdraw-idempotency.test.tsx, creator-wallet.money-buckets.test.tsx). Not covered by any test found in this tree: a real/sandbox RazorpayX payout call (RazorpayXClient is mocked everywhere), and PayoutOrphanedDebitSweepJob's reconciliation path was not itself re-run in this pass.",
+      "production_conditions": "Requires RazorpayX contact/fund-account API credentials configured and reachable; requires influora.pii.bank-encryption-key (CreatorBankPiiCipher) and the RazorpayX client's own signing/auth secrets set in the live environment -- not verified as actually set from this source checkout alone.",
+      "evidence": "influora-api/src/main/java/com/influora/web/WalletController.java:116-229; influora-api/src/main/java/com/influora/service/WalletService.java:249-490; influora-api/src/main/java/com/influora/service/payout/CreatorBankAccountService.java:47-193; influora-api/src/main/java/com/influora/service/payout/RazorpayFundAccountService.java:55-131; influora-api/src/main/java/com/influora/job/PayoutOrphanedDebitSweepJob.java; mvn -Dtest=WalletServiceTest,WalletControllerPayoutMethodsTest,PayoutRepositoryCreatorScopingTest run in rc-115f698, exit 0.",
+      "known_issues": [
+        "No test in this tree exercises a real/sandbox RazorpayX payout call end to end -- coverage is unit-level with a mocked RazorpayXClient throughout.",
+        "requireIdentityKycSubmitted only requires KYC to have been SUBMITTED, never VERIFIED, because (per the method's own javadoc) no admin KYC review/approve workflow exists anywhere in this codebase to ever move a creator to VERIFIED -- a self-documented permanent gap, not a bug in this method itself."
+      ],
+      "required_fixes": []
+    },
+    {
+      "name": "Tracking links + campaign coupons (brand-facing)",
+      "user_type": "brand",
+      "purpose": "A brand generates a UTM tracking link or discount coupon for a creator's participation in a campaign, and lists what already exists, to measure clicks/conversions/revenue per creator.",
+      "status": "WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 90,
+      "entry_point": "brand-campaign-tracking.tsx -> useCampaignTrackingLinks/useCampaignCoupons -> api.ts campaignTracking.* -> POST/GET /campaigns/{campaignId}/tracking-links and /coupons (CampaignTrackingController.java:67-119)",
+      "flow": "brand-campaign-tracking.tsx (route /brand/campaigns/:campaignId/tracking) -> UTMGeneratorForm/CouponCodeGenerator -> useCampaignTrackingLinks.create / useCampaignCoupons.create -> api.ts campaignTracking.createTrackingLink/createCoupon -> POST /campaigns/{campaignId}/tracking-links|/coupons -> CampaignTrackingController -> brandContextService.requireBrandWorkspace(principal) resolves workspaceId -> CampaignTrackingService.createTrackingLink/createCoupon (workspace-scoped resolve-then-scope) -> CampaignLinkService/CouponCodeService persist UtmCampaign/CouponCode rows -> TrackingLinkResponse/CouponResponse returned, rendered in TrackingLinksTable/CouponsTable and summarized in CampaignROICard (clicks -> conversions funnel only, no impression tracking exists).",
+      "api": "POST /campaigns/{campaignId}/tracking-links (201), GET /campaigns/{campaignId}/tracking-links, POST /campaigns/{campaignId}/coupons, GET /campaigns/{campaignId}/coupons -- CampaignTrackingController.java:67-119",
+      "database": "utm_campaigns (fullTrackingUrl, clickCount, uniqueVisitors, conversionCount, revenueAttributed), coupon_codes (code, discountType/discountValue constrained to percentage|fixed and 0.01-100000.00 by @NotBlank/@Pattern/@DecimalMin/@DecimalMax on CreateCouponRequest)",
+      "state_machine": "Tracking link / coupon created once per (campaign, creator) pair and then read-only from this controller's perspective; click/conversion/revenue counters are mutated exclusively by the separate public ConversionWebhookController/Shopify/WooCommerce webhook paths, not here.",
+      "authn": "JWT AuthPrincipal",
+      "authz": "brandContextService.requireBrandWorkspace(principal) resolves the workspace id from the token; every downstream call is scoped to that workspace id, never a caller-supplied one -- confirmed at all four controller methods.",
+      "working_condition": "A brand member requests a tracking link/coupon for a campaign their workspace owns with a valid http(s) baseUrl (tracking links) or a valid percentage/fixed discountType and bounded discountValue (coupons); the row is created (or the existing one returned) and appears in both the create response and the subsequent list call.",
+      "failure_conditions": "Blank/missing baseUrl -> 400 (fixed via @NotBlank/@Pattern, previously an unguarded NPE per the class's own bug-fix javadoc, B18). Invalid discountType (e.g. 'percent' typo) -> 400 (fixed via @Pattern, Kabir H-3 -- previously saved successfully and threw 500 on every redemption instead). Non-blank creatorProfileId requires a resolvable collaborationId or throws COLLABORATION_NOT_FOUND downstream.",
+      "security_conditions": "baseUrl is scheme-allowlisted (http/https only, both via @Pattern here and authoritatively in CampaignLinkService.validateBaseUrl) specifically to prevent a stored javascript:/data: URL being served back out via the public GET /track/click/{id} redirect -- a stored-XSS/open-redirect primitive the class javadoc documents as the reason for the allowlist.",
+      "tests": "CampaignTrackingControllerTest, CampaignTrackingServiceTest (both RUN in this audit: PASS, exit 0), CouponCodeServiceTest.",
+      "production_conditions": "None beyond normal DB/API availability -- no external gateway dependency for this slice.",
+      "evidence": "influora-api/src/main/java/com/influora/web/CampaignTrackingController.java:44-120; influora-api/src/main/java/com/influora/web/dto/tracking/TrackingDtos.java; src/pages/brand-campaign-tracking.tsx; src/lib/api.ts:5093-5178; mvn -Dtest=CampaignTrackingControllerTest,CampaignTrackingServiceTest run in rc-115f698, exit 0.",
+      "known_issues": [],
+      "required_fixes": []
+    },
+    {
+      "name": "Click redirect + conversion/redemption webhooks (public, unauthenticated)",
+      "user_type": "anonymous visitor / brand's own commerce backend",
+      "purpose": "GET /track/click/{id} redirects a creator's posted tracking link to the brand's real page while recording a click; POST /webhooks/redemption and /webhooks/conversion let a brand's OWN commerce backend report a coupon redemption or a UTM-attributed order conversion.",
+      "status": "WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 87,
+      "entry_point": "ConversionWebhookController.java:198-325 (GET /track/click/{utmCampaignId}, POST /webhooks/redemption, POST /webhooks/conversion)",
+      "flow": "Redemption: brand's commerce backend POSTs raw JSON + X-Influora-Signature -> parseRedemptionPayload -> CouponCodeRepository.findAllByCode resolves owning workspaceId (rejects on >1 match, F-0728) -> verifySignatureOrReject(rawPayload, signature, workspaceId) via ConversionWebhookSecretService.decryptSecretForWorkspace + ConversionWebhookSignatureVerifier -> RedemptionService.redeem(workspaceId-scoped 6-arg overload) with idempotencyKey namespaced by workspaceId (namespaceIdempotencyKey, closes a global-UNIQUE cross-tenant idempotency-key collision, [SEC: Vikram P3(b)]) -> CouponRedemption persisted -> AffiliateEarningsService.recordEarning invoked synchronously inside the same transaction (per AffiliateEarningReconciliationJob's javadoc). Conversion: two-hop workspace resolution (UtmCampaign.campaignId -> Campaign.workspaceId) then the same verify-then-delegate pattern into ConversionTrackingService.recordConversion. Click: campaignLinkService.recordClick(utmCampaignId, visitorId) then 302 redirect to UtmCampaign.getFullTrackingUrl() -- deliberately NOT signature-protected (no brand secret a visitor browser could sign with, no money-bearing payload).",
+      "api": "GET /track/click/{utmCampaignId} (302), POST /webhooks/redemption, POST /webhooks/conversion -- ConversionWebhookController.java",
+      "database": "coupon_redemptions (idempotency_key globally UNIQUE but namespaced per-workspace by this controller before use), conversion_webhook_secrets (per-workspace AES-256-GCM encrypted HMAC secret), utm_campaigns, campaigns",
+      "state_machine": "A redemption/conversion is either newly recorded or rejected outright at signature verification; there is no intermediate/pending state at this layer (idempotency is enforced by IdempotencyService's insert-first-wins reservation inside the downstream services).",
+      "authn": "None (public) -- trust boundary is entirely the per-workspace HMAC-SHA256 signature over the raw request body, verified BEFORE any JSON parsing beyond what is needed to resolve the workspace identifier.",
+      "authz": "Workspace resolved server-side from the caller-supplied code/utmCampaignId (never a caller-supplied workspace id); a workspace with no configured secret, an unresolvable code/id, or a bad signature are all rejected with the SAME 401 INVALID_WEBHOOK_SIGNATURE, deliberately indistinguishable so the endpoint cannot be used to enumerate valid coupon codes or configured workspaces.",
+      "working_condition": "A brand that has generated a webhook secret (POST /webhook-secret/generate) and configured their backend to send X-Influora-Signature = HMAC-SHA256(secret, raw body) gets its redemption/conversion recorded exactly once even under redelivery/retry.",
+      "failure_conditions": "Missing/invalid signature, unresolvable code/utmCampaignId, or no secret configured for the resolved workspace -> 401 INVALID_WEBHOOK_SIGNATURE (uniform, no enumeration signal). Malformed JSON body -> 400 INVALID_WEBHOOK_PAYLOAD. A coupon code that legitimately matches >1 workspace (should not happen given UNIQUE(workspace_id, code), but the finder handles it defensively) -> logged and rejected as unresolvable rather than picking one.",
+      "security_conditions": "Body binding is raw String (not Spring's auto-deserialized record) specifically so the EXACT signed bytes are available for HMAC verification, matching Shopify/WooCommerce's discipline in this same codebase. Idempotency key is namespaced by the ALREADY-VERIFIED workspaceId to prevent one workspace's replay-lookup resolving another workspace's redemption row over this public endpoint (a real cross-tenant data leak this fix explicitly closed, per its own javadoc).",
+      "tests": "ConversionWebhookControllerTest (RUN in this audit: PASS, exit 0), ConversionWebhookSignatureVerifierTest, ConversionTrackingServiceTest, ConversionTrackingDedupTest, AuthRateLimitFilterTrackingBucketTest.",
+      "production_conditions": "Requires influora.conversion-webhook.token-encryption-key (32-byte base64 AES key) configured -- ConversionWebhookSecretService's constructor throws IllegalStateException at boot if absent/blank, so this is a hard boot-time dependency, not a soft runtime gate like Shopify's isConfigured().",
+      "evidence": "influora-api/src/main/java/com/influora/web/ConversionWebhookController.java:143-410; influora-api/src/main/java/com/influora/integration/tracking/webhook/ConversionWebhookSecretService.java:65-79,153-161; mvn -Dtest=ConversionWebhookControllerTest run in rc-115f698, exit 0.",
+      "known_issues": [
+        "AuthRateLimitFilter's shared 'tracking' bucket for this and the Shopify/WooCommerce webhook endpoints is documented (in WooCommerceWebhookController's own javadoc, citing a prior red-team probe) as keyed by raw per-IP, not per-workspace -- a shared NAT/CDN edge could let one caller's volume throttle another brand's legitimate deliveries. Pre-existing, not introduced by this feature."
+      ],
+      "required_fixes": []
+    },
+    {
+      "name": "Conversion-webhook secret generate/delete",
+      "user_type": "brand",
+      "purpose": "Lets a brand generate (or rotate) and revoke the per-workspace HMAC secret their own commerce backend must sign /webhooks/conversion and /webhooks/redemption requests with.",
+      "status": "PARTIALLY WORKING",
+      "classification": "IMPLEMENTED BUT NOT VERIFIED",
+      "evidence_score": 3,
+      "confidence": 62,
+      "entry_point": "ConversionWebhookSecretController.java:50,63 (POST /webhook-secret/generate, DELETE /webhook-secret)",
+      "flow": "Brand settings UI (not located as a dedicated page in this pass -- api.ts exposes conversionWebhookSecret.generate()/revoke()) -> POST /webhook-secret/generate -> brandContextService.requireBrandWorkspace(principal) -> ConversionWebhookSecretService.generate(workspaceId): generates 32 random bytes, AES-256-GCM encrypts, rotates-in-place any existing row (ConversionWebhookSecretRepository.findByWorkspaceIdAndRevokedFalse), returns PLAINTEXT exactly once (never persisted or logged in recoverable form). DELETE /webhook-secret -> secretService.revoke(workspaceId) marks the row revoked (soft, audit trail preserved) -- from that point every /webhooks/conversion|/redemption call claiming this workspace is rejected the same as never having configured one.",
+      "api": "POST /webhook-secret/generate, DELETE /webhook-secret -- ConversionWebhookSecretController.java:50,63",
+      "database": "conversion_webhook_secrets (encrypted_secret ciphertext only, revoked boolean, rotate-in-place on regenerate)",
+      "state_machine": "none-configured -> generated (plaintext returned once) -> [rotated any number of times, previous stops verifying immediately] -> revoked (fail-closed, same state as never configured) -> can be regenerated again.",
+      "authn": "JWT AuthPrincipal",
+      "authz": "brandContextService.requireBrandWorkspace(principal) -- same resolve-then-scope pattern as every other brand-facing controller reviewed in this domain.",
+      "working_condition": "A brand-authenticated POST /webhook-secret/generate returns a fresh plaintext secret and immediately invalidates any request signed with a previous one; DELETE immediately fail-closes all subsequent webhook calls for that workspace.",
+      "failure_conditions": "No dedicated negative-path tests found for the controller itself (see known_issues) -- unauthenticated/non-brand access should be rejected by the standard AuthPrincipal/requireBrandWorkspace chain shared by every other controller in this file, but this specific controller's behavior under that chain was not independently exercised by a test in this run.",
+      "security_conditions": "One-time-reveal discipline: no endpoint anywhere in this codebase can retrieve a previously-generated plaintext secret again, mirrored consistently between the controller javadoc and the FE api.ts client comment.",
+      "tests": "ConversionWebhookSecretServiceTest exists and was RUN in this audit (PASS, exit 0) -- covers the service layer's crypto/rotate/revoke logic directly. NO ConversionWebhookSecretControllerTest exists in this tree (confirmed by file search) -- the HTTP-layer wiring (auth principal extraction, requireBrandWorkspace enforcement, response shape) is untested at the controller level, matching the task brief's own note that this endpoint has 'no test'.",
+      "production_conditions": "Same influora.conversion-webhook.token-encryption-key boot-time dependency as the webhook controller above.",
+      "evidence": "influora-api/src/main/java/com/influora/web/ConversionWebhookSecretController.java:32-69; influora-api/src/test/java/com/influora/integration/tracking/webhook/ConversionWebhookSecretServiceTest.java (run, exit 0); absence confirmed via find over influora-api/src/test/java/com/influora/web/*Controller*Test.java.",
+      "known_issues": [
+        "No controller-level test exists for ConversionWebhookSecretController -- only the underlying service is unit-tested. The HTTP-layer auth/workspace-scoping wiring is IMPLEMENTED BUT NOT VERIFIED by any test in this tree."
+      ],
+      "required_fixes": [
+        "Add a ConversionWebhookSecretControllerTest (or MockMvc-based slice test) asserting: unauthenticated request is rejected, a brand principal's generate/revoke only ever affects their own workspace's row, and the plaintext secret in the generate response body matches what the persisted ciphertext decrypts to."
+      ]
+    },
+    {
+      "name": "Shopify OAuth connect + order webhook",
+      "user_type": "brand",
+      "purpose": "A brand connects their Shopify store via OAuth (free custom-app install flow) and this platform receives orders/paid and orders/create webhooks to attribute discount-code redemptions back to a creator's coupon.",
+      "status": "PARTIALLY WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 83,
+      "entry_point": "brand-shopify-callback.tsx -> storeIntegrations.authorizeShopify/handleShopifyCallback -> GET /shopify/oauth/authorize, GET /shopify/oauth/callback (ShopifyConnectController.java:76,112); POST /webhooks/shopify (ShopifyWebhookController.java:122)",
+      "flow": "Connect: brand settings -> storeIntegrations.authorizeShopify(shop) -> GET /shopify/oauth/authorize -> brandContextService.requireBrand -> shopifyProperties.isConfigured() guard (503 SHOPIFY_NOT_CONFIGURED if api-key/secret/webhook-signing-secret unset) -> ShopifyOAuthStateStore.issue (CSRF state bound to user+shop) -> returns Shopify's authorize dialog URL. Shopify redirects the merchant browser to brand-shopify-callback.tsx (FE route) which calls GET /shopify/oauth/callback -> stateStore.consume (validates+single-use) -> ShopifyOAuthService.exchangeCodeForToken -> ShopifyTokenStorage.storeToken (encrypted, workspace-scoped) -> ShopifyWebhookRegistrar.registerOrderWebhooks; on registration failure the token is REVOKED and the connect fails outright rather than reporting a half-connected 'connected:true, deaf' state (F-0730 fix). Webhook: Shopify POSTs orders/paid|orders/create with X-Shopify-Hmac-Sha256 (verified against the APP-LEVEL secret FIRST, before any parsing) + X-Shopify-Shop-Domain (resolved to the owning ShopifyIntegration/workspace AFTER signature verification) -> for order-bearing, coupon-bearing deliveries, ShopifyOrderOwnershipVerifier confirms the order actually exists in the CLAIMED shop via that shop's own Admin API (closing F-0726: the shop-domain header itself is unsigned) -> IdempotencyService.executeOnce keyed by SHA-256(shopDomain|orderId) (topic deliberately excluded from the key, F-0619, since Shopify sends both orders/paid and orders/create for one order) -> RedemptionService.redeem (workspace-scoped 6-arg overload, closing the D1 cross-tenant HIGH finding) -> terminal redemption outcomes (INVALID_CODE/CODE_EXPIRED/CODE_LIMIT_REACHED/UNSUPPORTED_DISCOUNT_TYPE) acknowledged 200 rather than retried forever (F-0725, since Shopify disconnects a store after ~48h of continuous non-2xx).",
+      "api": "GET /shopify/oauth/authorize, GET /shopify/oauth/callback (ShopifyConnectController.java:76,112); POST /webhooks/shopify (ShopifyWebhookController.java:122)",
+      "database": "shopify_integrations (encrypted access token, shop_domain, granted scopes, revoked flag)",
+      "state_machine": "not-connected -> authorize (state minted) -> callback (token exchanged + webhooks registered) -> connected, OR callback fails and the just-obtained token is revoked (never left half-connected). Webhook delivery: verified+order-owned+new -> redeemed; verified+order-owned+duplicate -> no-op (idempotent); verified+order-owned+terminal-failure -> acknowledged, not retried; unverified or order-not-owned -> rejected 401.",
+      "authn": "Brand JWT for connect flow; HMAC signature (app-level secret) + Admin-API order-ownership check for the webhook receiver (public, no JWT).",
+      "authz": "requireBrand/requireBrandWorkspace for connect; resolve-then-scope via shop domain (never a caller-supplied workspace id) for the webhook, with the F-0726 order-ownership check specifically closing the gap where the unsigned X-Shopify-Shop-Domain header alone would let an attacker choose which workspace's coupon gets redeemed.",
+      "working_condition": "A brand with a configured Shopify app (all 3 of api-key/api-secret/webhook-signing-secret present and non-placeholder) completes OAuth, the order webhooks register successfully, and a subsequent order carrying a valid Influora coupon code is redeemed exactly once regardless of Shopify's dual orders/paid+orders/create delivery.",
+      "failure_conditions": "isConfigured() false (any of the 3 required credentials blank/placeholder) -> /authorize answers 503 SHOPIFY_NOT_CONFIGURED before any state is minted, so /callback is correctly documented as unreachable in that state. Invalid/expired/reused OAuth state -> 400. Webhook registration failure during callback -> the whole connect attempt fails and the token is revoked (not silently half-connected). Bad/missing webhook signature -> 401, never reaches RedemptionService. Order not found in the claimed shop's own Admin API -> 401 SHOP_ORDER_MISMATCH.",
+      "security_conditions": "Verify-before-parse discipline (HMAC checked before JSON parsing/dispatch). Order-ownership cross-check against the claimed shop's real Admin API closes a documented HIGH-class gap (F-0726) where the shop-identifying header is not itself covered by the HMAC. Coupon redemption is workspace-scoped, closing a documented D1 HIGH cross-tenant redemption finding.",
+      "tests": "ShopifyConnectControllerTest (RUN in this audit: PASS, exit 0), ShopifyWebhookControllerTest (RUN: PASS), ShopifyWebhookIdempotencyTest, ShopifyOAuthServiceTest, ShopifyOAuthStateStoreTest, ShopifyTokenStorageTest, ShopifyOrderOwnershipVerifierTest, ShopifyOrderWebhookPayloadTest, ShopifyWebhookSignatureVerifierTest, ShopifyPropertiesBindingTest, AuthRateLimitFilterShopifyBucketTest.",
+      "production_conditions": "Requires INFLUORA_SHOPIFY_APIKEY, INFLUORA_SHOPIFY_APISECRET, INFLUORA_SHOPIFY_WEBHOOKSIGNINGSECRET, INFLUORA_SHOPIFY_TOKENENCRYPTIONKEY set to real (non-blank, non-REPLACE_WITH_-prefixed) values in the live environment (application.yml:490-493 binds them; a fresh Shopify Partner app is required, per ShopifyProperties' own javadoc admission that 'no real Shopify Partner app exists yet -- placeholders only'). Whether this has been done in the actual production deploy could not be confirmed from source alone.",
+      "evidence": "influora-api/src/main/java/com/influora/web/ShopifyConnectController.java:44-161; influora-api/src/main/java/com/influora/web/ShopifyWebhookController.java:90-315; influora-api/src/main/resources/application.yml:483-503; influora-api/src/main/java/com/influora/config/ShopifyProperties.java:1-70; mvn -Dtest=ShopifyConnectControllerTest,ShopifyWebhookControllerTest run in rc-115f698, exit 0.",
+      "known_issues": [
+        "ShopifyConnectController's own in-code comment (lines 81-90) claims 'no yaml placeholder, no deploy file... binds them' as the reason for the isConfigured() guard, but application.yml:490-493 DOES bind all three to real ${INFLUORA_SHOPIFY_*} env var placeholders -- the comment is stale documentation drift, not a functional defect (the guard itself behaves correctly either way).",
+        "Only discount-code-based redemption is wired; UTM click-based conversion attribution from a Shopify order is explicitly out of scope per the controller's own documented cut (no field in Shopify's order payload carries the UtmCampaign ULID today)."
+      ],
+      "required_fixes": [
+        "Update the stale comment in ShopifyConnectController.java:81-90 to reflect that application.yml now binds real env-var placeholders for all three Shopify credentials, so a future reader does not re-diagnose an already-fixed gap."
+      ]
+    },
+    {
+      "name": "WooCommerce connect + order webhook",
+      "user_type": "brand",
+      "purpose": "A brand submits their WooCommerce site URL + a webhook secret generated in their own WooCommerce admin, and this platform receives order.created/order.updated webhooks to attribute coupon-code redemptions.",
+      "status": "WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 85,
+      "entry_point": "POST /woocommerce/connect (WooCommerceConnectController.java:61); POST /webhooks/woocommerce (WooCommerceWebhookController.java:192)",
+      "flow": "Connect: brand submits siteUrl+webhookSecret (no OAuth flow exists for WooCommerce, confirmed against WooCommerce's real webhook contract per the class javadoc) -> WooCommerceSiteUrl.normalize (scheme+host[+port], lower-cased, no path/trailing slash -- load-bearing so later header-based lookups match) -> WooCommerceIntegrationService.connect encrypts+persists the secret, scoped to the caller's workspace, rotating any existing connection in place. Webhook: WooCommerce POSTs order.created/order.updated with X-WC-Webhook-Signature + X-WC-Webhook-Source (site URL) -> normalizeSiteUrl + integrationRepository.findBySiteUrlAndRevokedFalse resolves the integration BEFORE signature verification (WooCommerce has no app-level secret, unlike Shopify, so which secret to check must be resolved first -- still verify-before-parse since this is a header+indexed-lookup, not payload parsing) -> WooCommerceWebhookSignatureVerifier.verify -> topic routing (order.created/order.updated acted on, everything else acknowledged 200) -> WooCommerceOrderWebhookPayload.parse -> IdempotencyService.executeOnce keyed by SHA-256(siteUrl|orderId) (topic excluded from the key, F-0521, same dual-delivery reasoning as Shopify) WRAPPED in a bounded in-process computeIfAbsent memoization map (closes a narrower race the DB-backed executeOnce alone does not: two callers racing to be first to reserve the same not-yet-settled key) -> RedemptionService.redeem (workspace-scoped 6-arg overload, applied 'from the start' per the class javadoc, learning the D1 lesson rather than repeating it).",
+      "api": "POST /woocommerce/connect (WooCommerceConnectController.java:61); POST /webhooks/woocommerce (WooCommerceWebhookController.java:192)",
+      "database": "woocommerce_integrations (site_url normalized+unique-ish by lookup, encrypted_webhook_secret, revoked flag)",
+      "state_machine": "not-connected -> connected (secret encrypted+stored) -> webhook deliveries verified+resolved+redeemed exactly once per order regardless of order.created/order.updated duplication -> disconnect marks revoked (soft).",
+      "authn": "Brand JWT for connect; per-site HMAC secret (resolved via the site URL header) for the webhook receiver (public, no JWT).",
+      "authz": "requireBrandWorkspace for connect; resolve-then-scope via normalized site URL (never caller-supplied workspace id) for the webhook, with the workspace-scoped redeem overload applied from day one specifically to avoid Shopify D1's original cross-tenant redemption bug.",
+      "working_condition": "A brand submits a valid site URL + the Secret copied from their own WooCommerce webhook config; a subsequent order carrying an Influora coupon code, delivered via either order.created or order.updated (or both, for the same order), is redeemed exactly once.",
+      "failure_conditions": "Blank webhookSecret -> 400 WEBHOOK_SECRET_REQUIRED. Unresolvable/unknown/un-normalized-mismatch site URL -> 404 SITE_NOT_CONNECTED before any secret is even read. Bad signature -> 401, never reaches RedemptionService. Unhandled topic -> 200 (acknowledged, not processed), preventing WooCommerce's indefinite-retry-on-non-2xx behavior from spamming the endpoint.",
+      "security_conditions": "Site URL normalization is explicitly load-bearing (not cosmetic) both at connect time and at webhook-resolution time -- an un-normalized mismatch would cause every subsequent webhook to be rejected SITE_NOT_CONNECTED, a functional bug the class javadoc calls out by name. No SSRF vector exists here since this integration never dials out to the submitted URL (webhook-receive-only).",
+      "tests": "WooCommerceConnectControllerTest (RUN in this audit: PASS, exit 0), WooCommerceWebhookControllerTest (RUN: PASS, including the class's own cross-tenant coupon regression test per its javadoc reference), WooCommerceWebhookIdempotencyTest, WooCommerceIntegrationServiceTest, WooCommerceSiteUrlTest, WooCommerceOrderWebhookPayloadTest, WooCommerceWebhookSignatureVerifierTest, AuthRateLimitFilterWooCommerceBucketTest.",
+      "production_conditions": "Requires INFLUORA_WOOCOMMERCE_TOKENENCRYPTIONKEY set (application.yml:505) for AES-GCM secret storage; no OAuth app or Partner-dashboard credential is needed (structurally simpler than Shopify).",
+      "evidence": "influora-api/src/main/java/com/influora/web/WooCommerceConnectController.java:42-81; influora-api/src/main/java/com/influora/web/WooCommerceWebhookController.java:120-358; mvn -Dtest=WooCommerceConnectControllerTest,WooCommerceWebhookControllerTest run in rc-115f698, exit 0.",
+      "known_issues": [
+        "Only coupon-based redemption is wired; UTM click-based conversion attribution is out of scope for the same documented reason as Shopify (no real order field carries the UtmCampaign ULID)."
+      ],
+      "required_fixes": []
+    },
+    {
+      "name": "Store integration status / disconnect",
+      "user_type": "brand",
+      "purpose": "Unified read/revoke surface telling a brand's settings page whether Shopify or WooCommerce is connected (or neither), and letting them disconnect either.",
+      "status": "WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 3,
+      "confidence": 78,
+      "entry_point": "GET /integrations/store/status, DELETE /integrations/store/disconnect?provider=... (StoreIntegrationStatusController.java:79,120)",
+      "flow": "Brand settings UI -> storeIntegrations.status()/disconnect(provider) -> GET/DELETE /integrations/store/status|disconnect -> brandContextService.requireBrandWorkspace(principal) -> checks ShopifyIntegrationRepository.findByWorkspaceIdAndRevokedFalse first, then WooCommerceIntegrationRepository if Shopify absent -> returns IntegrationStatusResponse(connected, provider, shopDomainOrSiteUrl, connectedAt, shopifyAvailable) where shopifyAvailable=ShopifyProperties.isConfigured() regardless of which provider (or neither) is actually connected, gating whether the settings page offers a Shopify connect button at all. Disconnect marks the matched integration row revoked=true (soft delete, audit history preserved).",
+      "api": "GET /integrations/store/status, DELETE /integrations/store/disconnect?provider=SHOPIFY|WOOCOMMERCE -- StoreIntegrationStatusController.java:79,120",
+      "database": "shopify_integrations, woocommerce_integrations (both read/written via revoked-flag soft-delete)",
+      "state_machine": "no integration -> Shopify connected XOR WooCommerce connected (assumed, not DB-enforced) -> disconnected (revoked=true, can reconnect fresh).",
+      "authn": "Brand JWT",
+      "authz": "requireBrandWorkspace -- status/disconnect always scoped to the caller's own workspace.",
+      "working_condition": "A brand sees connected=true with the right provider/domain/connectedAt for whichever store they connected, and shopifyAvailable correctly reflects whether this deployment can even offer Shopify; disconnecting immediately makes status report connected=false and the corresponding webhook route start rejecting with *_NOT_CONNECTED.",
+      "failure_conditions": "Disconnecting a provider with no active integration -> 404 INTEGRATION_NOT_FOUND. An invalid provider enum value cannot reach the defensive INVALID_PROVIDER branch under normal Spring enum-binding (would 400 at binding time first).",
+      "security_conditions": "No hard-delete -- revoke-only preserves audit history, consistent with every other integration/secret revoke path reviewed in this domain.",
+      "tests": "StoreIntegrationStatusShopifyAvailabilityTest (RUN in this audit: PASS, exit 0). No test found specifically covering the WooCommerce branch of /status or the disconnect endpoint for either provider in this tree's controller-test listing.",
+      "production_conditions": "Depends on ShopifyProperties.isConfigured() (see Shopify feature above) for the shopifyAvailable flag's accuracy.",
+      "evidence": "influora-api/src/main/java/com/influora/web/StoreIntegrationStatusController.java:51-158; mvn -Dtest=StoreIntegrationStatusShopifyAvailabilityTest run in rc-115f698, exit 0.",
+      "known_issues": [
+        "The controller's own javadoc explicitly flags an unenforced assumption: 'only one can be connected at a time per workspace today -- if that assumption changes, this will need to return a list or prioritize one.' No DB constraint or connect-time cross-provider check was found preventing a workspace from completing BOTH a Shopify and a WooCommerce connect; in that state, GET /status always reports Shopify only (checked first) and silently never surfaces the WooCommerce connection, even though that connection's webhook receiver would still be live and functioning.",
+        "No controller test found covering the WooCommerce branch of GET /status or either branch of DELETE /disconnect."
+      ],
+      "required_fixes": [
+        "Either enforce single-provider-per-workspace at connect time (reject a WooCommerce connect if an active Shopify integration exists for the workspace, and vice versa) or change GET /status to report both/a list, so a dual-connected workspace's WooCommerce integration is not silently hidden from its own settings page.",
+        "Add controller tests for the WooCommerce status branch and both disconnect branches (currently only the Shopify-availability-flag path is covered by a dedicated test)."
+      ]
+    },
+    {
+      "name": "Creator affiliate earnings + coupons (read-only)",
+      "user_type": "creator",
+      "purpose": "A creator views their per-sale affiliate commission history + a SETTLED-vs-pending summary, and views the coupons that exist for their own campaign participations.",
+      "status": "PARTIALLY WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 84,
+      "entry_point": "creator-affiliate-earnings.tsx / creator-coupons.tsx -> useAffiliateEarnings / useCreatorCoupons -> GET /creator/affiliate-earnings (CreatorAffiliateEarningController.java:30), GET /creator/coupons (CreatorCouponController.java:29)",
+      "flow": "creator-affiliate-earnings.tsx -> AffiliateEarningsView -> useAffiliateEarnings hook -> api.affiliateEarnings.get(page,limit) -> GET /creator/affiliate-earnings -> CreatorAffiliateEarningController.list -> AffiliateEarningsService.listForCreator(principal, page, limit): resolves CreatorProfile via CreatorContextService, loads ALL of that creator's AffiliateEarning rows, applies overflow-safe long-arithmetic pagination (fromIndex/toIndex, Priya red-team fix preventing an int-multiply overflow -> IndexOutOfBoundsException on an absurd page number), joins campaign/workspace names, computes summary (thisMonthSales/Revenue/Commission, unsettledCommission). creator-coupons.tsx -> useCreatorCoupons -> GET /creator/coupons -> CreatorCouponController.list -> CreatorCouponService.list(principal), self-scoped via CreatorContextService, read-only (brand-side creation stays on CampaignTrackingController).",
+      "api": "GET /creator/affiliate-earnings (paged), GET /creator/coupons -- CreatorAffiliateEarningController.java:30, CreatorCouponController.java:29",
+      "database": "affiliate_earnings (creator_id-scoped read, UNIQUE(redemption_id) backstop), coupon_codes (creator-scoped read via the creator's own collaborations)",
+      "state_machine": "AffiliateEarning: PENDING (recorded, not yet settled) -> SETTLED (via AffiliateSettlementJob) or FAILED (retryable, swept back into the next settlement run).",
+      "authn": "JWT AuthPrincipal",
+      "authz": "Identity resolved entirely inside the service via CreatorContextService -- rows filtered strictly by creator_id = profile.id, never a request parameter.",
+      "working_condition": "A creator sees exactly their own commission rows (never another creator's), correctly paginated even for an out-of-range page number, with a summary that matches the sum of what AffiliateSettlementJob has/hasn't yet settled for them.",
+      "failure_conditions": "An absurd page number (e.g. page=100000000) degrades to an empty page rather than a 500 (Priya red-team fix, long-arithmetic). No creator profile resolvable for the principal -> whatever CreatorContextService.requireCreatorProfile throws (not traced further in this pass).",
+      "security_conditions": "No cross-creator data leak vector found -- every read is scoped by the resolved profile id, never client input.",
+      "tests": "AffiliateEarningsServiceTest (RUN in this audit: PASS, exit 0), CreatorCouponServiceTest (RUN: PASS), CreatorCouponControllerTest (RUN: PASS). No CreatorAffiliateEarningControllerTest exists in this tree (confirmed by file search) -- the controller itself (auth extraction, page/limit param passthrough) is thin and delegates entirely to the tested service, so this is a minor coverage gap rather than a functional risk signal.",
+      "production_conditions": "None beyond normal DB availability.",
+      "evidence": "influora-api/src/main/java/com/influora/web/CreatorAffiliateEarningController.java:19-37; influora-api/src/main/java/com/influora/web/CreatorCouponController.java:19-34; influora-api/src/main/java/com/influora/service/AffiliateEarningsService.java:91-200; mvn -Dtest=AffiliateEarningsServiceTest,CreatorCouponServiceTest,CreatorCouponControllerTest run in rc-115f698, exit 0.",
+      "known_issues": [
+        "AffiliateEarningsService.DEFAULT_COMMISSION_RATE (10%) is a hardcoded flat rate for every campaign/creator, explicitly documented in its own javadoc as a placeholder pending a real per-campaign rate configuration and product/finance sign-off -- every commission figure this page shows today uses this single rate regardless of the brand's actual agreed terms.",
+        "No CreatorAffiliateEarningControllerTest exists -- the controller's own HTTP-layer behavior (as opposed to the underlying service) is untested directly."
+      ],
+      "required_fixes": [
+        "Replace the hardcoded 10% DEFAULT_COMMISSION_RATE with a per-campaign-configurable rate before this figure is treated as a real, contractual commission amount in production."
+      ]
+    },
+    {
+      "name": "Scheduled jobs: PayoutOrphanedDebitSweepJob (10m), AffiliateEarningReconciliationJob (hourly), AffiliateSettlementJob (monthly)",
+      "user_type": "system (background reconciliation, no direct end-user surface)",
+      "purpose": "Self-healing sweeps that catch money-safety gaps a synchronous request/response cycle cannot: a payout debited from a creator's wallet but never confirmed sent to RazorpayX (crash window), a coupon redemption that never got a matching affiliate-earnings row, and a monthly rollup that credits every creator's accumulated pending/failed commission to their wallet exactly once.",
+      "status": "PARTIALLY WORKING",
+      "classification": "VERIFIED WORKING",
+      "evidence_score": 4,
+      "confidence": 80,
+      "entry_point": "PayoutOrphanedDebitSweepJob.sweepOrphanedPendingPayouts (cron every 10m), AffiliateEarningReconciliationJob.reconcileMissingAffiliateEarnings (cron hourly at :15), AffiliateSettlementJob.runMonthlySettlement (cron monthly, 1st 05:00 UTC)",
+      "flow": "PayoutOrphanedDebitSweepJob: single-flight AtomicBoolean guard + ShedLock cluster-wide lock -> finds Payout rows STATUS_PENDING older than a 15-minute grace period -> PayoutReconciliationService.reconcileOrphanedPendingPayout per row (retry-or-reverse the stuck RazorpayX call) -> also separately sweeps FAILURE_STATUSES rows with a stale updatedAt for a stuck ADMIN-RETRY-PATH debit (a second, narrower crash window the original sweep alone cannot see, per the [Red-team F2 fix] javadoc) -> per-row try/catch so one bad row never aborts the sweep -> audit log entry only when something was found/failed. AffiliateEarningReconciliationJob: finds CouponRedemption rows with no matching affiliate_earnings row older than a 30-minute grace period -> re-invokes AffiliateEarningsService.recordEarning (idempotent via UNIQUE(redemption_id)) -> WARN-logs a nonzero backfill count as a genuine defect signal (the synchronous path should normally never miss one). AffiliateSettlementJob: creates one AffiliateSettlementBatch per run -> sweeps EVERY creator with >=1 PENDING/FAILED AffiliateEarning (not date-filtered by the period being settled) -> per creator, server-derived idempotency key 'affiliate.settlement:{creatorId}:{periodYearMonth}' reserved via IdempotencyService.executeOnce -> AffiliateSettlementWriter.doSettleCreator (a genuinely separate @Component so @Transactional is not a self-invocation no-op, per the [W1-7/H15/H16] fix javadoc) marks earnings SETTLED and credits the creator's wallet via WalletLedgerService -> batch marked completed/failed depending on whether any creator failed.",
+      "api": "None directly -- internal @Scheduled jobs, one (runSettlementForPeriod) also exposed as a callable method for manual retry/backfill.",
+      "database": "payouts (STATUS_PENDING sweep target), coupon_redemptions + affiliate_earnings (orphan sweep target), affiliate_earnings + affiliate_settlement_batches (settlement target), idempotency_keys (backstop for all three), wallets/wallet_transactions (credited by AffiliateSettlementWriter)",
+      "state_machine": "Payout: PENDING -> reconciled (retried or reversed) by the sweep. AffiliateEarning: PENDING/FAILED -> SETTLED (or remains FAILED, retried next month) via the settlement job; orphaned (no row at all) -> backfilled by the reconciliation job. AffiliateSettlementBatch: created -> COMPLETED or FAILED (not terminal -- retried by the next scheduled run or a manual runSettlementForPeriod call).",
+      "authn": "N/A (system jobs)",
+      "authz": "N/A",
+      "working_condition": "Each job runs on its schedule, is single-flight within one JVM (AtomicBoolean) and cluster-wide (ShedLock), never double-processes the same row (idempotency key + DB unique constraints), and one row's failure never aborts the batch for every other row.",
+      "failure_conditions": "A row that keeps failing every run stays a candidate forever (logged at ERROR/WARN each time) rather than being permanently skipped -- by design, so a transient issue self-heals once resolved, but also means a permanently-broken row (e.g. AffiliateSettlementJobTest's 'still failing' RuntimeException case) will re-log on every scheduled run indefinitely without an escalation/alerting threshold visible in this code.",
+      "security_conditions": "AffiliateSettlementJob's idempotency key is server-derived entirely (creator id from the DB sweep, period from either the trigger's own clock or an explicit backfill argument) -- never caller-suppliable, so there is no key-squatting vector.",
+      "tests": "AffiliateSettlementJobTest (RUN in this audit: PASS, exit 0), AffiliateEarningReconciliationJobTest (RUN: 21/22 PASS in a 4-class batch run -- 1 failure in testOverlapGuardPreventsConcurrentRuns, reproduced once; re-run in isolation 3/3 PASS, see known_issues), CreatorAffiliateEarningSettlementTest, AffiliateSettlementWriterNullCollaboratorLogTest, WalletTopUpReconciliationJobTest (adjacent). No dedicated PayoutOrphanedDebitSweepJobTest file was found in this tree's test listing -- its reconciliation behavior is exercised indirectly via PayoutReconciliationServiceTest/PayoutServiceTest, not the sweep job class itself.",
+      "production_conditions": "Requires ShedLock's backing table/lock provider correctly configured cluster-wide (not verified from source alone) so the single-flight guarantee actually holds across multiple app instances, not just within one JVM.",
+      "evidence": "influora-api/src/main/java/com/influora/job/PayoutOrphanedDebitSweepJob.java:44-192; influora-api/src/main/java/com/influora/job/AffiliateEarningReconciliationJob.java:54-161; influora-api/src/main/java/com/influora/job/AffiliateSettlementJob.java:97-279; mvn -Dtest=AffiliateSettlementJobTest run in rc-115f698, exit 0; mvn -Dtest=AffiliateEarningReconciliationJobTest,AffiliateSettlementJobTest,PayoutRepositoryCreatorScopingTest,WalletControllerPayoutMethodsTest batch run: 1 failure (testOverlapGuardPreventsConcurrentRuns), re-isolated 3/3 PASS.",
+      "known_issues": [
+        "AffiliateEarningReconciliationJobTest#testOverlapGuardPreventsConcurrentRuns failed once when run in a 4-class batch (Mockito verify expected 1 call to findOrphanedWithoutAffiliateEarning, observed 2) but passed 3/3 times when re-run in isolation. The production AtomicBoolean guard's logic is sound on inspection (the CAS strictly precedes the guarded repository call in both PayoutOrphanedDebitSweepJob and this job), so this reads as Thread+sleep test-timing fragility under host/JVM contention rather than a demonstrated production race -- but it is a real, reproduced instance of CI flakiness in this suite.",
+        "AffiliateSettlementJob.settleOneCreator queries ALL of a creator's PENDING/FAILED earnings with no date bound tied to periodYearMonth -- the period is only a label on the batch/idempotency key. A backlog of many months of never-settled (repeatedly-FAILED) earnings for one creator would all be swept into whichever single period the job happens to be running for, which does not match the class javadoc's own description ('settles the PREVIOUS calendar month'). Money-safety (no double-settlement) is preserved regardless.",
+        "No dedicated test file for PayoutOrphanedDebitSweepJob itself was found -- coverage of its two sweep methods relies on PayoutReconciliationServiceTest/PayoutServiceTest exercising the downstream reconciliation logic, not the job's own scheduling/guard/per-row-catch behavior directly."
+      ],
+      "required_fixes": [
+        "Investigate/stabilize AffiliateEarningReconciliationJobTest#testOverlapGuardPreventsConcurrentRuns's real-Thread+sleep timing assumptions (e.g. a longer/adaptive wait, or a deterministic synchronization primitive) so it does not intermittently fail CI when co-scheduled with other test classes.",
+        "Either rename/re-scope AffiliateSettlementJob's period semantics to accurately describe 'settles everything currently outstanding, labeled under this period' or add an actual date filter so a batch's periodYearMonth label matches what it actually swept.",
+        "Add a dedicated PayoutOrphanedDebitSweepJobTest covering both of its sweep methods (queue-time orphan sweep and retry-path stuck-debit sweep) directly, rather than relying solely on the downstream reconciliation service's own tests."
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "SAGE-01",
+      "title": "AffiliateEarningReconciliationJobTest overlap-guard test fails intermittently under batched/parallel test execution",
+      "severity": "P3",
+      "evidence_score": 4,
+      "confidence": 55,
+      "status": "VERIFIED",
+      "provenance": "COMMITTED",
+      "evidence": "mvn -o -Dtest=AffiliateSettlementJobTest,AffiliateEarningReconciliationJobTest,PayoutRepositoryCreatorScopingTest,WalletControllerPayoutMethodsTest test (run against rc-115f698) reported: 'AffiliateEarningReconciliationJobTest.testOverlapGuardPreventsConcurrentRuns:154 ... Wanted 1 time ... But was 2 times', Tests run: 22, Failures: 1, exit code 1. Re-running mvn -o -Dtest=AffiliateEarningReconciliationJobTest#testOverlapGuardPreventsConcurrentRuns test in isolation 3 consecutive times: 3/3 PASS (exit 0 each time).",
+      "location": "influora-api/src/test/java/com/influora/job/AffiliateEarningReconciliationJobTest.java:141-171 (test); influora-api/src/main/java/com/influora/job/AffiliateEarningReconciliationJob.java:76-94 (guard under test)",
+      "impact": "A CI run that batches this test class with others has a demonstrated chance of a red build purely from test timing (real Thread + Thread.sleep(100) + CountDownLatch under host contention), not from an actual regression in the AtomicBoolean single-flight guard, which is correct on inspection (compareAndSet strictly precedes the guarded call in the production code in both this job and the structurally-identical PayoutOrphanedDebitSweepJob). Left unaddressed, this erodes trust in 'red means broken' for this suite and could cause a real, unrelated regression to be dismissed as 'that flaky test again.'",
+      "affected_features": [
+        "Jobs: PayoutOrphanedDebitSweepJob (10m), AffiliateEarningReconciliationJob (hourly), AffiliateSettlementJob (monthly)"
+      ],
+      "recommended_fix": "Replace the real Thread+Thread.sleep(100)/CountDownLatch(5s) synchronization in testOverlapGuardPreventsConcurrentRuns with a more deterministic mechanism (e.g. a CyclicBarrier with a longer, environment-scaled timeout, or asserting via a spy that blocks until explicitly released) so the test does not depend on wall-clock scheduling fairness under variable host load.",
+      "verification_required": "Run the full job/repo test package together under simulated CI load (e.g. mvn -T 2C or with other test classes forced to run concurrently) multiple times to establish a failure rate, and confirm no production code path was touched by this change."
+    },
+    {
+      "id": "SAGE-02",
+      "title": "AffiliateEarningsService commission rate is a hardcoded flat 10% for every campaign and creator",
+      "severity": "P2",
+      "evidence_score": 3,
+      "confidence": 75,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-api/src/main/java/com/influora/service/AffiliateEarningsService.java:102: `static final BigDecimal DEFAULT_COMMISSION_RATE = new BigDecimal(\"0.10\");` with an explicit class-adjacent javadoc TODO(follow-up) admitting this is 'a deliberately conservative placeholder ... until a real per-campaign rate configuration exists.'",
+      "location": "influora-api/src/main/java/com/influora/service/AffiliateEarningsService.java:96-102",
+      "impact": "Every affiliate commission credited anywhere in this domain (CreatorAffiliateEarningController, AffiliateSettlementJob, the creator-affiliate-earnings.tsx summary) uses this single flat rate regardless of what a brand actually agreed to pay a given creator for a given campaign. If any brand deal specifies a different commission percentage, creators are being paid (or shown as owed) the wrong amount today, silently.",
+      "recommended_fix": "Add a per-campaign (or per-collaboration) commission-rate column, thread it through AffiliateEarningsService.recordEarning instead of the hardcoded constant, and backfill/migrate existing rows once product/finance sign off on real rates per the TODO's own stated blocker.",
+      "verification_required": "Confirm with product/finance whether any live brand campaign currently has a commission rate other than 10% under contract, which would mean this placeholder is already producing incorrect payouts in production."
+    },
+    {
+      "id": "SAGE-03",
+      "title": "StoreIntegrationStatusController assumes one store integration per workspace, unenforced at the DB layer",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 45,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-api/src/main/java/com/influora/web/StoreIntegrationStatusController.java:74-78 (javadoc: 'only one can be connected at a time per workspace today -- if that assumption changes, this will need to return a list or prioritize one') and :84-108 (status() checks Shopify first, returns immediately if present, only checks WooCommerce otherwise). No unique constraint or cross-provider check was found in ShopifyConnectController.callback or WooCommerceConnectController.connect preventing both from succeeding independently for the same workspace.",
+      "location": "influora-api/src/main/java/com/influora/web/StoreIntegrationStatusController.java:79-113",
+      "impact": "A workspace that completes both a Shopify OAuth connect and a separate WooCommerce connect call would have its WooCommerce integration permanently invisible to GET /integrations/store/status (and therefore to the settings page), even though POST /webhooks/woocommerce would still actively process and redeem coupons against it. A brand could not see or disconnect a store integration they believe is inactive.",
+      "recommended_fix": "Either reject a second provider's connect call while an active one already exists for the workspace, or change the status endpoint/DTO to report all connected providers rather than the first one found.",
+      "verification_required": "Reproduce by connecting both Shopify and WooCommerce for the same test workspace and confirming GET /status only ever reports Shopify; not attempted in this pass (would require live OAuth/connect flow execution, out of scope for a read-only source audit)."
+    },
+    {
+      "id": "SAGE-04",
+      "title": "AffiliateSettlementJob sweeps a creator's entire PENDING/FAILED backlog regardless of the period label being settled",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 60,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "influora-api/src/main/java/com/influora/job/AffiliateSettlementJob.java:226-231: `affiliateEarningRepository.findByCreatorIdAndStatusIn(creatorId, SETTLEABLE_STATUSES)` has no date/period argument at all, while the class's own top-level javadoc and runMonthlySettlement's comment both describe this job as settling 'the PREVIOUS calendar month.'",
+      "location": "influora-api/src/main/java/com/influora/job/AffiliateSettlementJob.java:130-138,226-233",
+      "impact": "A creator whose earnings failed to settle for several consecutive months (staying in FAILED, retried every run) would have all of that multi-month backlog folded into whatever single period label the job happens to be running under when it finally succeeds -- the batch's periodYearMonth and totalAmount would then misrepresent what was actually earned in that calendar month, which could confuse both creator-facing reporting and any finance reconciliation against this label. Money-safety itself (no double-settlement) is not affected, since the idempotency key and per-earning status transition still prevent any row from being settled twice.",
+      "recommended_fix": "Either scope the settleable-earnings query to earnings created within (or attributable to) periodYearMonth, or rename/redocument the job's contract as 'settles whatever is currently outstanding, labeled under the batch's trigger period' so the code and its own javadoc agree.",
+      "verification_required": "Confirm with product/finance whether the current 'sweep everything outstanding under today's label' behavior is actually the intended contract, or whether per-month settlement accuracy is required for creator-facing statements/tax purposes."
+    },
+    {
+      "id": "SAGE-05",
+      "title": "ConversionWebhookSecretController has no controller-level test",
+      "severity": "P3",
+      "evidence_score": 2,
+      "confidence": 50,
+      "status": "OBSERVED",
+      "provenance": "COMMITTED",
+      "evidence": "find over influora-api/src/test/java/com/influora/web/*Controller*Test.java found no ConversionWebhookSecretControllerTest; only ConversionWebhookSecretServiceTest (service-level, run in this audit and PASSING) exists.",
+      "location": "influora-api/src/main/java/com/influora/web/ConversionWebhookSecretController.java:32-69",
+      "impact": "The HTTP-layer wiring specific to this controller (AuthPrincipal extraction, requireBrandWorkspace enforcement, and the exact response body shape returned to the caller) is untested independent of the well-tested service it delegates to. A regression introduced only at the controller layer (e.g. a missing auth annotation, a workspace-id mixup between principal and path/body) would not be caught by the existing test suite.",
+      "recommended_fix": "Add a MockMvc/WebMvcTest-based ConversionWebhookSecretControllerTest asserting unauthenticated rejection, workspace-scoping (one brand's generate/revoke never touches another's row), and that the plaintext returned in the generate response matches what was actually persisted encrypted.",
+      "verification_required": "None further needed to confirm the gap itself (file-existence check is conclusive); verification is for the fix once written."
+    }
+  ]
+}
