@@ -202,6 +202,18 @@ public final class MeeraContextDtos {
             @JsonProperty("brand_tone") String brandTone,
             @JsonProperty("floors") Map<String, String> floors,
             @JsonProperty("metrics_summary") Map<String, String> metricsSummary,
+            /**
+             * Creator Meera audience knowledge (Swapnil 2026-09-21) - a compact, TEXT-ONLY summary of
+             * THIS creator's own Instagram audience: the top two age bands and the gender split as
+             * percentages, the top three cities, and the snapshot date. Built by {@code
+             * MeeraContextService#buildAudienceSummary} from the same read the creator's own
+             * analytics page uses; never a raw breakdown map and never anything about an individual
+             * follower. When there is no snapshot it carries the explicit {@code
+             * MeeraContextService.AUDIENCE_NOT_AVAILABLE} text, never zeros or a guess. CREATOR
+             * audience only: the BRAND context never carries it (see {@code
+             * MeeraCreatorAudienceContextTest}).
+             */
+            @JsonProperty("audience_summary") String audienceSummary,
             @JsonProperty("deals_summary") Map<String, Object> dealsSummary,
             @JsonProperty("approval_level") int approvalLevel,
             @JsonProperty("represented") boolean represented,

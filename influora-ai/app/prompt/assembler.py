@@ -118,6 +118,10 @@ _FORBIDDEN_BRAND_FIELDS = {
     "rate_card_shareable",
     "approved_draft_count",
     "rate_card",
+    # Creator audience knowledge (2026-09-21): a creator's own audience
+    # summary (age bands, gender split, top cities). Hers to use for content;
+    # brand Meera keeps its "don't state demographics you can't verify" rule.
+    "audience_summary",
 }
 
 # Canonical snake_case field set for POST /internal/meera/context's response
@@ -156,6 +160,11 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     # in Meera's mouth reads as a scoreboard, not as help.
     "approved_draft_count",
     "audience",
+    # Creator audience knowledge (2026-09-21): a compact TEXT summary of this
+    # creator's OWN Instagram audience (top age bands, gender split, top
+    # cities, as-of date), rendered by Java. When there is no snapshot Spring
+    # sends an explicit "not available (...)" string, never zeros.
+    "audience_summary",
     "blocked_brands",
     "brand_tone",
     "categories",
@@ -204,6 +213,11 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     "working_hours_timezone",
     "workspace_id",
 )
+
+# What Block B says when Spring sends no `audience_summary` at all. Same words
+# as Java's `MeeraContextService.AUDIENCE_NOT_AVAILABLE`, so the persona's
+# "not available" rule fires either way.
+AUDIENCE_NOT_AVAILABLE_TEXT = "not available (Instagram not connected, or no audience snapshot yet)"
 
 # Fields that pass the allow-list (so the drift test against Java stays exact)
 # but are consumed by OTHER readers and must never be rendered into Block B.
@@ -681,6 +695,14 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
         lines.append("- Engagement: " + _safe(metrics.get("engagement_rate") or "not available"))
     else:
         lines.append("- Metrics: Instagram not connected yet (no verified numbers)")
+
+    # Creator audience knowledge (2026-09-21): who actually watches THIS
+    # creator, pre-rendered by Java. Always a line: a missing key is stated as
+    # not available rather than dropped, so Meera never fills the gap herself.
+    lines.append(
+        "- Your audience (from Instagram): "
+        + _creator_str(ctx, "audience_summary", AUDIENCE_NOT_AVAILABLE_TEXT)
+    )
 
     deals = ctx.get("deals_summary")
     if isinstance(deals, dict) and deals:

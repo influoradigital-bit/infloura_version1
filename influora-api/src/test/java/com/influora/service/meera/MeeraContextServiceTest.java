@@ -86,7 +86,8 @@ class MeeraContextServiceTest {
                         new BrandContextAssembler(),
                         creatorProfileRepository,
                         creatorAgentPreferencesRepository,
-                        creatorMetricsRepository);
+                        creatorMetricsRepository,
+                        org.mockito.Mockito.mock(com.influora.service.analytics.AnalyticsService.class));
     }
 
     @Test

@@ -32,7 +32,9 @@ import com.influora.repository.DeliverableMetricRepository;
 import com.influora.repository.EscrowHoldRepository;
 import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
+import com.influora.service.analytics.AnalyticsService;
 import com.influora.service.scoring.CreatorTiers;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.OutcomeDigest;
@@ -106,6 +108,19 @@ public class MeeraContextService {
     private final CreatorProfileRepository creatorProfileRepository;
     private final CreatorAgentPreferencesRepository creatorAgentPreferencesRepository;
     private final CreatorMetricsRepository creatorMetricsRepository;
+    private final AnalyticsService analyticsService;
+
+    /**
+     * Creator Meera audience knowledge (Swapnil 2026-09-21) - the explicit value {@code
+     * audience_summary} carries when this creator has no audience snapshot (Instagram not
+     * connected, or the weekly demographics job has not produced one yet). Never zeros, never a
+     * category-based guess: the creator persona is told to say this plainly and suggest connecting.
+     */
+    public static final String AUDIENCE_NOT_AVAILABLE =
+            "not available (Instagram not connected, or no audience snapshot yet)";
+
+    private static final int AUDIENCE_TOP_AGE_BANDS = 2;
+    private static final int AUDIENCE_TOP_CITIES = 3;
 
     public MeeraContextService(
             WorkspaceRepository workspaceRepository,
@@ -120,7 +135,8 @@ public class MeeraContextService {
             BrandContextAssembler contextAssembler,
             CreatorProfileRepository creatorProfileRepository,
             CreatorAgentPreferencesRepository creatorAgentPreferencesRepository,
-            CreatorMetricsRepository creatorMetricsRepository) {
+            CreatorMetricsRepository creatorMetricsRepository,
+            AnalyticsService analyticsService) {
         this.workspaceRepository = workspaceRepository;
         this.brandProfileRepository = brandProfileRepository;
         this.templateRepository = templateRepository;
@@ -134,6 +150,7 @@ public class MeeraContextService {
         this.creatorProfileRepository = creatorProfileRepository;
         this.creatorAgentPreferencesRepository = creatorAgentPreferencesRepository;
         this.creatorMetricsRepository = creatorMetricsRepository;
+        this.analyticsService = analyticsService;
     }
 
     /**
@@ -251,6 +268,9 @@ public class MeeraContextService {
                         .filter(CreatorMetric::isPlatformVerified)
                         .findFirst();
         Map<String, String> metricsSummary = buildMetricsSummary(profile, latestMetric, locale);
+        // Keyed off THIS creator's own resolved profile id only - the same id every other read in
+        // this method uses, never a caller-supplied creator id. The BRAND path never calls this.
+        String audienceSummary = buildAudienceSummary(profile.getId(), locale);
 
         List<Collaboration> collaborations = collaborationRepository.findByCreatorId(creatorUserId);
         Map<String, Object> dealsSummary = buildDealsSummary(collaborations, locale);
@@ -298,6 +318,7 @@ public class MeeraContextService {
                 prefs != null && prefs.getBrandTone() != null ? prefs.getBrandTone() : CreatorAgentPreferences.TONE_FRIENDLY,
                 floors,
                 metricsSummary,
+                audienceSummary,
                 dealsSummary,
                 approvalLevel,
                 represented,
@@ -331,6 +352,117 @@ public class MeeraContextService {
                 // MeeraContextServiceTest#testCreatorContextCarriesWiredToolNames — reverting this
                 // argument to List.of() must turn that test red.
                 CreatorToolScopes.toolNamesForLevel(approvalLevel, represented, negotiationHoldout));
+    }
+
+    /**
+     * Creator Meera audience knowledge (Swapnil 2026-09-21) - a compact, text-only summary of this
+     * creator's own audience, reusing {@link AnalyticsService#getCreatorDemographicsForProfile}
+     * (the read behind the creator's own GET /creator/analytics/demographics). Shape: {@code "Age:
+     * 18-24 41%, 25-34 33%. Gender: women 58%, men 40%. Top cities: Mumbai / Pune / Delhi. As of 12
+     * Sep 2026."} Percentages are of the age/gender total; cities are names only (Meta's own city
+     * labels can contain a comma, hence the slash separator). No raw breakdown map leaves this
+     * method, and Meta's aggregate breakdowns carry no follower identities to leak.
+     *
+     * <p>Returns {@link #AUDIENCE_NOT_AVAILABLE} when there is no snapshot, or when the snapshot
+     * has neither a usable age/gender breakdown nor any city - never zeros and never a guess.
+     */
+    private String buildAudienceSummary(String creatorProfileId, Locale locale) {
+        CreatorDemographicsResponse demographics =
+                analyticsService.getCreatorDemographicsForProfile(creatorProfileId);
+        if (demographics == null || !demographics.hasData()) {
+            return AUDIENCE_NOT_AVAILABLE;
+        }
+
+        // Map<String, ?> on purpose: the breakdowns are decoded from JSON with a raw Map.class, so
+        // at runtime a value is usually an Integer despite the declared Long. Reading it as Object
+        // avoids the implicit (Long) cast that would throw ClassCastException.
+        Map<String, Long> ageTotals = new LinkedHashMap<>();
+        Map<String, Long> genderTotals = new LinkedHashMap<>();
+        long ageGenderTotal = 0;
+        Map<String, ?> ageGender = demographics.ageGenderBreakdown();
+        if (ageGender != null) {
+            for (Map.Entry<String, ?> entry : ageGender.entrySet()) {
+                long count = countOf(entry.getValue());
+                String key = entry.getKey();
+                int dot = key == null ? -1 : key.indexOf('.');
+                // Meta's audience_gender_age keys are "F.25-34" / "M.18-24" / "U.35-44".
+                if (count <= 0 || dot <= 0 || dot == key.length() - 1) {
+                    continue;
+                }
+                genderTotals.merge(key.substring(0, dot), count, Long::sum);
+                ageTotals.merge(key.substring(dot + 1), count, Long::sum);
+                ageGenderTotal += count;
+            }
+        }
+
+        List<String> parts = new ArrayList<>();
+        NumberFormat pct = NumberFormat.getIntegerInstance(locale);
+        if (ageGenderTotal > 0) {
+            final long total = ageGenderTotal;
+            parts.add(
+                    "Age: "
+                            + String.join(
+                                    ", ",
+                                    topEntries(ageTotals, AUDIENCE_TOP_AGE_BANDS).stream()
+                                            .map(e -> e.getKey() + " " + pct.format(Math.round(e.getValue() * 100.0 / total)) + "%")
+                                            .toList()));
+            parts.add(
+                    "Gender: "
+                            + String.join(
+                                    ", ",
+                                    topEntries(genderTotals, genderTotals.size()).stream()
+                                            .map(e -> genderLabel(e.getKey()) + " " + pct.format(Math.round(e.getValue() * 100.0 / total)) + "%")
+                                            .toList()));
+        }
+
+        Map<String, Long> cityCounts = new LinkedHashMap<>();
+        Map<String, ?> cities = demographics.cityBreakdown();
+        if (cities != null) {
+            for (Map.Entry<String, ?> entry : cities.entrySet()) {
+                long count = countOf(entry.getValue());
+                if (count > 0 && entry.getKey() != null && !entry.getKey().isBlank()) {
+                    cityCounts.put(entry.getKey().strip(), count);
+                }
+            }
+        }
+        if (!cityCounts.isEmpty()) {
+            parts.add(
+                    "Top cities: "
+                            + String.join(
+                                    " / ",
+                                    topEntries(cityCounts, AUDIENCE_TOP_CITIES).stream().map(Map.Entry::getKey).toList()));
+        }
+
+        if (parts.isEmpty()) {
+            return AUDIENCE_NOT_AVAILABLE;
+        }
+        String asOf = Rendered.date(demographics.fetchedAt(), locale);
+        if (asOf != null) {
+            parts.add("As of " + asOf);
+        }
+        return String.join(". ", parts) + ".";
+    }
+
+    private static long countOf(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    /** Largest first; ties broken by key so the same snapshot always renders the same text. */
+    private static List<Map.Entry<String, Long>> topEntries(Map<String, Long> counts, int limit) {
+        return counts.entrySet().stream()
+                .sorted(
+                        Map.Entry.<String, Long>comparingByValue(Comparator.reverseOrder())
+                                .thenComparing(Map.Entry.comparingByKey()))
+                .limit(limit)
+                .toList();
+    }
+
+    private static String genderLabel(String metaCode) {
+        return switch (metaCode) {
+            case "F" -> "women";
+            case "M" -> "men";
+            default -> "unspecified";
+        };
     }
 
     /**

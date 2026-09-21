@@ -76,8 +76,14 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.21.1"
-# ^ bumped for creator content knowledge (feature/creator-content-knowledge,
+PROMPT_VERSION = "meera-2026.09.21.2"
+# ^ bumped for creator audience knowledge (feature/creator-content-knowledge,
+# Swapnil 2026-09-21): the CREATOR Block B now renders a "Your audience" line
+# from the new `audience_summary` context field (the creator's OWN audience,
+# rendered by Java, or an explicit "not available"), and creator_persona.py
+# gained the "Use their audience too." rule. BRAND prompt text unchanged.
+#
+# Previously (.1): bumped for creator content knowledge (feature/creator-content-knowledge,
 # Swapnil 2026-09-21): CREATOR turns now carry a third cached system block
 # rendered from app/prompt/knowledge/video_content_concepts.jsonl
 # (app/prompt/content_knowledge.py), and creator_persona.py gained the

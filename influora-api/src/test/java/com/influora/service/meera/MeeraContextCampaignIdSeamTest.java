@@ -111,7 +111,8 @@ class MeeraContextCampaignIdSeamTest {
                         new BrandContextAssembler(),
                         creatorProfileRepository,
                         creatorAgentPreferencesRepository,
-                        creatorMetricsRepository);
+                        creatorMetricsRepository,
+                        org.mockito.Mockito.mock(com.influora.service.analytics.AnalyticsService.class));
 
         campaign =
                 Campaign.builder()
