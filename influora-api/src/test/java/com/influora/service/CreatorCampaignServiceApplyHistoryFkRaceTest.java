@@ -105,7 +105,7 @@ import org.springframework.transaction.support.TransactionTemplate;
                         type = FilterType.REGEX,
                         pattern =
                                 "com\\.influora\\.repository\\.(?!CampaignRepository$|CollaborationRepository$|ApplicationHistoryEventRepository$).*"))
-@Import({CreatorCampaignService.class, ApplicationHistoryService.class})
+@Import({CreatorCampaignService.class, ApplicationHistoryService.class, ApplicationHistoryWriter.class})
 @TestPropertySource(
         properties = {
             "spring.datasource.url=jdbc:h2:mem:creator_campaign_apply_history_fk_race_test;DB_CLOSE_DELAY=-1;MODE=MySQL",

@@ -1,5 +1,6 @@
 package com.influora.service;
 
+import com.influora.common.AfterCommit;
 import com.influora.common.ApiException;
 import com.influora.common.InsufficientFundsException;
 import com.influora.common.PageMeta;
@@ -1662,8 +1663,58 @@ public class EscrowService {
      * exception is logged loudly (this is a real operational problem — e.g. a payee with no
      * creator profile, or a PDF/R2 failure that also broke the invoice row) but never propagates,
      * so a completed escrow release + ledger posting can never be undone by an invoicing failure.
+     *
+     * <p><b>Deferred to after the release commits (same defect as the application-history
+     * stall).</b> {@code createAtRelease} is a {@code REQUIRES_NEW} INSERT into {@code
+     * campaign_service_invoices}, which has InnoDB foreign keys to {@code escrow_holds(id)} ({@code
+     * fk_csi_escrow_hold}) and {@code collaborations(id)} ({@code fk_csi_collaboration},
+     * V20260715130000__campaign_service_invoice.sql:20-22). Every caller here has already locked
+     * the hold row {@code X} through {@link #requireHoldForUpdate} ({@link #releaseInternal},
+     * {@link #releaseByHoldIdInternal}, and both dispute settlements through {@code
+     * requireFrozenHoldsForCollaboration}). The FK check on a second connection needs {@code
+     * S,REC_NOT_GAP} on that same hold row, so the insert waited on its own caller for {@code
+     * innodb_lock_wait_timeout}, then failed, and the release fell back to the failure marker. The
+     * {@code escrow_holds} FK alone is enough to cause this on every release path at this tip; the
+     * {@code collaborations} FK would add a second wait on any path that also locks the
+     * collaboration.
+     *
+     * <p>{@link AfterCommit} runs the whole attempt (the invoice and, if it fails, the marker) after
+     * the release transaction has committed and released its locks. Consequences:
+     *
+     * <ul>
+     *   <li>The insert can no longer wait on its caller.
+     *   <li>A release that rolls back produces no invoice. Before, {@code REQUIRES_NEW} committed the
+     *       invoice on its own, so a later rollback left a numbered GST invoice for a payment that
+     *       did not happen. It is logged at WARN instead.
+     *   <li>The failure marker is written after the money movement committed, in its own
+     *       transaction ({@link CampaignServiceInvoiceService#recordInvoiceCreationFailure} is now
+     *       {@code REQUIRES_NEW}, because a {@code REQUIRED} write from an after-commit callback
+     *       would join the already-committed transaction and never commit). The marker still never
+     *       exists without the release it documents. The reverse case, money moved with neither an
+     *       invoice nor a marker, now needs the marker write to fail as well (logged at ERROR by
+     *       {@code recordFailure}) or the process to die between the release commit and this call.
+     * </ul>
+     *
+     * <p>{@code hold} and {@code collaboration} are detached when the deferred body runs. That is
+     * safe: {@code createAtRelease} reads only scalar getters from them and loads everything else
+     * through its own repositories.
      */
     private void safelyCreateServiceInvoice(
+            EscrowHold hold, Collaboration collaboration, String ledgerCreditLegId) {
+        AfterCommit.run(
+                "Doc#2 creator service invoice",
+                () ->
+                        "escrowHoldId="
+                                + hold.getId()
+                                + " collaborationId="
+                                + collaboration.getId()
+                                + " ledgerCreditLegId="
+                                + ledgerCreditLegId,
+                () -> createServiceInvoiceAfterCommit(hold, collaboration, ledgerCreditLegId));
+    }
+
+    /** The deferred body of {@link #safelyCreateServiceInvoice}. Runs after the commit. */
+    private void createServiceInvoiceAfterCommit(
             EscrowHold hold, Collaboration collaboration, String ledgerCreditLegId) {
         try {
             campaignServiceInvoiceService.createAtRelease(hold, collaboration, ledgerCreditLegId);
@@ -1677,9 +1728,8 @@ public class EscrowService {
                     e);
             // [F-0390 D1] Previously this log line WAS the entire recovery story — no outbox row, no
             // retry, no failure marker, no metric, no backfill tool anywhere in the codebase. This
-            // persists a queryable, retryable marker (escrow_invoice_failures) in the SAME
-            // transaction as the release that just committed above, so the marker can never exist
-            // without the money movement it documents (or vice versa). Never throws.
+            // persists a queryable, retryable marker (escrow_invoice_failures) in its own
+            // transaction, after the release it documents has committed. Never throws.
             campaignServiceInvoiceService.recordInvoiceCreationFailure(
                     hold.getId(), collaboration.getId(), ledgerCreditLegId, e.getMessage());
         }

@@ -111,6 +111,7 @@ import org.springframework.test.context.TestPropertySource;
 @Import({
     BrandDeliverableService.class,
     ApplicationHistoryService.class,
+    ApplicationHistoryWriter.class,
     CollaborationLifecycleService.class,
     // Real, with its defaults (3/2 working days) - BrandDeliverableService takes it in its
     // constructor now. ReviewSlaProperties is deliberately NOT imported here: @DataJpaTest

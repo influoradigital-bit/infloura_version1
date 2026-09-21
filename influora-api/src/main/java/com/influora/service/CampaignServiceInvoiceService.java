@@ -270,13 +270,19 @@ public class CampaignServiceInvoiceService {
      * created at all (creator-profile/campaign/workspace lookup, or invoice-number mint, failed).
      * Persists a durable, queryable failure marker (V20260828120000__escrow_invoice_failures.sql)
      * instead of the log-only handling this used to get, and {@link #retryFailedInvoiceFailures}
-     * picks it back up on a schedule. Runs on the CALLER's ambient transaction (EscrowService's
-     * release/adminReleaseForDispute/adminSplitForDispute, all {@code @Transactional}) so the
-     * marker commits atomically with the release it documents — deliberately NOT its own {@code
-     * REQUIRES_NEW}, unlike {@link #createAtRelease}, because there is no risk here of THIS write
-     * needing isolation from a rollback the caller doesn't have (the release already succeeded by
-     * the time this is called). Never throws — {@link #recordFailure} swallows its own failures.
+     * picks it back up on a schedule. Never throws — {@link #recordFailure} swallows its own
+     * failures.
+     *
+     * <p>{@code REQUIRES_NEW}: {@code EscrowService#safelyCreateServiceInvoice} now runs the invoice
+     * attempt, and this fallback, through {@code AfterCommit}, after the release transaction has
+     * committed and released its row locks (the {@code REQUIRES_NEW} invoice insert used to wait on
+     * the release's own lock on the {@code escrow_holds} row). This method used to join the
+     * caller's transaction so the marker committed atomically with the release. From an
+     * after-commit callback that transaction has already committed, and a joined write would never
+     * be committed, so the marker now gets its own transaction. It is still written only after the
+     * release it documents has committed.
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void recordInvoiceCreationFailure(
             String escrowHoldId, String collaborationId, String ledgerCreditLegId, String errorMessage) {
         recordFailure(escrowHoldId, collaborationId, ledgerCreditLegId, "INVOICE_CREATE", errorMessage);

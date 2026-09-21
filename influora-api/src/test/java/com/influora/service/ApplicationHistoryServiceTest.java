@@ -40,7 +40,7 @@ class ApplicationHistoryServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ApplicationHistoryService(repository);
+        service = new ApplicationHistoryService(new ApplicationHistoryWriter(repository));
     }
 
     @Test

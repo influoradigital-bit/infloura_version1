@@ -87,7 +87,7 @@ import org.springframework.transaction.support.TransactionTemplate;
                         type = FilterType.REGEX,
                         pattern =
                                 "com\\.influora\\.repository\\.(?!CollaborationRepository$|ApplicationHistoryEventRepository$).*"))
-@Import(ApplicationHistoryService.class)
+@Import({ApplicationHistoryService.class, ApplicationHistoryWriter.class})
 @TestPropertySource(
         properties = {
             "spring.datasource.url=jdbc:h2:mem:application_history_rollback_isolation_test;DB_CLOSE_DELAY=-1;MODE=MySQL",
