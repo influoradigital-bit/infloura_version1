@@ -112,7 +112,8 @@ class MeeraContextCampaignIdSeamTest {
                         creatorProfileRepository,
                         creatorAgentPreferencesRepository,
                         creatorMetricsRepository,
-                        org.mockito.Mockito.mock(com.influora.service.analytics.AnalyticsService.class));
+                        org.mockito.Mockito.mock(com.influora.service.analytics.AnalyticsService.class),
+                        org.mockito.Mockito.mock(com.influora.repository.MetaOAuthTokenRepository.class));
 
         campaign =
                 Campaign.builder()

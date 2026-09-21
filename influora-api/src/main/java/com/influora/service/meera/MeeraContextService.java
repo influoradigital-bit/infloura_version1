@@ -12,6 +12,7 @@ import com.influora.domain.entity.CreatorAgentPreferences;
 import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.entity.DeliverableMetric;
+import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.domain.entity.UtmCampaign;
 import com.influora.domain.entity.Workspace;
 import com.influora.domain.enums.CampaignStatus;
@@ -30,6 +31,7 @@ import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.CreatorProfileRepository;
 import com.influora.repository.DeliverableMetricRepository;
 import com.influora.repository.EscrowHoldRepository;
+import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.analytics.AnalyticsService;
@@ -51,6 +53,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -70,6 +75,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class MeeraContextService {
+
+    private static final Logger log = LoggerFactory.getLogger(MeeraContextService.class);
 
     /** Last-N campaigns fed into {@code past_campaign_summary} — keeps the digest ~2-3 lines (Ash's cost note). */
     private static final int PAST_CAMPAIGN_LIMIT = 5;
@@ -109,6 +116,7 @@ public class MeeraContextService {
     private final CreatorAgentPreferencesRepository creatorAgentPreferencesRepository;
     private final CreatorMetricsRepository creatorMetricsRepository;
     private final AnalyticsService analyticsService;
+    private final MetaOAuthTokenRepository metaOAuthTokenRepository;
 
     /**
      * Creator Meera audience knowledge (Swapnil 2026-09-21) - the explicit value {@code
@@ -121,6 +129,10 @@ public class MeeraContextService {
 
     private static final int AUDIENCE_TOP_AGE_BANDS = 2;
     private static final int AUDIENCE_TOP_CITIES = 3;
+
+    /** LOW-3 fix (post-554c347 review): control characters in a Meta city label must never be able
+     * to inject a line break (or other control byte) into the creator's prompt block. */
+    private static final Pattern CONTROL_CHARS = Pattern.compile("\\p{Cntrl}+");
 
     public MeeraContextService(
             WorkspaceRepository workspaceRepository,
@@ -136,7 +148,8 @@ public class MeeraContextService {
             CreatorProfileRepository creatorProfileRepository,
             CreatorAgentPreferencesRepository creatorAgentPreferencesRepository,
             CreatorMetricsRepository creatorMetricsRepository,
-            AnalyticsService analyticsService) {
+            AnalyticsService analyticsService,
+            MetaOAuthTokenRepository metaOAuthTokenRepository) {
         this.workspaceRepository = workspaceRepository;
         this.brandProfileRepository = brandProfileRepository;
         this.templateRepository = templateRepository;
@@ -151,6 +164,7 @@ public class MeeraContextService {
         this.creatorAgentPreferencesRepository = creatorAgentPreferencesRepository;
         this.creatorMetricsRepository = creatorMetricsRepository;
         this.analyticsService = analyticsService;
+        this.metaOAuthTokenRepository = metaOAuthTokenRepository;
     }
 
     /**
@@ -365,10 +379,35 @@ public class MeeraContextService {
      *
      * <p>Returns {@link #AUDIENCE_NOT_AVAILABLE} when there is no snapshot, or when the snapshot
      * has neither a usable age/gender breakdown nor any city - never zeros and never a guess.
+     *
+     * <p>LOW-2 fix (post-554c347 review): a stored snapshot is never surfaced once the creator has
+     * no live Meta connection — our published Meta data policy promises data is not used once no
+     * longer needed, and revoking the connection means it is no longer needed for Meera. "Live" is
+     * checked the same way {@code MetricsPollingJob#onCreatorConnected} decides it for this exact
+     * creator-owned key-space (workspace_id IS NULL): a non-revoked {@link MetaOAuthToken} row that
+     * is either not expiring or not yet expired. This class never re-derives that definition.
+     *
+     * <p>LOW-1 fix (post-554c347 review): the demographics read itself is guarded so a failure
+     * there (e.g. a JSON decode error on a stored breakdown, per this class's own comment on {@code
+     * ageGender} below) degrades to the not-available summary instead of failing the whole CREATOR
+     * context — logged with the creator profile id only, never any breakdown data.
      */
     private String buildAudienceSummary(String creatorProfileId, Locale locale) {
-        CreatorDemographicsResponse demographics =
-                analyticsService.getCreatorDemographicsForProfile(creatorProfileId);
+        if (!hasLiveMetaConnection(creatorProfileId)) {
+            return AUDIENCE_NOT_AVAILABLE;
+        }
+
+        CreatorDemographicsResponse demographics;
+        try {
+            demographics = analyticsService.getCreatorDemographicsForProfile(creatorProfileId);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "MeeraContextService: audience demographics read failed for creator profile {};"
+                            + " falling back to the not-available summary",
+                    creatorProfileId,
+                    e);
+            return AUDIENCE_NOT_AVAILABLE;
+        }
         if (demographics == null || !demographics.hasData()) {
             return AUDIENCE_NOT_AVAILABLE;
         }
@@ -421,7 +460,15 @@ public class MeeraContextService {
             for (Map.Entry<String, ?> entry : cities.entrySet()) {
                 long count = countOf(entry.getValue());
                 if (count > 0 && entry.getKey() != null && !entry.getKey().isBlank()) {
-                    cityCounts.put(entry.getKey().strip(), count);
+                    // LOW-3 fix (post-554c347 review): a raw Meta city label can carry \r/\n/\t (or
+                    // other control bytes) that would otherwise start a new line inside the
+                    // creator's single-line prompt block. Sanitize before it ever joins parts/asOf
+                    // below. merge (not put): two distinct raw labels can collapse onto the same
+                    // sanitized one, and their counts must combine rather than one silently winning.
+                    String sanitizedCity = sanitizeLabel(entry.getKey());
+                    if (!sanitizedCity.isBlank()) {
+                        cityCounts.merge(sanitizedCity, count, Long::sum);
+                    }
                 }
             }
         }
@@ -445,6 +492,27 @@ public class MeeraContextService {
 
     private static long countOf(Object value) {
         return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    /** LOW-3 fix (post-554c347 review): strips/replaces control characters (\r, \n, \t, and any
+     * other {@code \p{Cntrl}} byte) with a space, then trims. Used on every raw Meta city label
+     * before it can reach the single-line audience summary. */
+    private static String sanitizeLabel(String raw) {
+        return CONTROL_CHARS.matcher(raw).replaceAll(" ").strip();
+    }
+
+    /**
+     * LOW-2 fix (post-554c347 review): reuses the exact "live creator-owned Meta connection" check
+     * {@code MetricsPollingJob#onCreatorConnected} already uses for this same creator-owned
+     * key-space (workspace_id IS NULL) — a non-revoked {@link MetaOAuthToken} row whose {@code
+     * expiresAt} is either absent or still in the future. Read-only; this class does not decide or
+     * change connection state, only asks the same repository the rest of the codebase already asks.
+     */
+    private boolean hasLiveMetaConnection(String creatorProfileId) {
+        return metaOAuthTokenRepository
+                .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
+                .filter(t -> t.getExpiresAt() == null || t.getExpiresAt().isAfter(Instant.now()))
+                .isPresent();
     }
 
     /** Largest first; ties broken by key so the same snapshot always renders the same text. */
