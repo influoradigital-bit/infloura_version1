@@ -38,15 +38,27 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import type { DailySuggestion, MetaConnectionState } from '@/lib/api';
 import { reconcileMetaConnectionStatus } from '@/hooks/creator/useMetaConnection';
+import { useTrendsEnabled } from '@/hooks/useTrendsEnabled';
 
 export type { DailySuggestion } from '@/lib/api';
 
+/**
+ * T-TSOFF-0920 — `'disabled'` is a SIXTH, terminal state added on top of spec §3.4's five.
+ *
+ * It is not a variant of `'idle'` (which means "connect Instagram and this starts working") and
+ * not a variant of `'dismissed'` (which the component renders as "No new idea today — check back
+ * tomorrow"). Both of those are promises. With trend ingest off there is no tomorrow and
+ * connecting Instagram changes nothing, so neither copy is true, and rendering either one is the
+ * dishonest state this task exists to remove. `'disabled'` outranks every other status,
+ * INCLUDING `'idle'`, so the Connect Instagram CTA — a control that cannot deliver what it
+ * offers — is never rendered while the feature is off.
+ */
 /** UI-facing state machine (spec §3.4's literal 5 states). Distinct from the wire-level
  *  `CreatorCopilotWireStatus` ('pending_tagging' | 'ready' | 'no_suggestion_today') this hook
  *  derives it from — see the derivation table below. `acted` collapses into `dismissed`
  *  (API-CONTRACT.md §6 item 2, still open whether it deserves its own value; not a wire-shape
  *  question either way). */
-export type SuggestionStatus = 'idle' | 'loading' | 'ready' | 'dismissed' | 'error';
+export type SuggestionStatus = 'idle' | 'loading' | 'ready' | 'dismissed' | 'error' | 'disabled';
 
 export interface UseDailySuggestionResult {
   suggestion: DailySuggestion | null;
@@ -128,6 +140,10 @@ function clearSessionInteraction(day: string, suggestionId: string): void {
 export function useDailySuggestion(): UseDailySuggestionResult {
   const queryClient = useQueryClient();
   const day = todayKey();
+  // T-TSOFF-0920 — server-authoritative; see useTrendsEnabled.ts. `isLoading` is consumed so the
+  // Meta-status probe and the suggestion GET both wait for the answer instead of racing it.
+  const { trendsEnabled, isLoading: trendsFlagLoading } = useTrendsEnabled();
+  const trendsOff = !trendsFlagLoading && !trendsEnabled;
 
   // F-0480 — the backend is the source of truth for "is Instagram connected"; the localStorage
   // mirror is only the synchronous seed for first paint (and the fallback if the status call
@@ -137,6 +153,13 @@ export function useDailySuggestion(): UseDailySuggestionResult {
   const statusQuery = useQuery({
     queryKey: metaConnectionStatusQueryKey,
     queryFn: async () => reconcileMetaConnectionStatus(await api.metaOAuth.status()),
+    // T-TSOFF-0920 — with the feature off we never render a connect prompt, so there is nothing
+    // this answer could change. Skipping it keeps a disabled surface at zero network cost.
+    // Gated POSITIVELY (`trendsEnabled`, not `!trendsOff`): while the flag read is still in
+    // flight the answer is not yet "on", and a `!trendsOff` gate would let this fire during that
+    // window and then have to un-fire — the race that leaked a real request out of a disabled
+    // surface on the first render.
+    enabled: trendsEnabled,
     staleTime: 30_000,
     retry: 1,
   });
@@ -154,7 +177,11 @@ export function useDailySuggestion(): UseDailySuggestionResult {
   const query = useQuery({
     queryKey: dailySuggestionQueryKey(day),
     queryFn: () => api.creatorCopilot.getTodaySuggestion(),
-    enabled: isConnected, // don't fetch until IG is linked
+    // T-TSOFF-0920 — `&& trendsEnabled`: the endpoint answers 404 TRENDS_DISABLED while the
+    // feature is off, so asking would guarantee an error toast + a Retry button that can never
+    // succeed. Positive gate for the same reason as the status query above: "not yet known" must
+    // behave as off, or a slow /config/public read lets one real request escape.
+    enabled: isConnected && trendsEnabled, // don't fetch until IG is linked
     staleTime: Infinity, // per-day cache; a new day is simply a cache miss (new query key)
     retry: 1,
   });
@@ -179,6 +206,11 @@ export function useDailySuggestion(): UseDailySuggestionResult {
   const localInteraction = suggestion ? getSessionInteraction(day, suggestion.id) : null;
 
   const status: SuggestionStatus = useMemo(() => {
+    // T-TSOFF-0920 — FIRST, ahead of every other branch including 'idle'. See the SuggestionStatus
+    // doc comment: while the feature is off, "connect Instagram" and "check back tomorrow" are
+    // both false, so neither may be rendered.
+    if (trendsOff) return 'disabled';
+    if (trendsFlagLoading) return 'loading';
     if (verifyingConnection) return 'loading';
     if (!isConnected) return 'idle';
     if (query.isError) return 'error';
@@ -187,7 +219,16 @@ export function useDailySuggestion(): UseDailySuggestionResult {
     if (query.data.status === 'no_suggestion_today') return 'dismissed';
     // query.data.status === 'ready'
     return localInteraction ? 'dismissed' : 'ready';
-  }, [verifyingConnection, isConnected, query.isError, query.isLoading, query.data, localInteraction]);
+  }, [
+    trendsOff,
+    trendsFlagLoading,
+    verifyingConnection,
+    isConnected,
+    query.isError,
+    query.isLoading,
+    query.data,
+    localInteraction,
+  ]);
 
   const error = useMemo(() => {
     if (!query.isError) return null;

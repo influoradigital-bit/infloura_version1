@@ -173,4 +173,35 @@ public class TrendIngestProperties {
     public boolean hasClassifierWorkspaceId() {
         return classifierWorkspaceId != null && !classifierWorkspaceId.isBlank();
     }
+
+    /**
+     * T-TSOFF-0920 — the ONE server-authoritative answer to "can a trend row ever exist?", and the
+     * only thing {@code /config/public}'s {@code trendsEnabled} and {@link
+     * com.influora.config.TrendFeatureGate} are allowed to be derived from.
+     *
+     * <p>Deliberately NOT a new independent flag. A separate {@code influora.trendspark.enabled}
+     * would let an operator switch the user-facing surfaces on while ingest stayed off, which is
+     * exactly the dishonest state this exists to prevent. Instead it re-states, in one place, the
+     * three conditions {@link com.influora.job.TrendPullJob#pullTrends()} already enforces
+     * individually — every one of them, alone, means zero rows are ever written to {@code trends}:
+     *
+     * <ul>
+     *   <li>{@link #isEnabled()} false → {@code pullTrends} returns at its first line
+     *       ("disabled ... skipping run").
+     *   <li>{@link #isConfigured()} false → every {@link
+     *       com.influora.service.trendspark.ingest.TrendSourceClient} is skipped for a missing key
+     *       and {@code fetched} is empty ("nothing written").
+     *   <li>{@link #hasClassifierWorkspaceId()} false → every fetched row is rejected
+     *       {@code reason=classifier_unconfigured} before the write (EV-013's fail-closed leg).
+     * </ul>
+     *
+     * <p>Consequence for the UI: with this false, {@code TrendSparkNudgeService#getNudge} and
+     * {@code CreatorNudgeService#getSuggestion} can only ever reach their "nothing to say" exits,
+     * because both score against {@code TrendRepository.findActive} and that list is permanently
+     * empty. Rendering a trend/idea surface in that state is a promise the backend cannot keep, so
+     * the surfaces hide instead — see {@link TrendFeatureGate}.
+     */
+    public boolean canProduceTrends() {
+        return isEnabled() && isConfigured() && hasClassifierWorkspaceId();
+    }
 }

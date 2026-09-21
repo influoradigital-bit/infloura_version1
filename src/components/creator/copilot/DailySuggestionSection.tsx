@@ -53,6 +53,17 @@ export function DailySuggestionSection({ className }: DailySuggestionSectionProp
     }
   }, [status, error, toast]);
 
+  // T-TSOFF-0920 — checked BEFORE 'idle'. With trend ingest off, `IGConnectPrompt`
+  // ("Get your first daily idea" / "Connect Instagram") and `BusinessAccountRequired` are both
+  // dead controls: completing the Instagram OAuth round-trip cannot produce a suggestion,
+  // because `CreatorNudgeService` scores against an empty `trends` table and the endpoint now
+  // answers 404 TRENDS_DISABLED outright. A plain, final "not available yet" card replaces
+  // them — no CTA, no retry, no "check back tomorrow", because there is no tomorrow until an
+  // operator turns ingest on.
+  if (status === 'disabled') {
+    return <SuggestionUnavailable className={className} />;
+  }
+
   if (status === 'idle') {
     if (requiresBusinessAccount) {
       if (businessPromptSkipped) return null;
@@ -113,5 +124,31 @@ export function DailySuggestionSection({ className }: DailySuggestionSectionProp
       onRetry={retry}
       className={className}
     />
+  );
+}
+
+/**
+ * T-TSOFF-0920 — the honest off-state for the creator daily-idea surface.
+ *
+ * Deliberately NOT `SuggestionEmptyState`: every one of that component's three copy strings
+ * promises the idea is coming ("your first idea lands by tomorrow morning", "check back
+ * tomorrow", "checking your Instagram connection"), and it renders an animated pulsing icon
+ * that reads as work-in-progress. Both were false while the feature is switched off.
+ *
+ * Inert by construction: no button, no link, no retry, no dismiss — nothing here can be clicked,
+ * so there is no control that fails. The copy states the situation and stops; it does not
+ * apologise, promise a date, or invite the creator to come back.
+ */
+function SuggestionUnavailable({ className }: { className?: string }) {
+  return (
+    <Card className={className}>
+      <CardContent className="py-4">
+        <p className="text-sm font-medium">Content ideas aren&rsquo;t available yet</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Daily content ideas are switched off on Influora right now. There&rsquo;s nothing for
+          you to set up or wait for.
+        </p>
+      </CardContent>
+    </Card>
   );
 }

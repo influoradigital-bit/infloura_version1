@@ -10,12 +10,18 @@
  * all resolve to `nudge: null` here — `TrendSparkNudgeCard` renders nothing
  * in every one of those cases. There is no fallback/demo nudge fabricated on
  * error; silence is the safe default, never a guess.
+ *
+ * T-TSOFF-0920: the query does not fire at all unless the server says trends are
+ * on (`useTrendsEnabled`, from `GET /config/public`). With the beta's TrendSpark
+ * switch off, `GET /brand/trendspark/nudge` answers 404 TRENDS_DISABLED, so
+ * firing it would only produce a guaranteed error on every brand dashboard load.
  */
 
 import { useCallback, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, ApiError } from '@/lib/api';
 import type { TrendSparkNudge } from '@/lib/api';
+import { useTrendsEnabled } from '@/hooks/useTrendsEnabled';
 
 export const trendSparkNudgeQueryKey = ['trendspark', 'nudge'] as const;
 
@@ -34,10 +40,13 @@ export interface UseTrendSparkNudgeResult {
 
 export function useTrendSparkNudge(): UseTrendSparkNudgeResult {
   const queryClient = useQueryClient();
+  const { trendsEnabled } = useTrendsEnabled();
 
   const { data, isLoading, error } = useQuery({
     queryKey: trendSparkNudgeQueryKey,
     queryFn: () => api.trendspark.getNudge(),
+    // T-TSOFF-0920 — off means "never ask", not "ask and swallow the 404".
+    enabled: trendsEnabled,
     staleTime: 5 * 60 * 1000, // 5 min — a soft, low-frequency nudge, not a live feed
     retry: 1,
   });
@@ -55,7 +64,9 @@ export function useTrendSparkNudge(): UseTrendSparkNudgeResult {
     },
   });
 
-  const nudge = data ?? null;
+  // T-TSOFF-0920 — belt and braces: even a stale cache entry from a session where the
+  // feature was on must not render once the server says off.
+  const nudge = trendsEnabled ? data ?? null : null;
 
   const recordClick = useCallback(() => {
     if (!nudge) return;

@@ -43,6 +43,15 @@ export default function CreatorCopilotPage() {
   // `status` here is the only way to know pre-connect vs. post-connect from
   // outside the section without forking its internals.
   const { status } = useDailySuggestion();
+  // T-TSOFF-0920 — `status === 'idle'` alone used to be enough, but 'idle' no longer implies the
+  // feature can deliver: `useDailySuggestion` now returns 'disabled' when trend ingest is off, and
+  // this card is the single worst thing to render in that state. It shows a hand-written example
+  // idea ("Turn your morning routine into a 30-second reel", tagged "Skincare Routine") that the
+  // model did not produce. It is labelled "Preview", which is honest while the feature works and
+  // the creator is one Instagram connect away from the real thing — but with the feature switched
+  // off it becomes a fabricated sample advertising something that will never arrive, which is the
+  // exact failure mode the audit flagged elsewhere. The 'disabled' status never satisfies
+  // `=== 'idle'`, so this is already false; the comment records WHY it must stay that way.
   const showPreview = status === 'idle';
 
   // T-MEERA-CREATOR-PHASE-A (A10, SPEC.md §4.7) — "Talk to Meera" entry with a DPDP consent

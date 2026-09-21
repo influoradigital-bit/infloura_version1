@@ -21,7 +21,7 @@
 import * as React from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useDailySuggestion } from './useDailySuggestion';
 import { api } from '@/lib/api';
 
@@ -42,6 +42,15 @@ const READY_SUGGESTION = {
 };
 
 describe('useDailySuggestion — F-0480: connection is verified against the backend', () => {
+  // T-TSOFF-0920 — every case in this file is about the ENABLED feature, so the server switch is
+  // pinned on. Without this the hook correctly short-circuits to 'disabled' (the real default in
+  // mock mode is trendsEnabled:false), which would make the F-0480 assertions below vacuous
+  // rather than failing — they would stop exercising the connection-verification path at all.
+  // The switched-OFF behaviour is asserted separately in useDailySuggestion.trends-off.test.ts.
+  beforeEach(() => {
+    vi.spyOn(api.config, 'public').mockResolvedValue({ requireEmailOtp: false, trendsEnabled: true });
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();

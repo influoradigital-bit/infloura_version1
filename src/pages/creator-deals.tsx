@@ -31,6 +31,7 @@ import { getInitials } from '@/lib/helpers';
 import { type HypeInvite } from '@/lib/demo-data';
 import { HypeInboxCard } from '@/components/creator/hype-inbox-card';
 import { useToast } from '@/hooks/use-toast';
+import { useTrendsEnabled } from '@/hooks/useTrendsEnabled';
 import { DealTermsSummary } from '@/components/shared/deal-terms-summary';
 
 /**
@@ -206,6 +207,8 @@ export const mockDeals: DealRoom[] = [
 export default function CreatorDealsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  // T-TSOFF-0920 — gates the Co-pilot "today's content idea" entry card below.
+  const { trendsEnabled } = useTrendsEnabled();
   const [searchParams] = useSearchParams();
   const [deals, setDeals] = React.useState<DealRoom[]>([]);
   /**
@@ -495,19 +498,27 @@ export default function CreatorDealsPage() {
 
         {/* Creator AI Co-pilot — the full daily-suggestion card now lives at its own
             route (/creator/copilot, Ananya A2); this is just a slim entry point so
-            Deals doesn't carry a second full copy of it. */}
-        <Card
-          onClick={() => navigate('/creator/copilot')}
-          className="mb-3 cursor-pointer transition-all hover:shadow-sm"
-        >
-          <CardContent className="flex items-center justify-between gap-3 py-3">
-            <div className="flex items-center gap-2.5">
-              <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
-              <p className="text-sm font-medium">Get today&rsquo;s content idea from Co-pilot</p>
-            </div>
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </CardContent>
-        </Card>
+            Deals doesn't carry a second full copy of it.
+
+            T-TSOFF-0920: hidden entirely while trend ingest is off. The card's whole promise is
+            its label — "Get today's content idea from Co-pilot" — and with the feature off there
+            is no idea behind it, so it is a dead control: it navigates somewhere that can only
+            say "not available yet". The /creator/copilot ROUTE and its sidebar nav entry both
+            stay, because that page also hosts Meera chat, which is on for the beta. */}
+        {trendsEnabled && (
+          <Card
+            onClick={() => navigate('/creator/copilot')}
+            className="mb-3 cursor-pointer transition-all hover:shadow-sm"
+          >
+            <CardContent className="flex items-center justify-between gap-3 py-3">
+              <div className="flex items-center gap-2.5">
+                <Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
+                <p className="text-sm font-medium">Get today&rsquo;s content idea from Co-pilot</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Hype invites — one-tap accept, shown alongside new proposals */}
         {(activeFilter === 'all' || activeFilter === 'new') &&

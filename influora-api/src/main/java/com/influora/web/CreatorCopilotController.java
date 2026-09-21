@@ -1,6 +1,7 @@
 package com.influora.web;
 
 import com.influora.common.ApiResponse;
+import com.influora.config.TrendFeatureGate;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorContextService;
@@ -21,6 +22,17 @@ import org.springframework.web.bind.annotation.RestController;
  * never trusted from a path/body param (Guardrail 2, Kabir gate threat-1: PASS). The {@code {id}}
  * path param on dismiss/acted is the *suggestion* id only; ownership is enforced inside {@code
  * CreatorNudgeLogRepository.findByIdAndCreatorProfileId}, never by trusting the path.
+ *
+ * <p><b>T-TSOFF-0920 — one documented exception to the frozen "always 200" contract below.</b>
+ * The daily suggestion is trend-derived: {@code CreatorNudgeService#getSuggestion} scores the
+ * creator's theme tags against {@code TrendRepository.findActive}. With trend ingest off that
+ * list is permanently empty, so the endpoint could only ever answer {@code no_suggestion_today}
+ * — the same wire value it sends on a normal day when nothing matched. The SPA cannot tell those
+ * apart, and it showed the difference: it rendered "No new idea today — check back tomorrow" for
+ * a feature that has no tomorrow. So when {@link TrendFeatureGate#isEnabled()} is false every
+ * method here answers {@code 404 TRENDS_DISABLED} instead, and the SPA renders an honest
+ * "not available yet" state. API-CONTRACT.md §1.1's rule still governs the ENABLED feature
+ * verbatim: "nothing to say today" is still a 200, never a 4xx.
  */
 @RestController
 @RequestMapping("/creator/copilot")
@@ -28,11 +40,15 @@ public class CreatorCopilotController {
 
     private final CreatorContextService creatorContext;
     private final CreatorNudgeService nudgeService;
+    private final TrendFeatureGate trendFeatureGate;
 
     public CreatorCopilotController(
-            CreatorContextService creatorContext, CreatorNudgeService nudgeService) {
+            CreatorContextService creatorContext,
+            CreatorNudgeService nudgeService,
+            TrendFeatureGate trendFeatureGate) {
         this.creatorContext = creatorContext;
         this.nudgeService = nudgeService;
+        this.trendFeatureGate = trendFeatureGate;
     }
 
     /** "Nothing to say today" is always a 200 success with {@code status:
@@ -42,6 +58,7 @@ public class CreatorCopilotController {
     @GetMapping("/suggestion/today")
     public ResponseEntity<ApiResponse<SuggestionTodayResponse>> getToday(
             @AuthenticationPrincipal AuthPrincipal principal) {
+        trendFeatureGate.requireEnabled();
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
         SuggestionResult result = nudgeService.getSuggestion(profile.getId());
         return ResponseEntity.ok(
@@ -54,6 +71,7 @@ public class CreatorCopilotController {
     @PostMapping("/suggestion/{id}/dismiss")
     public ResponseEntity<ApiResponse<Void>> dismiss(
             @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
+        trendFeatureGate.requireEnabled();
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
         nudgeService.markDismissed(profile.getId(), id);
         return ResponseEntity.ok(ApiResponse.ok(null));
@@ -63,6 +81,7 @@ public class CreatorCopilotController {
     @PostMapping("/suggestion/{id}/acted")
     public ResponseEntity<ApiResponse<Void>> acted(
             @AuthenticationPrincipal AuthPrincipal principal, @PathVariable String id) {
+        trendFeatureGate.requireEnabled();
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
         nudgeService.markActed(profile.getId(), id);
         return ResponseEntity.ok(ApiResponse.ok(null));

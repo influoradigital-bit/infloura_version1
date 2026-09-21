@@ -9,6 +9,7 @@ import { BrandAvatar } from '@/components/ui/brand-avatar';
 import { cn, formatINR } from '@/lib/utils';
 import { DURATION_NORMAL, EASE_OUT } from '@/lib/motion-config';
 import { useTrendSparkNudge } from '@/hooks/trendspark/useTrendSparkNudge';
+import { useTrendsEnabled } from '@/hooks/useTrendsEnabled';
 import { ThemeProvenanceBadge } from '@/components/trendspark/ThemeProvenanceBadge';
 import type { TrendSparkVideoCard } from '@/lib/api';
 
@@ -92,11 +93,21 @@ export interface TrendSparkNudgeCardProps {
  *  - SNAPSBY: up to 3 ready catalog videos with a "Preview" handoff per video.
  */
 export function TrendSparkNudgeCard({ className }: TrendSparkNudgeCardProps) {
+  // T-TSOFF-0920 — hard gate, read before anything else. The brand dashboard is a
+  // "glance" surface: with the feature off the honest treatment is to render NOTHING
+  // here (no empty slot, no "not available yet" card telling a brand about a feature
+  // they cannot have), which is exactly what the existing silent-by-default card does
+  // anyway. The value of the explicit check is that it is now DELIBERATE and asserted,
+  // instead of an accident of the trends table happening to be empty — and it also
+  // blocks the mock-mode fabricated nudge (MOCK_TRENDSPARK_NUDGE in api.ts) from ever
+  // reaching a real user on a build where VITE_API_MODE was not set to `live`.
+  const { trendsEnabled } = useTrendsEnabled();
   const { nudge, isLoading, recordClick } = useTrendSparkNudge();
   const reduceMotion = useReducedMotion();
   const [dismissedId, setDismissedId] = React.useState<string | null>(null);
 
   const visible =
+    trendsEnabled &&
     !isLoading &&
     !!nudge &&
     nudge.nudgeId !== dismissedId &&

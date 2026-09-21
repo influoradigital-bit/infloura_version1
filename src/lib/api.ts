@@ -3714,6 +3714,18 @@ export interface PublicConfigResponse {
    * completed OTP verification, so the signup pages must run the OTP step first.
    */
   requireEmailOtp: boolean;
+  /**
+   * T-TSOFF-0920 - the ONE switch every trend-derived surface reads (brand Trend-Spark nudge,
+   * creator Co-pilot daily idea, and the entry points that link to them). Server-derived from
+   * `TrendIngestProperties.canProduceTrends()` via `TrendFeatureGate`, so it is true only when a
+   * trend row can actually exist: ingest enabled AND at least one source key AND a classifier
+   * workspace id. There is deliberately no frontend constant mirroring this - flipping the server
+   * env turns the UI back on with no frontend release.
+   *
+   * Never read this directly in a component; use `useTrendsEnabled()`, which shares one
+   * react-query cache entry across every surface.
+   */
+  trendsEnabled: boolean;
 }
 
 export const config = {
@@ -3742,11 +3754,27 @@ export const config = {
    * they existed, a blip on this GET produced a signup form no user could complete.
    */
   public: async (): Promise<PublicConfigResponse> => {
-    if (!isLive()) return mockOr<PublicConfigResponse>({ requireEmailOtp: false });
+    if (!isLive()) {
+      // T-TSOFF-0920: mock mode must not invent a live feature. Opt in locally with
+      // `VITE_MOCK_TRENDS_ENABLED=true` in .env.local to demo the trend surfaces offline.
+      return mockOr<PublicConfigResponse>({
+        requireEmailOtp: false,
+        trendsEnabled: import.meta.env?.VITE_MOCK_TRENDS_ENABLED === 'true',
+      });
+    }
     try {
-      return await http.request<PublicConfigResponse>('GET', '/config/public');
+      const raw = await http.request<PublicConfigResponse>('GET', '/config/public');
+      // T-TSOFF-0920: `?? false` covers an OLDER BACKEND that does not send the field at all -
+      // absent is read as off, so a frontend deployed ahead of the API never advertises trends.
+      return { ...raw, trendsEnabled: raw?.trendsEnabled ?? false };
     } catch {
-      return { requireEmailOtp: false };
+      // `trendsEnabled` defaults the OTHER way to `requireEmailOtp` on a failed read - `false`,
+      // the safe value, not the permissive one. There is no server-side recovery for it the way
+      // there is for the OTP flag: if this GET fails and we guessed `true`, the SPA would render
+      // a trend surface whose own endpoint then answers 404 TRENDS_DISABLED, which is exactly the
+      // empty-slot / dead-control state this flag exists to remove. Guessing `false` only ever
+      // hides a working feature for one page load, which is recoverable and harmless.
+      return { requireEmailOtp: false, trendsEnabled: false };
     }
   },
 };
