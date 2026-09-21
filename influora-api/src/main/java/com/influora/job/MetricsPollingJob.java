@@ -299,6 +299,11 @@ public class MetricsPollingJob {
                                     profile.mediaCount() == null ? null : profile.mediaCount().intValue())
                             .avgReachPerPost(averageOf(mediaRows, MediaMetric::getReach))
                             .avgImpressionsPerPost(averageOf(mediaRows, MediaMetric::getImpressions))
+                            // Same aggregation, same null-not-zero contract, from the same poll's
+                            // per-post rows — these two are surfaced to brands on
+                            // PlatformStatResponse alongside reach and views.
+                            .avgLikesPerPost(averageOf(mediaRows, MediaMetric::getLikes))
+                            .avgCommentsPerPost(averageOf(mediaRows, MediaMetric::getComments))
                             .avgEngagementRate(
                                     averageEngagementRate(mediaRows, profile.followersCount()))
                             .dataSource(DATA_SOURCE_META_API)

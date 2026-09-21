@@ -579,6 +579,7 @@ public class PortfolioService {
                             metric.isPlatformVerified(),
                             handle);
             written = existing.get();
+            applyAverages(written, metric);
             platformStatRepository.save(written);
         } else {
             written =
@@ -592,6 +593,7 @@ public class PortfolioService {
                             // CR-119 — was a hardcoded `false`; see the update branch above.
                             .verified(metric.isPlatformVerified())
                             .build();
+            applyAverages(written, metric);
             platformStatRepository.save(written);
         }
 
@@ -625,6 +627,29 @@ public class PortfolioService {
                         e);
             }
         }
+    }
+
+    /**
+     * Mirrors {@code PlatformStatsAggregationJob#applyAverages} — this class's upsert is a
+     * deliberate duplicate of that job's (see the javadoc on {@link #upsertPlatformStat}), so the
+     * averages must be carried on BOTH or the numbers the job writes would silently freeze the next
+     * time a creator runs a portfolio sync.
+     *
+     * <p>Null-preserving by design (see {@code PlatformStat#applyMetricAverages}), which is what
+     * makes this safe on the first-connect path: {@link #syncPlatforms} never calls the insights
+     * endpoint, so its snapshot carries null averages — with the null-preserving rule that is a
+     * no-op rather than a wipe of what the polling job already measured.
+     */
+    private void applyAverages(PlatformStat stat, CreatorMetric metric) {
+        stat.applyMetricAverages(
+                metric.getAvgReachPerPost(),
+                // Meta's unified `views` count arrives in the impressions column.
+                metric.getAvgImpressionsPerPost(),
+                metric.getAvgLikesPerPost(),
+                metric.getAvgCommentsPerPost(),
+                CreatorMetric.DATA_SOURCE_META_API.equals(metric.getDataSource())
+                        ? metric.getFetchedAt()
+                        : null);
     }
 
     @Transactional(readOnly = true)
@@ -1440,7 +1465,14 @@ public class PortfolioService {
                 ps.getFollowers(),
                 ps.getEngagementRate(),
                 ps.isVerified(),
-                ps.getProfileUrl());
+                ps.getProfileUrl(),
+                // Straight through, nulls included — see CreatorMapper#toPlatform; all three
+                // producers of this DTO are deliberately byte-identical.
+                ps.getAvgReachPerPost(),
+                ps.getAvgViewsPerPost(),
+                ps.getAvgLikesPerPost(),
+                ps.getAvgCommentsPerPost(),
+                ps.getLastSyncedAt());
     }
 
     /**

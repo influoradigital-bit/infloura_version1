@@ -209,6 +209,7 @@ public class PlatformStatsAggregationJob {
                             metric.getAvgEngagementRate(),
                             metric.isPlatformVerified(),
                             handle);
+            applyAverages(existing.get(), metric);
             platformStatRepository.save(existing.get());
             return existing.get();
         } else {
@@ -223,8 +224,34 @@ public class PlatformStatsAggregationJob {
                             // CR-119 — was a hardcoded `false`; see the update branch above.
                             .verified(metric.isPlatformVerified())
                             .build();
+            applyAverages(created, metric);
             platformStatRepository.save(created);
             return created;
         }
+    }
+
+    /**
+     * Carries the newest snapshot's per-post averages onto the stat row, exactly as the
+     * {@code avgEngagementRate} copy above already carries the engagement number.
+     *
+     * <p>{@code metric} is the newest row for this platform
+     * ({@code findFirstByCreatorProfileIdAndPlatformOrderByTimeDesc}), so no extra repository call
+     * is needed. Note the deliberate mapping: Meta's unified {@code views} count lands in the
+     * impressions column, so {@code avgImpressionsPerPost} is what the UI calls "avg views".
+     *
+     * <p>The sync timestamp is passed only for a META_API snapshot. A creator-reported row leaves it
+     * null rather than claiming a platform sync that never happened (EV-008/CR-119). Nothing here
+     * defaults a missing average to 0 — contrast {@code AdminCreatorService#platformStats}, which
+     * collapses null to {@code 0L} and is the fabricated-zero shape F-0589 forbids.
+     */
+    private void applyAverages(PlatformStat stat, CreatorMetric metric) {
+        stat.applyMetricAverages(
+                metric.getAvgReachPerPost(),
+                metric.getAvgImpressionsPerPost(),
+                metric.getAvgLikesPerPost(),
+                metric.getAvgCommentsPerPost(),
+                CreatorMetric.DATA_SOURCE_META_API.equals(metric.getDataSource())
+                        ? metric.getFetchedAt()
+                        : null);
     }
 }

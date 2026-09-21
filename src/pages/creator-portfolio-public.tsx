@@ -781,9 +781,30 @@ function PlatformPill({ stats }: { stats: PortfolioPlatformStats }) {
 
 function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
   const Icon = stats.platform === 'INSTAGRAM' ? Instagram : stats.platform === 'YOUTUBE' ? Youtube : Globe;
-  const reachLabel = stats.platform === 'YOUTUBE' ? 'Avg Views per Video' : 'Avg Reel Views';
   const followerLabel = stats.platform === 'YOUTUBE' ? 'Subscribers' : 'Followers';
   const syncedLabel = relativeTime(stats.lastSyncedAt);
+  /**
+   * The four per-post averages, in the order a brand reads them: how many people it reached,
+   * how many watched, how many reacted. Each is null unless this platform has polled Meta media
+   * insights, so the block is shown only when at least ONE of them arrived — a Meta-synced
+   * platform. Showing it whenever the platform exists would put four "—" rows under every
+   * creator-declared YouTube/TikTok handle, which is worse than the old (never-rendering) block,
+   * not better (CreatorDtos.PlatformStatResponse javadoc, F-0589).
+   *
+   * Inside a synced platform an individual null still renders "—": Meta can return reach
+   * without views on an image-only feed, and a 0 there would read as "nobody watched".
+   *
+   * "Avg Views" is Meta's unified view count. It is persisted in a column named `impressions`
+   * (MediaMetricMapper.java:77-84); that name is legacy plumbing and deliberately does not
+   * appear here.
+   */
+  const postAverages: Array<{ label: string; value: number | null | undefined }> = [
+    { label: 'Avg Reach per Post', value: stats.avgReach },
+    { label: 'Avg Views per Post', value: stats.avgViews },
+    { label: 'Avg Likes per Post', value: stats.avgLikes },
+    { label: 'Avg Comments per Post', value: stats.avgComments },
+  ];
+  const hasPostAverages = postAverages.some((row) => typeof row.value === 'number');
   return (
     <Card>
       <CardContent className="p-4">
@@ -824,12 +845,15 @@ function PlatformStatCard({ stats }: { stats: PortfolioPlatformStats }) {
             <span className="text-xs text-muted-foreground">Engagement Rate</span>
             <span className="text-sm font-semibold">{stats.engagementRate != null ? `${stats.engagementRate.toFixed(1)}%` : '—'}</span>
           </div>
-          {typeof stats.avgReach === 'number' && (
-            <div className="flex items-baseline justify-between">
-              <span className="text-xs text-muted-foreground">{reachLabel}</span>
-              <span className="text-sm font-semibold">{formatFollowers(stats.avgReach)}</span>
-            </div>
-          )}
+          {hasPostAverages &&
+            postAverages.map((row) => (
+              <div key={row.label} className="flex items-baseline justify-between">
+                <span className="text-xs text-muted-foreground">{row.label}</span>
+                <span className="text-sm font-semibold">
+                  {typeof row.value === 'number' ? formatFollowers(row.value) : '—'}
+                </span>
+              </div>
+            ))}
         </div>
         {/* CR-14 — the whole line is dropped when there is no usable sync
             timestamp; it never falls through to "Synced NaNd ago". */}

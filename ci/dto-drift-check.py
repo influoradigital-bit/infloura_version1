@@ -43,14 +43,14 @@ PAIRS = [
         "ts_file": "src/lib/api.ts",
         "java": "PlatformStatResponse",
         "java_file": "influora-api/src/main/java/com/influora/web/dto/creator/CreatorDtos.java",
-        "fe_only": {
-            "avgReach": "not on PlatformStatResponse; populated from portfolio metrics",
-            # Declared, not silent: the backend genuinely never sends this. It is optional and
-            # the "synced N ago" label degrades to hidden (creator-portfolio-public.tsx:746,
-            # relativeTime handles null), so live portfolios simply never show a sync time.
-            # Only the mock fixtures populate it. Remove this exemption if the backend adds it.
-            "lastSyncedAt": "never sent by PlatformStatResponse; optional, label hides when absent",
-        },
+        # No exemptions. avgReach and lastSyncedAt WERE exempted here while the Java record
+        # was a 6-component row that sent neither. Both are now real components of
+        # PlatformStatResponse alongside avgViews/avgLikes/avgComments, so the exemptions were
+        # not merely redundant: the comparison below is one-directional (ts - java - fe_only),
+        # so an exemption for a field the backend does send silently subtracts that field
+        # forever — a later rename of the Java component would leave the gate green. Keep this
+        # empty unless the FE genuinely declares something the server never sends.
+        "fe_only": {},
     },
     {
         "ts": "ContractApiRecord",

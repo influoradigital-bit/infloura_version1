@@ -97,6 +97,19 @@ public class CreatorMetric {
     @Column(name = "avg_impressions_per_post")
     private Long avgImpressionsPerPost;
 
+    /**
+     * Mean likes across the posts polled in this cycle. Boxed, and legitimately null: {@code
+     * MetricsPollingJob#averageOf} returns null for an empty or all-null media list rather than 0,
+     * because "Meta returned no media this cycle" is not "this creator averages zero likes"
+     * (F-0589).
+     */
+    @Column(name = "avg_likes_per_post")
+    private Long avgLikesPerPost;
+
+    /** Mean comments across the posts polled in this cycle. Null-vs-zero as above. */
+    @Column(name = "avg_comments_per_post")
+    private Long avgCommentsPerPost;
+
     @Column(name = "profile_views")
     private Long profileViews;
 
@@ -156,6 +169,14 @@ public class CreatorMetric {
 
     public Long getAvgImpressionsPerPost() {
         return avgImpressionsPerPost;
+    }
+
+    public Long getAvgLikesPerPost() {
+        return avgLikesPerPost;
+    }
+
+    public Long getAvgCommentsPerPost() {
+        return avgCommentsPerPost;
     }
 
     public Long getProfileViews() {
@@ -237,6 +258,16 @@ public class CreatorMetric {
 
         public Builder avgImpressionsPerPost(Long avgImpressionsPerPost) {
             m.avgImpressionsPerPost = avgImpressionsPerPost;
+            return this;
+        }
+
+        public Builder avgLikesPerPost(Long avgLikesPerPost) {
+            m.avgLikesPerPost = avgLikesPerPost;
+            return this;
+        }
+
+        public Builder avgCommentsPerPost(Long avgCommentsPerPost) {
+            m.avgCommentsPerPost = avgCommentsPerPost;
             return this;
         }
 

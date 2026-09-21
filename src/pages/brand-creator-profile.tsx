@@ -33,7 +33,7 @@ import {
   type SimilarCreator,
   type PortfolioRateRow,
 } from '@/lib/api';
-import type { Platform, CreatorDemographics } from '@/lib/types';
+import type { Platform, PlatformStats, CreatorDemographics } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { cssVars } from '@/lib/css-vars';
 import { followersCaption } from '@/components/brand/discover/creator-discovery';
@@ -72,6 +72,19 @@ interface CreatorPlatformView {
   engagement: number;
   verified: boolean;
   color: string;
+  /**
+   * Per-post averages for THIS platform, straight off `CreatorDtos.PlatformStatResponse`
+   * (CreatorDtos.java:24-36). Optional because the mock creator above predates them; in live
+   * mode `buildLiveCreatorView` always sets all four, using `null` — never 0 — for a platform
+   * with no polled Meta media insights, which is every creator-declared handle.
+   *
+   * `avgViews` is Meta's unified view count; it lives in a column named `impressions`
+   * (MediaMetricMapper.java:77-84) and that legacy name must not reach a label.
+   */
+  avgReach?: number | null;
+  avgViews?: number | null;
+  avgLikes?: number | null;
+  avgComments?: number | null;
 }
 
 interface CreatorDisplayModel {
@@ -93,13 +106,27 @@ interface CreatorDisplayModel {
     /** EV-008 — provenance of totalFollowers/avgEngagement (absent in mock mode). */
     followersSource?: 'VERIFIED' | 'IMPORTED' | 'NONE';
     /**
-     * F-0260 — DiscoveryDtos.CreatorPublicProfileResponse has no per-post average likes/
-     * comments/views field. `null` in live mode, rendered as an explicit "—" instead of a
-     * fabricated "0 Avg Likes" presented as a measured fact (same rule as `rating` below).
+     * F-0260 — these were `null` in live mode because the DTO carried no per-post averages at
+     * all. `CreatorDtos.PlatformStatResponse` carries them now (CreatorDtos.java:24-36), and
+     * `DiscoveryDtos.CreatorPublicProfileResponse.platforms` is a list of exactly that record
+     * (DiscoveryDtos.java:75), so the values arrive per platform.
+     *
+     * They stay `null` whenever no connected platform reports them, and are still rendered as
+     * an explicit "—" rather than a fabricated "0 Avg Likes" presented as a measured fact
+     * (same rule as `rating` below).
+     *
+     * These are ONE platform's averages, not a cross-platform figure — see
+     * `dominantPlatformAverages`. There is no post count on the wire, so a creator-level mean
+     * cannot be computed, and a mean-of-means would be a number no measurement produced.
      */
     avgLikes: number | null;
     avgComments: number | null;
     avgViews: number | null;
+    /**
+     * The platform `avgLikes`/`avgComments`/`avgViews` were taken from (e.g. "Instagram"), so
+     * the headline tiles can say whose numbers they are. `null` when no platform reports any.
+     */
+    averagesSource: string | null;
     completedCampaigns: number;
     /**
      * PR-1 (BrandF.md §87) — real avg of brand→creator star reviews from
@@ -289,6 +316,7 @@ const mockCreator: CreatorDisplayModel = {
     avgLikes: 46500,
     avgComments: 1820,
     avgViews: 245000,
+    averagesSource: 'Instagram',
     completedCampaigns: 67,
     rating: 4.9,
     reviewCount: 52,
@@ -457,7 +485,81 @@ const PLATFORM_COLOR: Partial<Record<Platform, string>> = {
   TWITTER: '#1DA1F2',
 };
 
+/**
+ * Picks the ONE platform whose per-post averages the headline tiles show.
+ *
+ * The tiles are creator-level but the data is per-platform, and a true creator-level average
+ * needs a post count per platform to weight by — nothing on the wire carries one. A plain mean
+ * of the platform means would print a figure no measurement produced, which is exactly the class
+ * of number F-0260 removed from this page. So one platform is chosen and named in the label
+ * instead: the largest, by followers, among those that actually report an average. In practice
+ * that is the creator's Meta-synced Instagram, because Meta insights are the only source of
+ * these four numbers today.
+ *
+ * Returns all-null when no platform reports anything, which the tiles render as "—".
+ */
+function dominantPlatformAverages(platforms: PlatformStats[]): {
+  avgLikes: number | null;
+  avgComments: number | null;
+  avgViews: number | null;
+  source: string | null;
+} {
+  const reporting = platforms.filter(
+    (p) =>
+      typeof p.avgLikes === 'number' ||
+      typeof p.avgComments === 'number' ||
+      typeof p.avgViews === 'number' ||
+      typeof p.avgReach === 'number'
+  );
+  if (reporting.length === 0) {
+    return { avgLikes: null, avgComments: null, avgViews: null, source: null };
+  }
+  const best = reporting.reduce((a, b) => (b.followers > a.followers ? b : a));
+  return {
+    avgLikes: best.avgLikes ?? null,
+    avgComments: best.avgComments ?? null,
+    avgViews: best.avgViews ?? null,
+    source: PLATFORM_LABEL[best.platform] ?? best.platform,
+  };
+}
+
+/**
+ * The four per-post averages for one platform, shown under that platform's handle so each
+ * number stays attached to the account that produced it.
+ *
+ * Rendered only when at least one of the four arrived — a Meta-synced platform. A
+ * creator-declared YouTube/TikTok/X handle has all four null, and printing four "—" under every
+ * one of them would be noise, not honesty (CreatorDtos.PlatformStatResponse javadoc, F-0589).
+ * Within a synced platform an individual null still prints "—": Meta returns reach without
+ * views on an image-only feed, and a 0 there would read as "nobody watched".
+ */
+function PlatformAverages({ platform }: { platform: CreatorPlatformView }) {
+  const rows: Array<{ label: string; value: number | null | undefined }> = [
+    { label: 'Reach', value: platform.avgReach },
+    // Meta's unified view count — stored in a column named `impressions`, never labelled so.
+    { label: 'Views', value: platform.avgViews },
+    { label: 'Likes', value: platform.avgLikes },
+    { label: 'Comments', value: platform.avgComments },
+  ];
+  if (!rows.some((r) => typeof r.value === 'number')) return null;
+  return (
+    <p className="mt-1 text-[11px] text-muted-foreground">
+      <span className="sr-only">Average per post: </span>
+      {rows.map((r, i) => (
+        <React.Fragment key={r.label}>
+          {i > 0 ? <span aria-hidden="true"> · </span> : null}
+          <span>
+            {r.label} {typeof r.value === 'number' ? formatNumber(r.value) : '—'}
+          </span>
+        </React.Fragment>
+      ))}
+      <span> / post</span>
+    </p>
+  );
+}
+
 function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
+  const averages = dominantPlatformAverages(row.platforms ?? []);
   return {
     id: row.id,
     displayName: row.displayName,
@@ -475,11 +577,15 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       totalFollowers: row.totalFollowers,
       avgEngagement: row.engagementRate,
       followersSource: row.followersSource,
-      // F-0260 — was hardcoded to 0, rendering as a fabricated "0 Avg Likes"/"0 Avg Views" for
-      // every creator. `null`: DTO has no per-post average likes/comments/views field.
-      avgLikes: null,
-      avgComments: null,
-      avgViews: null,
+      // F-0260 — was hardcoded to 0 (a fabricated "0 Avg Likes"/"0 Avg Views" on every
+      // creator), then to null once the fabrication was removed. Real now: the platform list
+      // carries per-post averages, and `dominantPlatformAverages` names the one platform they
+      // came from instead of blending platforms into a number nothing measured. Still null —
+      // never 0 — when no connected platform has polled Meta insights.
+      avgLikes: averages.avgLikes,
+      avgComments: averages.avgComments,
+      avgViews: averages.avgViews,
+      averagesSource: averages.source,
       // PR-1 fix (BrandF.md §87) — real count from GET /creators/profile/:usernameOrId.
       // The old GET /creators/:id (CreatorResponse) had no such field at all, so this was
       // hardcoded to 0 and rendered as a fabricated "0 campaigns" for every creator.
@@ -503,6 +609,12 @@ function buildLiveCreatorView(row: LiveCreatorRow): CreatorDisplayModel {
       engagement: p.engagementRate,
       verified: p.isVerified,
       color: PLATFORM_COLOR[p.platform] ?? '#6B7280',
+      // Per-post averages stay attached to the platform that measured them; the card below
+      // shows them under that platform's handle. `null`, not 0, when absent.
+      avgReach: p.avgReach ?? null,
+      avgViews: p.avgViews ?? null,
+      avgLikes: p.avgLikes ?? null,
+      avgComments: p.avgComments ?? null,
     })),
     audience: {
       // F-0795/F-0796 [ananya · 2026-09-17] — age/gender/city breakdown moved out of this
@@ -927,14 +1039,22 @@ export default function BrandCreatorProfilePage() {
               icon: TrendingUp,
             },
             {
-              // F-0260 — `null` means the DTO has no per-post average; render an explicit
-              // not-available state instead of a fabricated "0" (same rule as Rating below).
-              label: 'Avg Likes',
+              // F-0260 — `null` means no connected platform reports a per-post average; render
+              // an explicit not-available state instead of a fabricated "0" (same rule as
+              // Rating below). When a value IS present it belongs to one platform, and the
+              // label says which — these tiles never blend platforms into a single figure.
+              label: creator.stats.averagesSource
+                ? `Avg Likes · ${creator.stats.averagesSource}`
+                : 'Avg Likes',
               value: creator.stats.avgLikes != null ? formatNumber(creator.stats.avgLikes) : '—',
               icon: Heart,
             },
             {
-              label: 'Avg Views',
+              // "Views" is Meta's unified view count. It is persisted in a column named
+              // `impressions` (MediaMetricMapper.java:77-84) — legacy plumbing, never a label.
+              label: creator.stats.averagesSource
+                ? `Avg Views · ${creator.stats.averagesSource}`
+                : 'Avg Views',
               value: creator.stats.avgViews != null ? formatNumber(creator.stats.avgViews) : '—',
               icon: Eye,
             },
@@ -996,6 +1116,7 @@ export default function BrandCreatorProfilePage() {
                     ) : null}
                   </div>
                   <p className="text-sm text-muted-foreground">{platform.handle}</p>
+                  <PlatformAverages platform={platform} />
                 </div>
                 <div className="text-right">
                   <p className="font-semibold">{formatNumber(platform.followers)}</p>

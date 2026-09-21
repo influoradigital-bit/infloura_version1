@@ -60,8 +60,14 @@ const NO_DEMOGRAPHICS_DATA = {
   fetchedAt: null,
 };
 
-// A real CreatorPublicProfile response. The DTO has no avgLikes/avgComments/avgViews/gender
-// fields — this object is exactly what the live server actually returns, not a partial fixture.
+// A real CreatorPublicProfile response. This object is exactly what the live server actually
+// returns for this creator, not a partial fixture.
+//
+// The per-post averages now DO exist on the wire — `CreatorDtos.PlatformStatResponse` carries
+// avgReach/avgViews/avgLikes/avgComments per platform — but they ride the `platforms` list, and
+// this creator has connected none. So the absent state under test is unchanged and is if
+// anything the more common one: no connected platform means no measured average to show, and
+// the tiles must still print "—", never a 0.
 const CREATOR_WITH_NO_ENGAGEMENT_STATS = {
   id: 'cp_no_stats',
   username: 'quietcreator',

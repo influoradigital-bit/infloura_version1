@@ -96,7 +96,15 @@ public final class CreatorMapper {
                 ps.getFollowers(),
                 ps.getEngagementRate(),
                 ps.isVerified(),
-                ps.getProfileUrl());
+                ps.getProfileUrl(),
+                // Straight through, nulls included. Contrast the handle line above, which defaults
+                // to "" because the client types handle as a non-nullable string; these are typed
+                // optional and a fabricated 0 would read as a measured average (F-0589).
+                ps.getAvgReachPerPost(),
+                ps.getAvgViewsPerPost(),
+                ps.getAvgLikesPerPost(),
+                ps.getAvgCommentsPerPost(),
+                ps.getLastSyncedAt());
     }
 
     private static BigDecimal averageRate(BigDecimal min, BigDecimal max) {

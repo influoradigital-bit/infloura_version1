@@ -579,6 +579,34 @@ export interface PlatformStats {
   engagementRate: number;
   isVerified: boolean;
   profileUrl?: string;
+  /**
+   * Per-post averages, from `CreatorDtos.PlatformStatResponse` (CreatorDtos.java:24-36) — the
+   * same record backs both `CreatorResponse.platforms` and
+   * `DiscoveryDtos.CreatorPublicProfileResponse.platforms` (DiscoveryDtos.java:75), so these
+   * arrive on every endpoint typed as `PlatformStats[]`.
+   *
+   * Every one of them is a boxed `Long` server-side and is null far more often than not: they
+   * exist only for a Meta-synced platform whose media insights have been polled
+   * (MetricsPollingJob writes them into `creator_metrics`; PlatformStat#applyMetricAverages
+   * copies them onto the row). A creator-declared platform — YouTube, TikTok, X, or an
+   * Instagram account that has never completed a sync — carries `null` for all four. Absent is
+   * not zero (F-0589): consumers must render an explicit "—", never a measured-looking 0.
+   */
+  avgReach?: number | null;
+  /**
+   * Meta's unified `views` count for the platform's recent posts. Stored upstream in the
+   * `impressions` column of `media_metrics` for legacy reasons (MediaMetricMapper.java:77-84);
+   * that column name is an implementation detail and must never surface in the UI — this is
+   * "views" to a brand and to a creator.
+   */
+  avgViews?: number | null;
+  avgLikes?: number | null;
+  avgComments?: number | null;
+  /**
+   * ISO timestamp of the last Meta sync for this platform, or null for a creator-declared one
+   * (the writers pass it only when `CreatorMetric.DATA_SOURCE_META_API` produced the row).
+   */
+  lastSyncedAt?: string | null;
 }
 
 // ============================================

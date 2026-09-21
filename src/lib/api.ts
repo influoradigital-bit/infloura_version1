@@ -4687,13 +4687,34 @@ export interface PortfolioPlatformStats {
   isVerified: boolean;
   followers: number;
   engagementRate: number;
-  avgReach?: number;
   /**
-   * ISO timestamp of the last platform sync. CR-14 — declared non-nullable
-   * here, but the live `GET /portfolio/:username` response omits it for a
-   * platform that has never completed a sync, which is how the public page
-   * came to render the literal "Synced NaNd ago". Typed to match what the
-   * server actually sends so the consumer's guard isn't dead code.
+   * Per-post averages. `avgReach` was declared here long before the wire carried it — the
+   * server sent a 6-field `PlatformStatResponse` (platform, handle, followers,
+   * engagementRate, isVerified, profileUrl), so the guarded Avg Reach row on the public page
+   * never once rendered. The record now carries all four averages plus `lastSyncedAt`
+   * (CreatorDtos.java:24-36), written by `PortfolioService#toPlatform`
+   * (PortfolioService.java:1436).
+   *
+   * All four are boxed `Long` server-side and are null for any platform without polled Meta
+   * media insights — which is every creator-declared platform (YouTube, TikTok, X) and every
+   * Instagram account that has not completed a sync. Absent is not zero (F-0589): render an
+   * explicit "—", never a 0 that reads as a measurement.
+   */
+  avgReach?: number | null;
+  /**
+   * Meta's unified `views` count. It is persisted in the `impressions` column of
+   * `media_metrics` (MediaMetricMapper.java:77-84) for legacy reasons — that column name is an
+   * implementation detail and must not appear in any label the user reads.
+   */
+  avgViews?: number | null;
+  avgLikes?: number | null;
+  avgComments?: number | null;
+  /**
+   * ISO timestamp of the last platform sync. CR-14 — declared non-nullable here while the
+   * server sent nothing at all, which is how the public page came to render the literal
+   * "Synced NaNd ago". The field is now on the wire, and is null for a creator-declared
+   * platform: both writers pass it only when the backing `CreatorMetric` row came from
+   * `DATA_SOURCE_META_API`. The consumer's `relativeTime()` guard is live, not dead code.
    */
   lastSyncedAt?: string | null;
 }
@@ -4944,7 +4965,13 @@ function mockPortfolio(username: string): PortfolioPage {
         isVerified: true,
         followers: 125000,
         engagementRate: 4.2,
+        // A Meta-synced platform is the only kind that has per-post averages, so this fixture
+        // carries all four plus a sync timestamp. Reach > followers and views > reach is the
+        // normal shape for a reel that travelled beyond the follower base.
         avgReach: 180000,
+        avgViews: 242000,
+        avgLikes: 5250,
+        avgComments: 310,
         lastSyncedAt: new Date(Date.now() - 14 * 60 * 60 * 1000).toISOString(),
       },
       {
@@ -4961,8 +4988,12 @@ function mockPortfolio(username: string): PortfolioPage {
         isVerified: false,
         followers: 50000,
         engagementRate: 3.8,
-        avgReach: 25000,
-        lastSyncedAt: new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString(),
+        // Same CR-119 problem in a second field: `avgReach: 25000` and a `lastSyncedAt` 18h ago
+        // were a measured reach figure and a platform-sync timestamp on a platform this
+        // codebase cannot sync. Both writers set lastSyncedAt only when the backing
+        // CreatorMetric row came from DATA_SOURCE_META_API, and the per-post averages only
+        // exist for polled Meta media — so a YouTube row can carry neither. Dropping them is
+        // what the server actually sends, and drops the per-post block from this card.
       },
     ],
     collabs: [

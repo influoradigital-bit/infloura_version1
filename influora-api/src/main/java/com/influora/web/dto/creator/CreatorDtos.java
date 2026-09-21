@@ -10,13 +10,30 @@ public final class CreatorDtos {
 
     private CreatorDtos() {}
 
+    /**
+     * The per-post averages are boxed {@code Long}, never {@code long}, and every one of them is
+     * routinely null: absent is not zero (F-0589). A creator who has not connected Meta has no
+     * media insights at all, which today is very nearly the whole creator base, so the consuming UI
+     * must key off the value being present rather than off the platform existing — otherwise a
+     * block that used to not render starts rendering empty, which is strictly worse.
+     *
+     * <p>{@code avgViews} is Meta's unified {@code views} count. It is stored in the {@code
+     * impressions} column upstream; the column name is an implementation detail and "views" is what
+     * the UI says. {@code lastSyncedAt} is the last Meta sync of this platform, and is null for a
+     * creator-declared one.
+     */
     public record PlatformStatResponse(
             String platform,
             String handle,
             long followers,
             BigDecimal engagementRate,
             boolean isVerified,
-            String profileUrl) {}
+            String profileUrl,
+            Long avgReach,
+            Long avgViews,
+            Long avgLikes,
+            Long avgComments,
+            Instant lastSyncedAt) {}
 
     public record CreatorResponse(
             String id,

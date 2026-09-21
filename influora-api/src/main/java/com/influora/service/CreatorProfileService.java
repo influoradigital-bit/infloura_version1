@@ -256,7 +256,14 @@ public class CreatorProfileService {
                 ps.getFollowers(),
                 ps.getEngagementRate(),
                 ps.isVerified(),
-                ps.getProfileUrl());
+                ps.getProfileUrl(),
+                // Straight through, nulls included — see CreatorMapper#toPlatform; all three
+                // producers of this DTO are deliberately byte-identical.
+                ps.getAvgReachPerPost(),
+                ps.getAvgViewsPerPost(),
+                ps.getAvgLikesPerPost(),
+                ps.getAvgCommentsPerPost(),
+                ps.getLastSyncedAt());
     }
 
     static int calculateCompleteness(CreatorProfile profile, List<PlatformStat> platforms) {

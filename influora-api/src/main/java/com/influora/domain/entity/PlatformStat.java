@@ -51,6 +51,38 @@ public class PlatformStat {
     @Column(name = "source", nullable = false, length = 20)
     private String source = SOURCE_CREATOR_REPORTED;
 
+    /**
+     * Per-post averages rolled up from the newest {@code creator_metrics} snapshot for this
+     * platform, so the portfolio read path can serve them without a second query.
+     *
+     * <p>All boxed and all legitimately null — null is in fact the DEFAULT state for very nearly
+     * every creator on the platform today, because a creator who never connected Meta has no
+     * insights at all and never will until they do. An absent average must stay null the whole way
+     * to the wire so the UI can omit the block; a 0 here would render as a measured "0 avg reach"
+     * (F-0589). {@code avgViewsPerPost} holds Meta's unified {@code views} count, which arrives in
+     * {@code MediaMetric.impressions}.
+     */
+    @Column(name = "avg_reach_per_post")
+    private Long avgReachPerPost;
+
+    @Column(name = "avg_views_per_post")
+    private Long avgViewsPerPost;
+
+    @Column(name = "avg_likes_per_post")
+    private Long avgLikesPerPost;
+
+    @Column(name = "avg_comments_per_post")
+    private Long avgCommentsPerPost;
+
+    /**
+     * When this platform was last synced FROM META — deliberately not the row's {@code updated_at},
+     * which any write bumps (including a creator typing a handle via {@code
+     * PortfolioService#declarePlatform} and the F-0965 backfill), and which would therefore claim a
+     * Meta sync that never happened. Null for a creator-declared platform, forever.
+     */
+    @Column(name = "last_synced_at", columnDefinition = "DATETIME(6)")
+    private Instant lastSyncedAt;
+
     protected PlatformStat() {}
 
     public String getId() {
@@ -89,6 +121,26 @@ public class PlatformStat {
         return source;
     }
 
+    public Long getAvgReachPerPost() {
+        return avgReachPerPost;
+    }
+
+    public Long getAvgViewsPerPost() {
+        return avgViewsPerPost;
+    }
+
+    public Long getAvgLikesPerPost() {
+        return avgLikesPerPost;
+    }
+
+    public Long getAvgCommentsPerPost() {
+        return avgCommentsPerPost;
+    }
+
+    public Instant getLastSyncedAt() {
+        return lastSyncedAt;
+    }
+
     /**
      * H-10 fix: this table previously had no writer at all (no setters, no {@code save} call
      * site anywhere) — {@code PlatformStatsAggregationJob} calls this to roll the latest {@code
@@ -106,6 +158,46 @@ public class PlatformStat {
         this.handle = handle;
         // F-0965: a snapshot is either a Meta sync or the creator's own declaration.
         this.source = verified ? SOURCE_META_API : SOURCE_CREATOR_REPORTED;
+    }
+
+    /**
+     * Rolls the newest {@code creator_metrics} averages onto this row. Deliberately NOT folded into
+     * {@link #applySnapshot} — that signature has a positional test caller (FollowerTotalsTest), and
+     * widening it would also force {@code PortfolioService#declarePlatform}, where a creator types a
+     * handle and there are no averages to pass, to hand over four nulls.
+     *
+     * <p>F-0589 — each average is overwritten only when the incoming snapshot actually carries one,
+     * the same CR-116 discipline {@code applySnapshot} uses for {@code handle}. {@code
+     * MetricsPollingJob#pollRecentMedia} swallows every failure and returns an empty list, which
+     * makes the averages null; an incoming null therefore means "no media data this cycle", which
+     * must not blank a previously-recorded average.
+     *
+     * <p>{@code syncedAt} is advanced only for a {@code META_API} snapshot — the caller is
+     * responsible for passing null otherwise, so a creator declaration never mints a sync time.
+     *
+     * <p>Known tradeoff: because averages are preserved on null, {@code lastSyncedAt} means "last
+     * Meta sync of this platform", not "last time these averages changed". A poll whose media fetch
+     * failed refreshes the follower count and this timestamp while the averages stay older. That is
+     * the honest reading of the word "Synced", and it matches the existing guarantee that a media
+     * failure must never block the profile snapshot.
+     */
+    public void applyMetricAverages(
+            Long avgReach, Long avgViews, Long avgLikes, Long avgComments, Instant syncedAt) {
+        if (avgReach != null) {
+            this.avgReachPerPost = avgReach;
+        }
+        if (avgViews != null) {
+            this.avgViewsPerPost = avgViews;
+        }
+        if (avgLikes != null) {
+            this.avgLikesPerPost = avgLikes;
+        }
+        if (avgComments != null) {
+            this.avgCommentsPerPost = avgComments;
+        }
+        if (syncedAt != null) {
+            this.lastSyncedAt = syncedAt;
+        }
     }
 
     public static Builder builder() {
