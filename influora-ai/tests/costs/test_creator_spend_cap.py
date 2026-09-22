@@ -28,7 +28,9 @@ CREATOR_ID = "creator-cap-001"
 
 @pytest.fixture(autouse=True)
 async def _reset(monkeypatch):
-    monkeypatch.delenv("AI_CREATOR_MONTHLY_CAP_USD", raising=False)
+    # The boundary tests below are written against a 0.75 cap; pin it so they keep testing
+    # the boundary whatever the shipped default is (2.00 since 2026-09-22).
+    monkeypatch.setenv("AI_CREATOR_MONTHLY_CAP_USD", "0.75")
     monkeypatch.delenv("REDIS_URL", raising=False)
     get_settings.cache_clear()
     await spend_tracker.reset_for_testing()
@@ -38,9 +40,11 @@ async def _reset(monkeypatch):
     await spend_tracker.reset_for_testing()
 
 
-def test_default_cap_is_the_spec_value():
-    assert CREATOR_MONTHLY_CAP_USD == Decimal("0.75")
-    assert creator_monthly_cap_usd() == Decimal("0.75")
+def test_default_cap_is_the_spec_value(monkeypatch):
+    monkeypatch.delenv("AI_CREATOR_MONTHLY_CAP_USD", raising=False)
+    get_settings.cache_clear()
+    assert CREATOR_MONTHLY_CAP_USD == Decimal("2.00")
+    assert creator_monthly_cap_usd() == Decimal("2.00")
 
 
 def test_cap_is_configurable_via_env(monkeypatch):

@@ -401,7 +401,7 @@ services:
       # n8n trend tagger — read at config.py:394, fails closed (503) on /internal/trendspark/tag
       # without this (F-0390 A7)
       TREND_TAG_INGEST_SECRET: ${TREND_TAG_INGEST_SECRET}
-      AI_DAILY_SPEND_CEILING_USD: "15.0"
+      AI_DAILY_SPEND_CEILING_USD: "30.0"
       AI_SPEND_KILL_SWITCH: "false"
       # Meera for Creators (A8): per-creator MONTHLY cap in USD, UTC calendar month,
       # enforced by influora-ai before any provider call (spend_tracker.py). Declared
@@ -415,7 +415,7 @@ services:
       # to the `${VAR:-default}` form so an operator override actually reaches the container; the
       # 0.75 default is unchanged, so this is not a change to the Q7 pinned value, only to whether
       # it can be overridden per box. Source: influora-ai/app/config.py:455-457.
-      AI_CREATOR_MONTHLY_CAP_USD: ${AI_CREATOR_MONTHLY_CAP_USD:-0.75}
+      AI_CREATOR_MONTHLY_CAP_USD: ${AI_CREATOR_MONTHLY_CAP_USD:-2.00}
       # EV-044 [ash - 2026-09-20] — per-workspace DAILY hard cap, in USD, UTC day.
       # BLOCKING (app/costs/gate.py), unlike AI_WORKSPACE_DAILY_SOFT_CAP_USD which only logs.
       # Previously declared in NO deploy file at all, and the code default was None, so on every
@@ -424,7 +424,7 @@ services:
       # default is now a real 3.0 (influora-ai/app/config.py), so a forgotten variable is safe;
       # this line exists so the number is visible and overridable per box. "0" disables the
       # block entirely -- only ever set that deliberately.
-      WORKSPACE_DAILY_HARD_CAP_USD: ${WORKSPACE_DAILY_HARD_CAP_USD:-3.0}
+      WORKSPACE_DAILY_HARD_CAP_USD: ${WORKSPACE_DAILY_HARD_CAP_USD:-5.0}
       # EV-044 — server-side limits on what a CLIENT can send. The chat history in the request
       # body is replayed verbatim into the prompt, and influora-api charges one AI credit per
       # SEND regardless of prompt size, so an unbounded history is one credit buying an

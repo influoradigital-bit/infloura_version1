@@ -138,7 +138,8 @@ class FakeRedis:
 @pytest.fixture
 def fake_redis(monkeypatch):
     store = FakeRedis()
-    monkeypatch.delenv("AI_CREATOR_MONTHLY_CAP_USD", raising=False)
+    # Pinned to CAP: the shipped default moved to 2.00 on 2026-09-22.
+    monkeypatch.setenv("AI_CREATOR_MONTHLY_CAP_USD", str(CAP))
     monkeypatch.delenv("REDIS_URL", raising=False)
     get_settings.cache_clear()
     monkeypatch.setattr(spend_tracker, "_redis_configured", lambda: True)

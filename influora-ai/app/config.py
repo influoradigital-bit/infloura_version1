@@ -555,7 +555,7 @@ class Settings:
     # --- AI spend ceiling + kill-switch (P2-17, Rohan budget proposal
     # 2026-07-12) — defaults exactly as specified in that proposal §3.5. ---
     ai_daily_spend_ceiling_usd: float = field(
-        default_factory=lambda: _get_float("AI_DAILY_SPEND_CEILING_USD", 15.0)
+        default_factory=lambda: _get_float("AI_DAILY_SPEND_CEILING_USD", 30.0)
     )
     ai_spend_kill_switch: bool = field(
         default_factory=lambda: _get_bool("AI_SPEND_KILL_SWITCH", False)
@@ -592,7 +592,7 @@ class Settings:
     # `_get_optional_float`) is what makes unset fall to the default;
     # app.costs.gate normalises <= 0 back to None.
     ai_workspace_daily_hard_cap_usd: float = field(
-        default_factory=lambda: _get_float("WORKSPACE_DAILY_HARD_CAP_USD", 3.0)
+        default_factory=lambda: _get_float("WORKSPACE_DAILY_HARD_CAP_USD", 5.0)
     )
 
     # --- EV-044: server-side ceiling on CLIENT-SUPPLIED conversation history ---
@@ -631,7 +631,7 @@ class Settings:
     # call; the over-cap reply is a friendly message, never a raw 5xx. Set
     # `AI_CREATOR_MONTHLY_CAP_USD=0` to disable the cap entirely.
     ai_creator_monthly_cap_usd: float = field(
-        default_factory=lambda: _get_float("AI_CREATOR_MONTHLY_CAP_USD", 0.75)
+        default_factory=lambda: _get_float("AI_CREATOR_MONTHLY_CAP_USD", 2.0)
     )
 
     # --- Brief extraction's OWN monthly cap (SPEC §14.4.b) ---

@@ -174,6 +174,8 @@ async def _drain(response) -> str:
 async def _reset(monkeypatch):
     for var in ("AI_SPEND_KILL_SWITCH", "WORKSPACE_DAILY_HARD_CAP_USD", "AI_CREATOR_MONTHLY_CAP_USD", "REDIS_URL"):
         monkeypatch.delenv(var, raising=False)
+    # These tests are written against a 0.75 cap; pinned since the default moved to 2.00 (2026-09-22).
+    monkeypatch.setenv("AI_CREATOR_MONTHLY_CAP_USD", "0.75")
     monkeypatch.setenv("AI_DAILY_SPEND_CEILING_USD", "999999")
     get_settings.cache_clear()
     await spend_tracker.reset_for_testing()
