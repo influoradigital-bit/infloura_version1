@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# content-performance-panel.sh   (F-1783 / F-1784 / F-1785 / F-1786)
+# content-performance-panel.sh   (F-1783 / F-1784 / F-1785 / F-1786 / F-1788)
 #
 # Exit 0 = proved · 1 = broken · 2 = unavailable (never green)
 #
@@ -9,6 +9,9 @@
 #   F-1784  permalink never used, raw Meta enum as title, unconditional trend arrow
 #   F-1785  "Eng. rate" named two different formulas
 #   F-1786  sorted by poll time, not postedAt; US-format dates
+#   F-1788  post thumbnails: VIDEO/REELS must use thumbnail_url never the mp4, Meta-CDN-only
+#           host allow-list, link <= 2048 chars, creator route only, onError fallback.
+#           Pinned by MediaMetricMapperTest + ContentPerformancePanel.thumbnail.test.tsx.
 #
 # This gate runs the tests that pin those behaviours. Each was falsified against a
 # mutant before this gate existed (sort removed, caption leaked to brands, K-only
@@ -42,16 +45,16 @@ oom() { grep -qiE "out of memory|OutOfMemoryError|Cannot reserve|could not reser
 
 # --- backend: caption routing + postedAt sort + dedup ------------------------
 # Redirect to a file and read $? directly: `mvn | grep` returns grep's exit code.
-( cd influora-api && mvn -o -q -Dtest=AnalyticsServiceTest,AnalyticsControllerTest \
+( cd influora-api && mvn -o -q -Dtest=AnalyticsServiceTest,AnalyticsControllerTest,MediaMetricMapperTest \
     -DfailIfNoTests=false test ) > "$LOG" 2>&1
 rc=$?
 if [ "$rc" -ne 0 ]; then
   if oom; then echo "GATE 2: mvn ran out of memory -- backend half unevaluated"; exit 2; fi
-  echo "  BROKEN: AnalyticsServiceTest/AnalyticsControllerTest failed (mvn exit $rc)"
+  echo "  BROKEN: AnalyticsServiceTest/AnalyticsControllerTest/MediaMetricMapperTest failed (mvn exit $rc)"
   grep -E "^\[ERROR\]   " "$LOG" | head -8
   fail=1
 else
-  echo "  ok: backend -- sort by postedAt, caption only on the creator route, dedup intact"
+  echo "  ok: backend -- sort by postedAt, caption + thumbnail only on the creator route, thumbnail never the mp4, dedup intact"
 fi
 
 # --- frontend: link safety, title, dates, labels, number scale ---------------
