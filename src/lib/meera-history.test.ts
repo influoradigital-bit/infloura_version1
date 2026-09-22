@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { recentHistory, MEERA_HISTORY_MAX_TURNS, type HistoryTurn } from './meera-history';
+import {
+  CREATOR_HISTORY_MAX_CHARS,
+  CREATOR_HISTORY_MAX_TURNS,
+  recentHistory,
+  MEERA_HISTORY_MAX_TURNS,
+  type HistoryTurn,
+} from './meera-history';
 
 const turn = (i: number, size = 10): HistoryTurn => ({
   role: i % 2 === 0 ? 'user' : 'assistant',
@@ -32,5 +38,20 @@ describe('recentHistory (EV-044: never trips the server history limit)', () => {
   it('always keeps the latest message even if it alone is huge', () => {
     const big: HistoryTurn = { role: 'user', content: 'x'.repeat(70_000) };
     expect(recentHistory([turn(0), turn(1), big])).toEqual([big]);
+  });
+});
+
+describe('creator history window (cost fix 2026-09-22)', () => {
+  it('keeps at most 20 messages and 16,000 characters, newest last', () => {
+    const h = Array.from({ length: 101 }, (_, i) => turn(i));
+    const out = recentHistory(h, CREATOR_HISTORY_MAX_TURNS, CREATOR_HISTORY_MAX_CHARS);
+    expect(CREATOR_HISTORY_MAX_TURNS).toBe(20);
+    expect(out.length).toBeLessThanOrEqual(20);
+    expect(out[out.length - 1]).toEqual(h[100]);
+
+    const long = Array.from({ length: 20 }, (_, i) => turn(i, 3_000));
+    const cut = recentHistory(long, CREATOR_HISTORY_MAX_TURNS, CREATOR_HISTORY_MAX_CHARS);
+    expect(cut.reduce((n, t) => n + t.content.length, 0)).toBeLessThanOrEqual(16_000);
+    expect(cut[cut.length - 1]).toEqual(long[19]);
   });
 });

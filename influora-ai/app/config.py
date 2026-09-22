@@ -458,6 +458,15 @@ class Settings:
     # this ceiling is later outgrown again. MUST be pinned explicitly in
     # env.example and every deploy env artifact -- do not let it silently fall
     # back to a code default again.
+    # 2026-09-22 (Swapnil, cost fix 1): cache TTL for the two creator system blocks that are
+    # the SAME for every creator (Block A persona+tools, and the content knowledge block).
+    # "1h" keeps them warm through quiet stretches -- on a 5-minute TTL a quiet platform
+    # re-wrote ~18k tokens at 1.25x on nearly every first message (~Rs 6.5 a message).
+    # A 1-hour write costs 2x instead of 1.25x but is paid about once an hour. The
+    # per-creator Block B stays on 5 minutes. Set "5m" to go back.
+    ai_creator_shared_cache_ttl: str = field(
+        default_factory=lambda: os.getenv("AI_CREATOR_SHARED_CACHE_TTL", "1h").strip().lower()
+    )
     meera_chat_max_tokens: int = field(
         default_factory=lambda: _get_int("MEERA_CHAT_MAX_TOKENS", 1536)
     )

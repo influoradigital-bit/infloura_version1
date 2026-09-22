@@ -99,7 +99,8 @@ def test_directives_fall_back_to_display_name_then_generic():
 
 def test_block_a_creator_is_cached_and_carries_no_creator_data():
     block = build_block_a_creator()
-    assert block["cache_control"] == {"type": "ephemeral"}
+    # Shared by every creator -> 1-hour TTL since 2026-09-22 (cost fix 1).
+    assert block["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     assert block["text"].startswith(MEERA_CREATOR_PERSONA)
 
 

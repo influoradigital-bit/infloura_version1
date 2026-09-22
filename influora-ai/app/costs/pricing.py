@@ -55,6 +55,8 @@ class ModelRate(NamedTuple):
 
 # Anthropic prompt-caching multipliers on the base input rate.
 CACHE_WRITE_MULTIPLIER = Decimal("1.25")
+# 1-hour-TTL cache writes (creator shared blocks since 2026-09-22) bill at 2x input.
+CACHE_WRITE_1H_MULTIPLIER = Decimal("2")
 CACHE_READ_MULTIPLIER = Decimal("0.1")
 
 
@@ -289,10 +291,18 @@ def estimate_cost_usd(model: str, usage: dict[str, Any] | None) -> Decimal:
         or 0
     )
 
+    # The 1-hour share of the writes (a SUBSET of cache_write_tokens, never extra), priced
+    # at 2x input instead of the 5-minute 1.25x. Clamped so a bad report can't go negative.
+    write_1h_tokens = min(
+        int(usage.get("cache_creation_1h_input_tokens") or 0), int(cache_write_tokens)
+    )
+    write_5m_tokens = int(cache_write_tokens) - write_1h_tokens
+
     cost = (
         (Decimal(int(input_tokens)) * rate.input_per_token)
         + (Decimal(int(output_tokens)) * rate.output_per_token)
         + (Decimal(int(cache_read_tokens)) * rate.cache_read_per_token)
-        + (Decimal(int(cache_write_tokens)) * rate.cache_write_per_token)
+        + (Decimal(write_5m_tokens) * rate.cache_write_per_token)
+        + (Decimal(write_1h_tokens) * rate.input_per_token * CACHE_WRITE_1H_MULTIPLIER)
     )
     return cost

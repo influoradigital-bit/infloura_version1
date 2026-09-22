@@ -157,7 +157,8 @@ def test_creator_system_prompt_contains_the_cached_knowledge_block():
     assert len(knowledge) == 1
     block = knowledge[0]
     assert block["text"] == CREATOR_KNOWLEDGE_TEXT
-    assert block["cache_control"] == {"type": "ephemeral"}
+    # Shared by every creator -> 1-hour TTL since 2026-09-22 (cost fix 1).
+    assert block["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     # Named entries the persona tells Meera to say back.
     for name in ("Before-After-Bridge (BAB)", "Static / locked-off shot", "Problem-Agitate-Solve (PAS)"):
         assert name in block["text"]
