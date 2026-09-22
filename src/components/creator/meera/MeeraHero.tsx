@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Loader2 } from 'lucide-react';
 import { GlowingInput } from '@/components/ui/glowing-input';
 import { VoicePoweredOrb } from '@/components/ui/voice-powered-orb';
@@ -17,11 +18,14 @@ export interface MeeraHeroProps {
   onOpen: () => void;
   busy?: boolean;
   error?: string | null;
+  /** Optional corner slot (top right), e.g. the creator's credit balance chip. */
+  topRight?: ReactNode;
 }
 
-export function MeeraHero({ firstName, onAsk, onOpen, busy = false, error }: MeeraHeroProps) {
+export function MeeraHero({ firstName, onAsk, onOpen, busy = false, error, topRight }: MeeraHeroProps) {
   return (
     <div className="relative overflow-hidden rounded-2xl bg-[radial-gradient(120%_90%_at_50%_0%,var(--meera-stage-2)_0%,var(--meera-stage)_65%)] px-4 py-8 text-center text-white sm:px-8 sm:py-10">
+      {topRight ? <div className="absolute right-3 top-3 z-10">{topRight}</div> : null}
       <div className="mx-auto h-32 w-32 sm:h-40 sm:w-40" aria-hidden>
         <VoicePoweredOrb activity={busy ? 0.4 : 0.12} />
       </div>

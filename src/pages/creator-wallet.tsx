@@ -50,6 +50,7 @@ import {
 } from '@/lib/api';
 import { useServiceInvoices } from '@/hooks/creator/useServiceInvoices';
 import { useToast } from '@/hooks/use-toast';
+import { CreatorCreditsWalletCard } from '@/components/creator/credits/CreatorCreditsWalletCard';
 
 // ---------------------------------------------------------------------------
 // Live-wiring notes (ported from claude/api-connection-workflow-b62285):
@@ -715,6 +716,12 @@ export default function CreatorWalletPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Meera credits (hidden while CREATOR_CREDITS_ENABLED is off) */}
+        <CreatorCreditsWalletCard />
+
+        {/* Meera credits (hidden while CREATOR_CREDITS_ENABLED is off) */}
+        <CreatorCreditsWalletCard />
 
         {/* Tabs */}
         <Tabs defaultValue="payouts" className="space-y-4">
