@@ -795,4 +795,73 @@ class AnalyticsServiceTest {
             assertEquals(null, row.caption());
         }
     }
+
+    // ------------------------------------------------------------------------------------------
+    // Content performance — preview image (post thumbnails, 2026-09-22)
+    // ------------------------------------------------------------------------------------------
+
+    private static final String FRESH_PREVIEW =
+            "https://scontent.cdninstagram.com/v/fresh.jpg?oe=6A1B2C3D&oh=00_fresh";
+    private static final String STALE_PREVIEW =
+            "https://scontent.cdninstagram.com/v/stale.jpg?oe=5A1B2C3D&oh=00_stale";
+
+    /** The same post polled twice: newest-first, as the repository returns it. */
+    private static List<MediaMetric> twoSnapshotsWithPreview() {
+        MediaMetric latest =
+                MediaMetric.builder()
+                        .id("01HMEDIA-PREVIEW-LATEST00")
+                        .creatorProfileId(CREATOR_ID)
+                        .mediaId("ig-preview")
+                        .mediaType("VIDEO")
+                        .previewImageUrl(FRESH_PREVIEW)
+                        .postedAt(Instant.parse("2026-09-15T10:00:00Z"))
+                        .time(Instant.parse("2026-09-22T06:00:00Z"))
+                        .build();
+        MediaMetric older =
+                MediaMetric.builder()
+                        .id("01HMEDIA-PREVIEW-OLDER000")
+                        .creatorProfileId(CREATOR_ID)
+                        .mediaId("ig-preview")
+                        .mediaType("VIDEO")
+                        .previewImageUrl(STALE_PREVIEW)
+                        .postedAt(Instant.parse("2026-09-15T10:00:00Z"))
+                        .time(Instant.parse("2026-09-22T00:00:00Z"))
+                        .build();
+        return List.of(latest, older);
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformanceForProfile (creator route): carries the LATEST poll's"
+                    + " previewImageUrl, not an older (expired) one")
+    void testCreatorContentPerformanceCarriesFreshPreviewImage() {
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(twoSnapshotsWithPreview());
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformanceForProfile(CREATOR_ID);
+
+        assertEquals(1, result.size());
+        assertEquals(FRESH_PREVIEW, result.get(0).previewImageUrl());
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformance (brand route): previewImageUrl is null, pending the owner's"
+                    + " ruling on brand visibility")
+    void testBrandContentPerformanceNeverCarriesPreviewImage() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
+                .thenReturn(CREATOR_ID);
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(twoSnapshotsWithPreview());
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformance(principal, CREATOR_ID);
+
+        assertEquals(1, result.size());
+        assertEquals("ig-preview", result.get(0).mediaId());
+        assertEquals(null, result.get(0).previewImageUrl());
+    }
 }

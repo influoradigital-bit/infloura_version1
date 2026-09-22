@@ -5209,6 +5209,15 @@ export interface ContentPerformanceItem {
    */
   caption?: string | null;
   /**
+   * Post thumbnail: a SIGNED Instagram/Facebook CDN image link that expires in
+   * ~4 days, refreshed on every metrics poll. Creator route only for now; the
+   * brand route never carries it and NON_NULL omits the key. Untrusted —
+   * ContentPerformancePanel only renders it after checking it is an https URL
+   * on cdninstagram.com / fbcdn.net, and falls back to the placeholder icon
+   * when the image fails to load (an expired link answers 403).
+   */
+  previewImageUrl?: string | null;
+  /**
    * Nullable on the wire — `AnalyticsDtos.ContentPerformanceResponse` is
    * `@JsonInclude(NON_NULL)`, so when Meta didn't report reach for a post the
    * key is OMITTED entirely (arrives as `undefined`), never sent as JSON

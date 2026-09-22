@@ -17,7 +17,10 @@ public record InstagramMediaResponse(List<MediaItem> data, Paging paging) {
             String permalink,
             String timestamp,
             @JsonProperty("like_count") Long likeCount,
-            @JsonProperty("comments_count") Long commentsCount) {}
+            @JsonProperty("comments_count") Long commentsCount,
+            // Cover image for VIDEO/REELS, whose media_url is the mp4 itself. Signed CDN link that
+            // expires, so it is re-read on every poll rather than stored once.
+            @JsonProperty("thumbnail_url") String thumbnailUrl) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Paging(Cursors cursors, String next) {}

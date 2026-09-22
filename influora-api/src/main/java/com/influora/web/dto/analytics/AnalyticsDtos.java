@@ -182,6 +182,11 @@ public final class AnalyticsDtos {
      * it {@code null} (omitted by {@code NON_NULL}) because {@code MediaMetric.caption} is documented
      * as BrandSafety-pipeline input that must never surface raw through a brand-facing response.
      *
+     * <p><b>{@code previewImageUrl}</b>: the post's cover image (a signed Instagram CDN link, from
+     * the latest poll so it is still inside its expiry). Appended LAST, after {@code caption}, for
+     * the same positional-constructor reason. Follows the caption precedent pending the owner's
+     * ruling: populated on the creator-self route only, {@code null} (omitted) on the brand route.
+     *
      * <p>Row order: newest {@code postedAt} first, rows without a {@code postedAt} last (F-1786).
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -199,5 +204,6 @@ public final class AnalyticsDtos {
             Long videoViews,
             Instant postedAt,
             BigDecimal engagementRate,
-            String caption) {}
+            String caption,
+            String previewImageUrl) {}
 }

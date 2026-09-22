@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { AlertTriangle, ExternalLink, Image as ImageIcon } from 'lucide-react';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -92,6 +93,69 @@ function safeInstagramUrl(permalink: string | null | undefined): string | null {
   const host = url.hostname.toLowerCase();
   if (host !== 'instagram.com' && !host.endsWith('.instagram.com')) return null;
   return url.href;
+}
+
+const PREVIEW_IMAGE_HOSTS = ['cdninstagram.com', 'fbcdn.net'] as const;
+
+/**
+ * `previewImageUrl` is a Meta CDN link passed through by the backend, which
+ * already allow-lists the host (MediaMetricMapper). Checked again here as
+ * defence in depth: only an https URL on cdninstagram.com / fbcdn.net (or a
+ * subdomain), with no embedded credentials, is rendered; anything else shows
+ * the placeholder icon.
+ */
+function safePreviewImageUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:') return null;
+  if (url.username || url.password) return null;
+  const host = url.hostname.toLowerCase();
+  const allowed = PREVIEW_IMAGE_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  return allowed ? url.href : null;
+}
+
+function PostThumbnailPlaceholder() {
+  return (
+    <div
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted"
+      data-testid="post-thumbnail-placeholder"
+    >
+      <ImageIcon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+    </div>
+  );
+}
+
+/**
+ * The post's cover image, same 40px box as the placeholder. The CDN links are
+ * signed and expire in ~4 days, so a creator whose polling stopped has dead
+ * links: onError swaps to the placeholder and the state keeps it swapped
+ * across re-renders (no broken-image icon). Keyed by URL at the call site, so a
+ * fresh link after the next poll gets a fresh attempt. alt="" because the row
+ * title already names the post; no-referrer so the CDN is not told which of our
+ * pages the viewer was on.
+ */
+function PostThumbnail({ src }: { src: string | null }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <PostThumbnailPlaceholder />;
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      width={40}
+      height={40}
+      onError={() => setFailed(true)}
+      className="h-10 w-10 shrink-0 rounded-md bg-muted object-cover"
+      data-testid="post-thumbnail"
+    />
+  );
 }
 
 /** F-1785: per-post rate is a different formula from the profile rate — say so. */
@@ -198,6 +262,7 @@ export function ContentPerformancePanel({
               const title = caption ?? typeLabel;
               const href = safeInstagramUrl(item.permalink);
               const postedLabel = formatPostedAt(item.postedAt);
+              const previewSrc = safePreviewImageUrl(item.previewImageUrl);
               return (
               <div
                 key={item.mediaId}
@@ -209,9 +274,7 @@ export function ContentPerformancePanel({
                 className="relative flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
               >
                 <div className="flex min-w-0 items-center gap-3 sm:flex-1">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-muted">
-                    <ImageIcon className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                  </div>
+                  <PostThumbnail key={previewSrc ?? 'none'} src={previewSrc} />
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-1">
                       {href ? (

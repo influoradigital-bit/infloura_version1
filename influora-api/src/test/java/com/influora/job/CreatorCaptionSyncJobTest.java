@@ -101,7 +101,7 @@ class CreatorCaptionSyncJobTest {
                 .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1)));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
         MediaItem item = new MediaItem("media_1", "A real caption", "IMAGE", null, null,
-                "2026-08-01T12:00:00+0000", 10L, 2L);
+                "2026-08-01T12:00:00+0000", 10L, 2L, null);
         when(instagramClient.getMedia(IG_ID_1, ACCESS_TOKEN, props.getCaptionSyncMediaLimit(), MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(item), null));
         when(captionRepository.findByCreatorProfileIdAndIgMediaId(CREATOR_ID_1, "media_1"))
@@ -118,7 +118,7 @@ class CreatorCaptionSyncJobTest {
         when(tokenRepository.findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(any()))
                 .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1)));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
-        MediaItem blankItem = new MediaItem("media_1", "  ", "IMAGE", null, null, null, null, null);
+        MediaItem blankItem = new MediaItem("media_1", "  ", "IMAGE", null, null, null, null, null, null);
         when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(new InstagramMediaResponse(List.of(blankItem), null));
 
@@ -134,7 +134,7 @@ class CreatorCaptionSyncJobTest {
         when(tokenRepository.findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(any()))
                 .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1)));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
-        MediaItem item = new MediaItem("media_1", "Already cached", "IMAGE", null, null, null, null, null);
+        MediaItem item = new MediaItem("media_1", "Already cached", "IMAGE", null, null, null, null, null, null);
         when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(new InstagramMediaResponse(List.of(item), null));
         when(captionRepository.findByCreatorProfileIdAndIgMediaId(CREATOR_ID_1, "media_1"))
@@ -161,7 +161,7 @@ class CreatorCaptionSyncJobTest {
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_2)).thenReturn(Optional.of(ACCESS_TOKEN));
         when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenThrow(new MetaApiException("rate limited"));
-        MediaItem item = new MediaItem("media_2", "Creator 2's caption", "IMAGE", null, null, null, null, null);
+        MediaItem item = new MediaItem("media_2", "Creator 2's caption", "IMAGE", null, null, null, null, null, null);
         when(instagramClient.getMedia(eq(IG_ID_2), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(new InstagramMediaResponse(List.of(item), null));
         when(captionRepository.findByCreatorProfileIdAndIgMediaId(CREATOR_ID_2, "media_2"))
@@ -184,8 +184,8 @@ class CreatorCaptionSyncJobTest {
         when(tokenRepository.findByWorkspaceIdIsNullAndRevokedFalseAndExpiresAtAfter(any()))
                 .thenReturn(List.of(tokenFor(CREATOR_ID_1, IG_ID_1)));
         when(tokenStorage.getValidCreatorToken(CREATOR_ID_1)).thenReturn(Optional.of(ACCESS_TOKEN));
-        MediaItem bad = new MediaItem("media_bad", "Bad item", "IMAGE", null, null, null, null, null);
-        MediaItem good = new MediaItem("media_good", "Good item", "IMAGE", null, null, null, null, null);
+        MediaItem bad = new MediaItem("media_bad", "Bad item", "IMAGE", null, null, null, null, null, null);
+        MediaItem good = new MediaItem("media_good", "Good item", "IMAGE", null, null, null, null, null, null);
         when(instagramClient.getMedia(eq(IG_ID_1), eq(ACCESS_TOKEN), anyInt(), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(new InstagramMediaResponse(List.of(bad, good), null));
         when(captionRepository.findByCreatorProfileIdAndIgMediaId(CREATOR_ID_1, "media_bad"))

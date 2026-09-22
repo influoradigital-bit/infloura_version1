@@ -344,8 +344,10 @@ public class AnalyticsService {
         String workspaceId = brandContext.requireBrandWorkspace(principal).getId();
         String authorizedCreatorId =
                 metricsAuthorizationService.resolveAuthorizedCreatorProfileId(workspaceId, creatorId);
-        // Brand-facing: never carry raw caption text (MediaMetric.caption javadoc).
-        return buildContentPerformanceResponse(authorizedCreatorId, false);
+        // Brand-facing: never carry raw caption text (MediaMetric.caption javadoc). The preview image
+        // is withheld too, pending the owner's ruling on brand visibility — flipping it is the
+        // third argument here and nothing else.
+        return buildContentPerformanceResponse(authorizedCreatorId, false, false);
     }
 
     /**
@@ -355,7 +357,7 @@ public class AnalyticsService {
     @Transactional(readOnly = true)
     public List<ContentPerformanceResponse> getContentPerformanceForProfile(String creatorProfileId) {
         // Creator-self: the creator is reading their own captions, so they are carried through.
-        return buildContentPerformanceResponse(creatorProfileId, true);
+        return buildContentPerformanceResponse(creatorProfileId, true, true);
     }
 
     /**
@@ -375,9 +377,14 @@ public class AnalyticsService {
      *
      * <p>{@code includeCaption} is {@code true} only for the creator-self route; the brand route
      * passes {@code false} so raw caption text never reaches a brand-facing response.
+     *
+     * <p>{@code includePreviewImage} is a separate flag (not folded into {@code includeCaption}) so
+     * the brand route can be opened to thumbnails later without also exposing captions. Today it
+     * mirrors the caption rule: creator-self {@code true}, brand {@code false}. The URL served is
+     * the latest snapshot's, i.e. the one refreshed on the most recent poll.
      */
     private List<ContentPerformanceResponse> buildContentPerformanceResponse(
-            String creatorProfileId, boolean includeCaption) {
+            String creatorProfileId, boolean includeCaption, boolean includePreviewImage) {
         List<MediaMetric> recent =
                 mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
                         creatorProfileId, PageRequest.of(0, CONTENT_PERFORMANCE_LOOKBACK));
@@ -404,7 +411,8 @@ public class AnalyticsService {
                                         m.getVideoViews(),
                                         m.getPostedAt(),
                                         engagementRate(m.getEngagement(), m.getReach()),
-                                        includeCaption ? m.getCaption() : null))
+                                        includeCaption ? m.getCaption() : null,
+                                        includePreviewImage ? m.getPreviewImageUrl() : null))
                 .sorted(
                         Comparator.comparing(
                                 ContentPerformanceResponse::postedAt,

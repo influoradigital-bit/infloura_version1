@@ -141,7 +141,7 @@ class DeliverableVerificationServiceTest {
                         "https://www.instagram.com/p/" + IG_SHORTCODE + "/",
                         "2026-07-10T00:00:00+0000",
                         10L,
-                        2L);
+                        2L, null);
         return new InstagramMediaResponse(List.of(item), null);
     }
 
