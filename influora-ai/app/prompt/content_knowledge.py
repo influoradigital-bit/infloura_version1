@@ -10,7 +10,7 @@ reduces-work.md): the point is fewer steps for the creator, not a cleverer
 answer. The persona rules that tell the model HOW to use this block live in
 `app/prompt/creator_persona.py`; this module only loads, validates and renders.
 
-Data: `app/prompt/knowledge/video_content_concepts.jsonl` (84 rows, v3 2026-09-22). It sits
+Data: `app/prompt/knowledge/video_content_concepts.jsonl` (109 rows, v4 2026-09-22). It sits
 under `app/prompt/` on purpose: `ci/stale-comment-check.py` watches that prefix
 (PROMPT_SOURCES), so editing the data forces a PROMPT_VERSION bump exactly like
 a persona edit does -- the rendered text is prompt content.
@@ -49,7 +49,19 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "narrative_principle": ("principle", "definition", "video_application"),
     "content_characteristic": ("characteristic", "definition", "video_application"),
     "platform_strategy": ("platform", "note", "video_application", "jab_hook_balance"),
+    # v4 (2026-09-22): what the full-script format reads -- the actions to film
+    # per category, the starting length per goal, and which structure fits which
+    # situation.
+    "contextual_action": ("category", "home_actions", "outdoor_actions"),
+    "length_guideline": ("goal", "starting_range_seconds", "main_success_signal"),
+    "structure_selection_rule": ("situation", "structure", "use_when"),
 }
+
+# Fields that are non-empty lists of non-empty strings, not plain strings.
+LIST_FIELDS: frozenset[str] = frozenset({"steps", "home_actions", "outdoor_actions"})
+
+# "15-35": a starting range in whole seconds, low before high.
+_SECONDS_RANGE = re.compile(r"^(\d+)-(\d+)$")
 
 # The field that names an entry -- what Meera says back to the creator
 # ("Before-After-Bridge (BAB)", "Static / locked-off shot").
@@ -62,6 +74,9 @@ NAME_FIELD: dict[str, str] = {
     "narrative_principle": "principle",
     "content_characteristic": "characteristic",
     "platform_strategy": "platform",
+    "contextual_action": "category",
+    "length_guideline": "goal",
+    "structure_selection_rule": "situation",
 }
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
@@ -115,12 +130,12 @@ def _validate_row(row: Any, lineno: int) -> dict[str, Any]:
         raise KnowledgeFileError(f"line {lineno}: unknown data_type {data_type!r}")
     for key in _COMMON_REQUIRED + REQUIRED_FIELDS[data_type]:
         value = row.get(key)
-        if key == "steps":
+        if key in LIST_FIELDS:
             if not isinstance(value, list) or not value or not all(
                 isinstance(s, str) and s.strip() for s in value
             ):
                 raise KnowledgeFileError(
-                    f"line {lineno}: {data_type} field 'steps' must be a non-empty list of strings"
+                    f"line {lineno}: {data_type} field {key!r} must be a non-empty list of strings"
                 )
             continue
         if not isinstance(value, str) or not value.strip():
@@ -131,6 +146,12 @@ def _validate_row(row: Any, lineno: int) -> dict[str, Any]:
         raise KnowledgeFileError(
             f"line {lineno}: unknown confidence {row['confidence']!r}"
         )
+    if data_type == "length_guideline":
+        m = _SECONDS_RANGE.match(row["starting_range_seconds"].strip())
+        if not m or int(m.group(1)) >= int(m.group(2)):
+            raise KnowledgeFileError(
+                f"line {lineno}: length_guideline starting_range_seconds must look like '15-35'"
+            )
     return row
 
 
@@ -155,6 +176,15 @@ def load_knowledge(path: Path = KNOWLEDGE_PATH) -> list[dict[str, Any]]:
             rows.append(row)
     if not rows:
         raise KnowledgeFileError(f"{path.name}: no rows")
+    # A selection rule must point at a structure the block actually defines,
+    # by its exact name -- otherwise Meera picks a structure with no steps.
+    defined = {r["framework"].strip() for r in _by_type(rows, "storytelling_structure")}
+    for r in _by_type(rows, "structure_selection_rule"):
+        if r["structure"].strip() not in defined:
+            raise KnowledgeFileError(
+                f"structure_selection_rule {r['situation']!r} names undefined structure"
+                f" {r['structure']!r}"
+            )
     return rows
 
 
@@ -230,6 +260,31 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
             f"- {r['platform']} ({r['jab_hook_balance']}): {r['note']} For video:"
             f" {r['video_application']} Caveat: {r['source']}"
         )
+
+    out += ["", "Which structure to use (situation -> the storytelling structure above):"]
+    for r in _by_type(rows, "structure_selection_rule"):
+        out.append(f"- {r['situation']} -> {r['structure']}. Use when: {r['use_when']}")
+
+    out += [
+        "",
+        "Script length by goal (starting range in seconds; a full script's timings add up"
+        " to a length inside it):",
+    ]
+    for r in _by_type(rows, "length_guideline"):
+        out.append(
+            f"- {r['goal']}: {r['starting_range_seconds'].strip()} seconds."
+            f" Success looks like: {r['main_success_signal']}"
+        )
+
+    out += [
+        "",
+        "Actions to film, by category (real actions the creator can do on camera; a person,"
+        " shop or place is filmed only with permission):",
+    ]
+    for r in _by_type(rows, "contextual_action"):
+        home = ", ".join(a.strip() for a in r["home_actions"])
+        outdoor = ", ".join(a.strip() for a in r["outdoor_actions"])
+        out.append(f"- {r['category']}: at home: {home}. Outdoors: {outdoor}.")
     return "\n".join(out) + "\n"
 
 

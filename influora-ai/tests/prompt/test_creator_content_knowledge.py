@@ -90,9 +90,9 @@ ADAPTED_SOURCE = "influora_content_team (adapted pattern)"
 # --- the committed file -----------------------------------------------------
 
 
-def test_committed_knowledge_file_loads_all_84_rows_by_type():
+def test_committed_knowledge_file_loads_all_109_rows_by_type():
     rows = load_knowledge()
-    assert len(rows) == 84
+    assert len(rows) == 109
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
@@ -105,6 +105,9 @@ def test_committed_knowledge_file_loads_all_84_rows_by_type():
         "narrative_principle": 17,
         "content_characteristic": 6,
         "platform_strategy": 3,
+        "contextual_action": 11,
+        "length_guideline": 6,
+        "structure_selection_rule": 8,
     }
 
 
@@ -282,6 +285,9 @@ def test_every_row_reaches_the_knowledge_text():
             "narrative_principle": "principle",
             "content_characteristic": "characteristic",
             "platform_strategy": "platform",
+            "contextual_action": "category",
+            "length_guideline": "goal",
+            "structure_selection_rule": "situation",
         }[r["data_type"]]
         assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
 
