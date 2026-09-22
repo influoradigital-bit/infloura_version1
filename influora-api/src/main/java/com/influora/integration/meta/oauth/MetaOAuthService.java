@@ -10,6 +10,7 @@ import com.influora.integration.meta.exception.MetaApiException;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +18,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
@@ -76,6 +78,9 @@ public class MetaOAuthService {
     // spins up the JDK HttpClient (selector thread + NIO pipe), and application boot must not
     // depend on outbound-HTTP plumbing that only OAuth flows ever exercise.
     private volatile RestClient restClient;
+
+    /** Read timeout for the token exchanges; see {@link #restClient()} for why it is not 10s. */
+    static final Duration OAUTH_READ_TIMEOUT = Duration.ofSeconds(25);
 
     // @Autowired is required, not decorative: with the test constructor below also present,
     // Spring has two candidates and refuses to guess ("No default constructor found" at boot).
@@ -143,7 +148,17 @@ public class MetaOAuthService {
                     // code-for-token exchange on a Tomcat request thread while the user waits on
                     // the OAuth callback; untimed, a hung Meta endpoint held that thread open
                     // with no bound at all.
-                    restClient = OutboundRestClients.build();
+                    //
+                    // The read timeout is longer than the 10s default on purpose. Measured on
+                    // production 2026-09-22 17:53: graph.facebook.com took over 10s on a creator's
+                    // code exchange and the connect died. The code is single-use, so giving up
+                    // early does not save the attempt, it burns it: Meta may still have spent the
+                    // code, and the creator has to go through the whole consent dialog again.
+                    restClient =
+                            OutboundRestClients.builder(
+                                            OutboundRestClients.DEFAULT_CONNECT_TIMEOUT,
+                                            OAUTH_READ_TIMEOUT)
+                                    .build();
                 }
                 client = restClient;
             }
@@ -264,6 +279,8 @@ public class MetaOAuthService {
                     e.getStatusCode().value(),
                     e.getResponseBodyAsString());
             throw new MetaApiException("Meta OAuth instagram-code-exchange failed", e);
+        } catch (ResourceAccessException e) {
+            throw unreachable("instagram-code-exchange", e);
         }
     }
 
@@ -351,7 +368,18 @@ public class MetaOAuthService {
                     e.getStatusCode().value(),
                     e.getResponseBodyAsString());
             throw new MetaApiException("Meta OAuth " + opName + " failed", e);
+        } catch (ResourceAccessException e) {
+            throw unreachable(opName, e);
         }
+    }
+
+    /**
+     * A timeout or connection failure reaching Meta. Before this, it escaped as an unhandled
+     * exception, and the creator's callback page showed "An unexpected error occurred" (500).
+     */
+    private static MetaApiException unreachable(String opName, ResourceAccessException e) {
+        log.warn("Meta OAuth {} did not complete: {}", opName, e.getMessage());
+        return MetaApiException.unavailable(e);
     }
 
     private static String urlEncode(String value) {
