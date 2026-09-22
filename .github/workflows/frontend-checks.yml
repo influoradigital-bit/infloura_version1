@@ -39,7 +39,30 @@ jobs:
     name: typecheck · test · build
     steps:
       - name: Checkout code
+        # CI-1 (vikram): fetch-depth: 0 (full history), not the actions/checkout@v4 default of a
+        # depth-1 shallow clone. `ci/stale-comment-check.py --since <base>` rule 3 now walks
+        # since..HEAD commit by commit (see that file's CI-1 docstring); a depth-1 checkout has no
+        # parent for any commit to diff against, and every one of those diffs fails as
+        # UNREADABLE rather than actually checking the PROMPT_VERSION pairing.
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # CI-1 round 2 (vikram, MEERA-CI1-PROOF-0917.md #8, s8-firstpush): rule 3 in
+      # ci/stale-comment-check.py falls back to `git merge-base HEAD origin/main` when CI hands it
+      # an all-zero, missing, or otherwise-unresolvable 'before' SHA -- a branch's first push, or
+      # (CI-1 round 3 folded this second shape into the same fallback; PRIYA-LASTCALL-CI1-0917.md
+      # F1) a force-push whose old tip this checkout never fetched. actions/checkout@v4 does not
+      # fetch other branches by default even with fetch-depth: 0 -- only the ref actually being
+      # tested -- so origin/main must be fetched explicitly, or that fallback has nothing to
+      # resolve against and rule 3 fails loud instead of silently passing.
+      #
+      # CI-1 round 3, residual 1 (PRIYA-LASTCALL-CI1-0917.md): rule 3's cross-branch PROMPT_VERSION
+      # reuse check also needs every OTHER branch's tip, not just main's, so this now fetches every
+      # `refs/heads/*` head explicitly into `refs/remotes/origin/*` -- a plain `git fetch origin`
+      # does not populate that namespace the way a full clone would.
+      - name: Fetch all origin branch heads (CI-1's first-push fallback and cross-branch reuse check need them)
+        run: git fetch origin '+refs/heads/*:refs/remotes/origin/*'
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
@@ -67,7 +90,13 @@ jobs:
       # out without the PROMPT_VERSION bump that `cache_key_for` depends on, so sessions kept
       # serving the old prompt. Checks the three claims that are mechanically falsifiable.
       - name: Stale comments (contradicted claims, dead citations, PROMPT_VERSION)
-        run: python ci/stale-comment-check.py --since "${{ github.event.pull_request.base.sha || github.event.before }}"
+        # CI-1 round 3 (PRIYA-LASTCALL-CI1-0917.md, residual 2): rule 3 needs to know whether this
+        # run is a pull_request before treating a fallback-resolved base equal to HEAD as the
+        # vacuous-pass shape it refuses -- a real pull_request's base.sha is always a genuine,
+        # non-fallback ancestor of HEAD, so it's exempted from that guard. Passed explicitly
+        # (rather than relying solely on the runner's own GITHUB_EVENT_NAME, which the script also
+        # reads as a fallback) so a local or scratch-repo run can exercise both paths.
+        run: python ci/stale-comment-check.py --since "${{ github.event.pull_request.base.sha || github.event.before }}" --event "${{ github.event_name }}"
 
       # F-0390 — the money flags (VITE_PAYMENTS_IN_ENABLED / VITE_PAYOUTS_ENABLED) gate every
       # money action in the bundle and were once declared in no build input at all, so both baked

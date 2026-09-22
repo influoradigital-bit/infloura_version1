@@ -43,6 +43,13 @@ vi.mock('@/lib/api', async () => {
         exportConversation: vi.fn(),
         deleteConversation: vi.fn(),
       },
+      // U-7 — MeeraSettingsSection's saved-briefs table (SavedBriefsSection) is now mounted
+      // unconditionally on this page, including when the rest of the section is hidden; its own
+      // list call needs to be present or property access on the mock throws.
+      creatorBriefs: {
+        list: vi.fn().mockResolvedValue([]),
+        delete: vi.fn(),
+      },
       metaOAuth: {
         getLocalConnectionState: vi.fn().mockReturnValue({ connected: true, scopes: ['instagram_basic'], accountType: 'business' }),
         status: vi.fn().mockResolvedValue({ connected: true, grantedScopes: ['instagram_basic'] }),
