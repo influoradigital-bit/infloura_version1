@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { ConsentScreen } from '@/components/meera/ConsentScreen';
 import { MeeraCopilotChat } from '@/components/creator/MeeraCopilotChat';
 import { MeeraHero } from '@/components/creator/meera/MeeraHero';
+import { HeroCreditsChip } from '@/components/creator/credits/HeroCreditsChip';
 import { api, ApiError } from '@/lib/api';
 import { getCreatorSession } from '@/lib/auth-session';
 
@@ -268,6 +269,7 @@ export default function CreatorCopilotPage() {
                   onOpen={openMeera}
                   busy={checkingConsent}
                   error={consentLoadError}
+                  topRight={<HeroCreditsChip language={language} />}
                 />
               )}
             </CardContent>

@@ -29,8 +29,18 @@ public final class MeeraDtos {
             String brandProfileStatus,
             CreditsSummary credits) {}
 
-    /** Body for {@code POST /meera/sessions/{conversationId}/messages}. */
-    public record SendTurnRequest(@NotBlank @Size(max = 8000) String content) {}
+    /**
+     * Body for {@code POST /meera/sessions/{conversationId}/messages}.
+     *
+     * <p>T-CREATOR-CREDITS-V2 (SPEC.md B7) — {@code voiceReply}: true when the client's voice
+     * toggle is on, so this creator turn's reply will be spoken (2 credits instead of 1). {@code
+     * null} on the wire means false. The BRAND controller ignores this field entirely.
+     */
+    public record SendTurnRequest(@NotBlank @Size(max = 8000) String content, Boolean voiceReply) {
+        public boolean isVoiceReply() {
+            return Boolean.TRUE.equals(voiceReply);
+        }
+    }
 
     /**
      * {@code messageId} is the persisted USER message id — the {@code turn_id} the browser passes
@@ -53,7 +63,7 @@ public final class MeeraDtos {
             String assistantMessageId,
             String streamToken,
             String streamUrl,
-            int creditsRemaining,
+            Integer creditsRemaining,
             String reply,
             String workspaceId,
             String onBehalfToken) {}

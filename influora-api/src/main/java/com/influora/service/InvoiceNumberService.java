@@ -96,6 +96,7 @@ public class InvoiceNumberService {
             case SUBSCRIPTION -> "INF/SUB";
             case COMMISSION_BRAND -> "INF/CMB";
             case COMMISSION_CREATOR -> "INF/CMC";
+            case CREATOR_CREDITS -> "INF/CRC";
             case CAMPAIGN_SERVICE ->
                     throw new IllegalStateException("CAMPAIGN_SERVICE is a per-creator series, not platform-wide");
         };

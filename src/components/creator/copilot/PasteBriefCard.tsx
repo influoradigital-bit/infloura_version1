@@ -6,6 +6,25 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { api, ApiError, type BriefAnalysisResponse } from '@/lib/api';
+import { useCreatorCredits } from '@/hooks/useCreatorCredits';
+import { CreditCostHint } from '@/components/creator/credits/CreditCostHint';
+import { BuyCreditsCard } from '@/components/creator/credits/BuyCreditsCard';
+
+/**
+ * T-CREATOR-CREDITS-V2 (SPEC.md §8 "Refusal codes") — same two codes `MeeraCopilotChat` handles;
+ * see that file's own note on why these are NOT the brand paywall's `CREDITS_EXHAUSTED`.
+ */
+const CREDITS_EXHAUSTED_ERROR_CODE = 'CREATOR_CREDITS_EXHAUSTED';
+const CREDITS_DAILY_CAP_ERROR_CODE = 'CREATOR_DAILY_CAP_REACHED';
+
+function isCreditsRefusal(code: string): boolean {
+  return code === CREDITS_EXHAUSTED_ERROR_CODE || code === CREDITS_DAILY_CAP_ERROR_CODE;
+}
+
+function safeRandomKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  return `brief-idem-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
 
 /**
  * U-2 (T-MEERA-CREATOR-PHASE-B SPEC.md §8.5) — the paste half of "Paste and Read".
@@ -91,6 +110,8 @@ export function PasteBriefCard({
   const [analysing, setAnalysing] = React.useState(false);
   const [result, setResult] = React.useState<BriefAnalysisResponse | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [creditsRefusal, setCreditsRefusal] = React.useState(false);
+  const credits = useCreatorCredits();
 
   const mounted = React.useRef(true);
   React.useEffect(() => {
@@ -121,6 +142,7 @@ export function PasteBriefCard({
   const handleAnalyse = async () => {
     if (!canAnalyse) return;
     setError(null);
+    setCreditsRefusal(false);
 
     if (needsConsent) {
       setError(CONSENT_MESSAGE);
@@ -131,9 +153,17 @@ export function PasteBriefCard({
     setResult(null);
     setAnalysing(true);
     try {
-      const analysis = await api.creatorBriefs.paste(text);
+      // T-CREATOR-CREDITS-V2 (SPEC.md §9.2, F2/C20) — one key per paste action (this click), not
+      // the fresh-per-call default `api.creatorBriefs.paste` falls back to when omitted. This
+      // click is the whole "action" the key protects (there is no retry surface on this card), so
+      // minting it right here — rather than threading a stored key across renders — is enough to
+      // stop a double-click/StrictMode double-invoke from analysing (and charging) the same paste
+      // twice; the server's own `Idempotency-Key` + `executeOnce` replay is what actually enforces
+      // that server-side.
+      const analysis = await api.creatorBriefs.paste(text, safeRandomKey());
       if (!mounted.current) return;
       setResult(analysis);
+      void credits.refresh();
     } catch (err) {
       if (!mounted.current) return;
       if (err instanceof ApiError && err.code === 'CONSENT_REQUIRED') {
@@ -141,6 +171,12 @@ export function PasteBriefCard({
         onConsentRequired?.();
       } else if (err instanceof ApiError && err.code === 'FEATURE_DISABLED') {
         onFeatureDisabled?.();
+      } else if (err instanceof ApiError && isCreditsRefusal(err.code)) {
+        // T-CREATOR-CREDITS-V2 (SPEC.md §9.3, "the same bubble and card") — the server's own
+        // en/hi-templated message, plus the same `BuyCreditsCard` the chat shows on a refusal.
+        setError(err.message);
+        setCreditsRefusal(true);
+        void credits.refresh();
       } else {
         setError(
           err instanceof ApiError && err.message
@@ -192,6 +228,10 @@ export function PasteBriefCard({
           </div>
         </div>
 
+        {/* T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F9) — a fixed 3-credit label, never AI-intent cost
+            detection. Hidden with the flag off (`credits.enabled` false). */}
+        {credits.enabled ? <CreditCostHint variant="brief" language={language} /> : null}
+
         <Button type="button" onClick={handleAnalyse} disabled={!canAnalyse}>
           {analysing ? (
             <>
@@ -211,6 +251,9 @@ export function PasteBriefCard({
           >
             {error}
           </p>
+        ) : null}
+        {creditsRefusal ? (
+          <BuyCreditsCard language={language} balance={credits.balance} onCredited={() => void credits.refresh()} />
         ) : null}
 
         {result ? (

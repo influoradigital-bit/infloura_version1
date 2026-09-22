@@ -20,10 +20,12 @@ import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.enums.ConversationStatus;
 import com.influora.domain.enums.ConversationTenantType;
 import com.influora.domain.enums.UserType;
+import com.influora.config.CreatorCreditProperties;
 import com.influora.integration.ai.MeeraVoiceAiClient;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.CreatorContextService;
+import com.influora.service.credits.CreatorCreditService;
 import com.influora.service.meera.MeeraSessionService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.meera.MeeraDtos.SendTurnRequest;
@@ -60,6 +62,8 @@ class CreatorMeeraControllerTest {
     @Mock private CreatorAgentPreferencesService preferencesService;
     @Mock private MeeraVoiceAiClient voiceAiClient;
     @Mock private MeeraCreatorFeatureProperties featureProperties;
+    @Mock private CreatorCreditService creatorCreditService;
+    @Mock private CreatorCreditProperties creditProperties;
     @Mock private AuthPrincipal principal;
     @Mock private CreatorProfile creatorProfile;
 
@@ -74,7 +78,9 @@ class CreatorMeeraControllerTest {
                         streamProperties,
                         preferencesService,
                         voiceAiClient,
-                        featureProperties);
+                        featureProperties,
+                        creatorCreditService,
+                        creditProperties);
         // Every handler on this controller calls requireFeatureEnabled() first (Priya gate review
         // defect 4) -- on by default here so every pre-existing test below still exercises its own
         // real behavior; the flag-off tests further down override this per-test.
@@ -221,7 +227,7 @@ class CreatorMeeraControllerTest {
                     + " minted for a principal that has never consented")
     void sendTurn_unconsentedCreator_rejectedBeforeAnyPersistence() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(false);
-        SendTurnRequest body = new SendTurnRequest("hello meera");
+        SendTurnRequest body = new SendTurnRequest("hello meera", null);
 
         ApiException ex =
                 assertThrows(
@@ -238,17 +244,18 @@ class CreatorMeeraControllerTest {
     void sendTurn_consentedCreator_proceeds() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
         when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
-        SendTurnRequest body = new SendTurnRequest("hello meera");
+        SendTurnRequest body = new SendTurnRequest("hello meera", null);
         MeeraSessionService.TurnResult result =
                 new MeeraSessionService.TurnResult(
-                        "msg-1", null, "stream-token", "onbehalf-token", java.util.Map.of(), null);
+                        "msg-1", null, "stream-token", "onbehalf-token", java.util.Map.of(), null, null);
         when(sessionService.sendTurn(
                         eq(CREATOR_USER_ID),
                         eq(CREATOR_USER_ID),
                         eq(UserType.CREATOR),
                         eq(CONVERSATION_ID),
                         anyString(),
-                        eq(IDEMPOTENCY_KEY)))
+                        eq(IDEMPOTENCY_KEY),
+                        eq(false)))
                 .thenReturn(result);
 
         controller.sendTurn(principal, CONVERSATION_ID, IDEMPOTENCY_KEY, body);
@@ -260,7 +267,8 @@ class CreatorMeeraControllerTest {
                         eq(UserType.CREATOR),
                         eq(CONVERSATION_ID),
                         anyString(),
-                        eq(IDEMPOTENCY_KEY));
+                        eq(IDEMPOTENCY_KEY),
+                        eq(false));
     }
 
     // ---- Priya gate review defect 3: creator voice routes (POST /creator/meera/voice/speak,
@@ -270,7 +278,7 @@ class CreatorMeeraControllerTest {
     @DisplayName("voice/speak: an unconsented creator is rejected with 403 CONSENT_REQUIRED before any provider call")
     void speak_unconsentedCreator_rejectedBeforeAnyPersistence() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(false);
-        var body = new CreatorMeeraController.VoiceSpeakRequest("hello", null);
+        var body = new CreatorMeeraController.VoiceSpeakRequest("hello", null, null);
 
         ApiException ex = assertThrows(ApiException.class, () -> controller.speak(principal, body));
 
@@ -285,7 +293,7 @@ class CreatorMeeraControllerTest {
                     + " the creator's OWN user id (never a brand workspace id)")
     void speak_consentedCreator_reachesVoiceClient() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
-        var body = new CreatorMeeraController.VoiceSpeakRequest("hello meera", "hi-IN");
+        var body = new CreatorMeeraController.VoiceSpeakRequest("hello meera", "hi-IN", null);
         when(voiceAiClient.speak(CREATOR_USER_ID, "hello meera", "hi-IN"))
                 .thenReturn(MeeraVoiceAiClient.SpeakResult.audio(new byte[] {1, 2, 3}, "audio/wav"));
 
@@ -304,7 +312,7 @@ class CreatorMeeraControllerTest {
                                 "WRONG_USER_TYPE",
                                 "This endpoint is for creator accounts only",
                                 HttpStatus.FORBIDDEN));
-        var body = new CreatorMeeraController.VoiceSpeakRequest("hello", null);
+        var body = new CreatorMeeraController.VoiceSpeakRequest("hello", null, null);
 
         ApiException ex = assertThrows(ApiException.class, () -> controller.speak(principal, body));
 
@@ -382,7 +390,7 @@ class CreatorMeeraControllerTest {
     @DisplayName("sendTurn: flag off returns 404 FEATURE_DISABLED before identity is even resolved")
     void sendTurn_flagOff_returns404WithoutResolvingIdentity() {
         when(featureProperties.isCreatorEnabled()).thenReturn(false);
-        SendTurnRequest body = new SendTurnRequest("hello meera");
+        SendTurnRequest body = new SendTurnRequest("hello meera", null);
 
         ApiException ex =
                 assertThrows(
@@ -413,7 +421,7 @@ class CreatorMeeraControllerTest {
     @DisplayName("voice/speak: flag off returns 404 FEATURE_DISABLED before identity is even resolved")
     void speak_flagOff_returns404WithoutResolvingIdentity() {
         when(featureProperties.isCreatorEnabled()).thenReturn(false);
-        var body = new CreatorMeeraController.VoiceSpeakRequest("hello", null);
+        var body = new CreatorMeeraController.VoiceSpeakRequest("hello", null, null);
 
         ApiException ex = assertThrows(ApiException.class, () -> controller.speak(principal, body));
 

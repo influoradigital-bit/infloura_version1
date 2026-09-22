@@ -78,20 +78,27 @@ public class MeeraBriefAiClient {
     private volatile HttpClient httpClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /** T-CREATOR-CREDITS-V2 (SPEC.md B20) — the $12.00 brief-extract USD backstop, sent only when the flag is on. */
+    private final com.influora.config.CreatorCreditProperties creatorCreditProperties;
+
     @Autowired
     public MeeraBriefAiClient(
-            CreatorSuggestionAiProperties props, CreatorSuggestionServiceTokenService tokenService) {
-        this(props, tokenService, null);
+            CreatorSuggestionAiProperties props,
+            CreatorSuggestionServiceTokenService tokenService,
+            com.influora.config.CreatorCreditProperties creatorCreditProperties) {
+        this(props, tokenService, null, creatorCreditProperties);
     }
 
     /** Package-visible constructor for tests to inject a mocked {@link HttpClient}. */
     MeeraBriefAiClient(
             CreatorSuggestionAiProperties props,
             CreatorSuggestionServiceTokenService tokenService,
-            HttpClient httpClient) {
+            HttpClient httpClient,
+            com.influora.config.CreatorCreditProperties creatorCreditProperties) {
         this.props = props;
         this.tokenService = tokenService;
         this.httpClient = httpClient;
+        this.creatorCreditProperties = creatorCreditProperties;
     }
 
     private HttpClient httpClient() {
@@ -158,9 +165,11 @@ public class MeeraBriefAiClient {
         String requestBody;
         try {
             token = tokenService.mint(creatorProfileId);
+            java.math.BigDecimal briefMonthlyCapUsd =
+                    creatorCreditProperties.isEnabled() ? creatorCreditProperties.getUsdBriefBackstopMonthly() : null;
             requestBody =
                     objectMapper.writeValueAsString(
-                            new ExtractRequest(creatorProfileId, rawText, creatorLanguage));
+                            new ExtractRequest(creatorProfileId, rawText, creatorLanguage, briefMonthlyCapUsd));
         } catch (Exception e) {
             log.warn(
                     "MeeraBriefAiClient: failed to build request for creator={}: {}",

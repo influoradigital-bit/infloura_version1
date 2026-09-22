@@ -155,7 +155,6 @@ class TransactionalOnlyOnPublicMethodsTest {
      *
      * <ul>
      *   <li>{@code MeeraSessionService#doSendTurn}
-     *   <li>{@code MeeraSessionService#doPersistAssistantWriteback}
      *   <li>{@code meera.tool.CreateCampaignExecutor#doExecute}
      *   <li>{@code meera.tool.RequestPaymentExecutor#doExecute}
      *   <li>{@code job.PlatformStatsAggregationJob#aggregateOne} (package-private)
@@ -166,7 +165,6 @@ class TransactionalOnlyOnPublicMethodsTest {
                     "com.influora.job.PlatformStatsAggregationJob#aggregateOne is ",
                     "com.influora.service.PayoutService#doQueuePayout is protected",
                     "com.influora.service.WalletService#doProcessWithdrawal is protected",
-                    "com.influora.service.meera.MeeraSessionService#doPersistAssistantWriteback is protected",
                     "com.influora.service.meera.MeeraSessionService#doSendTurn is protected",
                     "com.influora.service.meera.tool.CreateCampaignExecutor#doExecute is protected",
                     "com.influora.service.meera.tool.RequestPaymentExecutor#doExecute is protected");
