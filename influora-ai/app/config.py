@@ -76,7 +76,19 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.21.3"
+PROMPT_VERSION = "meera-2026.09.22.7"
+# ^ bumped for release/0922, which merges feature/creator-content-knowledge (.22.1-.22.6)
+# onto the 2026-09-21 go-live line (.21.3). Both sides are Swapnil rulings and both are
+# kept: the go-live brand-deal rows, category playbooks, 30 book-derived rows and English
+# hooks, AND v4's actions per category, lengths per goal and structure-selection rules.
+# The one rule that could not be kept twice: the number rule. The .22.4 STATISTIC rule
+# is used, because its own note says it replaces the broader NUMBER rule of .21.3.
+# Three narrative/framework rows existed on both sides with different wording
+# (write for one hyper-specific person, single target emotion per piece, Grab-Story-CTA);
+# the go-live wording is kept because it carries the book-source attribution.
+# BRAND prompt unchanged.
+#
+# Previously, on the go-live line (.21.3):
 # ^ bumped for the go-live creator knowledge additions (Swapnil 2026-09-21):
 # video_content_concepts.jsonl gained 5 brand_deal_practice rows (ad label,
 # endorse only what you used, the Influora draft-to-payment flow, disclosed
@@ -98,6 +110,52 @@ PROMPT_VERSION = "meera-2026.09.21.3"
 # three questions, never re-asking what the context already holds (Swapnil 2026-09-21).
 #
 # Previously (.2): bumped for creator audience knowledge (feature/creator-content-knowledge,
+#
+# And on feature/creator-content-knowledge (.22.6 back to .22.1):
+# ^ bumped for the script review (Swapnil 2026-09-22): one call to action
+# matched to the goal, no absolute promises, hashtags optional (at most 2),
+# and the plan names the on-camera action (with a hands-only fallback) and
+# what success looks like. BRAND prompt unchanged.
+#
+# Previously (.22.5):
+# ^ bumped for content knowledge v4 (Swapnil 2026-09-22): 109 entries (+11
+# actions to film per category, +6 lengths per goal, +8 situation -> structure
+# rules, the two undefined structures mapped onto PAS and Three-act) and the
+# full script format in creator_persona.py (plain-text beats, only on request).
+# BRAND prompt unchanged.
+#
+# Previously (.22.4):
+# ^ bumped because the .22.3 numeric rule was too broad: it also restricted the
+# creator's own durations ("sirf [duration] minute") and tip counts ("Ye
+# [number] galtiyan"). It now restricts only invented statistics and claims
+# about other people's results (STATISTIC RULE marker, has_statistic_slot in
+# content_knowledge.py). BRAND prompt unchanged.
+#
+# Previously (.22.3):
+# ^ bumped for content knowledge v3 (Swapnil 2026-09-22): 84 entries (17 from
+# his v3 + 5 narrative principles), the no-invented-number rule made GENERIC
+# (any [number]/[statistic]/[duration]-style slot, detected by slot name in
+# content_knowledge.py), a never-suggest-TikTok rule (banned in India) and an
+# ideas-only guard on outrage/status content. The .22.2 question-first intake
+# is unchanged. BRAND prompt unchanged.
+#
+# Previously (.22.2):
+# ^ bumped because Swapnil (2026-09-22) wants creator Meera to ask before she
+# ideates, like a manager: the content section's "Content idea intake" asks at
+# most 3 questions in one round (goal, format, past work; plus category when
+# there are several), never asks what the context already holds, and has a
+# skip / "jaldi batao" override that answers at once on defaults. It replaces
+# .22.1's "do not ask them to pick a category first". BRAND prompt unchanged.
+#
+# Previously (.22.1):
+# ^ bumped because creator Meera refused a content-idea request (Swapnil
+# 2026-09-22: "content ideas nahi deti"). creator_persona.py's opening now says
+# content help is part of her job with a no-refusal rule, and the content section
+# gained the audience-not-available-still-answer, several-categories and
+# no-follower-count-put-down rules. BRAND prompt text unchanged.
+#
+# Previously (.21.2):
+# ^ bumped for creator audience knowledge (feature/creator-content-knowledge,
 # Swapnil 2026-09-21): the CREATOR Block B now renders a "Your audience" line
 # from the new `audience_summary` context field (the creator's OWN audience,
 # rendered by Java, or an explicit "not available"), and creator_persona.py

@@ -18,8 +18,8 @@ from app.prompt.content_knowledge import (
     CREATOR_KNOWLEDGE_TEXT,
     KNOWLEDGE_BLOCK_HEADING,
     KNOWLEDGE_PATH,
-    NUMBER_STAT_HOOK_TEMPLATES,
     KnowledgeFileError,
+    has_statistic_slot,
     load_knowledge,
 )
 from app.prompt.creator_persona import MEERA_CREATOR_PERSONA
@@ -63,12 +63,38 @@ def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
+# Hand-pinned oracle, independent of the loader's regex: the three templates
+# whose numeric slot invites an invented STATISTIC (v3 row 74 is the third).
+NUMBER_STAT_HOOK_TEMPLATES: tuple[str, ...] = (
+    "[Number] logo ne yeh try kiya — result dekho",
+    "[Number]% log yeh galat karte hain — sahi tareeka yeh hai",
+    "Kya aap bhi un [statistic]% logon mein ho jo [common belief] sach maante hain? Asli baat yeh hai.",
+)
+# Numbers that describe the creator's OWN content (the routine's length, how
+# many tips the video covers). Coordinator ruling 2026-09-22: free to fill.
+CREATOR_OWN_NUMBER_TEMPLATES: tuple[str, ...] = (
+    "[Action], ghar pe/apne shehar mein, bina [barrier], sirf [duration] minute — chalo shuru",
+    "Ye [number] galtiyan tumhara [outcome] kharab kar rahi hain",
+)
+
+NEW_STORR_PRINCIPLES: dict[str, str] = {
+    "Cause-and-effect beats": "Ch. 1.8",
+    "Want versus need": "Ch. 3.4",
+    "Show, don't tell": "Ch. 1.3",
+    "One meaningful detail": "Ch. 1.6",
+    "Active hero with a goal": "Ch. 4.0",
+}
+ADAPTED_SOURCE = "influora_content_team (adapted pattern)"
+
+
 # --- the committed file -----------------------------------------------------
 
 
 def test_committed_knowledge_file_loads_every_row_by_type():
     rows = load_knowledge()
-    assert len(rows) == 128  # 62 original + 26 go-live + 30 book-derived + 10 from dataset_2
+    # release/0922: the go-live file (128 = 62 original + 26 go-live + 30 book-derived + 10
+    # from dataset_2) plus v4's 44 new rows (47 minus 3 written on both sides).
+    assert len(rows) == 172
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
@@ -76,20 +102,106 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "camera_angle": 28,
         "storytelling_structure": 11,
         "persuasion_principle": 7,
-        "marketing_concept": 16,
-        "hook_template": 16,  # 6 Hinglish + 6 English versions + 4 from dataset_2
-        "narrative_principle": 18,
+        "marketing_concept": 19,
+        "hook_template": 22,
+        "narrative_principle": 27,
         "content_characteristic": 10,
-        "platform_strategy": 4,
+        "platform_strategy": 5,
         "brand_deal_practice": 5,
         "category_playbook": 13,
+        "contextual_action": 11,
+        "length_guideline": 6,
+        "structure_selection_rule": 8,
     }
 
 
-def test_the_two_number_hook_templates_exist_verbatim_in_the_data():
+def test_the_numeric_slot_templates_exist_verbatim_in_the_data():
     templates = {r["template"] for r in load_knowledge() if r["data_type"] == "hook_template"}
-    for t in NUMBER_STAT_HOOK_TEMPLATES:
+    for t in NUMBER_STAT_HOOK_TEMPLATES + CREATOR_OWN_NUMBER_TEMPLATES:
         assert t in templates, t
+
+
+def test_the_three_statistic_templates_are_restricted():
+    for t in NUMBER_STAT_HOOK_TEMPLATES:
+        assert has_statistic_slot(t), t
+
+
+def test_duration_and_tip_count_templates_are_not_restricted():
+    for t in CREATOR_OWN_NUMBER_TEMPLATES:
+        assert not has_statistic_slot(t), t
+
+
+def test_statistic_detection_is_generic_not_a_list():
+    templates = [r["template"] for r in load_knowledge() if r["data_type"] == "hook_template"]
+    flagged = {t for t in templates if has_statistic_slot(t)}
+    assert flagged == set(NUMBER_STAT_HOOK_TEMPLATES)
+    # A future template nobody listed is caught by its slot shape alone.
+    for new in (
+        "Only [percentage] of creators know this",
+        "[statistic] fact about sleep",
+        "[people count] ne yeh follow kiya",
+        "[figure]% galat hain",
+        "[Number] people tried this",
+        "[count] logon ne dekha",
+    ):
+        assert has_statistic_slot(new), new
+    # The creator's own numbers, and slots with no number at all, stay free.
+    for free in (
+        "[Duration] mein result",
+        "[count] reasons to start",
+        "Ye [number] steps follow karo",
+        "[Pain point] ka time ya resource nahi hai?",
+        "Calling [group]",
+    ):
+        assert not has_statistic_slot(free), free
+
+
+def test_no_tiktok_anywhere_in_the_knowledge_file_or_block():
+    assert "tiktok" not in KNOWLEDGE_PATH.read_bytes().decode("utf-8").lower()
+    assert "tiktok" not in CREATOR_KNOWLEDGE_TEXT.lower()
+    platforms = [r["platform"] for r in load_knowledge() if r["data_type"] == "platform_strategy"]
+    assert "Instagram Reels / YouTube Shorts (short-form algorithmic feeds)" in platforms
+
+
+def test_status_and_outrage_row_carries_the_no_real_individuals_guard():
+    name = "Status games and moral outrage as engagement drivers"
+    row = next(r for r in load_knowledge() if r.get("principle") == name)
+    app = row["video_application"]
+    assert "Never name, shame or target a real individual or brand" in app
+    assert "only at ideas, practices or common mistakes" in app
+    assert "this person did X wrong" not in app
+    line = next(ln for ln in CREATOR_KNOWLEDGE_TEXT.splitlines() if ln.startswith(f"- {name}:"))
+    assert "IDEAS ONLY" in line
+
+
+def test_five_new_storr_principles_are_present_by_name_with_chapter_credit():
+    rows = {r["principle"]: r for r in load_knowledge() if r["data_type"] == "narrative_principle"}
+    for name, chapter in NEW_STORR_PRINCIPLES.items():
+        assert name in rows, name
+        assert rows[name]["further_reading"] == (
+            f"The Science of Storytelling by Will Storr (Abrams Press, 2019), {chapter}"
+        )
+        assert rows[name]["source"] == "influora_content_team"
+        assert f"- {name}: " in CREATOR_KNOWLEDGE_TEXT
+
+
+def test_the_six_adapted_pattern_hooks_carry_the_adapted_source_and_keep_the_original():
+    rows = load_knowledge()
+    # Found by source, not by file position: release/0922 appends v4's rows after the
+    # go-live file, so the six rows that were 70..75 in v4 are 133..138 in the merge.
+    adapted = [r for r in rows if r.get("source") == ADAPTED_SOURCE]
+    assert len(adapted) == 6
+    for r in adapted:
+        assert r["data_type"] == "hook_template", r["template"]
+        assert r["further_reading"].startswith("Pattern inspired by: "), r["template"]
+    # The unconfirmed guides survive only as inspiration, never as a source,
+    # and their original wording never reaches the prompt.
+    for r in rows:
+        assert "Viral Hook Ideas" not in r["source"] and "breezy_content" not in r["source"]
+    assert "Did you know [statistic]%" not in CREATOR_KNOWLEDGE_TEXT
+    text = KNOWLEDGE_PATH.read_bytes().decode("utf-8")
+    assert "video_goal parameter" not in text
+    assert "goal_fit field" in text
 
 
 def test_platform_strategy_rows_are_medium_confidence():
@@ -181,6 +293,9 @@ def test_every_row_reaches_the_knowledge_text():
             "platform_strategy": "platform",
             "brand_deal_practice": "topic",
             "category_playbook": "category",
+            "contextual_action": "category",
+            "length_guideline": "goal",
+            "structure_selection_rule": "situation",
         }[r["data_type"]]
         assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
 
@@ -207,13 +322,50 @@ def test_persona_states_knowledge_first_name_entry_name_category_ask_script():
     assert "fall back to general knowledge, and say so plainly" in text
 
 
-def test_persona_states_the_no_invented_number_rule_naming_both_templates():
+def test_persona_states_the_no_invented_statistic_rule():
     text = _flat(MEERA_CREATOR_PERSONA)
-    assert "No invented numbers in hooks." in text
-    for t in NUMBER_STAT_HOOK_TEMPLATES:
-        assert _flat(t) in text, t
-    assert "creator's own figure from your context or a number the creator gave you" in text
+    assert "No invented statistics in hooks." in text
+    assert "Never invent a statistic or a claim about other people's results" in text
+    assert (
+        "every template the knowledge block marks STATISTIC RULE — may only be filled with the creator's own"
+        " figure from your context or a number the creator gave you"
+    ) in text
     assert "use a different template" in text
+    # The creator's own numbers are explicitly free.
+    assert (
+        "Numbers that describe the creator's own content, such as how long the routine is or how many tips"
+        " or steps the video covers, are fine to choose."
+    ) in text
+    # The .22.3 broad wording must not survive alongside the narrowed rule.
+    assert "No invented numbers in hooks." not in text
+    assert "Any hook template with a numeric slot" not in text
+
+
+def test_persona_never_suggests_tiktok():
+    text = _flat(MEERA_CREATOR_PERSONA)
+    assert "Never suggest TikTok. It is banned in India." in text
+    assert "suggest Instagram Reels or YouTube Shorts" in text
+    # TikTok appears in the persona only inside that prohibition.
+    assert text.lower().count("tiktok") == 1
+
+
+def test_persona_states_the_no_real_individuals_guard():
+    text = _flat(MEERA_CREATOR_PERSONA)
+    assert "Outrage and status only about ideas." in text
+    assert "Never name, shame or target a real individual or brand in an idea, hook or script." in text
+    assert "only at ideas, practices or common mistakes" in text
+
+
+def test_question_first_intake_still_present():
+    text = _flat(MEERA_CREATOR_PERSONA)
+    for phrase in (
+        "Content idea intake.",
+        "at most 3 short questions in ONE message",
+        "Skip override.",
+        "One round of questions only.",
+        "Never ask what the context already holds.",
+    ):
+        assert phrase in text, phrase
 
 
 def test_persona_states_the_no_urgency_rule():
@@ -234,7 +386,13 @@ def test_knowledge_block_marks_the_risky_entries_inline():
     text = CREATOR_KNOWLEDGE_TEXT
     for t in NUMBER_STAT_HOOK_TEMPLATES:
         line = next(line for line in text.splitlines() if t in line)
-        assert "NUMBER RULE" in line
+        assert "STATISTIC RULE" in line
+    for t in CREATOR_OWN_NUMBER_TEMPLATES:
+        line = next(line for line in text.splitlines() if t in line)
+        assert "STATISTIC RULE" not in line, t
+    # Only the three statistic templates carry the marker.
+    assert sum("STATISTIC RULE" in line for line in text.splitlines()) == 3
+    assert "NUMBER RULE" not in text
     for principle in ("Scarcity", "Commitment & consistency"):
         line = next(line for line in text.splitlines() if line.startswith(f"- {principle}:"))
         assert "STRUCTURE ONLY" in line
@@ -293,11 +451,15 @@ def test_playbook_must_name_a_structure_and_shots_that_exist(tmp_path):
         load_knowledge(_write(tmp_path, _refs() + [_playbook(formats=[])]))
 
 
-def test_every_number_slot_template_carries_the_number_rule(tmp_path):
+def test_every_statistic_slot_template_carries_the_statistic_rule(tmp_path):
+    # release/0922: the go-live NUMBER rule (every [Number] slot) was replaced by v4's
+    # narrower STATISTIC rule (.22.4): only invented claims about the world are
+    # restricted; the creator's own counts ("Ye [number] galtiyan") stay free.
+    from app.prompt.content_knowledge import has_statistic_slot
+
     for t in (r["template"] for r in load_knowledge() if r["data_type"] == "hook_template"):
-        if "[number" in t.lower():
-            line = next(line for line in CREATOR_KNOWLEDGE_TEXT.splitlines() if t in line)
-            assert "NUMBER RULE" in line
+        line = next(line for line in CREATOR_KNOWLEDGE_TEXT.splitlines() if t in line)
+        assert ("STATISTIC RULE" in line) == has_statistic_slot(t), t
     # A NEW template with a [Number] slot gets the rule too, not only the two named ones.
     from app.prompt.content_knowledge import render_knowledge_block
 
@@ -311,7 +473,7 @@ def test_every_number_slot_template_carries_the_number_rule(tmp_path):
         "source": "test",
     }
     text = render_knowledge_block(load_knowledge(_write(tmp_path, [hook])))
-    assert "NUMBER RULE" in next(line for line in text.splitlines() if "creators switched" in line)
+    assert "STATISTIC RULE" in next(line for line in text.splitlines() if "creators switched" in line)
 
 
 def test_playbooks_and_brand_deals_render_before_the_general_entries():
@@ -346,7 +508,7 @@ def test_persona_states_the_playbook_and_brand_deal_rules():
     assert "Use the category playbook." in text
     assert '"Never say" line is a hard rule' in text
     assert "ASCI asks for a clear, upfront label" in text
-    assert "every other template with a [Number], [statistic] or [percent] slot" in text
+    assert "No invented statistics in hooks." in text
 
 
 # --- "ask first, only what's unknown" (Swapnil 2026-09-21) --------------------
