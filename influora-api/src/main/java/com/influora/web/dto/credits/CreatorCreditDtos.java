@@ -46,7 +46,8 @@ public final class CreatorCreditDtos {
 
     public record PackInfo(String code, int credits, int pricePaise, boolean gstInclusive) {}
 
-    public record CostsInfo(int turn, int voiceTurn, int brief) {}
+    /** {@code script} / {@code profileReview}: the "Write a script" / "Review my profile" buttons (2026-09-22). */
+    public record CostsInfo(int turn, int voiceTurn, int brief, int script, int profileReview) {}
 
     /** {@code GET /creator/credits}. Flag off: only {@code enabled=false} is populated (NON_NULL). */
     @JsonInclude(JsonInclude.Include.NON_NULL)

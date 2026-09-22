@@ -200,7 +200,7 @@ public class CreatorMeeraController {
                         conversationId,
                         body.content(),
                         idempotencyKey,
-                        body.isVoiceReply());
+                        body.creatorChargeKind());
 
         var response =
                 new SendTurnResponse(

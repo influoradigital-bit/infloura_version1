@@ -7368,6 +7368,9 @@ export interface CreatorCreditCostsInfo {
   turn: number;
   voiceTurn: number;
   brief: number;
+  /** "Write a script" / "Review my profile" buttons (2026-09-22). Absent from older servers. */
+  script?: number;
+  profileReview?: number;
 }
 
 /**

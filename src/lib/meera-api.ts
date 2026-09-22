@@ -806,6 +806,12 @@ function safeRandomUUID(): string {
 // API methods
 // ---------------------------------------------------------------------------
 
+/**
+ * A creator quick-action button (2026-09-22): charged as a script / profile review (3 credits by
+ * default) instead of a plain message. The server decides the price; this only names the button.
+ */
+export type CreatorTurnAction = 'SCRIPT' | 'PROFILE_REVIEW';
+
 export const meeraApi = {
   /**
    * POST /meera/sessions - Start or resume a Meera session
@@ -851,7 +857,7 @@ export const meeraApi = {
     conversationId: string,
     content: string,
     role: MeeraRole = 'brand',
-    options: { voiceReply?: boolean; idempotencyKey?: string } = {}
+    options: { voiceReply?: boolean; idempotencyKey?: string; action?: CreatorTurnAction } = {}
   ): Promise<MeeraTurnResponse> => {
     if (!isApiLive()) {
       await delay();
@@ -871,7 +877,7 @@ export const meeraApi = {
       'POST',
       `${basePath(role)}/sessions/${conversationId}/messages`,
       {
-        body: { content, voiceReply: options.voiceReply },
+        body: { content, voiceReply: options.voiceReply, ...(options.action ? { action: options.action } : {}) },
         idempotencyKey: options.idempotencyKey ?? safeRandomUUID(),
         role,
       }

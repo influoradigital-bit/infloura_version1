@@ -30,7 +30,10 @@ public class CreatorCreditProperties {
     private final java.math.BigDecimal usdBackstopMonthly;
     private final java.math.BigDecimal usdBriefBackstopMonthly;
     private final int voiceSpeaksPerTurn;
+    private final int scriptCost;
+    private final int profileReviewCost;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public CreatorCreditProperties(
             @Value("${influora.creator-credits.enabled:false}") boolean enabled,
             @Value("${influora.creator-credits.turn-cost:1}") int turnCost,
@@ -44,7 +47,9 @@ public class CreatorCreditProperties {
             @Value("${influora.creator-credits.usd-backstop-monthly:25.00}") java.math.BigDecimal usdBackstopMonthly,
             @Value("${influora.creator-credits.usd-brief-backstop-monthly:12.00}")
                     java.math.BigDecimal usdBriefBackstopMonthly,
-            @Value("${influora.creator-credits.voice-speaks-per-turn:3}") int voiceSpeaksPerTurn) {
+            @Value("${influora.creator-credits.voice-speaks-per-turn:3}") int voiceSpeaksPerTurn,
+            @Value("${influora.creator-credits.script-cost:3}") int scriptCost,
+            @Value("${influora.creator-credits.profile-review-cost:3}") int profileReviewCost) {
         this.enabled = enabled;
         this.turnCost = turnCost;
         this.voiceSurcharge = voiceSurcharge;
@@ -57,6 +62,36 @@ public class CreatorCreditProperties {
         this.usdBackstopMonthly = usdBackstopMonthly;
         this.usdBriefBackstopMonthly = usdBriefBackstopMonthly;
         this.voiceSpeaksPerTurn = voiceSpeaksPerTurn;
+        this.scriptCost = scriptCost;
+        this.profileReviewCost = profileReviewCost;
+    }
+
+    /** Pre-2026-09-22 shape (tests and hand-built fixtures): script and profile review at 3. */
+    public CreatorCreditProperties(
+            boolean enabled,
+            int turnCost,
+            int voiceSurcharge,
+            int briefCost,
+            int dailyCap,
+            int welcomeGrant,
+            int monthlyGrant,
+            int paidValidityDays,
+            String zone,
+            java.math.BigDecimal usdBackstopMonthly,
+            java.math.BigDecimal usdBriefBackstopMonthly,
+            int voiceSpeaksPerTurn) {
+        this(enabled, turnCost, voiceSurcharge, briefCost, dailyCap, welcomeGrant, monthlyGrant, paidValidityDays,
+                zone, usdBackstopMonthly, usdBriefBackstopMonthly, voiceSpeaksPerTurn, 3, 3);
+    }
+
+    /** "Write a script" button (2026-09-22): credits for one script turn. */
+    public int getScriptCost() {
+        return scriptCost;
+    }
+
+    /** "Review my profile" button (2026-09-22): credits for one profile-review turn. */
+    public int getProfileReviewCost() {
+        return profileReviewCost;
     }
 
     public boolean isEnabled() {

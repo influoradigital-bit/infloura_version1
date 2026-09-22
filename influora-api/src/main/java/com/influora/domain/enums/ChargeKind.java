@@ -10,7 +10,16 @@ package com.influora.domain.enums;
 public enum ChargeKind {
     TURN(1),
     VOICE_TURN(2),
-    BRIEF(3);
+    BRIEF(3),
+    /**
+     * 2026-09-22 (Swapnil, option A) — the creator pressed "Write a script": a chat turn whose
+     * reply is a full reel script, several times longer than a normal answer. Debited like a TURN
+     * (one DEBIT_TURN row under {@code turn:<id>}, so refund, write-back marker and locking are
+     * all the TURN path's) but for {@code script-cost} credits instead of {@code turn-cost}.
+     */
+    SCRIPT(3),
+    /** 2026-09-22 — the creator pressed "Review my profile". Same TURN-shaped debit as {@link #SCRIPT}. */
+    PROFILE_REVIEW(3);
 
     private final int cost;
 
