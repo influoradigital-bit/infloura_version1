@@ -76,7 +76,14 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.21.2"
+PROMPT_VERSION = "meera-2026.09.22.1"
+# ^ bumped because creator Meera refused a content-idea request (Swapnil
+# 2026-09-22: "content ideas nahi deti"). creator_persona.py's opening now says
+# content help is part of her job with a no-refusal rule, and the content section
+# gained the audience-not-available-still-answer, several-categories and
+# no-follower-count-put-down rules. BRAND prompt text unchanged.
+#
+# Previously (.21.2):
 # ^ bumped for creator audience knowledge (feature/creator-content-knowledge,
 # Swapnil 2026-09-21): the CREATOR Block B now renders a "Your audience" line
 # from the new `audience_summary` context field (the creator's OWN audience,
