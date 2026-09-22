@@ -344,7 +344,8 @@ public class AnalyticsService {
         String workspaceId = brandContext.requireBrandWorkspace(principal).getId();
         String authorizedCreatorId =
                 metricsAuthorizationService.resolveAuthorizedCreatorProfileId(workspaceId, creatorId);
-        return buildContentPerformanceResponse(authorizedCreatorId);
+        // Brand-facing: never carry raw caption text (MediaMetric.caption javadoc).
+        return buildContentPerformanceResponse(authorizedCreatorId, false);
     }
 
     /**
@@ -353,7 +354,8 @@ public class AnalyticsService {
      */
     @Transactional(readOnly = true)
     public List<ContentPerformanceResponse> getContentPerformanceForProfile(String creatorProfileId) {
-        return buildContentPerformanceResponse(creatorProfileId);
+        // Creator-self: the creator is reading their own captions, so they are carried through.
+        return buildContentPerformanceResponse(creatorProfileId, true);
     }
 
     /**
@@ -364,8 +366,18 @@ public class AnalyticsService {
      * snapshot per post. {@code engagementRate} is derived per-row (see {@link
      * ContentPerformanceResponse} javadoc); left {@code null} rather than guessed when {@code reach}
      * is missing or zero.
+     *
+     * <p>Output order (F-1786): AFTER the dedup, rows are sorted by {@code postedAt} descending
+     * (newest post first), rows with no {@code postedAt} last. Poll order is not post order — every
+     * post from one poll shares the same {@code time}, so emitting in poll order listed a poll's
+     * posts in whatever order the database returned them. The dedup itself is unchanged: it still
+     * picks each post's latest snapshot by poll time.
+     *
+     * <p>{@code includeCaption} is {@code true} only for the creator-self route; the brand route
+     * passes {@code false} so raw caption text never reaches a brand-facing response.
      */
-    private List<ContentPerformanceResponse> buildContentPerformanceResponse(String creatorProfileId) {
+    private List<ContentPerformanceResponse> buildContentPerformanceResponse(
+            String creatorProfileId, boolean includeCaption) {
         List<MediaMetric> recent =
                 mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
                         creatorProfileId, PageRequest.of(0, CONTENT_PERFORMANCE_LOOKBACK));
@@ -391,7 +403,12 @@ public class AnalyticsService {
                                         m.getShares(),
                                         m.getVideoViews(),
                                         m.getPostedAt(),
-                                        engagementRate(m.getEngagement(), m.getReach())))
+                                        engagementRate(m.getEngagement(), m.getReach()),
+                                        includeCaption ? m.getCaption() : null))
+                .sorted(
+                        Comparator.comparing(
+                                ContentPerformanceResponse::postedAt,
+                                Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
     }
 

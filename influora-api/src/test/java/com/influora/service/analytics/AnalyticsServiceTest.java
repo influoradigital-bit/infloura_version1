@@ -704,4 +704,95 @@ class AnalyticsServiceTest {
         assertEquals(1, result.size());
         assertEquals(null, result.get(0).engagementRate());
     }
+
+    // ------------------------------------------------------------------------------------------
+    // Content performance — row order (F-1786) and caption (F-1784)
+    // ------------------------------------------------------------------------------------------
+
+    private static MediaMetric post(
+            String mediaId, Instant postedAt, Instant pollTime, String caption, Long reach) {
+        return MediaMetric.builder()
+                .id("01HMEDIA-" + mediaId + "-" + pollTime.getEpochSecond())
+                .creatorProfileId(CREATOR_ID)
+                .mediaId(mediaId)
+                .mediaType("IMAGE")
+                .caption(caption)
+                .reach(reach)
+                .engagement(10L)
+                .postedAt(postedAt)
+                .time(pollTime)
+                .build();
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformanceForProfile: posts from the SAME poll come out newest postedAt"
+                    + " first regardless of repository order, null postedAt last, caption carried,"
+                    + " dedup still keeps each post's latest snapshot")
+    void testContentPerformanceSortedByPostedAtDescNullsLastWithCaption() {
+        Instant samePoll = Instant.parse("2026-09-20T06:00:00Z");
+        Instant olderPoll = Instant.parse("2026-09-19T06:00:00Z");
+
+        // Repository order (poll time desc; ties in arbitrary DB order): OLDER post, then the
+        // post with no postedAt, then the NEWEST post — deliberately not post order.
+        MediaMetric olderPost =
+                post("ig-old", Instant.parse("2026-09-01T10:00:00Z"), samePoll, "old caption", 100L);
+        MediaMetric undatedPost = post("ig-undated", null, samePoll, "undated caption", 100L);
+        MediaMetric newestPost =
+                post("ig-new", Instant.parse("2026-09-15T10:00:00Z"), samePoll, "new caption", 100L);
+        // A stale, earlier-poll snapshot of the newest post — the dedup must drop it (reach 999
+        // would change engagementRate if it leaked through).
+        MediaMetric staleNewestSnapshot =
+                post("ig-new", Instant.parse("2026-09-15T10:00:00Z"), olderPoll, "stale", 999L);
+
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(List.of(olderPost, undatedPost, newestPost, staleNewestSnapshot));
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformanceForProfile(CREATOR_ID);
+
+        assertEquals(3, result.size());
+        assertEquals("ig-new", result.get(0).mediaId());
+        assertEquals("ig-old", result.get(1).mediaId());
+        assertEquals("ig-undated", result.get(2).mediaId());
+        assertEquals(null, result.get(2).postedAt());
+
+        assertEquals("new caption", result.get(0).caption());
+        assertEquals("old caption", result.get(1).caption());
+        assertEquals("undated caption", result.get(2).caption());
+        // Latest snapshot (reach 100) kept, not the stale one (reach 999): 10 / 100 * 100 = 10.00.
+        assertEquals(new BigDecimal("10.00"), result.get(0).engagementRate());
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformance (brand route): same postedAt-desc order, but raw caption is never"
+                    + " surfaced to a brand")
+    void testBrandContentPerformanceSortedAndNeverCarriesCaption() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
+                .thenReturn(CREATOR_ID);
+
+        Instant samePoll = Instant.parse("2026-09-20T06:00:00Z");
+        MediaMetric undatedPost = post("ig-undated", null, samePoll, "undated caption", 100L);
+        MediaMetric olderPost =
+                post("ig-old", Instant.parse("2026-09-01T10:00:00Z"), samePoll, "old caption", 100L);
+        MediaMetric newestPost =
+                post("ig-new", Instant.parse("2026-09-15T10:00:00Z"), samePoll, "new caption", 100L);
+
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(List.of(undatedPost, olderPost, newestPost));
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformance(principal, CREATOR_ID);
+
+        assertEquals(3, result.size());
+        assertEquals("ig-new", result.get(0).mediaId());
+        assertEquals("ig-old", result.get(1).mediaId());
+        assertEquals("ig-undated", result.get(2).mediaId());
+        for (ContentPerformanceResponse row : result) {
+            assertEquals(null, row.caption());
+        }
+    }
 }

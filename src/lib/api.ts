@@ -5191,7 +5191,23 @@ export const creatorAnalytics = {
 export interface ContentPerformanceItem {
   mediaId: string;
   mediaType: string;
-  postedAt: string;
+  /**
+   * ISO instant. Same NON_NULL omission as `reach` when the poll never saw a
+   * timestamp — the panel renders "—" rather than "Invalid Date" (F-1786).
+   */
+  postedAt?: string | null;
+  /**
+   * F-1784: Instagram post URL (sent all along, never rendered). Untrusted —
+   * ContentPerformancePanel only turns it into a link after checking it is an
+   * https URL on instagram.com.
+   */
+  permalink?: string | null;
+  /**
+   * F-1784: the post's caption. Sent only on the creator's own route
+   * (GET /creator/analytics/me/media); the brand route never carries it, and
+   * NON_NULL omits the key, so treat it as optional everywhere.
+   */
+  caption?: string | null;
   /**
    * Nullable on the wire — `AnalyticsDtos.ContentPerformanceResponse` is
    * `@JsonInclude(NON_NULL)`, so when Meta didn't report reach for a post the
