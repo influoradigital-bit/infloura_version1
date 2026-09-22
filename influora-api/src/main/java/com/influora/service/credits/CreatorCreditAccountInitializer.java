@@ -46,6 +46,15 @@ public class CreatorCreditAccountInitializer {
         this.accountRepository = accountRepository;
     }
 
+    /**
+     * Plain existence check that joins the CALLER's transaction (no new connection). Call it
+     * before {@link #ensureAccount}: that method is REQUIRES_NEW, and taking a second pooled
+     * connection on every call starved the pool under concurrent charges.
+     */
+    public boolean accountExists(String creatorUserId) {
+        return accountRepository.existsById(creatorUserId);
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void ensureAccount(String creatorUserId) {
         // Fast path: on every call after the very first, the row already exists — skip the

@@ -104,7 +104,9 @@ public class CreatorCreditOrderService {
         // (saveAndFlush + DataIntegrityViolationException catch, see
         // CreatorCreditAccountInitializer's own javadoc for exactly why a plain try/catch is not
         // enough on its own) so this is safe to call unconditionally, every time.
-        try {
+        // Only when missing: ensureAccount is REQUIRES_NEW (a second pooled connection while this
+        // transaction holds one) - see CreatorCreditService#lockAccount for the pool-starvation bug.
+        if (!accountInitializer.accountExists(creatorUserId)) try {
             accountInitializer.ensureAccount(creatorUserId);
         } catch (UnexpectedRollbackException racedAway) {
             // Review finding #16 point 1 — the SAME race CreatorCreditService#lockAccount already

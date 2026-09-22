@@ -166,7 +166,7 @@ public class CreatorCreditService {
 
         String primaryRef = kind == ChargeKind.BRIEF ? briefRef(ulid) : turnRef(ulid);
         boolean alreadyCharged =
-                ledgerRepository.findByCreatorUserIdAndReferenceIdIn(creatorUserId, List.of(primaryRef)).stream()
+                ledgerRepository.lockByCreatorUserIdAndReferenceIdIn(creatorUserId, List.of(primaryRef)).stream()
                         .anyMatch(e -> isDebitReason(e.getReason()));
         if (alreadyCharged) {
             accountRepository.save(account);
@@ -178,7 +178,7 @@ public class CreatorCreditService {
             return ChargeResult.dailyCap(kind, cost, totalRemaining(creatorUserId, now), account.getDailyUsed());
         }
 
-        List<CreatorCreditGrant> spendable = GrantOrder.sort(grantRepository.findSpendable(creatorUserId, now), now);
+        List<CreatorCreditGrant> spendable = GrantOrder.sort(grantRepository.lockSpendable(creatorUserId, now), now);
         int total = spendable.stream().mapToInt(CreatorCreditGrant::getCreditsRemaining).sum();
         if (total < cost) {
             accountRepository.save(account);
@@ -295,9 +295,10 @@ public class CreatorCreditService {
         // and re-anchors that view. Reading the ledger/grant rows *before* the lock (the previous
         // order) let a concurrent charge()/writeback that committed while this release() was blocked
         // on the lock go invisible to the later plain reads below, so this release would refund a
-        // stale (pre-debit) balance and silently erase the other transaction's debit. Locking first
-        // means every plain read after it observes anything committed up to the moment the lock was
-        // granted.
+        // stale (pre-debit) balance and silently erase the other transaction's debit. Locking first is
+        // necessary but NOT sufficient: under REPEATABLE READ a plain read still sees the snapshot of
+        // this transaction's first read (which may predate the lock), so every read below that decides
+        // a write is a LOCKING read (lock* repository methods), which always sees the latest commit.
         Optional<CreatorCreditAccount> maybeAccount = accountRepository.findByIdForUpdate(creatorUserId);
         if (maybeAccount.isEmpty()) {
             return;
@@ -305,7 +306,7 @@ public class CreatorCreditService {
         CreatorCreditAccount account = maybeAccount.get();
 
         List<CreatorCreditLedgerEntry> rows =
-                ledgerRepository.findByCreatorUserIdAndReferenceIdIn(creatorUserId, refs);
+                ledgerRepository.lockByCreatorUserIdAndReferenceIdIn(creatorUserId, refs);
         List<CreatorCreditLedgerEntry> debitRows =
                 rows.stream().filter(e -> debitReasons.contains(e.getReason())).toList();
         if (debitRows.isEmpty()) {
@@ -353,7 +354,7 @@ public class CreatorCreditService {
 
         Instant now = clock.instant();
         for (CreatorCreditLedgerEntry debit : toRelease) {
-            CreatorCreditGrant grant = grantRepository.findById(debit.getGrantId()).orElse(null);
+            CreatorCreditGrant grant = grantRepository.lockById(debit.getGrantId()).orElse(null);
             if (grant == null) {
                 log.error(
                         "CreatorCreditService#release: grant {} for creator {} no longer exists — cannot"
@@ -427,7 +428,7 @@ public class CreatorCreditService {
         lockAccount(creatorUserId);
         CreatorVoiceSpeak row =
                 voiceSpeakRepository
-                        .findByIdCreatorUserIdAndIdTurnId(creatorUserId, turnUlid)
+                        .lockByCreatorUserIdAndTurnId(creatorUserId, turnUlid)
                         .orElseGet(() -> CreatorVoiceSpeak.newRow(creatorUserId, turnUlid));
         boolean claimed = row.tryIncrement(properties.getVoiceSpeaksPerTurn());
         if (claimed) {
@@ -451,7 +452,7 @@ public class CreatorCreditService {
         }
         accountRepository.findByIdForUpdate(creatorUserId);
         CreatorVoiceSpeak row =
-                voiceSpeakRepository.findByIdCreatorUserIdAndIdTurnId(creatorUserId, turnUlid).orElse(null);
+                voiceSpeakRepository.lockByCreatorUserIdAndTurnId(creatorUserId, turnUlid).orElse(null);
         if (row == null || row.isDelivered()) {
             return;
         }
@@ -494,7 +495,7 @@ public class CreatorCreditService {
         }
         accountRepository.findByIdForUpdate(creatorUserId);
         CreatorVoiceSpeak row =
-                voiceSpeakRepository.findByIdCreatorUserIdAndIdTurnId(creatorUserId, turnUlid).orElse(null);
+                voiceSpeakRepository.lockByCreatorUserIdAndTurnId(creatorUserId, turnUlid).orElse(null);
         if (row == null || row.isDelivered() || row.isRefunded() || row.getSpeakCount() != 1) {
             return;
         }
@@ -512,7 +513,7 @@ public class CreatorCreditService {
         accountRepository.findByIdForUpdate(creatorUserId);
         String ref = turnRef(turnUlid);
         boolean released =
-                ledgerRepository.findByCreatorUserIdAndReferenceIdIn(creatorUserId, List.of(ref)).stream()
+                ledgerRepository.lockByCreatorUserIdAndReferenceIdIn(creatorUserId, List.of(ref)).stream()
                         .anyMatch(e -> e.getReason() == CreditLedgerReason.REFUND);
         if (released) {
             throw new ApiException(
@@ -545,7 +546,7 @@ public class CreatorCreditService {
         accountRepository.findByIdForUpdate(creatorUserId);
         String ref = turnRef(turnUlid);
         List<CreatorCreditLedgerEntry> rows =
-                ledgerRepository.findByCreatorUserIdAndReferenceIdIn(creatorUserId, List.of(ref));
+                ledgerRepository.lockByCreatorUserIdAndReferenceIdIn(creatorUserId, List.of(ref));
         boolean alreadyMarked =
                 rows.stream().anyMatch(e -> e.getReason() == CreditLedgerReason.WRITEBACK_MARKER);
         if (alreadyMarked) {
@@ -559,7 +560,7 @@ public class CreatorCreditService {
             // for release() to wrongly resurrect, so no marker is needed.
             return;
         }
-        CreatorCreditGrant grant = grantRepository.findById(debit.getGrantId()).orElse(null);
+        CreatorCreditGrant grant = grantRepository.lockById(debit.getGrantId()).orElse(null);
         int balanceAfter = grant == null ? debit.getBalanceAfter() : grant.getCreditsRemaining();
         ledgerRepository.save(
                 CreatorCreditLedgerEntry.of(
@@ -656,7 +657,7 @@ public class CreatorCreditService {
 
         LocalDate today = LocalDate.now(clock.withZone(zone));
         List<CreatorCreditGrant> leftovers =
-                grantRepository.findWithRemainingByCreatorUserIdAndBucket(
+                grantRepository.lockWithRemainingByCreatorUserIdAndBucket(
                         account.getCreatorUserId(), CreditBucket.FREE_MONTHLY);
         for (CreatorCreditGrant grant : leftovers) {
             int remaining = grant.expireRemaining();
@@ -890,15 +891,25 @@ public class CreatorCreditService {
     // ------------------------------------------------------------------
 
     private CreatorCreditAccount lockAccount(String creatorUserId) {
-        try {
-            accountInitializer.ensureAccount(creatorUserId);
-        } catch (UnexpectedRollbackException racedAway) {
+        // Connection-pool safety (found by CreatorCreditConcurrencyIntegrationTest on real MySQL):
+        // ensureAccount is REQUIRES_NEW, i.e. a SECOND pooled connection while this transaction
+        // already holds one. Calling it unconditionally made every charge hold two connections, so
+        // as many concurrent charges as the pool size starved Hikari and froze the whole API. The
+        // existence check therefore runs here first, in THIS transaction, as a plain non-locking
+        // read (a FOR UPDATE on a missing PK would take a gap lock that blocks ensureAccount's own
+        // insert from the other connection - the same self-deadlock as the application-history
+        // stall). Steady state: one connection. Only a creator's very first touch pays for two.
+        if (!accountRepository.existsById(creatorUserId)) {
+            try {
+                accountInitializer.ensureAccount(creatorUserId);
+            } catch (UnexpectedRollbackException racedAway) {
             // K-02 (see CreatorCreditAccountInitializer's javadoc): a concurrent first-touch for
             // this same creator already created the row between our existsById check and our own
             // insert attempt. That row is exactly what we wanted to exist, so this is success,
             // not a failure — ensureAccount's REQUIRES_NEW transaction is its own, separate
             // physical transaction, so this never touches OUR transaction.
-            log.debug("CreatorCreditService#lockAccount: account for {} already created concurrently", creatorUserId);
+                log.debug("CreatorCreditService#lockAccount: account for {} already created concurrently", creatorUserId);
+            }
         }
         return accountRepository
                 .findByIdForUpdate(creatorUserId)
@@ -906,7 +917,7 @@ public class CreatorCreditService {
     }
 
     private int totalRemaining(String creatorUserId, Instant now) {
-        return grantRepository.findSpendable(creatorUserId, now).stream()
+        return grantRepository.lockSpendable(creatorUserId, now).stream()
                 .mapToInt(CreatorCreditGrant::getCreditsRemaining)
                 .sum();
     }
