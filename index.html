@@ -2,6 +2,10 @@
 <html lang="en-IN">
   <head>
     <meta charset="UTF-8" />
+    <!-- F-1789: must stay FIRST among scripts — buffers CSP violations raised before the app's
+         reporter installs (GTM via /site-tags.js runs earlier than the app bundle). Blocking and
+         external on purpose: an inline script is exactly what the CSP blocks. -->
+    <script src="/csp-violation-buffer.js"></script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Influencer Marketing Platform for India | Influora</title>
     <meta
