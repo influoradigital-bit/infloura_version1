@@ -115,5 +115,5 @@ def test_persona_audience_rule_reaches_the_creator_system_prompt():
 
 
 def test_prompt_version_bumped_for_audience_knowledge():
-    # .21.2 introduced the audience rule; .22.2 (content-idea intake) superseded it.
-    assert PROMPT_VERSION == "meera-2026.09.22.2"
+    # .21.2 introduced the audience rule; .22.2 (content-idea intake), then .22.3 (knowledge v3).
+    assert PROMPT_VERSION == "meera-2026.09.22.3"

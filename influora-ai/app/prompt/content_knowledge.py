@@ -10,7 +10,7 @@ reduces-work.md): the point is fewer steps for the creator, not a cleverer
 answer. The persona rules that tell the model HOW to use this block live in
 `app/prompt/creator_persona.py`; this module only loads, validates and renders.
 
-Data: `app/prompt/knowledge/video_content_concepts.jsonl` (62 rows). It sits
+Data: `app/prompt/knowledge/video_content_concepts.jsonl` (84 rows, v3 2026-09-22). It sits
 under `app/prompt/` on purpose: `ci/stale-comment-check.py` watches that prefix
 (PROMPT_SOURCES), so editing the data forces a PROMPT_VERSION bump exactly like
 a persona edit does -- the rendered text is prompt content.
@@ -29,6 +29,7 @@ Block A).
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -65,17 +66,26 @@ NAME_FIELD: dict[str, str] = {
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
 
-# The two hook templates whose [Number] slot invites an invented statistic.
-# The persona names them verbatim; tests assert both appear in the data AND in
-# the rule, so a reworded template cannot quietly escape the rule.
-NUMBER_STAT_HOOK_TEMPLATES: tuple[str, ...] = (
-    "[Number] logo ne yeh try kiya — result dekho",
-    "[Number]% log yeh galat karte hain — sahi tareeka yeh hai",
+# GENERIC numeric-slot rule (v3, 2026-09-22). A hook template whose [slot]
+# asks for a number -- [Number], [statistic], [duration], a percentage, a count
+# -- invites an invented figure. Detection is by slot name, not by a list of
+# template strings, so a template added or reworded later is flagged without
+# anyone remembering to list it. The persona states the rule generically and
+# points at the inline NUMBER RULE marker rendered below.
+NUMERIC_SLOT_RE = re.compile(
+    r"\[(?:number|statistic|duration|percent(?:age)?|count)\b[^\]]*\]", re.IGNORECASE
 )
+
+
+def has_numeric_slot(template: str) -> bool:
+    return NUMERIC_SLOT_RE.search(template) is not None
 
 # Persuasion entries that inform STRUCTURE only -- their example wording is
 # urgency copy Meera must never write for a creator.
 STRUCTURE_ONLY_PRINCIPLES: tuple[str, ...] = ("Scarcity", "Commitment & consistency")
+
+# Narrative entries about outrage and status: aim them at ideas, never people.
+IDEAS_ONLY_PRINCIPLES: tuple[str, ...] = ("Status games and moral outrage as engagement drivers",)
 
 KNOWLEDGE_BLOCK_HEADING = "Influora content knowledge (check this FIRST for content and growth questions)"
 
@@ -157,7 +167,7 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
     out += ["", "Hook templates (fill the [slots]; the Hinglish wording is the template):"]
     for r in _by_type(rows, "hook_template"):
         line = f"- {r['template']} (type: {r['category']}; works on: {r['persuasion_principle']}; goal: {r['goal_fit']})"
-        if r["template"] in NUMBER_STAT_HOOK_TEMPLATES:
+        if has_numeric_slot(r["template"]):
             line += (
                 " [NUMBER RULE: only a number from the creator's own context or one the"
                 " creator gave you; otherwise use a different template]"
@@ -170,7 +180,13 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
 
     out += ["", "Narrative principles:"]
     for r in _by_type(rows, "narrative_principle"):
-        out.append(f"- {r['principle']}: {r['definition']} For video: {r['video_application']}")
+        line = f"- {r['principle']}: {r['definition']} For video: {r['video_application']}"
+        if r["principle"] in IDEAS_ONLY_PRINCIPLES:
+            line += (
+                " [IDEAS ONLY: never name, shame or target a real individual or brand;"
+                " aim outrage and status at ideas, practices or common mistakes]"
+            )
+        out.append(line)
 
     out += ["", "Content characteristics:"]
     for r in _by_type(rows, "content_characteristic"):

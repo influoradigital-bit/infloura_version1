@@ -85,5 +85,5 @@ def test_rules_reach_the_assembled_creator_system_prompt():
 
 
 def test_prompt_version_bumped_for_no_refusal():
-    # .22.1 introduced no-refusal; .22.2 (content-idea intake) superseded it.
-    assert PROMPT_VERSION == "meera-2026.09.22.2"
+    # .22.1 introduced no-refusal; .22.2 (content-idea intake), then .22.3 (knowledge v3).
+    assert PROMPT_VERSION == "meera-2026.09.22.3"
