@@ -76,7 +76,13 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.22.5"
+PROMPT_VERSION = "meera-2026.09.22.6"
+# ^ bumped for the script review (Swapnil 2026-09-22): one call to action
+# matched to the goal, no absolute promises, hashtags optional (at most 2),
+# and the plan names the on-camera action (with a hands-only fallback) and
+# what success looks like. BRAND prompt unchanged.
+#
+# Previously (.22.5):
 # ^ bumped for content knowledge v4 (Swapnil 2026-09-22): 109 entries (+11
 # actions to film per category, +6 lengths per goal, +8 situation -> structure
 # rules, the two undefined structures mapped onto PAS and Three-act) and the

@@ -172,11 +172,39 @@ def test_layout_is_plain_text_with_every_part():
         "Idea: a short title.",
         "Plan: for whom; the one feeling; the goal; the length in seconds, vertical 9:16;",
         '"0-3s. Shot: <camera angle> - <action>. Say: "<exact line>". On screen: <text>."',
-        "Caption: one caption with 3 to 5 relevant hashtags.",
+        "Caption: one caption that carries the conversation question;",
+        'Action: what they do on camera while they speak, from "Actions to film";',
+        'Success looks like: the line for their goal from "Script length by goal".',
         "Before you shoot: three practical items",
         "Why this works: the knowledge entries you used, each by its exact name",
     ):
         assert part in TEXT, part
+
+
+def test_hashtags_are_optional_and_capped_at_two():
+    assert "hashtags are optional, at most 2, and only relevant ones" in TEXT
+    assert "3 to 5" not in TEXT
+
+
+def test_plan_offers_a_hands_only_fallback():
+    assert "if they would rather not be on camera: hands only, overhead, with voice-over" in TEXT
+
+
+def test_one_call_to_action_matched_to_the_goal():
+    assert "One call to action, in the last beat only, and it matches the goal:" in TEXT
+    assert "followers means follow, saves means save, shares means send it to someone" in TEXT
+    assert "Never stack follow, save, share and comment in one ending" in TEXT
+    assert "the conversation question goes in the caption instead" in TEXT
+
+
+def test_no_absolute_promises_in_lines_caption_or_tips():
+    assert "No absolute promises, in the lines, the caption or the filming tips." in TEXT
+    for banned in ('"the secret"', '"exactly the same taste"', '"guaranteed"', '"always works"',
+                   '"the first 3 seconds decide"'):
+        assert banned in TEXT, banned
+    # The review's softer wording is the model the rule points at.
+    assert '"isse flavour achchhe se aata hai"' in TEXT
+    assert '"kaafi close hai"' in TEXT
 
 
 def test_for_whom_never_invents_an_audience():
