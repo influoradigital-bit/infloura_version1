@@ -66,19 +66,32 @@ NAME_FIELD: dict[str, str] = {
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
 
-# GENERIC numeric-slot rule (v3, 2026-09-22). A hook template whose [slot]
-# asks for a number -- [Number], [statistic], [duration], a percentage, a count
-# -- invites an invented figure. Detection is by slot name, not by a list of
-# template strings, so a template added or reworded later is flagged without
-# anyone remembering to list it. The persona states the rule generically and
-# points at the inline NUMBER RULE marker rendered below.
-NUMERIC_SLOT_RE = re.compile(
-    r"\[(?:number|statistic|duration|percent(?:age)?|count)\b[^\]]*\]", re.IGNORECASE
+# Statistic-slot rule (narrowed 2026-09-22, .22.4). The rule exists to stop an
+# invented CLAIM ABOUT THE WORLD -- how many people did something, what
+# percentage get something wrong, results others got. A number that is part of
+# the creator's own idea ("sirf [duration] minute", "Ye [number] galtiyan": the
+# routine's length, how many tips the video covers) is an honest content choice
+# and stays free to fill. Detection is by slot shape, not a list of template
+# strings, so a future template is caught without anyone listing it:
+#   1. a slot NAMED like a statistic: [statistic...], [percent...], [percentage...],
+#      [people count...] / [people-count...];
+#   2. any slot followed by "%" (a percentage claim);
+#   3. a [number]/[count] slot followed by a people word ("[Number] logo ne ...",
+#      "[number] people ..."): a claim about how many OTHER people did something.
+_STATISTIC_SLOT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\[(?:statistic|percent(?:age)?|people[\s_-]?count)\b[^\]]*\]", re.IGNORECASE),
+    re.compile(r"\[[^\]]*\]\s*%"),
+    re.compile(
+        r"\[(?:number|count)\b[^\]]*\]\s*(?:log|logo|logon|people|users|creators|viewers)\b",
+        re.IGNORECASE,
+    ),
 )
 
 
-def has_numeric_slot(template: str) -> bool:
-    return NUMERIC_SLOT_RE.search(template) is not None
+def has_statistic_slot(template: str) -> bool:
+    """True when the template asks for a statistic or a claim about other
+    people. Durations and tip/step counts of the creator's own video are not."""
+    return any(p.search(template) for p in _STATISTIC_SLOT_PATTERNS)
 
 # Persuasion entries that inform STRUCTURE only -- their example wording is
 # urgency copy Meera must never write for a creator.
@@ -167,10 +180,11 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
     out += ["", "Hook templates (fill the [slots]; the Hinglish wording is the template):"]
     for r in _by_type(rows, "hook_template"):
         line = f"- {r['template']} (type: {r['category']}; works on: {r['persuasion_principle']}; goal: {r['goal_fit']})"
-        if has_numeric_slot(r["template"]):
+        if has_statistic_slot(r["template"]):
             line += (
-                " [NUMBER RULE: only a number from the creator's own context or one the"
-                " creator gave you; otherwise use a different template]"
+                " [STATISTIC RULE: never invent this statistic; only a figure from the"
+                " creator's own context or one the creator gave you; otherwise use a"
+                " different template]"
             )
         out.append(line)
 

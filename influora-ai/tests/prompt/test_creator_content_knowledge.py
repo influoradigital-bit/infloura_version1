@@ -19,7 +19,7 @@ from app.prompt.content_knowledge import (
     KNOWLEDGE_BLOCK_HEADING,
     KNOWLEDGE_PATH,
     KnowledgeFileError,
-    has_numeric_slot,
+    has_statistic_slot,
     load_knowledge,
 )
 from app.prompt.creator_persona import MEERA_CREATOR_PERSONA
@@ -70,8 +70,9 @@ NUMBER_STAT_HOOK_TEMPLATES: tuple[str, ...] = (
     "[Number]% log yeh galat karte hain — sahi tareeka yeh hai",
     "Kya aap bhi un [statistic]% logon mein ho jo [common belief] sach maante hain? Asli baat yeh hai.",
 )
-# The generic rule also catches the two older templates with a numeric slot.
-OTHER_NUMERIC_SLOT_TEMPLATES: tuple[str, ...] = (
+# Numbers that describe the creator's OWN content (the routine's length, how
+# many tips the video covers). Coordinator ruling 2026-09-22: free to fill.
+CREATOR_OWN_NUMBER_TEMPLATES: tuple[str, ...] = (
     "[Action], ghar pe/apne shehar mein, bina [barrier], sirf [duration] minute — chalo shuru",
     "Ye [number] galtiyan tumhara [outcome] kharab kar rahi hain",
 )
@@ -109,19 +110,43 @@ def test_committed_knowledge_file_loads_all_84_rows_by_type():
 
 def test_the_numeric_slot_templates_exist_verbatim_in_the_data():
     templates = {r["template"] for r in load_knowledge() if r["data_type"] == "hook_template"}
-    for t in NUMBER_STAT_HOOK_TEMPLATES + OTHER_NUMERIC_SLOT_TEMPLATES:
+    for t in NUMBER_STAT_HOOK_TEMPLATES + CREATOR_OWN_NUMBER_TEMPLATES:
         assert t in templates, t
 
 
-def test_numeric_slot_detection_is_generic_not_a_list():
+def test_the_three_statistic_templates_are_restricted():
+    for t in NUMBER_STAT_HOOK_TEMPLATES:
+        assert has_statistic_slot(t), t
+
+
+def test_duration_and_tip_count_templates_are_not_restricted():
+    for t in CREATOR_OWN_NUMBER_TEMPLATES:
+        assert not has_statistic_slot(t), t
+
+
+def test_statistic_detection_is_generic_not_a_list():
     templates = [r["template"] for r in load_knowledge() if r["data_type"] == "hook_template"]
-    flagged = {t for t in templates if has_numeric_slot(t)}
-    assert flagged == set(NUMBER_STAT_HOOK_TEMPLATES + OTHER_NUMERIC_SLOT_TEMPLATES)
-    # A template nobody listed is caught by its slot name alone.
-    for new in ("[Duration] mein result", "Only [percentage] know this", "[count] reasons", "[statistic] fact"):
-        assert has_numeric_slot(new), new
-    for clean in ("[Pain point] ka time ya resource nahi hai?", "Calling [group]", "[Action] now"):
-        assert not has_numeric_slot(clean), clean
+    flagged = {t for t in templates if has_statistic_slot(t)}
+    assert flagged == set(NUMBER_STAT_HOOK_TEMPLATES)
+    # A future template nobody listed is caught by its slot shape alone.
+    for new in (
+        "Only [percentage] of creators know this",
+        "[statistic] fact about sleep",
+        "[people count] ne yeh follow kiya",
+        "[figure]% galat hain",
+        "[Number] people tried this",
+        "[count] logon ne dekha",
+    ):
+        assert has_statistic_slot(new), new
+    # The creator's own numbers, and slots with no number at all, stay free.
+    for free in (
+        "[Duration] mein result",
+        "[count] reasons to start",
+        "Ye [number] steps follow karo",
+        "[Pain point] ka time ya resource nahi hai?",
+        "Calling [group]",
+    ):
+        assert not has_statistic_slot(free), free
 
 
 def test_no_tiktok_anywhere_in_the_knowledge_file_or_block():
@@ -283,15 +308,23 @@ def test_persona_states_knowledge_first_name_entry_name_category_ask_script():
     assert "fall back to general knowledge, and say so plainly" in text
 
 
-def test_persona_states_the_generic_no_invented_number_rule():
+def test_persona_states_the_no_invented_statistic_rule():
     text = _flat(MEERA_CREATOR_PERSONA)
-    assert "No invented numbers in hooks." in text
+    assert "No invented statistics in hooks." in text
+    assert "Never invent a statistic or a claim about other people's results" in text
     assert (
-        "Any hook template with a numeric slot — [Number], [statistic], [duration], a percentage or a count,"
-        " and every template the knowledge block marks NUMBER RULE — may only be filled with the creator's own"
-        " figure from your context or a number the creator gave you."
+        "every template the knowledge block marks STATISTIC RULE — may only be filled with the creator's own"
+        " figure from your context or a number the creator gave you"
     ) in text
     assert "use a different template" in text
+    # The creator's own numbers are explicitly free.
+    assert (
+        "Numbers that describe the creator's own content, such as how long the routine is or how many tips"
+        " or steps the video covers, are fine to choose."
+    ) in text
+    # The .22.3 broad wording must not survive alongside the narrowed rule.
+    assert "No invented numbers in hooks." not in text
+    assert "Any hook template with a numeric slot" not in text
 
 
 def test_persona_never_suggests_tiktok():
@@ -337,11 +370,15 @@ def test_persona_states_platform_rows_are_background():
 
 def test_knowledge_block_marks_the_risky_entries_inline():
     text = CREATOR_KNOWLEDGE_TEXT
-    for t in NUMBER_STAT_HOOK_TEMPLATES + OTHER_NUMERIC_SLOT_TEMPLATES:
+    for t in NUMBER_STAT_HOOK_TEMPLATES:
         line = next(line for line in text.splitlines() if t in line)
-        assert "NUMBER RULE" in line
-    # Only numeric-slot templates carry the marker.
-    assert sum("NUMBER RULE" in line for line in text.splitlines()) == 5
+        assert "STATISTIC RULE" in line
+    for t in CREATOR_OWN_NUMBER_TEMPLATES:
+        line = next(line for line in text.splitlines() if t in line)
+        assert "STATISTIC RULE" not in line, t
+    # Only the three statistic templates carry the marker.
+    assert sum("STATISTIC RULE" in line for line in text.splitlines()) == 3
+    assert "NUMBER RULE" not in text
     for principle in ("Scarcity", "Commitment & consistency"):
         line = next(line for line in text.splitlines() if line.startswith(f"- {principle}:"))
         assert "STRUCTURE ONLY" in line

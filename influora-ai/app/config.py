@@ -76,7 +76,14 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.22.3"
+PROMPT_VERSION = "meera-2026.09.22.4"
+# ^ bumped because the .22.3 numeric rule was too broad: it also restricted the
+# creator's own durations ("sirf [duration] minute") and tip counts ("Ye
+# [number] galtiyan"). It now restricts only invented statistics and claims
+# about other people's results (STATISTIC RULE marker, has_statistic_slot in
+# content_knowledge.py). BRAND prompt unchanged.
+#
+# Previously (.22.3):
 # ^ bumped for content knowledge v3 (Swapnil 2026-09-22): 84 entries (17 from
 # his v3 + 5 narrative principles), the no-invented-number rule made GENERIC
 # (any [number]/[statistic]/[duration]-style slot, detected by slot name in

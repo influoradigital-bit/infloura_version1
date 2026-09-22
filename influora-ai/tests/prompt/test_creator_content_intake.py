@@ -109,7 +109,7 @@ def test_old_do_not_ask_first_rule_is_gone():
 
 
 def test_existing_content_rails_kept():
-    assert "No invented numbers in hooks." in TEXT
+    assert "No invented statistics in hooks." in TEXT
     assert "No urgency wording." in TEXT
     assert "Audience not available is never a reason to hold back." in TEXT
     assert "Never use the follower count as a put-down or as filler." in TEXT
