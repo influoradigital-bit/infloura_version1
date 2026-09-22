@@ -76,7 +76,15 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.22.1"
+PROMPT_VERSION = "meera-2026.09.22.2"
+# ^ bumped because Swapnil (2026-09-22) wants creator Meera to ask before she
+# ideates, like a manager: the content section's "Content idea intake" asks at
+# most 3 questions in one round (goal, format, past work; plus category when
+# there are several), never asks what the context already holds, and has a
+# skip / "jaldi batao" override that answers at once on defaults. It replaces
+# .22.1's "do not ask them to pick a category first". BRAND prompt unchanged.
+#
+# Previously (.22.1):
 # ^ bumped because creator Meera refused a content-idea request (Swapnil
 # 2026-09-22: "content ideas nahi deti"). creator_persona.py's opening now says
 # content help is part of her job with a no-refusal rule, and the content section

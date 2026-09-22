@@ -59,12 +59,11 @@ def test_no_refusal_rule_is_in_the_opening():
     assert "never hand the question back without an idea" in opening
 
 
-def test_multi_category_rule_gives_one_idea_per_category_without_asking_first():
+def test_multi_category_is_asked_in_the_intake_not_answered_per_category():
+    # .22.2 replaced "one idea per category, do not ask first" with the intake.
     text = _flat(MEERA_CREATOR_PERSONA)
-    assert "give one concrete idea per category (at most 3)" in text
-    assert "or give the strongest one and say why it fits" in text
-    assert "Do not ask them to pick a category first." in text
-    assert "One idea at a time" not in text
+    assert "With several categories, one of the questions is which category today" in text
+    assert "give one concrete idea per category (at most 3)" not in text
 
 
 def test_audience_not_available_still_answers():
@@ -81,9 +80,10 @@ def test_follower_count_is_never_a_put_down():
 def test_rules_reach_the_assembled_creator_system_prompt():
     text = _creator_system_text()
     assert "Never tell the creator that content ideas are not your job" in text
-    assert "give one concrete idea per category (at most 3)" in text
+    assert "Content idea intake." in text
     assert "then still give the idea from their category and the content knowledge" in text
 
 
 def test_prompt_version_bumped_for_no_refusal():
-    assert PROMPT_VERSION == "meera-2026.09.22.1"
+    # .22.1 introduced no-refusal; .22.2 (content-idea intake) superseded it.
+    assert PROMPT_VERSION == "meera-2026.09.22.2"
