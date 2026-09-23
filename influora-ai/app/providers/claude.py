@@ -12,6 +12,7 @@ SDK with:
 
 from __future__ import annotations
 
+import base64
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -347,6 +348,104 @@ class ClaudeProvider:
             self._breaker.on_failure()
             logger.warning("claude complete_text failed: %s", type(exc).__name__)
             return ClaudeTextResult(ok=False, error="provider_error")
+
+        text_block = next(
+            (block for block in response.content if getattr(block, "type", None) == "text"),
+            None,
+        )
+        text = getattr(text_block, "text", None) if text_block is not None else None
+
+        usage = getattr(response, "usage", None)
+        return ClaudeTextResult(
+            ok=True,
+            text=text,
+            usage={
+                "input_tokens": getattr(usage, "input_tokens", None),
+                "output_tokens": getattr(usage, "output_tokens", None),
+                "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
+                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None),
+            }
+            if usage
+            else None,
+        )
+
+    async def complete_with_image(
+        self,
+        *,
+        system: str,
+        user_text: str,
+        image_bytes: bytes,
+        image_media_type: str,
+        model: str,
+        max_tokens: int = 1024,
+    ) -> ClaudeTextResult:
+        """Single non-streaming turn, ONE image block plus a text prompt, plain-
+        text output (no tools) -- for POST /ai/shoot-check/frame (Level 2 "frame
+        check"), the first caller that needs Claude to SEE anything. Every other
+        route/provider method on this class is text-only; this is additive and
+        does not touch `complete_text`'s messages shape (`content: user` as a
+        bare string) at all, so every existing text-only caller
+        (trendspark.py, creator_suggestion.py, trend_tag.py) is byte-for-byte
+        unaffected.
+
+        The image is base64-encoded IN MEMORY and sent as one
+        `{"type": "image", "source": {"type": "base64", ...}}` content block
+        ahead of the text block, per the Messages API's multi-content-block
+        user-message shape. Caller owns validating `image_media_type` (must be
+        one Claude/this route actually accepts) and the byte size BEFORE
+        calling this -- this method does not re-validate either, matching
+        `complete_text`'s "caller shapes the input" contract.
+
+        Same never-raises / `ok: bool` degrade contract as `complete_text`:
+        provider errors, timeouts, and circuit-open all come back as
+        `ok=False` so the route can fall back to its own deterministic
+        single-fix message instead of a 500. Never logs the image bytes or
+        their base64 form -- only this method's own code ever holds them, and
+        neither is passed to `logger.warning` below (only the exception TYPE
+        name, matching every other provider error log in this class).
+        """
+        try:
+            self._breaker.before_call()
+        except CircuitOpenError as exc:
+            return ClaudeTextResult(ok=False, error=f"circuit_open: {exc}")
+
+        image_b64 = base64.b64encode(image_bytes).decode("ascii")
+        try:
+            response = await self._client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=[{"type": "text", "text": system}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": image_media_type,
+                                    "data": image_b64,
+                                },
+                            },
+                            {"type": "text", "text": user_text},
+                        ],
+                    }
+                ],
+            )
+            self._breaker.on_success()
+        except anthropic.APIError as exc:
+            self._breaker.on_failure()
+            logger.warning("claude complete_with_image failed: %s", type(exc).__name__)
+            return ClaudeTextResult(ok=False, error="provider_error")
+        except Exception as exc:  # noqa: BLE001 - provider SDKs raise anything; callers degrade on ok=False
+            self._breaker.on_failure()
+            logger.warning("claude complete_with_image failed: %s", type(exc).__name__)
+            return ClaudeTextResult(ok=False, error="provider_error")
+        finally:
+            # Drop the base64 copy the moment the call is done -- it is a second
+            # in-memory copy of the image data and has no reason to outlive
+            # this call.
+            del image_b64
 
         text_block = next(
             (block for block in response.content if getattr(block, "type", None) == "text"),

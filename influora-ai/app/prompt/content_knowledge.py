@@ -118,6 +118,25 @@ def has_statistic_slot(template: str) -> bool:
     people. Durations and tip/step counts of the creator's own video are not."""
     return any(p.search(template) for p in _STATISTIC_SLOT_PATTERNS)
 
+
+# Call-to-action rule (audit 2026-09-24, lane B3). The full script allows ONE
+# call to action, in the last beat only, while two hook templates end their
+# opening line with a comment ask ("Aap kis side ho -- comment mein batao",
+# "Comment mein '[word]' likho -- seedha DM mein milega"). Such a template is
+# marked CTA RULE: in a script its opening keeps the first part and the comment
+# ask moves to the last beat or the caption. Detected by wording, not by a list
+# of template strings, so a future template is caught without anyone listing it.
+_HOOK_CTA_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bcomments?\b", re.IGNORECASE),
+    re.compile(r"\bDM\b"),
+)
+
+
+def has_hook_cta(template: str) -> bool:
+    """True when the hook template itself asks the viewer to comment or DM."""
+    return any(p.search(template) for p in _HOOK_CTA_PATTERNS)
+
+
 # Persuasion entries that inform STRUCTURE only -- their example wording is
 # urgency copy Meera must never write for a creator.
 STRUCTURE_ONLY_PRINCIPLES: tuple[str, ...] = ("Scarcity", "Commitment & consistency")
@@ -263,6 +282,13 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
                 " [STATISTIC RULE: never invent this statistic; only a figure from the"
                 " creator's own context or one the creator gave you; otherwise use a"
                 " different template]"
+            )
+        if has_hook_cta(r["template"]):
+            line += (
+                " [CTA RULE: in a script, say only the part before the comment ask in the"
+                " opening; the comment ask moves to the last beat as the one call to action,"
+                " or to the caption; never promise the creator will DM anyone unless they"
+                " said they will]"
             )
         out.append(line)
 

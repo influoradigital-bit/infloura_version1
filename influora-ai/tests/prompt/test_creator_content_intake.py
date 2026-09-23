@@ -61,7 +61,11 @@ def test_never_asks_what_the_context_holds():
 def test_each_question_carries_ready_options():
     assert "give each question ready options they can answer in a word" in TEXT
     assert "goal (grow followers, a brand deal, or selling something)" in TEXT
-    assert "format (Reel, YouTube Short or carousel)" in TEXT
+    # Lane B3 (ai.md M10): every downstream rule is video-only, so the intake no longer offers
+    # a carousel; a creator who asks for one is told plainly and offered a Reel.
+    assert "format (Reel or YouTube Short)" in TEXT
+    assert "carousel)" not in TEXT
+    assert "If they ask for a carousel or a photo post, say plainly that your content notes cover short video only, then offer the idea as a Reel." in TEXT
     assert "ask them to paste their last video script as text, or tell you which recent video did best" in TEXT
     assert "say they can skip this one" in TEXT
     assert "which category today, with their categories as the options" in TEXT

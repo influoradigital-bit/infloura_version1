@@ -81,6 +81,8 @@ const TOOL_PENDING_LABELS: Record<CreatorToolName, string> = {
   get_my_metrics: 'Pulling your metrics…',
   check_deal_risks: 'Checking this deal…',
   draft_reply: 'Drafting a reply…',
+  get_todays_topics: 'Checking today’s topics…',
+  plan_my_week: 'Planning your week…',
 };
 
 /**

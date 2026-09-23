@@ -237,6 +237,15 @@ except Exception:
         "brief_extract router failed to import — /internal/brief-extract NOT registered"
     )
 
+try:
+    from app.routes import shoot_check
+
+    app.include_router(shoot_check.router, tags=["shoot-check"])
+except Exception:
+    logger.exception(
+        "shoot_check router failed to import — /ai/shoot-check/frame NOT registered"
+    )
+
 
 @app.on_event("startup")
 async def _refuse_boot_on_missing_secrets() -> None:
