@@ -418,7 +418,7 @@ services:
       # n8n trend tagger — read at config.py:394, fails closed (503) on /internal/trendspark/tag
       # without this (F-0390 A7)
       TREND_TAG_INGEST_SECRET: ${TREND_TAG_INGEST_SECRET}
-      AI_DAILY_SPEND_CEILING_USD: "15.0"
+      AI_DAILY_SPEND_CEILING_USD: "30.0"
       AI_SPEND_KILL_SWITCH: "false"
       # T-GOLIVE-0918 [meera · 2026-09-18] — was present in docker-compose.utho.yml (this
       # service's env is not covered by the utho-compose-keysets-match.sh gate, which only
@@ -429,7 +429,7 @@ services:
       # as docker-compose.utho.yml — switched both to `${AI_CREATOR_MONTHLY_CAP_USD:-0.75}` so
       # go-live-0918.md §2's "set this in the env file" instruction is actually true on both
       # boxes. Default unchanged.
-      AI_CREATOR_MONTHLY_CAP_USD: ${AI_CREATOR_MONTHLY_CAP_USD:-0.75}
+      AI_CREATOR_MONTHLY_CAP_USD: ${AI_CREATOR_MONTHLY_CAP_USD:-2.00}
       # EV-044 [ash - 2026-09-20] — per-workspace DAILY hard cap, in USD, UTC day.
       # BLOCKING (app/costs/gate.py), unlike AI_WORKSPACE_DAILY_SOFT_CAP_USD which only logs.
       # Previously declared in NO deploy file at all, and the code default was None, so on every
@@ -438,7 +438,7 @@ services:
       # default is now a real 3.0 (influora-ai/app/config.py), so a forgotten variable is safe;
       # this line exists so the number is visible and overridable per box. "0" disables the
       # block entirely -- only ever set that deliberately.
-      WORKSPACE_DAILY_HARD_CAP_USD: ${WORKSPACE_DAILY_HARD_CAP_USD:-3.0}
+      WORKSPACE_DAILY_HARD_CAP_USD: ${WORKSPACE_DAILY_HARD_CAP_USD:-5.0}
       # EV-044 — server-side limits on what a CLIENT can send. The chat history in the request
       # body is replayed verbatim into the prompt, and influora-api charges one AI credit per
       # SEND regardless of prompt size, so an unbounded history is one credit buying an

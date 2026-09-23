@@ -192,3 +192,32 @@ def test_sarvam_tts_cost_zero_chars_is_zero():
 
 def test_sarvam_tts_cost_never_negative_for_bad_input():
     assert estimate_sarvam_tts_cost_usd(-5) == Decimal(0)
+
+
+# --- cost fix 1 (2026-09-22): 1-hour cache writes bill at 2x input, 5-minute at 1.25x ---
+
+
+def test_one_hour_cache_writes_are_billed_at_2x_input():
+    usage = {"input_tokens": 0, "output_tokens": 0,
+             "cache_creation_input_tokens": 1_000_000, "cache_creation_1h_input_tokens": 1_000_000}
+    assert pricing.estimate_cost_usd(CLAUDE_MODEL, usage) == Decimal("6.00")
+
+
+def test_mixed_writes_split_between_the_two_rates():
+    # 18k shared (1h, 2x) + 1k per-creator (5m, 1.25x) on Sonnet ($3/MTok input).
+    usage = {"input_tokens": 0, "output_tokens": 0,
+             "cache_creation_input_tokens": 19_000, "cache_creation_1h_input_tokens": 18_000}
+    expected = Decimal(18_000) * Decimal("3") / Decimal(1_000_000) * 2 \
+        + Decimal(1_000) * Decimal("3") / Decimal(1_000_000) * Decimal("1.25")
+    assert pricing.estimate_cost_usd(CLAUDE_MODEL, usage) == expected
+
+
+def test_without_the_1h_field_writes_stay_at_1_25x():
+    usage = {"input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 1_000_000}
+    assert pricing.estimate_cost_usd(CLAUDE_MODEL, usage) == Decimal("3.75")
+
+
+def test_a_bad_1h_report_can_never_exceed_the_total_writes():
+    usage = {"input_tokens": 0, "output_tokens": 0,
+             "cache_creation_input_tokens": 100, "cache_creation_1h_input_tokens": 999_999}
+    assert pricing.estimate_cost_usd(CLAUDE_MODEL, usage) == Decimal(100) * Decimal("3") / Decimal(1_000_000) * 2

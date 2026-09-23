@@ -367,10 +367,22 @@ CREATOR_KNOWLEDGE_ROWS: list[dict[str, Any]] = load_knowledge()
 CREATOR_KNOWLEDGE_TEXT: str = render_knowledge_block(CREATOR_KNOWLEDGE_ROWS)
 
 
+def creator_shared_cache_control() -> dict[str, Any]:
+    """`cache_control` for the creator system blocks shared by EVERY creator (Block A and
+    this knowledge block). 1-hour TTL unless AI_CREATOR_SHARED_CACHE_TTL=5m. Anthropic
+    requires 1-hour entries to come before 5-minute ones, which holds: both shared blocks
+    precede the per-creator Block B (5 minutes)."""
+    from app.config import get_settings
+
+    if get_settings().ai_creator_shared_cache_ttl == "1h":
+        return {"type": "ephemeral", "ttl": "1h"}
+    return {"type": "ephemeral"}
+
+
 def build_creator_knowledge_block() -> dict[str, Any]:
     """The cached system block for CREATOR turns. Never used on the BRAND path."""
     return {
         "type": "text",
         "text": CREATOR_KNOWLEDGE_TEXT,
-        "cache_control": {"type": "ephemeral"},
+        "cache_control": creator_shared_cache_control(),
     }

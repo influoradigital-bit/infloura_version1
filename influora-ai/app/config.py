@@ -571,6 +571,15 @@ class Settings:
     # this ceiling is later outgrown again. MUST be pinned explicitly in
     # env.example and every deploy env artifact -- do not let it silently fall
     # back to a code default again.
+    # 2026-09-22 (Swapnil, cost fix 1): cache TTL for the two creator system blocks that are
+    # the SAME for every creator (Block A persona+tools, and the content knowledge block).
+    # "1h" keeps them warm through quiet stretches -- on a 5-minute TTL a quiet platform
+    # re-wrote ~18k tokens at 1.25x on nearly every first message (~Rs 6.5 a message).
+    # A 1-hour write costs 2x instead of 1.25x but is paid about once an hour. The
+    # per-creator Block B stays on 5 minutes. Set "5m" to go back.
+    ai_creator_shared_cache_ttl: str = field(
+        default_factory=lambda: os.getenv("AI_CREATOR_SHARED_CACHE_TTL", "1h").strip().lower()
+    )
     meera_chat_max_tokens: int = field(
         default_factory=lambda: _get_int("MEERA_CHAT_MAX_TOKENS", 1536)
     )
@@ -668,7 +677,7 @@ class Settings:
     # --- AI spend ceiling + kill-switch (P2-17, Rohan budget proposal
     # 2026-07-12) — defaults exactly as specified in that proposal §3.5. ---
     ai_daily_spend_ceiling_usd: float = field(
-        default_factory=lambda: _get_float("AI_DAILY_SPEND_CEILING_USD", 15.0)
+        default_factory=lambda: _get_float("AI_DAILY_SPEND_CEILING_USD", 30.0)
     )
     ai_spend_kill_switch: bool = field(
         default_factory=lambda: _get_bool("AI_SPEND_KILL_SWITCH", False)
@@ -705,7 +714,7 @@ class Settings:
     # `_get_optional_float`) is what makes unset fall to the default;
     # app.costs.gate normalises <= 0 back to None.
     ai_workspace_daily_hard_cap_usd: float = field(
-        default_factory=lambda: _get_float("WORKSPACE_DAILY_HARD_CAP_USD", 3.0)
+        default_factory=lambda: _get_float("WORKSPACE_DAILY_HARD_CAP_USD", 5.0)
     )
 
     # --- EV-044: server-side ceiling on CLIENT-SUPPLIED conversation history ---
@@ -744,7 +753,7 @@ class Settings:
     # call; the over-cap reply is a friendly message, never a raw 5xx. Set
     # `AI_CREATOR_MONTHLY_CAP_USD=0` to disable the cap entirely.
     ai_creator_monthly_cap_usd: float = field(
-        default_factory=lambda: _get_float("AI_CREATOR_MONTHLY_CAP_USD", 0.75)
+        default_factory=lambda: _get_float("AI_CREATOR_MONTHLY_CAP_USD", 2.0)
     )
 
     # --- Brief extraction's OWN monthly cap (SPEC §14.4.b) ---

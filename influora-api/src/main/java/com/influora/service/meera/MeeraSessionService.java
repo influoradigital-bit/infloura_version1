@@ -243,10 +243,11 @@ public class MeeraSessionService {
      * one-time, first-turn-only event, never repeated on every session start.
      *
      * <p><b>Gate fix round 4 (Priya's fourth pass):</b> {@code creatorLanguage} makes the
-     * persisted greeting language-aware. V73 defaults every creator's {@code
-     * creator_agent_preferences.creator_language} to {@link
-     * com.influora.domain.entity.CreatorAgentPreferences#DEFAULT_LANGUAGE} ({@code "hi-IN"}), and
-     * before this fix the persisted greeting was always the English literal — since {@link
+     * persisted greeting language-aware. Every creator's {@code
+     * creator_agent_preferences.creator_language} falls back to {@link
+     * com.influora.domain.entity.CreatorAgentPreferences#DEFAULT_LANGUAGE} — {@code "en-IN"}
+     * since 2026-09-23, {@code "hi-IN"} before it (V73's column default), which is why the
+     * greeting must follow the stored tag rather than a literal — since {@link
      * #createConversationWithOnboardingGreeting} is now the SOLE writer of the first ASSISTANT
      * message, the frontend's Hindi fallback in {@code MeeraCopilotChat.tsx} could never actually
      * be reached for a Hindi-default creator. The caller ({@code CreatorMeeraController}) resolves

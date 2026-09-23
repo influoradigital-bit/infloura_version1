@@ -72,7 +72,7 @@ class InstagramMetricsFetcherTest {
         InstagramMediaResponse.MediaItem mediaItem =
                 new InstagramMediaResponse.MediaItem(
                         "media_1", "caption", "IMAGE", "http://img", "http://permalink/1",
-                        "2026-06-01T10:15:30+00:00", 42L, 7L);
+                        "2026-06-01T10:15:30+00:00", 42L, 7L, null);
         when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(mediaItem), null));
 
@@ -248,7 +248,7 @@ class InstagramMetricsFetcherTest {
         InstagramMediaResponse.MediaItem mediaItem =
                 new InstagramMediaResponse.MediaItem(
                         "media_rl", "caption", "IMAGE", "http://img", "http://permalink/rl",
-                        "2026-06-04T00:00:00+00:00", 1L, 1L);
+                        "2026-06-04T00:00:00+00:00", 1L, 1L, null);
         when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(mediaItem), null));
         when(instagramClient.getMediaInsights("media_rl", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID, MetaAuthPath.FACEBOOK_LOGIN))
@@ -270,7 +270,7 @@ class InstagramMetricsFetcherTest {
         InstagramMediaResponse.MediaItem mediaItem =
                 new InstagramMediaResponse.MediaItem(
                         "media_reels", "caption", "REELS", "http://reels", "http://permalink/reels",
-                        "2026-06-03T12:00:00+00:00", 999L, 88L);
+                        "2026-06-03T12:00:00+00:00", 999L, 88L, null);
         when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(mediaItem), null));
         when(instagramClient.getMediaInsights("media_reels", TOKEN_VALUE, IG_BUSINESS_ACCOUNT_ID, MetaAuthPath.FACEBOOK_LOGIN))
@@ -291,13 +291,13 @@ class InstagramMetricsFetcherTest {
 
         InstagramMediaResponse.MediaItem good1 =
                 new InstagramMediaResponse.MediaItem(
-                        "media_ok1", "c", "IMAGE", "u", "p1", "2026-06-05T00:00:00+00:00", 1L, 1L);
+                        "media_ok1", "c", "IMAGE", "u", "p1", "2026-06-05T00:00:00+00:00", 1L, 1L, null);
         InstagramMediaResponse.MediaItem bad =
                 new InstagramMediaResponse.MediaItem(
-                        "media_bad", "c", "IMAGE", "u", "p2", "2026-06-05T00:00:00+00:00", 1L, 1L);
+                        "media_bad", "c", "IMAGE", "u", "p2", "2026-06-05T00:00:00+00:00", 1L, 1L, null);
         InstagramMediaResponse.MediaItem good2 =
                 new InstagramMediaResponse.MediaItem(
-                        "media_ok2", "c", "IMAGE", "u", "p3", "2026-06-05T00:00:00+00:00", 1L, 1L);
+                        "media_ok2", "c", "IMAGE", "u", "p3", "2026-06-05T00:00:00+00:00", 1L, 1L, null);
         when(instagramClient.getMedia(IG_BUSINESS_ACCOUNT_ID, TOKEN_VALUE, 25, MetaAuthPath.FACEBOOK_LOGIN))
                 .thenReturn(new InstagramMediaResponse(List.of(good1, bad, good2), null));
 

@@ -17,7 +17,7 @@ public class InstagramInsightsClient {
     private static final String USER_FIELDS =
             "id,username,name,biography,followers_count,follows_count,media_count,profile_picture_url,website";
     private static final String MEDIA_FIELDS =
-            "id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count";
+            "id,caption,media_type,media_url,permalink,timestamp,like_count,comments_count,thumbnail_url";
     // Metric names verified against IG Media Insights (ref updated 2026-06-18) for the pinned
     // graph-api-version. Removed: impressions (deprecated for media created after 2024-07-02),
     // engagement (superseded by total_interactions, v18.0+), video_views (superseded by views).

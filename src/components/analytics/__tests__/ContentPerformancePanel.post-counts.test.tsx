@@ -45,6 +45,9 @@ describe('ContentPerformancePanel — per-post counts (F-0952)', () => {
     expect(within(row).getAllByText('Views', { selector: 'p' })).toHaveLength(1);
     expect(within(row).queryByText('Impressions')).toBeNull();
     expect(statValue(row, 'Reach')).toBe('5.4K');
+    // F-1785: the per-post rate is interactions ÷ reach, not the profile rate — relabelled.
+    expect(statValue(row, 'Eng./reach')).toBe('6.1%');
+    expect(within(row).queryByText('Eng. rate')).toBeNull();
   });
 
   it('a count Meta did not report shows "—", never 0 (null and omitted key alike)', () => {
@@ -65,6 +68,7 @@ describe('ContentPerformancePanel — per-post counts (F-0952)', () => {
     expect(statValue(row, 'Comments')).toBe('—');
     expect(statValue(row, 'Saves')).toBe('—');
     expect(statValue(row, 'Shares')).toBe('—');
+    expect(statValue(row, 'Eng./reach')).toBe('—');
   });
 
   it('a real zero stays 0 (a post with no shares is not "unreported")', () => {

@@ -344,7 +344,10 @@ public class AnalyticsService {
         String workspaceId = brandContext.requireBrandWorkspace(principal).getId();
         String authorizedCreatorId =
                 metricsAuthorizationService.resolveAuthorizedCreatorProfileId(workspaceId, creatorId);
-        return buildContentPerformanceResponse(authorizedCreatorId);
+        // Brand-facing. The preview image is withheld pending the owner's ruling on brand
+        // visibility — flipping it is the second argument here and nothing else. Captions are not
+        // carried on any route (see buildContentPerformanceResponse).
+        return buildContentPerformanceResponse(authorizedCreatorId, false);
     }
 
     /**
@@ -353,7 +356,8 @@ public class AnalyticsService {
      */
     @Transactional(readOnly = true)
     public List<ContentPerformanceResponse> getContentPerformanceForProfile(String creatorProfileId) {
-        return buildContentPerformanceResponse(creatorProfileId);
+        // Creator-self: the post thumbnail is shown. Captions are not (see the builder).
+        return buildContentPerformanceResponse(creatorProfileId, true);
     }
 
     /**
@@ -364,8 +368,23 @@ public class AnalyticsService {
      * snapshot per post. {@code engagementRate} is derived per-row (see {@link
      * ContentPerformanceResponse} javadoc); left {@code null} rather than guessed when {@code reach}
      * is missing or zero.
+     *
+     * <p>Output order (F-1786): AFTER the dedup, rows are sorted by {@code postedAt} descending
+     * (newest post first), rows with no {@code postedAt} last. Poll order is not post order — every
+     * post from one poll shares the same {@code time}, so emitting in poll order listed a poll's
+     * posts in whatever order the database returned them. The dedup itself is unchanged: it still
+     * picks each post's latest snapshot by poll time.
+     *
+     * <p>No caption on either route: {@code MediaMetric.caption} is internal brand-safety input
+     * only (wiki/decisions/2026-07-06-brand-safety-caption-storage.md, LOCKED), and the response
+     * type has no field for it, so no flag flip can ever leak it (Swapnil, 2026-09-23).
+     *
+     * <p>{@code includePreviewImage}: creator-self {@code true}, brand {@code false}, pending the
+     * owner's ruling on brand visibility. The URL served is the latest snapshot's, i.e. the one
+     * refreshed on the most recent poll.
      */
-    private List<ContentPerformanceResponse> buildContentPerformanceResponse(String creatorProfileId) {
+    private List<ContentPerformanceResponse> buildContentPerformanceResponse(
+            String creatorProfileId, boolean includePreviewImage) {
         List<MediaMetric> recent =
                 mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
                         creatorProfileId, PageRequest.of(0, CONTENT_PERFORMANCE_LOOKBACK));
@@ -391,7 +410,12 @@ public class AnalyticsService {
                                         m.getShares(),
                                         m.getVideoViews(),
                                         m.getPostedAt(),
-                                        engagementRate(m.getEngagement(), m.getReach())))
+                                        engagementRate(m.getEngagement(), m.getReach()),
+                                        includePreviewImage ? m.getPreviewImageUrl() : null))
+                .sorted(
+                        Comparator.comparing(
+                                ContentPerformanceResponse::postedAt,
+                                Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
     }
 

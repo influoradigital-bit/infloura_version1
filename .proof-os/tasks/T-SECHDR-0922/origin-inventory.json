@@ -1,0 +1,142 @@
+{
+  "task": "T-SECHDR-0922",
+  "finding": "F-1787",
+  "author": "Meera (DevOps)",
+  "captured_at": "2026-09-22T13:11:40Z",
+  "method": "Anonymous read-only HTTPS GET of public URLs only. crawl.py downloads index.html plus every referenced JS/CSS and follows import() and __vite__mapDeps to closure. Origins are classified by reading the call site around each string in the bundle, not by the string alone.",
+  "live_build": {
+    "index_js": "/assets/index-BRQ9d70T.js",
+    "index_js_sha256": "c8ada685910323f0a267e0ac2c71eff0e08a230f90935ebdb0cb6c4326ce01d4",
+    "index_css": "/assets/index-DWR-Mpw4.css",
+    "index_html_sha256": "1541d79132d4a7f7c15fc2588ef55797515019dc228563e50ad1556391b166f2",
+    "index_html_last_modified": "Tue, 22 Sep 2026 10:40:40 GMT",
+    "site_tags_js_sha256": "0a702492cccbedca17b3ed9550079185b9a10a88765034382be4c151dd49bfc2",
+    "baked_api_base": "https://influora.in/api/v1 (absolute, not relative: const Th / SL)",
+    "baked_build_sha_string": "dcf2408",
+    "files_downloaded": [
+      "index.html",
+      "site-tags.js",
+      "assets/index-BRQ9d70T.js",
+      "assets/index-DWR-Mpw4.css",
+      "assets/login-scene-3d-BxraF2IK.js",
+      "assets/PerformanceMonitor-vRa7k7SS.js",
+      "assets/MeshDistortMaterial-BLoAPRgl.js",
+      "assets/DiscoverCanvas-ClLsOEEx.js",
+      "assets/Html-DbNBveLQ.js",
+      "assets/PortfolioCanvas-CIEqpIB-.js",
+      "assets/MeeraDemoPlayer-CK2TAYcN.js"
+    ],
+    "closure_note": "The only lazy chunks are the 4 import() targets plus the 6-entry __vite__mapDeps list. The one other import() is react-router's framework-mode route loader (import(e.module)), which SPA mode never calls. The CSS has no url() or @import, so it loads nothing.",
+    "prerender_not_applied": "The live index.html is the static crawler fallback from index.html (12,391 bytes), not scripts/prerender.mjs output, so prerender did not run for this deploy."
+  },
+  "topology_observed": {
+    "www_influora_in": "Returns 200 with the same index.html (ETag 6ab25b28-3067) and does NOT redirect to the apex. Because the API base is hard-coded to https://influora.in, a visitor on www makes CROSS-ORIGIN API calls, and CORS allows them (preflight returns Access-Control-Allow-Origin: https://www.influora.in, credentials true). So connect-src must list https://influora.in explicitly. 'self' alone breaks every API call on www.",
+    "http_influora_in": "Returns a 301 redirect (to https).",
+    "api_location_headers": "Spring already sends its own security headers on /api/v1/*: HSTS max-age=31536000; includeSubDomains, X-Frame-Options DENY, CSP default-src 'none'; frame-ancestors 'none'; base-uri 'none', Referrer-Policy no-referrer, X-Content-Type-Options nosniff. If nginx adds headers at server level and location /api/ has none of its own, /api/ inherits them and sends duplicate or conflicting headers. Keep the SPA headers out of /api/, or scope them to the static locations.",
+    "ai_influora_in": "GET /healthz returns 200 with no security headers. The live SPA never references it (see meera)."
+  },
+  "origins": [
+    {"origin": "'self' (https://influora.in, https://www.influora.in)", "directives": ["script-src", "style-src", "img-src", "media-src", "font-src", "connect-src", "manifest"], "evidence": "/assets/*.js, /site-tags.js, /favicon + icons, /product-shots/*.png, /stitch-media/*.jpg, /brand/mark.png, /videos/*.mp4 and /placeholder-video*.mp4 (default walkthrough videos; zLe={} so no VITE_WALKTHROUGH_* override is baked in)."},
+    {"origin": "https://influora.in", "directives": ["connect-src"], "evidence": "const Th=\"https://influora.in/api/v1\" and const SL=\"https://influora.in/api/v1\" are used by fetch() for every API call, including Meera chat, the streamed turns (fetch + body.getReader SSE parsing, no EventSource) and voice speak/transcribe. Must be explicit for the www host. Also https://influora.in/api/v1/webhooks/woocommerce, which is displayed copy, not fetched."},
+    {"origin": "https://www.googletagmanager.com", "directives": ["script-src", "img-src", "connect-src"], "evidence": "site-tags.js injects <script src=https://www.googletagmanager.com/gtm.js?id=GTM-K7LNG26G>. GTM then loads gtag/js?id=G-CLTL0Y6L44 from the same host. Google's GA4 CSP guidance also lists *.googletagmanager.com for img and connect. The noscript iframe ns.html needs frame-src only for JS-disabled visitors."},
+    {"origin": "https://*.google-analytics.com", "directives": ["connect-src", "img-src"], "evidence": "gtag-G-CLTL0Y6L44.js builds https://{subdomain.}google-analytics.com/g/s/collect (the GA4 collect endpoint, via sendBeacon/fetch, with an image fallback)."},
+    {"origin": "https://*.analytics.google.com", "directives": ["connect-src"], "evidence": "gtag builds https://{subdomain.}analytics.google.com/g/s/collect"},
+    {"origin": "https://www.google.com", "directives": ["connect-src", "img-src"], "evidence": "Both gtm.js and gtag reference https://www.google.com/ccm/geo and www.google.com (conversion/ads measurement, Google signals). No Ads or Floodlight tag is configured in the container, so these are probably unused. Allowing them is low risk; leaving them out risks only console CSP reports."},
+    {"origin": "https://stats.g.doubleclick.net", "directives": ["connect-src", "img-src"], "evidence": "gtag: Google signals / demographics beacon. Fires only if Google signals is enabled in GA4 admin, which is not verifiable anonymously."},
+    {"origin": "https://www.clarity.ms", "directives": ["script-src"], "evidence": "GTM template __cvt_MQDKZ injectScript('https://www.clarity.ms/tag/yh2rsgpkvq?ref=gtm')"},
+    {"origin": "https://scripts.clarity.ms", "directives": ["script-src"], "evidence": "The Clarity tag loader inserts https://scripts.clarity.ms/0.8.70/clarity.js"},
+    {"origin": "https://k.clarity.ms", "directives": ["connect-src"], "evidence": "Clarity tag config upload: https://k.clarity.ms/collect (XHR POST / sendBeacon). The host letter is assigned per project and can change, so use https://*.clarity.ms."},
+    {"origin": "https://c.clarity.ms", "directives": ["img-src"], "evidence": "Clarity tag: (new Image).src='https://c.clarity.ms/c.gif' on load."},
+    {"origin": "https://connect.facebook.net", "directives": ["script-src"], "evidence": "Loaded 3 ways: (1) GTM template tag __cvt_5RM3Q (pixel 624599723914394) through injectScript; (2) GTM Custom HTML tag_id 3 (see gtm_findings); (3) the bundle's own Tjt() inserts https://connect.facebook.net/en_US/fbevents.js for the Festival Box sponsor pixel. fbevents.js then loads connect.facebook.net/signals/config/<id> and signals/plugins/* from the same host."},
+    {"origin": "https://www.facebook.com", "directives": ["img-src", "connect-src", "form-action", "frame-src?"], "evidence": "fbevents.js sends /tr by new Image() GET, sendBeacon and fetch POST. For large payloads it creates a hidden <form method=post action=ENDPOINT target=<iframe name>> pointing at www.facebook.com/tr, so a form-action 'self' policy silently blocks that fallback. The iframe it creates is about:blank (no frame-src entry needed); the form response lands in it, so frame-src www.facebook.com may be needed. Not verified."},
+    {"origin": "https://gw.conversionsapigateway.com", "directives": ["connect-src?"], "evidence": "fbevents.js constant SGW_INSTANCE_FRL. Used only when a Conversions API Gateway is configured for the pixel. The signals config for 624599723914394 does not reference it. Omit it."},
+    {"origin": "https://checkout.razorpay.com", "directives": ["script-src", "frame-src"], "evidence": "bundle: const kqe='https://checkout.razorpay.com/v1/checkout.js' injected by Eqe() (id razorpay-checkout-sdk) for wallet top-up and escrow funding. Runs behind login only."},
+    {"origin": "https://api.razorpay.com", "directives": ["frame-src", "connect-src"], "evidence": "Referenced 7 times in the public checkout.js (the checkout iframe plus API calls). The bundle never references it directly. Inferred from vendor code, not observed at runtime."},
+    {"origin": "https://lumberjack.razorpay.com", "directives": ["connect-src"], "evidence": "checkout.js telemetry (also lumberjack-cx / lumberjack-metrics). Inferred from vendor code only."},
+    {"origin": "https://cdn.razorpay.com", "directives": ["img-src"], "evidence": "checkout.js, 8 refs (logos and images, most inside the api.razorpay.com iframe). Inferred."},
+    {"origin": "https://www.youtube.com", "directives": ["frame-src"], "evidence": "qLe() maps walkthrough video URLs to <iframe src=https://www.youtube.com/embed/ID>. It runs only when a VITE_WALKTHROUGH_VIDEO_* env var holds a YouTube URL. The live build bakes zLe={}, so the defaults (/videos/*.mp4) are used and this iframe is DEAD in this build. Needed only if that env var is ever set."},
+    {"origin": "https://player.vimeo.com", "directives": ["frame-src"], "evidence": "Same resolver and same status as YouTube: dead in this build."},
+    {"origin": "https://*.influora.in", "directives": ["media-src"], "evidence": "qLe() accepts <video> file URLs on influora.in and *.influora.in (VLe). It is dead in this build for the same reason, so 'self' covers the defaults."},
+    {"origin": "https://*.r2.cloudflarestorage.com", "directives": ["img-src", "media-src", "connect-src?"], "evidence": "Not a string in the bundle. It arrives as API data. docs/docs/features/uploads-storage.md says deliverable media, proof screenshots and portfolio covers are served as 15-minute presigned R2 GET URLs. The host is <account>.r2.cloudflarestorage.com, but the account id lives only in the server .env, which was not read. The R2_PUBLIC_URL default https://r2.influora.com may also apply. See unverified."},
+    {"origin": "https://*.cdninstagram.com, https://*.fbcdn.net", "directives": ["img-src"], "evidence": "Not in the bundle. It arrives as API data: the Content Performance post thumbnails (F-1788, ff94cba) and Meta profile pictures are hotlinked. Per the established brief, not re-observed here (it needs an authenticated analytics view)."}
+  ],
+  "schemes_needed": {
+    "blob:": "media-src: Meera voice playback URL.createObjectURL(blob) -> new Audio(url) (two call sites). Also window.open(blob text/html) to print a report. That opens a blob document that inherits this CSP and may need the same script/style allowances. Downloads (a[href=blob:], download attr) need no CSP entry.",
+    "data:": "media-src: MeeraDemoPlayer (Remotion) embeds zr='data:audio/mp3;base64,...' (silent autoplay-unlock clip). img-src data: is standard for Radix/SVG and safe to keep. font-src: none needed. The CSS has no @font-face and no url(), so Inter and JetBrains Mono fall back to system fonts.",
+    "mediastream": "getUserMedia plus MediaRecorder record voice locally and upload it through fetch to /api. No CSP entry is needed, but a Permissions-Policy must keep microphone=(self) or Meera voice breaks.",
+    "worker": "No new Worker / SharedWorker in the bundle. Clarity uses CompressionStream, not a worker. worker-src 'self' is enough (blob: is optional)."
+  },
+  "style_src_requirement": "'unsafe-inline' is required in style-src. Runtime <style> injection: the react-remove-scroll style singleton (LDe: createElement('style'), honours __webpack_nonce__ only), React 19 hoisted <style precedence> resources, and the Remotion player (MeeraDemoPlayer: head.prepend(style)). Style hashes cannot cover dynamic text. Inline style=\"\" attributes set through the CSSOM (element.style) are not governed by CSP.",
+  "script_src_eval": "No eval( or new Function( in any first-party chunk. GTM sandboxed templates (__cvt_*) and gtag do not need 'unsafe-eval'. Omit 'unsafe-eval'.",
+  "inline_scripts_in_index_html": [
+    {
+      "purpose": "JSON-LD Organization schema (type=application/ld+json). It is a data block that is never executed, so script-src does not govern it and it needs no hash. The hash is recorded in case a policy author prefers to list it anyway.",
+      "bytes": 625,
+      "hash": "sha256-vzllYLMMJfJaoF51KvCeESa6d+qv9lFoKlmLIF5xZBg="
+    }
+  ],
+  "inline_scripts_note": "There is no executable inline script in the live index.html. The GTM bootstrap is the external same-origin /site-tags.js, and the module entry is external. There is no theme-flash script. Caveat: if a future deploy runs scripts/prerender.mjs, the prerendered HTML may contain other inline blocks (e.g. per-route JSON-LD from <Seo>). Recompute hashes against THAT artifact, not this one.",
+  "inline_style_attributes_in_index_html": [
+    {"element": "<noscript><iframe src=https://www.googletagmanager.com/ns.html?id=GTM-K7LNG26G style=\"display: none; visibility: hidden\">", "note": "Parsed only when JS is disabled. Harmless if blocked."}
+  ],
+  "gtm_findings": {
+    "container": "GTM-K7LNG26G, fetched live (383,769 bytes)",
+    "tags": [
+      {"tag_id": 5, "type": "__cvt_5RM3Q (Meta Pixel community template)", "pixel": "624599723914394", "loads": "https://connect.facebook.net/en_US/fbevents.js via injectScript", "csp": "works with script-src connect.facebook.net"},
+      {"tag_id": 6, "type": "__googtag (Google tag)", "id": "G-CLTL0Y6L44", "loads": "https://www.googletagmanager.com/gtag/js?id=G-CLTL0Y6L44"},
+      {"tag_id": 7, "type": "__gaawe (GA4 event)", "id": "G-CLTL0Y6L44"},
+      {"tag_id": 11, "type": "__cvt_MQDKZ (Microsoft Clarity template)", "project": "yh2rsgpkvq", "loads": "https://www.clarity.ms/tag/yh2rsgpkvq?ref=gtm -> https://scripts.clarity.ms/0.8.70/clarity.js -> https://k.clarity.ms/collect, https://c.clarity.ms/c.gif"},
+      {"tag_id": 3, "type": "__html (CUSTOM HTML)", "content": "inline <script> Meta Pixel bootstrap for the SAME pixel 624599723914394 plus <noscript><img src=https://www.facebook.com/tr?...>", "csp": "WILL BE BLOCKED under any script-src without 'unsafe-inline' or a nonce. GTM injects it as an inline script whose text we do not control. This is the duplicate pixel from the GTM memory note. Recommendation: DELETE tag 3 in the GTM UI, because tag 5 already fires PageView for the same pixel. Do NOT add 'unsafe-inline' to accommodate it. Until it is deleted, expect one CSP violation report per page."}
+    ],
+    "other_hosts_in_container_runtime": "www.google.com, www.googleadservices.com, adservice.google.com, pagead2.googlesyndication.com, ade.googlesyndication.com, ad.doubleclick.net, cct.google, www.youtube.com/m.youtube.com (YouTube video trigger support). These are generic GTM runtime capabilities, and no configured tag uses them. Excluded."
+  },
+  "meera": {
+    "ai_influora_in_in_bundle": false,
+    "evidence": "grep -c 'ai.influora' returns 0 in all 8 chunks. Every Meera call is fetch(`${SL}${Xg(role)}/...`) with SL=https://influora.in/api/v1 and Xg -> '/meera' | '/creator/meera': sessions, messages, credits, brand-profile, voice/speak, voice/transcribe, and /workspaces/me/meera/interactions/option-tapped. Streaming uses fetch plus a ReadableStream reader, not EventSource or WebSocket.",
+    "csp_consequence": "ai.influora.in does NOT need to be in connect-src for this build. Spring proxies Meera server-side. The repo template's ${CSP_MEERA_ORIGIN} is unnecessary for the live SPA."
+  },
+  "dropped_as_not_loaded": [
+    {"origin": "https://schema.org, http://schema.org", "reason": "JSON-LD @context identifiers, never fetched"},
+    {"origin": "http://www.w3.org", "reason": "SVG/XML namespace URIs"},
+    {"origin": "https://fonts.googleapis.com, https://fonts.gstatic.com", "reason": "Only <link rel=preconnect> in index.html. No stylesheet or @font-face loads from them (the CSS has 0 url() and 0 @font-face; no JS injects a fonts link). A preconnect needs no CSP entry. The warm-up is wasted and can be deleted."},
+    {"origin": "https://i.pravatar.cc, https://images.unsplash.com", "reason": "Avatar strings inside MOCK constants (IL bid list, zK conversation list). The live build has die='live' (isApiLive true), and per the mock-constants memory these sit behind if(!isApiLive()) returns. Not proven for every consumer, so listed in unverified. Recommendation: omit them. If one leaks, it shows a broken avatar image, not a security hole."},
+    {"origin": "https://developers.facebook.com, https://gsap.com, https://react.dev, https://reactrouter.com, https://radix-ui.com, https://github.com, http://fb.me, https://www.remotion.dev, https://remotion.dev, https://docs.pmnd.rs, https://jcgt.org, https://tailwindcss.com", "reason": "Docs links in error messages, licence comments or markdown copy (e.g. Meta Platform Terms in the privacy copy)"},
+    {"origin": "https://instagram.com, https://www.instagram.com", "reason": "<input placeholder> text and <a href> profile links built by gwt(); navigation only"},
+    {"origin": "https://app.influora.in, https://yourbrand.com, https://your-store.com, https://www.example.com, https://courier.com", "reason": "<input placeholder> text only"},
+    {"origin": "http://localhost, http://localhost:3000", "reason": "react-router history fallback base and a Remotion dev message"},
+    {"origin": "Meta/Shopify OAuth authorizationUrl", "reason": "Top-level window.location.href navigation returned by the API. CSP does not govern it."}
+  ],
+  "comparison_with_repo_template": {
+    "file": "docker/nginx.conf.template map $uri $influora_csp (default branch)",
+    "would_break_if_shipped_as_is": [
+      "media-src is absent, so it falls back to default-src 'self'. That blocks Meera voice playback (blob:) and the Remotion data:audio clip.",
+      "connect-src relies on ${CSP_API_ORIGIN}. It must resolve to https://influora.in or the www host loses the API.",
+      "form-action 'self' blocks the Meta Pixel large-payload form POST to www.facebook.com/tr (a silent drop, not a crash)",
+      "frame-src has no youtube/vimeo entry. That is dead code today, but it breaks the moment a VITE_WALKTHROUGH_VIDEO_* URL is set."
+    ],
+    "stale_or_unneeded": [
+      "${CSP_MEERA_ORIGIN}: the live bundle never calls ai.influora.in",
+      "https://capi-automation.s3.us-east-2.amazonaws.com in script-src: not in fbevents.js 2.9.406 or in this pixel's signals config",
+      "https://tagassistant.google.com in frame-src: needed only for GTM Preview/debug mode (keep it if the team uses preview on prod)"
+    ],
+    "img_src_https_wildcard": "The template uses img-src 'self' data: blob: https:. That is pragmatic given the API-supplied image hosts (R2 presigned, Instagram CDN, fbcdn). An explicit list is tighter but needs the R2 account host, which cannot be verified from here."
+  },
+  "unverified": [
+    "Razorpay runtime origins (api.razorpay.com frame and XHR, lumberjack*.razorpay.com, cdn.razorpay.com, checkout-static-next.razorpay.com, browser.sentry-cdn.com). Taken from the public checkout.js only. Checkout opens only in authenticated top-up and escrow flows, which cannot be exercised anonymously.",
+    "The exact R2 presigned host (<account>.r2.cloudflarestorage.com, or r2.influora.com). The account id is only in the server env, which was deliberately not read. Whether downloads are fetched with fetch() (connect-src) or only used as img/video src.",
+    "Instagram/Facebook CDN image hosts for Content Performance thumbnails and profile pictures. They need an authenticated analytics view.",
+    "Whether Google signals / Ads features are on in GA4 admin (decides whether stats.g.doubleclick.net and www.google.com are actually hit).",
+    "Whether the Meta Pixel form-POST fallback also needs frame-src https://www.facebook.com for its response iframe.",
+    "Whether the mock avatar constants (i.pravatar.cc, images.unsplash.com) are fully unreachable in live mode. Every consumer was not traced.",
+    "Whether the Clarity upload host letter (k.) is stable. Assume it can change and use *.clarity.ms.",
+    "The contents of the prerendered HTML if prerender runs in a future deploy (possible extra inline JSON-LD blocks with different hashes).",
+    "No browser session was run. The inventory is static analysis of the live bytes plus vendor scripts, not observed network traffic under a report-only CSP. Recommend shipping Content-Security-Policy-Report-Only first."
+  ],
+  "artifacts": {
+    "crawler": "C:\\tmp\\sechdr\\.proof-os\\tasks\\T-SECHDR-0922\\crawl.py",
+    "crawl_log": "C:\\tmp\\sechdr\\.proof-os\\tasks\\T-SECHDR-0922\\crawl-log.txt",
+    "bundle_dir": "C:\\tmp\\sechdr\\.proof-os\\tasks\\T-SECHDR-0922\\live-bundle\\",
+    "vendor_dir": "C:\\tmp\\sechdr\\.proof-os\\tasks\\T-SECHDR-0922\\live-bundle\\vendor\\ (gtag-G-CLTL0Y6L44.js, clarity-tag.js, clarity.js, fbevents.js, fb-signals-config.js, razorpay-checkout.js)",
+    "gtm_container": "C:\\tmp\\sechdr\\.proof-os\\tasks\\T-SECHDR-0922\\live-bundle\\gtm-K7LNG26G.js"
+  }
+}

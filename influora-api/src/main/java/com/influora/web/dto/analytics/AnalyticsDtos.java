@@ -175,6 +175,20 @@ public final class AnalyticsDtos {
      * requires requesting a new Meta insight metric, a permissions/App-Review question, not a code
      * one — do not derive a substitute from {@code videoViews} or {@code engagement}; that would be
      * fabricating a measurement and shipping it as real, the exact defect this removal closes.
+     *
+     * <p><b>No caption.</b> The post's caption text is deliberately NOT carried, on either route:
+     * wiki/decisions/2026-07-06-brand-safety-caption-storage.md (LOCKED) keeps {@code
+     * MediaMetric.caption} as internal brand-safety input only, and NoBrandFacingCaptionExposureTest
+     * fails if any field here is named caption. F-1784 added one (null for brands, filled for the
+     * creator's own route); it was removed on 2026-09-23. A row is still identified by its
+     * thumbnail, media type and date, and opens on Instagram through {@code permalink}.
+     *
+     * <p><b>{@code previewImageUrl}</b>: the post's cover image (a signed Instagram CDN link, from
+     * the latest poll so it is still inside its expiry). Appended LAST so existing positional
+     * constructor calls keep their argument order. Pending the owner's ruling on brand visibility:
+     * populated on the creator-self route only, {@code null} (omitted) on the brand route.
+     *
+     * <p>Row order: newest {@code postedAt} first, rows without a {@code postedAt} last (F-1786).
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ContentPerformanceResponse(
@@ -190,5 +204,6 @@ public final class AnalyticsDtos {
             Long shares,
             Long videoViews,
             Instant postedAt,
-            BigDecimal engagementRate) {}
+            BigDecimal engagementRate,
+            String previewImageUrl) {}
 }

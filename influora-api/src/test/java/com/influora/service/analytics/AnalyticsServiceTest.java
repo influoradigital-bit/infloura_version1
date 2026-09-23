@@ -704,4 +704,158 @@ class AnalyticsServiceTest {
         assertEquals(1, result.size());
         assertEquals(null, result.get(0).engagementRate());
     }
+
+    // ------------------------------------------------------------------------------------------
+    // Content performance — row order (F-1786). No caption on either route (ADR 2026-07-06).
+    // ------------------------------------------------------------------------------------------
+
+    private static MediaMetric post(
+            String mediaId, Instant postedAt, Instant pollTime, String caption, Long reach) {
+        return MediaMetric.builder()
+                .id("01HMEDIA-" + mediaId + "-" + pollTime.getEpochSecond())
+                .creatorProfileId(CREATOR_ID)
+                .mediaId(mediaId)
+                .mediaType("IMAGE")
+                .caption(caption)
+                .reach(reach)
+                .engagement(10L)
+                .postedAt(postedAt)
+                .time(pollTime)
+                .build();
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformanceForProfile: posts from the SAME poll come out newest postedAt"
+                    + " first regardless of repository order, null postedAt last, dedup still keeps"
+                    + " each post's latest snapshot")
+    void testContentPerformanceSortedByPostedAtDescNullsLast() {
+        Instant samePoll = Instant.parse("2026-09-20T06:00:00Z");
+        Instant olderPoll = Instant.parse("2026-09-19T06:00:00Z");
+
+        // Repository order (poll time desc; ties in arbitrary DB order): OLDER post, then the
+        // post with no postedAt, then the NEWEST post — deliberately not post order.
+        MediaMetric olderPost =
+                post("ig-old", Instant.parse("2026-09-01T10:00:00Z"), samePoll, "old caption", 100L);
+        MediaMetric undatedPost = post("ig-undated", null, samePoll, "undated caption", 100L);
+        MediaMetric newestPost =
+                post("ig-new", Instant.parse("2026-09-15T10:00:00Z"), samePoll, "new caption", 100L);
+        // A stale, earlier-poll snapshot of the newest post — the dedup must drop it (reach 999
+        // would change engagementRate if it leaked through).
+        MediaMetric staleNewestSnapshot =
+                post("ig-new", Instant.parse("2026-09-15T10:00:00Z"), olderPoll, "stale", 999L);
+
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(List.of(olderPost, undatedPost, newestPost, staleNewestSnapshot));
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformanceForProfile(CREATOR_ID);
+
+        assertEquals(3, result.size());
+        assertEquals("ig-new", result.get(0).mediaId());
+        assertEquals("ig-old", result.get(1).mediaId());
+        assertEquals("ig-undated", result.get(2).mediaId());
+        assertEquals(null, result.get(2).postedAt());
+
+        // Latest snapshot (reach 100) kept, not the stale one (reach 999): 10 / 100 * 100 = 10.00.
+        assertEquals(new BigDecimal("10.00"), result.get(0).engagementRate());
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformance (brand route): same postedAt-desc order. (No caption: the"
+                    + " response type has no such field - NoBrandFacingCaptionExposureTest pins it.)")
+    void testBrandContentPerformanceSortedByPostedAtDesc() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
+                .thenReturn(CREATOR_ID);
+
+        Instant samePoll = Instant.parse("2026-09-20T06:00:00Z");
+        MediaMetric undatedPost = post("ig-undated", null, samePoll, "undated caption", 100L);
+        MediaMetric olderPost =
+                post("ig-old", Instant.parse("2026-09-01T10:00:00Z"), samePoll, "old caption", 100L);
+        MediaMetric newestPost =
+                post("ig-new", Instant.parse("2026-09-15T10:00:00Z"), samePoll, "new caption", 100L);
+
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(List.of(undatedPost, olderPost, newestPost));
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformance(principal, CREATOR_ID);
+
+        assertEquals(3, result.size());
+        assertEquals("ig-new", result.get(0).mediaId());
+        assertEquals("ig-old", result.get(1).mediaId());
+        assertEquals("ig-undated", result.get(2).mediaId());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Content performance — preview image (post thumbnails, 2026-09-22)
+    // ------------------------------------------------------------------------------------------
+
+    private static final String FRESH_PREVIEW =
+            "https://scontent.cdninstagram.com/v/fresh.jpg?oe=6A1B2C3D&oh=00_fresh";
+    private static final String STALE_PREVIEW =
+            "https://scontent.cdninstagram.com/v/stale.jpg?oe=5A1B2C3D&oh=00_stale";
+
+    /** The same post polled twice: newest-first, as the repository returns it. */
+    private static List<MediaMetric> twoSnapshotsWithPreview() {
+        MediaMetric latest =
+                MediaMetric.builder()
+                        .id("01HMEDIA-PREVIEW-LATEST00")
+                        .creatorProfileId(CREATOR_ID)
+                        .mediaId("ig-preview")
+                        .mediaType("VIDEO")
+                        .previewImageUrl(FRESH_PREVIEW)
+                        .postedAt(Instant.parse("2026-09-15T10:00:00Z"))
+                        .time(Instant.parse("2026-09-22T06:00:00Z"))
+                        .build();
+        MediaMetric older =
+                MediaMetric.builder()
+                        .id("01HMEDIA-PREVIEW-OLDER000")
+                        .creatorProfileId(CREATOR_ID)
+                        .mediaId("ig-preview")
+                        .mediaType("VIDEO")
+                        .previewImageUrl(STALE_PREVIEW)
+                        .postedAt(Instant.parse("2026-09-15T10:00:00Z"))
+                        .time(Instant.parse("2026-09-22T00:00:00Z"))
+                        .build();
+        return List.of(latest, older);
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformanceForProfile (creator route): carries the LATEST poll's"
+                    + " previewImageUrl, not an older (expired) one")
+    void testCreatorContentPerformanceCarriesFreshPreviewImage() {
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(twoSnapshotsWithPreview());
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformanceForProfile(CREATOR_ID);
+
+        assertEquals(1, result.size());
+        assertEquals(FRESH_PREVIEW, result.get(0).previewImageUrl());
+    }
+
+    @Test
+    @DisplayName(
+            "getContentPerformance (brand route): previewImageUrl is null, pending the owner's"
+                    + " ruling on brand visibility")
+    void testBrandContentPerformanceNeverCarriesPreviewImage() {
+        when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
+        when(workspace.getId()).thenReturn(WORKSPACE_ID);
+        when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
+                .thenReturn(CREATOR_ID);
+        when(mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(CREATOR_ID), any(Pageable.class)))
+                .thenReturn(twoSnapshotsWithPreview());
+
+        List<ContentPerformanceResponse> result =
+                analyticsService.getContentPerformance(principal, CREATOR_ID);
+
+        assertEquals(1, result.size());
+        assertEquals("ig-preview", result.get(0).mediaId());
+        assertEquals(null, result.get(0).previewImageUrl());
+    }
 }

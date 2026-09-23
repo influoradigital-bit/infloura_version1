@@ -99,7 +99,8 @@ def test_directives_fall_back_to_display_name_then_generic():
 
 def test_block_a_creator_is_cached_and_carries_no_creator_data():
     block = build_block_a_creator()
-    assert block["cache_control"] == {"type": "ephemeral"}
+    # Shared by every creator -> 1-hour TTL since 2026-09-22 (cost fix 1).
+    assert block["cache_control"] == {"type": "ephemeral", "ttl": "1h"}
     assert block["text"].startswith(MEERA_CREATOR_PERSONA)
 
 
@@ -326,3 +327,22 @@ def test_creator_context_payload_fields_include_the_consent_key():
     assert "consent_accepted" in CREATOR_CONTEXT_PAYLOAD_FIELDS
     assert "floors" in CREATOR_CONTEXT_PAYLOAD_FIELDS
     assert "identity" in CREATOR_CONTEXT_PAYLOAD_FIELDS
+
+
+def test_no_language_on_file_means_english_not_hindi():
+    """Swapnil 2026-09-23: English is the default; Hindi only when the creator has it on file
+    (or switches mid-chat, which the persona's language rule covers)."""
+    ctx = _ctx()
+    ctx.pop("creator_language", None)
+    persona = get_creator_persona(ctx)
+    assert "Reply language: en-IN" in persona
+    assert "Reply language: hi-IN" not in persona
+
+
+def test_a_creator_with_hindi_on_file_still_gets_hindi():
+    assert "Reply language: hi-IN" in get_creator_persona(_ctx(creator_language="hi-IN"))
+
+
+def test_persona_tells_meera_to_switch_when_the_creator_switches():
+    persona = get_creator_persona(_ctx())
+    assert "asks you to switch" in persona

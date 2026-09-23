@@ -16,6 +16,15 @@
 export const MEERA_HISTORY_MAX_TURNS = 30;
 export const MEERA_HISTORY_MAX_CHARS = 48_000;
 
+/**
+ * Creator Meera sends a shorter window (2026-09-22, Swapnil, cost fix 2): the last 20 messages
+ * (10 back-and-forths), at most 16,000 characters. History is the one part of the prompt that is
+ * never cached, so at the 30-message / 48,000-character window a long creator chat cost ~Rs 4.8 a
+ * message; this caps the history share at roughly Rs 1.2. Brand chat keeps the defaults above.
+ */
+export const CREATOR_HISTORY_MAX_TURNS = 20;
+export const CREATOR_HISTORY_MAX_CHARS = 16_000;
+
 export interface HistoryTurn {
   role: 'user' | 'assistant';
   content: string;

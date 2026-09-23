@@ -35,7 +35,13 @@ public class CreatorAgentPreferences {
     public static final String TONE_FORMAL = "FORMAL";
     public static final String TONE_FRIENDLY = "FRIENDLY";
 
-    public static final String DEFAULT_LANGUAGE = "hi-IN";
+    /**
+     * Swapnil ruling 2026-09-23: Meera speaks ENGLISH by default and switches to Hindi when the
+     * creator writes to her in Hindi or asks for it. Was {@code "hi-IN"} (V73's column default);
+     * migration V20260923090000 moves the column default to match. Creators who already have a
+     * language on file keep it.
+     */
+    public static final String DEFAULT_LANGUAGE = "en-IN";
 
     /**
      * Gate fix round 2, item 1 (Priya Q3) — the DPDP consent notice's current version. Bump this

@@ -26,6 +26,36 @@ from app.config import CLAUDE_MODEL, get_settings
 logger = logging.getLogger(__name__)
 
 
+
+def _cache_write_1h_tokens(usage: Any, assume_all_1h: bool = False) -> int | None:
+    """Cache-write tokens stored with the 1-HOUR TTL, which Anthropic bills at 2x the
+    input rate (5-minute writes are 1.25x). Read from `usage.cache_creation
+    .ephemeral_1h_input_tokens`. The pinned SDK (0.42) predates that field, so it may
+    only be reachable as an extra attribute, or not at all; when it is missing and the
+    request DID use a 1-hour marker, every write is counted as 1-hour -- over-counting
+    the small per-creator block is the safe direction for the spend caps."""
+    if usage is None:
+        return None
+    cc = getattr(usage, "cache_creation", None)
+    if cc is None:
+        extra = getattr(usage, "model_extra", None)
+        if isinstance(extra, dict):
+            cc = extra.get("cache_creation")
+    value = cc.get("ephemeral_1h_input_tokens") if isinstance(cc, dict) else getattr(cc, "ephemeral_1h_input_tokens", None)
+    if isinstance(value, int):
+        return value
+    if assume_all_1h:
+        writes = getattr(usage, "cache_creation_input_tokens", None)
+        return writes if isinstance(writes, int) else None
+    return None
+
+
+def _uses_1h_cache(system_blocks: Any) -> bool:
+    return any(
+        isinstance(block, dict) and (block.get("cache_control") or {}).get("ttl") == "1h"
+        for block in (system_blocks or [])
+    )
+
 class CircuitOpenError(Exception):
     """Raised when the breaker is open — caller must surface a degraded error,
     never silently retry into a known-bad provider."""
@@ -204,6 +234,7 @@ class ClaudeProvider:
                 # get_global_total_today() never moved. These fields are
                 # accumulated as the stream runs and flushed on cancellation.
                 partial_usage: dict[str, Any] = {}
+                uses_1h = _uses_1h_cache(system_blocks)
 
                 def _snapshot_usage(source: Any) -> None:
                     """Merge whatever usage fields this event carries."""
@@ -218,6 +249,9 @@ class ClaudeProvider:
                         value = getattr(source, key, None)
                         if value is not None:
                             partial_usage[key] = value
+                    one_hour = _cache_write_1h_tokens(source, uses_1h)
+                    if one_hour is not None:
+                        partial_usage["cache_creation_1h_input_tokens"] = one_hour
 
                 async for event in stream:
                     if event.type == "message_start":
@@ -320,6 +354,9 @@ class ClaudeProvider:
                                 "cache_creation_input_tokens": getattr(
                                     usage, "cache_creation_input_tokens", None
                                 ),
+                                "cache_creation_1h_input_tokens": _cache_write_1h_tokens(
+                                    usage, uses_1h
+                                ),
                             }
                             if usage
                             else None,
@@ -389,6 +426,7 @@ class ClaudeProvider:
                 "output_tokens": getattr(usage, "output_tokens", None),
                 "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
                 "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None),
+                "cache_creation_1h_input_tokens": _cache_write_1h_tokens(usage),
             }
             if usage
             else None,
@@ -549,6 +587,7 @@ class ClaudeProvider:
             "output_tokens": getattr(usage, "output_tokens", None),
             "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
             "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None),
+            "cache_creation_1h_input_tokens": _cache_write_1h_tokens(usage, _uses_1h_cache(system_blocks)),
         } if usage else None
 
         # T-GOLIVE-0918-R2 [ash · 2026-09-18] — see ClaudeToolResult.stop_reason.

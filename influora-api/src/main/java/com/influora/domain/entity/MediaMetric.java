@@ -49,6 +49,16 @@ public class MediaMetric {
     @Column(name = "permalink", length = 500)
     private String permalink;
 
+    /**
+     * V20260922130000. The post's preview image as a signed Instagram/Facebook CDN link (hotlinked,
+     * never copied). The link EXPIRES (~4 days), so every poll writes the fresh one on its new row;
+     * readers must take it from the latest snapshot only. 2048 because a real link measured 521
+     * characters — {@code permalink}'s 500 would fail every insert. Null when Meta sent none or the
+     * URL failed the host allow-list in {@code MediaMetricMapper}.
+     */
+    @Column(name = "preview_image_url", length = 2048)
+    private String previewImageUrl;
+
     @Column(name = "impressions")
     private Long impressions;
 
@@ -128,6 +138,10 @@ public class MediaMetric {
 
     public String getPermalink() {
         return permalink;
+    }
+
+    public String getPreviewImageUrl() {
+        return previewImageUrl;
     }
 
     public Long getImpressions() {
@@ -222,6 +236,11 @@ public class MediaMetric {
 
         public Builder permalink(String permalink) {
             m.permalink = permalink;
+            return this;
+        }
+
+        public Builder previewImageUrl(String previewImageUrl) {
+            m.previewImageUrl = previewImageUrl;
             return this;
         }
 

@@ -313,3 +313,41 @@ describe('MeeraCopilotChat — accessibility (N3, PRIYA-LASTCALL-U3-U5-0917.md r
     expect(await screen.findByRole('button', { name: 'Send message' })).toBeInTheDocument();
   });
 });
+
+describe('MeeraCopilotChat history window (cost fix 2026-09-22)', () => {
+  it('sends only the last 20 messages of a long resumed chat, ending with the new one', async () => {
+    const user = userEvent.setup();
+    startSessionMock.mockResolvedValue({ conversationId: 'conv_long' });
+    getHistoryMock.mockResolvedValue(
+      Array.from({ length: 60 }, (_, i) => ({
+        id: `h${i}`,
+        role: i % 2 === 0 ? 'USER' : 'ASSISTANT',
+        content: `old message ${i}`,
+      })),
+    );
+    sendTurnMock.mockResolvedValue({
+      messageId: 'm1',
+      streamUrl: 'http://x/chat',
+      streamToken: 'tok',
+      workspaceId: 'ws_1',
+      reply: null,
+    });
+
+    render(
+      <MeeraCopilotChat firstName="Asha" language="en-IN" onClose={vi.fn()} onConsentRequired={vi.fn()} />,
+    );
+    await screen.findByText('old message 59');
+    const textbox = await screen.findByPlaceholderText(/Ask Meera/i);
+    await user.type(textbox, 'Write me a reel script');
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(openMock).toHaveBeenCalled());
+
+    const body = openMock.mock.calls[openMock.mock.calls.length - 1][3] as {
+      conversation: { role: string; content: string }[];
+    };
+    expect(body.conversation.length).toBeLessThanOrEqual(20);
+    expect(body.conversation.length).toBeGreaterThan(10);
+    expect(body.conversation[body.conversation.length - 1]).toEqual({ role: 'user', content: 'Write me a reel script' });
+    expect(body.conversation[0].role).toBe('user');
+  });
+});

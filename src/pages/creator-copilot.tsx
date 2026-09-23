@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Sparkles } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
+import { ChallengeCard } from '@/components/creator/challenge/ChallengeCard';
 import { CopilotPreviewCard } from '@/components/creator/copilot/CopilotPreviewCard';
 import { DailySuggestionSection } from '@/components/creator/copilot/DailySuggestionSection';
 import { PasteBriefCard } from '@/components/creator/copilot/PasteBriefCard';
@@ -63,7 +64,9 @@ export default function CreatorCopilotPage() {
   const [checkingConsent, setCheckingConsent] = React.useState(false);
   const [showConsent, setShowConsent] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState(false);
-  const [language, setLanguage] = React.useState('hi-IN');
+  // Swapnil 2026-09-23: English by default; the creator's stored creator_language wins as
+  // soon as preferences load, and Meera follows the language they write in.
+  const [language, setLanguage] = React.useState('en-IN');
   const [consentLoadError, setConsentLoadError] = React.useState<string | null>(null);
   // T-MEERA-CREATOR-PHASE-A gate review fix (item 3) — MEERA_CREATOR_ENABLED rollback flag.
   // GET /creator/agent-preferences 404s with { code: 'FEATURE_DISABLED' } in the standard
@@ -101,7 +104,7 @@ export default function CreatorCopilotPage() {
       .getPreferences()
       .then((prefs) => {
         if (cancelled) return;
-        setLanguage(prefs.creator_language || 'hi-IN');
+        setLanguage(prefs.creator_language || 'en-IN');
         setConsentAccepted(prefs.consent_accepted);
         setFeatureDisabled(false);
       })
@@ -119,7 +122,7 @@ export default function CreatorCopilotPage() {
     setCheckingConsent(true);
     try {
       const prefs = await api.creatorAgentPrefs.getPreferences();
-      setLanguage(prefs.creator_language || 'hi-IN');
+      setLanguage(prefs.creator_language || 'en-IN');
       setConsentAccepted(prefs.consent_accepted);
       if (prefs.consent_accepted) {
         // Plain "Open Meera" never carries a leftover brief prompt from an earlier ask.
@@ -187,7 +190,7 @@ export default function CreatorCopilotPage() {
     setCheckingConsent(true);
     try {
       const prefs = await api.creatorAgentPrefs.getPreferences();
-      const lang = prefs.creator_language || 'hi-IN';
+      const lang = prefs.creator_language || 'en-IN';
       setLanguage(lang);
       setConsentAccepted(prefs.consent_accepted);
       const text = typeof prompt === 'function' ? prompt(lang) : prompt;
@@ -218,6 +221,16 @@ export default function CreatorCopilotPage() {
           <h1 className="text-2xl font-bold">Co-pilot</h1>
           <p className="text-muted-foreground">Your AI content partner</p>
         </div>
+
+        {/* Creator 7-day challenge (CHALLENGE-SPEC.md, 2026-09-23, Frontend §7) — top of the
+            Co-pilot page. "Write the script" / "Give me an idea" reuse this same
+            `openMeeraWithPrompt`, PREFILL-ONLY (ruling R-U1) — never sends on the creator's
+            behalf, same contract as "Ask Meera about this brief" below. */}
+        <ChallengeCard
+          language={language}
+          onAskMeera={(prompt) => void openMeeraWithPrompt(prompt)}
+          className="mb-6"
+        />
 
         {/* T-MEERA-CREATOR-PHASE-A (A10) — Meera chat entry. Conversational only in Phase A:
             deals/earnings/metrics Q&A, no drafting or sending on the creator's behalf.

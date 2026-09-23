@@ -5,10 +5,14 @@ import com.influora.domain.entity.MediaMetric;
 import com.influora.integration.meta.dto.InstagramInsightsResponse;
 import com.influora.integration.meta.dto.InstagramMediaResponse;
 import com.influora.common.Ulids;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * Maps one fetched Instagram media item plus its insights onto a {@link MediaMetric} row (F-0479).
@@ -43,6 +47,12 @@ public final class MediaMetricMapper {
     private static final DateTimeFormatter META_TIMESTAMP =
             DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssZ");
 
+    /** Meta's image CDNs; a host must equal one of these or be a subdomain of it. */
+    private static final List<String> ALLOWED_IMAGE_HOSTS = List.of("cdninstagram.com", "fbcdn.net");
+
+    /** Must equal the length of media_metrics.preview_image_url (MediaMetric @Column, migration). */
+    static final int PREVIEW_IMAGE_URL_MAX_LENGTH = 2048;
+
     private MediaMetricMapper() {}
 
     /**
@@ -75,6 +85,8 @@ public final class MediaMetricMapper {
                 // keep it out of logs (see the MediaMetric field javadoc).
                 .caption(media.caption())
                 .permalink(media.permalink())
+                // Re-chosen and re-stored on every poll: the CDN link is signed and expires.
+                .previewImageUrl(previewImageUrl(media))
                 // `views` is Meta's unified view count and lands in `impressions`, matching the
                 // mapping DeliverableVerificationService already uses for the same metric. The
                 // `impressions` METRIC was deprecated 2025-04-21; the COLUMN is simply where the
@@ -98,6 +110,63 @@ public final class MediaMetricMapper {
                 .dataSource(CreatorMetric.DATA_SOURCE_META_API)
                 .fetchedAt(fetchedAt)
                 .build();
+    }
+
+    /**
+     * Picks the image a browser can render for this post. For VIDEO and REELS {@code media_url} is
+     * the video file (mp4) and would render nothing in an {@code <img>}, so only {@code
+     * thumbnail_url} (the cover) is used — never {@code media_url}. For IMAGE / CAROUSEL_ALBUM /
+     * anything else {@code media_url} is the image, with {@code thumbnail_url} as the fallback.
+     *
+     * @return the chosen URL if it passes {@link #isAllowedCdnUrl}, else {@code null}
+     */
+    static String previewImageUrl(InstagramMediaResponse.MediaItem media) {
+        String type = media.mediaType();
+        boolean video = "VIDEO".equalsIgnoreCase(type) || "REELS".equalsIgnoreCase(type);
+        String candidate;
+        if (video) {
+            candidate = media.thumbnailUrl();
+        } else {
+            candidate = isAllowedCdnUrl(media.mediaUrl()) ? media.mediaUrl() : media.thumbnailUrl();
+        }
+        return isAllowedCdnUrl(candidate) ? candidate : null;
+    }
+
+    /**
+     * The value is served to browsers as an {@code <img src>}, so only Meta's own image CDNs are
+     * accepted: {@code https}, no userinfo, host exactly {@code cdninstagram.com} / {@code fbcdn.net}
+     * or a subdomain of either (a dot-anchored suffix, so {@code cdninstagram.com.evil.com} and
+     * {@code evilcdninstagram.com} are rejected). Anything unparseable is rejected.
+     */
+    static boolean isAllowedCdnUrl(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        // Must fit media_metrics.preview_image_url. An over-long link would make the poll's
+        // saveAll throw "Data too long", and MetricsPollingJob's catch then drops EVERY media row
+        // for that creator that cycle -- all their metrics lost over one thumbnail. Rejecting it
+        // here degrades to "no thumbnail" instead.
+        if (raw.length() > PREVIEW_IMAGE_URL_MAX_LENGTH) {
+            return false;
+        }
+        URI uri;
+        try {
+            uri = new URI(raw);
+        } catch (URISyntaxException e) {
+            return false;
+        }
+        if (!"https".equalsIgnoreCase(uri.getScheme())
+                || uri.getRawUserInfo() != null
+                || uri.getHost() == null) {
+            return false;
+        }
+        String host = uri.getHost().toLowerCase(Locale.ROOT);
+        for (String allowed : ALLOWED_IMAGE_HOSTS) {
+            if (host.equals(allowed) || host.endsWith("." + allowed)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

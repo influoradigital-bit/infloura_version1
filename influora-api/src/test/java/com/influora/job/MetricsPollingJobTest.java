@@ -226,7 +226,7 @@ class MetricsPollingJobTest {
         return new InstagramMetricsFetcher.MediaWithInsights(
                 new InstagramMediaResponse.MediaItem(
                         mediaId, "caption", "IMAGE", null, "https://instagram.com/p/" + mediaId,
-                        "2026-08-20T10:30:00+0000", 10L, 2L),
+                        "2026-08-20T10:30:00+0000", 10L, 2L, null),
                 null);
     }
 
@@ -258,7 +258,7 @@ class MetricsPollingJobTest {
         return new InstagramMetricsFetcher.MediaWithInsights(
                 new InstagramMediaResponse.MediaItem(
                         mediaId, "caption", "IMAGE", null, "https://instagram.com/p/" + mediaId,
-                        "2026-08-20T10:30:00+0000", 10L, 2L),
+                        "2026-08-20T10:30:00+0000", 10L, 2L, null),
                 insights);
     }
 
@@ -274,7 +274,7 @@ class MetricsPollingJobTest {
         return new InstagramMetricsFetcher.MediaWithInsights(
                 new InstagramMediaResponse.MediaItem(
                         mediaId, "caption", "IMAGE", null, "https://instagram.com/p/" + mediaId,
-                        "2026-08-20T10:30:00+0000", likes, comments),
+                        "2026-08-20T10:30:00+0000", likes, comments, null),
                 null);
     }
 

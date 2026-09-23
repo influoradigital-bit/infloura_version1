@@ -77,7 +77,9 @@ _MICROS_PER_DOLLAR = Decimal(1000000)
 # A8 default: USD 0.75/creator/month (~INR 60). The live value comes from
 # `Settings.ai_creator_monthly_cap_usd` (env AI_CREATOR_MONTHLY_CAP_USD); this
 # constant documents the spec default and backs the settings default.
-CREATOR_MONTHLY_CAP_USD = Decimal("0.75")
+# 2026-09-22 Swapnil (Rohan): 0.75 -> 2.00 so the 40 welcome + 15 monthly free
+# messages of the credits plan fit (~$0.03 each; 0.75 ran out at ~25).
+CREATOR_MONTHLY_CAP_USD = Decimal("2.00")
 
 # Friendly, persona-consistent over-cap message (A8). Spoken-safe: no symbols,
 # no jargon. Deliberately does NOT mention dollars, tokens or "spend" -- the
@@ -518,7 +520,7 @@ def creator_monthly_cap_usd(override: Decimal | str | float | int | None = None)
     context payload (`ai_monthly_cap_usd`, set by support through the admin
     override endpoint -- gate fix round 1, Q7: "who can raise it" used to be
     "nobody without a redeploy"). When present and parseable it wins over the
-    process-wide default (env AI_CREATOR_MONTHLY_CAP_USD, default 0.75); an
+    process-wide default (env AI_CREATOR_MONTHLY_CAP_USD, default 2.00); an
     unparseable value is logged and ignored so a bad row can never disable the
     cap by accident. `<= 0` disables the cap (either source).
     """

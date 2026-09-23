@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.prompt.content_knowledge import build_creator_knowledge_block
+from app.prompt.content_knowledge import build_creator_knowledge_block, creator_shared_cache_control
 from app.prompt.creator_persona import (
     get_creator_directives,
     get_creator_persona_block,
@@ -552,7 +552,8 @@ def build_block_a_creator(tool_names: list[str] | None = None) -> dict[str, Any]
     return {
         "type": "text",
         "text": text,
-        "cache_control": {"type": "ephemeral"},
+        # Shared by every creator: 1-hour TTL (see content_knowledge.creator_shared_cache_control).
+        "cache_control": creator_shared_cache_control(),
     }
 
 

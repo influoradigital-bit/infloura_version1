@@ -54,6 +54,12 @@ vi.mock('@/components/creator/creator-layout', () => ({
   ),
 }));
 
+// Reads via react-query (useCreatorChallenge), which needs a QueryClientProvider this page's
+// own tests don't set up — mocked away same as every other query-backed child here would be.
+vi.mock('@/components/creator/challenge/ChallengeTile', () => ({
+  ChallengeTile: () => <div data-testid="challenge-tile" />,
+}));
+
 vi.mock('@/components/motion', () => ({
   FadeUp: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   StaggerContainer: ({
