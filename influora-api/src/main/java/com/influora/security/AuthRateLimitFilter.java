@@ -130,6 +130,32 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             Pattern.compile("^/portfolio/[^/]+/contact$");
 
     /**
+     * F-audit-A2 — {@code POST /creator/meera/shoot-check/frame} ({@link
+     * com.influora.web.CreatorMeeraController#checkFrame}) had NO bucket at all, unlike its sibling
+     * voice paths ({@code meera-voice}, below) which cover the same "per-call provider cost, keyed
+     * per creator" shape. A creator could fire unlimited frame checks: each one is a Claude VISION
+     * call ({@code SHOOT_CHECK_MODEL} on influora-ai) — more expensive than a TTS/STT call and also
+     * the one input that can trip the shared frame-check circuit breaker (F-audit-A3) for every
+     * OTHER creator, so leaving this unbounded was both a spend and an availability exposure.
+     */
+    private static final String FRAME_CHECK_PATH = "/creator/meera/shoot-check/frame";
+
+    /**
+     * F-audit-A2 — hard cap on the {@code Content-Length} of {@link #FRAME_CHECK_PATH} BEFORE
+     * Spring's multipart resolver ever runs. {@code spring.servlet.multipart.max-file-size} is
+     * 500MB globally (Kabir H-1 — every OTHER upload surface in this codebase needs that room), so
+     * a caller could send up to 500MB of body and have it fully parsed/buffered before {@code
+     * CreatorMeeraController#MAX_FRAME_BYTES} (1.5MB) ever got a chance to reject it — multipart
+     * parsing reads and buffers the whole body first, so the 1.5MB check runs far too late to bound
+     * the work already done. This filter runs ahead of {@code DispatcherServlet}'s multipart
+     * resolution, so a plain {@code Content-Length} check here rejects an oversize body with zero
+     * parsing work, scoped to this one path only — the global 500MB limit other endpoints rely on
+     * is untouched. Set comfortably above the 1.5MB image ceiling (multipart boundary framing plus
+     * the optional {@code shot_label} field add a little overhead) and nowhere near the global cap.
+     */
+    private static final long FRAME_CHECK_MAX_CONTENT_LENGTH_BYTES = 2_000_000L;
+
+    /**
      * T-MEERA-CREATOR-PHASE-B (SPEC.md &sect;3.4) — the creator Meera tool surface, {@code POST}
      * only. Every route under it runs a real query fan-out on behalf of one creator, so it is the
      * same class of per-call cost as {@link #MEERA_TURN}; this bucket is defence-in-depth behind the
@@ -309,6 +335,17 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private int meeraVoiceLimit;
 
     /**
+     * F-audit-A2 — requests per window, per creator, for {@code POST
+     * /creator/meera/shoot-check/frame}. Lower than {@code meera-voice} (30): a frame check is a
+     * Claude VISION call, strictly more expensive per call than TTS/STT, and each one is also an
+     * input to the shared frame-check circuit breaker (F-audit-A3) — bounding request volume here
+     * is part of what keeps one creator from being able to spend the whole breaker's failure budget
+     * by itself.
+     */
+    @Value("${influora.meera.frame-check-rate-limit-per-window:15}")
+    private int frameCheckLimit;
+
+    /**
      * Requests per window, <b>per creator</b>, for the creator Meera tool surface
      * ({@code POST /internal/meera/creator/*}). 60 per creator per window, not 60 per platform —
      * see {@link #extractOnBehalfSubject} for why that distinction is the whole point of this
@@ -434,6 +471,18 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
+        // F-audit-A2 — independent of `enabled`: this is a payload-size gate ahead of multipart
+        // parsing, not a rate limit, and disabling the rate limiter must not reopen it.
+        if (isOversizeFrameCheckUpload(request)) {
+            response.setStatus(413);
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            response.getWriter()
+                    .write(
+                            "{\"success\":false,\"error\":{\"code\":\"FRAME_TOO_LARGE\","
+                                    + "\"message\":\"Image is too large.\"}}");
+            return;
+        }
+
         if (!enabled || !isThrottledMethod(request.getMethod())) {
             chain.doFilter(request, response);
             return;
@@ -494,6 +543,31 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     /** POST covers the auth/write surface; GET is needed for OAuth-connect and discovery-search. */
     private static boolean isThrottledMethod(String method) {
         return "POST".equalsIgnoreCase(method) || "GET".equalsIgnoreCase(method);
+    }
+
+    /**
+     * F-audit-A2 — true only for a {@code POST} to {@link #FRAME_CHECK_PATH} whose {@code
+     * Content-Length} header both IS PRESENT and exceeds {@link
+     * #FRAME_CHECK_MAX_CONTENT_LENGTH_BYTES}. A missing/unknown length (chunked transfer with no
+     * header) is not blocked here — this is deliberately the same "Content-Length check in a
+     * filter" shape the fix calls for, not a full streaming body-size enforcement; the controller's
+     * own {@code MAX_FRAME_BYTES} check remains the backstop for a request this cannot see.
+     */
+    private static boolean isOversizeFrameCheckUpload(HttpServletRequest request) {
+        if (!"POST".equalsIgnoreCase(request.getMethod())) {
+            return false;
+        }
+        final String path;
+        try {
+            path = RequestPaths.pathWithinApplication(request);
+        } catch (RequestPaths.UnnormalisablePathException e) {
+            return false; // Tomcat itself 400s a malformed escape before this matters.
+        }
+        if (!FRAME_CHECK_PATH.equals(path)) {
+            return false;
+        }
+        long contentLength = request.getContentLengthLong();
+        return contentLength > FRAME_CHECK_MAX_CONTENT_LENGTH_BYTES;
     }
 
     /** Returns the rate-limit bucket for the request path, or null if the path is not throttled. */
@@ -620,6 +694,11 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                 || path.equals("/creator/meera/voice/transcribe")) {
             return "meera-voice";
         }
+        // F-audit-A2 — see FRAME_CHECK_PATH's javadoc. Checked alongside meera-voice since it is
+        // the same class of per-call, user-keyed AI cost surface.
+        if (path.equals(FRAME_CHECK_PATH)) {
+            return "frame-check";
+        }
         if (MEERA_TURN.matcher(path).matches()) {
             return "meera-turn";
         }
@@ -719,6 +798,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             case "admin-coupon-issue" -> adminCouponIssueLimit;
             case "meera-turn" -> meeraTurnLimit;
             case "meera-voice" -> meeraVoiceLimit;
+            case "frame-check" -> frameCheckLimit;
             case "creator-tool" -> creatorToolLimit;
             case "creator-brief-paste" -> creatorBriefPasteLimit;
             case "creator-brief-get" -> creatorBriefGetLimit;
@@ -778,6 +858,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
                     "admin-coupon-issue",
                     "meera-turn",
                     "meera-voice",
+                    // F-audit-A2 — same reasoning as meera-voice immediately above: the identity
+                    // to bound is the creator's, not her network's.
+                    "frame-check",
                     // SPEC.md 3.8 — AI cost, so the identity that must be bounded is the creator's,
                     // not her network's. Reachable from the ordinary `Authorization` header (unlike
                     // "creator-tool" above, which sits on /internal/** where that header carries the
