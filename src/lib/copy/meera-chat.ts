@@ -106,6 +106,20 @@ export const TOOL_TRAIL_LABELS: Record<CreatorToolName, ToolTrailLabelSet> = {
     done: { en: 'Drafted a reply', hi: 'जवाब का मसौदा बना लिया' },
     failed: { en: "Couldn't draft the reply", hi: 'जवाब का मसौदा नहीं बन पाया' },
   },
+
+  // release/0924: the two planner tools (fix/plan-my-week-gaps) landed after this table was
+  // written on feat/meera-creator-design, so the Record<CreatorToolName, ...> above had no
+  // labels for them and the build failed — exactly what that type is there to catch.
+  get_todays_topics: {
+    running: { en: "Checking today's topics…", hi: 'आज के विषय देखे जा रहे हैं…' },
+    done: { en: "Checked today's topics", hi: 'आज के विषय देख लिए' },
+    failed: { en: "Couldn't load today's topics", hi: 'आज के विषय लोड नहीं हो पाए' },
+  },
+  plan_my_week: {
+    running: { en: 'Planning your week…', hi: 'आपका हफ़्ता प्लान किया जा रहा है…' },
+    done: { en: 'Planned your week', hi: 'आपका हफ़्ता प्लान कर लिया' },
+    failed: { en: "Couldn't plan your week", hi: 'आपका हफ़्ता प्लान नहीं हो पाया' },
+  },
 };
 
 export const TRAIL_SHOW: BilingualText = { en: 'Show', hi: 'दिखाएं' };

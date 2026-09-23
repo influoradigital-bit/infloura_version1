@@ -105,6 +105,7 @@ interface ChatMessage {
    * a `BuyCreditsCard` right under it (R6 — the chat never just goes silent on a refusal).
    */
   creditsRefusal?: boolean;
+  /**
    * MEERA-CHAT-DESIGN-SPEC.md Part A — true once THIS turn's stream has finished
    * (`onDone`/`onError`/`onHeartbeatTimeout`), which is when `MeeraWorkTrail` collapses its live
    * list into the "Meera did N things · Show" summary line. Undefined for every message that
@@ -494,6 +495,8 @@ export function MeeraCopilotChat({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [credits.balance?.monthly?.period, credits.balance?.paidExpiring, language]);
+
+  /**
    * MEERA-CHAT-DESIGN-SPEC.md Part B — the desk's tiles/starter prompts and "Ask Meera my rate"
    * all go through this: fill the composer, never send (R-U1, same rule the `prefillMessage`
    * prop already follows). Appends to whatever is already typed rather than overwriting it, for
@@ -1163,7 +1166,6 @@ export function MeeraCopilotChat({
             onClick={handleSendClick}
             disabled={
               connecting ||
-              sending ||
               (action !== null && actionBlockedReason(action, credits.balance, language) !== null)
             }
             aria-label="Send message"
