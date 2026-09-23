@@ -1,0 +1,462 @@
+<title>Shot Check</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #FCFCFD;
+    --panel: #F1F2F6;
+    --rule: #D6D8E0;
+    --ink: #10131A;
+    --ink-soft: #454B59;
+    --ink-faint: #767D8D;
+    --accent: #2F3E8F;
+    --accent-wash: #E6E9F6;
+    --flag: #8A4B12;
+    --flag-wash: #FAEDE0;
+    --ok: #1D6340;
+    --serif: "Source Serif 4", Georgia, serif;
+    --sans: "Chivo", "Segoe UI", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0E1015;
+      --panel: #181C24;
+      --rule: #2B313C;
+      --ink: #E9EBF0;
+      --ink-soft: #B2B8C5;
+      --ink-faint: #7E8695;
+      --accent: #9AA9F0;
+      --accent-wash: #1A1F38;
+      --flag: #E2A86A;
+      --flag-wash: #2E2113;
+      --ok: #79CBA0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #0E1015;
+    --panel: #181C24;
+    --rule: #2B313C;
+    --ink: #E9EBF0;
+    --ink-soft: #B2B8C5;
+    --ink-faint: #7E8695;
+    --accent: #9AA9F0;
+    --accent-wash: #1A1F38;
+    --flag: #E2A86A;
+    --flag-wash: #2E2113;
+    --ok: #79CBA0;
+  }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+  }
+  .sheet {
+    max-width: 74ch;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 36px 72px;
+  }
+  h1, h2, h3, .label {
+    font-family: var(--sans);
+    text-wrap: balance;
+  }
+  h1 {
+    font-size: clamp(1.8rem, 5.2vw, 2.55rem);
+    font-weight: 700;
+    line-height: 1.14;
+    letter-spacing: -0.015em;
+    margin: 0 0 12px;
+  }
+  h2 {
+    font-size: 1.16rem;
+    font-weight: 700;
+    margin: 42px 0 4px;
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+  }
+  h2 .num {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-weight: 500;
+  }
+  h3 {
+    font-size: 0.97rem;
+    font-weight: 500;
+    margin: 26px 0 2px;
+    color: var(--ink-soft);
+  }
+  p { margin: 0 0 1.05em; }
+  a { color: var(--accent); }
+  strong { font-weight: 600; }
+
+  .banner {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: var(--flag-wash);
+    color: var(--flag);
+    padding: 8px 12px;
+    border-left: 3px solid var(--flag);
+    margin-bottom: 26px;
+  }
+  .meta {
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+    line-height: 1.8;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    padding-block: 12px;
+    margin-bottom: 30px;
+  }
+  .abstract {
+    background: var(--panel);
+    padding: 20px 22px;
+    margin-bottom: 8px;
+  }
+  .abstract .label,
+  .figure-label {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    display: block;
+    margin-bottom: 8px;
+  }
+  .abstract p:last-child { margin-bottom: 0; }
+
+  .scroll { overflow-x: auto; margin-block: 20px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; font-family: var(--sans); font-weight: 500; }
+  caption {
+    caption-side: bottom;
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+    padding-top: 10px;
+  }
+  th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--ink-soft);
+    white-space: nowrap;
+  }
+  td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  pre {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.7;
+    background: var(--panel);
+    border-left: 2px solid var(--accent);
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 18px 0;
+  }
+  code { font-family: var(--mono); font-size: 0.86em; }
+
+  figure { margin: 26px 0; }
+  figure svg, figure pre.mermaid { max-width: 100%; }
+  figcaption {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: var(--ink-faint);
+    margin-top: 10px;
+  }
+
+  .claim {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-wash);
+    padding: 13px 16px;
+    margin: 20px 0;
+    font-size: 0.97rem;
+  }
+  .unknown {
+    border-left: 3px solid var(--flag);
+    background: var(--flag-wash);
+    padding: 13px 16px;
+    margin: 20px 0;
+    font-size: 0.97rem;
+  }
+  ul, ol { padding-left: 22px; margin: 0 0 1.05em; }
+  li { margin-bottom: 6px; }
+
+  .refs { font-size: 0.86rem; color: var(--ink-soft); }
+  .refs li { margin-bottom: 9px; }
+
+  footer.colophon {
+    border-top: 1px solid var(--rule);
+    margin-top: 44px;
+    padding-top: 14px;
+    font-family: var(--mono);
+    font-size: 0.73rem;
+    color: var(--ink-faint);
+  }
+
+  .save-note {
+    font-family: var(--sans);
+    font-size: 0.86rem;
+    font-weight: 500;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    padding: 12px 15px;
+    margin-bottom: 26px;
+    color: var(--ink-soft);
+  }
+  .save-note kbd {
+    font-family: var(--mono);
+    font-size: 0.8em;
+    border: 1px solid var(--rule);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 1px 5px;
+    background: var(--paper);
+    color: var(--ink);
+  }
+
+  /* Printing to PDF: white ground, no interface chrome, no split tables. */
+  @media print {
+    :root {
+      --paper: #FFFFFF;
+      --panel: #F4F4F6;
+      --rule: #C9CCD4;
+      --ink: #000000;
+      --ink-soft: #2B2F38;
+      --ink-faint: #55596A;
+      --accent: #1F2C73;
+      --accent-wash: #EDEFF8;
+      --flag: #6E3A0C;
+      --flag-wash: #F7EFE6;
+    }
+    body { background: #FFFFFF; font-size: 10.5pt; }
+    .sheet { max-width: none; padding: 0; }
+    .save-note { display: none; }
+    h1 { font-size: 20pt; }
+    h2 { font-size: 12pt; margin-top: 20pt; break-after: avoid; }
+    h3 { break-after: avoid; }
+    table, figure, pre, .claim, .unknown, .abstract { break-inside: avoid; }
+    tr, li { break-inside: avoid; }
+    .scroll { overflow: visible; }
+    a { color: var(--ink); text-decoration: none; }
+  }
+</style>
+
+<div class="sheet">
+
+<p class="banner">Internal design report · no measured results yet</p>
+
+<p class="save-note">To keep a copy: press <kbd>Ctrl</kbd>+<kbd>P</kbd> (<kbd>⌘</kbd>+<kbd>P</kbd> on Mac) and choose "Save as PDF" — this page is laid out for print. The Markdown and HTML source files are also in the repo at <code>wiki/reports/shot-check-design-report.md</code>.</p>
+
+<h1>Shot Check: coaching a phone before the take, not after it</h1>
+
+<div class="meta">
+  Influora · creator platform engineering · 23 September 2026<br>
+  Subject: pre-capture guidance for phone-shot vertical video (Reels, YouTube Shorts)<br>
+  Status: Level 1 and Level 2 under construction on <code>feature/creator-content-knowledge</code><br>
+  Audience: Swapnil Maruti (CEO), Priya (CTO), build team
+</div>
+
+<div class="abstract">
+  <span class="label">Abstract</span>
+  <p>India's nano and micro creators shoot on one phone, alone, with no lights and no crew. The dominant hidden cost in their week is not ideas — our platform already supplies those — but the <em>reshoot</em>: they film, watch it back, find it dark or crooked or framed wrong, and set up again. We describe a two-level system that moves that feedback to before the take. Level 1 measures the camera preview on the device itself — brightness, focus, subject framing, tilt, background clutter, and the gap between voice and room noise — at four samples a second, with no network and no cost, and speaks its corrections aloud so a creator standing away from the phone can hear them. Level 2 sends a single still, on an explicit tap, to a vision model that names up to three specific fixes a meter cannot see, such as which object behind the shoulder pulls the eye. Level 1's thresholds are craft heuristics, not learned from our own creators; we state them explicitly and describe the calibration that would replace them. We report design, cost and privacy decisions in full, and an evaluation protocol with pre-declared success and kill criteria. <strong>We report no results: nothing here has been measured with creators, and the system has not run on a real handset.</strong></p>
+</div>
+
+<h2><span class="num">1</span> The problem, stated concretely</h2>
+<p>A creator with 8,000 followers films a 35-second recipe reel on a mid-range Android phone. She props it against a jar, steps back to the stove, and records. Watching it back she finds her face darker than the wall behind her, because the window was behind her; the phone leaned six degrees; and in the close-up her hands left the frame. She films the whole thing again. That second setup costs more of her week than choosing the idea did.</p>
+<p>Three properties make this addressable. The fault is usually visible <em>before</em> the take. It is usually one of a small set of recurring faults. And the phone already holds every signal needed to detect most of them, in the preview frame it is showing anyway.</p>
+<p>The constraint that shapes the whole design: the creator is not holding the phone. They are two to three metres away, standing where they will perform, unable to read a 5-inch screen. Any guidance that only appears as text has already failed for the case it was built for.</p>
+
+<h2><span class="num">2</span> What this plugs into</h2>
+<p>Shot Check is not standalone. Our creator assistant already produces, for a given creator, a shot-by-shot script: numbered beats, each with a named camera angle, a duration, a spoken line and on-screen text, drawn from a 109-row content dataset of structures, hooks, camera angles and narrative principles. It also produces a seven-day plan with dated festival days and, where the creator's Instagram is connected, the day-parts their own posts have performed best in.</p>
+<p>That matters here for one reason: <strong>the correct advice depends on the shot</strong>. "Come closer" is right for an extreme close-up and wrong for a wide establishing shot; "lift the phone so your eyes are higher" is nonsense for an overhead of the hands, where no face should be in frame at all. Because the script already declares the angle per beat, Shot Check can check the right thing at the right moment instead of applying one generic talking-head target to everything.</p>
+
+<h2><span class="num">3</span> Design principles</h2>
+<ol>
+  <li><strong>Arithmetic on the device; judgement in the model.</strong> Anything computable from pixels is computed locally, free and instantly. Only what needs interpretation goes to a model, once, on request.</li>
+  <li><strong>No media leaves the device unless the creator taps.</strong> Level 1 uploads nothing. Level 2 sends one still, holds it in memory, and never writes it anywhere.</li>
+  <li><strong>Advice, never verdicts.</strong> "The light is behind you" is a fact about the frame. "This will get more views" is a claim we cannot support and do not make.</li>
+  <li><strong>Every reading is falsifiable.</strong> Each measure is a named function of the frame with a stated threshold, unit-tested against synthetic inputs, so a regression is a failing test rather than a judgement call.</li>
+  <li><strong>Degrade, never blank.</strong> No camera permission, no face detector, no internet: the screen still gives the same advice as text.</li>
+</ol>
+
+<h2><span class="num">4</span> Level 1: measuring the preview</h2>
+<p>Each sample draws the current preview frame into an offscreen canvas at 160×90 and runs six pure functions over the resulting pixel buffer. At four samples a second that is about 57,600 pixels of work per second — trivial for a low-end phone, and deliberately so.</p>
+
+<h3>4.1 Brightness</h3>
+<pre>Y  = 0.2126·R + 0.7152·G + 0.0722·B        (Rec. 709 luma)
+L  = mean(Y) over all sampled pixels, scaled to 0..100
+Lf = mean(Y) inside the subject box, when one is known
+
+dark          if  L  &lt; 22
+backlit       if  L  ≥ 22  and  (L − Lf) &gt; 18
+ok            otherwise</pre>
+<p>The second test is the one that matters in practice: the frame overall is bright enough, while the subject is far darker than it — the signature of a window behind the creator. A single average would call that frame acceptable.</p>
+
+<h3>4.2 Focus</h3>
+<pre>G   = grayscale(frame)
+Lap = G ⊛ [[0,1,0],[1,−4,1],[0,1,0]]
+S   = variance(Lap)                        (focus measure)
+
+unknown   if  L &lt; 22          ← never judged in the dark
+soft      if  S &lt; 90
+ok        otherwise</pre>
+<p>Variance of the Laplacian is a standard focus measure [1]. The guard is the important part: in low light, sensor noise raises high-frequency energy and an out-of-focus dark frame scores as sharp. Below the darkness threshold the system reports <code>unknown</code> and says "too dark to tell" rather than guessing. Where a subject box is known, the measure is taken inside it, so a sharp background behind a soft face reads correctly as soft.</p>
+
+<h3>4.3 Framing</h3>
+<p>Where the browser exposes a face detector we take the face box; where it does not, we fall back to subject-agnostic targets and say so. Framing is then two independent judgements: vertical placement, and distance.</p>
+<div class="scroll">
+<table>
+  <caption>Table 1 — targets per shot type. The script supplies the shot type; with no script the medium target is used.</caption>
+  <thead><tr><th>Shot type</th><th>Expects a face</th><th class="num">Face height (frame %)</th><th class="num">Eye line from top</th><th>Typical advice</th></tr></thead>
+  <tbody>
+    <tr><td>Extreme close-up</td><td>yes, or the subject</td><td class="num">45–85</td><td class="num">25–45%</td><td>come closer / too close</td></tr>
+    <tr><td>Medium</td><td>yes</td><td class="num">18–35</td><td class="num">20–38%</td><td>lift the phone / step back</td></tr>
+    <tr><td>Wide</td><td>optional</td><td class="num">6–18</td><td class="num">15–35%</td><td>step into the middle</td></tr>
+    <tr><td>Overhead, hands</td><td><strong>no</strong></td><td class="num">—</td><td class="num">—</td><td>centre the work surface / phone not level</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>4.4 Tilt</h3>
+<p>Taken from the device orientation sensor, not the image: rotation about the viewing axis, reported in degrees, flagged beyond ±3°. Where the sensor is unavailable the reading is <code>unknown</code> — never 0, which would silently assert a level phone.</p>
+
+<h3>4.5 Background clutter</h3>
+<pre>E = |Sobel_x(G)| + |Sobel_y(G)|
+C = mean(E over pixels OUTSIDE the subject box), scaled 0..100
+
+busy   if  C &gt; 46
+ok     otherwise</pre>
+<p>This is a proxy, and a weak one: a patterned wall scores as clutter while a plain wall with one distracting object may not. It is honest about being a hint ("a plainer background reads better"), and it is precisely the judgement Level 2 exists to make properly.</p>
+
+<h3>4.6 Voice against the room</h3>
+<pre>rms(dBFS) from a WebAudio analyser on the same stream
+noise_floor = 10th percentile of rms over the last 3 s
+gap         = rms_speaking − noise_floor
+
+far    if  rms &lt; −38 dBFS
+noisy  if  gap &lt; 12 dB
+ok     otherwise</pre>
+<p>Loudness alone is the wrong measure; intelligibility tracks the margin between voice and background. A fan or traffic raises the floor, and the honest advice is "the room is noisy, come closer to the phone" rather than "speak up".</p>
+
+<div class="unknown">
+  <strong>Where these numbers come from.</strong> Every threshold above is a craft heuristic — standard framing convention, established focus measures, and the signal margins used in speech work — <em>not</em> a value learned from our own creators' results. We publish them as constants in one file, with that caveat in the code, so they can be argued with and replaced. Section 9 describes the calibration that would replace them.
+</div>
+
+<h2><span class="num">5</span> Speaking the corrections</h2>
+<p>Since the creator is away from the phone, guidance is spoken. Three decisions follow from cost and latency rather than preference:</p>
+<ul>
+  <li><strong>On-device speech, not our paid voice service.</strong> Our assistant's chat voice uses a commercial text-to-speech API; using it for live cues would mean a billed network call every few seconds, to a creator who may have weak signal. The browser's built-in speech synthesis is free, immediate, works offline and supports Hindi on most Android devices. The paid service stays where quality matters and there is one call per reply.</li>
+  <li><strong>Speak on change, not on schedule.</strong> An utterance is emitted only when a verdict changes, at most one every three seconds, so the creator hears "thoda peeche jao… haan, wahin ruko" rather than a loop.</li>
+  <li><strong>Language follows the creator's setting</strong> — Hindi, Hinglish or Indian English — the same setting the assistant already uses for text.</li>
+</ul>
+
+<h2><span class="num">6</span> Level 2: one frame, three fixes</h2>
+<p>A meter cannot say <em>which</em> object is distracting. A vision model can. The trade is latency and cost, so the call is deliberate, never automatic.</p>
+<pre>capture   → one still, downscaled to ≤800 px wide, JPEG q≈0.7  (~100–150 KB)
+transport → HTTPS multipart, with the creator's category and current shot label
+gate      → consent check → spend reservation against the daily cap
+model     → one image block + a constrained prompt
+parse     → strict JSON: fixes[≤3], settings[≤3], ok[≤3]; fences stripped;
+            unparseable → one plain "try again" line, never a 500
+discard   → bytes held in memory only; never written, never logged</pre>
+<p>The prompt is constrained by policy as much as by task. It may not comment on appearance, body, clothing or skin; may not guess age, gender or identity; must state plainly when more than one person is visible and then analyse only the creator; may invent no numbers and promise no outcomes; and must say a photo is unusable rather than fabricate fixes for it.</p>
+
+<figure>
+  <pre class="mermaid">
+flowchart TB
+  A["Camera preview<br/>(never leaves the phone)"] --> B["160x90 sample<br/>4 per second"]
+  B --> C["Six measures<br/>light, focus, framing,<br/>tilt, clutter, voice"]
+  C --> D["Spoken + on-screen<br/>corrections"]
+  C -. "numbers only" .-> E["Assistant chat"]
+  A -- "one still, on tap" --> F["Frame check route<br/>consent + spend cap"]
+  F --> G["Vision model"]
+  G --> H["Up to three fixes<br/>+ settings advice"]
+  F -. "no bytes stored" .-> I["Audit: check ran"]
+  </pre>
+  <figcaption>Figure 1 — data paths. The only path off the device is the tapped still; the assistant receives readings, never imagery.</figcaption>
+</figure>
+
+<h2><span class="num">7</span> Cost model</h2>
+<div class="scroll">
+<table>
+  <caption>Table 2 — running cost. Level 2 figures assume one 800 px image plus a short reply on our current chat model, at list prices, and are bounded above by the existing per-workspace daily spend cap.</caption>
+  <thead><tr><th>Item</th><th class="num">Per use</th><th class="num">1,000 active creators / month</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Level 1 meter</td><td class="num">₹0</td><td class="num">₹0</td><td>On-device arithmetic; no network</td></tr>
+    <tr><td>Spoken cues</td><td class="num">₹0</td><td class="num">₹0</td><td>Browser speech, not the paid API</td></tr>
+    <tr><td>Level 2 frame check</td><td class="num">≈₹0.50–1.00</td><td class="num">≈₹3,000–6,000</td><td>At 6 checks per active creator per month</td></tr>
+    <tr><td>Storage</td><td class="num">₹0</td><td class="num">₹0</td><td>No images, no video, by design</td></tr>
+  </tbody>
+</table>
+</div>
+<p>A third level — a model watching the video stream continuously — would cost roughly ₹30–60 per minute filmed and still lag behind the action. We rejected it on both grounds; Level 1 is what "live" can honestly mean at this price.</p>
+
+<h2><span class="num">8</span> Privacy, consent and the rules we will not bend</h2>
+<p>This is a camera pointed into someone's home, which makes restraint a feature rather than a compliance chore.</p>
+<ul>
+  <li><strong>No imagery is stored at either level.</strong> Level 1 uploads nothing; Level 2's frame lives in memory for the duration of one request.</li>
+  <li><strong>No video, ever, on our servers</strong> — even if we later add an in-app recorder, the file stays in the creator's own gallery.</li>
+  <li><strong>Camera is a new consent category</strong> under India's data protection regime [3], so it needs its own line in the existing consent gate and in the privacy policy before release, not after.</li>
+  <li><strong>No appearance judgements.</strong> The model is instructed never to comment on body, clothing or skin, and never to guess who someone is.</li>
+  <li><strong>Other people are named, not analysed.</strong> If a second person is in frame the system says so and stops; our published platform data policy forbids profiling anyone other than the creator, and this is the surface where that would otherwise be crossed first.</li>
+  <li><strong>What we log is the fact and the readings</strong> — that a check ran, and the numeric verdicts — because that is what tells us whether the feature removes reshoots, and it contains no imagery.</li>
+</ul>
+
+<h2><span class="num">9</span> Evaluation plan</h2>
+<p>We have measured nothing yet. The protocol below is declared in advance so the result cannot be chosen after the fact.</p>
+<div class="scroll">
+<table>
+  <caption>Table 3 — pre-declared metrics. Baselines must be collected before the feature is switched on for anyone.</caption>
+  <thead><tr><th>Question</th><th>Measure</th><th>Success</th><th>Kill</th></tr></thead>
+  <tbody>
+    <tr><td>Does it remove the reshoot?</td><td>Self-reported takes per published video, asked once a week in-product</td><td>Median takes falls by ≥1</td><td>No change after 4 weeks</td></tr>
+    <tr><td>Is it used more than once?</td><td>Share of creators who run a second check within 14 days</td><td>≥40%</td><td>&lt;15%</td></tr>
+    <tr><td>Is the advice acted on?</td><td>Share of sessions where a red reading turns green before recording</td><td>≥60%</td><td>&lt;25%</td></tr>
+    <tr><td>Is Level 2 worth its cost?</td><td>Frame checks per creator, and repeat rate after the first</td><td>≥2 per active creator per month</td><td>&lt;0.5</td></tr>
+    <tr><td>Does output quality improve?</td><td>Brand revision and rejection rate on deliverables, users vs non-users</td><td>Any reliable reduction</td><td>No difference at n≥200 deals</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Threshold calibration.</strong> The readings are logged per session with the creator's own later performance on the resulting post, where Instagram is connected. With a few thousand sessions we can compare the distribution of each reading on posts that performed above and below that creator's own median, and move the thresholds to where they separate the two — replacing craft heuristics with our own evidence, per creator category. Until then the constants stand and are labelled as guesses.</p>
+
+<h2><span class="num">10</span> Limitations and threats to validity</h2>
+<ul>
+  <li><strong>Unproven on hardware.</strong> Browser test environments have no camera; automated tests can prove the maths and the refusal paths, not the device path. Real-handset testing on at least one low-end Android and one iPhone is a release gate, not a nicety.</li>
+  <li><strong>Platform asymmetry.</strong> Android browsers expose camera controls (brightness, focus, zoom) that iOS Safari largely does not, so on iPhone the settings help is advice only. A web page can never change the settings of the phone's own camera app or of Instagram — a limit we state to creators rather than paper over.</li>
+  <li><strong>Face detection is not universal.</strong> Where the browser lacks it we deliberately ship no library, so framing advice degrades to subject-agnostic targets. Adding megabytes of on-device models before anyone has used the feature is a cost we refused.</li>
+  <li><strong>Clutter is a proxy.</strong> Edge density is not distraction; it is a hint with a known failure mode (patterned walls).</li>
+  <li><strong>Self-report is soft.</strong> "Takes per video" is the metric we can actually collect without touching anyone's footage, and it carries the usual recall bias; the deliverable-revision measure is the harder, slower check on it.</li>
+  <li><strong>Self-selection.</strong> Creators who choose a shoot-check tool are likely the ones already trying to improve, which will flatter any naive before/after comparison.</li>
+  <li><strong>Model variance.</strong> Level 2's usefulness depends on a model's judgement of a photograph, which is neither deterministic nor evaluated here. A golden set of annotated frames with expected fixes is the missing piece of this plan.</li>
+</ul>
+
+<h2><span class="num">11</span> What we will claim, and when</h2>
+<div class="claim">
+  Until the numbers in Table 3 exist, the honest description of this system is: <strong>a fast, private, on-device checklist that speaks, plus an optional second opinion from a vision model.</strong> Not "AI that makes your videos better". The first claim is defensible today; the second needs the evaluation to come in.
+</div>
+
+<h2><span class="num">12</span> Background</h2>
+<p>This is engineering, not a literature review; the sources below are the ones the method leans on directly.</p>
+<ol class="refs">
+  <li>J. L. Pech-Pacheco, G. Cristóbal, J. Chamorro-Martínez, J. Fernández-Valdivia, "Diatom autofocusing in brightfield microscopy: a comparative study", <em>Proc. ICPR</em>, 2000 — the variance-of-Laplacian focus measure used in §4.2.</li>
+  <li>ITU-R Recommendation BT.709 — the luma coefficients used in §4.1.</li>
+  <li>Digital Personal Data Protection Act, 2023 (India) — consent and purpose limitation obligations that shape §8.</li>
+  <li>Influora internal: creator content dataset (109 rows) and the shot-by-shot script format that supplies the shot targets in Table 1; the platform data policy clause forbidding profiling of anyone other than the creator.</li>
+</ol>
+
+<footer class="colophon">
+  Shot Check · internal design report · Influora · 23 September 2026 · Level 1 and Level 2 in build on feature/creator-content-knowledge · no creator has used this system and no result in this document has been measured
+</footer>
+
+</div>
