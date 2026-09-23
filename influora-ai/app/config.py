@@ -747,8 +747,9 @@ class Settings:
     # --- Meera for Creators, Phase A (A8) — per-creator MONTHLY cap ---
     # CREATOR-audience chat turns are metered per creator per calendar month
     # (UTC), separately from the per-workspace DAILY counters above. Default
-    # USD 0.75/month (~INR 60): an active creator costs 25-45 INR/month against
-    # a 500-750 INR commission on one deal (plan Part 5). Enforced BLOCKING by
+    # USD 2.00/month, raised from 0.75 for launch (cb87f0d6); an active creator
+    # costs 25-45 INR/month against a 500-750 INR commission on one deal (plan
+    # Part 5). Enforced BLOCKING by
     # `app.costs.spend_tracker.check_creator_spend_gate` before any provider
     # call; the over-cap reply is a friendly message, never a raw 5xx. Set
     # `AI_CREATOR_MONTHLY_CAP_USD=0` to disable the cap entirely.

@@ -157,6 +157,9 @@ async def _reset(monkeypatch):
     for var in ("AI_SPEND_KILL_SWITCH", "AI_CREATOR_MONTHLY_CAP_USD", "REDIS_URL"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("AI_DAILY_SPEND_CEILING_USD", "999999")
+    # Written against a 0.75 cap; pinned since the launch default moved to 2.00 (cb87f0d6),
+    # the same pin tests/routes/test_voice_creator_cap.py already carries.
+    monkeypatch.setenv("AI_CREATOR_MONTHLY_CAP_USD", "0.75")
     get_settings.cache_clear()
     await spend_tracker.reset_for_testing()
     yield
