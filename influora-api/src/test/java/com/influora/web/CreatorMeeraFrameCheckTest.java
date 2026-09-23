@@ -15,11 +15,13 @@ import com.influora.common.ApiException;
 import com.influora.config.MeeraCreatorFeatureProperties;
 import com.influora.config.MeeraStreamProperties;
 import com.influora.domain.entity.CreatorProfile;
+import com.influora.domain.enums.UserType;
 import com.influora.integration.ai.MeeraVoiceAiClient;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.CreatorContextService;
 import com.influora.service.meera.MeeraSessionService;
+import com.influora.service.meera.OnBehalfTokenService;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -57,8 +59,11 @@ class CreatorMeeraFrameCheckTest {
     @Mock private CreatorAgentPreferencesService preferencesService;
     @Mock private MeeraVoiceAiClient voiceAiClient;
     @Mock private MeeraCreatorFeatureProperties featureProperties;
+    @Mock private OnBehalfTokenService onBehalfTokenService;
     @Mock private AuthPrincipal principal;
     @Mock private CreatorProfile creatorProfile;
+
+    private static final String ONBEHALF_JWT = "stub-onbehalf-jwt-frame-check";
 
     private CreatorMeeraController controller;
 
@@ -71,10 +76,18 @@ class CreatorMeeraFrameCheckTest {
                         streamProperties,
                         preferencesService,
                         voiceAiClient,
-                        featureProperties);
+                        featureProperties,
+                        onBehalfTokenService);
         lenient().when(featureProperties.isCreatorEnabled()).thenReturn(true);
         lenient().when(creatorContext.requireCreatorProfile(principal)).thenReturn(creatorProfile);
         lenient().when(creatorProfile.getUserId()).thenReturn(CREATOR_USER_ID);
+        // F-audit-A1: the frame-check route mints a real on-behalf JWT for EVERY forwarded call --
+        // stubbed here so the many consented-path tests below don't each need to repeat it.
+        lenient()
+                .when(
+                        onBehalfTokenService.mint(
+                                eq(CREATOR_USER_ID), isNull(), isNull(), eq(CREATOR_USER_ID), eq(UserType.CREATOR), eq("")))
+                .thenReturn(ONBEHALF_JWT);
     }
 
     private static MockMultipartFile jpeg(byte[] bytes) {
@@ -86,15 +99,20 @@ class CreatorMeeraFrameCheckTest {
     void consentedCreator_reachesClient_andPassesTheBodyThrough() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
         byte[] body = "{\"fixes\":[\"Step right\"],\"settings\":[],\"ok\":[]}".getBytes();
-        when(voiceAiClient.checkFrame(eq(CREATOR_USER_ID), any(), eq("image/jpeg"), eq("static overhead")))
+        when(voiceAiClient.checkFrameForCreator(
+                        eq(CREATOR_USER_ID), any(), eq("image/jpeg"), eq("static overhead"), eq(ONBEHALF_JWT)))
                 .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, body, "application/json", 200));
 
         ResponseEntity<?> response = controller.checkFrame(principal, jpeg(JPEG), "  static overhead  ");
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals(body, response.getBody());
-        // Identity comes from the verified principal, never from anything in the request.
-        verify(voiceAiClient).checkFrame(eq(CREATOR_USER_ID), eq(JPEG), eq("image/jpeg"), eq("static overhead"));
+        // Identity comes from the verified principal, never from anything in the request. The
+        // on-behalf JWT forwarded is the REAL one minted for this creator (F-audit-A1) -- never
+        // the service bearer, never a hand-built stand-in.
+        verify(voiceAiClient)
+                .checkFrameForCreator(
+                        eq(CREATOR_USER_ID), eq(JPEG), eq("image/jpeg"), eq("static overhead"), eq(ONBEHALF_JWT));
     }
 
     @Test
@@ -164,7 +182,7 @@ class CreatorMeeraFrameCheckTest {
     void imageAtTheLimit_forwarded() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
         byte[] atLimit = new byte[(int) CreatorMeeraController.MAX_FRAME_BYTES];
-        when(voiceAiClient.checkFrame(eq(CREATOR_USER_ID), any(), any(), isNull()))
+        when(voiceAiClient.checkFrameForCreator(eq(CREATOR_USER_ID), any(), any(), isNull(), eq(ONBEHALF_JWT)))
                 .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, new byte[] {'{', '}'}, "application/json", 200));
 
         ResponseEntity<?> response = controller.checkFrame(principal, jpeg(atLimit), null);
@@ -176,7 +194,7 @@ class CreatorMeeraFrameCheckTest {
     @DisplayName("influora-ai fails: 502 FRAME_CHECK_UNAVAILABLE, never a fake empty result the app would show as ok")
     void upstreamFailure_badGateway() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
-        when(voiceAiClient.checkFrame(any(), any(), any(), any()))
+        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any()))
                 .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(false, null, null, 500));
 
         ResponseEntity<?> response = controller.checkFrame(principal, jpeg(JPEG), null);
@@ -189,13 +207,33 @@ class CreatorMeeraFrameCheckTest {
     @DisplayName("a runaway shot label is cut to a sane length before it is forwarded")
     void longShotLabel_truncated() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
-        when(voiceAiClient.checkFrame(any(), any(), any(), any()))
+        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any()))
                 .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, new byte[] {'{', '}'}, "application/json", 200));
 
         controller.checkFrame(principal, jpeg(JPEG), "x".repeat(5_000));
 
         ArgumentCaptor<String> label = ArgumentCaptor.forClass(String.class);
-        verify(voiceAiClient).checkFrame(any(), any(), any(), label.capture());
+        verify(voiceAiClient).checkFrameForCreator(any(), any(), any(), label.capture(), any());
         assertEquals(120, label.getValue().length());
+    }
+
+    @Test
+    @DisplayName(
+            "F-audit-A1: a real, creator-scoped on-behalf JWT is minted for every forwarded frame check")
+    void consentedCreator_mintsARealOnBehalfJwtScopedToTheCreator() {
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any()))
+                .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, new byte[] {'{', '}'}, "application/json", 200));
+
+        controller.checkFrame(principal, jpeg(JPEG), null);
+
+        // workspaceId == userId == the creator's OWN id (never a brand workspace id), userType ==
+        // CREATOR, and an EMPTY scope (this token authenticates exactly one read, nothing else --
+        // see CreatorMeeraController#mintCreatorOnBehalfJwt's javadoc).
+        verify(onBehalfTokenService)
+                .mint(eq(CREATOR_USER_ID), isNull(), isNull(), eq(CREATOR_USER_ID), eq(UserType.CREATOR), eq(""));
+        // And the SAME minted value is what actually gets forwarded to influora-ai -- not
+        // recomputed, not a different token, not silently dropped.
+        verify(voiceAiClient).checkFrameForCreator(any(), any(), any(), any(), eq(ONBEHALF_JWT));
     }
 }

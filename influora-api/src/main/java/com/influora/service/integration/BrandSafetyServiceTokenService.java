@@ -2,6 +2,7 @@ package com.influora.service.integration;
 
 import com.influora.config.BrandSafetyServiceTokenProperties;
 import com.influora.security.SpringJwksKeyService;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
 import java.security.PrivateKey;
 import java.time.Instant;
@@ -46,6 +47,17 @@ public class BrandSafetyServiceTokenService {
 
     public static final String SCOPE_SERVICE = "service";
 
+    /**
+     * F-audit-A1 — the claim influora-ai's {@code app.auth.audience.derive_audience}
+     * ({@code AUDIENCE_CLAIM_KEYS = ("audience", "userType", "user_type")}) reads to decide
+     * whether a call is CREATOR- or BRAND-originated. Named to match {@code
+     * StreamTokenService#USER_TYPE_CLAIM}/{@code OnBehalfTokenService}'s own {@code "userType"}
+     * claim — this token family and that one are read by the same derivation function on the
+     * influora-ai side, so they use the same claim name and the same value shape ({@link
+     * com.influora.domain.enums.UserType#name()}).
+     */
+    public static final String USER_TYPE_CLAIM = "userType";
+
     private final BrandSafetyServiceTokenProperties props;
     private final SpringJwksKeyService jwksKeyService;
 
@@ -59,23 +71,55 @@ public class BrandSafetyServiceTokenService {
      * Mints a token scoped to exactly one workspace, no {@code user_id}/{@code sub} claim (this
      * is a service-to-service call, not acting on behalf of a specific user). Signed with
      * Spring's asymmetric EC/ES256 private key — see {@link SpringJwksKeyService}.
+     *
+     * <p>Byte-for-byte the same token shape this method has always produced — delegates to
+     * {@link #mint(String, String)} with a {@code null} {@code userType}, which omits the claim
+     * entirely. Every existing caller (this class's four OTHER callers besides {@code
+     * MeeraVoiceAiClient} — brand safety, brand voice, trend spark, creator suggestion, analyze
+     * site — keeps calling this overload and sees zero change.
      */
     public String mint(String workspaceId) {
+        return mint(workspaceId, null);
+    }
+
+    /**
+     * F-audit-A1 — as {@link #mint(String)}, but additionally carries a {@link #USER_TYPE_CLAIM}
+     * naming the audience this ONE call is for, when (and only when) the caller is acting on
+     * behalf of a creator rather than a workspace-scoped brand/service call. {@code userType}
+     * {@code null} or blank omits the claim entirely, producing the EXACT SAME token {@link
+     * #mint(String)} always has — this is what keeps every non-creator caller of this service
+     * (which all still call the single-argument overload) byte-for-byte unaffected by this fix.
+     *
+     * <p>Adding ONLY the audience claim here does not, on its own, make influora-ai's per-creator
+     * spend cap and DPDP consent re-check reach the truth: {@code resolve_frame_check_prefs}/
+     * {@code resolve_voice_prefs} still need a way to authenticate the Spring context fetch they
+     * make once they see CREATOR. This service token is not it (see {@code OnBehalfAuthResolver}
+     * — it verifies the on-behalf JWT against a DIFFERENT audience/contract than this token
+     * carries). The other half of that fix is {@code CreatorMeeraController} minting a real,
+     * creator-scoped {@code OnBehalfTokenService} token per call and {@code MeeraVoiceAiClient}
+     * forwarding it as the request's {@code onbehalf_jwt} — see both classes' javadoc.
+     */
+    public String mint(String workspaceId, String userType) {
         long ttl = Math.min(props.getTtlSeconds(), BrandSafetyServiceTokenProperties.MAX_TTL_SECONDS);
         Instant now = Instant.now();
         Instant exp = now.plusSeconds(ttl);
         PrivateKey signingKey = jwksKeyService.signingKey();
-        return Jwts.builder()
-                .header()
-                .keyId(jwksKeyService.kid())
-                .and()
-                .id(UUID.randomUUID().toString())
-                .issuer(props.getIssuer())
-                .audience()
-                .add(props.getAudience())
-                .and()
-                .claim("workspace_id", workspaceId)
-                .claim("scope", SCOPE_SERVICE)
+        JwtBuilder builder =
+                Jwts.builder()
+                        .header()
+                        .keyId(jwksKeyService.kid())
+                        .and()
+                        .id(UUID.randomUUID().toString())
+                        .issuer(props.getIssuer())
+                        .audience()
+                        .add(props.getAudience())
+                        .and()
+                        .claim("workspace_id", workspaceId)
+                        .claim("scope", SCOPE_SERVICE);
+        if (userType != null && !userType.isBlank()) {
+            builder = builder.claim(USER_TYPE_CLAIM, userType);
+        }
+        return builder
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(exp))
                 .signWith(signingKey, Jwts.SIG.ES256)

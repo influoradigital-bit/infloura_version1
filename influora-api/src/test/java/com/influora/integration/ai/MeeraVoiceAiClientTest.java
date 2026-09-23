@@ -14,6 +14,8 @@ import com.influora.config.JwksSigningKeyProperties;
 import com.influora.security.SpringJwksKeyService;
 import com.influora.service.integration.BrandSafetyServiceTokenService;
 import com.influora.testsupport.TestEcKeys;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import org.apache.hc.client5.http.classic.methods.HttpPost;
@@ -48,6 +50,7 @@ class MeeraVoiceAiClientTest {
     @Mock private CloseableHttpClient httpClient;
 
     private BrandSafetyServiceTokenService tokenService;
+    private SpringJwksKeyService jwksKeyService;
     private MeeraVoiceAiClient client;
 
     @BeforeEach
@@ -59,9 +62,16 @@ class MeeraVoiceAiClientTest {
         jwksProps.setPrivateKeyPem(TestEcKeys.PRIVATE_KEY_PEM);
         jwksProps.setPublicKeyPem(TestEcKeys.PUBLIC_KEY_PEM);
         jwksProps.setKid("test-kid-voice-client");
-        tokenService = new BrandSafetyServiceTokenService(tokenProps, new SpringJwksKeyService(jwksProps));
+        jwksKeyService = new SpringJwksKeyService(jwksProps);
+        tokenService = new BrandSafetyServiceTokenService(tokenProps, jwksKeyService);
 
         client = new MeeraVoiceAiClient("http://localhost:8000", 10, tokenService, httpClient);
+    }
+
+    /** Real ES256 verification of the Bearer token a captured {@link HttpPost} carries. */
+    private Claims verifiedClaimsOf(HttpPost request) {
+        String bearer = request.getFirstHeader("Authorization").getValue().substring("Bearer ".length());
+        return Jwts.parser().verifyWith(jwksKeyService.publicKey()).build().parseSignedClaims(bearer).getPayload();
     }
 
     private static ClassicHttpResponse fakeResponse(int status, byte[] body, String contentType) {
@@ -201,5 +211,112 @@ class MeeraVoiceAiClientTest {
                         requestCaptor.getValue().getEntity().getContent().readAllBytes(),
                         StandardCharsets.UTF_8);
         assertFalse(sentBody.contains("lang"));
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // F-audit-A1 -- speakForCreator: mints WITH userType=CREATOR and forwards a real on-behalf JWT.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("speak: the ordinary (BRAND) overload's minted token carries NO userType claim")
+    void testSpeakTokenCarriesNoUserTypeClaim() throws Exception {
+        mockExecuteReturning(fakeResponse(200, new byte[0], "audio/wav"));
+        ArgumentCaptor<HttpPost> captor = ArgumentCaptor.forClass(HttpPost.class);
+
+        client.speak(WORKSPACE_ID, "hello there");
+
+        verify(httpClient).execute(captor.capture(), any(HttpClientResponseHandler.class));
+        assertEquals(null, verifiedClaimsOf(captor.getValue()).get("userType"));
+    }
+
+    @Test
+    @DisplayName("speakForCreator: mints a token with userType=CREATOR, verified for real (ES256)")
+    void testSpeakForCreatorTokenCarriesCreatorUserType() throws Exception {
+        mockExecuteReturning(fakeResponse(200, new byte[0], "audio/wav"));
+        ArgumentCaptor<HttpPost> captor = ArgumentCaptor.forClass(HttpPost.class);
+
+        client.speakForCreator(WORKSPACE_ID, "hello there", null, "real-onbehalf-jwt");
+
+        verify(httpClient).execute(captor.capture(), any(HttpClientResponseHandler.class));
+        Claims claims = verifiedClaimsOf(captor.getValue());
+        assertEquals("CREATOR", claims.get("userType"));
+        assertEquals(WORKSPACE_ID, claims.get("workspace_id"));
+        assertEquals("service", claims.get("scope"));
+    }
+
+    @Test
+    @DisplayName("speakForCreator: forwards the given onBehalfJwt as \"onbehalf_jwt\" in the JSON body")
+    void testSpeakForCreatorIncludesOnBehalfJwtInBody() throws Exception {
+        mockExecuteReturning(fakeResponse(200, new byte[0], "audio/wav"));
+        ArgumentCaptor<HttpPost> captor = ArgumentCaptor.forClass(HttpPost.class);
+
+        client.speakForCreator(WORKSPACE_ID, "hello there", null, "real-onbehalf-jwt-value");
+
+        verify(httpClient).execute(captor.capture(), any(HttpClientResponseHandler.class));
+        String sentBody =
+                new String(captor.getValue().getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(sentBody.contains("\"onbehalf_jwt\":\"real-onbehalf-jwt-value\""), sentBody);
+    }
+
+    @Test
+    @DisplayName(
+            "speak (the plain BRAND overload) NEVER sends an onbehalf_jwt field -- influora-ai's"
+                    + " own bearer fallback must apply exactly as it always has for this caller")
+    void testPlainSpeakNeverIncludesOnBehalfJwtInBody() throws Exception {
+        mockExecuteReturning(fakeResponse(200, new byte[0], "audio/wav"));
+        ArgumentCaptor<HttpPost> captor = ArgumentCaptor.forClass(HttpPost.class);
+
+        client.speak(WORKSPACE_ID, "hello there", "hi-IN");
+
+        verify(httpClient).execute(captor.capture(), any(HttpClientResponseHandler.class));
+        String sentBody =
+                new String(captor.getValue().getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertFalse(sentBody.contains("onbehalf_jwt"), sentBody);
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // F-audit-A1 -- transcribeForCreator: same two properties, for the multipart voice-INPUT leg.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("transcribeForCreator: mints a token with userType=CREATOR, verified for real (ES256)")
+    void testTranscribeForCreatorTokenCarriesCreatorUserType() throws Exception {
+        mockExecuteReturning(fakeResponse(200, "{}".getBytes(StandardCharsets.UTF_8), "application/json"));
+        ArgumentCaptor<HttpPost> captor = ArgumentCaptor.forClass(HttpPost.class);
+
+        client.transcribeForCreator(WORKSPACE_ID, new byte[] {1, 2, 3}, "audio/webm", "real-onbehalf-jwt");
+
+        verify(httpClient).execute(captor.capture(), any(HttpClientResponseHandler.class));
+        assertEquals("CREATOR", verifiedClaimsOf(captor.getValue()).get("userType"));
+    }
+
+    @Test
+    @DisplayName("transcribeForCreator: the multipart body carries an onbehalf_jwt field with the given value")
+    void testTranscribeForCreatorIncludesOnBehalfJwtField() throws Exception {
+        mockExecuteReturning(fakeResponse(200, "{}".getBytes(StandardCharsets.UTF_8), "application/json"));
+        ArgumentCaptor<HttpPost> captor = ArgumentCaptor.forClass(HttpPost.class);
+
+        client.transcribeForCreator(WORKSPACE_ID, new byte[] {1, 2, 3}, "audio/webm", "real-onbehalf-jwt-value");
+
+        verify(httpClient).execute(captor.capture(), any(HttpClientResponseHandler.class));
+        String sentBody =
+                new String(captor.getValue().getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertTrue(sentBody.contains("name=\"onbehalf_jwt\""), sentBody);
+        assertTrue(sentBody.contains("real-onbehalf-jwt-value"), sentBody);
+    }
+
+    @Test
+    @DisplayName("transcribe (the plain BRAND overload) never includes an onbehalf_jwt multipart field")
+    void testPlainTranscribeNeverIncludesOnBehalfJwtField() throws Exception {
+        mockExecuteReturning(fakeResponse(200, "{}".getBytes(StandardCharsets.UTF_8), "application/json"));
+        ArgumentCaptor<HttpPost> captor = ArgumentCaptor.forClass(HttpPost.class);
+
+        client.transcribe(WORKSPACE_ID, new byte[] {1, 2, 3}, "audio/webm");
+
+        verify(httpClient).execute(captor.capture(), any(HttpClientResponseHandler.class));
+        String sentBody =
+                new String(captor.getValue().getEntity().getContent().readAllBytes(), StandardCharsets.UTF_8);
+        assertFalse(sentBody.contains("onbehalf_jwt"), sentBody);
+        assertEquals(null, verifiedClaimsOf(captor.getValue()).get("userType"));
     }
 }
