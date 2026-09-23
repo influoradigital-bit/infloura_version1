@@ -149,8 +149,14 @@ def test_full_script_only_on_request():
     assert "A plain idea question still gets the short idea; end it by offering the full script." in TEXT
 
 
-def test_short_reply_rule_names_the_script_as_its_only_length_exception():
-    assert "The one exception to length is a full script" in TEXT
+def test_short_reply_rule_names_the_script_and_the_week_plan_as_its_exceptions():
+    # Lane B3 (ai.md M1): the week plan is seven lines plus a line above it, so the short rule
+    # has to name it too, and a format's own layout (numbered tips, label lines) wins.
+    assert "The one exception to length is a full script" not in TEXT
+    assert (
+        "The two exceptions are a full script and a week plan: each is laid out exactly as"
+        " its own format below says, and that layout wins over this rule."
+    ) in TEXT
 
 
 def test_script_picks_structure_and_length_from_the_knowledge():
