@@ -49,12 +49,20 @@ public interface MediaMetricsRepository extends JpaRepository<MediaMetric, Strin
      *
      * <p>Rows with a null {@code posted_at} are excluded by the comparison itself; the caller still
      * applies the upper bound of its window and its own dedupe as a second line of defence.
+     *
+     * <p><b>Collab posts (F-audit-A5):</b> the correlated subquery is keyed by {@code (mediaId,
+     * creatorProfileId)}, not {@code mediaId} alone. An Instagram collab post has ONE {@code
+     * media_id} but is polled independently on each collaborator's own profile, so a {@code
+     * mediaId}-only {@code max(time)} would pick the single globally-latest poll across every
+     * creator and silently drop every other creator's row for that same post the moment a
+     * different creator happened to poll it more recently — see {@code
+     * MediaMetricsNewestSnapshotQueryTest#collabPostOnTwoProfiles} for the case this closes.
      */
     @Query(
             "select m from MediaMetric m where m.creatorProfileId = :creatorProfileId"
                     + " and m.postedAt >= :postedAtFrom"
                     + " and m.time = (select max(m2.time) from MediaMetric m2"
-                    + " where m2.mediaId = m.mediaId)"
+                    + " where m2.mediaId = m.mediaId and m2.creatorProfileId = m.creatorProfileId)"
                     + " order by m.postedAt desc")
     List<MediaMetric> findNewestSnapshotPerPostSince(
             @Param("creatorProfileId") String creatorProfileId,
