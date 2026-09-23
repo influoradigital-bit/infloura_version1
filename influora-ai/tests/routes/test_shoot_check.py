@@ -35,10 +35,15 @@ from app.routes import shoot_check as shoot_check_route
 CREATOR_ID = "creator-user-shoot-check-001"
 BRAND_WS = "ws-brand-shoot-check-001"
 
-# Minimal valid magic-number prefixes -- the route only ever checks the
-# first few bytes, so the rest can be arbitrary filler.
-JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 200
-PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 200
+# F-audit-A3: the route's `_looks_like_declared_type` now checks structure,
+# not just leading magic bytes (a JPEG must END in the EOI marker, a PNG's
+# first chunk after the signature must be a well-formed IHDR header) -- see
+# that function's docstring. These fixtures satisfy the tighter check so the
+# many happy-path tests in this file still reach the (mocked) Claude call;
+# everything between the required header/trailer bytes remains arbitrary
+# filler.
+JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 200 + b"\xff\xd9"
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\x0d" + b"IHDR" + b"\x00" * 200
 
 
 # --------------------------------------------------------------------------- helpers
@@ -328,6 +333,42 @@ async def test_truncated_file_rejected_before_model_call():
     claude = _claude_ok({"fixes": ["x"], "settings": [], "ok": []})
 
     result = await _call("BRAND", BRAND_WS, claude=claude, spring=MagicMock(), image=b"\xff\xd8")
+
+    assert result["fallback"] is True
+    claude.complete_with_image.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_valid_jpeg_signature_followed_by_garbage_rejected_before_model_call():
+    """F-audit-A3: a real JPEG SOI marker (`FF D8 FF`) followed by arbitrary
+    junk -- NOT a truncated upload, NOT a mislabeled other-file-type upload,
+    just garbage wearing a JPEG's leading bytes. Before this fix,
+    `_looks_like_declared_type` only checked the first three bytes and this
+    was indistinguishable from a real photo, so it reached the (mocked, but
+    in prod real) Claude vision call. Five of these in a row is exactly the
+    input that opened the shared frame-check circuit breaker for every
+    creator on the worker -- see test_claude_provider.py for the other half
+    of that fix."""
+    claude = _claude_ok({"fixes": ["x"], "settings": [], "ok": []})
+    junk = b"\xff\xd8\xff\xe0" + bytes(range(256)) * 4  # does not end in FF D9
+
+    result = await _call("BRAND", BRAND_WS, claude=claude, spring=MagicMock(), image=junk)
+
+    assert result["fallback"] is True
+    claude.complete_with_image.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_valid_png_signature_with_malformed_ihdr_rejected_before_model_call():
+    """F-audit-A3, the PNG mirror of the JPEG case above: the 8-byte PNG
+    signature is real, but what follows is not a well-formed IHDR chunk."""
+    claude = _claude_ok({"fixes": ["x"], "settings": [], "ok": []})
+    junk = b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 4  # no IHDR chunk header
+
+    result = await _call(
+        "BRAND", BRAND_WS, claude=claude, spring=MagicMock(),
+        image=junk, content_type="image/png", filename="shot.png",
+    )
 
     assert result["fallback"] is True
     claude.complete_with_image.assert_not_awaited()

@@ -16,6 +16,7 @@ import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.CreatorContextService;
 import com.influora.service.credits.CreatorCreditService;
 import com.influora.service.meera.MeeraSessionService;
+import com.influora.service.meera.OnBehalfTokenService;
 import com.influora.web.dto.meera.MeeraDtos.CreditsSummary;
 import com.influora.web.dto.meera.MeeraDtos.MessageHistoryItem;
 import com.influora.web.dto.meera.MeeraDtos.SendTurnRequest;
@@ -87,6 +88,7 @@ public class CreatorMeeraController {
     private final MeeraCreatorFeatureProperties featureProperties;
     private final CreatorCreditService creatorCreditService;
     private final CreatorCreditProperties creditProperties;
+    private final OnBehalfTokenService onBehalfTokenService;
 
     public CreatorMeeraController(
             MeeraSessionService sessionService,
@@ -97,6 +99,7 @@ public class CreatorMeeraController {
             MeeraCreatorFeatureProperties featureProperties,
             CreatorCreditService creatorCreditService,
             CreatorCreditProperties creditProperties) {
+            OnBehalfTokenService onBehalfTokenService) {
         this.sessionService = sessionService;
         this.creatorContext = creatorContext;
         this.streamProperties = streamProperties;
@@ -105,6 +108,7 @@ public class CreatorMeeraController {
         this.featureProperties = featureProperties;
         this.creatorCreditService = creatorCreditService;
         this.creditProperties = creditProperties;
+        this.onBehalfTokenService = onBehalfTokenService;
     }
 
     /**
@@ -145,6 +149,41 @@ public class CreatorMeeraController {
                     "Consent is required before using Meera",
                     HttpStatus.FORBIDDEN);
         }
+    }
+
+    /**
+     * F-audit-A1 — mints a real, creator-scoped on-behalf JWT for the ONE media call about to be
+     * forwarded to influora-ai via {@link MeeraVoiceAiClient#speakForCreator}/{@code
+     * transcribeForCreator}/{@code checkFrameForCreator}. This is the OTHER half of that fix,
+     * alongside minting the service token with {@code userType=CREATOR}: once influora-ai's {@code
+     * derive_audience} sees CREATOR, {@code resolve_voice_prefs}/{@code resolve_frame_check_prefs}
+     * make their OWN Spring context fetch (consent + cap) authenticated by {@code onbehalf_jwt} —
+     * and the service bearer this controller's caller already holds is NOT a valid on-behalf token
+     * ({@link OnBehalfAuthResolver} verifies against {@link OnBehalfTokenService#ONBEHALF_AUDIENCE},
+     * a completely different contract than {@code BrandSafetyServiceTokenProperties}'s audience —
+     * see {@code BrandSafetyServiceTokenService#mint(String, String)}'s javadoc for the full
+     * hazard). Without a REAL on-behalf token here, that Spring call would fail closed and refuse
+     * every creator voice/frame-check call regardless of actual consent state.
+     *
+     * <p>{@code workspaceId} is deliberately {@code creatorUserId} (same "workspace_id carries the
+     * creator's own user id" convention this class's javadoc documents for the stream/on-behalf
+     * tokens minted at session start) — {@code OnBehalfAuthResolver#resolveVerified} requires the
+     * on-behalf token's {@code workspaceId} claim to equal the request body's {@code workspace_id},
+     * and influora-ai's {@code get_meera_context} call sends exactly {@code creatorUserId} as that
+     * value.
+     *
+     * <p>{@code conversationId}/{@code turnId} are {@code null} — a voice/frame-check call is not
+     * part of a chat turn, so neither concept applies; {@link OnBehalfTokenService#mint} tolerates
+     * both being absent (see its own javadoc). Scope is deliberately EMPTY, not {@link
+     * OnBehalfTokenService#SCOPE_DEFAULT}: this token exists to authenticate exactly one read (the
+     * context fetch, which {@code OnBehalfAuthResolver#resolveForWorkspace} never scope-checks) and
+     * nothing else — an empty scope means that if it were ever presented to a scope-gated tool
+     * route instead, {@code OnBehalfAuthResolver#resolveForWorkspaceRequiringScope} would reject it,
+     * which is the correct least-privilege outcome for a token this narrowly purposed.
+     */
+    private String mintCreatorOnBehalfJwt(String creatorUserId) {
+        return onBehalfTokenService.mint(
+                creatorUserId, null, null, creatorUserId, UserType.CREATOR, "");
     }
 
     @PostMapping("/sessions")
@@ -281,7 +320,9 @@ public class CreatorMeeraController {
             }
         }
 
-        MeeraVoiceAiClient.SpeakResult result = voiceAiClient.speak(creatorUserId, body.text(), body.lang());
+        MeeraVoiceAiClient.SpeakResult result =
+                voiceAiClient.speakForCreator(
+                        creatorUserId, body.text(), body.lang(), mintCreatorOnBehalfJwt(creatorUserId));
         if (result.ok()) {
             // K-15/round-2 review finding #3 fix — record, under the account lock (via
             // CreatorCreditService#markVoiceDelivered), that this turn's paid voice surcharge was
@@ -369,7 +410,12 @@ public class CreatorMeeraController {
         }
 
         MeeraVoiceAiClient.FrameCheckResult result =
-                voiceAiClient.checkFrame(creatorUserId, imageBytes, image.getContentType(), label);
+                voiceAiClient.checkFrameForCreator(
+                        creatorUserId,
+                        imageBytes,
+                        image.getContentType(),
+                        label,
+                        mintCreatorOnBehalfJwt(creatorUserId));
         if (!result.ok()) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("code", "FRAME_CHECK_UNAVAILABLE"));
         }
@@ -408,7 +454,8 @@ public class CreatorMeeraController {
         }
 
         MeeraVoiceAiClient.TranscribeResult result =
-                voiceAiClient.transcribe(creatorUserId, audioBytes, audio.getContentType());
+                voiceAiClient.transcribeForCreator(
+                        creatorUserId, audioBytes, audio.getContentType(), mintCreatorOnBehalfJwt(creatorUserId));
         if (result.ok()) {
             MediaType mediaType;
             try {

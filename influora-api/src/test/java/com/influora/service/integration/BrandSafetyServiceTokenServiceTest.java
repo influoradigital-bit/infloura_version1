@@ -1,6 +1,7 @@
 package com.influora.service.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -102,6 +103,52 @@ class BrandSafetyServiceTokenServiceTest {
 
         assertEquals("workspace-a", parse(tokenA).get("workspace_id"));
         assertEquals("workspace-b", parse(tokenB).get("workspace_id"));
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // F-audit-A1 -- mint(workspaceId, userType). Real ES256 sign + verify, same as every test
+    // above; this is the claim influora-ai's app.auth.audience.derive_audience reads.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("mint(ws): the single-argument overload's token carries NO userType claim at all")
+    void testSingleArgMintCarriesNoUserTypeClaim() {
+        Claims claims = parse(service.mint(WORKSPACE_ID));
+        assertNull(claims.get("userType"), "the existing single-argument mint must be byte-for-byte unaffected");
+    }
+
+    @Test
+    @DisplayName("mint(ws, \"CREATOR\"): the token carries userType=CREATOR")
+    void testMintWithUserTypeCarriesTheClaim() {
+        Claims claims = parse(service.mint(WORKSPACE_ID, "CREATOR"));
+        assertEquals("CREATOR", claims.get("userType"));
+        // every other claim is unchanged from the plain overload
+        assertEquals("service", claims.get("scope"));
+        assertEquals(WORKSPACE_ID, claims.get("workspace_id"));
+    }
+
+    @Test
+    @DisplayName("mint(ws, null): identical claim set to mint(ws) -- null omits the claim, not a literal \"null\"")
+    void testMintWithNullUserTypeOmitsClaim() {
+        Claims claims = parse(service.mint(WORKSPACE_ID, null));
+        assertNull(claims.get("userType"));
+        assertFalse(claims.containsKey("userType"), "the key must be ABSENT, not present with a null value");
+    }
+
+    @Test
+    @DisplayName("mint(ws, \"\"): a blank userType also omits the claim")
+    void testMintWithBlankUserTypeOmitsClaim() {
+        Claims claims = parse(service.mint(WORKSPACE_ID, "   "));
+        assertFalse(claims.containsKey("userType"));
+    }
+
+    @Test
+    @DisplayName("mint(ws, \"CREATOR\") still signs ES256 with the configured kid, same as the plain overload")
+    void testMintWithUserTypeStillSignsEs256AndKid() {
+        String token = service.mint(WORKSPACE_ID, "CREATOR");
+        var header = Jwts.parser().verifyWith(jwksKeyService.publicKey()).build().parseSignedClaims(token).getHeader();
+        assertEquals("ES256", header.getAlgorithm());
+        assertEquals("test-kid-brand-safety", header.getKeyId());
     }
 
     private void assertNotEqualsJti(String jti1, String jti2) {

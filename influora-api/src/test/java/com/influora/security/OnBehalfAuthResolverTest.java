@@ -5,10 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 
 import com.influora.common.ApiException;
+import com.influora.config.BrandSafetyServiceTokenProperties;
 import com.influora.config.JwksSigningKeyProperties;
 import com.influora.config.JwtProperties;
 import com.influora.domain.enums.UserType;
 import com.influora.repository.WorkspaceMemberRepository;
+import com.influora.service.integration.BrandSafetyServiceTokenService;
 import com.influora.service.meera.OnBehalfTokenService;
 import com.influora.testsupport.TestEcKeys;
 import io.jsonwebtoken.Jwts;
@@ -183,6 +185,56 @@ class OnBehalfAuthResolverTest {
         assertEquals(WORKSPACE_ID, ctx.workspaceId());
         assertEquals(UserType.BRAND, ctx.userType());
         assertEquals("conv-001", ctx.conversationId());
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // F-audit-A1 -- CreatorMeeraController#mintCreatorOnBehalfJwt's exact shape (workspaceId ==
+    // userId == the creator's own id, no conversationId/turnId, userType=CREATOR, empty scope)
+    // must be ACCEPTED here, and the hazard this fix exists to avoid -- forwarding the BrandSafety
+    // SERVICE token as if it were an on-behalf JWT -- must be REJECTED. Both properties matter:
+    // the fix only works if Java mints a token this resolver actually accepts.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "F-audit-A1: a token minted exactly the way CreatorMeeraController#mintCreatorOnBehalfJwt"
+                    + " mints it (workspaceId==userId, no conversation/turn, userType=CREATOR, empty"
+                    + " scope) is ACCEPTED, with the creator's own id round-tripping as both fields")
+    void testAcceptsTokenShapedLikeCreatorMeeraControllersMint() {
+        String creatorUserId = "creator-user-f-audit-a1";
+        String token = onBehalfTokenService.mint(creatorUserId, null, null, creatorUserId, UserType.CREATOR, "");
+
+        var ctx = resolver.resolveForWorkspace(token, creatorUserId);
+
+        assertEquals(creatorUserId, ctx.userId());
+        assertEquals(creatorUserId, ctx.workspaceId());
+        assertEquals(UserType.CREATOR, ctx.userType());
+    }
+
+    @Test
+    @DisplayName(
+            "F-audit-A1 HAZARD, reproduced directly: the service token"
+                    + " BrandSafetyServiceTokenService mints (what MeeraVoiceAiClient forwards as the"
+                    + " Authorization bearer, and what a broken fix might fall back to as onbehalf_jwt)"
+                    + " is REJECTED here -- wrong contract entirely (no on-behalf audience, signed for a"
+                    + " different purpose). This is exactly why CreatorMeeraController must mint a REAL"
+                    + " on-behalf token rather than forwarding its own service bearer: presenting the"
+                    + " service token here fails closed, which without a real on-behalf token would"
+                    + " 403/401 EVERY creator voice/frame-check call regardless of actual consent.")
+    void testRejectsTheServiceBearerTokenPresentedAsOnBehalf() {
+        var serviceTokenProps = new BrandSafetyServiceTokenProperties();
+        serviceTokenProps.setAudience("influora-internal");
+        serviceTokenProps.setIssuer("influora-api");
+        var serviceTokenService = new BrandSafetyServiceTokenService(serviceTokenProps, jwksKeyService);
+        String creatorUserId = "creator-user-f-audit-a1";
+
+        String serviceToken = serviceTokenService.mint(creatorUserId, "CREATOR");
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class, () -> resolver.resolveForWorkspace(serviceToken, creatorUserId));
+        assertEquals("ON_BEHALF_JWT_INVALID", ex.getCode());
+        assertEquals(401, ex.getStatus().value());
     }
 
     @Test

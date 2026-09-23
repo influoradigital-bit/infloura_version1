@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -27,6 +28,7 @@ import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.CreatorContextService;
 import com.influora.service.credits.CreatorCreditService;
 import com.influora.service.meera.MeeraSessionService;
+import com.influora.service.meera.OnBehalfTokenService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.meera.MeeraDtos.SendTurnRequest;
 import java.util.List;
@@ -64,8 +66,11 @@ class CreatorMeeraControllerTest {
     @Mock private MeeraCreatorFeatureProperties featureProperties;
     @Mock private CreatorCreditService creatorCreditService;
     @Mock private CreatorCreditProperties creditProperties;
+    @Mock private OnBehalfTokenService onBehalfTokenService;
     @Mock private AuthPrincipal principal;
     @Mock private CreatorProfile creatorProfile;
+
+    private static final String ONBEHALF_JWT = "stub-onbehalf-jwt";
 
     private CreatorMeeraController controller;
 
@@ -81,6 +86,7 @@ class CreatorMeeraControllerTest {
                         featureProperties,
                         creatorCreditService,
                         creditProperties);
+                        onBehalfTokenService);
         // Every handler on this controller calls requireFeatureEnabled() first (Priya gate review
         // defect 4) -- on by default here so every pre-existing test below still exercises its own
         // real behavior; the flag-off tests further down override this per-test.
@@ -90,6 +96,14 @@ class CreatorMeeraControllerTest {
         // otherwise trip MockitoExtension's strict-stubs UnnecessaryStubbingException.
         lenient().when(creatorContext.requireCreatorProfile(principal)).thenReturn(creatorProfile);
         lenient().when(creatorProfile.getUserId()).thenReturn(CREATOR_USER_ID);
+        // F-audit-A1: voice/speak and voice/transcribe each mint a real on-behalf JWT for every
+        // forwarded call -- stubbed here (lenient: not every test in this file reaches it) so the
+        // consented-path tests below don't each need to repeat it.
+        lenient()
+                .when(
+                        onBehalfTokenService.mint(
+                                eq(CREATOR_USER_ID), isNull(), isNull(), eq(CREATOR_USER_ID), eq(UserType.CREATOR), eq("")))
+                .thenReturn(ONBEHALF_JWT);
     }
 
     @Test
@@ -294,13 +308,13 @@ class CreatorMeeraControllerTest {
     void speak_consentedCreator_reachesVoiceClient() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
         var body = new CreatorMeeraController.VoiceSpeakRequest("hello meera", "hi-IN", null);
-        when(voiceAiClient.speak(CREATOR_USER_ID, "hello meera", "hi-IN"))
+        when(voiceAiClient.speakForCreator(CREATOR_USER_ID, "hello meera", "hi-IN", ONBEHALF_JWT))
                 .thenReturn(MeeraVoiceAiClient.SpeakResult.audio(new byte[] {1, 2, 3}, "audio/wav"));
 
         ResponseEntity<?> response = controller.speak(principal, body);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(voiceAiClient).speak(CREATOR_USER_ID, "hello meera", "hi-IN");
+        verify(voiceAiClient).speakForCreator(CREATOR_USER_ID, "hello meera", "hi-IN", ONBEHALF_JWT);
     }
 
     @Test
@@ -342,7 +356,7 @@ class CreatorMeeraControllerTest {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
         byte[] bytes = new byte[] {9, 9};
         MockMultipartFile audio = new MockMultipartFile("audio", "clip.webm", "audio/webm", bytes);
-        when(voiceAiClient.transcribe(eq(CREATOR_USER_ID), any(), eq("audio/webm")))
+        when(voiceAiClient.transcribeForCreator(eq(CREATOR_USER_ID), any(), eq("audio/webm"), eq(ONBEHALF_JWT)))
                 .thenReturn(
                         MeeraVoiceAiClient.TranscribeResult.json(
                                 "{\"raw_transcript\":\"hi\"}".getBytes(), "application/json"));
@@ -350,7 +364,7 @@ class CreatorMeeraControllerTest {
         ResponseEntity<?> response = controller.transcribe(principal, audio);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        verify(voiceAiClient).transcribe(eq(CREATOR_USER_ID), any(), eq("audio/webm"));
+        verify(voiceAiClient).transcribeForCreator(eq(CREATOR_USER_ID), any(), eq("audio/webm"), eq(ONBEHALF_JWT));
     }
 
     @Test

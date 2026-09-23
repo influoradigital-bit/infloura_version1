@@ -116,6 +116,33 @@ class MediaMetricsNewestSnapshotQueryTest {
     }
 
     @Test
+    @DisplayName("a collab post polled on two creator profiles keeps each profile's own newest snapshot (F-audit-A5)")
+    void collabPostOnTwoProfiles() {
+        Instant postedAt = NOW.minus(2, ChronoUnit.DAYS);
+        // Profile 1 polled this collab post once, well before profile 2's most recent poll of the
+        // SAME media_id. A mediaId-only max(time) would pick profile 2's later poll globally and
+        // drop profile 1's row entirely, even though profile 1's query is scoped to its own id.
+        repository.save(
+                snapshot("c1", "collab-post", PROFILE_ID, NOW.minus(3, ChronoUnit.DAYS), postedAt, 111L));
+        repository.save(
+                snapshot("c2", "collab-post", OTHER_PROFILE_ID, NOW.minus(1, ChronoUnit.DAYS), postedAt, 222L));
+
+        List<MediaMetric> mine =
+                repository.findNewestSnapshotPerPostSince(PROFILE_ID, NOW.minus(90, ChronoUnit.DAYS));
+        List<MediaMetric> theirs =
+                repository.findNewestSnapshotPerPostSince(OTHER_PROFILE_ID, NOW.minus(90, ChronoUnit.DAYS));
+
+        assertEquals(
+                List.of("collab-post"),
+                mine.stream().map(MediaMetric::getMediaId).toList(),
+                "profile 1's own snapshot of the collab post must not disappear because profile 2 polled it more recently");
+        assertEquals(111L, mine.get(0).getReach());
+        assertEquals(
+                List.of("collab-post"), theirs.stream().map(MediaMetric::getMediaId).toList());
+        assertEquals(222L, theirs.get(0).getReach());
+    }
+
+    @Test
     @DisplayName("several posts each reduce to one row, newest post first")
     void manyPostsOneRowEach() {
         for (int i = 1; i <= 4; i++) {

@@ -14,6 +14,8 @@ import com.influora.config.JwksSigningKeyProperties;
 import com.influora.security.SpringJwksKeyService;
 import com.influora.service.integration.BrandSafetyServiceTokenService;
 import com.influora.testsupport.TestEcKeys;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -50,6 +52,7 @@ class MeeraVoiceAiClientFrameCheckTest {
     @Mock private CloseableHttpClient httpClient;
 
     private MeeraVoiceAiClient client;
+    private SpringJwksKeyService jwksKeyService;
 
     @BeforeEach
     void setUp() {
@@ -59,8 +62,15 @@ class MeeraVoiceAiClientFrameCheckTest {
         jwksProps.setPrivateKeyPem(TestEcKeys.PRIVATE_KEY_PEM);
         jwksProps.setPublicKeyPem(TestEcKeys.PUBLIC_KEY_PEM);
         jwksProps.setKid("test-kid-frame-check");
-        var tokenService = new BrandSafetyServiceTokenService(tokenProps, new SpringJwksKeyService(jwksProps));
+        jwksKeyService = new SpringJwksKeyService(jwksProps);
+        var tokenService = new BrandSafetyServiceTokenService(tokenProps, jwksKeyService);
         client = new MeeraVoiceAiClient("http://localhost:8000", 10, tokenService, httpClient);
+    }
+
+    /** Real ES256 verification of the Bearer token a captured {@link HttpPost} carries. */
+    private Claims verifiedClaimsOf(HttpPost request) {
+        String bearer = request.getFirstHeader("Authorization").getValue().substring("Bearer ".length());
+        return Jwts.parser().verifyWith(jwksKeyService.publicKey()).build().parseSignedClaims(bearer).getPayload();
     }
 
     private static ClassicHttpResponse response(int status, String json) {
@@ -168,11 +178,85 @@ class MeeraVoiceAiClientFrameCheckTest {
     }
 
     @Test
+    @DisplayName(
+            "the frame check's response timeout outlasts influora-ai's own budget for that call (F-audit-A4)")
+    void responseTimeoutOutlastsInfluoraAisRealBudget() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrame(CREATOR_USER_ID, JPEG, "image/jpeg", null);
+
+        HttpPost sent = capturedRequest();
+        long responseTimeoutSeconds = sent.getConfig().getResponseTimeout().toSeconds();
+        // influora-ai/app/config.py's ProviderTimeouts for this route: claude_connect (3.0s) +
+        // claude_read (30.0s) = a 33.0s worst case before Python itself gives up. Java must wait
+        // strictly longer than that, or a merely-slow (not stuck) check fails here while Python
+        // keeps running, finishes, and bills the creator for a check Java already told them failed.
+        assertTrue(
+                responseTimeoutSeconds > 33,
+                "response timeout (" + responseTimeoutSeconds + "s) must exceed influora-ai's 33s budget"
+                        + " (claude_connect 3.0s + claude_read 30.0s)");
+    }
+
+    @Test
     @DisplayName("no image or no workspace: no HTTP call at all")
     @SuppressWarnings("unchecked")
     void missingInputs_noCall() throws Exception {
         assertFalse(client.checkFrame(CREATOR_USER_ID, new byte[0], "image/jpeg", null).ok());
         assertFalse(client.checkFrame(" ", JPEG, "image/jpeg", null).ok());
         verify(httpClient, never()).execute(any(HttpPost.class), any(HttpClientResponseHandler.class));
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // F-audit-A1 -- checkFrameForCreator: mints WITH userType=CREATOR and forwards a real
+    // on-behalf JWT. This is the specific hole A1 names: before this fix NEITHER the creator
+    // monthly cap NOR influora-ai's own consent re-check ever applied to a frame check at all.
+    // ------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("checkFrame (the plain overload): the minted token carries NO userType claim")
+    void checkFrame_tokenCarriesNoUserTypeClaim() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrame(CREATOR_USER_ID, JPEG, "image/jpeg", null);
+
+        assertEquals(null, verifiedClaimsOf(capturedRequest()).get("userType"));
+    }
+
+    @Test
+    @DisplayName("checkFrameForCreator: mints a token with userType=CREATOR, verified for real (ES256)")
+    void checkFrameForCreator_tokenCarriesCreatorUserType() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", null, "real-onbehalf-jwt");
+
+        Claims claims = verifiedClaimsOf(capturedRequest());
+        assertEquals("CREATOR", claims.get("userType"));
+        assertEquals(CREATOR_USER_ID, claims.get("workspace_id"));
+        assertEquals("service", claims.get("scope"));
+    }
+
+    @Test
+    @DisplayName("checkFrameForCreator: the multipart body carries an onbehalf_jwt field with the given value")
+    void checkFrameForCreator_includesOnBehalfJwtField() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", "static overhead", "real-onbehalf-jwt-value");
+
+        String body = bodyOf(capturedRequest());
+        assertTrue(body.contains("name=\"onbehalf_jwt\""), body);
+        assertTrue(body.contains("real-onbehalf-jwt-value"), body);
+        // every other field this route pins is still present, unaffected by the new field
+        assertTrue(body.contains("name=\"shot_label\""), body);
+        assertTrue(body.contains("name=\"image\"; filename=\"frame.jpg\""), body);
+    }
+
+    @Test
+    @DisplayName("checkFrame (the plain overload) never includes an onbehalf_jwt multipart field")
+    void checkFrame_neverIncludesOnBehalfJwtField() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrame(CREATOR_USER_ID, JPEG, "image/jpeg", "static overhead");
+
+        assertFalse(bodyOf(capturedRequest()).contains("onbehalf_jwt"));
     }
 }

@@ -3,6 +3,7 @@ package com.influora.integration.ai;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.influora.domain.enums.UserType;
 import com.influora.service.integration.BrandSafetyServiceTokenService;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -79,8 +80,21 @@ public class MeeraVoiceAiClient {
     private static final String TRANSCRIBE_PATH = "/voice/transcribe";
     /** Shoot Check Level 2 on influora-ai (app/routes/shoot_check.py). */
     static final String FRAME_CHECK_PATH = "/ai/shoot-check/frame";
-    /** A vision call is slower than a TTS one, so it gets its own response timeout. */
-    private static final int FRAME_CHECK_RESPONSE_TIMEOUT_SECONDS = 25;
+    /**
+     * A vision call is slower than a TTS one, so it gets its own response timeout.
+     *
+     * <p>F-audit-A4: this MUST exceed influora-ai's own budget for this call, or a check that is
+     * merely slow (not actually stuck) times out and returns a failure to the creator here while
+     * the Python side keeps running, finishes, bills the spend gate, and the creator is charged
+     * for a check they were told failed. influora-ai's real ceiling for {@code
+     * /ai/shoot-check/frame} is {@code app/config.py}'s {@code ProviderTimeouts}: {@code
+     * claude_connect} (3.0s) to open the connection to the model provider plus {@code claude_read}
+     * (30.0s) to read the response -- a 33.0s worst case, not the 25s this was previously set to.
+     * 35s clears that with a 2s margin; if either of those two influora-ai numbers is retuned this
+     * must be revisited by hand (same discipline {@code get_brief_read}'s comment in
+     * influora-ai/app/config.py documents for the mirror-image Spring -&gt; Python direction).
+     */
+    private static final int FRAME_CHECK_RESPONSE_TIMEOUT_SECONDS = 35;
     private static final String CRLF = "\r\n";
 
     private final String baseUrl;
@@ -194,18 +208,48 @@ public class MeeraVoiceAiClient {
      * SpeakResult#fallback()}, same as every other failure mode here.
      */
     public SpeakResult speak(String workspaceId, String text, String lang) {
+        return speak(workspaceId, text, lang, null, null);
+    }
+
+    /**
+     * F-audit-A1 — CREATOR-audience mirror of {@link #speak(String, String, String)}, used ONLY
+     * by {@code CreatorMeeraController}. Mints the service token WITH the {@code userType=CREATOR}
+     * claim influora-ai's {@code derive_audience} reads (see {@link
+     * BrandSafetyServiceTokenService#mint(String, String)}), so the per-creator monthly spend cap
+     * and the DPDP consent re-check actually engage for this call, and forwards {@code
+     * onBehalfJwt} as the request's {@code onbehalf_jwt} field.
+     *
+     * <p>{@code onBehalfJwt} MUST be a real, creator-scoped token minted by {@code
+     * OnBehalfTokenService} (the caller's job, never this class's) — never this method's own
+     * service bearer. influora-ai's {@code resolve_voice_prefs} uses whatever it is given here to
+     * authenticate its OWN Spring context fetch for consent/cap data, and {@code
+     * OnBehalfAuthResolver} on the Spring side verifies that token against a DIFFERENT audience/
+     * contract than the service token carries ({@code OnBehalfTokenService#ONBEHALF_AUDIENCE},
+     * not {@code BrandSafetyServiceTokenProperties}'s audience) — presenting the service bearer
+     * there fails signature/audience verification outright, which is exactly the fail-closed
+     * hazard this method exists to avoid: without a real on-behalf token, EVERY creator voice
+     * call would 403 CONSENT_REQUIRED regardless of actual consent state.
+     */
+    public SpeakResult speakForCreator(String workspaceId, String text, String lang, String onBehalfJwt) {
+        return speak(workspaceId, text, lang, UserType.CREATOR.name(), onBehalfJwt);
+    }
+
+    private SpeakResult speak(String workspaceId, String text, String lang, String userType, String onBehalfJwt) {
         if (workspaceId == null || workspaceId.isBlank() || text == null || text.isBlank()) {
             log.warn("MeeraVoiceAiClient: missing workspaceId/text, skipping call");
             return SpeakResult.fallback();
         }
 
         String resolvedLang = (lang == null || lang.isBlank()) ? null : lang;
+        String resolvedOnBehalfJwt = (onBehalfJwt == null || onBehalfJwt.isBlank()) ? null : onBehalfJwt;
 
         String token;
         String requestBody;
         try {
-            token = tokenService.mint(workspaceId);
-            requestBody = objectMapper.writeValueAsString(new SpeakRequest(workspaceId, text, resolvedLang));
+            token = tokenService.mint(workspaceId, userType);
+            requestBody =
+                    objectMapper.writeValueAsString(
+                            new SpeakRequest(workspaceId, text, resolvedLang, resolvedOnBehalfJwt));
         } catch (Exception e) {
             log.warn(
                     "MeeraVoiceAiClient: failed to build request for workspace={}: {}",
@@ -266,10 +310,16 @@ public class MeeraVoiceAiClient {
     // when absent, so voice.py's `body.get("lang", "en-IN")` default still applies. Sending an
     // explicit `"lang": null` would defeat that default: dict.get on a key present with a None
     // value returns None, not "en-IN".
+    //
+    // F-audit-A1: onbehalfJwt is the same shape -- @JsonInclude(NON_NULL), omitted entirely for
+    // every non-creator call (every existing caller of the public `speak` overloads), so
+    // voice.py's `body.get("onbehalf_jwt") or _bearer(authorization)` falls back to the bearer
+    // exactly as it always has for those calls. Only `speakForCreator` ever populates it.
     private record SpeakRequest(
             @JsonProperty("workspace_id") String workspaceId,
             String text,
-            @JsonInclude(JsonInclude.Include.NON_NULL) String lang) {}
+            @JsonInclude(JsonInclude.Include.NON_NULL) String lang,
+            @JsonInclude(JsonInclude.Include.NON_NULL) @JsonProperty("onbehalf_jwt") String onbehalfJwt) {}
 
     /**
      * Result of a {@link #transcribe} call — the voice-INPUT mirror of {@link SpeakResult}. {@code
@@ -309,6 +359,22 @@ public class MeeraVoiceAiClient {
      * of this class is HTTP-client-agnostic, just raw bytes over a {@link ByteArrayEntity}.
      */
     public TranscribeResult transcribe(String workspaceId, byte[] audioBytes, String contentType) {
+        return transcribe(workspaceId, audioBytes, contentType, null, null);
+    }
+
+    /**
+     * F-audit-A1 — CREATOR-audience mirror of {@link #transcribe(String, byte[], String)}, used
+     * ONLY by {@code CreatorMeeraController}. See {@link #speakForCreator}'s javadoc for the full
+     * rationale (userType claim + real on-behalf JWT forwarding) — identical here, just for the
+     * voice-INPUT leg.
+     */
+    public TranscribeResult transcribeForCreator(
+            String workspaceId, byte[] audioBytes, String contentType, String onBehalfJwt) {
+        return transcribe(workspaceId, audioBytes, contentType, UserType.CREATOR.name(), onBehalfJwt);
+    }
+
+    private TranscribeResult transcribe(
+            String workspaceId, byte[] audioBytes, String contentType, String userType, String onBehalfJwt) {
         if (workspaceId == null || workspaceId.isBlank() || audioBytes == null || audioBytes.length == 0) {
             log.warn("MeeraVoiceAiClient: missing workspaceId/audio, skipping transcribe call");
             return TranscribeResult.fallback();
@@ -318,8 +384,8 @@ public class MeeraVoiceAiClient {
         byte[] body;
         String boundary = "InfluoraVoiceBoundary-" + UUID.randomUUID();
         try {
-            token = tokenService.mint(workspaceId);
-            body = buildMultipartBody(boundary, workspaceId, audioBytes, contentType);
+            token = tokenService.mint(workspaceId, userType);
+            body = buildMultipartBody(boundary, workspaceId, audioBytes, contentType, onBehalfJwt);
         } catch (Exception e) {
             log.warn(
                     "MeeraVoiceAiClient: failed to build transcribe request for workspace={}: {}",
@@ -370,11 +436,13 @@ public class MeeraVoiceAiClient {
     /**
      * Assembles the {@code multipart/form-data} body influora-ai's {@code /voice/transcribe}
      * expects: a {@code workspace_id} text part (re-verified against the service token on the Python
-     * side) and an {@code audio} file part carrying the raw recorded bytes. Content type falls back
-     * to {@code application/octet-stream} when the browser upload didn't report one.
+     * side), an {@code audio} file part carrying the raw recorded bytes, and -- F-audit-A1 -- an
+     * OPTIONAL {@code onbehalf_jwt} text part, written only when {@code onBehalfJwt} is non-blank
+     * (see {@link #transcribeForCreator}'s javadoc). Content type falls back to {@code
+     * application/octet-stream} when the browser upload didn't report one.
      */
     private static byte[] buildMultipartBody(
-            String boundary, String workspaceId, byte[] audioBytes, String contentType)
+            String boundary, String workspaceId, byte[] audioBytes, String contentType, String onBehalfJwt)
             throws IOException {
         String audioContentType =
                 (contentType == null || contentType.isBlank()) ? "application/octet-stream" : contentType;
@@ -387,6 +455,10 @@ public class MeeraVoiceAiClient {
         out.write(workspaceId.getBytes(StandardCharsets.UTF_8));
         out.write(CRLF.getBytes(StandardCharsets.UTF_8));
 
+        if (onBehalfJwt != null && !onBehalfJwt.isBlank()) {
+            writeTextPart(out, boundary, "onbehalf_jwt", onBehalfJwt);
+        }
+
         out.write(("--" + boundary + CRLF).getBytes(StandardCharsets.UTF_8));
         out.write(
                 ("Content-Disposition: form-data; name=\"audio\"; filename=\"audio\"" + CRLF)
@@ -397,6 +469,21 @@ public class MeeraVoiceAiClient {
 
         out.write(("--" + boundary + "--" + CRLF).getBytes(StandardCharsets.UTF_8));
         return out.toByteArray();
+    }
+
+    /**
+     * F-audit-A1 — writes one plain-text multipart field (used for the optional {@code
+     * onbehalf_jwt} part in {@link #buildMultipartBody}/{@link #buildFrameMultipartBody}), mirroring
+     * the shape every other text field in this class already writes by hand.
+     */
+    private static void writeTextPart(ByteArrayOutputStream out, String boundary, String name, String value)
+            throws IOException {
+        out.write(("--" + boundary + CRLF).getBytes(StandardCharsets.UTF_8));
+        out.write(
+                ("Content-Disposition: form-data; name=\"" + name + "\"" + CRLF + CRLF)
+                        .getBytes(StandardCharsets.UTF_8));
+        out.write(value.getBytes(StandardCharsets.UTF_8));
+        out.write(CRLF.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
@@ -424,6 +511,28 @@ public class MeeraVoiceAiClient {
      */
     public FrameCheckResult checkFrame(
             String workspaceId, byte[] imageBytes, String contentType, String shotLabel) {
+        return checkFrame(workspaceId, imageBytes, contentType, shotLabel, null, null);
+    }
+
+    /**
+     * F-audit-A1 — CREATOR-audience mirror of {@link #checkFrame(String, byte[], String, String)},
+     * used ONLY by {@code CreatorMeeraController}. See {@link #speakForCreator}'s javadoc for the
+     * full rationale (userType claim + real on-behalf JWT forwarding) — identical here, just for
+     * the frame-check leg. This is also the specific hole A1 names: before this fix NEITHER the
+     * creator monthly cap NOR influora-ai's own consent re-check ever applied to a frame check.
+     */
+    public FrameCheckResult checkFrameForCreator(
+            String workspaceId, byte[] imageBytes, String contentType, String shotLabel, String onBehalfJwt) {
+        return checkFrame(workspaceId, imageBytes, contentType, shotLabel, UserType.CREATOR.name(), onBehalfJwt);
+    }
+
+    private FrameCheckResult checkFrame(
+            String workspaceId,
+            byte[] imageBytes,
+            String contentType,
+            String shotLabel,
+            String userType,
+            String onBehalfJwt) {
         if (workspaceId == null || workspaceId.isBlank() || imageBytes == null || imageBytes.length == 0) {
             log.warn("MeeraVoiceAiClient: missing workspaceId/image, skipping frame check call");
             return FrameCheckResult.failed(0);
@@ -433,8 +542,8 @@ public class MeeraVoiceAiClient {
         byte[] body;
         String boundary = "InfluoraFrameBoundary-" + UUID.randomUUID();
         try {
-            token = tokenService.mint(workspaceId);
-            body = buildFrameMultipartBody(boundary, workspaceId, imageBytes, contentType, shotLabel);
+            token = tokenService.mint(workspaceId, userType);
+            body = buildFrameMultipartBody(boundary, workspaceId, imageBytes, contentType, shotLabel, onBehalfJwt);
         } catch (Exception e) {
             log.warn(
                     "MeeraVoiceAiClient: failed to build frame check request for workspace={}: {}",
@@ -481,11 +590,17 @@ public class MeeraVoiceAiClient {
 
     /**
      * The multipart body influora-ai's frame route reads with {@code form.get(...)}:
-     * {@code workspace_id}, {@code image} and the optional {@code shot_label}. These three names
-     * are pinned against the Python route by {@code tests/routes/test_shoot_check_java_seam.py}.
+     * {@code workspace_id}, {@code image}, the optional {@code shot_label}, and -- F-audit-A1 --
+     * the optional {@code onbehalf_jwt} (see {@link #checkFrameForCreator}'s javadoc). These
+     * names are pinned against the Python route by {@code tests/routes/test_shoot_check_java_seam.py}.
      */
     static byte[] buildFrameMultipartBody(
-            String boundary, String workspaceId, byte[] imageBytes, String contentType, String shotLabel)
+            String boundary,
+            String workspaceId,
+            byte[] imageBytes,
+            String contentType,
+            String shotLabel,
+            String onBehalfJwt)
             throws IOException {
         String imageContentType =
                 (contentType == null || contentType.isBlank()) ? "image/jpeg" : contentType;
@@ -505,6 +620,10 @@ public class MeeraVoiceAiClient {
                             .getBytes(StandardCharsets.UTF_8));
             out.write(shotLabel.getBytes(StandardCharsets.UTF_8));
             out.write(CRLF.getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (onBehalfJwt != null && !onBehalfJwt.isBlank()) {
+            writeTextPart(out, boundary, "onbehalf_jwt", onBehalfJwt);
         }
 
         out.write(("--" + boundary + CRLF).getBytes(StandardCharsets.UTF_8));
