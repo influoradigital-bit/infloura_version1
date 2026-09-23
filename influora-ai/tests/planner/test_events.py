@@ -72,17 +72,24 @@ def _variable(**over) -> dict:
 # --- the committed file ---------------------------------------------------------
 
 
-def test_committed_file_loads_and_every_variable_row_is_still_unverified():
+def test_committed_file_loads_and_every_date_in_it_is_a_real_date_for_its_year():
+    """Dates may now be filled in (see app/planner/EVENT-DATES.md for each one's source). What is
+    checked here is that whatever IS filled in is well formed and filed under the right year - a
+    "2027" key holding a 2026 date would put Diwali a year out. Rows nobody has looked up yet
+    stay empty, and `events_for_week` skips them; that rule is pinned in
+    test_an_unverified_festival_is_left_out_rather_than_dated."""
     rows = EVENT_ROWS
     assert len(rows) == 59
     by_type: dict[str, int] = {}
     for row in rows:
         by_type[row["event_type"]] = by_type.get(row["event_type"], 0) + 1
     assert by_type == {"fixed": 30, "rule": 4, "season": 5, "variable": 20}
-    # Nobody has filled in a lunar date yet, and no date was invented for one.
     for row in rows:
-        if row["event_type"] == "variable":
-            assert row["year_dates"] == {}, row["name"]
+        if row["event_type"] != "variable":
+            continue
+        for year, value in row["year_dates"].items():
+            parsed = date.fromisoformat(value)
+            assert str(parsed.year) == year, (row["name"], year, value)
 
 
 def test_committed_file_has_no_illness_or_mourning_days():

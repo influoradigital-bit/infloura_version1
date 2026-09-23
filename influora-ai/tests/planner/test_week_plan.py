@@ -144,16 +144,29 @@ def test_a_non_dict_payload_is_returned_as_is():
 
 
 def test_an_unverified_festival_is_left_out_rather_than_dated(tmp_path):
-    # Diwali has no verified date in the committed file, and November is its season.
+    """The rule, pinned against a FIXTURE row rather than the shipped data: as soon as somebody
+    fills in a real Diwali date (app/planner/EVENT-DATES.md), a test written against the shipped
+    Diwali would start proving the opposite of what it claims."""
+    unverified = {
+        "event_type": "variable",
+        "name": "Moon Festival (no date on file)",
+        "type": "festival",
+        "fits": ["ALL"],
+        "angles": ["An evergreen idea"],
+        "post_before_days": 3,
+        "sensitivity": "none",
+        "region": "India",
+        "date_status": "needs_verified_date",
+        "year_dates": {},
+    }
     november = _plan(
         today="2026-11-03",
         days=[{"date": f"2026-11-{day:02d}", "weekday": "Tuesday"} for day in range(3, 10)],
         categories=["Food"],
     )
-    enriched = enrich_week_plan(november)
+    enriched = enrich_week_plan(november, rows=[unverified])
     names = {event["name"] for day in enriched["days"] for event in day["events"]}
-    assert "Diwali" not in names
-    assert "Dhanteras" not in names
+    assert names == set(), names
 
 
 def test_a_day_shape_spring_does_not_send_is_left_alone():
