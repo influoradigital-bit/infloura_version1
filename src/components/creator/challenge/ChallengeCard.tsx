@@ -53,7 +53,7 @@ function buildPrompts(
       }
     : {
         script: `Write me a script for today's ${typeLabel.toLowerCase()} — ${when}.`,
-        idea: `Give me a content idea for today's ${typeLabel.toLowerCase()}.`,
+        idea: `Give me an idea for today's ${typeLabel.toLowerCase()}.`,
       };
 }
 

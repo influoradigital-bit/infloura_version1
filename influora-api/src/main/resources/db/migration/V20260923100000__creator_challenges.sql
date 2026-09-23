@@ -48,7 +48,7 @@ CREATE TABLE creator_challenges (
 -- so there is no single row an FK could target.
 CREATE TABLE creator_challenge_days (
     challenge_id     VARCHAR(26)  NOT NULL,
-    day_index        TINYINT      NOT NULL,               -- 0-6
+    day_index        INT          NOT NULL,               -- 0-6 (INT, not TINYINT: the entity's int must pass ddl-auto=validate on MySQL)
     date             DATE         NOT NULL,
     planned_type     VARCHAR(12)  NOT NULL,                -- REEL | CAROUSEL | POST | REST
     window_label     VARCHAR(12)  NULL,                    -- e.g. "evening"

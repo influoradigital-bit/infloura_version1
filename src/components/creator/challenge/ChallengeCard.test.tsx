@@ -261,6 +261,9 @@ describe('ChallengeCard', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Give me an idea' }));
     expect(onAskMeera).toHaveBeenCalledTimes(2);
+    // Asks Meera for an idea for TODAY'S planned post. It must not read as the trend-based
+    // "content idea" feature, which can be switched off (trends-off-copy gate, T-TSOFF-0920).
+    expect(onAskMeera.mock.calls[1][0]).toMatch(/^Give me an idea for today's (reel|carousel|post)\.$/);
   });
 
   it('a 409 CHALLENGE_ALREADY_ACTIVE start error renders a plain message', () => {
