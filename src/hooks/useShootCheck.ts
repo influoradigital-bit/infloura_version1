@@ -5,6 +5,7 @@ import {
   clutter,
   focusVerdict,
   framingVerdict,
+  hasVoiceActivity,
   lightVerdict,
   micVerdict,
   sharpness,
@@ -159,6 +160,14 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  /** The separately-acquired microphone stream (see `start`) — kept apart from `streamRef` (the
+   * camera stream) so each can fail independently and still be torn down in full on `stop()`. */
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  /** Bumped on every `start()` call, and on every `stop()`/unmount/tab-hide — the async body below
+   * checks this after each `await` and abandons (releasing whatever it already acquired) the
+   * instant it no longer matches the token it captured, so a `getUserMedia` that resolves after
+   * the creator already left never turns the camera/mic on behind them. */
+  const startTokenRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const sampleTimerRef = useRef<number | null>(null);
   const inactivityTimerRef = useRef<number | null>(null);
@@ -293,8 +302,12 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
       noiseFloorDbRef.current =
         micLevelDb < noiseFloorDbRef.current ? micLevelDb : noiseFloorDbRef.current + (micLevelDb - noiseFloorDbRef.current) * 0.02;
     }
+    // A silent room reads at (or just above) its own noise floor — judging THAT gap with
+    // micVerdict scores it as "poor-separation" ("Room noise is drowning your voice") with
+    // nobody talking. Only run micVerdict once there is a clear voice signal to judge.
+    const voiceActive = micLevelDb !== null && hasVoiceActivity(micLevelDb, noiseFloorDbRef.current);
     // No analyser means no audio track: say so, never guess. Same discipline as tilt above.
-    const mic = micLevelDb === null ? null : micVerdict(micLevelDb, noiseFloorDbRef.current);
+    const mic = micLevelDb !== null && voiceActive ? micVerdict(micLevelDb, noiseFloorDbRef.current) : null;
 
     const lang = langRef.current;
     const nextReadings: ShootCheckReadings = {
@@ -310,7 +323,7 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
         text: adviceText(backgroundStatus === 'busy' ? 'tidy-background' : 'ok', lang),
       },
       mic:
-        mic === null || micLevelDb === null
+        micLevelDb === null
           ? {
               levelDb: 'unknown',
               noiseFloorDb: 'unknown',
@@ -318,13 +331,24 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
               advice: 'unknown',
               text: adviceText('mic-unknown', lang),
             }
-          : {
-              levelDb: micLevelDb,
-              noiseFloorDb: noiseFloorDbRef.current,
-              status: mic.status,
-              advice: mic.advice,
-              text: adviceText(mic.advice, lang),
-            },
+          : !voiceActive || mic === null
+            ? {
+                // A mic reading exists but nothing is clearly above the room's own noise floor —
+                // a neutral "nothing to check yet" state, not a fault: never `micVerdict`'s
+                // poor-separation copy for a room that's simply quiet.
+                levelDb: 'unknown',
+                noiseFloorDb: 'unknown',
+                status: 'unknown',
+                advice: 'unknown',
+                text: adviceText('mic-no-voice', lang),
+              }
+            : {
+                levelDb: micLevelDb,
+                noiseFloorDb: noiseFloorDbRef.current,
+                status: mic.status,
+                advice: mic.advice,
+                text: adviceText(mic.advice, lang),
+              },
     };
     setReadings(nextReadings);
 
@@ -379,6 +403,11 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
   }, [armInactivityTimer]);
 
   const stop = useCallback(() => {
+    // Invalidate any `start()` still in flight (a pending `getUserMedia`) BEFORE anything else —
+    // when it resolves it will see its captured token no longer matches, release its stream(s)
+    // immediately, and never set phase to 'active'.
+    startTokenRef.current += 1;
+
     if (sampleTimerRef.current !== null) {
       clearInterval(sampleTimerRef.current);
       sampleTimerRef.current = null;
@@ -387,6 +416,8 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
 
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+    audioStreamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
 
     if (orientationListenerAttachedRef.current) {
@@ -422,30 +453,74 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
     if (!supportedRef.current) return;
     if (phaseRef.current === 'starting' || phaseRef.current === 'active') return;
 
+    // This call's own generation. Every check below compares against
+    // `startTokenRef.current` — `stop()`, unmount and tab-hide each bump it, so any of those
+    // happening while a `getUserMedia` below is still pending is detected the instant it resolves.
+    const token = ++startTokenRef.current;
+
     setErrorMessage(null);
     setPhase('starting');
 
     void (async () => {
+      // Video and audio are requested SEPARATELY (not one combined { video, audio } call): a
+      // phone with no microphone, or with only the mic blocked, used to fail the ONE call and
+      // get told the CAMERA was denied, even though the camera was never the problem. Requesting
+      // audio on its own means a mic failure can never block or mis-blame the camera.
+      let videoStream: MediaStream;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          void videoRef.current.play().catch(() => {});
-        }
+        videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
+      } catch {
+        if (startTokenRef.current !== token) return; // cancelled while camera permission was pending
+        setErrorMessage('Camera access was denied — allow camera access in your browser settings to use Shoot Check.');
+        setPhase('denied');
+        return;
+      }
 
-        if (!canvasRef.current) canvasRef.current = document.createElement('canvas');
+      if (startTokenRef.current !== token) {
+        // stop() / unmount / tab-hide happened while getUserMedia was pending — release
+        // immediately and never enter 'active'.
+        videoStream.getTracks().forEach((track) => track.stop());
+        return;
+      }
 
-        if (typeof window !== 'undefined' && window.FaceDetector) {
-          try {
-            faceDetectorRef.current = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
-          } catch {
-            faceDetectorRef.current = null;
-          }
-        } else {
+      streamRef.current = videoStream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = videoStream;
+        void videoRef.current.play().catch(() => {});
+      }
+
+      if (!canvasRef.current) canvasRef.current = document.createElement('canvas');
+
+      if (typeof window !== 'undefined' && window.FaceDetector) {
+        try {
+          faceDetectorRef.current = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 1 });
+        } catch {
           faceDetectorRef.current = null;
         }
+      } else {
+        faceDetectorRef.current = null;
+      }
 
+      // Audio is best-effort: no microphone, or the mic permission specifically denied, leaves
+      // the camera running — `audioStreamRef`/`analyserRef` simply stay null and every mic
+      // reading reports 'unknown' (never a false camera-denied message for an audio problem).
+      let audioStream: MediaStream | null = null;
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch {
+        audioStream = null;
+      }
+
+      if (startTokenRef.current !== token) {
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        if (videoRef.current) videoRef.current.srcObject = null;
+        audioStream?.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
+      audioStreamRef.current = audioStream;
+      if (audioStream) {
         try {
           const AudioCtxCtor =
             window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -453,7 +528,7 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
             const audioCtx = new AudioCtxCtor();
             audioContextRef.current = audioCtx;
             if (audioCtx.state === 'suspended') void audioCtx.resume().catch(() => {});
-            const source = audioCtx.createMediaStreamSource(stream);
+            const source = audioCtx.createMediaStreamSource(audioStream);
             const analyser = audioCtx.createAnalyser();
             analyser.fftSize = 2048;
             source.connect(analyser);
@@ -462,33 +537,43 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
         } catch {
           analyserRef.current = null;
         }
+      }
 
-        if (orientationSupportedRef.current) {
-          window.addEventListener('deviceorientation', handleOrientation);
-          orientationListenerAttachedRef.current = true;
+      if (orientationSupportedRef.current) {
+        window.addEventListener('deviceorientation', handleOrientation);
+        orientationListenerAttachedRef.current = true;
+      }
+
+      // Best-effort screen wake lock — battery/heat guard is a hard cap (INACTIVITY_TIMEOUT_MS)
+      // regardless, so a browser without wake-lock support just relies on that.
+      try {
+        if (navigator.wakeLock) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen');
         }
-
-        // Best-effort screen wake lock — battery/heat guard is a hard cap (INACTIVITY_TIMEOUT_MS)
-        // regardless, so a browser without wake-lock support just relies on that.
-        try {
-          if (navigator.wakeLock) {
-            wakeLockRef.current = await navigator.wakeLock.request('screen');
-          }
-        } catch {
-          wakeLockRef.current = null;
-        }
-
-        sampleTimerRef.current = window.setInterval(sampleOnce, SAMPLE_INTERVAL_MS);
-        armInactivityTimer();
-        setPhase('active');
       } catch {
-        // getUserMedia permission denied, no camera, or any other acquisition failure — a
-        // distinct phase with a message, never a thrown error reaching the caller.
+        wakeLockRef.current = null;
+      }
+
+      if (startTokenRef.current !== token) {
+        // Cancelled during the wake-lock await — same release discipline as above.
         streamRef.current?.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
-        setErrorMessage('Camera access was denied — allow camera access in your browser settings to use Shoot Check.');
-        setPhase('denied');
+        if (videoRef.current) videoRef.current.srcObject = null;
+        audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+        audioStreamRef.current = null;
+        const audioCtx = audioContextRef.current;
+        audioContextRef.current = null;
+        analyserRef.current = null;
+        if (audioCtx && audioCtx.state !== 'closed') void audioCtx.close().catch(() => {});
+        const wakeLock = wakeLockRef.current;
+        wakeLockRef.current = null;
+        if (wakeLock) void wakeLock.release().catch(() => {});
+        return;
       }
+
+      sampleTimerRef.current = window.setInterval(sampleOnce, SAMPLE_INTERVAL_MS);
+      armInactivityTimer();
+      setPhase('active');
     })();
   }, [facingMode, handleOrientation, sampleOnce, armInactivityTimer]);
 
@@ -499,10 +584,17 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
     }
   }, []);
 
-  // Stop on tab hide — a backgrounded tab has no business keeping the camera/mic hot.
+  // Stop on tab hide — a backgrounded tab has no business keeping the camera/mic hot. Also fires
+  // while 'starting' (a `getUserMedia` still pending): `stop()` bumps `startTokenRef`, so that
+  // pending call releases its stream(s) the instant it resolves instead of going 'active' behind
+  // a hidden tab.
   useEffect(() => {
     const handleVisibility = () => {
-      if (typeof document !== 'undefined' && document.hidden && phaseRef.current === 'active') {
+      if (
+        typeof document !== 'undefined' &&
+        document.hidden &&
+        (phaseRef.current === 'active' || phaseRef.current === 'starting')
+      ) {
         stopRef.current();
       }
     };
@@ -515,9 +607,14 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
   // after the component holding this hook is gone.
   useEffect(() => {
     return () => {
+      // Invalidate a `start()` still in flight — same token bump `stop()` does, so a pending
+      // `getUserMedia` that resolves after the component holding this hook is gone releases its
+      // stream(s) instead of setting state on an unmounted hook.
+      startTokenRef.current += 1;
       if (sampleTimerRef.current !== null) clearInterval(sampleTimerRef.current);
       if (inactivityTimerRef.current !== null) clearTimeout(inactivityTimerRef.current);
       streamRef.current?.getTracks().forEach((track) => track.stop());
+      audioStreamRef.current?.getTracks().forEach((track) => track.stop());
       if (orientationListenerAttachedRef.current) window.removeEventListener('deviceorientation', handleOrientation);
       const audioCtx = audioContextRef.current;
       if (audioCtx && audioCtx.state !== 'closed') void audioCtx.close().catch(() => {});

@@ -81,14 +81,22 @@ export function ShootCheckPanel({ shots, lang = 'en-IN' }: ShootCheckPanelProps)
   const online = useOnlineStatus();
 
   const [frameCheck, setFrameCheck] = React.useState<{
-    status: 'idle' | 'loading' | 'done' | 'error';
+    status: 'idle' | 'loading' | 'done' | 'error' | 'capped';
     result: MeeraShootCheckFrameResult | null;
-  }>({ status: 'idle', result: null });
+    message: string | null;
+  }>({ status: 'idle', result: null, message: null });
+
+  /** Bumped whenever the shot changes and at the start of every check — `handleCheckFrame`
+   * compares against this after each `await` and drops a result whose token no longer matches, so
+   * a check for shot 1 that resolves after the creator has already moved to shot 2 can never
+   * clobber the idle state `goToShot` just set with shot 1's stale fixes. */
+  const frameCheckTokenRef = React.useRef(0);
 
   const goToShot = React.useCallback(
     (nextIndex: number) => {
       setShotIndex(Math.max(0, Math.min(script.length - 1, nextIndex)));
-      setFrameCheck({ status: 'idle', result: null });
+      frameCheckTokenRef.current += 1;
+      setFrameCheck({ status: 'idle', result: null, message: null });
       shootCheck.noteInteraction();
     },
     [script.length, shootCheck]
@@ -110,20 +118,26 @@ export function ShootCheckPanel({ shots, lang = 'en-IN' }: ShootCheckPanelProps)
     if (!video) return;
 
     shootCheck.noteInteraction();
-    setFrameCheck({ status: 'loading', result: null });
+    const token = ++frameCheckTokenRef.current;
+    setFrameCheck({ status: 'loading', result: null, message: null });
 
     const blob = await captureDownscaledJpeg(video);
+    if (frameCheckTokenRef.current !== token) return; // shot changed while capturing the frame
     if (!blob) {
-      setFrameCheck({ status: 'error', result: null });
+      setFrameCheck({ status: 'error', result: null, message: null });
       return;
     }
 
-    const result = await meeraApi.checkFrame(blob, currentShot.label || undefined, 'creator');
-    if (!result) {
-      setFrameCheck({ status: 'error', result: null });
-      return;
+    const outcome = await meeraApi.checkFrame(blob, currentShot.label || undefined, 'creator');
+    if (frameCheckTokenRef.current !== token) return; // shot changed while checking — drop the stale result
+
+    if (outcome.kind === 'ok') {
+      setFrameCheck({ status: 'done', result: outcome.result, message: null });
+    } else if (outcome.kind === 'capped') {
+      setFrameCheck({ status: 'capped', result: null, message: outcome.message });
+    } else {
+      setFrameCheck({ status: 'error', result: null, message: null });
     }
-    setFrameCheck({ status: 'done', result });
   }, [frameCheckDisabled, shootCheck, currentShot.label]);
 
   const readings = shootCheck.readings;
@@ -275,6 +289,10 @@ export function ShootCheckPanel({ shots, lang = 'en-IN' }: ShootCheckPanelProps)
 
           {frameCheck.status === 'error' ? (
             <p className="text-sm text-muted-foreground">Couldn’t check your frame right now. Try again in a moment.</p>
+          ) : null}
+
+          {frameCheck.status === 'capped' && frameCheck.message ? (
+            <p className="text-sm text-muted-foreground">{frameCheck.message}</p>
           ) : null}
 
           {frameCheck.status === 'done' && frameCheck.result ? (

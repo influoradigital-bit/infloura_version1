@@ -81,6 +81,13 @@ export const THRESHOLDS = {
   // a loud room and a quiet voice can read the same raw dB as a quiet room and a normal voice) ---
   MIC_GOOD_GAP_DB: 12,
   MIC_LOW_GAP_DB: 6,
+  /** Below this gap there is no voice activity to judge at all — a silent room reads at (or just
+   * above) its own noise floor, and running THAT through `micVerdict` scores it as
+   * `MIC_LOW_GAP_DB`-or-worse ("room noise is drowning your voice") even though nobody is
+   * talking. Deliberately smaller than `MIC_LOW_GAP_DB`: this is a "is anyone speaking at all"
+   * gate, not a quality judgment — a real, poorly-separated voice still clears it and gets
+   * judged by `micVerdict` as before. */
+  MIC_VOICE_ACTIVE_GAP_DB: 4,
 
   // --- framing: face-height as a fraction of frame height, per shot target ---
   FACE_CLOSEUP_MIN_FRACTION: 0.35,
@@ -326,6 +333,19 @@ export function micVerdict(levelDb: number, noiseFloorDb: number): { status: Mic
   if (gap < THRESHOLDS.MIC_LOW_GAP_DB) return { status: 'poor-separation', advice: 'reduce-background-noise' };
   if (gap < THRESHOLDS.MIC_GOOD_GAP_DB) return { status: 'weak-separation', advice: 'move-closer-to-mic' };
   return { status: 'ok', advice: 'ok' };
+}
+
+/**
+ * True when the current level is clearly above the (slow-moving) noise floor — i.e. there is an
+ * actual voice signal to judge. A silent room has `levelDb` sitting AT its own noise floor (the
+ * floor estimate drops instantly toward a quieter reading), so `levelDb - noiseFloorDb` is near
+ * zero there — well under `MIC_LOW_GAP_DB` — and feeding that straight into `micVerdict` reads as
+ * "poor-separation" / "Room noise is drowning your voice" with nobody talking. Callers MUST gate
+ * `micVerdict` on this: only judge the gap once it's this function that says someone is actually
+ * making sound.
+ */
+export function hasVoiceActivity(levelDb: number, noiseFloorDb: number): boolean {
+  return levelDb - noiseFloorDb >= THRESHOLDS.MIC_VOICE_ACTIVE_GAP_DB;
 }
 
 // ---------------------------------------------------------------------------

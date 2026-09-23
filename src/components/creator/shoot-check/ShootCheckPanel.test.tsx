@@ -13,7 +13,7 @@
  * `src/lib/shoot-check/metrics.test.ts`, and the device path itself is still only provable on real
  * hardware.
  */
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ShootCheckReadings } from '@/hooks/useShootCheck';
@@ -24,6 +24,13 @@ vi.mock('@/hooks/useShootCheck', () => ({
   SAMPLE_INTERVAL_MS: 250,
   SPEECH_THROTTLE_MS: 3000,
   INACTIVITY_TIMEOUT_MS: 120_000,
+}));
+
+const { checkFrameMock } = vi.hoisted(() => ({ checkFrameMock: vi.fn() }));
+vi.mock('@/lib/meera-api', () => ({ meeraApi: { checkFrame: checkFrameMock } }));
+
+vi.mock('@/lib/shoot-check/capture-frame', () => ({
+  captureDownscaledJpeg: vi.fn().mockResolvedValue(new Blob(['x'], { type: 'image/jpeg' })),
 }));
 
 import { ShootCheckPanel, type ShootCheckShot } from './ShootCheckPanel';
@@ -57,7 +64,9 @@ function mockHook(readings: ShootCheckReadings | null): void {
     phase: readings ? 'active' : 'idle',
     errorMessage: null,
     readings,
-    videoRef: { current: null },
+    // Truthy so `handleCheckFrame` (guarded on `videoRef.current`) actually runs — the specific
+    // element shape doesn't matter, `captureDownscaledJpeg` is mocked below.
+    videoRef: { current: document.createElement('video') },
     start: vi.fn(),
     stop: vi.fn(),
     muted: false,
@@ -75,6 +84,7 @@ const SCRIPT: ShootCheckShot[] = [
 
 beforeEach(() => {
   useShootCheckMock.mockReset();
+  checkFrameMock.mockReset();
 });
 
 describe('shot numbering', () => {
@@ -117,5 +127,82 @@ describe('before the camera starts', () => {
     render(<ShootCheckPanel shots={SCRIPT} />);
     expect(screen.getByText(/Light/)).toBeTruthy();
     expect(screen.getByText(/Mic/)).toBeTruthy();
+  });
+});
+
+/**
+ * C5 — a frame check's result used to be applied unconditionally whenever the request resolved,
+ * with no check that the creator was still looking at the same shot. `goToShot` already resets
+ * `frameCheck` to idle on Next/Previous, but a check started on shot 1 that only RESOLVES after
+ * the creator has already moved to shot 2 was applied afterwards anyway, clobbering that reset
+ * and showing shot 1's fixes under shot 2's header.
+ */
+describe('a frame check belongs to the shot it was taken for', () => {
+  it('drops a frame-check result that resolves after the creator already moved to the next shot', async () => {
+    let resolveCheck!: (value: unknown) => void;
+    checkFrameMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCheck = resolve;
+      })
+    );
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    await waitFor(() => expect(checkFrameMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next shot' }));
+    expect(screen.getByText(/Shot 2 of 3/)).toBeTruthy();
+
+    await act(async () => {
+      resolveCheck({ kind: 'ok', result: { fixes: ['Stale fix from shot 1'], settings: [], ok: [] } });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText('Stale fix from shot 1')).toBeNull();
+    // Still on shot 2, still showing the idle "Check my frame" button, not a stray result.
+    expect(screen.getByText(/Shot 2 of 3/)).toBeTruthy();
+  });
+
+  it('a result that resolves before any shot change is shown normally', async () => {
+    checkFrameMock.mockResolvedValue({ kind: 'ok', result: { fixes: ['Move closer'], settings: [], ok: [] } });
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    await waitFor(() => expect(screen.getByText('Move closer')).toBeTruthy());
+  });
+});
+
+/**
+ * C4 — influora-ai returns HTTP 200 with `fallback: true` on every failure and gate-block path,
+ * `fixes` filled with placeholder text (never a real check). `meeraApi.checkFrame` now turns that
+ * into `{kind: 'unavailable'}` (or `{kind: 'capped', message}` for the one case with something to
+ * say), so the panel must never render a fallback body as a real "Fix" card.
+ */
+describe('a fallback response from influora-ai is never shown as a real check result', () => {
+  it('shows the generic "could not check" line, not a Fix card, for an ordinary fallback', async () => {
+    checkFrameMock.mockResolvedValue({ kind: 'unavailable' });
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    await waitFor(() => expect(screen.getByText(/Couldn.t check your frame right now/)).toBeTruthy());
+    expect(screen.queryByText('Fix')).toBeNull();
+  });
+
+  it('shows the creator-cap message, not a Fix card, when the cap fallback comes back', async () => {
+    checkFrameMock.mockResolvedValue({
+      kind: 'capped',
+      message: "You've reached your monthly Meera usage limit. It resets on the 1st of next month.",
+    });
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    await waitFor(() => expect(screen.getByText(/monthly Meera usage limit/)).toBeTruthy());
+    expect(screen.queryByText('Fix')).toBeNull();
+    expect(screen.queryByText(/Couldn.t check your frame right now/)).toBeNull();
   });
 });

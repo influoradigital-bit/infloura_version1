@@ -28,6 +28,7 @@ type AdviceKey =
   | 'unknown'
   | 'tilt-unknown'
   | 'mic-unknown'
+  | 'mic-no-voice'
   | 'tidy-background';
 
 const COPY: Record<AdviceKey, Record<ShootCheckLang, string>> = {
@@ -66,6 +67,13 @@ const COPY: Record<AdviceKey, Record<ShootCheckLang, string>> = {
   'mic-unknown': {
     'en-IN': 'No microphone reading — check your sound on a test recording',
     'hi-IN': 'माइक की रीडिंग नहीं मिली — एक टेस्ट रिकॉर्डिंग से आवाज़ जाँच लें',
+  },
+  // A mic IS attached and readable, but nothing is clearly above the room's own noise floor yet —
+  // not a fault (there is nothing to judge), so this is deliberately NOT phrased as a problem the
+  // way 'reduce-background-noise' is, and useShootCheck never speaks it (see `hasVoiceActivity`).
+  'mic-no-voice': {
+    'en-IN': 'Say a line to check your sound',
+    'hi-IN': 'अपनी आवाज़ जाँचने के लिए एक लाइन बोलें',
   },
 
   // mic

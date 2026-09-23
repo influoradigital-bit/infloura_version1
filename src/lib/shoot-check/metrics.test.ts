@@ -23,6 +23,7 @@ import {
   clutter,
   focusVerdict,
   framingVerdict,
+  hasVoiceActivity,
   lightVerdict,
   micVerdict,
   sharpness,
@@ -256,5 +257,31 @@ describe('micVerdict', () => {
     const thin = micVerdict(-20, -20 - (THRESHOLDS.MIC_GOOD_GAP_DB - 1))
     expect(thin.status).toBe('weak-separation')
     expect(thin.advice).toBe('move-closer-to-mic')
+  })
+})
+
+describe('hasVoiceActivity', () => {
+  // C3: a silent room reads AT its own noise floor (the floor estimate drops instantly toward a
+  // quieter reading), so `levelDb - noiseFloorDb` is near zero there. Feeding that gap straight
+  // into `micVerdict` — the bug this function exists to prevent — scores it 'poor-separation'
+  // ("Room noise is drowning your voice") with nobody talking, which is exactly what
+  // `micVerdict` on its own still does below: this documents the trap, `hasVoiceActivity` is the
+  // gate `useShootCheck` must check first.
+  it('a silent room (level at its own noise floor) has no voice activity', () => {
+    expect(hasVoiceActivity(-40, -40)).toBe(false)
+    // The undetected trap: this exact reading still reads as a fault if judged directly.
+    expect(micVerdict(-40, -40).status).toBe('poor-separation')
+  })
+
+  it('a level only barely above the floor is still not voice activity', () => {
+    expect(hasVoiceActivity(-40, -40 - (THRESHOLDS.MIC_VOICE_ACTIVE_GAP_DB - 1))).toBe(false)
+  })
+
+  it('a level clearly above the floor IS voice activity, right at the boundary', () => {
+    expect(hasVoiceActivity(-40, -40 - THRESHOLDS.MIC_VOICE_ACTIVE_GAP_DB)).toBe(true)
+  })
+
+  it('a real, loud voice over a loud room is still voice activity', () => {
+    expect(hasVoiceActivity(-10, -10 - THRESHOLDS.MIC_GOOD_GAP_DB)).toBe(true)
   })
 })
