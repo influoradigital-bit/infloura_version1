@@ -327,3 +327,22 @@ def test_creator_context_payload_fields_include_the_consent_key():
     assert "consent_accepted" in CREATOR_CONTEXT_PAYLOAD_FIELDS
     assert "floors" in CREATOR_CONTEXT_PAYLOAD_FIELDS
     assert "identity" in CREATOR_CONTEXT_PAYLOAD_FIELDS
+
+
+def test_no_language_on_file_means_english_not_hindi():
+    """Swapnil 2026-09-23: English is the default; Hindi only when the creator has it on file
+    (or switches mid-chat, which the persona's language rule covers)."""
+    ctx = _ctx()
+    ctx.pop("creator_language", None)
+    persona = get_creator_persona(ctx)
+    assert "Reply language: en-IN" in persona
+    assert "Reply language: hi-IN" not in persona
+
+
+def test_a_creator_with_hindi_on_file_still_gets_hindi():
+    assert "Reply language: hi-IN" in get_creator_persona(_ctx(creator_language="hi-IN"))
+
+
+def test_persona_tells_meera_to_switch_when_the_creator_switches():
+    persona = get_creator_persona(_ctx())
+    assert "asks you to switch" in persona
