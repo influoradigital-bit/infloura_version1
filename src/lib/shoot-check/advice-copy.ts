@@ -19,7 +19,16 @@ export type ShootCheckLang = 'en-IN' | 'hi-IN';
  * single `if`). The copy still belongs in this shared table so the on-screen text and any future
  * spoken cue for it stay in lockstep like every other reading.
  */
-type AdviceKey = FramingAdvice | TiltAdvice | LightAdvice | FocusAdvice | MicAdvice | 'unknown' | 'tidy-background';
+type AdviceKey =
+  | FramingAdvice
+  | TiltAdvice
+  | LightAdvice
+  | FocusAdvice
+  | MicAdvice
+  | 'unknown'
+  | 'tilt-unknown'
+  | 'mic-unknown'
+  | 'tidy-background';
 
 const COPY: Record<AdviceKey, Record<ShootCheckLang, string>> = {
   // framing
@@ -45,7 +54,19 @@ const COPY: Record<AdviceKey, Record<ShootCheckLang, string>> = {
     'en-IN': 'Looks blurry — hold steady or wipe the lens',
     'hi-IN': 'धुंधला लग रहा है — कैमरा स्थिर रखें',
   },
+  // One key per UNKNOWN reason. These were a single `unknown` key, so the tilt row rendered the
+  // focus sentence ("Too dark to check focus") whenever a phone had no orientation sensor —
+  // found by running the panel against a synthetic camera in a real browser, where tilt is always
+  // unknown. A shared key across two readings cannot say why either one is unknown.
   unknown: { 'en-IN': 'Too dark to check focus', 'hi-IN': 'फ़ोकस जाँचने के लिए बहुत अँधेरा है' },
+  'tilt-unknown': {
+    'en-IN': 'This phone doesn’t report tilt — check the edges of the frame look level',
+    'hi-IN': 'यह फ़ोन झुकाव नहीं बताता — फ़्रेम के किनारे देखकर सीधा करें',
+  },
+  'mic-unknown': {
+    'en-IN': 'No microphone reading — check your sound on a test recording',
+    'hi-IN': 'माइक की रीडिंग नहीं मिली — एक टेस्ट रिकॉर्डिंग से आवाज़ जाँच लें',
+  },
 
   // mic
   'reduce-background-noise': { 'en-IN': 'Room noise is drowning your voice — find a quieter spot', 'hi-IN': 'कमरे का शोर ज़्यादा है' },

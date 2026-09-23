@@ -67,7 +67,17 @@ export interface ShootCheckReadings {
    * reports orientation — a silent 0 would read as "perfectly level" instead of "we don't know". */
   tilt: { degrees: number | 'unknown'; status: TiltStatus | 'unknown'; advice: TiltAdvice | 'unknown'; text: string };
   background: { clutter: number; status: 'ok' | 'busy'; text: string };
-  mic: { levelDb: number; noiseFloorDb: number; status: MicStatus; advice: MicAdvice; text: string };
+  /** `status`/`advice` are `'unknown'` when the stream carries no audio track (a camera-only
+   * permission, a device with no usable mic, a synthetic stream). Never a verdict: with no
+   * samples, `micVerdict` was reading the default floor as a real room and telling creators their
+   * voice was being drowned out when nothing had been measured at all. */
+  mic: {
+    levelDb: number | 'unknown';
+    noiseFloorDb: number | 'unknown';
+    status: MicStatus | 'unknown';
+    advice: MicAdvice | 'unknown';
+    text: string;
+  };
 }
 
 export interface UseShootCheckOptions {
@@ -273,7 +283,7 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
     const tiltDegrees = tiltRef.current;
     const tiltResult = tiltDegrees === 'unknown' ? null : tiltVerdict(tiltDegrees);
 
-    let micLevelDb = -60;
+    let micLevelDb: number | null = null;
     const analyser = analyserRef.current;
     if (analyser) {
       micLevelDb = readMicLevelDb(analyser);
@@ -283,7 +293,8 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
       noiseFloorDbRef.current =
         micLevelDb < noiseFloorDbRef.current ? micLevelDb : noiseFloorDbRef.current + (micLevelDb - noiseFloorDbRef.current) * 0.02;
     }
-    const mic = micVerdict(micLevelDb, noiseFloorDbRef.current);
+    // No analyser means no audio track: say so, never guess. Same discipline as tilt above.
+    const mic = micLevelDb === null ? null : micVerdict(micLevelDb, noiseFloorDbRef.current);
 
     const lang = langRef.current;
     const nextReadings: ShootCheckReadings = {
@@ -292,13 +303,28 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
       framing: { status: framing.status, advice: framing.advice, text: adviceText(framing.advice, lang) },
       tilt: tiltResult
         ? { degrees: tiltDegrees as number, status: tiltResult.status, advice: tiltResult.advice, text: adviceText(tiltResult.advice, lang) }
-        : { degrees: 'unknown', status: 'unknown', advice: 'unknown', text: adviceText('unknown', lang) },
+        : { degrees: 'unknown', status: 'unknown', advice: 'unknown', text: adviceText('tilt-unknown', lang) },
       background: {
         clutter: clutterValue,
         status: backgroundStatus,
         text: adviceText(backgroundStatus === 'busy' ? 'tidy-background' : 'ok', lang),
       },
-      mic: { levelDb: micLevelDb, noiseFloorDb: noiseFloorDbRef.current, status: mic.status, advice: mic.advice, text: adviceText(mic.advice, lang) },
+      mic:
+        mic === null || micLevelDb === null
+          ? {
+              levelDb: 'unknown',
+              noiseFloorDb: 'unknown',
+              status: 'unknown',
+              advice: 'unknown',
+              text: adviceText('mic-unknown', lang),
+            }
+          : {
+              levelDb: micLevelDb,
+              noiseFloorDb: noiseFloorDbRef.current,
+              status: mic.status,
+              advice: mic.advice,
+              text: adviceText(mic.advice, lang),
+            },
     };
     setReadings(nextReadings);
 
@@ -315,7 +341,12 @@ export function useShootCheck({ target, facingMode = 'user', lang = 'en-IN' }: U
         text: nextReadings.tilt.text,
       },
       { key: `background:${backgroundStatus}`, ok: backgroundStatus === 'ok', text: nextReadings.background.text },
-      { key: `mic:${mic.advice}`, ok: mic.advice === 'ok', text: nextReadings.mic.text },
+      // An unknown mic is not a problem to speak about — there is nothing for the creator to fix.
+      {
+        key: `mic:${nextReadings.mic.advice}`,
+        ok: nextReadings.mic.advice === 'ok' || nextReadings.mic.advice === 'unknown',
+        text: nextReadings.mic.text,
+      },
     ];
     const urgent = candidates.find((c) => !c.ok);
     if (urgent) {

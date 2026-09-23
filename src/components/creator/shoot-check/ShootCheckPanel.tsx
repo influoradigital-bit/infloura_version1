@@ -14,6 +14,9 @@ import { FramingGuide } from './FramingGuide';
 import { ReadingRow, type ReadingSeverity } from './ReadingRow';
 
 export interface ShootCheckShot {
+  /** The script's own number for this beat, for the caller's reference only. The header
+   * numbers shots by POSITION in the array — trusting this field made a 1-based script read
+   * "Shot 2 of 3" on its first shot. */
   index: number;
   label: string;
   seconds: number;
@@ -36,8 +39,10 @@ const GENERIC_TIPS: Array<{ label: string; fix: string }> = [
   { label: 'Mic', fix: 'Move closer to the phone and away from noisy rooms.' },
 ];
 
-function shotHeaderText(shot: ShootCheckShot, total: number): string {
-  const base = `Shot ${shot.index + 1} of ${total}`;
+function shotHeaderText(shot: ShootCheckShot, total: number, position: number): string {
+  // Numbered by POSITION (0-based) in the script array, not by `shot.index`: a caller numbering
+  // its own beats from 1 made the first shot render as "Shot 2 of 3".
+  const base = `Shot ${position + 1} of ${total}`;
   const parts = [shot.label, shot.seconds ? `${shot.seconds}s` : null].filter((p): p is string => Boolean(p));
   return parts.length ? `${base} - ${parts.join(', ')}` : base;
 }
@@ -166,7 +171,10 @@ export function ShootCheckPanel({ shots, workspaceId = 'me', lang = 'en-IN' }: S
         {
           icon: <Mic className="size-4" />,
           label: 'Mic',
-          value: `${Math.round(readings.mic.levelDb - readings.mic.noiseFloorDb)} dB gap`,
+          value:
+            readings.mic.levelDb === 'unknown' || readings.mic.noiseFloorDb === 'unknown'
+              ? '—'
+              : `${Math.round(readings.mic.levelDb - readings.mic.noiseFloorDb)} dB gap`,
           severity: micSeverity(readings.mic.status),
           fix: readings.mic.text,
         },
@@ -183,7 +191,7 @@ export function ShootCheckPanel({ shots, workspaceId = 'me', lang = 'en-IN' }: S
     <div className="flex flex-col gap-4">
       <Card>
         <CardHeader className="flex-row items-center justify-between gap-2">
-          <CardTitle className="text-base">{shotHeaderText(currentShot, script.length)}</CardTitle>
+          <CardTitle className="text-base">{shotHeaderText(currentShot, script.length, clampedIndex)}</CardTitle>
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
@@ -333,7 +341,9 @@ function tiltSeverity(status: 'ok' | 'warn' | 'bad' | 'unknown'): ReadingSeverit
   return status;
 }
 
-function micSeverity(status: 'poor-separation' | 'weak-separation' | 'ok'): ReadingSeverity {
+function micSeverity(status: 'poor-separation' | 'weak-separation' | 'ok' | 'unknown'): ReadingSeverity {
+  // 'unknown' is not a fault: with no audio track there is nothing measured to be good or bad.
+  if (status === 'unknown') return 'unknown';
   if (status === 'poor-separation') return 'bad';
   if (status === 'weak-separation') return 'warn';
   return 'ok';
