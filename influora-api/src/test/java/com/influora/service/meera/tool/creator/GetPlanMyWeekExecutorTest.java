@@ -115,4 +115,35 @@ class GetPlanMyWeekExecutorTest {
         assertEquals(5, result.pattern().windows().get(0).posts());
         assertEquals("4.8%", result.pattern().windows().get(0).engagementRate());
     }
+
+    @Test
+    @DisplayName(
+            "the creator's OWN categories travel in the result -- influora-ai's festival calendar"
+                    + " filters on them, and 50 of its 59 rows are category-specific")
+    void testCategoriesAreSentForTheCalendarToFilterOn() {
+        when(contentTopicService.resolveCreatorCategories(CREATOR_USER_ID))
+                .thenReturn(List.of("Food", "Beauty & skincare"));
+        when(contentTopicService.topicsFor(eq(CREATOR_USER_ID), any())).thenReturn(List.of());
+        when(creatorPostingPatternService.analyse(eq(CREATOR_USER_ID), any()))
+                .thenReturn(new PostingPattern(false, 0, null, List.of(), "Not enough posts yet."));
+
+        GetPlanMyWeekExecutor executor =
+                new GetPlanMyWeekExecutor(contentTopicService, creatorPostingPatternService);
+        PlanMyWeekResult result = executor.execute(CREATOR_USER_ID, Map.of());
+
+        assertEquals(List.of("Food", "Beauty & skincare"), result.categories());
+    }
+
+    @Test
+    @DisplayName("a creator with no categories on file sends an empty list, never null")
+    void testNoCategoriesIsAnEmptyList() {
+        when(contentTopicService.resolveCreatorCategories(CREATOR_USER_ID)).thenReturn(List.of());
+        when(contentTopicService.topicsFor(eq(CREATOR_USER_ID), any())).thenReturn(List.of());
+        when(creatorPostingPatternService.analyse(eq(CREATOR_USER_ID), any()))
+                .thenReturn(new PostingPattern(false, 0, null, List.of(), "Not enough posts yet."));
+
+        GetPlanMyWeekExecutor executor =
+                new GetPlanMyWeekExecutor(contentTopicService, creatorPostingPatternService);
+        assertEquals(List.of(), executor.execute(CREATOR_USER_ID, Map.of()).categories());
+    }
 }

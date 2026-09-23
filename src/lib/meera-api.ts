@@ -666,6 +666,12 @@ export const CREATOR_TOOL_NAMES = [
   'get_my_metrics',
   'check_deal_risks',
   'draft_reply',
+  // T-CONTENT-TOPICS / T-PLAN-MY-WEEK. A name missing here is dropped by `isCreatorToolName`,
+  // so the chat shows NOTHING for that tool call - no card, and no step in the work trail,
+  // while Meera was in fact reading the topics or planning the week. Kept in step with
+  // influora-ai's own CREATOR_TOOL_NAMES by meera-api.creator-tools-in-sync.test.ts.
+  'get_todays_topics',
+  'plan_my_week',
 ] as const;
 
 export type CreatorToolName = (typeof CREATOR_TOOL_NAMES)[number];

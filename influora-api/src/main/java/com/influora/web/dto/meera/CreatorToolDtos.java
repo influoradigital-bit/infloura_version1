@@ -264,6 +264,15 @@ public final class CreatorToolDtos {
     public record PlanMyWeekResult(
             @JsonProperty("today") String today,
             @JsonProperty("days") List<PlanDay> days,
+            /**
+             * The creator's own categories, exactly as stored. influora-ai's {@code
+             * app/planner/week_plan.py} filters the festival and season calendar against these:
+             * 50 of its 59 rows are category-specific, so without this field only the 9 rows
+             * marked {@code ALL} could ever attach and a food creator would never be told World
+             * Food Day is coming. Empty when the creator has no categories on file, which is a
+             * real state, not an error.
+             */
+            @JsonProperty("categories") List<String> categories,
             @JsonProperty("topics") List<TopicResult> topics,
             @JsonProperty("pattern") PatternResult pattern) {}
 }

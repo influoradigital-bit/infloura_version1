@@ -635,6 +635,7 @@ class CreatorMeeraToolControllerTest {
                 "2026-09-23",
                 List.of(),
                 List.of(),
+                List.of(),
                 new PatternResult(false, 0, null, List.of(), "Not enough posts yet."));
     }
 

@@ -57,12 +57,16 @@ public class GetPlanMyWeekExecutor {
         LocalDate today = LocalDate.now(IST);
 
         List<PlanDay> days = buildDays(today);
+        // The SAME lookup topicsFor performs, so the categories the calendar filters on and the
+        // ones the topics were screened against can never disagree.
+        List<String> categories = contentTopicService.resolveCreatorCategories(creatorUserId);
         List<ServableTopic> topics = contentTopicService.topicsFor(creatorUserId, today);
         PostingPattern pattern = creatorPostingPatternService.analyse(creatorUserId, today);
 
         return new PlanMyWeekResult(
                 today.toString(),
                 days,
+                categories,
                 topics.stream().map(GetPlanMyWeekExecutor::toTopicResult).toList(),
                 toPatternResult(pattern));
     }
