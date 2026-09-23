@@ -201,3 +201,51 @@ export const STARTER_PROMPTS: StarterPrompt[] = [
   { key: 'reel-script', text: { en: 'Write me a reel script', hi: 'मेरे लिए एक रील स्क्रिप्ट लिखो' } },
   { key: 'review-profile', text: { en: 'Review my profile', hi: 'मेरी प्रोफ़ाइल की समीक्षा करो' } },
 ];
+
+// ---------------------------------------------------------------------------
+// Part C — Meera's results as finished cards (PHASE-C-SPEC.md)
+// ---------------------------------------------------------------------------
+
+export const SCRIPT_CARD_LENGTH_PREFIX: BilingualText = { en: 'Length', hi: 'लंबाई' };
+export const SCRIPT_CARD_HOOK_LABEL: BilingualText = { en: 'Hook', hi: 'हुक' };
+export const SCRIPT_CARD_CTA_LABEL: BilingualText = { en: 'Call to action', hi: 'कॉल टू एक्शन' };
+export const SCRIPT_CARD_WHY_LABEL: BilingualText = { en: 'Why this works', hi: 'यह क्यों काम करता है' };
+
+export const REVIEW_CARD_WORKING_LABEL: BilingualText = { en: 'Working', hi: 'क्या काम कर रहा है' };
+export const REVIEW_CARD_NOT_WORKING_LABEL: BilingualText = {
+  en: 'Not working',
+  hi: 'क्या काम नहीं कर रहा',
+};
+export const REVIEW_CARD_NEXT_STEPS_LABEL: BilingualText = { en: 'Next steps', hi: 'अगले कदम' };
+
+/** Copy button, both cards. */
+export const RESULT_CARD_COPY: BilingualText = { en: 'Copy', hi: 'कॉपी करें' };
+export const RESULT_CARD_COPIED: BilingualText = { en: 'Copied', hi: 'कॉपी हो गया' };
+
+/** R-U1 — prefill only, never sent automatically. Shown as the button's own label, same pattern
+ *  as `STARTER_PROMPTS` on the desk. */
+/** Short button labels. The *_PROMPT strings below are what gets typed into the composer;
+ *  using a whole sentence as a button label made the card look like a wall of text. */
+export const SCRIPT_CARD_ANOTHER_HOOK_LABEL: BilingualText = {
+  en: 'Another hook',
+  hi: 'दूसरा हुक',
+};
+export const REVIEW_CARD_WHAT_FIRST_LABEL: BilingualText = {
+  en: 'What should I do first?',
+  hi: 'पहले क्या करूँ?',
+};
+
+export const SCRIPT_CARD_ANOTHER_HOOK_PROMPT: BilingualText = {
+  en: 'Give me another hook for this script',
+  hi: 'इस स्क्रिप्ट के लिए एक और हुक दो',
+};
+
+export const REVIEW_CARD_WHAT_FIRST_PROMPT: BilingualText = {
+  en: 'What should I do first?',
+  hi: 'मुझे पहले क्या करना चाहिए?',
+};
+
+/** The toggle that reveals the original message text under a rendered card, and its "back to
+ *  card" counterpart. Never discards the original text — see `MeeraCopilotChat.tsx`. */
+export const RESULT_CARD_SHOW_AS_TEXT: BilingualText = { en: 'Show as text', hi: 'टेक्स्ट के रूप में दिखाएं' };
+export const RESULT_CARD_SHOW_AS_CARD: BilingualText = { en: 'Show as card', hi: 'कार्ड के रूप में दिखाएं' };

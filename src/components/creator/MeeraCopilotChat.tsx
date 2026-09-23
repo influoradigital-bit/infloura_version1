@@ -16,7 +16,15 @@ import { isCreatorToolName, meeraApi, type CreatorToolName } from '@/lib/meera-a
 import { CreatorToolResultRenderer } from '@/components/creator/meera/CreatorToolResultRenderer';
 import { MeeraWorkTrail } from '@/components/creator/meera/MeeraWorkTrail';
 import { MeeraDesk } from '@/components/creator/meera/MeeraDesk';
+import { MeeraScriptCard } from '@/components/creator/meera/MeeraScriptCard';
+import { MeeraReviewCard } from '@/components/creator/meera/MeeraReviewCard';
 import { uniqueId } from '@/lib/unique-id';
+import {
+  parseMeeraReview,
+  parseMeeraScript,
+  type ParsedMeeraReview,
+  type ParsedMeeraScript,
+} from '@/lib/meera-result-cards';
 import { useMeeraStream } from '@/hooks/useMeeraStream';
 import { useVoiceOutput } from '@/hooks/useVoiceOutput';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
@@ -28,6 +36,8 @@ import {
   HEADER_STATUS_ONLINE,
   HEADER_STATUS_SPEAKING,
   HEADER_STATUS_WORKING,
+  RESULT_CARD_SHOW_AS_CARD,
+  RESULT_CARD_SHOW_AS_TEXT,
   TRAIL_UNDERSTANDING,
   TRUST_LINE,
   pickLang,
@@ -62,6 +72,15 @@ interface CreatorToolResult {
   errorMessage?: string;
 }
 
+/**
+ * PHASE-C-SPEC.md §2/§3 — the parsed shape of a finished-card message, or `undefined` for every
+ * normal reply. A union keyed on `kind` rather than two optional fields, so a message can never
+ * carry both (or neither with a truthy discriminant) by construction.
+ */
+type ChatMessageResultCard =
+  | { kind: 'script'; script: ParsedMeeraScript }
+  | { kind: 'review'; review: ParsedMeeraReview };
+
 interface ChatMessage {
   id: string;
   role: 'meera' | 'creator';
@@ -77,6 +96,33 @@ interface ChatMessage {
    * carry `toolResults`.
    */
   toolTrailDone?: boolean;
+  /**
+   * PHASE-C-SPEC.md §3 — set only for a `meera` message whose FINAL text parsed as a script or a
+   * review (`parseResultCard` below). Never set from partial/streaming text — see the `onDone`
+   * handler, the only place a live turn's card is computed.
+   */
+  resultCard?: ChatMessageResultCard;
+  /** PHASE-C-SPEC.md §3 — "Show as text" toggle state for a message that has a `resultCard`.
+   *  `m.text` itself is never touched by this: the card renders while false, the ORIGINAL text
+   *  renders unchanged while true. Undefined/false is "show the card". */
+  showRawText?: boolean;
+}
+
+/**
+ * PHASE-C-SPEC.md §1/§3 — tries the script contract, then the review contract, on a FINISHED
+ * message's text. Returns `undefined` (never a partial object) the instant either parser does,
+ * so the caller's fallback is always "render the plain bubble", exactly as if this function did
+ * not exist.
+ */
+/** What mock mode answers with when there is no backend to talk to. */
+const MOCK_MODE_REPLY = 'This is mock mode — connect a live backend to chat with Meera.';
+
+function parseResultCard(text: string): ChatMessageResultCard | undefined {
+  const script = parseMeeraScript(text);
+  if (script) return { kind: 'script', script };
+  const review = parseMeeraReview(text);
+  if (review) return { kind: 'review', review };
+  return undefined;
 }
 
 /**
@@ -260,7 +306,13 @@ export function MeeraCopilotChat({
               if (onCancelledRef.current) return;
               if (history.length > 0) {
                 setMessages(
-                  history.map((m) => ({ id: m.id, role: m.role === 'ASSISTANT' ? 'meera' : 'creator', text: m.content })),
+                  history.map((m) => {
+                    const role: ChatMessage['role'] = m.role === 'ASSISTANT' ? 'meera' : 'creator';
+                    // History text is always complete (never a streaming partial), so it is safe
+                    // to parse immediately rather than deferring to an `onDone` this row has no
+                    // stream for.
+                    return { id: m.id, role, text: m.content, resultCard: role === 'meera' ? parseResultCard(m.content) : undefined };
+                  }),
                 );
               } else {
                 // Backend day-one onboarding hasn't sent a first turn yet (or this build predates
@@ -364,7 +416,14 @@ export function MeeraCopilotChat({
       window.setTimeout(() => {
         setMessages((prev) => [
           ...prev,
-          { id: uniqueId('meera-mock'), role: 'meera', text: 'This is mock mode — connect a live backend to chat with Meera.' },
+          // Parsed like every other Meera message (Phase C): a demo must show what the live
+          // product shows, so a script/review reply renders as a card here too.
+          {
+            id: uniqueId('meera-mock'),
+            role: 'meera',
+            text: MOCK_MODE_REPLY,
+            resultCard: parseResultCard(MOCK_MODE_REPLY),
+          },
         ]);
       }, 500);
       return;
@@ -409,7 +468,12 @@ export function MeeraCopilotChat({
       .then((turnRes) => {
         if (turnRes.reply != null) {
           const replyText = turnRes.reply.trim() || "Sorry, I lost my train of thought there. Say that again?";
-          setMessages((prev) => [...prev, { id: assistantId, role: 'meera', text: replyText }]);
+          // Non-streaming reply — the text is already final, so (PHASE-C-SPEC.md §3) it is parsed
+          // immediately rather than waiting for a stream `onDone` this path never opens.
+          setMessages((prev) => [
+            ...prev,
+            { id: assistantId, role: 'meera', text: replyText, resultCard: parseResultCard(replyText) },
+          ]);
           speak(replyText, language);
           setSending(false);
           return;
@@ -503,6 +567,15 @@ export function MeeraCopilotChat({
                   bubbleAdded
                     ? prev.map((m) => (m.id === assistantId ? { ...m, text: assistantText } : m))
                     : [...prev, { id: assistantId, role: 'meera', text: assistantText }],
+                );
+              }
+              // PHASE-C-SPEC.md §3 — parse ONLY here, now that the turn is fully finished. Never
+              // on `onToken`'s partial text, or a half-written script would flash a broken card
+              // before settling into its real shape.
+              const resultCard = parseResultCard(assistantText);
+              if (resultCard) {
+                setMessages((prev) =>
+                  prev.map((m) => (m.id === assistantId ? { ...m, resultCard } : m)),
                 );
               }
               speak(assistantText, language);
@@ -723,25 +796,67 @@ export function MeeraCopilotChat({
                 can attach to this turn before the first token arrives. `onToken`/`onDone` fill the
                 text in, and the bubble appears then. */}
             {m.text ? (
-              <div className={cn('flex items-end gap-1.5', m.role === 'creator' ? 'justify-end' : 'justify-start')}>
-                {/* Part 0.2 — Meera's bubbles get a small orb-coloured dot avatar. */}
-                {m.role === 'meera' && (
-                  <span
-                    className="mb-1 h-2 w-2 shrink-0 rounded-full bg-primary"
-                    aria-hidden="true"
-                  />
-                )}
-                <div
-                  className={cn(
-                    'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
-                    m.role === 'creator'
-                      ? 'bg-primary text-primary-foreground'
-                      : 'border border-border bg-white text-foreground',
+              m.role === 'meera' && m.resultCard && !m.showRawText ? (
+                // PHASE-C-SPEC.md §3 — a finished script/review renders as its card INSTEAD of
+                // the bubble. `rawText={m.text}` is the untouched original — Copy and "Show as
+                // text" both read from it, never from a re-serialized version of the parsed
+                // fields.
+                <div className="max-w-[85%]">
+                  {m.resultCard.kind === 'script' ? (
+                    <MeeraScriptCard
+                      script={m.resultCard.script}
+                      rawText={m.text}
+                      language={language}
+                      onPrefill={prefillComposer}
+                    />
+                  ) : (
+                    <MeeraReviewCard
+                      review={m.resultCard.review}
+                      rawText={m.text}
+                      language={language}
+                      onPrefill={prefillComposer}
+                    />
                   )}
-                >
-                  {m.text}
                 </div>
-              </div>
+              ) : (
+                <div className={cn('flex items-end gap-1.5', m.role === 'creator' ? 'justify-end' : 'justify-start')}>
+                  {/* Part 0.2 — Meera's bubbles get a small orb-coloured dot avatar. */}
+                  {m.role === 'meera' && (
+                    <span
+                      className="mb-1 h-2 w-2 shrink-0 rounded-full bg-primary"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <div
+                    className={cn(
+                      'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
+                      m.role === 'creator'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'border border-border bg-white text-foreground',
+                    )}
+                  >
+                    {m.text}
+                  </div>
+                </div>
+              )
+            ) : null}
+
+            {/* PHASE-C-SPEC.md §3 — the toggle that reveals (or re-hides) the ORIGINAL text under
+                a rendered card. `m.text` is never discarded either way, so a creator who wants to
+                copy the reply exactly as written, or hear a voice reply read from it, still can. */}
+            {m.role === 'meera' && m.resultCard ? (
+              <button
+                type="button"
+                data-testid="result-card-text-toggle"
+                onClick={() =>
+                  setMessages((prev) =>
+                    prev.map((row) => (row.id === m.id ? { ...row, showRawText: !row.showRawText } : row)),
+                  )
+                }
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                {pickLang(language, m.showRawText ? RESULT_CARD_SHOW_AS_CARD : RESULT_CARD_SHOW_AS_TEXT)}
+              </button>
             ) : null}
 
             {/* §8.3 — tool cards render AFTER the bubble they belong to. No `onPrefillCounter` or
