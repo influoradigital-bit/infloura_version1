@@ -52,6 +52,8 @@ class CreatorVoiceSpeakChargeTest {
     @Mock private MeeraCreatorFeatureProperties featureProperties;
     @Mock private CreatorCreditService creatorCreditService;
     @Mock private CreatorCreditProperties creditProperties;
+    @Mock private com.influora.service.meera.OnBehalfTokenService onBehalfTokenService;
+    private static final String ONBEHALF_JWT = "stub-onbehalf-jwt-voice-charge";
     @Mock private AuthPrincipal principal;
     @Mock private CreatorProfile creatorProfile;
 
@@ -68,7 +70,18 @@ class CreatorVoiceSpeakChargeTest {
                         voiceAiClient,
                         featureProperties,
                         creatorCreditService,
-                        creditProperties);
+                        creditProperties,
+                        onBehalfTokenService);
+        org.mockito.Mockito.lenient()
+                .when(
+                        onBehalfTokenService.mint(
+                                org.mockito.ArgumentMatchers.eq(CREATOR_USER_ID),
+                                org.mockito.ArgumentMatchers.isNull(),
+                                org.mockito.ArgumentMatchers.isNull(),
+                                org.mockito.ArgumentMatchers.eq(CREATOR_USER_ID),
+                                org.mockito.ArgumentMatchers.eq(com.influora.domain.enums.UserType.CREATOR),
+                                org.mockito.ArgumentMatchers.eq("")))
+                .thenReturn(ONBEHALF_JWT);
         when(featureProperties.isCreatorEnabled()).thenReturn(true);
         when(creatorContext.requireCreatorProfile(principal)).thenReturn(creatorProfile);
         when(creatorProfile.getUserId()).thenReturn(CREATOR_USER_ID);
@@ -114,12 +127,12 @@ class CreatorVoiceSpeakChargeTest {
         // The creator's OWN paid voice turn: hasVoiceCharge + claimVoiceSpeak both true -> Sarvam IS called.
         when(creatorCreditService.hasVoiceCharge(CREATOR_USER_ID, OWN_TURN_ID)).thenReturn(true);
         when(creatorCreditService.claimVoiceSpeak(CREATOR_USER_ID, OWN_TURN_ID)).thenReturn(true);
-        when(voiceAiClient.speak(CREATOR_USER_ID, "hello meera", "en-IN"))
+        when(voiceAiClient.speakForCreator(CREATOR_USER_ID, "hello meera", "en-IN", ONBEHALF_JWT))
                 .thenReturn(MeeraVoiceAiClient.SpeakResult.audio(new byte[] {1, 2, 3}, "audio/wav"));
 
         ResponseEntity<?> own = controller.speak(principal, body(OWN_TURN_ID));
         assertEquals(HttpStatus.OK, own.getStatusCode());
-        verify(voiceAiClient).speak(CREATOR_USER_ID, "hello meera", "en-IN");
+        verify(voiceAiClient).speakForCreator(CREATOR_USER_ID, "hello meera", "en-IN", ONBEHALF_JWT);
 
         // The 4th claim for the SAME turn: hasVoiceCharge is still true (nothing refunded it), but
         // claimVoiceSpeak returns false at the per-turn cap (voice-speaks-per-turn=3) -> fallback,
@@ -127,7 +140,7 @@ class CreatorVoiceSpeakChargeTest {
         when(creatorCreditService.claimVoiceSpeak(CREATOR_USER_ID, OWN_TURN_ID)).thenReturn(false);
         ResponseEntity<?> fourthCall = controller.speak(principal, body(OWN_TURN_ID));
         assertEquals(Map.of("fallback", true), fourthCall.getBody());
-        verify(voiceAiClient, times(1)).speak(any(), any(), any());
+        verify(voiceAiClient, times(1)).speakForCreator(any(), any(), any(), any());
         verify(creatorCreditService, never()).release(any(), any(), any());
     }
 
@@ -143,7 +156,7 @@ class CreatorVoiceSpeakChargeTest {
     void sarvamFailureRefundsVoiceSurchargeOnly() {
         when(creatorCreditService.hasVoiceCharge(CREATOR_USER_ID, OWN_TURN_ID)).thenReturn(true);
         when(creatorCreditService.claimVoiceSpeak(CREATOR_USER_ID, OWN_TURN_ID)).thenReturn(true);
-        when(voiceAiClient.speak(CREATOR_USER_ID, "hello meera", "en-IN"))
+        when(voiceAiClient.speakForCreator(CREATOR_USER_ID, "hello meera", "en-IN", ONBEHALF_JWT))
                 .thenReturn(MeeraVoiceAiClient.SpeakResult.fallback());
 
         ResponseEntity<?> response = controller.speak(principal, body(OWN_TURN_ID));
@@ -163,7 +176,7 @@ class CreatorVoiceSpeakChargeTest {
     void sarvamSuccessMarksDeliveredNeverReleases() {
         when(creatorCreditService.hasVoiceCharge(CREATOR_USER_ID, OWN_TURN_ID)).thenReturn(true);
         when(creatorCreditService.claimVoiceSpeak(CREATOR_USER_ID, OWN_TURN_ID)).thenReturn(true);
-        when(voiceAiClient.speak(CREATOR_USER_ID, "hello meera", "en-IN"))
+        when(voiceAiClient.speakForCreator(CREATOR_USER_ID, "hello meera", "en-IN", ONBEHALF_JWT))
                 .thenReturn(MeeraVoiceAiClient.SpeakResult.audio(new byte[] {1, 2, 3}, "audio/wav"));
 
         ResponseEntity<?> first = controller.speak(principal, body(OWN_TURN_ID));

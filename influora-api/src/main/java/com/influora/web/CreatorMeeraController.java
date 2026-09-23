@@ -98,7 +98,7 @@ public class CreatorMeeraController {
             MeeraVoiceAiClient voiceAiClient,
             MeeraCreatorFeatureProperties featureProperties,
             CreatorCreditService creatorCreditService,
-            CreatorCreditProperties creditProperties) {
+            CreatorCreditProperties creditProperties,
             OnBehalfTokenService onBehalfTokenService) {
         this.sessionService = sessionService;
         this.creatorContext = creatorContext;

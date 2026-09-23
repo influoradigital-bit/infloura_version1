@@ -85,7 +85,7 @@ class CreatorMeeraControllerTest {
                         voiceAiClient,
                         featureProperties,
                         creatorCreditService,
-                        creditProperties);
+                        creditProperties,
                         onBehalfTokenService);
         // Every handler on this controller calls requireFeatureEnabled() first (Priya gate review
         // defect 4) -- on by default here so every pre-existing test below still exercises its own

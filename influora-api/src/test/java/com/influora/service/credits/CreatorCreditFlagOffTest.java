@@ -183,6 +183,13 @@ class CreatorCreditFlagOffTest {
         com.influora.config.MeeraCreatorFeatureProperties featureProperties =
                 mock(com.influora.config.MeeraCreatorFeatureProperties.class);
         CreatorCreditService creatorCreditServiceMock = mock(CreatorCreditService.class);
+        // release/0924 (lane A): the speak route forwards an on-behalf JWT so influora-ai
+        // applies the creator's monthly cap and re-checks consent.
+        com.influora.service.meera.OnBehalfTokenService onBehalfTokenService =
+                mock(com.influora.service.meera.OnBehalfTokenService.class);
+        when(onBehalfTokenService.mint(
+                        CREATOR, null, null, CREATOR, com.influora.domain.enums.UserType.CREATOR, ""))
+                .thenReturn("stub-onbehalf-jwt-flag-off");
 
         com.influora.web.CreatorMeeraController meeraController =
                 new com.influora.web.CreatorMeeraController(
@@ -193,7 +200,8 @@ class CreatorCreditFlagOffTest {
                         voiceAiClient,
                         featureProperties,
                         creatorCreditServiceMock,
-                        disabledProps);
+                        disabledProps,
+                        onBehalfTokenService);
 
         when(featureProperties.isCreatorEnabled()).thenReturn(true);
         com.influora.security.AuthPrincipal principal = mock(com.influora.security.AuthPrincipal.class);
@@ -222,7 +230,7 @@ class CreatorCreditFlagOffTest {
         // -- speak ignores turnId entirely: even a non-blank turnId never reaches
         // hasVoiceCharge/claimVoiceSpeak/release when the flag is off — the whole `if
         // (creditProperties.isEnabled())` gating block is skipped structurally.
-        when(voiceAiClient.speak(CREATOR, "hello", null))
+        when(voiceAiClient.speakForCreator(CREATOR, "hello", null, "stub-onbehalf-jwt-flag-off"))
                 .thenReturn(
                         com.influora.integration.ai.MeeraVoiceAiClient.SpeakResult.audio(
                                 new byte[] {1, 2, 3}, "audio/wav"));
@@ -233,7 +241,7 @@ class CreatorCreditFlagOffTest {
         verify(creatorCreditServiceMock, never()).hasVoiceCharge(any(), any());
         verify(creatorCreditServiceMock, never()).claimVoiceSpeak(any(), any());
         verify(creatorCreditServiceMock, never()).release(any(), any(), any());
-        verify(voiceAiClient).speak(CREATOR, "hello", null);
+        verify(voiceAiClient).speakForCreator(CREATOR, "hello", null, "stub-onbehalf-jwt-flag-off");
 
         // -- GET /creator/credits -> {enabled:false}, no service/order-service call at all.
         CreatorCreditOrderService orderService = mock(CreatorCreditOrderService.class);

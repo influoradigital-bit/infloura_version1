@@ -60,6 +60,10 @@ class CreatorMeeraFrameCheckTest {
     @Mock private MeeraVoiceAiClient voiceAiClient;
     @Mock private MeeraCreatorFeatureProperties featureProperties;
     @Mock private OnBehalfTokenService onBehalfTokenService;
+    // release/0924: the controller also takes the creator-credits collaborators. The credits
+    // flag is off by default on a mock, so the frame-check behaviour under test is unchanged.
+    @Mock private com.influora.service.credits.CreatorCreditService creatorCreditService;
+    @Mock private com.influora.config.CreatorCreditProperties creditProperties;
     @Mock private AuthPrincipal principal;
     @Mock private CreatorProfile creatorProfile;
 
@@ -77,6 +81,8 @@ class CreatorMeeraFrameCheckTest {
                         preferencesService,
                         voiceAiClient,
                         featureProperties,
+                        creatorCreditService,
+                        creditProperties,
                         onBehalfTokenService);
         lenient().when(featureProperties.isCreatorEnabled()).thenReturn(true);
         lenient().when(creatorContext.requireCreatorProfile(principal)).thenReturn(creatorProfile);
