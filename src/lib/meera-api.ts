@@ -155,6 +155,18 @@ export interface MeeraTranscribeResult {
   langDetected?: string;
 }
 
+/**
+ * POST /ai/shoot-check/frame success payload — Level 2 "Check my frame" still-image analysis for
+ * the creator Shoot Check screen (`ShootCheckPanel.tsx`). Three flat string lists rather than
+ * anything more structured: `fixes` (must-do corrections), `settings` (camera/app setting
+ * suggestions), `ok` (what's already fine) — the panel renders each as its own labeled group.
+ */
+export interface MeeraShootCheckFrameResult {
+  fixes: string[];
+  settings: string[];
+  ok: string[];
+}
+
 /** Escrow status response (02 section 1.5) */
 export interface MeeraEscrowStatus {
   escrowHoldId: string;
@@ -1107,6 +1119,76 @@ export const meeraApi = {
         rawTranscript,
         cleanedText,
         langDetected: typeof body.lang_detected === 'string' ? body.lang_detected : undefined,
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * POST /ai/shoot-check/frame — Level 2 "Check my frame" for the creator Shoot Check screen.
+   * Multipart: `image` (a single JPEG still, downscaled client-side to max 800px wide at ~0.7
+   * quality by the caller before this ever runs — this method does no image processing itself),
+   * `workspace_id`, and an optional `shot_label`.
+   *
+   * Deliberately NOT routed through `basePath(role)` the way every other method in this file is —
+   * this endpoint's contract (as given to the frontend lane) is the flat path below, not a
+   * `/meera` or `/creator/meera` one. If the backend lane that owns this route lands it under a
+   * different prefix, this is the one line to change.
+   *
+   * Same one-thing-to-check discipline as `transcribe()`: returns `null` for every "no result"
+   * case — mock mode, the endpoint not existing yet (404) or any other non-2xx, an unparsable
+   * body, or a network error — never throws. `ShootCheckPanel` renders `null` as a plain "couldn't
+   * check your frame right now" line and does not retry automatically.
+   */
+  checkFrame: async (
+    image: Blob,
+    workspaceId: string,
+    shotLabel: string | undefined,
+    role: MeeraRole = 'creator'
+  ): Promise<MeeraShootCheckFrameResult | null> => {
+    if (!isApiLive()) {
+      await delay(600);
+      return {
+        fixes: ['Move a little closer — your face is small in the frame'],
+        settings: ['Turn on grid lines in your camera app to help with framing'],
+        ok: ['Lighting looks even'],
+      };
+    }
+
+    try {
+      const headers: Record<string, string> = {};
+      const token = getToken(role);
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const formData = new FormData();
+      formData.append('image', image, 'frame.jpg');
+      formData.append('workspace_id', workspaceId);
+      if (shotLabel) formData.append('shot_label', shotLabel);
+
+      const res = await fetch(`${API_BASE_URL}/ai/shoot-check/frame`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: formData,
+      });
+
+      if (!res.ok) return null;
+
+      let body: { fixes?: unknown; settings?: unknown; ok?: unknown };
+      try {
+        body = await res.json();
+      } catch {
+        return null;
+      }
+
+      const asStringArray = (value: unknown): string[] =>
+        Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+
+      return {
+        fixes: asStringArray(body.fixes),
+        settings: asStringArray(body.settings),
+        ok: asStringArray(body.ok),
       };
     } catch {
       return null;

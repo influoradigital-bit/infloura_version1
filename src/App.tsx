@@ -81,6 +81,7 @@ import CreatorDashboardPage from '@/pages/creator-dashboard';
 import CreatorCampaignsPage from '@/pages/creator-campaigns';
 import CreatorApplicationsPage from '@/pages/creator-applications';
 import CreatorCopilotPage from '@/pages/creator-copilot';
+import CreatorShootCheckPage from '@/pages/creator-shoot-check';
 import CreatorCampaignDetailPage from '@/pages/creator-campaign-detail';
 import CreatorDisputesPage from '@/pages/creator-disputes';
 import CreatorReviewsPage from '@/pages/creator-reviews';
@@ -553,6 +554,14 @@ export default function App() {
           element={
             <CreatorProtectedRoute>
               <CreatorCopilotPage />
+            </CreatorProtectedRoute>
+          }
+        />
+        <Route
+          path="/creator/shoot-check"
+          element={
+            <CreatorProtectedRoute>
+              <CreatorShootCheckPage />
             </CreatorProtectedRoute>
           }
         />

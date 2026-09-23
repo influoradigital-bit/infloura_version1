@@ -76,7 +76,22 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.23.2"
+PROMPT_VERSION = "meera-2026.09.23.3"
+# ^ bumped for the Level 2 "frame check" route (T-SHOOTCHECK-L2, one photo in,
+# three fixes out -- app/routes/shoot_check.py, app/prompt/frame_check.py): a
+# NEW cached system block (`build_system_prompt` in frame_check.py) reaches
+# the model for the first time on this bump, and `prompt_version` is a
+# component of `cache_key_for` (assembler.py) / every `ai_spend` log line, so
+# without this bump the frame-check route's own turns would be logged/cached
+# under a version number that, until now, only ever meant the chat/voice
+# persona text. This route is independent of the chat Block A/B/C persona
+# (it never touches assembler.py), but PROMPT_VERSION is service-global per
+# this file's own rule above (see the .09.20.1 entry: "the version is global,
+# so brand cache keys roll over too") -- one file's prompt content changing
+# means the constant that names "which prompt text is live" must move,
+# regardless of which route owns that content.
+#
+# Previously (.23.2):
 # ^ bumped for plan_my_week (Swapnil 2026-09-23): a 7-day plan built from the server's dates,
 # the festival calendar in app/planner/events.jsonl, today's topics and the creator's own
 # posting pattern. The plan format forbids inventing a date or a festival day, and says the
@@ -303,6 +318,17 @@ BRIEF_EXTRACT_MODEL = os.getenv("BRIEF_EXTRACT_MODEL", TRENDSPARK_MODEL)
 # proven, not assumed. Do not point this at a Haiku-class model without that
 # eval. Overridable via env for that future (evaluated) bump.
 BRAND_SAFETY_MODEL = os.getenv("BRAND_SAFETY_MODEL", CLAUDE_MODEL)
+
+# Level 2 "frame check" (T-SHOOTCHECK-L2, POST /ai/shoot-check/frame) — the
+# first route in this service that sends an IMAGE to a model
+# (`ClaudeProvider.complete_with_image`). Defaults to the full CLAUDE_MODEL
+# (Sonnet), not a Haiku-class model: judging framing/light/background from a
+# photo and staying inside the appearance/identity rules in
+# app/prompt/frame_check.py needs real vision quality, and unlike
+# TREND_TAG_MODEL/BRAND_SAFETY_MODEL/CREATOR_COPILOT_MODEL this is not yet
+# evaluated against a cheaper model at all -- overridable via env for a future
+# (evaluated) bump, same pattern as BRAND_SAFETY_MODEL above.
+SHOOT_CHECK_MODEL = os.getenv("SHOOT_CHECK_MODEL", CLAUDE_MODEL)
 
 # India / approved regions only (Kabir guardrail #3) — informational; enforced by
 # provider client base URLs / region config below.
@@ -642,6 +668,32 @@ class Settings:
     # configured — see that function and SPEC §14.4.b trap 2.
     brief_extract_monthly_cap_usd: float = field(
         default_factory=lambda: _get_float("BRIEF_EXTRACT_MONTHLY_CAP_USD", 0.25)
+    )
+
+    # --- Level 2 "frame check" (T-SHOOTCHECK-L2, POST /ai/shoot-check/frame) ---
+    # Upload cap per the route spec: reject an image over this many bytes
+    # BEFORE it reaches the model. 1.5 MB is generous for a phone-camera JPEG
+    # a creator is checking before filming, and keeps one call's base64
+    # payload (~1.33x the raw bytes) comfortably inside a normal request body.
+    shoot_check_max_image_bytes: int = field(
+        default_factory=lambda: _get_int("SHOOT_CHECK_MAX_IMAGE_BYTES", 1_500_000)
+    )
+    shoot_check_max_tokens: int = field(
+        default_factory=lambda: _get_int("SHOOT_CHECK_MAX_TOKENS", 1024)
+    )
+    # Swapnil has not yet ruled on whether a frame check costs a creator a
+    # credit (creator turns currently charge zero across the board --
+    # `creditsCharged(0)` is hard-coded on the creator path in
+    # `influora-api/.../MeeraSessionService.java`). This route METERS every
+    # check (see app/routes/shoot_check.py's `_log_frame_check_metered`) but
+    # does NOT charge anything itself -- there is no credit-debit call
+    # anywhere in this route. `shoot_check_credit_cost_credits` is read into
+    # every metering log line purely so that WHEN Swapnil rules, wiring a real
+    # charge is a config flip plus the (separate, not-yet-built) charge call,
+    # not a re-plumb of this route. A value of 0 (the default) means exactly
+    # what it says today: this check is free.
+    shoot_check_credit_cost_credits: int = field(
+        default_factory=lambda: _get_int("SHOOT_CHECK_CREDIT_COST_CREDITS", 0)
     )
 
     # --- Voice language defaults (A5) ---
