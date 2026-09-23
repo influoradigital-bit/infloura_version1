@@ -586,6 +586,36 @@ describe('MeeraCopilotChat — "Meera is on it" desk (MEERA-CHAT-DESIGN-SPEC.md 
     expect(sendTurnMock).not.toHaveBeenCalled();
   });
 
+  // Meera's verification (2026-09-23) mutated `prefillComposer` to call `handleSend` and the
+  // suite stayed green: that mutation is inert (the appended call closes over an empty draft),
+  // so it changed no behaviour. This test pins the whole two-step instead - the prompt lands in
+  // the composer, nothing is sent until the creator presses Send, and then exactly ONE turn goes
+  // out carrying exactly that text (an auto-send or a double-send both fail here).
+  it('a starter prompt is sent only when the creator presses Send, exactly once, with that text', async () => {
+    dealsListMock.mockResolvedValue([]);
+    contractsUnsignedMock.mockResolvedValue([]);
+    walletGetMock.mockResolvedValue({ availableBalance: 0, escrowLocked: 0, pendingPayouts: 0, runwayDays: null });
+    portfolioAnalyticsMock.mockRejectedValue(new Error('no analytics'));
+    sendTurnMock.mockResolvedValue({
+      messageId: 'm1',
+      streamUrl: 'http://x/chat',
+      streamToken: 'tok',
+      workspaceId: 'ws_1',
+      reply: null,
+    });
+
+    const user = userEvent.setup();
+    renderChat({ firstName: 'Asha', language: 'en-IN', onClose: vi.fn(), onConsentRequired: vi.fn() });
+
+    await user.click(await screen.findByRole('button', { name: 'What did I earn this month?' }));
+    expect(sendTurnMock).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Send message' }));
+
+    await waitFor(() => expect(sendTurnMock).toHaveBeenCalledTimes(1));
+    expect(sendTurnMock.mock.calls[0][1]).toBe('What did I earn this month?');
+  });
+
   it('"Ask Meera my rate" prefills the exact rate question and never calls sendTurn', async () => {
     dealsListMock.mockRejectedValue(new Error('down'));
     contractsUnsignedMock.mockRejectedValue(new Error('down'));
