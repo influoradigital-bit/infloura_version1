@@ -197,4 +197,30 @@ public final class CreatorToolDtos {
             @JsonProperty("draft_id") String draftId,
             @JsonProperty("campaign_id") String campaignId,
             @JsonProperty("text") String text) {}
+
+    /**
+     * T-CONTENT-TOPICS -- one matched, safety-screened row from {@code content_topics}. {@code
+     * category} and {@code sensitivity} are passed through from the row untouched; {@code angles}
+     * is already split into lines by {@code ContentTopicService#splitAngles}.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record TopicResult(
+            @JsonProperty("id") Long id,
+            @JsonProperty("category") String category,
+            @JsonProperty("title") String title,
+            @JsonProperty("angles") List<String> angles,
+            @JsonProperty("live_until") String liveUntil,
+            @JsonProperty("sensitivity") String sensitivity) {}
+
+    /**
+     * T-CONTENT-TOPICS -- {@code get_todays_topics}'s result. {@code today}/{@code weekday} exist
+     * because the model has no other way to know the date: nothing in its prompt states it, and it
+     * must not be left to infer one from the client or from its own training data. Both are
+     * computed server-side in IST by {@code GetTodaysTopicsExecutor}.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record GetTodaysTopicsResult(
+            @JsonProperty("today") String today,
+            @JsonProperty("weekday") String weekday,
+            @JsonProperty("topics") List<TopicResult> topics) {}
 }

@@ -17,11 +17,13 @@ import com.influora.service.meera.tool.creator.EstimateMyRateExecutor;
 import com.influora.service.meera.tool.creator.GetBriefExecutor;
 import com.influora.service.meera.tool.creator.GetMyDealsExecutor;
 import com.influora.service.meera.tool.creator.GetMyMetricsExecutor;
+import com.influora.service.meera.tool.creator.GetTodaysTopicsExecutor;
 import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
 import com.influora.web.dto.meera.CreatorToolDtos.EstimateMyRateResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetBriefResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyDealsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyMetricsResult;
+import com.influora.web.dto.meera.CreatorToolDtos.GetTodaysTopicsResult;
 import java.util.Map;
 import java.util.function.BiFunction;
 import org.springframework.http.HttpStatus;
@@ -41,10 +43,12 @@ import org.springframework.web.bind.annotation.RestController;
  * on-behalf JWT authenticates the creator. Neither alone is sufficient, and this controller re-proves
  * the human on every call rather than trusting the body.
  *
- * <p><b>Five routes, not the nine in SPEC.md &sect;3.1.</b> {@code estimate_my_rate} and
+ * <p><b>Six routes, not the nine in SPEC.md &sect;3.1.</b> {@code estimate_my_rate} and
  * {@code check_deal_risks} joined the first two in Wave 3, with {@code RateQuoteService} and
  * {@code DealRiskService}; {@code get_brief} followed once {@code CreatorBriefService} existed to
- * read. The drafts and campaign tools are later waves still. They are deliberately not stubbed. A
+ * read; {@code get_todays_topics} (T-CONTENT-TOPICS) is outside SPEC.md &sect;3.1 entirely, added
+ * later with {@code ContentTopicService}. The drafts and campaign tools are later waves still.
+ * They are deliberately not stubbed. A
  * registered route that 404s or returns an empty shape is worse than an absent one: the model is
  * told the capability exists, spends a turn on it, and narrates a failure to the creator.
  *
@@ -75,6 +79,7 @@ public class CreatorMeeraToolController {
     private final EstimateMyRateExecutor estimateMyRateExecutor;
     private final CheckDealRisksExecutor checkDealRisksExecutor;
     private final GetBriefExecutor getBriefExecutor;
+    private final GetTodaysTopicsExecutor getTodaysTopicsExecutor;
 
     public CreatorMeeraToolController(
             OnBehalfAuthResolver onBehalfAuthResolver,
@@ -86,7 +91,8 @@ public class CreatorMeeraToolController {
             GetMyMetricsExecutor getMyMetricsExecutor,
             EstimateMyRateExecutor estimateMyRateExecutor,
             CheckDealRisksExecutor checkDealRisksExecutor,
-            GetBriefExecutor getBriefExecutor) {
+            GetBriefExecutor getBriefExecutor,
+            GetTodaysTopicsExecutor getTodaysTopicsExecutor) {
         this.onBehalfAuthResolver = onBehalfAuthResolver;
         this.creatorToolCallValidator = creatorToolCallValidator;
         this.preferencesService = preferencesService;
@@ -97,6 +103,7 @@ public class CreatorMeeraToolController {
         this.estimateMyRateExecutor = estimateMyRateExecutor;
         this.checkDealRisksExecutor = checkDealRisksExecutor;
         this.getBriefExecutor = getBriefExecutor;
+        this.getTodaysTopicsExecutor = getTodaysTopicsExecutor;
     }
 
     @PostMapping("/get_my_deals")
@@ -141,6 +148,20 @@ public class CreatorMeeraToolController {
             @RequestBody Map<String, Object> body) {
         return handleRead(
                 onBehalfJwt, body, CreatorToolName.check_deal_risks, checkDealRisksExecutor::execute);
+    }
+
+    /**
+     * T-CONTENT-TOPICS -- {@code get_todays_topics}: today's date/weekday plus up to five matched,
+     * safety-screened rows from the hand-typed {@code content_topics} catalogue. Like every other
+     * route here, {@code today} is decided by {@link GetTodaysTopicsExecutor}, never by this
+     * request.
+     */
+    @PostMapping("/get_todays_topics")
+    public ResponseEntity<ApiResponse<GetTodaysTopicsResult>> getTodaysTopics(
+            @RequestHeader(ON_BEHALF_HEADER) String onBehalfJwt,
+            @RequestBody Map<String, Object> body) {
+        return handleRead(
+                onBehalfJwt, body, CreatorToolName.get_todays_topics, getTodaysTopicsExecutor::execute);
     }
 
     /**

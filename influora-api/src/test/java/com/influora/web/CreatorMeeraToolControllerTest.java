@@ -29,11 +29,13 @@ import com.influora.service.meera.tool.creator.EstimateMyRateExecutor;
 import com.influora.service.meera.tool.creator.GetBriefExecutor;
 import com.influora.service.meera.tool.creator.GetMyDealsExecutor;
 import com.influora.service.meera.tool.creator.GetMyMetricsExecutor;
+import com.influora.service.meera.tool.creator.GetTodaysTopicsExecutor;
 import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
 import com.influora.web.dto.meera.CreatorToolDtos.EstimateMyRateResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetBriefResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyDealsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyMetricsResult;
+import com.influora.web.dto.meera.CreatorToolDtos.GetTodaysTopicsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.MetricsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.PackageQuote;
 import com.influora.web.dto.meera.CreatorToolDtos.RiskFlag;
@@ -76,6 +78,7 @@ class CreatorMeeraToolControllerTest {
     @Mock private EstimateMyRateExecutor estimateMyRateExecutor;
     @Mock private CheckDealRisksExecutor checkDealRisksExecutor;
     @Mock private GetBriefExecutor getBriefExecutor;
+    @Mock private GetTodaysTopicsExecutor getTodaysTopicsExecutor;
 
     private CreatorMeeraToolController controller;
 
@@ -92,7 +95,8 @@ class CreatorMeeraToolControllerTest {
                         getMyMetricsExecutor,
                         estimateMyRateExecutor,
                         checkDealRisksExecutor,
-                        getBriefExecutor);
+                        getBriefExecutor,
+                        getTodaysTopicsExecutor);
         lenient().when(featureProperties.isCreatorEnabled()).thenReturn(true);
     }
 
@@ -123,6 +127,8 @@ class CreatorMeeraToolControllerTest {
                 assertThrows(ApiException.class, () -> controller.checkDealRisks(JWT, BODY));
         ApiException brief =
                 assertThrows(ApiException.class, () -> controller.getBrief(JWT, BODY));
+        ApiException topics =
+                assertThrows(ApiException.class, () -> controller.getTodaysTopics(JWT, BODY));
 
         assertEquals("FEATURE_DISABLED", deals.getCode());
         assertEquals(HttpStatus.NOT_FOUND, deals.getStatus());
@@ -134,6 +140,8 @@ class CreatorMeeraToolControllerTest {
         assertEquals(HttpStatus.NOT_FOUND, risks.getStatus());
         assertEquals("FEATURE_DISABLED", brief.getCode());
         assertEquals(HttpStatus.NOT_FOUND, brief.getStatus());
+        assertEquals("FEATURE_DISABLED", topics.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, topics.getStatus());
 
         verifyNoInteractions(
                 onBehalfAuthResolver,
@@ -142,7 +150,8 @@ class CreatorMeeraToolControllerTest {
                 getMyMetricsExecutor,
                 estimateMyRateExecutor,
                 checkDealRisksExecutor,
-                getBriefExecutor);
+                getBriefExecutor,
+                getTodaysTopicsExecutor);
         // [SEC: Kabir Wave 2, finding 3] The refusal is audited, with a null tenant key: the flag
         // is checked before anything about the caller is proven, so there is no identity to record.
         assertRejectionRow(null, "get_my_deals", "FEATURE_DISABLED");
@@ -150,6 +159,7 @@ class CreatorMeeraToolControllerTest {
         assertRejectionRow(null, "estimate_my_rate", "FEATURE_DISABLED");
         assertRejectionRow(null, "check_deal_risks", "FEATURE_DISABLED");
         assertRejectionRow(null, "get_brief", "FEATURE_DISABLED");
+        assertRejectionRow(null, "get_todays_topics", "FEATURE_DISABLED");
     }
 
     @Test
@@ -462,6 +472,79 @@ class CreatorMeeraToolControllerTest {
                         eq((String) null),
                         eq((BigDecimal) null),
                         any());
+    }
+
+    @Test
+    @DisplayName(
+            "get_todays_topics requires its OWN scope name -- a token scoped only to"
+                    + " get_my_metrics cannot reach it")
+    void testGetTodaysTopicsRequiresItsOwnScope() {
+        stubResolverFor(CreatorToolName.get_todays_topics, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(creatorToolCallValidator.validateAndResolve("get_todays_topics", CREATOR_USER_ID))
+                .thenReturn(CreatorToolName.get_todays_topics);
+        when(creatorToolCallValidator.tierOf(CreatorToolName.get_todays_topics))
+                .thenReturn(MeeraToolTier.R);
+        GetTodaysTopicsResult expected = new GetTodaysTopicsResult("2026-09-23", "Wednesday", List.of());
+        when(getTodaysTopicsExecutor.execute(CREATOR_USER_ID, BODY)).thenReturn(expected);
+
+        ResponseEntity<ApiResponse<GetTodaysTopicsResult>> response =
+                controller.getTodaysTopics(JWT, BODY);
+
+        assertEquals(expected, response.getBody().data());
+        verify(onBehalfAuthResolver)
+                .resolveForWorkspaceRequiringScope(JWT, CREATOR_USER_ID, "get_todays_topics");
+        // ... and never under a different tool's name, which would let one scope open both routes.
+        verify(onBehalfAuthResolver, never())
+                .resolveForWorkspaceRequiringScope(anyString(), anyString(), eq("get_my_metrics"));
+    }
+
+    @Test
+    @DisplayName(
+            "get_todays_topics happy path: the executor runs with the JWT-verified user id and an"
+                    + " ALLOWED audit row is written with the tool's real tier")
+    void testGetTodaysTopicsHappyPath() {
+        stubResolverFor(CreatorToolName.get_todays_topics, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(creatorToolCallValidator.validateAndResolve("get_todays_topics", CREATOR_USER_ID))
+                .thenReturn(CreatorToolName.get_todays_topics);
+        when(creatorToolCallValidator.tierOf(CreatorToolName.get_todays_topics))
+                .thenReturn(MeeraToolTier.R);
+        GetTodaysTopicsResult expected = new GetTodaysTopicsResult("2026-09-23", "Wednesday", List.of());
+        when(getTodaysTopicsExecutor.execute(CREATOR_USER_ID, BODY)).thenReturn(expected);
+
+        ResponseEntity<ApiResponse<GetTodaysTopicsResult>> response =
+                controller.getTodaysTopics(JWT, BODY);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(expected, response.getBody().data());
+        verify(getTodaysTopicsExecutor).execute(CREATOR_USER_ID, BODY);
+        verify(auditLogService)
+                .recordToolCall(
+                        eq(CREATOR_USER_ID),
+                        eq("get_todays_topics"),
+                        eq("R"),
+                        eq(AuditLogService.OUTCOME_ALLOWED),
+                        eq((String) null),
+                        eq((String) null),
+                        eq((BigDecimal) null),
+                        any());
+    }
+
+    @Test
+    @DisplayName(
+            "an unconsented creator is 403 CONSENT_REQUIRED on get_todays_topics too, before the"
+                    + " executor runs")
+    void testGetTodaysTopicsUnconsentedCreatorIs403() {
+        stubResolverFor(CreatorToolName.get_todays_topics, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> controller.getTodaysTopics(JWT, BODY));
+
+        assertEquals("CONSENT_REQUIRED", ex.getCode());
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        verifyNoInteractions(getTodaysTopicsExecutor);
+        assertRejectionRow(CREATOR_USER_ID, "get_todays_topics", "CONSENT_REQUIRED");
     }
 
     @Test
@@ -779,7 +862,7 @@ class CreatorMeeraToolControllerTest {
             assertRejectionRow("01HBRANDUSER123456789", tool, "AUDIENCE_PRINCIPAL_MISMATCH");
         }
 
-        // Non-vacuity: the five wired routes, by name. A reflection that found nothing would pass
+        // Non-vacuity: the six wired routes, by name. A reflection that found nothing would pass
         // every assertion in the loop above.
         assertEquals(
                 new TreeSet<>(
@@ -788,14 +871,16 @@ class CreatorMeeraToolControllerTest {
                                 "get_brief",
                                 "estimate_my_rate",
                                 "get_my_metrics",
-                                "check_deal_risks")),
+                                "check_deal_risks",
+                                "get_todays_topics")),
                 routes);
         verifyNoInteractions(
                 getMyDealsExecutor,
                 getMyMetricsExecutor,
                 estimateMyRateExecutor,
                 checkDealRisksExecutor,
-                getBriefExecutor);
+                getBriefExecutor,
+                getTodaysTopicsExecutor);
         verify(preferencesService, never()).isConsentAccepted(anyString());
         assertNoAllowedRow();
     }

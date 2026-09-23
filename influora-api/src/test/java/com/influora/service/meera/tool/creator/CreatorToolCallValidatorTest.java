@@ -117,13 +117,14 @@ class CreatorToolCallValidatorTest {
     }
 
     @Test
-    @DisplayName("tierOf: R for the five reads, D for draft_reply -- and never C or FORBIDDEN")
+    @DisplayName("tierOf: R for the six reads, D for draft_reply -- and never C or FORBIDDEN")
     void testTiers() {
         assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.get_my_deals));
         assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.get_brief));
         assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.estimate_my_rate));
         assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.get_my_metrics));
         assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.check_deal_risks));
+        assertEquals(MeeraToolTier.R, validator.tierOf(CreatorToolName.get_todays_topics));
         assertEquals(MeeraToolTier.D, validator.tierOf(CreatorToolName.draft_reply));
     }
 
@@ -143,10 +144,12 @@ class CreatorToolCallValidatorTest {
     @DisplayName(
             "MeeraToolName is untouched: still exactly its six BRAND values, so"
                     + " ToolCallValidatorTest's count assertion and the schema-check CI job both"
-                    + " stay green")
+                    + " stay green -- CreatorToolName now carries one more (get_todays_topics,"
+                    + " T-CONTENT-TOPICS, outside SPEC.md 3.1), so the two catalogues are no longer"
+                    + " the same size, only still disjoint")
     void testBrandToolCatalogueUntouched() {
         assertEquals(6, MeeraToolName.values().length);
-        assertEquals(6, CreatorToolName.values().length);
+        assertEquals(7, CreatorToolName.values().length);
         // Same size, entirely disjoint name sets -- the two enums must never share a constant.
         for (CreatorToolName creatorTool : CreatorToolName.values()) {
             for (MeeraToolName brandTool : MeeraToolName.values()) {

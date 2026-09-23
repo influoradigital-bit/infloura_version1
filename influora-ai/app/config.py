@@ -76,7 +76,15 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.22.6"
+PROMPT_VERSION = "meera-2026.09.23.1"
+# ^ bumped for get_todays_topics (Swapnil 2026-09-23): admin-curated daily topics reach
+# creator Meera through a tool, never the cached prompt. Two rails land with it, both from
+# Ash's AI review (wiki/ai-review/daily-topics-week-plan-ai-review.md): the model is told it
+# does NOT know the date and must read it from the tool, and topic text rides inside
+# `<untrusted_editorial>` because it is typed straight into the database. BRAND prompt
+# unchanged.
+#
+# Previously (.22.6):
 # ^ bumped for the script review (Swapnil 2026-09-22): one call to action
 # matched to the goal, no absolute promises, hashtags optional (at most 2),
 # and the plan names the on-camera action (with a hands-only fallback) and

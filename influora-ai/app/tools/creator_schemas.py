@@ -40,6 +40,7 @@ ESTIMATE_MY_RATE = "estimate_my_rate"
 GET_MY_METRICS = "get_my_metrics"
 CHECK_DEAL_RISKS = "check_deal_risks"
 DRAFT_REPLY = "draft_reply"
+GET_TODAYS_TOPICS = "get_todays_topics"
 
 # B0 order matches §3.1's tool catalogue. B1 appends send_routine_reply,
 # rank_open_campaigns and draft_application to the END of this tuple.
@@ -50,6 +51,7 @@ CREATOR_TOOL_NAMES: tuple[str, ...] = (
     GET_MY_METRICS,
     CHECK_DEAL_RISKS,
     DRAFT_REPLY,
+    GET_TODAYS_TOPICS,
 )
 
 # Every creator tool forwards to `/internal/meera/creator/<name>`
@@ -387,6 +389,24 @@ CREATOR_TOOL_SCHEMAS: list[dict[str, Any]] = [
                 },
             },
             "required": ["kind", "text"],
+        },
+    },
+    {
+        "name": GET_TODAYS_TOPICS,
+        "description": (
+            "Read the topics Influora's editorial team has put live TODAY for this creator's "
+            "categories, and today's date. Call it before suggesting what to post today or "
+            "planning a week: it is the only way you can know today's date, and the only source "
+            "of what is current. The result's `today` and `weekday` are the server's, in Indian "
+            "time -- use them and never your own idea of the date. A topic is a topic, not a "
+            "fact: present it as something going around, add no numbers to it, and use the "
+            "angles as written. An empty list means nothing is live for them today, which is "
+            "normal -- fall back to the content knowledge. Read-only."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
         },
     },
 ]
