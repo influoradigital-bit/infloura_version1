@@ -6941,6 +6941,263 @@ export const creatorAgentPrefs = {
 };
 
 // ---------------------------------------------------------------------------
+// Creator 7-day challenge (CHALLENGE-SPEC.md, 2026-09-23) — GET/POST /creator/challenge,
+// POST /creator/challenge/:id/end. Contract frozen for this build: backend (Vikram) and
+// frontend (Ananya) both build against the shapes below, in the same worktree, at the same
+// time — do not change these without updating the spec.
+// ---------------------------------------------------------------------------
+
+export type ChallengePlannedType = 'REEL' | 'CAROUSEL' | 'POST' | 'REST';
+
+/** `MISSED` never renders red per the honesty rules (CHALLENGE-SPEC.md "Facts already
+ *  verified" / Frontend §6) — a muted dash, same register as a rest day, not a failure state. */
+export type ChallengeDayStatus = 'DONE' | 'TODAY' | 'UPCOMING' | 'CHECKING' | 'MISSED' | 'REST';
+
+/** `your_posts` = drawn from the creator's own posting pattern; `suggestion` = not enough data
+ *  yet. The UI must say "suggested", never "your best time", whenever this is `suggestion`
+ *  (spec Frontend §4) — never invert or default this away. */
+export type ChallengeWindowSource = 'your_posts' | 'suggestion';
+
+export interface ChallengeWindow {
+  label: string;
+  from: string;
+  to: string;
+}
+
+export interface ChallengeDay {
+  dayIndex: number;
+  date: string; // ISO date, Asia/Kolkata
+  plannedType: ChallengePlannedType;
+  /** Null on a REST day. */
+  window: ChallengeWindow | null;
+  /** Null on a REST day (no window to source). */
+  windowSource: ChallengeWindowSource | null;
+  status: ChallengeDayStatus;
+  /** Only meaningful once the day is DONE; null otherwise. A DONE day with `matchedType: false`
+   *  still shows `postedType` — the creator gets credit for posting, honestly labelled. */
+  matchedType: boolean | null;
+  /** Raw `MediaMetric.mediaType` the day was ticked off by (`IMAGE` | `VIDEO` | `CAROUSEL_ALBUM`
+   *  | `REELS`), or null until DONE. */
+  postedType: string | null;
+  permalink: string | null;
+}
+
+export interface ActiveChallenge {
+  id: string;
+  startedOn: string;
+  /** 1-based ("day 3 of 7"), derived from today vs. `startedOn` — not necessarily
+   *  `days.findIndex(TODAY) + 1` once the challenge runs past day 7 into COMPLETED. */
+  dayNumber: number;
+  streak: number;
+  days: ChallengeDay[];
+}
+
+export interface LastCompletedChallenge {
+  id: string;
+  startedOn: string;
+  daysDone: number;
+  daysPlanned: number;
+}
+
+export interface ChallengeWeekStats {
+  from: string;
+  to: string;
+  posts: number;
+  /** Posts at least 48h old at request time — the only posts `reach`/`engagementRate` are
+   *  computed from (Instagram numbers still grow for ~2 days). */
+  settledPosts: number;
+  reach: number;
+  engagementRate: string;
+}
+
+export interface ChallengeComparison {
+  thisWeek: ChallengeWeekStats;
+  lastWeek: ChallengeWeekStats;
+  /** Null unless `enoughToCompare` — never a percentage computed from a zero base. */
+  reachChangePercent: number | null;
+  engagementChangePoints: number | null;
+  /** False unless BOTH weeks have >= 2 settled posts. The UI must hide every %/point figure and
+   *  show `note` instead when this is false (spec Frontend §5) — and never use the word
+   *  "growing" regardless of this value. */
+  enoughToCompare: boolean;
+  note: string | null;
+}
+
+export interface ChallengeState {
+  instagramConnected: boolean;
+  /** Null when there is no active challenge. */
+  active: ActiveChallenge | null;
+  /** Null when none has ever completed. */
+  lastCompleted: LastCompletedChallenge | null;
+  /** Always present, even with no challenge at all (spec: "comparison is always present"). */
+  comparison: ChallengeComparison;
+}
+
+/** Mock-only date helper — plain local-time offset from today, formatted `YYYY-MM-DD`. Not an
+ *  Asia/Kolkata-correct conversion (the mock doesn't need one); the live backend owns real IST
+ *  date math. */
+function mockIsoDateOffset(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Demo creator mock — day 3 of an active challenge (CHALLENGE-SPEC.md Frontend §1): two DONE
+ *  days behind them (a 2-day streak), today is a REST day is deliberately NOT day 3 so the
+ *  "today's task" card has something to show, one UPCOMING day sourced from a `suggestion`
+ *  window to exercise the "suggested" copy path in mock mode too, and `enoughToCompare: false`
+ *  so the comparison row's honest fallback (`note`, no %) is what a fresh demo account sees by
+ *  default. */
+const MOCK_CHALLENGE_STATE: ChallengeState = {
+  instagramConnected: true,
+  active: {
+    id: '01J_MOCK_CHALLENGE',
+    startedOn: mockIsoDateOffset(-2),
+    dayNumber: 3,
+    streak: 2,
+    days: [
+      {
+        dayIndex: 0,
+        date: mockIsoDateOffset(-2),
+        plannedType: 'REEL',
+        window: { label: 'evening', from: '17:00', to: '22:00' },
+        windowSource: 'your_posts',
+        status: 'DONE',
+        matchedType: true,
+        postedType: 'VIDEO',
+        permalink: 'https://www.instagram.com/p/mock_day0/',
+      },
+      {
+        dayIndex: 1,
+        date: mockIsoDateOffset(-1),
+        plannedType: 'CAROUSEL',
+        window: { label: 'afternoon', from: '12:00', to: '17:00' },
+        windowSource: 'your_posts',
+        status: 'DONE',
+        // Honesty rule exercised in mock mode too: posted, but not the planned type.
+        matchedType: false,
+        postedType: 'VIDEO',
+        permalink: 'https://www.instagram.com/p/mock_day1/',
+      },
+      {
+        dayIndex: 2,
+        date: mockIsoDateOffset(0),
+        plannedType: 'POST',
+        window: { label: 'evening', from: '17:00', to: '22:00' },
+        windowSource: 'suggestion',
+        status: 'TODAY',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+      {
+        dayIndex: 3,
+        date: mockIsoDateOffset(1),
+        plannedType: 'REEL',
+        window: { label: 'morning', from: '05:00', to: '12:00' },
+        windowSource: 'your_posts',
+        status: 'UPCOMING',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+      {
+        dayIndex: 4,
+        date: mockIsoDateOffset(2),
+        plannedType: 'REST',
+        window: null,
+        windowSource: null,
+        status: 'REST',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+      {
+        dayIndex: 5,
+        date: mockIsoDateOffset(3),
+        plannedType: 'CAROUSEL',
+        window: { label: 'evening', from: '17:00', to: '22:00' },
+        windowSource: 'suggestion',
+        status: 'UPCOMING',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+      {
+        dayIndex: 6,
+        date: mockIsoDateOffset(4),
+        plannedType: 'REEL',
+        window: { label: 'evening', from: '17:00', to: '22:00' },
+        windowSource: 'your_posts',
+        status: 'UPCOMING',
+        matchedType: null,
+        postedType: null,
+        permalink: null,
+      },
+    ],
+  },
+  lastCompleted: null,
+  comparison: {
+    thisWeek: {
+      from: mockIsoDateOffset(-6),
+      to: mockIsoDateOffset(0),
+      posts: 2,
+      settledPosts: 1,
+      reach: 4200,
+      engagementRate: '4.3%',
+    },
+    lastWeek: {
+      from: mockIsoDateOffset(-13),
+      to: mockIsoDateOffset(-7),
+      posts: 1,
+      settledPosts: 1,
+      reach: 3100,
+      engagementRate: '3.8%',
+    },
+    reachChangePercent: null,
+    engagementChangePoints: null,
+    enoughToCompare: false,
+    note: 'Not enough settled posts in both weeks to compare yet.',
+  },
+};
+
+export const creatorChallenge = {
+  /** GET /creator/challenge — always 200 with a `ChallengeState`, even with no challenge ever
+   *  started (spec: "comparison is always present"). */
+  get: (): Promise<ChallengeState> =>
+    isLive()
+      ? http.request<ChallengeState>('GET', '/creator/challenge', { role: 'creator' })
+      : mockOr(MOCK_CHALLENGE_STATE),
+
+  /** POST /creator/challenge — starts one. 409 `CHALLENGE_ALREADY_ACTIVE` if one is already
+   *  active, 409 `INSTAGRAM_NOT_CONNECTED` if not connected; both surface via `ApiError.code`,
+   *  same as every other endpoint. Returns the new `ChallengeState`. */
+  start: (): Promise<ChallengeState> =>
+    isLive()
+      ? http.request<ChallengeState>('POST', '/creator/challenge', { role: 'creator' })
+      : mockOr(MOCK_CHALLENGE_STATE),
+
+  /** POST /creator/challenge/:id/end — ends it early (status ENDED server-side). 404 if not
+   *  theirs. Returns the updated `ChallengeState` (`active: null`). */
+  end: (id: string): Promise<ChallengeState> =>
+    isLive()
+      ? http.request<ChallengeState>('POST', `/creator/challenge/${id}/end`, { role: 'creator' })
+      : mockOr<ChallengeState>({
+          instagramConnected: true,
+          active: null,
+          lastCompleted: MOCK_CHALLENGE_STATE.active
+            ? {
+                id: MOCK_CHALLENGE_STATE.active.id,
+                startedOn: MOCK_CHALLENGE_STATE.active.startedOn,
+                daysDone: 2,
+                daysPlanned: 6,
+              }
+            : null,
+          comparison: MOCK_CHALLENGE_STATE.comparison,
+        }),
+};
+
+// ---------------------------------------------------------------------------
 // Meera Phase B0 "Paste and Read" — creator brief, quote, deal-risk, draft and
 // campaign-fit contract types (T-MEERA-CREATOR-PHASE-B SPEC.md §8.1, B0-16).
 // Types only — no namespace methods here; those land with a later wave.
@@ -7606,6 +7863,7 @@ export const api = {
   trendspark,
   creatorCopilot,
   creatorAgentPrefs,
+  creatorChallenge,
   creatorBriefs,
   publicCreators,
   clientErrors,

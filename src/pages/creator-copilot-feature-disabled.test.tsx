@@ -29,6 +29,11 @@ vi.mock('@/components/creator/copilot/CopilotPreviewCard', () => ({
 vi.mock('@/hooks/useDailySuggestion', () => ({
   useDailySuggestion: () => ({ status: 'idle' }),
 }));
+// Reads via react-query (useCreatorChallenge), which needs a QueryClientProvider this page's
+// own tests don't set up — mocked away same as DailySuggestionSection above.
+vi.mock('@/components/creator/challenge/ChallengeCard', () => ({
+  ChallengeCard: () => <div data-testid="challenge-card" />,
+}));
 
 // vi.mock is hoisted above imports/top-level consts, so the mock fns referenced inside its
 // factory must be created through vi.hoisted() (see vitest's hoisting docs) rather than plain

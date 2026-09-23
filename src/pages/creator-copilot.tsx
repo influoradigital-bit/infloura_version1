@@ -2,6 +2,7 @@ import * as React from 'react';
 import { Sparkles } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
+import { ChallengeCard } from '@/components/creator/challenge/ChallengeCard';
 import { CopilotPreviewCard } from '@/components/creator/copilot/CopilotPreviewCard';
 import { DailySuggestionSection } from '@/components/creator/copilot/DailySuggestionSection';
 import { PasteBriefCard } from '@/components/creator/copilot/PasteBriefCard';
@@ -219,6 +220,16 @@ export default function CreatorCopilotPage() {
           <h1 className="text-2xl font-bold">Co-pilot</h1>
           <p className="text-muted-foreground">Your AI content partner</p>
         </div>
+
+        {/* Creator 7-day challenge (CHALLENGE-SPEC.md, 2026-09-23, Frontend §7) — top of the
+            Co-pilot page. "Write the script" / "Give me an idea" reuse this same
+            `openMeeraWithPrompt`, PREFILL-ONLY (ruling R-U1) — never sends on the creator's
+            behalf, same contract as "Ask Meera about this brief" below. */}
+        <ChallengeCard
+          language={language}
+          onAskMeera={(prompt) => void openMeeraWithPrompt(prompt)}
+          className="mb-6"
+        />
 
         {/* T-MEERA-CREATOR-PHASE-A (A10) — Meera chat entry. Conversational only in Phase A:
             deals/earnings/metrics Q&A, no drafting or sending on the creator's behalf.
