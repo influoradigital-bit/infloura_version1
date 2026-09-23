@@ -89,13 +89,78 @@ describe('checkFrame route', () => {
 
   it('parses the three lists from the proxy’s response', async () => {
     const result = await meeraApi.checkFrame(new Blob(['x']), undefined, 'creator');
-    expect(result).toEqual({ fixes: ['Step right'], settings: [], ok: [] });
+    expect(result).toEqual({ kind: 'ok', result: { fixes: ['Step right'], settings: [], ok: [] } });
   });
 
-  it('returns null on the proxy’s failure codes, so the panel says it could not check', async () => {
+  it('returns "unavailable" on the proxy’s failure codes, so the panel says it could not check', async () => {
     for (const status of [400, 413, 502]) {
       fetchMock.mockResolvedValueOnce(new Response('{"code":"X"}', { status }));
-      expect(await meeraApi.checkFrame(new Blob(['x']), undefined, 'creator')).toBeNull();
+      expect(await meeraApi.checkFrame(new Blob(['x']), undefined, 'creator')).toEqual({ kind: 'unavailable' });
     }
+  });
+});
+
+/**
+ * C4 — influora-ai's `shoot_check_frame` route (`influora-ai/app/routes/shoot_check.py`) answers
+ * EVERY failure and gate-block path with HTTP 200 and `fallback: true`, `fixes` filled with
+ * placeholder text from `fallback_response()` — never a real per-photo check. The Java proxy
+ * passes that body through verbatim (`CreatorMeeraController#checkFrame` — `result.jsonBytes()`,
+ * unmodified, still HTTP 200). These two bodies are copied from that route's own return
+ * statements, not retyped: the oversize-upload fallback (a representative ordinary fallback) and
+ * the creator monthly-cap fallback (`app/costs/spend_tracker.py`'s `CREATOR_CAP_MESSAGE` /
+ * `CREATOR_CAP_CODE`), which is the one fallback body `checkFrame` must surface a message for.
+ */
+describe('checkFrame vs influora-ai’s fallback envelope', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('an ordinary fallback (e.g. the oversize-upload block) is never treated as a real result', async () => {
+    // Copied verbatim from shoot_check.py's oversize-image branch:
+    //   return {**fallback_response(), "fallback": True,
+    //           "fixes": ["That photo is too large -- please use one under 1.5 MB and try again."]}
+    fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          fixes: ['That photo is too large -- please use one under 1.5 MB and try again.'],
+          settings: [],
+          ok: [],
+          fallback: true,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const outcome = await meeraApi.checkFrame(new Blob(['x'], { type: 'image/jpeg' }), undefined, 'creator');
+    expect(outcome).toEqual({ kind: 'unavailable' });
+  });
+
+  it('the creator monthly-cap fallback surfaces its own message instead of "unavailable" or a Fix', async () => {
+    // Copied verbatim from shoot_check.py's `_creator_cap_gate` block:
+    //   return {**fallback_response(), "fallback": True, "message": CREATOR_CAP_MESSAGE, "code": CREATOR_CAP_CODE}
+    // fallback_response() == {"fixes": [FALLBACK_FIX], "settings": [], "ok": []}
+    const CREATOR_CAP_MESSAGE =
+      "You've reached your monthly Meera usage limit. It resets on the 1st of next month. "
+      + "If you need more before then, message support and we'll sort it out.";
+    fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          fixes: ["Couldn't check that photo just now -- please try uploading it again."],
+          settings: [],
+          ok: [],
+          fallback: true,
+          message: CREATOR_CAP_MESSAGE,
+          code: 'CREATOR_MONTHLY_CAP_REACHED',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const outcome = await meeraApi.checkFrame(new Blob(['x'], { type: 'image/jpeg' }), undefined, 'creator');
+    expect(outcome).toEqual({ kind: 'capped', message: CREATOR_CAP_MESSAGE });
   });
 });
