@@ -76,7 +76,20 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.23.3"
+PROMPT_VERSION = "meera-2026.09.24.1"
+# ^ bumped for the creator-AI audit fixes, lane B (audit 2026-09-24, ai.md H1 and M1-M10):
+# the week plan now shows each festival on ONE day (its post day, with post_by the festival's
+# own date) and the persona's week-plan rule says so; KEEP IT SHORT names the week plan as an
+# exception next to the full script; the two hook templates that open with a comment ask are
+# marked CTA RULE in the knowledge block (content_knowledge.py) so the ask moves to the last
+# beat or the caption; the intake no longer offers "carousel" (short video only, said
+# plainly); "saved as a draft, tap to send" now rides in the draft_reply bullet, rendered only
+# when that tool is offered; with no tool giving the date Meera says she cannot see it and
+# asks; and four knowledge rows no longer model invented statistics or invented first-person
+# results, with a persona rule against scripting results the creator has not told her.
+# BRAND prompt unchanged.
+#
+# Previously (.23.3):
 # ^ bumped for the Level 2 "frame check" route (T-SHOOTCHECK-L2, one photo in,
 # three fixes out -- app/routes/shoot_check.py, app/prompt/frame_check.py): a
 # NEW cached system block (`build_system_prompt` in frame_check.py) reaches

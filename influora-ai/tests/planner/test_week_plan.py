@@ -13,6 +13,7 @@ Two rules this file defends:
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 
 from app.planner.events import load_events
 from app.planner.week_plan import enrich_week_plan
@@ -76,28 +77,72 @@ def _plan(**over) -> dict:
 # --- the calendar is attached to the server's days -------------------------------
 
 
+def _days_carrying(enriched: dict, name: str) -> dict[str, dict]:
+    return {
+        day["date"]: event
+        for day in enriched["days"]
+        for event in day["events"]
+        if event["name"] == name
+    }
+
+
 def test_events_land_on_the_dates_spring_sent():
     enriched = enrich_week_plan(_plan())
     assert [day["date"] for day in enriched["days"]] == [day["date"] for day in _DAYS]
     assert [day["weekday"] for day in enriched["days"]] == [day["weekday"] for day in _DAYS]
-    by_date = {day["date"]: [event["name"] for event in day["events"]] for day in enriched["days"]}
-    # World Tourism Day is 27 September, post_before_days 3, and fits Food.
-    assert "World Tourism Day" in by_date["2026-09-27"]
-    assert "World Tourism Day" in by_date["2026-09-24"]
-    assert "World Tourism Day" not in by_date["2026-09-23"]
-    # World Heart Day is 29 September, post_before_days 2, and fits Food.
-    assert "World Heart Day" in by_date["2026-09-29"]
+    # World Tourism Day is 27 September, post_before_days 3, and fits Food: it goes on its post
+    # day, 24 September, and on no other day (lane B2: it used to fill 24-27).
+    assert set(_days_carrying(enriched, "World Tourism Day")) == {"2026-09-24"}
+    # World Heart Day is 29 September, post_before_days 2, and fits Food: post day 27 September.
+    assert set(_days_carrying(enriched, "World Heart Day")) == {"2026-09-27"}
 
 
 def test_days_until_counts_down_to_the_day_itself():
     enriched = enrich_week_plan(_plan())
-    tourism = {
-        day["date"]: event["days_until"]
-        for day in enriched["days"]
-        for event in day["events"]
-        if event["name"] == "World Tourism Day"
-    }
-    assert tourism == {"2026-09-24": 3, "2026-09-25": 2, "2026-09-26": 1, "2026-09-27": 0}
+    tourism = _days_carrying(enriched, "World Tourism Day")
+    # Counted from the post day to the day itself, and post_by names the day itself.
+    assert {day: event["days_until"] for day, event in tourism.items()} == {"2026-09-24": 3}
+    assert tourism["2026-09-24"]["post_by"] == "2026-09-27"
+    assert tourism["2026-09-24"]["date"] == "2026-09-27"
+
+
+def _week_from(start: str) -> list[dict]:
+    first = date.fromisoformat(start)
+    return [
+        {"date": (first + timedelta(days=n)).isoformat(), "weekday": (first + timedelta(days=n)).strftime("%A")}
+        for n in range(7)
+    ]
+
+
+def test_a_post_day_before_the_window_is_clamped_to_its_first_day():
+    # Window starts 26 September: Tourism Day's post day (24th) has passed, so it goes on the 26th,
+    # the first day of the window, with one day to go -- never after the 27th.
+    enriched = enrich_week_plan(_plan(today="2026-09-26", days=_week_from("2026-09-26")))
+    tourism = _days_carrying(enriched, "World Tourism Day")
+    assert {day: event["days_until"] for day, event in tourism.items()} == {"2026-09-26": 1}
+    # An event whose day is the window's first day stays on it, 0 days to go.
+    on_the_day = enrich_week_plan(_plan(today="2026-09-27", days=_week_from("2026-09-27")))
+    tourism = _days_carrying(on_the_day, "World Tourism Day")
+    assert {day: event["days_until"] for day, event in tourism.items()} == {"2026-09-27": 0}
+
+
+def test_each_event_sits_on_exactly_one_day_and_the_week_keeps_free_days():
+    """ai.md H1, the audit's own week: a Food and Fitness creator on 2026-09-24 saw World Tourism
+    Day on four days running and an event on all seven days, so the persona's "a day with an event
+    is built around it" left no evergreen idea and no rest day."""
+    enriched = enrich_week_plan(
+        _plan(today="2026-09-24", days=_week_from("2026-09-24"), categories=["Food", "Fitness"])
+    )
+    placements = [
+        (event["name"], event["post_by"]) for day in enriched["days"] for event in day["events"]
+    ]
+    assert placements, "the week should still carry its festivals"
+    assert len(placements) == len(set(placements)), placements
+    free_days = [day["date"] for day in enriched["days"] if not day["events"]]
+    assert len(free_days) >= 1, "no day is left for an evergreen idea or a rest day"
+    by_date = {day["date"]: {e["name"] for e in day["events"]} for day in enriched["days"]}
+    assert by_date["2026-09-24"] == {"World Tourism Day", "Daughters' Day (India)"}
+    assert by_date["2026-09-27"] == {"World Heart Day"}
 
 
 def test_events_carry_their_angles_and_sensitivity_note():
@@ -248,6 +293,10 @@ def test_the_persona_pins_the_plan_format():
     assert "Never say a festival is on a date the tool did not give you." in TEXT
     assert "keep one rest or reply day" in TEXT
     assert "End by offering the full script for any day." in TEXT
+    # Lane B2: the rule matches the data -- one day per event, and post_by is the day itself.
+    assert "Each festival or special day sits on ONE day of the plan" in TEXT
+    assert "never repeat it on another day" in TEXT
+    assert "A day with a festival or special day in the tool is built around it" not in TEXT
 
 
 def test_the_committed_calendar_is_what_the_plan_reads():
