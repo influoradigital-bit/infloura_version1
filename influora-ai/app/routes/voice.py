@@ -153,6 +153,12 @@ async def resolve_voice_language(
     return prefs.language
 
 
+# A creator whose saved language cannot be read (no preference yet, or Spring unreachable) gets the
+# same language the chat starts in: CreatorAgentPreferences.DEFAULT_LANGUAGE (English since
+# 2026-09-23; Hindi on request). tests/routes/test_voice_language.py pins the two together.
+CREATOR_VOICE_FALLBACK_LANGUAGE = "en-IN"
+
+
 async def resolve_voice_prefs(
     *,
     verified_claims: dict[str, Any] | None,
@@ -197,7 +203,7 @@ async def resolve_voice_prefs(
     cap_override: str | None = None
     # Q3: consent starts REQUIRED and is cleared only by a positive signal
     # from a successfully fetched context -- the "voice must never dead-end"
-    # rule below covers the LANGUAGE (falls back to hi-IN); it never covers
+    # rule below covers the LANGUAGE (falls back to CREATOR_VOICE_FALLBACK_LANGUAGE); it never covers
     # consent, which is DPDP and fails closed exactly like /chat.
     consent_required = True
     try:
@@ -215,11 +221,11 @@ async def resolve_voice_prefs(
             fields={"error_type": type(exc).__name__, "direction": direction},
         )
         creator_language = None
-    # For a creator, the preferences default (hi-IN) is the right fallback in
-    # BOTH directions -- not the brand-side en-IN TTS default.
+    # For a creator, the preferences default (CreatorAgentPreferences.DEFAULT_LANGUAGE, en-IN
+    # since 2026-09-23) is the right fallback in BOTH directions, so voice and chat agree.
     return VoicePrefs(
         audience=audience,
-        language=normalize_voice_language(creator_language, default="hi-IN"),
+        language=normalize_voice_language(creator_language, default=CREATOR_VOICE_FALLBACK_LANGUAGE),
         creator_cap_override=cap_override,
         consent_required=consent_required,
     )

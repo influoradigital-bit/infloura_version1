@@ -157,7 +157,7 @@ async def test_creator_language_falls_back_to_hindi_when_context_is_missing_it()
         request_id="r",
         spring=spring,
     )
-    assert lang == "hi-IN"
+    assert lang == "en-IN"  # the chat's default too (English first, Hindi on request)
 
 
 @pytest.mark.asyncio
@@ -173,7 +173,7 @@ async def test_creator_language_survives_a_context_fetch_failure():
         request_id="r",
         spring=spring,
     )
-    assert lang == "hi-IN"  # voice never dead-ends
+    assert lang == "en-IN"  # voice never dead-ends
 
 
 @pytest.mark.asyncio
@@ -278,3 +278,18 @@ async def test_voice_transcribe_passes_creator_language_to_sarvam():
     assert result["cleaned_text"] == "Hello."
     sarvam.transcribe.assert_awaited_once()
     assert sarvam.transcribe.await_args.kwargs["language"] == "en-IN"
+
+def test_creator_voice_fallback_matches_the_chat_default_in_spring():
+    """Voice and chat must start in the same language. The chat's default lives in Java
+    (CreatorAgentPreferences.DEFAULT_LANGUAGE); read it from source so a change on either side
+    fails here instead of a creator typing in English and being transcribed as Hindi."""
+    import re
+    from pathlib import Path
+
+    java = (
+        Path(__file__).resolve().parents[3]
+        / "influora-api/src/main/java/com/influora/domain/entity/CreatorAgentPreferences.java"
+    ).read_text(encoding="utf-8")
+    match = re.search(r'DEFAULT_LANGUAGE\s*=\s*"([^"]+)"', java)
+    assert match, "CreatorAgentPreferences.DEFAULT_LANGUAGE not found"
+    assert voice_route.CREATOR_VOICE_FALLBACK_LANGUAGE == match.group(1)
