@@ -583,6 +583,14 @@ export function MeeraCopilotChat({
    * moves focus to the textarea instead of silently doing nothing — the button is never
    * `disabled` for this case any more, so it needs its own honest response to a tap.
    */
+  const statusText = isListening
+    ? pickLang(language, HEADER_STATUS_LISTENING)
+    : isSpeaking
+      ? pickLang(language, HEADER_STATUS_SPEAKING)
+      : sending
+        ? pickLang(language, HEADER_STATUS_WORKING)
+        : pickLang(language, HEADER_STATUS_ONLINE);
+
   const handleSendClick = () => {
     if (!draft.trim()) {
       document.getElementById(composerId)?.focus();
@@ -594,11 +602,14 @@ export function MeeraCopilotChat({
   const voiceStatus: MeeraVoiceStatus = isListening ? 'listening' : isSpeaking ? 'speaking' : sending ? 'thinking' : 'idle';
   const lastMeeraReply = [...messages].reverse().find((m) => m.role === 'meera' && m.text.trim() !== '')?.text;
 
+  // Live check at 375px: the fixed 32rem panel left the message area 203px tall, so the desk sat
+  // below the fold behind a wrapped header. On a phone the panel takes most of the screen
+  // instead; from `sm` up it keeps its original size.
   return (
-    <div className="flex h-[32rem] max-h-[75vh] flex-col rounded-xl border border-border bg-card shadow-sm">
+    <div className="flex h-[min(78vh,32rem)] flex-col rounded-xl border border-border bg-card shadow-sm sm:h-[32rem] sm:max-h-[75vh]">
       {/* MEERA-CHAT-DESIGN-SPEC.md Part 0.1 — header on the 30% band (--meera-stage), white text. */}
       <div className="flex shrink-0 items-center justify-between bg-[var(--meera-stage)] px-4 py-3 text-white">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {/* Meera's presence: follows her REAL state. The mic is opened by the orb only while the
               creator is already recording (useVoiceInput has the permission by then).
               Round 2 QA — at rest (low `activity`) the orb's thin ring alone read as an empty
@@ -619,19 +630,20 @@ export function MeeraCopilotChat({
               />
             </div>
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-semibold">Meera</p>
-            <p className="flex items-center gap-1.5 text-xs text-white/75" aria-live="polite">
+            {/* `truncate` + `min-w-0`: at 375px this sentence wrapped to five lines and made the
+                header 156px tall. One line, cut with an ellipsis; the full text stays in the
+                accessible name for screen readers. */}
+            <p
+              className="flex items-center gap-1.5 truncate text-xs text-white/75"
+              aria-live="polite"
+              title={statusText}
+            >
               {/* Round 2 QA — `success-foreground` failed contrast on this dark band; a bright
                   mint (≥3:1 on #221e35) at ≥8px reads clearly as an online indicator. */}
               <span className="h-2 w-2 shrink-0 rounded-full bg-[#5DCAA5]" aria-hidden="true" />
-              {isListening
-                ? pickLang(language, HEADER_STATUS_LISTENING)
-                : isSpeaking
-                  ? pickLang(language, HEADER_STATUS_SPEAKING)
-                  : sending
-                    ? pickLang(language, HEADER_STATUS_WORKING)
-                    : pickLang(language, HEADER_STATUS_ONLINE)}
+              <span className="truncate">{statusText}</span>
             </p>
           </div>
         </div>
