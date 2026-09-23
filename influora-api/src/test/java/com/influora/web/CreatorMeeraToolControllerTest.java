@@ -29,6 +29,7 @@ import com.influora.service.meera.tool.creator.EstimateMyRateExecutor;
 import com.influora.service.meera.tool.creator.GetBriefExecutor;
 import com.influora.service.meera.tool.creator.GetMyDealsExecutor;
 import com.influora.service.meera.tool.creator.GetMyMetricsExecutor;
+import com.influora.service.meera.tool.creator.GetPlanMyWeekExecutor;
 import com.influora.service.meera.tool.creator.GetTodaysTopicsExecutor;
 import com.influora.web.dto.meera.CreatorToolDtos.CheckDealRisksResult;
 import com.influora.web.dto.meera.CreatorToolDtos.EstimateMyRateResult;
@@ -37,6 +38,8 @@ import com.influora.web.dto.meera.CreatorToolDtos.GetMyDealsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyMetricsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.GetTodaysTopicsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.MetricsResult;
+import com.influora.web.dto.meera.CreatorToolDtos.PatternResult;
+import com.influora.web.dto.meera.CreatorToolDtos.PlanMyWeekResult;
 import com.influora.web.dto.meera.CreatorToolDtos.PackageQuote;
 import com.influora.web.dto.meera.CreatorToolDtos.RiskFlag;
 import java.lang.reflect.InvocationTargetException;
@@ -79,6 +82,7 @@ class CreatorMeeraToolControllerTest {
     @Mock private CheckDealRisksExecutor checkDealRisksExecutor;
     @Mock private GetBriefExecutor getBriefExecutor;
     @Mock private GetTodaysTopicsExecutor getTodaysTopicsExecutor;
+    @Mock private GetPlanMyWeekExecutor getPlanMyWeekExecutor;
 
     private CreatorMeeraToolController controller;
 
@@ -96,7 +100,8 @@ class CreatorMeeraToolControllerTest {
                         estimateMyRateExecutor,
                         checkDealRisksExecutor,
                         getBriefExecutor,
-                        getTodaysTopicsExecutor);
+                        getTodaysTopicsExecutor,
+                        getPlanMyWeekExecutor);
         lenient().when(featureProperties.isCreatorEnabled()).thenReturn(true);
     }
 
@@ -129,6 +134,8 @@ class CreatorMeeraToolControllerTest {
                 assertThrows(ApiException.class, () -> controller.getBrief(JWT, BODY));
         ApiException topics =
                 assertThrows(ApiException.class, () -> controller.getTodaysTopics(JWT, BODY));
+        ApiException plan =
+                assertThrows(ApiException.class, () -> controller.planMyWeek(JWT, BODY));
 
         assertEquals("FEATURE_DISABLED", deals.getCode());
         assertEquals(HttpStatus.NOT_FOUND, deals.getStatus());
@@ -142,6 +149,8 @@ class CreatorMeeraToolControllerTest {
         assertEquals(HttpStatus.NOT_FOUND, brief.getStatus());
         assertEquals("FEATURE_DISABLED", topics.getCode());
         assertEquals(HttpStatus.NOT_FOUND, topics.getStatus());
+        assertEquals("FEATURE_DISABLED", plan.getCode());
+        assertEquals(HttpStatus.NOT_FOUND, plan.getStatus());
 
         verifyNoInteractions(
                 onBehalfAuthResolver,
@@ -151,7 +160,8 @@ class CreatorMeeraToolControllerTest {
                 estimateMyRateExecutor,
                 checkDealRisksExecutor,
                 getBriefExecutor,
-                getTodaysTopicsExecutor);
+                getTodaysTopicsExecutor,
+                getPlanMyWeekExecutor);
         // [SEC: Kabir Wave 2, finding 3] The refusal is audited, with a null tenant key: the flag
         // is checked before anything about the caller is proven, so there is no identity to record.
         assertRejectionRow(null, "get_my_deals", "FEATURE_DISABLED");
@@ -160,6 +170,7 @@ class CreatorMeeraToolControllerTest {
         assertRejectionRow(null, "check_deal_risks", "FEATURE_DISABLED");
         assertRejectionRow(null, "get_brief", "FEATURE_DISABLED");
         assertRejectionRow(null, "get_todays_topics", "FEATURE_DISABLED");
+        assertRejectionRow(null, "plan_my_week", "FEATURE_DISABLED");
     }
 
     @Test
@@ -616,6 +627,82 @@ class CreatorMeeraToolControllerTest {
     }
 
     // =====================================================================================
+    // plan_my_week - T-PLAN-MY-WEEK
+    // =====================================================================================
+
+    private static PlanMyWeekResult emptyPlanMyWeekResult() {
+        return new PlanMyWeekResult(
+                "2026-09-23",
+                List.of(),
+                List.of(),
+                new PatternResult(false, 0, null, List.of(), "Not enough posts yet."));
+    }
+
+    @Test
+    @DisplayName(
+            "plan_my_week requires its OWN scope name -- a token scoped only to get_todays_topics"
+                    + " cannot reach it")
+    void testPlanMyWeekRequiresItsOwnScope() {
+        stubResolverFor(CreatorToolName.plan_my_week, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(creatorToolCallValidator.validateAndResolve("plan_my_week", CREATOR_USER_ID))
+                .thenReturn(CreatorToolName.plan_my_week);
+        when(creatorToolCallValidator.tierOf(CreatorToolName.plan_my_week)).thenReturn(MeeraToolTier.R);
+        when(getPlanMyWeekExecutor.execute(CREATOR_USER_ID, BODY)).thenReturn(emptyPlanMyWeekResult());
+
+        ResponseEntity<ApiResponse<PlanMyWeekResult>> response = controller.planMyWeek(JWT, BODY);
+
+        assertEquals(emptyPlanMyWeekResult(), response.getBody().data());
+        verify(onBehalfAuthResolver).resolveForWorkspaceRequiringScope(JWT, CREATOR_USER_ID, "plan_my_week");
+        verify(onBehalfAuthResolver, never())
+                .resolveForWorkspaceRequiringScope(anyString(), anyString(), eq("get_todays_topics"));
+    }
+
+    @Test
+    @DisplayName(
+            "plan_my_week happy path: the executor runs with the JWT-verified user id and an"
+                    + " ALLOWED audit row is written with the tool's real tier")
+    void testPlanMyWeekHappyPath() {
+        stubResolverFor(CreatorToolName.plan_my_week, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(creatorToolCallValidator.validateAndResolve("plan_my_week", CREATOR_USER_ID))
+                .thenReturn(CreatorToolName.plan_my_week);
+        when(creatorToolCallValidator.tierOf(CreatorToolName.plan_my_week)).thenReturn(MeeraToolTier.R);
+        PlanMyWeekResult expected = emptyPlanMyWeekResult();
+        when(getPlanMyWeekExecutor.execute(CREATOR_USER_ID, BODY)).thenReturn(expected);
+
+        ResponseEntity<ApiResponse<PlanMyWeekResult>> response = controller.planMyWeek(JWT, BODY);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(expected, response.getBody().data());
+        verify(getPlanMyWeekExecutor).execute(CREATOR_USER_ID, BODY);
+        verify(auditLogService)
+                .recordToolCall(
+                        eq(CREATOR_USER_ID),
+                        eq("plan_my_week"),
+                        eq("R"),
+                        eq(AuditLogService.OUTCOME_ALLOWED),
+                        eq((String) null),
+                        eq((String) null),
+                        eq((BigDecimal) null),
+                        any());
+    }
+
+    @Test
+    @DisplayName("an unconsented creator is 403 CONSENT_REQUIRED on plan_my_week too, before the executor runs")
+    void testPlanMyWeekUnconsentedCreatorIs403() {
+        stubResolverFor(CreatorToolName.plan_my_week, creatorContext());
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(false);
+
+        ApiException ex = assertThrows(ApiException.class, () -> controller.planMyWeek(JWT, BODY));
+
+        assertEquals("CONSENT_REQUIRED", ex.getCode());
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatus());
+        verifyNoInteractions(getPlanMyWeekExecutor);
+        assertRejectionRow(CREATOR_USER_ID, "plan_my_week", "CONSENT_REQUIRED");
+    }
+
+    // =====================================================================================
     // get_brief - the read half of "paste and read"
     // =====================================================================================
 
@@ -862,7 +949,7 @@ class CreatorMeeraToolControllerTest {
             assertRejectionRow("01HBRANDUSER123456789", tool, "AUDIENCE_PRINCIPAL_MISMATCH");
         }
 
-        // Non-vacuity: the six wired routes, by name. A reflection that found nothing would pass
+        // Non-vacuity: the seven wired routes, by name. A reflection that found nothing would pass
         // every assertion in the loop above.
         assertEquals(
                 new TreeSet<>(
@@ -872,7 +959,8 @@ class CreatorMeeraToolControllerTest {
                                 "estimate_my_rate",
                                 "get_my_metrics",
                                 "check_deal_risks",
-                                "get_todays_topics")),
+                                "get_todays_topics",
+                                "plan_my_week")),
                 routes);
         verifyNoInteractions(
                 getMyDealsExecutor,
@@ -880,7 +968,8 @@ class CreatorMeeraToolControllerTest {
                 estimateMyRateExecutor,
                 checkDealRisksExecutor,
                 getBriefExecutor,
-                getTodaysTopicsExecutor);
+                getTodaysTopicsExecutor,
+                getPlanMyWeekExecutor);
         verify(preferencesService, never()).isConsentAccepted(anyString());
         assertNoAllowedRow();
     }

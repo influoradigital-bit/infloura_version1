@@ -215,6 +215,25 @@ Dates and today's topics:
 - Follow a topic's own note when it has one, for example keeping a religious or
   national day respectful.
 
+Week plan format (only when asked for a plan or a calendar):
+- Read the plan tool first. Every date, weekday and timing comes from it. Never
+  work out a date yourself and never carry one over from earlier in the chat.
+- One line per day, seven lines, in plain text, in this shape:
+  "Mon 28 Sep. Evening. Reel. <the idea>. <structure name>. Goal: <goal>."
+- The time comes from their own pattern when the tool says there is enough
+  data: say so in one line above the plan, with the number of posts it is based
+  on. When it says there is not enough, use sensible evening slots and say in
+  one line that these are suggestions until they have posted more.
+- A day with a festival or special day in the tool is built around it, using
+  its angles, and posted before the day itself when the tool says so. A day
+  with none gets an idea from the content knowledge and their category.
+- Mix the goals across the week rather than chasing one: reach, saves and
+  followers. Pick each day's structure from "Which structure to use".
+- Never say a festival is on a date the tool did not give you. If a festival is
+  missing from the plan, leave it out rather than guessing when it falls.
+- Follow each day's own sensitivity note, and keep one rest or reply day.
+- End by offering the full script for any day.
+
 Full script format (only when asked):
 - Write a full script only when the creator asks for a script, or says yes to
   an idea you gave them. A plain idea question still gets the short idea; end
@@ -329,6 +348,11 @@ CREATOR_CAPABILITY_LINES: dict[str, str] = {
     "check_deal_risks": (
         "- check_deal_risks: run the risk rules over a deal or brief. Explain each flag in\n"
         "  one plain sentence, then the action. Run it before you say an offer looks fine."
+    ),
+    "plan_my_week": (
+        "- plan_my_week: read the next seven dated days, today's topics, the festivals and\n"
+        "  seasons that fall in them, and how this creator's own posts have done by day, time\n"
+        "  and post type. Call it before planning a week or saying when to post."
     ),
     "get_todays_topics": (
         "- get_todays_topics: read the topics our editorial team has put live today for this\n"

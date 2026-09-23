@@ -41,6 +41,7 @@ GET_MY_METRICS = "get_my_metrics"
 CHECK_DEAL_RISKS = "check_deal_risks"
 DRAFT_REPLY = "draft_reply"
 GET_TODAYS_TOPICS = "get_todays_topics"
+PLAN_MY_WEEK = "plan_my_week"
 
 # B0 order matches §3.1's tool catalogue. B1 appends send_routine_reply,
 # rank_open_campaigns and draft_application to the END of this tuple.
@@ -52,6 +53,7 @@ CREATOR_TOOL_NAMES: tuple[str, ...] = (
     CHECK_DEAL_RISKS,
     DRAFT_REPLY,
     GET_TODAYS_TOPICS,
+    PLAN_MY_WEEK,
 )
 
 # Every creator tool forwards to `/internal/meera/creator/<name>`
@@ -402,6 +404,24 @@ CREATOR_TOOL_SCHEMAS: list[dict[str, Any]] = [
             "fact: present it as something going around, add no numbers to it, and use the "
             "angles as written. An empty list means nothing is live for them today, which is "
             "normal -- fall back to the content knowledge. Read-only."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": PLAN_MY_WEEK,
+        "description": (
+            "Plan the creator's next seven days. Returns the server's date and the seven dated "
+            "days ahead in Indian time, the festivals and seasons that fall in them with ready "
+            "angles, today's editorial topics, and how this creator's OWN posts have performed by "
+            "day, time of day and post type. Call it before planning a week or saying when to "
+            "post. Every date and weekday in your answer must come from this result -- you have no "
+            "other way to know them. The pattern's `enough_data` decides whether you may say a "
+            "best time at all: when it is false, say the timings are suggestions until they have "
+            "posted more, and never quote a window. Read-only."
         ),
         "input_schema": {
             "type": "object",

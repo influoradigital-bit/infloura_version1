@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * Storage-abstraction repository for per-post metrics (V21 {@code media_metrics}).
@@ -33,6 +35,30 @@ public interface MediaMetricsRepository extends JpaRepository<MediaMetric, Strin
     /** Recent per-post metrics for a creator on one platform, newest first. */
     List<MediaMetric> findByCreatorProfileIdAndPlatformOrderByTimeDesc(
             String creatorProfileId, String platform, Pageable pageable);
+
+    /**
+     * The NEWEST snapshot of each post this creator published on or after {@code postedAtFrom} —
+     * one row per post, not one per poll.
+     *
+     * <p>{@code media_metrics} stores a snapshot per poll ({@code time} is the fetch time, {@code
+     * posted_at} the post's own), so a post polled hourly for three months holds hundreds of rows
+     * that are all the same post. {@code CreatorPostingPatternService} needs one row per post, and
+     * loading every snapshot to throw all but one away grows without bound on a chat request — the
+     * correlated {@code max(time)} below does that reduction in the database instead, so the result
+     * size is the number of posts, not the number of polls.
+     *
+     * <p>Rows with a null {@code posted_at} are excluded by the comparison itself; the caller still
+     * applies the upper bound of its window and its own dedupe as a second line of defence.
+     */
+    @Query(
+            "select m from MediaMetric m where m.creatorProfileId = :creatorProfileId"
+                    + " and m.postedAt >= :postedAtFrom"
+                    + " and m.time = (select max(m2.time) from MediaMetric m2"
+                    + " where m2.mediaId = m.mediaId)"
+                    + " order by m.postedAt desc")
+    List<MediaMetric> findNewestSnapshotPerPostSince(
+            @Param("creatorProfileId") String creatorProfileId,
+            @Param("postedAtFrom") Instant postedAtFrom);
 
     /** Time-range query for a creator's media metrics (trend charts / analytics API). */
     List<MediaMetric> findByCreatorProfileIdAndTimeBetweenOrderByTimeAsc(

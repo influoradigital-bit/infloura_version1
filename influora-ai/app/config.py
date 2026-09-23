@@ -76,7 +76,13 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.23.1"
+PROMPT_VERSION = "meera-2026.09.23.2"
+# ^ bumped for plan_my_week (Swapnil 2026-09-23): a 7-day plan built from the server's dates,
+# the festival calendar in app/planner/events.jsonl, today's topics and the creator's own
+# posting pattern. The plan format forbids inventing a date or a festival day, and says the
+# timing is a suggestion until their own posts support it. BRAND prompt unchanged.
+#
+# Previously (.23.1):
 # ^ bumped for get_todays_topics (Swapnil 2026-09-23): admin-curated daily topics reach
 # creator Meera through a tool, never the cached prompt. Two rails land with it, both from
 # Ash's AI review (wiki/ai-review/daily-topics-week-plan-ai-review.md): the model is told it

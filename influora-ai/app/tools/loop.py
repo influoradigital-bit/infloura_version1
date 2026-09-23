@@ -27,6 +27,7 @@ from app.clients.spring import (
     idempotency_key_for,
 )
 from app.config import PROMPT_VERSION, get_settings
+from app.planner.week_plan import enrich_week_plan
 from app.prompt.untrusted import wrap_untrusted
 from app.providers.claude import ClaudeProvider
 from app.routes.analyze_site import perform_site_analysis
@@ -38,6 +39,7 @@ from app.tools.creator_schemas import (
     GET_BRIEF,
     GET_MY_DEALS,
     GET_TODAYS_TOPICS,
+    PLAN_MY_WEEK,
 )
 from app.tools.schemas import (
     IDEMPOTENT_REQUIRED_TOOLS,
@@ -731,6 +733,12 @@ _TRUSTED_KEYS_CHECK_DEAL_RISKS = ("highest_severity", "target", "target_id")
 # review 2026-09-23, P0-2). Wrapped as `editorial`, not `brand_written`: the persona names
 # both, and a creator reading the reply should not be told a brand wrote it.
 _TRUSTED_KEYS_GET_TODAYS_TOPICS = ("today", "weekday")
+
+# plan_my_week: everything the SERVER computed (dates, the posting pattern from the
+# creator's own posts, their categories) plus the festival calendar from this repo is
+# trusted; `topics` is the hand-typed table again, so it rides in the wrapper, and so does
+# any key Spring does not send today.
+_TRUSTED_KEYS_PLAN_MY_WEEK = ("today", "days", "pattern", "categories", "seasons")
 # get_my_deals: two allow-lists -- top-level result fields, and per-deal fields. `deals` itself
 # is handled specially below (split per deal), not listed as trusted or wrapped whole.
 _TRUSTED_KEYS_GET_MY_DEALS = ("active_count", "completed_count")
@@ -942,6 +950,19 @@ def _model_copy_of_tool_result(tool_name: str, data: Any) -> str:
         if not brand:
             return _safe_json(data)
         return _safe_json(trusted) + "\n" + wrap_untrusted("brand_written", _safe_json(brand))
+
+    if tool_name == PLAN_MY_WEEK:
+        # The festival calendar is attached here, against the dates Spring sent -- never a date
+        # this process or the model worked out. `enrich_week_plan` returns `data` untouched when
+        # there is no usable date to enrich against.
+        enriched = enrich_week_plan(data)
+        if not isinstance(enriched, dict):
+            return _safe_json(enriched)
+        trusted = {k: v for k, v in enriched.items() if k in _TRUSTED_KEYS_PLAN_MY_WEEK}
+        editorial = {k: v for k, v in enriched.items() if k not in _TRUSTED_KEYS_PLAN_MY_WEEK}
+        if not editorial:
+            return _safe_json(trusted)
+        return _safe_json(trusted) + "\n" + wrap_untrusted("editorial", _safe_json(editorial))
 
     if tool_name == GET_TODAYS_TOPICS:
         # Everything except the server-computed date goes in the wrapper, `topics` included --

@@ -13,11 +13,12 @@ import java.util.Optional;
  * set. Neither gate looks at this enum, and neither should: the creator tools are described by
  * {@code creator_schemas.py}, a different catalogue for a different audience.
  *
- * <p><b>Six values from SPEC.md &sect;3.1, plus one outside it.</b> {@code get_todays_topics}
- * (T-CONTENT-TOPICS) is not in SPEC.md's &sect;3.1 catalogue -- it is a later addition with its own
- * route and executor, wired the same way every SPEC.md tool is: a name here, a tier in
- * {@code CreatorToolCallValidator}, a scope entry in {@code CreatorToolScopes}, and a route in
- * {@code CreatorMeeraToolController}, all in one change. {@code send_routine_reply},
+ * <p><b>Six values from SPEC.md &sect;3.1, plus two outside it.</b> {@code get_todays_topics}
+ * (T-CONTENT-TOPICS) and {@code plan_my_week} (T-PLAN-MY-WEEK) are not in SPEC.md's &sect;3.1
+ * catalogue -- both are later additions with their own route and executor, wired the same way
+ * every SPEC.md tool is: a name here, a tier in {@code CreatorToolCallValidator}, a scope entry in
+ * {@code CreatorToolScopes}, and a route in {@code CreatorMeeraToolController}, all in one change.
+ * {@code send_routine_reply},
  * {@code rank_open_campaigns} and {@code draft_application} are still not declared here: they are
  * Phase-B1/B5/B7 and remain names the model can be told about but the server cannot answer, which
  * is exactly why an enum constant is withheld until a route and an executor both exist.
@@ -32,7 +33,8 @@ public enum CreatorToolName {
     get_my_metrics,
     check_deal_risks,
     draft_reply,
-    get_todays_topics;
+    get_todays_topics,
+    plan_my_week;
 
     /**
      * Exact {@link #name()} match — never case-insensitive, never trimmed. A model that emits

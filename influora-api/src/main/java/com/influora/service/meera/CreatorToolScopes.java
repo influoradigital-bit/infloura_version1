@@ -79,7 +79,10 @@ public final class CreatorToolScopes {
                     + " rank_open_campaigns draft_application"
                     // T-CONTENT-TOPICS -- get_todays_topics is wired (has a route and an executor)
                     // from the moment it is added here, unlike the two names above it.
-                    + " get_todays_topics";
+                    + " get_todays_topics"
+                    // T-PLAN-MY-WEEK -- plan_my_week is wired (has a route and an executor) from
+                    // the moment it is added here, same as get_todays_topics above it.
+                    + " plan_my_week";
 
     /**
      * Level 1 adds the one commit-like tool: a routine reply actually reaches the brand.
@@ -175,7 +178,9 @@ public final class CreatorToolScopes {
                     "get_my_metrics",
                     "check_deal_risks",
                     // T-CONTENT-TOPICS -- route + GetTodaysTopicsExecutor added in the same change.
-                    "get_todays_topics");
+                    "get_todays_topics",
+                    // T-PLAN-MY-WEEK -- route + GetPlanMyWeekExecutor added in the same change.
+                    "plan_my_week");
 
     private CreatorToolScopes() {}
 
