@@ -72,6 +72,10 @@ public class CreatorMeeraController {
      * guard, same silent-fallback-not-413 contract, applied to the CREATOR-audience upload leg.
      */
     private static final long MAX_VOICE_CLIP_BYTES = 10L * 1024 * 1024;
+    /** Matches influora-ai's SHOOT_CHECK_MAX_IMAGE_BYTES default; the app sends a ~150 KB JPEG. */
+    static final long MAX_FRAME_BYTES = 1_500_000L;
+    /** A shot label is a few words from the script ("static overhead, 15s"), never an essay. */
+    private static final int MAX_SHOT_LABEL_CHARS = 120;
 
     private final MeeraSessionService sessionService;
     private final CreatorContextService creatorContext;
@@ -274,6 +278,64 @@ public class CreatorMeeraController {
      * 4xx/5xx for a provider/transport hiccup). Same {@link #MAX_VOICE_CLIP_BYTES} DoS/OOM guard
      * (Kabir H-1) and the same identity/consent discipline as {@link #speak} above.
      */
+    /**
+     * Shoot Check Level 2 -- "Check my frame": one still in, up to three fixes out.
+     *
+     * <p>A proxy, like {@link #transcribe}: the vision route lives on influora-ai and accepts only a
+     * service token, so the browser cannot call it directly. Before this route existed the app
+     * posted to {@code /ai/shoot-check/frame} on THIS server, which has no such path -- every tap
+     * failed in production while both services' tests passed.
+     *
+     * <p>Same identity and consent discipline as {@link #transcribe}: the creator is resolved from
+     * the verified principal (never the request body), consent is checked before any byte leaves
+     * this server, and the image is held in memory for this request only -- never stored, never
+     * logged. Failures are a non-2xx on purpose: the app shows "couldn't check your frame right
+     * now" for any of them and never retries.
+     */
+    @PostMapping(value = "/shoot-check/frame", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> checkFrame(
+            @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestParam(value = "image", required = false) MultipartFile image,
+            @RequestParam(value = "shot_label", required = false) String shotLabel) {
+        requireFeatureEnabled();
+        CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
+        String creatorUserId = profile.getUserId();
+        requireConsent(creatorUserId);
+
+        if (image == null || image.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("code", "FRAME_MISSING"));
+        }
+        if (image.getSize() > MAX_FRAME_BYTES) {
+            return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of("code", "FRAME_TOO_LARGE"));
+        }
+
+        byte[] imageBytes;
+        try {
+            imageBytes = image.getBytes();
+        } catch (IOException e) {
+            return ResponseEntity.badRequest().body(Map.of("code", "FRAME_UNREADABLE"));
+        }
+
+        String label = shotLabel == null ? null : shotLabel.strip();
+        if (label != null && label.length() > MAX_SHOT_LABEL_CHARS) {
+            label = label.substring(0, MAX_SHOT_LABEL_CHARS);
+        }
+
+        MeeraVoiceAiClient.FrameCheckResult result =
+                voiceAiClient.checkFrame(creatorUserId, imageBytes, image.getContentType(), label);
+        if (!result.ok()) {
+            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("code", "FRAME_CHECK_UNAVAILABLE"));
+        }
+
+        MediaType mediaType;
+        try {
+            mediaType = MediaType.parseMediaType(result.contentType());
+        } catch (Exception e) {
+            mediaType = MediaType.APPLICATION_JSON;
+        }
+        return ResponseEntity.ok().contentType(mediaType).body(result.jsonBytes());
+    }
+
     @PostMapping(value = "/voice/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> transcribe(
             @AuthenticationPrincipal AuthPrincipal principal,

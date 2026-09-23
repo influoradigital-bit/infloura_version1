@@ -1132,15 +1132,16 @@ export const meeraApi = {
   },
 
   /**
-   * POST /ai/shoot-check/frame — Level 2 "Check my frame" for the creator Shoot Check screen.
-   * Multipart: `image` (a single JPEG still, downscaled client-side to max 800px wide at ~0.7
-   * quality by the caller before this ever runs — this method does no image processing itself),
-   * `workspace_id`, and an optional `shot_label`.
+   * POST /creator/meera/shoot-check/frame — Level 2 "Check my frame" for the creator Shoot Check
+   * screen. Multipart: `image` (a single JPEG still, downscaled client-side to max 800px wide at
+   * ~0.7 quality by the caller before this ever runs — this method does no image processing
+   * itself) and an optional `shot_label`.
    *
-   * Deliberately NOT routed through `basePath(role)` the way every other method in this file is —
-   * this endpoint's contract (as given to the frontend lane) is the flat path below, not a
-   * `/meera` or `/creator/meera` one. If the backend lane that owns this route lands it under a
-   * different prefix, this is the one line to change.
+   * Goes through `basePath(role)` like every other method here. It used to post to a flat
+   * `/ai/shoot-check/frame`, which is influora-ai's own route: this app cannot reach that service
+   * directly, so every tap failed in production. `CreatorMeeraController#checkFrame` is the proxy,
+   * and `meera-api.shoot-check-route.test.ts` pins this URL to that Java mapping. The creator's
+   * identity comes from the auth token on the server, so no workspace id is sent.
    *
    * Same one-thing-to-check discipline as `transcribe()`: returns `null` for every "no result"
    * case — mock mode, the endpoint not existing yet (404) or any other non-2xx, an unparsable
@@ -1149,7 +1150,6 @@ export const meeraApi = {
    */
   checkFrame: async (
     image: Blob,
-    workspaceId: string,
     shotLabel: string | undefined,
     role: MeeraRole = 'creator'
   ): Promise<MeeraShootCheckFrameResult | null> => {
@@ -1169,10 +1169,9 @@ export const meeraApi = {
 
       const formData = new FormData();
       formData.append('image', image, 'frame.jpg');
-      formData.append('workspace_id', workspaceId);
       if (shotLabel) formData.append('shot_label', shotLabel);
 
-      const res = await fetch(`${API_BASE_URL}/ai/shoot-check/frame`, {
+      const res = await fetch(`${API_BASE_URL}${basePath(role)}/shoot-check/frame`, {
         method: 'POST',
         headers,
         credentials: 'include',

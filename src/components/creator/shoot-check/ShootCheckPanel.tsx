@@ -65,17 +65,13 @@ function useOnlineStatus(): boolean {
 export interface ShootCheckPanelProps {
   /** Shot-by-shot script. With none, falls back to a single `medium` target. */
   shots?: ShootCheckShot[];
-  /** Self-scoped, same convention as `/workspaces/me/...` elsewhere in this codebase — the
-   * server derives the real workspace from the auth token; this is only what the multipart
-   * contract's `workspace_id` field expects to see. */
-  workspaceId?: string;
   /** Creator's language for on-screen fix text and spoken cues — the page reads this from
    * `api.creatorAgentPrefs.getPreferences().creator_language`, same source `creator-copilot.tsx`
    * uses, and passes it down; this component has no opinion on where it comes from. */
   lang?: ShootCheckLang;
 }
 
-export function ShootCheckPanel({ shots, workspaceId = 'me', lang = 'en-IN' }: ShootCheckPanelProps) {
+export function ShootCheckPanel({ shots, lang = 'en-IN' }: ShootCheckPanelProps) {
   const script = shots && shots.length > 0 ? shots : [FALLBACK_SHOT];
   const [shotIndex, setShotIndex] = React.useState(0);
   const clampedIndex = Math.min(shotIndex, script.length - 1);
@@ -122,13 +118,13 @@ export function ShootCheckPanel({ shots, workspaceId = 'me', lang = 'en-IN' }: S
       return;
     }
 
-    const result = await meeraApi.checkFrame(blob, workspaceId, currentShot.label || undefined, 'creator');
+    const result = await meeraApi.checkFrame(blob, currentShot.label || undefined, 'creator');
     if (!result) {
       setFrameCheck({ status: 'error', result: null });
       return;
     }
     setFrameCheck({ status: 'done', result });
-  }, [frameCheckDisabled, shootCheck, workspaceId, currentShot.label]);
+  }, [frameCheckDisabled, shootCheck, currentShot.label]);
 
   const readings = shootCheck.readings;
   const rows = readings
