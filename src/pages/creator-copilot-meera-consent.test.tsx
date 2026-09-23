@@ -50,11 +50,11 @@ describe('CreatorCopilotPage — Meera consent gate (A6/A10)', () => {
 
     await user.click(screen.getByRole('button', { name: /open meera/i }));
 
-    // MOCK_CREATOR_AGENT_PREFS.creator_language is 'hi-IN' — the consent dialog renders
-    // its Hindi copy, not the chat panel.
-    await waitFor(() => {
-      expect(screen.getByText('Meera से बात करें')).toBeInTheDocument();
-    });
+    // MOCK_CREATOR_AGENT_PREFS.creator_language is 'en-IN' (English is the default since
+    // 2026-09-23) — the consent dialog renders its English copy, not the chat panel.
+    // Queried by the dialog's own Accept button: the page card behind it is also titled
+    // "Talk to Meera", so matching that text alone passes before the dialog has opened.
+    expect(await screen.findByRole('button', { name: 'Accept' })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/ask meera/i)).not.toBeInTheDocument();
   });
 
@@ -63,13 +63,13 @@ describe('CreatorCopilotPage — Meera consent gate (A6/A10)', () => {
     renderPage();
 
     await user.click(screen.getByRole('button', { name: /open meera/i }));
-    await waitFor(() => screen.getByText('Meera से बात करें'));
+    await user.click(await screen.findByRole('button', { name: 'Accept' }));
 
-    await user.click(screen.getByRole('button', { name: 'स्वीकार करें' }));
-
+    // The consent dialog itself must go away (its title now matches the page card behind it,
+    // so query the dialog role), and the chat panel's composer must appear.
     await waitFor(() => {
-      expect(screen.queryByText('Meera से बात करें')).not.toBeInTheDocument();
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
-    expect(screen.getByPlaceholderText(/ask meera/i)).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText(/ask meera/i)).toBeInTheDocument();
   });
 });

@@ -106,7 +106,8 @@ class CreatorAgentPreferencesServiceTest {
         assertEquals(new BigDecimal("1200"), response.reelFloor());
         assertEquals(new BigDecimal("1200"), response.storySetFloor());
         assertEquals(new BigDecimal("1200"), response.postFloor());
-        assertEquals("hi-IN", response.creatorLanguage());
+        // Swapnil 2026-09-23: English is the default language for a brand-new creator.
+        assertEquals("en-IN", response.creatorLanguage());
         assertEquals(CreatorAgentPreferences.TONE_FRIENDLY, response.brandTone());
         assertEquals(0, response.approvalLevel());
         assertFalse(response.consentAccepted());

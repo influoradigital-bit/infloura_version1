@@ -62,7 +62,9 @@ export default function CreatorCopilotPage() {
   const [checkingConsent, setCheckingConsent] = React.useState(false);
   const [showConsent, setShowConsent] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState(false);
-  const [language, setLanguage] = React.useState('hi-IN');
+  // Swapnil 2026-09-23: English by default; the creator's stored creator_language wins as
+  // soon as preferences load, and Meera follows the language they write in.
+  const [language, setLanguage] = React.useState('en-IN');
   const [consentLoadError, setConsentLoadError] = React.useState<string | null>(null);
   // T-MEERA-CREATOR-PHASE-A gate review fix (item 3) — MEERA_CREATOR_ENABLED rollback flag.
   // GET /creator/agent-preferences 404s with { code: 'FEATURE_DISABLED' } in the standard
@@ -100,7 +102,7 @@ export default function CreatorCopilotPage() {
       .getPreferences()
       .then((prefs) => {
         if (cancelled) return;
-        setLanguage(prefs.creator_language || 'hi-IN');
+        setLanguage(prefs.creator_language || 'en-IN');
         setConsentAccepted(prefs.consent_accepted);
         setFeatureDisabled(false);
       })
@@ -118,7 +120,7 @@ export default function CreatorCopilotPage() {
     setCheckingConsent(true);
     try {
       const prefs = await api.creatorAgentPrefs.getPreferences();
-      setLanguage(prefs.creator_language || 'hi-IN');
+      setLanguage(prefs.creator_language || 'en-IN');
       setConsentAccepted(prefs.consent_accepted);
       if (prefs.consent_accepted) {
         // Plain "Open Meera" never carries a leftover brief prompt from an earlier ask.
@@ -186,7 +188,7 @@ export default function CreatorCopilotPage() {
     setCheckingConsent(true);
     try {
       const prefs = await api.creatorAgentPrefs.getPreferences();
-      const lang = prefs.creator_language || 'hi-IN';
+      const lang = prefs.creator_language || 'en-IN';
       setLanguage(lang);
       setConsentAccepted(prefs.consent_accepted);
       const text = typeof prompt === 'function' ? prompt(lang) : prompt;

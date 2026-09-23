@@ -6865,7 +6865,8 @@ const MOCK_CREATOR_AGENT_PREFS: CreatorAgentPreferences = {
   excluded_categories: [],
   blocked_brands: [],
   approval_level: 0,
-  creator_language: 'hi-IN',
+  // Swapnil 2026-09-23: the demo creator speaks English, like the default for a new account.
+  creator_language: 'en-IN',
   brand_tone: 'FRIENDLY',
   working_hours_start: null,
   working_hours_end: null,
