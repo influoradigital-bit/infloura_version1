@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { CreatorCreditBalance } from '@/lib/api';
 import { creditsCopyWithCta } from '@/lib/copy/creator-credits';
+import { spendableCredits } from '@/lib/creator-credits-balance';
 import { BuyCreditsSheet } from './BuyCreditsSheet';
 
 const DISMISS_SESSION_KEY = 'creator-credits:zero-banner-dismissed';
@@ -44,7 +45,7 @@ export function ZeroCreditsBanner({ language, balance, onCredited, className }: 
   const [dismissed, setDismissed] = React.useState(readDismissed);
   const [sheetOpen, setSheetOpen] = React.useState(false);
 
-  if (!balance?.enabled || (balance.total ?? 0) > 0 || dismissed) return null;
+  if (!balance?.enabled || spendableCredits(balance) > 0 || dismissed) return null;
 
   const { message, cta } = creditsCopyWithCta('zeroBanner', language);
 

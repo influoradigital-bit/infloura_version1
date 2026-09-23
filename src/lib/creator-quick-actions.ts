@@ -1,5 +1,6 @@
 import type { CreatorCreditBalance } from '@/lib/api';
 import { creditsCopy } from '@/lib/copy/creator-credits';
+import { spendableCredits } from '@/lib/creator-credits-balance';
 import type { CreatorTurnAction } from '@/lib/meera-api';
 
 /**
@@ -22,7 +23,7 @@ export function actionBlockedReason(
 ): string | null {
   if (!balance?.enabled) return null;
   const n = actionCost(action, balance);
-  const have = balance.total ?? 0;
+  const have = spendableCredits(balance);
   if (have < n) return creditsCopy('action.notEnough', language, { n, have });
   const cap = balance.dailyCap;
   const used = balance.dailyUsed;

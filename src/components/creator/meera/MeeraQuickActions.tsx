@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import type { CreatorCreditBalance } from '@/lib/api';
 import { creditsCopy } from '@/lib/copy/creator-credits';
 import { FALLBACK_COST, actionBlockedReason, actionCost } from '@/lib/creator-quick-actions';
+import { spendableCredits } from '@/lib/creator-credits-balance';
 import type { CreatorTurnAction } from '@/lib/meera-api';
 import { cn } from '@/lib/utils';
 
@@ -122,7 +123,7 @@ export function MeeraActionStrip({ action, language, balance, onCancel, onBuy, c
   const n = actionCost(action, balance);
   const blocked = actionBlockedReason(action, balance, language);
   const hint = creditsCopy(action === 'SCRIPT' ? 'action.scriptHint' : 'action.profileHint', language, { n });
-  const lacksCredits = blocked !== null && (balance?.total ?? 0) < n;
+  const lacksCredits = blocked !== null && spendableCredits(balance) < n;
 
   return (
     <div
