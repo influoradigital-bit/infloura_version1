@@ -344,10 +344,10 @@ public class AnalyticsService {
         String workspaceId = brandContext.requireBrandWorkspace(principal).getId();
         String authorizedCreatorId =
                 metricsAuthorizationService.resolveAuthorizedCreatorProfileId(workspaceId, creatorId);
-        // Brand-facing: never carry raw caption text (MediaMetric.caption javadoc). The preview image
-        // is withheld too, pending the owner's ruling on brand visibility — flipping it is the
-        // third argument here and nothing else.
-        return buildContentPerformanceResponse(authorizedCreatorId, false, false);
+        // Brand-facing. The preview image is withheld pending the owner's ruling on brand
+        // visibility — flipping it is the second argument here and nothing else. Captions are not
+        // carried on any route (see buildContentPerformanceResponse).
+        return buildContentPerformanceResponse(authorizedCreatorId, false);
     }
 
     /**
@@ -356,8 +356,8 @@ public class AnalyticsService {
      */
     @Transactional(readOnly = true)
     public List<ContentPerformanceResponse> getContentPerformanceForProfile(String creatorProfileId) {
-        // Creator-self: the creator is reading their own captions, so they are carried through.
-        return buildContentPerformanceResponse(creatorProfileId, true, true);
+        // Creator-self: the post thumbnail is shown. Captions are not (see the builder).
+        return buildContentPerformanceResponse(creatorProfileId, true);
     }
 
     /**
@@ -375,16 +375,16 @@ public class AnalyticsService {
      * posts in whatever order the database returned them. The dedup itself is unchanged: it still
      * picks each post's latest snapshot by poll time.
      *
-     * <p>{@code includeCaption} is {@code true} only for the creator-self route; the brand route
-     * passes {@code false} so raw caption text never reaches a brand-facing response.
+     * <p>No caption on either route: {@code MediaMetric.caption} is internal brand-safety input
+     * only (wiki/decisions/2026-07-06-brand-safety-caption-storage.md, LOCKED), and the response
+     * type has no field for it, so no flag flip can ever leak it (Swapnil, 2026-09-23).
      *
-     * <p>{@code includePreviewImage} is a separate flag (not folded into {@code includeCaption}) so
-     * the brand route can be opened to thumbnails later without also exposing captions. Today it
-     * mirrors the caption rule: creator-self {@code true}, brand {@code false}. The URL served is
-     * the latest snapshot's, i.e. the one refreshed on the most recent poll.
+     * <p>{@code includePreviewImage}: creator-self {@code true}, brand {@code false}, pending the
+     * owner's ruling on brand visibility. The URL served is the latest snapshot's, i.e. the one
+     * refreshed on the most recent poll.
      */
     private List<ContentPerformanceResponse> buildContentPerformanceResponse(
-            String creatorProfileId, boolean includeCaption, boolean includePreviewImage) {
+            String creatorProfileId, boolean includePreviewImage) {
         List<MediaMetric> recent =
                 mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
                         creatorProfileId, PageRequest.of(0, CONTENT_PERFORMANCE_LOOKBACK));
@@ -411,7 +411,6 @@ public class AnalyticsService {
                                         m.getVideoViews(),
                                         m.getPostedAt(),
                                         engagementRate(m.getEngagement(), m.getReach()),
-                                        includeCaption ? m.getCaption() : null,
                                         includePreviewImage ? m.getPreviewImageUrl() : null))
                 .sorted(
                         Comparator.comparing(

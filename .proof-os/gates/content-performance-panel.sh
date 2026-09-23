@@ -54,7 +54,7 @@ if [ "$rc" -ne 0 ]; then
   grep -E "^\[ERROR\]   " "$LOG" | head -8
   fail=1
 else
-  echo "  ok: backend -- sort by postedAt, caption + thumbnail only on the creator route, thumbnail never the mp4, dedup intact"
+  echo "  ok: backend -- sort by postedAt, no caption on any route (ADR 2026-07-06), thumbnail only on the creator route, thumbnail never the mp4, dedup intact"
 fi
 
 # --- frontend: link safety, title, dates, labels, number scale ---------------

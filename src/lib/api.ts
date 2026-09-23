@@ -5203,12 +5203,6 @@ export interface ContentPerformanceItem {
    */
   permalink?: string | null;
   /**
-   * F-1784: the post's caption. Sent only on the creator's own route
-   * (GET /creator/analytics/me/media); the brand route never carries it, and
-   * NON_NULL omits the key, so treat it as optional everywhere.
-   */
-  caption?: string | null;
-  /**
    * Post thumbnail: a SIGNED Instagram/Facebook CDN image link that expires in
    * ~4 days, refreshed on every metrics poll. Creator route only for now; the
    * brand route never carries it and NON_NULL omits the key. Untrusted —

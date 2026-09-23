@@ -176,16 +176,17 @@ public final class AnalyticsDtos {
      * one — do not derive a substitute from {@code videoViews} or {@code engagement}; that would be
      * fabricating a measurement and shipping it as real, the exact defect this removal closes.
      *
-     * <p><b>{@code caption}</b> (F-1784): the post's own caption text, so the panel can title a row
-     * with what the post says instead of its media type. Appended LAST so no positional constructor
-     * call re-orders. Populated ONLY on the creator-self route; the brand-facing route always leaves
-     * it {@code null} (omitted by {@code NON_NULL}) because {@code MediaMetric.caption} is documented
-     * as BrandSafety-pipeline input that must never surface raw through a brand-facing response.
+     * <p><b>No caption.</b> The post's caption text is deliberately NOT carried, on either route:
+     * wiki/decisions/2026-07-06-brand-safety-caption-storage.md (LOCKED) keeps {@code
+     * MediaMetric.caption} as internal brand-safety input only, and NoBrandFacingCaptionExposureTest
+     * fails if any field here is named caption. F-1784 added one (null for brands, filled for the
+     * creator's own route); it was removed on 2026-09-23. A row is still identified by its
+     * thumbnail, media type and date, and opens on Instagram through {@code permalink}.
      *
      * <p><b>{@code previewImageUrl}</b>: the post's cover image (a signed Instagram CDN link, from
-     * the latest poll so it is still inside its expiry). Appended LAST, after {@code caption}, for
-     * the same positional-constructor reason. Follows the caption precedent pending the owner's
-     * ruling: populated on the creator-self route only, {@code null} (omitted) on the brand route.
+     * the latest poll so it is still inside its expiry). Appended LAST so existing positional
+     * constructor calls keep their argument order. Pending the owner's ruling on brand visibility:
+     * populated on the creator-self route only, {@code null} (omitted) on the brand route.
      *
      * <p>Row order: newest {@code postedAt} first, rows without a {@code postedAt} last (F-1786).
      */
@@ -204,6 +205,5 @@ public final class AnalyticsDtos {
             Long videoViews,
             Instant postedAt,
             BigDecimal engagementRate,
-            String caption,
             String previewImageUrl) {}
 }

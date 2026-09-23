@@ -1,7 +1,8 @@
 /**
  * F-1784 / F-1785 / F-1786 — the per-post row: links to the post on Instagram (only
- * for a validated https instagram.com permalink), shows the caption as the title with
- * a humanised media type (never the raw enum), formats the date en-IN with an honest
+ * for a validated https instagram.com permalink), titles it with the humanised media
+ * type (never the raw enum; no caption - the API never sends one, ADR 2026-07-06),
+ * formats the date en-IN with an honest
  * "—" fallback, labels the per-post rate "Eng./reach" with an explanation, and renders
  * no trend arrow.
  *
@@ -23,7 +24,6 @@ function item(overrides: Partial<ContentPerformanceItem> = {}): ContentPerforman
     // Midday UTC so the calendar day is the 30th in every CI timezone (UTC and IST alike).
     postedAt: '2026-03-30T06:00:00Z',
     permalink: 'https://www.instagram.com/p/ABC123/',
-    caption: 'Summer lookbook drop\nwith #linen and more',
     reach: 1000,
     impressions: 1500,
     engagementRate: 4.2,
@@ -39,7 +39,7 @@ describe('ContentPerformancePanel — post link (F-1784)', () => {
   it('links the row to a valid instagram permalink in a new tab with noopener', () => {
     render(<ContentPerformancePanel data={[item()]} />);
 
-    const link = screen.getByRole('link', { name: /Summer lookbook drop/ });
+    const link = screen.getByRole('link', { name: /Carousel/ });
     expect(link.getAttribute('href')).toBe('https://www.instagram.com/p/ABC123/');
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel') ?? '').toContain('noopener');
@@ -75,17 +75,16 @@ describe('ContentPerformancePanel — post link (F-1784)', () => {
     expect(container.querySelector('a')).toBeNull();
     expect(screen.queryByTestId('post-external-link-icon')).toBeNull();
     // The row still renders its title.
-    expect(within(screen.getByRole('listitem')).getByText(/Summer lookbook drop/)).toBeTruthy();
+    expect(within(screen.getByRole('listitem')).getByText('Carousel')).toBeTruthy();
   });
 });
 
 describe('ContentPerformancePanel — title and media type (F-1784)', () => {
-  it('uses the caption as the title and never shows the raw enum', () => {
+  it('titles the row with the humanised type and never shows the raw enum', () => {
     const { container } = render(<ContentPerformancePanel data={[item()]} />);
 
     const row = screen.getByRole('listitem');
-    expect(within(row).getByRole('link').textContent).toContain('Summer lookbook drop');
-    expect(within(row).getByText(/Carousel/)).toBeTruthy();
+    expect(within(row).getByRole('link').textContent).toBe('Carousel');
     expect(container.textContent).not.toContain('CAROUSEL_ALBUM');
     expect(container.innerHTML).not.toContain('CAROUSEL_ALBUM');
   });
@@ -95,23 +94,18 @@ describe('ContentPerformancePanel — title and media type (F-1784)', () => {
     ['CAROUSEL_ALBUM', 'Carousel'],
     ['IMAGE', 'Photo'],
     ['REELS', 'Reel'],
-  ])('falls back to the humanised type %s -> %s when there is no caption', (mediaType, label) => {
+  ])('titles %s as %s', (mediaType, label) => {
     const { container } = render(
-      <ContentPerformancePanel data={[item({ mediaType, caption: undefined, permalink: null })]} />,
+      <ContentPerformancePanel data={[item({ mediaType, permalink: null })]} />,
     );
 
     expect(within(screen.getByRole('listitem')).getByText(label, { selector: 'p' })).toBeTruthy();
     expect(container.textContent).not.toContain(mediaType);
   });
 
-  it('treats a blank caption as missing', () => {
-    render(<ContentPerformancePanel data={[item({ mediaType: 'VIDEO', caption: '   \n ' })]} />);
-    expect(screen.getByRole('link').textContent).toBe('Video');
-  });
-
   it('an unknown enum reads "Post", not the raw value', () => {
     const { container } = render(
-      <ContentPerformancePanel data={[item({ mediaType: 'SOME_NEW_TYPE', caption: null })]} />,
+      <ContentPerformancePanel data={[item({ mediaType: 'SOME_NEW_TYPE' })]} />,
     );
     expect(container.textContent).not.toContain('SOME_NEW_TYPE');
     expect(screen.getByRole('link').textContent).toBe('Post');
@@ -132,11 +126,11 @@ describe('ContentPerformancePanel — posted date (F-1786)', () => {
     ['an omitted postedAt', undefined],
   ])('renders "—" and never "Invalid Date" for %s', (_label, postedAt) => {
     const { container } = render(
-      <ContentPerformancePanel data={[item({ postedAt, caption: null, mediaType: 'IMAGE' })]} />,
+      <ContentPerformancePanel data={[item({ postedAt, mediaType: 'IMAGE' })]} />,
     );
 
     expect(container.textContent).not.toContain('Invalid Date');
-    // With no caption the secondary line is the date alone.
+    // The secondary line is the date alone.
     expect(within(screen.getByRole('listitem')).getByText('—', { selector: 'p.text-xs' })).toBeTruthy();
   });
 });

@@ -258,8 +258,9 @@ export function ContentPerformancePanel({
           <div className="space-y-2" role="list" aria-label="Per-post content performance">
             {data.map((item) => {
               const typeLabel = humaniseMediaType(item.mediaType);
-              const caption = item.caption?.trim() || null;
-              const title = caption ?? typeLabel;
+              // No caption: the API never sends one (ADR 2026-07-06, brand-safety input only),
+              // so the row is titled by its media type and dated underneath.
+              const title = typeLabel;
               const href = safeInstagramUrl(item.permalink);
               const postedLabel = formatPostedAt(item.postedAt);
               const previewSrc = safePreviewImageUrl(item.previewImageUrl);
@@ -284,14 +285,13 @@ export function ContentPerformancePanel({
                           href={href}
                           target="_blank"
                           rel="noopener noreferrer"
-                          aria-label={`${title}${caption ? ` (${typeLabel})` : ''} — open on Instagram in a new tab`}
-                          title={caption ?? undefined}
+                          aria-label={`${title} — open on Instagram in a new tab`}
                           className="min-w-0 truncate text-sm font-medium hover:underline focus-visible:outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
                         >
                           {title}
                         </a>
                       ) : (
-                        <p className="min-w-0 truncate text-sm font-medium" title={caption ?? undefined}>
+                        <p className="min-w-0 truncate text-sm font-medium">
                           {title}
                         </p>
                       )}
@@ -304,7 +304,7 @@ export function ContentPerformancePanel({
                       )}
                     </div>
                     <p className="truncate text-xs text-muted-foreground">
-                      {caption ? `${typeLabel} · ${postedLabel}` : postedLabel}
+                      {postedLabel}
                     </p>
                   </div>
                 </div>

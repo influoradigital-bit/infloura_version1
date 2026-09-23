@@ -21,7 +21,6 @@ function item(overrides: Partial<ContentPerformanceItem> = {}): ContentPerforman
     mediaType: 'IMAGE',
     postedAt: '2026-03-30T06:00:00Z',
     permalink: 'https://www.instagram.com/p/ABC123/',
-    caption: 'Summer lookbook drop',
     reach: 1000,
     impressions: 1500,
     engagementRate: 4.2,
@@ -115,7 +114,7 @@ describe('ContentPerformancePanel — post thumbnail', () => {
 
   it('keeps the row link and title intact alongside the image', () => {
     render(<ContentPerformancePanel data={[item({ previewImageUrl: CDN_URL })]} />);
-    const link = screen.getByRole('link', { name: /Summer lookbook drop/ });
+    const link = screen.getByRole('link', { name: /Photo/ });
     expect(link.getAttribute('href')).toBe('https://www.instagram.com/p/ABC123/');
   });
 });

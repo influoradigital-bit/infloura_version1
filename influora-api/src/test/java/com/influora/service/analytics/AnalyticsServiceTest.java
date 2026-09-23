@@ -706,7 +706,7 @@ class AnalyticsServiceTest {
     }
 
     // ------------------------------------------------------------------------------------------
-    // Content performance — row order (F-1786) and caption (F-1784)
+    // Content performance — row order (F-1786). No caption on either route (ADR 2026-07-06).
     // ------------------------------------------------------------------------------------------
 
     private static MediaMetric post(
@@ -727,9 +727,9 @@ class AnalyticsServiceTest {
     @Test
     @DisplayName(
             "getContentPerformanceForProfile: posts from the SAME poll come out newest postedAt"
-                    + " first regardless of repository order, null postedAt last, caption carried,"
-                    + " dedup still keeps each post's latest snapshot")
-    void testContentPerformanceSortedByPostedAtDescNullsLastWithCaption() {
+                    + " first regardless of repository order, null postedAt last, dedup still keeps"
+                    + " each post's latest snapshot")
+    void testContentPerformanceSortedByPostedAtDescNullsLast() {
         Instant samePoll = Instant.parse("2026-09-20T06:00:00Z");
         Instant olderPoll = Instant.parse("2026-09-19T06:00:00Z");
 
@@ -757,18 +757,15 @@ class AnalyticsServiceTest {
         assertEquals("ig-undated", result.get(2).mediaId());
         assertEquals(null, result.get(2).postedAt());
 
-        assertEquals("new caption", result.get(0).caption());
-        assertEquals("old caption", result.get(1).caption());
-        assertEquals("undated caption", result.get(2).caption());
         // Latest snapshot (reach 100) kept, not the stale one (reach 999): 10 / 100 * 100 = 10.00.
         assertEquals(new BigDecimal("10.00"), result.get(0).engagementRate());
     }
 
     @Test
     @DisplayName(
-            "getContentPerformance (brand route): same postedAt-desc order, but raw caption is never"
-                    + " surfaced to a brand")
-    void testBrandContentPerformanceSortedAndNeverCarriesCaption() {
+            "getContentPerformance (brand route): same postedAt-desc order. (No caption: the"
+                    + " response type has no such field - NoBrandFacingCaptionExposureTest pins it.)")
+    void testBrandContentPerformanceSortedByPostedAtDesc() {
         when(brandContext.requireBrandWorkspace(principal)).thenReturn(workspace);
         when(workspace.getId()).thenReturn(WORKSPACE_ID);
         when(metricsAuthorizationService.resolveAuthorizedCreatorProfileId(WORKSPACE_ID, CREATOR_ID))
@@ -791,9 +788,6 @@ class AnalyticsServiceTest {
         assertEquals("ig-new", result.get(0).mediaId());
         assertEquals("ig-old", result.get(1).mediaId());
         assertEquals("ig-undated", result.get(2).mediaId());
-        for (ContentPerformanceResponse row : result) {
-            assertEquals(null, row.caption());
-        }
     }
 
     // ------------------------------------------------------------------------------------------
