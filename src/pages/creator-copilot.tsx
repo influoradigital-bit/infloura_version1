@@ -252,13 +252,18 @@ export default function CreatorCopilotPage() {
           </Card>
         ) : (
           <Card className="mb-6">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" />
-                <CardTitle className="text-base">Talk to Meera</CardTitle>
-              </div>
-              <CardDescription>Your AI manager — ask about deals, earnings, and metrics.</CardDescription>
-            </CardHeader>
+            {/* Round 2 QA — the chat panel has its own "Meera" header once open (dark band,
+                orb, live status line); showing this outer title/description above it duplicated
+                the same heading. Kept for the hero (closed) state, where it is the only heading. */}
+            {!chatOpen && (
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-base">Talk to Meera</CardTitle>
+                </div>
+                <CardDescription>Your AI manager — ask about deals, earnings, and metrics.</CardDescription>
+              </CardHeader>
+            )}
             <CardContent>
               {chatOpen ? (
                 <MeeraCopilotChat

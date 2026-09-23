@@ -75,6 +75,9 @@ describe('CreatorCopilotPage — Meera consent gate (A6/A10)', () => {
     await waitFor(() => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
+    // The composer placeholder is bilingual (Round 2 QA). The demo creator's language is
+    // 'en-IN' since 2026-09-23 (English is the default), so the English one renders here;
+    // the Hindi one is covered in MeeraCopilotChat's own tests.
     expect(await screen.findByPlaceholderText(/ask meera/i)).toBeInTheDocument();
   });
 });
