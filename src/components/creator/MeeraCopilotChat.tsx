@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useReducedMotion } from 'framer-motion';
-import { Send, Mic, MicOff, Volume2, VolumeX, X, Loader2, AudioLines } from 'lucide-react';
+import { Send, Mic, MicOff, Volume2, VolumeX, X, Loader2, AudioLines, Lock } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,12 +14,24 @@ import {
 import { ApiError, isApiLive } from '@/lib/api';
 import { isCreatorToolName, meeraApi, type CreatorToolName } from '@/lib/meera-api';
 import { CreatorToolResultRenderer } from '@/components/creator/meera/CreatorToolResultRenderer';
+import { MeeraWorkTrail } from '@/components/creator/meera/MeeraWorkTrail';
+import { MeeraDesk } from '@/components/creator/meera/MeeraDesk';
 import { uniqueId } from '@/lib/unique-id';
 import { useMeeraStream } from '@/hooks/useMeeraStream';
 import { useVoiceOutput } from '@/hooks/useVoiceOutput';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
 import { VoicePoweredOrb } from '@/components/ui/voice-powered-orb';
 import { MeeraVoiceMode, type MeeraVoiceStatus } from '@/components/creator/meera/MeeraVoiceMode';
+import {
+  COMPOSER_PLACEHOLDER,
+  HEADER_STATUS_LISTENING,
+  HEADER_STATUS_ONLINE,
+  HEADER_STATUS_SPEAKING,
+  HEADER_STATUS_WORKING,
+  TRAIL_UNDERSTANDING,
+  TRUST_LINE,
+  pickLang,
+} from '@/lib/copy/meera-chat';
 
 /**
  * T-MEERA-CREATOR-PHASE-A (A4/A5/A10, SPEC.md §4.7) — the CREATOR-side Meera chat.
@@ -56,6 +68,15 @@ interface ChatMessage {
   text: string;
   /** LIVE-only — never set in mock mode, which opens no stream and so sees no tool events. */
   toolResults?: CreatorToolResult[];
+  /**
+   * MEERA-CHAT-DESIGN-SPEC.md Part A — true once THIS turn's stream has finished
+   * (`onDone`/`onError`/`onHeartbeatTimeout`), which is when `MeeraWorkTrail` collapses its live
+   * list into the "Meera did N things · Show" summary line. Undefined for every message that
+   * isn't a live, in-flight assistant turn (history rows, the mock-mode echo, the local
+   * greeting) — `MeeraWorkTrail` never renders anything for those anyway, since none of them
+   * carry `toolResults`.
+   */
+  toolTrailDone?: boolean;
 }
 
 /**
@@ -169,8 +190,19 @@ export function MeeraCopilotChat({
   const [connecting, setConnecting] = React.useState(true);
   const [connectError, setConnectError] = React.useState<string | null>(null);
   const [sending, setSending] = React.useState(false);
+  /**
+   * MEERA-CHAT-DESIGN-SPEC.md Part A — true once the CURRENT turn has produced its first real
+   * signal (a token or a tool_start). Before that, and only while `sending`, the messages list
+   * shows the one placeholder trail step "Understanding your question…" (replacing the old
+   * plain "Thinking…" line) — see the render below. Reset to false at the start of every send.
+   */
+  const [turnStarted, setTurnStarted] = React.useState(false);
   const [draft, setDraft] = React.useState('');
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  // Round 2 QA — a stable id for the composer `<Textarea>` so `handleSendClick` can focus it
+  // without needing `Textarea` (a shared shadcn primitive, `components/ui/textarea.tsx`) to
+  // forward a ref, which it does not do today.
+  const composerId = React.useId();
   const reduceMotion = useReducedMotion();
   const stream = useMeeraStream();
 
@@ -310,6 +342,16 @@ export function MeeraCopilotChat({
     return () => stopSpeaking();
   }, [stopSpeaking]);
 
+  /**
+   * MEERA-CHAT-DESIGN-SPEC.md Part B — the desk's tiles/starter prompts and "Ask Meera my rate"
+   * all go through this: fill the composer, never send (R-U1, same rule the `prefillMessage`
+   * prop already follows). Appends to whatever is already typed rather than overwriting it, for
+   * the same reason the `prefillMessage` effect above does.
+   */
+  const prefillComposer = React.useCallback((text: string) => {
+    setDraft((prev) => (prev.trim() ? `${prev} ${text}` : text));
+  }, []);
+
   const handleSend = () => {
     const text = draft.trim();
     if (!text || sending) return;
@@ -330,6 +372,7 @@ export function MeeraCopilotChat({
 
     if (!conversationId) return;
     setSending(true);
+    setTurnStarted(false);
     const assistantId = uniqueId('meera');
     let assistantText = '';
     let bubbleAdded = false;
@@ -377,6 +420,7 @@ export function MeeraCopilotChat({
           turnRes.streamToken,
           {
             onToken: (event) => {
+              setTurnStarted(true);
               assistantText += event.text;
               const rendered = assistantText;
               setMessages((prev) => {
@@ -401,6 +445,7 @@ export function MeeraCopilotChat({
              * failure mode this ticket exists to fix.
              */
             onToolStart: (event) => {
+              setTurnStarted(true);
               if (!isCreatorToolName(event.name)) {
                 if (import.meta.env.DEV) {
                   console.warn('[MeeraCopilotChat] ignoring unknown tool name:', event.name);
@@ -446,6 +491,12 @@ export function MeeraCopilotChat({
 
             onDone: () => {
               setSending(false);
+              // MEERA-CHAT-DESIGN-SPEC.md Part A — this turn's stream is finished, so its work
+              // trail (if it has one) collapses to the summary line. A no-op when the bubble
+              // was never created (no tokens, no tool calls at all).
+              setMessages((prev) =>
+                prev.map((m) => (m.id === assistantId ? { ...m, toolTrailDone: true } : m)),
+              );
               if (assistantText.trim() === '') {
                 assistantText = "Sorry, I lost my train of thought there. Say that again?";
                 setMessages((prev) =>
@@ -472,7 +523,9 @@ export function MeeraCopilotChat({
                   : friendlyStreamErrorText(event.code, event.message);
               setMessages((prev) =>
                 prev.some((m) => m.id === assistantId)
-                  ? prev.map((m) => (m.id === assistantId ? { ...m, text: fallbackText } : m))
+                  ? prev.map((m) =>
+                      m.id === assistantId ? { ...m, text: fallbackText, toolTrailDone: true } : m,
+                    )
                   : [...prev, { id: assistantId, role: 'meera', text: fallbackText }],
               );
             },
@@ -485,7 +538,9 @@ export function MeeraCopilotChat({
               const timeoutText = 'Meera stopped responding — try again?';
               setMessages((prev) =>
                 prev.some((m) => m.id === assistantId)
-                  ? prev.map((m) => (m.id === assistantId ? { ...m, text: timeoutText } : m))
+                  ? prev.map((m) =>
+                      m.id === assistantId ? { ...m, text: timeoutText, toolTrailDone: true } : m,
+                    )
                   : [...prev, { id: assistantId, role: 'meera', text: timeoutText }],
               );
             },
@@ -522,26 +577,61 @@ export function MeeraCopilotChat({
       });
   };
 
+  /**
+   * Round 2 QA — the Send button's own click handler, separate from `handleSend` (which stays
+   * the single source of truth for what "send" actually does, unchanged). An empty composer
+   * moves focus to the textarea instead of silently doing nothing — the button is never
+   * `disabled` for this case any more, so it needs its own honest response to a tap.
+   */
+  const handleSendClick = () => {
+    if (!draft.trim()) {
+      document.getElementById(composerId)?.focus();
+      return;
+    }
+    handleSend();
+  };
+
   const voiceStatus: MeeraVoiceStatus = isListening ? 'listening' : isSpeaking ? 'speaking' : sending ? 'thinking' : 'idle';
   const lastMeeraReply = [...messages].reverse().find((m) => m.role === 'meera' && m.text.trim() !== '')?.text;
 
   return (
     <div className="flex h-[32rem] max-h-[75vh] flex-col rounded-xl border border-border bg-card shadow-sm">
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
+      {/* MEERA-CHAT-DESIGN-SPEC.md Part 0.1 — header on the 30% band (--meera-stage), white text. */}
+      <div className="flex shrink-0 items-center justify-between bg-[var(--meera-stage)] px-4 py-3 text-white">
         <div className="flex items-center gap-3">
           {/* Meera's presence: follows her REAL state. The mic is opened by the orb only while the
-              creator is already recording (useVoiceInput has the permission by then). */}
-          <div className="h-10 w-10 shrink-0" aria-hidden="true">
-            <VoicePoweredOrb
-              enableVoiceControl={isListening}
-              activity={isSpeaking ? 0.7 : sending ? 0.35 : 0.08}
+              creator is already recording (useVoiceInput has the permission by then).
+              Round 2 QA — at rest (low `activity`) the orb's thin ring alone read as an empty
+              "grey ring" in the live render. A soft filled core (primary colour) behind it, with
+              a gentle pulse that is off under `prefers-reduced-motion`, makes it read as alive.
+              Header only — the big hero orb (MeeraHero.tsx) is untouched. */}
+          <div className="relative h-9 w-9 shrink-0" aria-hidden="true">
+            <div
+              className={cn(
+                'absolute inset-[22%] rounded-full bg-primary/70',
+                !reduceMotion && 'animate-pulse',
+              )}
             />
+            <div className="relative z-10 h-full w-full">
+              <VoicePoweredOrb
+                enableVoiceControl={isListening}
+                activity={isSpeaking ? 0.7 : sending ? 0.35 : 0.08}
+              />
+            </div>
           </div>
           <div>
             <p className="text-sm font-semibold">Meera</p>
-            <p className="text-xs text-muted-foreground" aria-live="polite">
-              {/* Thinking already has its own indicator in the message list; the orb shows it here. */}
-              {isListening ? 'Listening…' : isSpeaking ? 'Speaking…' : 'Your AI manager'}
+            <p className="flex items-center gap-1.5 text-xs text-white/75" aria-live="polite">
+              {/* Round 2 QA — `success-foreground` failed contrast on this dark band; a bright
+                  mint (≥3:1 on #221e35) at ≥8px reads clearly as an online indicator. */}
+              <span className="h-2 w-2 shrink-0 rounded-full bg-[#5DCAA5]" aria-hidden="true" />
+              {isListening
+                ? pickLang(language, HEADER_STATUS_LISTENING)
+                : isSpeaking
+                  ? pickLang(language, HEADER_STATUS_SPEAKING)
+                  : sending
+                    ? pickLang(language, HEADER_STATUS_WORKING)
+                    : pickLang(language, HEADER_STATUS_ONLINE)}
             </p>
           </div>
         </div>
@@ -551,7 +641,7 @@ export function MeeraCopilotChat({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="h-11 w-11 text-white/90 hover:bg-white/10 hover:text-white"
               aria-label="Voice mode"
               title="Voice mode"
               onClick={openVoiceMode}
@@ -565,14 +655,23 @@ export function MeeraCopilotChat({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="h-11 w-11 text-white/90 hover:bg-white/10 hover:text-white"
               title={voiceEnabled ? 'Voice replies on' : 'Voice replies off'}
+              aria-label={voiceEnabled ? 'Voice replies on' : 'Voice replies off'}
               onClick={() => setVoiceEnabled(!voiceEnabled)}
             >
               {voiceEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
             </Button>
           )}
-          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} aria-label="Close">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 text-white/90 hover:bg-white/10 hover:text-white"
+            onClick={onClose}
+            aria-label="Close"
+            title="Close"
+          >
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -595,16 +694,37 @@ export function MeeraCopilotChat({
         )}
         {messages.map((m) => (
           <div key={m.id} data-testid="chat-turn" className="space-y-1.5">
+            {/* MEERA-CHAT-DESIGN-SPEC.md Part A — the work trail renders ABOVE the answer it
+                belongs to, in addition to (never instead of) the tool-result cards below. Only
+                ever real tool events: `m.toolResults` is exactly what `onToolStart`/`onToolResult`
+                built for this turn, so a turn with none renders no trail at all. */}
+            {m.role === 'meera' && (
+              <MeeraWorkTrail
+                steps={m.toolResults ?? []}
+                done={!!m.toolTrailDone}
+                language={language}
+              />
+            )}
+
             {/* A bubble is skipped while its text is empty rather than rendered as a blank pill.
                 That window is real and only exists because of the lazy create above: a tool card
                 can attach to this turn before the first token arrives. `onToken`/`onDone` fill the
                 text in, and the bubble appears then. */}
             {m.text ? (
-              <div className={cn('flex', m.role === 'creator' ? 'justify-end' : 'justify-start')}>
+              <div className={cn('flex items-end gap-1.5', m.role === 'creator' ? 'justify-end' : 'justify-start')}>
+                {/* Part 0.2 — Meera's bubbles get a small orb-coloured dot avatar. */}
+                {m.role === 'meera' && (
+                  <span
+                    className="mb-1 h-2 w-2 shrink-0 rounded-full bg-primary"
+                    aria-hidden="true"
+                  />
+                )}
                 <div
                   className={cn(
                     'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
-                    m.role === 'creator' ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
+                    m.role === 'creator'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'border border-border bg-white text-foreground',
                   )}
                 >
                   {m.text}
@@ -639,17 +759,39 @@ export function MeeraCopilotChat({
             )}
           </div>
         ))}
-        {sending && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Thinking…
+
+        {/* Part B — "Meera is on it" desk, in place of the empty screen. Shown only until the
+            creator sends their first message THIS session; `messages.some(creator)` never goes
+            back to false once true, so the desk never reappears later in the same conversation. */}
+        {!connecting && !connectError && !messages.some((m) => m.role === 'creator') && (
+          <MeeraDesk language={language} onPrefill={prefillComposer} />
+        )}
+
+        {/* Part A — before the first tool event AND before the first token, one placeholder step.
+            Replaces the old plain "Thinking…" line. Disappears the instant a tool step or text
+            arrives (`turnStarted`, flipped by `onToken`/`onToolStart` above). */}
+        {sending && !turnStarted && (
+          <div
+            className="flex items-center gap-2 text-xs text-muted-foreground"
+            aria-live="polite"
+            data-testid="trail-understanding"
+          >
+            <Loader2 className="h-3 w-3 animate-spin text-primary" />
+            {pickLang(language, TRAIL_UNDERSTANDING)}
           </div>
         )}
+      </div>
+
+      {/* Part 0.4 — trust line, under the messages area. */}
+      <div className="flex shrink-0 items-center gap-1.5 border-t border-border px-4 py-2 text-xs text-muted-foreground">
+        <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
+        {pickLang(language, TRUST_LINE)}
       </div>
 
       <div className="shrink-0 border-t border-border p-3">
         <div className="flex items-end gap-2">
           <Textarea
+            id={composerId}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -658,9 +800,9 @@ export function MeeraCopilotChat({
                 handleSend();
               }
             }}
-            placeholder="Ask Meera about your deals, earnings, or metrics…"
+            placeholder={pickLang(language, COMPOSER_PLACEHOLDER)}
             rows={1}
-            className="min-h-9 resize-none text-sm"
+            className="min-h-11 resize-none text-sm focus-visible:border-primary focus-visible:ring-primary/50"
             disabled={connecting}
           />
           {voiceInputSupported && (
@@ -668,23 +810,37 @@ export function MeeraCopilotChat({
               type="button"
               variant="outline"
               size="icon"
-              className="h-9 w-9 shrink-0"
+              className="h-11 w-11 shrink-0"
               title={isListening ? 'Stop recording' : 'Speak your question'}
+              aria-label={isListening ? 'Stop recording' : 'Speak your question'}
               onClick={isListening ? stopListening : startListening}
               disabled={connecting}
             >
               {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
             </Button>
           )}
+          {/* Round 2 QA — the send button must stay solid primary at full opacity at ALL times
+              (the washed-out `disabled:opacity-50` look was explicitly rejected), including while
+              the composer is empty and while a turn is sending. `disabled` is therefore only ever
+              `connecting` (a brief, legitimate loading state, not the "everyday empty box" the
+              complaint was about); "empty" and "sending" are handled inside `handleSendClick`
+              instead — tapping an empty box focuses the textarea rather than doing nothing, and
+              `handleSend`'s own `if (!text || sending) return;` guard (unchanged) still makes a
+              tap-while-sending a no-op, so nothing here can double-send. */}
           <Button
             type="button"
             size="icon"
-            className="h-9 w-9 shrink-0"
-            onClick={handleSend}
-            disabled={connecting || sending || !draft.trim()}
+            className="h-11 w-11 shrink-0"
+            onClick={handleSendClick}
+            disabled={connecting}
             aria-label="Send message"
+            title="Send message"
           >
-            <Send className="h-4 w-4" />
+            {sending ? (
+              <Loader2 data-testid="send-spinner" className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </Button>
         </div>
       </div>

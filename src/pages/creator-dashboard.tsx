@@ -30,7 +30,6 @@ import {
   ApiError,
   isApiLive,
   type ContractApiRecord,
-  type CreatorDeliverableListItem,
   type PortfolioAnalytics,
   type WalletSummaryResponse,
 } from '@/lib/api';
@@ -38,25 +37,17 @@ import {
   mapDealToDealsPageRow,
   type CreatorDealsPageRow,
 } from '@/lib/creator-deal-mappers';
+import { computeDealAttentionCounts, isActiveDeal } from '@/lib/creator-needs-attention';
 import { mockDeals } from '@/pages/creator-deals';
 import { useAuthStore } from '@/lib/store';
 import { cn, formatINR, publicProfileUrl, publicProfileLabel } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // Rollup helpers — all numbers derive from existing clients (no new backend).
+// `isActiveDeal`/`countSubmittableDeliverables`/`loadDeliverablePendingCount` moved to
+// `@/lib/creator-needs-attention` (Round 2 QA, F-0631 class) so this dashboard and the Meera
+// chat desk share one counting definition instead of two that can drift.
 // ---------------------------------------------------------------------------
-
-function isActiveDeal(row: CreatorDealsPageRow): boolean {
-  return row.status === 'contracted' || row.status === 'in_progress' || row.status === 'review';
-}
-
-function countSubmittableDeliverables(items: CreatorDeliverableListItem[]): number {
-  return items.filter(
-    (d) =>
-      !d.completed &&
-      (d.status === 'PENDING' || d.status === 'DRAFT' || d.status === 'REVISION_REQUESTED'),
-  ).length;
-}
 
 /**
  * F-0631 (two-queries-can-disagree) — this breakdown deliberately does NOT carry a
@@ -94,22 +85,6 @@ const EMPTY_PENDING: PendingBreakdown = {
 };
 
 /**
- * CR-51 — was one `listForDeal` HTTP call per active deal (N+1 waterfall on every dashboard
- * load). Now a single batched `listForDeals` call covering every active deal id at once; see
- * CreatorDeliverableService#listForCollaborations for the server-side query-count reasoning.
- */
-async function loadDeliverablePendingCount(dealIds: string[]): Promise<number> {
-  if (dealIds.length === 0) return 0;
-  const byDeal = await api.creatorDeliverables
-    .listForDeals(dealIds)
-    .catch(() => ({}) as Record<string, CreatorDeliverableListItem[]>);
-  return dealIds.reduce(
-    (sum, id) => sum + countSubmittableDeliverables(byDeal[id] ?? []),
-    0,
-  );
-}
-
-/**
  * Portfolio reach + handle for the "Your public page" card. Supplementary to
  * the core dashboard — both calls self-gate mock/live and each fails soft to
  * null so a portfolio hiccup never blocks wallet/deals from rendering.
@@ -126,10 +101,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   if (!isApiLive()) {
     const deals = mockDeals;
     const [wallet, extras] = await Promise.all([api.wallet.get('creator'), fetchPortfolioExtras()]);
-    const unreadMessages = deals.reduce((sum, d) => sum + d.unreadCount, 0);
-    const activeIds = deals.filter(isActiveDeal).map((d) => d.id);
-    const submittableDeliverables = await loadDeliverablePendingCount(activeIds);
-    const pending: PendingBreakdown = { unreadMessages, submittableDeliverables };
+    const pending = await computeDealAttentionCounts(deals);
     return { wallet, deals, pending, ...extras };
   }
 
@@ -140,7 +112,6 @@ async function fetchDashboardData(): Promise<DashboardData> {
   ]);
 
   const deals = dealRows.map(mapDealToDealsPageRow);
-  const unreadMessages = deals.reduce((sum, d) => sum + d.unreadCount, 0);
   // F-0631 (two-queries-can-disagree) — this used to derive its own "awaiting signature" count
   // by filtering `dealRows` for `contractStatus === 'PENDING_SIGNATURES'`. That status alone
   // (per ContractApiRecord's own doc comment in lib/api.ts) collapses "the brand is waiting on
@@ -152,10 +123,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   // only what the viewer can act on, so the signature figure is no longer computed here at
   // all — `awaitingSignatureCount` below derives it from the SAME `unsignedContracts` state the
   // list renders, which makes the two numbers structurally unable to drift apart again.
-  const activeIds = deals.filter(isActiveDeal).map((d) => d.id);
-  const submittableDeliverables = await loadDeliverablePendingCount(activeIds);
-
-  const pending: PendingBreakdown = { unreadMessages, submittableDeliverables };
+  const pending = await computeDealAttentionCounts(deals);
 
   return { wallet, deals, pending, ...extras };
 }

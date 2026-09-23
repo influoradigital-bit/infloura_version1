@@ -70,6 +70,9 @@ describe('CreatorCopilotPage — Meera consent gate (A6/A10)', () => {
     await waitFor(() => {
       expect(screen.queryByText('Meera से बात करें')).not.toBeInTheDocument();
     });
-    expect(screen.getByPlaceholderText(/ask meera/i)).toBeInTheDocument();
+    // Round 2 QA — the composer placeholder is now genuinely bilingual (previously hardcoded
+    // English regardless of language). MOCK_CREATOR_AGENT_PREFS.creator_language is 'hi-IN', so
+    // the real placeholder here is the Hindi one, not the English "Ask Meera…" string.
+    expect(screen.getByPlaceholderText(/Meera से अपनी डील्स/)).toBeInTheDocument();
   });
 });
