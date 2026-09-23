@@ -31,6 +31,31 @@ class CircuitOpenError(Exception):
     never silently retry into a known-bad provider."""
 
 
+# F-audit-A3: a provider status code that means "the CALLER sent something
+# Claude cannot process," never "Claude/the transport is unhealthy." 400
+# (malformed request -- e.g. image bytes that fail Claude's own decode) and
+# 422 (unprocessable, same shape) are client-input errors; 413 is included
+# for the same reason even though this SDK maps it onto BadRequestError
+# today. Deliberately EXCLUDES 401/403 (an auth/config problem on OUR side --
+# a real health signal worth tripping the breaker over) and 429 (provider
+# capacity, also a real health signal). See `_is_client_input_error`.
+_CLIENT_INPUT_STATUS_CODES = frozenset({400, 413, 422})
+
+
+def _is_client_input_error(exc: BaseException) -> bool:
+    """True for a provider error that reflects a bad CLIENT input, never a
+    provider/transport health signal. Five requests carrying "a valid JPEG
+    signature followed by garbage" each got a provider-4xx here, and because
+    every `anthropic.APIError` used to count toward the breaker regardless of
+    cause, that was enough to open the shared frame-check circuit breaker and
+    switch frame checks off for every OTHER creator on this worker for
+    `recovery_seconds` -- see `CircuitBreakerConfig`. `status_code` is only
+    present on `anthropic.APIStatusError` (a real HTTP response came back);
+    `APIConnectionError`/`APITimeoutError` have none, so `getattr` correctly
+    falls through to `False` — those ARE transport health signals."""
+    return getattr(exc, "status_code", None) in _CLIENT_INPUT_STATUS_CODES
+
+
 @dataclass
 class _BreakerState:
     consecutive_failures: int = 0
@@ -434,7 +459,10 @@ class ClaudeProvider:
             )
             self._breaker.on_success()
         except anthropic.APIError as exc:
-            self._breaker.on_failure()
+            # F-audit-A3 -- a client-input 4xx (a malformed/undecodable image)
+            # must not count toward the breaker; see `_is_client_input_error`.
+            if not _is_client_input_error(exc):
+                self._breaker.on_failure()
             logger.warning("claude complete_with_image failed: %s", type(exc).__name__)
             return ClaudeTextResult(ok=False, error="provider_error")
         except Exception as exc:  # noqa: BLE001 - provider SDKs raise anything; callers degrade on ok=False

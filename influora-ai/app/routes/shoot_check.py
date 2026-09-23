@@ -85,6 +85,21 @@ ALLOWED_CONTENT_TYPES = frozenset({"image/jpeg", "image/png"})
 _JPEG_MAGIC = b"\xff\xd8\xff"
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
+# F-audit-A3: a JPEG's End-Of-Image marker and a PNG's first chunk header
+# (immediately after the 8-byte signature: a 4-byte length then the 4-byte
+# ASCII chunk type). Checking ONLY the leading magic bytes (as this file used
+# to) accepts "a valid JPEG signature followed by garbage" -- five requests
+# built exactly that way sent to Claude's vision endpoint, got five
+# provider-4xx failures, and opened the shared frame-check circuit breaker
+# for every creator on this worker (see `_is_client_input_error` in
+# app/providers/claude.py for the other half of this fix). Checking the tail
+# marker / header structure too is still three cheap byte comparisons, no new
+# dependency, and rejects the overwhelming majority of "magic bytes then
+# junk" uploads before a provider call is ever made.
+_JPEG_EOI = b"\xff\xd9"
+_PNG_IHDR_TYPE = b"IHDR"
+_PNG_IHDR_LENGTH = b"\x00\x00\x00\x0d"  # IHDR chunk data is always 13 bytes, per the PNG spec.
+
 _claude_provider: ClaudeProvider | None = None
 _spring_client: SpringInternalClient | None = None
 
@@ -228,16 +243,40 @@ async def _release_holds(daily_reservation: Any, creator_reservation: Any) -> No
 
 
 def _looks_like_declared_type(content_type: str | None, data: bytes) -> bool:
-    """True when `data` actually starts with the magic bytes for the
-    DECLARED `content_type`. Catches three things at once: a zero-byte file
-    (an empty `data` never starts with either magic), a truncated upload cut
-    off before its magic bytes finished arriving, and a mislabeled upload
-    (any other file relabeled `image/jpeg`/`image/png`) -- `content_type`
-    alone is a client-supplied header and proves nothing on its own."""
+    """True when `data` actually starts (and, for JPEG, ends) with the bytes
+    the DECLARED `content_type` requires. Catches four things at once: a
+    zero-byte file (an empty `data` never starts with either magic), a
+    truncated upload cut off before its magic bytes finished arriving, a
+    mislabeled upload (any other file relabeled `image/jpeg`/`image/png`),
+    and -- F-audit-A3 -- a valid magic-byte prefix followed by arbitrary
+    garbage, which the leading-bytes-only check this used to be would wave
+    through straight to a provider call that could only ever fail.
+    `content_type` alone is a client-supplied header and proves nothing on
+    its own.
+
+    JPEG: starts with the SOI marker and ENDS with the EOI marker
+    (`_JPEG_EOI`) -- garbage appended after a genuine JPEG's magic bytes
+    essentially never happens to end in `FF D9` by chance.
+
+    PNG: starts with the 8-byte PNG signature and its first chunk (bytes
+    8-15, immediately following the signature) is a well-formed IHDR header
+    -- length `00 00 00 0D` (IHDR's data is always exactly 13 bytes, per the
+    PNG spec) followed by the ASCII chunk type `IHDR`. Garbage after a
+    genuine PNG signature fails this structural check even though it still
+    starts with the right eight bytes."""
     if content_type == "image/jpeg":
-        return data.startswith(_JPEG_MAGIC)
+        return (
+            len(data) >= len(_JPEG_MAGIC) + len(_JPEG_EOI)
+            and data.startswith(_JPEG_MAGIC)
+            and data.endswith(_JPEG_EOI)
+        )
     if content_type == "image/png":
-        return data.startswith(_PNG_MAGIC)
+        return (
+            data.startswith(_PNG_MAGIC)
+            and len(data) >= 16
+            and data[8:12] == _PNG_IHDR_LENGTH
+            and data[12:16] == _PNG_IHDR_TYPE
+        )
     return False
 
 
