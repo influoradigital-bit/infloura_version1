@@ -51,6 +51,9 @@ import {
   TRUST_LINE,
   pickLang,
 } from '@/lib/copy/meera-chat';
+import { MeeraActionStrip, MeeraQuickActions } from '@/components/creator/meera/MeeraQuickActions';
+import { actionBlockedReason } from '@/lib/creator-quick-actions';
+import type { CreatorTurnAction } from '@/lib/meera-api';
 
 /**
  * T-MEERA-CREATOR-PHASE-A (A4/A5/A10, SPEC.md §4.7) — the CREATOR-side Meera chat.
@@ -253,6 +256,11 @@ export interface MeeraCopilotChatProps {
    * checked (see the effect below) so the prompt is never appended back-to-back with itself.
    */
   prefillMessage?: { text: string; token: number } | null;
+  /**
+   * 2026-09-22 — the "Analyse a brief" quick-action button hands off to the page's own brief card
+   * (the brief flow already exists there, with its own 3-credit charge). Omitted = no brief button.
+   */
+  onAnalyseBrief?: () => void;
 }
 
 export function MeeraCopilotChat({
@@ -261,6 +269,7 @@ export function MeeraCopilotChat({
   onClose,
   onConsentRequired,
   prefillMessage,
+  onAnalyseBrief,
 }: MeeraCopilotChatProps) {
   const [live] = React.useState(() => isApiLive());
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -276,6 +285,9 @@ export function MeeraCopilotChat({
    */
   const [turnStarted, setTurnStarted] = React.useState(false);
   const [draft, setDraft] = React.useState('');
+  // 2026-09-22 — a quick-action button the chat box is currently in ("Write a script" /
+  // "Review my profile"). The next Send goes out as that action and is charged as it.
+  const [action, setAction] = React.useState<CreatorTurnAction | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   // Round 2 QA — a stable id for the composer `<Textarea>` so `handleSendClick` can focus it
   // without needing `Textarea` (a shared shadcn primitive, `components/ui/textarea.tsx`) to
@@ -492,8 +504,21 @@ export function MeeraCopilotChat({
   }, []);
 
   const handleSend = () => {
-    const text = draft.trim();
-    if (!text || sending) return;
+    const typed = draft.trim();
+    const currentAction = action;
+    if (sending) return;
+    // A script needs a topic; a profile review may be sent with no extra text.
+    if (!typed && currentAction !== 'PROFILE_REVIEW') return;
+    if (currentAction && actionBlockedReason(currentAction, credits.balance, language)) return;
+    const text =
+      currentAction === 'SCRIPT'
+        ? creditsCopy('action.scriptPrompt', language, { topic: typed })
+        : currentAction === 'PROFILE_REVIEW'
+          ? typed
+            ? creditsCopy('action.profilePromptFocus', language, { topic: typed })
+            : creditsCopy('action.profilePrompt', language)
+          : typed;
+    setAction(null);
     setDraft('');
     setMessages((prev) => [...prev, { id: uniqueId('creator'), role: 'creator', text }]);
 
@@ -562,7 +587,13 @@ export function MeeraCopilotChat({
         : uniqueId('turn-idem');
 
     meeraApi
-      .sendTurn(conversationId, text, 'creator', { voiceReply: voiceEnabled, idempotencyKey: turnIdempotencyKey })
+      .sendTurn(conversationId, text, 'creator', {
+        // A button turn is charged as the action and is never read aloud (no voice credit is
+        // taken for it), so it never asks for a voice reply either.
+        voiceReply: currentAction ? false : voiceEnabled,
+        idempotencyKey: turnIdempotencyKey,
+        ...(currentAction ? { action: currentAction } : {}),
+      })
       .then((turnRes) => {
         // Review finding #6 — creditsRemaining is `number | null` on the wire type (the server's
         // Integer is nullable); today it is always a number (0 when the flag is off), but a null
@@ -581,7 +612,7 @@ export function MeeraCopilotChat({
             ...prev,
             { id: assistantId, role: 'meera', text: replyText, resultCard: parseResultCard(replyText) },
           ]);
-          speak(replyText, language, turnRes.messageId);
+          if (!currentAction) speak(replyText, language, turnRes.messageId);
           setSending(false);
           return;
         }
@@ -685,7 +716,7 @@ export function MeeraCopilotChat({
                   prev.map((m) => (m.id === assistantId ? { ...m, resultCard } : m)),
                 );
               }
-              speak(assistantText, language, turnRes.messageId);
+              if (!currentAction) speak(assistantText, language, turnRes.messageId);
             },
             onError: (event) => {
               setSending(false);
@@ -787,7 +818,8 @@ export function MeeraCopilotChat({
         : pickLang(language, HEADER_STATUS_ONLINE);
 
   const handleSendClick = () => {
-    if (!draft.trim()) {
+    // 'Review my profile' is sent with nothing typed, so only a plain turn falls back to focus.
+    if (!draft.trim() && action !== 'PROFILE_REVIEW') {
       document.getElementById(composerId)?.focus();
       return;
     }
@@ -1059,7 +1091,27 @@ export function MeeraCopilotChat({
           onCredited={() => void credits.refresh()}
           className="mb-2"
         />
-        {voiceEnabled && credits.enabled ? <CreditCostHint variant="voice" language={language} className="mb-1.5" /> : null}
+        <MeeraQuickActions
+          language={language}
+          balance={credits.balance}
+          active={action}
+          onPick={setAction}
+          onAnalyseBrief={onAnalyseBrief}
+          disabled={connecting || sending}
+          className="mb-1.5"
+        />
+        {action ? (
+          <MeeraActionStrip
+            action={action}
+            language={language}
+            balance={credits.balance}
+            onCancel={() => setAction(null)}
+            onBuy={() => setBuySheetOpen(true)}
+            className="mb-1.5"
+          />
+        ) : voiceEnabled && credits.enabled ? (
+          <CreditCostHint variant="voice" language={language} className="mb-1.5" />
+        ) : null}
         <div className="flex items-end gap-2">
           <Textarea
             id={composerId}
@@ -1071,7 +1123,13 @@ export function MeeraCopilotChat({
                 handleSend();
               }
             }}
-            placeholder={pickLang(language, COMPOSER_PLACEHOLDER)}
+            placeholder={
+              action === 'SCRIPT'
+                ? creditsCopy('action.scriptPlaceholder', language)
+                : action === 'PROFILE_REVIEW'
+                  ? creditsCopy('action.profilePlaceholder', language)
+                  : pickLang(language, COMPOSER_PLACEHOLDER)
+            }
             rows={1}
             className="min-h-11 resize-none text-sm focus-visible:border-primary focus-visible:ring-primary/50"
             disabled={connecting}
@@ -1103,7 +1161,11 @@ export function MeeraCopilotChat({
             size="icon"
             className="h-11 w-11 shrink-0"
             onClick={handleSendClick}
-            disabled={connecting}
+            disabled={
+              connecting ||
+              sending ||
+              (action !== null && actionBlockedReason(action, credits.balance, language) !== null)
+            }
             aria-label="Send message"
             title="Send message"
           >

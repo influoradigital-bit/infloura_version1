@@ -269,7 +269,7 @@ class CreatorMeeraControllerTest {
                         eq(CONVERSATION_ID),
                         anyString(),
                         eq(IDEMPOTENCY_KEY),
-                        eq(false)))
+                        eq(com.influora.domain.enums.ChargeKind.TURN)))
                 .thenReturn(result);
 
         controller.sendTurn(principal, CONVERSATION_ID, IDEMPOTENCY_KEY, body);
@@ -282,7 +282,39 @@ class CreatorMeeraControllerTest {
                         eq(CONVERSATION_ID),
                         anyString(),
                         eq(IDEMPOTENCY_KEY),
-                        eq(false));
+                        eq(com.influora.domain.enums.ChargeKind.TURN));
+    }
+
+    @Test
+    @DisplayName("sendTurn: a \"Write a script\" button press is charged as SCRIPT, even with voice on")
+    void sendTurn_scriptActionIsChargedAsScript() {
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(principal.getUserId()).thenReturn(CREATOR_USER_ID);
+        SendTurnRequest body = new SendTurnRequest("Write me a reel script about chai", true, "SCRIPT");
+        MeeraSessionService.TurnResult result =
+                new MeeraSessionService.TurnResult(
+                        "msg-2", null, "stream-token", "onbehalf-token", java.util.Map.of(), null, null);
+        when(sessionService.sendTurn(
+                        eq(CREATOR_USER_ID),
+                        eq(CREATOR_USER_ID),
+                        eq(UserType.CREATOR),
+                        eq(CONVERSATION_ID),
+                        anyString(),
+                        eq(IDEMPOTENCY_KEY),
+                        eq(com.influora.domain.enums.ChargeKind.SCRIPT)))
+                .thenReturn(result);
+
+        controller.sendTurn(principal, CONVERSATION_ID, IDEMPOTENCY_KEY, body);
+
+        verify(sessionService)
+                .sendTurn(
+                        eq(CREATOR_USER_ID),
+                        eq(CREATOR_USER_ID),
+                        eq(UserType.CREATOR),
+                        eq(CONVERSATION_ID),
+                        anyString(),
+                        eq(IDEMPOTENCY_KEY),
+                        eq(com.influora.domain.enums.ChargeKind.SCRIPT));
     }
 
     // ---- Priya gate review defect 3: creator voice routes (POST /creator/meera/voice/speak,

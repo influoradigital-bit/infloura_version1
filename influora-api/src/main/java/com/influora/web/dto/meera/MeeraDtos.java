@@ -36,9 +36,35 @@ public final class MeeraDtos {
      * toggle is on, so this creator turn's reply will be spoken (2 credits instead of 1). {@code
      * null} on the wire means false. The BRAND controller ignores this field entirely.
      */
-    public record SendTurnRequest(@NotBlank @Size(max = 8000) String content, Boolean voiceReply) {
+    public record SendTurnRequest(
+            @NotBlank @Size(max = 8000) String content,
+            Boolean voiceReply,
+            @jakarta.validation.constraints.Pattern(regexp = "SCRIPT|PROFILE_REVIEW") String action) {
+
+        /** Pre-2026-09-22 shape: a plain message, no button action. */
+        public SendTurnRequest(String content, Boolean voiceReply) {
+            this(content, voiceReply, null);
+        }
+
         public boolean isVoiceReply() {
             return Boolean.TRUE.equals(voiceReply);
+        }
+
+        /**
+         * 2026-09-22 — what this CREATOR turn costs. A button action ("Write a script" / "Review my
+         * profile") wins over the voice toggle: those replies are long and meant to be read, and a
+         * voice surcharge on top would charge for a reading nobody asked for.
+         */
+        public com.influora.domain.enums.ChargeKind creatorChargeKind() {
+            if ("SCRIPT".equals(action)) {
+                return com.influora.domain.enums.ChargeKind.SCRIPT;
+            }
+            if ("PROFILE_REVIEW".equals(action)) {
+                return com.influora.domain.enums.ChargeKind.PROFILE_REVIEW;
+            }
+            return isVoiceReply()
+                    ? com.influora.domain.enums.ChargeKind.VOICE_TURN
+                    : com.influora.domain.enums.ChargeKind.TURN;
         }
     }
 

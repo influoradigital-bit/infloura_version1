@@ -106,7 +106,9 @@ public class CreatorCreditController {
                         new CostsInfo(
                                 creditProperties.getTurnCost(),
                                 creditProperties.getVoiceTurnCost(),
-                                creditProperties.getBriefCost()));
+                                creditProperties.getBriefCost(),
+                                creditProperties.getScriptCost(),
+                                creditProperties.getProfileReviewCost()));
         return ResponseEntity.ok(ApiResponse.ok(response));
     }
 

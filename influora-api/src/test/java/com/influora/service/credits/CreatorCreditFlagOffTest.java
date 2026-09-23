@@ -216,7 +216,8 @@ class CreatorCreditFlagOffTest {
                         "msg-1", null, "stream-token", "onbehalf-token", java.util.Map.of(), null, null);
         when(sessionService.sendTurn(
                         eq(CREATOR), eq(CREATOR), eq(com.influora.domain.enums.UserType.CREATOR),
-                        eq("conv-1"), org.mockito.ArgumentMatchers.anyString(), eq("idem-1"), eq(false)))
+                        eq("conv-1"), org.mockito.ArgumentMatchers.anyString(), eq("idem-1"),
+                        eq(com.influora.domain.enums.ChargeKind.TURN)))
                 .thenReturn(flagOffResult);
 
         var sendTurnResponse =

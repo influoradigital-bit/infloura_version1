@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFo
 import { api, ApiError, type CreatorCreditBalance } from '@/lib/api';
 import { openRazorpayCheckout, type RazorpayCheckoutResponse } from '@/lib/razorpay';
 import { creditsCopy } from '@/lib/copy/creator-credits';
+import { spendableCredits, spendableFreeCredits } from '@/lib/creator-credits-balance';
 
 /**
  * T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F6/A48) — the top-up flow: `createOrder` → Checkout (opened
@@ -183,8 +184,8 @@ export function BuyCreditsSheet({ open, onOpenChange, language, balance, onCredi
           {balance?.enabled ? (
             <p data-testid="buy-sheet-balance" className="font-medium">
               {creditsCopy('sheet.balance', language, {
-                total: balance.total ?? 0,
-                free: balance.free ?? 0,
+                total: spendableCredits(balance),
+                free: spendableFreeCredits(balance),
                 paid: balance.paid ?? 0,
               })}
             </p>

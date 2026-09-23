@@ -352,4 +352,118 @@ class CreatorTurnChargeTest {
         assertEquals(9, totalRemaining(), "a real turn, even with greeting-shaped content, is charged normally");
         assertEquals(9, result.creditsRemaining());
     }
+
+    // ------------------------------------------------------------------
+    // 2026-09-22 (Swapnil, option A) — "Write a script" / "Review my profile" buttons cost 3.
+    // They are debited as ONE DEBIT_TURN row of -3 under turn:<id>, so the TURN path's refund,
+    // write-back marker and locking all apply unchanged.
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("Script and profile-review turns each debit 3 on one DEBIT_TURN row, never a voice row")
+    void scriptAndProfileReviewDebitThree() {
+        seedGrant(10);
+
+        MeeraSessionService.TurnResult script =
+                service.sendTurn(
+                        CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID,
+                        "Write me a reel script about monsoon skincare", "idem-script-1",
+                        com.influora.domain.enums.ChargeKind.SCRIPT);
+        assertEquals(7, totalRemaining());
+        assertEquals(7, script.creditsRemaining());
+        String turnRef = CreatorCreditService.turnRef(script.userMessageId());
+        String ttsRef = CreatorCreditService.ttsRef(script.userMessageId());
+        List<CreatorCreditLedgerEntry> rows =
+                ledgerRepository.findByCreatorUserIdAndReferenceIdIn(CREATOR_USER_ID, List.of(turnRef, ttsRef));
+        assertEquals(1, rows.size(), "exactly one debit row for a script turn");
+        assertEquals(CreditLedgerReason.DEBIT_TURN, rows.get(0).getReason());
+        assertEquals(-3, rows.get(0).getDelta());
+        assertEquals(3, accountRepository.findById(CREATOR_USER_ID).orElseThrow().getDailyUsed());
+
+        MeeraSessionService.TurnResult review =
+                service.sendTurn(
+                        CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID,
+                        "Review my profile", "idem-profile-1",
+                        com.influora.domain.enums.ChargeKind.PROFILE_REVIEW);
+        assertEquals(4, totalRemaining());
+        assertEquals(4, review.creditsRemaining());
+    }
+
+    @Test
+    @DisplayName("A script turn whose reply never arrives is refunded all 3 credits")
+    void failedScriptTurnRefundsAllThree() {
+        seedGrant(10);
+        MeeraSessionService.TurnResult script =
+                service.sendTurn(
+                        CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID,
+                        "Write me a script", "idem-script-refund",
+                        com.influora.domain.enums.ChargeKind.SCRIPT);
+        assertEquals(7, totalRemaining());
+
+        creatorCreditService.release(CREATOR_USER_ID, script.userMessageId(), ReleaseScope.TURN);
+
+        assertEquals(10, totalRemaining(), "the whole 3 comes back, not 1");
+        assertEquals(0, accountRepository.findById(CREATOR_USER_ID).orElseThrow().getDailyUsed());
+    }
+
+    @Test
+    @DisplayName("With 2 credits a script is refused (says it needs 3), nothing is saved, and a normal message still works")
+    void twoCreditsRefusesScriptButNotAMessage() {
+        seedGrant(2);
+
+        ApiException refused =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        ApiException.class,
+                        () -> service.sendTurn(
+                                CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID,
+                                "Write me a script", "idem-script-short",
+                                com.influora.domain.enums.ChargeKind.SCRIPT));
+        assertEquals("CREATOR_CREDITS_EXHAUSTED", refused.getCode());
+        assertEquals(HttpStatus.PAYMENT_REQUIRED, refused.getStatus());
+        assertTrue(refused.getMessage().contains("A script uses 3 credits and you have 2"), refused.getMessage());
+        verify(messageRepository, never()).save(any(AiMessage.class));
+        assertEquals(2, totalRemaining());
+
+        MeeraSessionService.TurnResult normal =
+                service.sendTurn(
+                        CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID, "hi", "idem-after-refusal");
+        assertEquals(1, normal.creditsRemaining());
+    }
+
+    @Test
+    @DisplayName("At 28 of 30 today a profile review is refused by the daily cap, and a normal message still works")
+    void dailyCapRefusesReviewButNotAMessage() {
+        seedGrant(20);
+        CreatorCreditAccount account = accountRepository.findById(CREATOR_USER_ID).orElseThrow();
+        account.rollDayIfNeeded(java.time.LocalDate.now(clock.withZone(java.time.ZoneId.of("Asia/Kolkata"))));
+        account.addDailyUsed(28);
+        accountRepository.saveAndFlush(account);
+
+        ApiException refused =
+                org.junit.jupiter.api.Assertions.assertThrows(
+                        ApiException.class,
+                        () -> service.sendTurn(
+                                CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID,
+                                "Review my profile", "idem-review-cap",
+                                com.influora.domain.enums.ChargeKind.PROFILE_REVIEW));
+        assertEquals("CREATOR_DAILY_CAP_REACHED", refused.getCode());
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, refused.getStatus());
+        assertTrue(refused.getMessage().contains("A profile review uses 3 credits"), refused.getMessage());
+        assertEquals(20, totalRemaining());
+
+        MeeraSessionService.TurnResult normal =
+                service.sendTurn(
+                        CREATOR_USER_ID, CREATOR_USER_ID, UserType.CREATOR, CONVERSATION_ID, "hi", "idem-after-cap");
+        assertEquals(19, normal.creditsRemaining());
+    }
+
+    @Test
+    @DisplayName("The script refusal has a Hindi version")
+    void scriptRefusalInHindi() {
+        ApiException hindi =
+                CreatorCreditService.refusal(
+                        ChargeResult.insufficient(com.influora.domain.enums.ChargeKind.SCRIPT, 3, 2, 0), "hi-IN");
+        assertTrue(hindi.getMessage().contains("स्क्रिप्ट"), hindi.getMessage());
+        assertTrue(hindi.getMessage().contains("3"), hindi.getMessage());
+    }
 }

@@ -49,6 +49,19 @@ describe('meeraApi.sendTurn (A49 — voiceReply + Idempotency-Key reuse)', () =>
     expect(body).toMatchObject({ content: 'hello', voiceReply: true });
   });
 
+  it('sends the quick-action button as `action`, and leaves it out for a plain message', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ messageId: 'm' })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await meeraApi.sendTurn('conv_1', 'Write me a reel script: chai', 'creator', { action: 'SCRIPT' });
+    await meeraApi.sendTurn('conv_1', 'hello', 'creator', {});
+
+    const first = JSON.parse((fetchMock.mock.calls[0] as [string, RequestInit])[1].body as string);
+    const second = JSON.parse((fetchMock.mock.calls[1] as [string, RequestInit])[1].body as string);
+    expect(first).toMatchObject({ content: 'Write me a reel script: chai', action: 'SCRIPT' });
+    expect(second).not.toHaveProperty('action');
+  });
+
   it('mints a fresh Idempotency-Key per call when none is supplied (unchanged default behaviour)', async () => {
     // `mockImplementation` (not `mockResolvedValue`) — a `Response` body can only be read once,
     // and this test calls `sendTurn` twice against the same mock, so each call needs its OWN

@@ -227,6 +227,8 @@ public class CreatorCreditService {
             case TURN -> properties.getTurnCost();
             case VOICE_TURN -> properties.getVoiceTurnCost();
             case BRIEF -> properties.getBriefCost();
+            case SCRIPT -> properties.getScriptCost();
+            case PROFILE_REVIEW -> properties.getProfileReviewCost();
         };
     }
 
@@ -877,6 +879,27 @@ public class CreatorCreditService {
     /** SPEC.md §9.1/§8 — the server-authored 402/429 template in the creator's own language. */
     public static ApiException refusal(ChargeResult result, String creatorLanguage) {
         boolean hindi = creatorLanguage != null && creatorLanguage.toLowerCase(Locale.ROOT).startsWith("hi");
+        boolean action = result.kind() == ChargeKind.SCRIPT || result.kind() == ChargeKind.PROFILE_REVIEW;
+        if (action && result.outcome() == ChargeResult.Outcome.DAILY_CAP) {
+            // A 3-credit button can be refused while a 1-credit message would still go through, so
+            // say what it costs and that a normal message is still possible.
+            String what = actionLabel(result.kind(), hindi);
+            String message = hindi
+                    ? what + " में " + result.cost() + " क्रेडिट्स लगते हैं और आज की लिमिट में इतने नहीं बचे। सामान्य"
+                            + " मैसेज में 1 क्रेडिट लगता है, और आपकी लिमिट आधी रात (IST) को रीसेट होगी।"
+                    : what + " uses " + result.cost() + " credits and today's limit doesn't have that many left."
+                            + " A normal message uses 1 credit, and your limit resets at midnight (IST).";
+            return new ApiException("CREATOR_DAILY_CAP_REACHED", message, HttpStatus.TOO_MANY_REQUESTS);
+        }
+        if (action && result.outcome() == ChargeResult.Outcome.INSUFFICIENT && result.balanceAfter() > 0) {
+            String what = actionLabel(result.kind(), hindi);
+            String message = hindi
+                    ? what + " में " + result.cost() + " क्रेडिट्स लगते हैं और आपके पास " + result.balanceAfter()
+                            + " हैं। इसके लिए 60 क्रेडिट्स लें, या 1 क्रेडिट में सामान्य मैसेज भेजें।"
+                    : what + " uses " + result.cost() + " credits and you have " + result.balanceAfter()
+                            + ". Buy 60 credits to use it, or send a normal message for 1 credit.";
+            return new ApiException("CREATOR_CREDITS_EXHAUSTED", message, HttpStatus.PAYMENT_REQUIRED);
+        }
         if (result.outcome() == ChargeResult.Outcome.DAILY_CAP) {
             boolean voiceCapVariant =
                     result.kind() == ChargeKind.VOICE_TURN && result.dailyUsedAfter() == 29;
@@ -886,6 +909,13 @@ public class CreatorCreditService {
         }
         return new ApiException(
                 "CREATOR_CREDITS_EXHAUSTED", hindi ? HI_EXHAUSTED : EN_EXHAUSTED, HttpStatus.PAYMENT_REQUIRED);
+    }
+
+    private static String actionLabel(ChargeKind kind, boolean hindi) {
+        if (kind == ChargeKind.SCRIPT) {
+            return hindi ? "स्क्रिप्ट लिखने" : "A script";
+        }
+        return hindi ? "प्रोफ़ाइल रिव्यू" : "A profile review";
     }
 
     // ------------------------------------------------------------------

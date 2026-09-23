@@ -24,6 +24,9 @@ export interface CreatorCreditsCopyVars {
   paid?: number;
   count?: number;
   date?: string;
+  have?: number;
+  left?: number;
+  topic?: string;
 }
 
 interface CopyEntry {
@@ -100,8 +103,53 @@ export const CREATOR_CREDITS_COPY = {
   // Wallet "Meera credits" card and hero chip (2026-09-22). Plain, no urgency.
   'wallet.title': { en: 'Meera credits', hi: 'Meera क्रेडिट्स' },
   'wallet.subtitle': {
-    en: '1 credit = 1 message to Meera. A voice reply uses 2, analysing a brief uses 3.',
-    hi: '1 क्रेडिट = Meera को 1 मैसेज। वॉइस रिप्लाई में 2 और ब्रीफ़ एनालिसिस में 3 लगते हैं।',
+    en: '1 credit = 1 message to Meera. A voice reply uses 2. Analysing a brief, writing a script or reviewing your profile uses 3.',
+    hi: '1 क्रेडिट = Meera को 1 मैसेज। वॉइस रिप्लाई में 2 लगते हैं। ब्रीफ़ एनालिसिस, स्क्रिप्ट लिखने या प्रोफ़ाइल रिव्यू में 3 लगते हैं।',
+  },
+  // Quick-action buttons above the chat box (2026-09-22). A button never sends on its own:
+  // script and profile open a strip that says what it costs, and the creator presses Send.
+  'action.script': { en: 'Write a script', hi: 'स्क्रिप्ट लिखें' },
+  'action.brief': { en: 'Analyse a brief', hi: 'ब्रीफ़ एनालिसिस' },
+  'action.profile': { en: 'Review my profile', hi: 'प्रोफ़ाइल रिव्यू' },
+  'action.cost': { en: '{n} credits', hi: '{n} क्रेडिट्स' },
+  'action.cancel': { en: 'Cancel', hi: 'रद्द करें' },
+  'action.scriptHint': {
+    en: 'Tell Meera what the reel is about, then press Send. A script uses {n} credits.',
+    hi: 'Meera को बताएं कि रील किस बारे में है, फिर भेजें दबाएं। स्क्रिप्ट में {n} क्रेडिट्स लगते हैं।',
+  },
+  'action.scriptPlaceholder': {
+    en: 'e.g. 3 monsoon skincare tips for oily skin',
+    hi: 'जैसे: ऑयली स्किन के लिए मानसून स्किनकेयर के 3 टिप्स',
+  },
+  'action.profileHint': {
+    en: 'Meera looks at your profile and numbers and gives you 3 next steps. Press Send. Uses {n} credits.',
+    hi: 'Meera आपकी प्रोफ़ाइल और नंबर देखकर 3 अगले कदम बताएगी। भेजें दबाएं। इसमें {n} क्रेडिट्स लगते हैं।',
+  },
+  'action.profilePlaceholder': {
+    en: 'Anything to focus on? (optional)',
+    hi: 'किसी खास बात पर ध्यान? (वैकल्पिक)',
+  },
+  'action.notEnough': {
+    en: 'This needs {n} credits and you have {have}.',
+    hi: 'इसमें {n} क्रेडिट्स लगते हैं और आपके पास {have} हैं।',
+  },
+  'action.capLeft': {
+    en: "This needs {n} credits and today's limit has {left} left. A normal message uses 1.",
+    hi: 'इसमें {n} क्रेडिट्स लगते हैं और आज की लिमिट में {left} बचे हैं। सामान्य मैसेज में 1 लगता है।',
+  },
+  'action.buy': { en: 'Buy credits', hi: 'क्रेडिट्स खरीदें' },
+  // What is actually sent to Meera, in the creator's language.
+  'action.scriptPrompt': {
+    en: 'Write me a reel script: {topic}',
+    hi: 'मेरे लिए एक रील स्क्रिप्ट लिखें: {topic}',
+  },
+  'action.profilePrompt': {
+    en: "Review my profile. Tell me what's working, what isn't, and the 3 things I should do next.",
+    hi: 'मेरी प्रोफ़ाइल रिव्यू करें। बताएं क्या अच्छा चल रहा है, क्या नहीं, और मुझे अगले 3 काम क्या करने चाहिए।',
+  },
+  'action.profilePromptFocus': {
+    en: "Review my profile, focusing on: {topic}. Tell me what's working, what isn't, and the 3 things I should do next.",
+    hi: 'मेरी प्रोफ़ाइल रिव्यू करें, खास तौर पर: {topic}। बताएं क्या अच्छा चल रहा है, क्या नहीं, और मुझे अगले 3 काम क्या करने चाहिए।',
   },
   'wallet.total': { en: '{total} credits available', hi: '{total} क्रेडिट्स उपलब्ध' },
   'wallet.split': { en: '{free} free · {paid} bought', hi: '{free} फ्री · {paid} खरीदे हुए' },

@@ -6,6 +6,7 @@ import { BuyCreditsSheet } from '@/components/creator/credits/BuyCreditsSheet';
 import { useCreatorCredits } from '@/hooks/useCreatorCredits';
 import { api, type CreatorCreditOrderHistoryItem } from '@/lib/api';
 import { creditsCopy } from '@/lib/copy/creator-credits';
+import { spendableCredits, spendableFreeCredits } from '@/lib/creator-credits-balance';
 
 /**
  * "Meera credits" on the creator Wallet page: the balance (free vs bought), today's use against
@@ -78,8 +79,8 @@ export function CreatorCreditsWalletCard({ language }: { language?: string }) {
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-2xl font-bold">{t('wallet.total', { total: b.total ?? 0 })}</p>
-            <p className="text-sm text-muted-foreground">{t('wallet.split', { free: b.free ?? 0, paid: b.paid ?? 0 })}</p>
+            <p className="text-2xl font-bold">{t('wallet.total', { total: spendableCredits(b) })}</p>
+            <p className="text-sm text-muted-foreground">{t('wallet.split', { free: spendableFreeCredits(b), paid: b.paid ?? 0 })}</p>
             <p className="text-sm text-muted-foreground">{t('wallet.today', { n: b.dailyUsed ?? 0, total: b.dailyCap ?? 30 })}</p>
           </div>
           <Button onClick={() => setSheetOpen(true)} className="min-h-11">

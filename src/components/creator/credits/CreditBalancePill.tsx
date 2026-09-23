@@ -3,6 +3,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import type { CreatorCreditBalance } from '@/lib/api';
 import { creditsCopy } from '@/lib/copy/creator-credits';
+import { spendableCredits } from '@/lib/creator-credits-balance';
 
 /**
  * T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F5) — the chat-header credit pill. Sits between Meera's
@@ -46,7 +47,7 @@ export function deriveCreditBalancePillState(balance: CreatorCreditBalance): Cre
   const dailyUsed = balance.dailyUsed ?? 0;
   const dailyCap = balance.dailyCap ?? Infinity;
   if (dailyUsed >= dailyCap) return 'cap';
-  const total = balance.total ?? 0;
+  const total = spendableCredits(balance);
   if (total <= 0) return 'zero';
   if (total <= LOW_THRESHOLD) return 'low';
   return 'normal';
@@ -64,7 +65,7 @@ export function CreditBalancePill({ balance, language, onClick, className }: Cre
   if (!balance || !balance.enabled) return null;
 
   const state = deriveCreditBalancePillState(balance);
-  const total = balance.total ?? 0;
+  const total = spendableCredits(balance);
   const label =
     state === 'cap'
       ? creditsCopy('pill.cap', language)

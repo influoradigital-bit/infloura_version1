@@ -720,9 +720,6 @@ export default function CreatorWalletPage() {
         {/* Meera credits (hidden while CREATOR_CREDITS_ENABLED is off) */}
         <CreatorCreditsWalletCard />
 
-        {/* Meera credits (hidden while CREATOR_CREDITS_ENABLED is off) */}
-        <CreatorCreditsWalletCard />
-
         {/* Tabs */}
         <Tabs defaultValue="payouts" className="space-y-4">
           <TabsList className="w-full grid grid-cols-4">

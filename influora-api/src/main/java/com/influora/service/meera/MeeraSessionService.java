@@ -378,6 +378,30 @@ public class MeeraSessionService {
             String content,
             String idempotencyKey,
             boolean voiceReply) {
+        return sendTurn(
+                workspaceId,
+                userId,
+                userType,
+                conversationId,
+                content,
+                idempotencyKey,
+                voiceReply ? ChargeKind.VOICE_TURN : ChargeKind.TURN);
+    }
+
+    /**
+     * 2026-09-22 — the general form: {@code creatorKind} is what this CREATOR turn costs (TURN,
+     * VOICE_TURN, or a button action — SCRIPT / PROFILE_REVIEW). {@code null} means TURN. Ignored
+     * on the BRAND path.
+     */
+    public TurnResult sendTurn(
+            String workspaceId,
+            String userId,
+            UserType userType,
+            String conversationId,
+            String content,
+            String idempotencyKey,
+            ChargeKind creatorKind) {
+        ChargeKind kind = creatorKind == null ? ChargeKind.TURN : creatorKind;
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new ApiException(
                     "IDEMPOTENCY_KEY_REQUIRED",
@@ -389,7 +413,7 @@ public class MeeraSessionService {
                     idempotencyKey,
                     workspaceId,
                     SEND_TURN_SCOPE,
-                    () -> doSendTurn(workspaceId, userId, userType, conversationId, content, voiceReply));
+                    () -> doSendTurn(workspaceId, userId, userType, conversationId, content, kind));
         } catch (IdempotencyService.AlreadyInProgressException
                 | IdempotencyService.AlreadyCompletedException raced) {
             throw new ApiException(
@@ -406,7 +430,7 @@ public class MeeraSessionService {
             UserType userType,
             String conversationId,
             String content,
-            boolean voiceReply) {
+            ChargeKind creatorKind) {
         AiConversation conversation =
                 conversationRepository
                         .findByIdAndWorkspaceId(conversationId, workspaceId)
@@ -453,8 +477,7 @@ public class MeeraSessionService {
             // creator credits (workspaceId here is the creator's own USER id, per the class
             // javadoc). With CREATOR_CREDITS_ENABLED off, ChargeResult.Outcome.DISABLED is neither
             // refused nor charged — this branch then behaves exactly as before this change.
-            ChargeKind kind = voiceReply ? ChargeKind.VOICE_TURN : ChargeKind.TURN;
-            ChargeResult chargeResult = creatorCreditService.charge(workspaceId, kind, messageId);
+            ChargeResult chargeResult = creatorCreditService.charge(workspaceId, creatorKind, messageId);
             if (chargeResult.refused()) {
                 // Refused BEFORE the USER row, any token, or any prefs write below — nothing about
                 // this turn is ever persisted.

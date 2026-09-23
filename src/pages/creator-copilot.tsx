@@ -64,6 +64,15 @@ export default function CreatorCopilotPage() {
   const [checkingConsent, setCheckingConsent] = React.useState(false);
   const [showConsent, setShowConsent] = React.useState(false);
   const [chatOpen, setChatOpen] = React.useState(false);
+
+  // 2026-09-22 — the chat's "Analyse a brief" button: bring the brief card below into view and put
+  // the cursor in its paste box. The card keeps its own flow and its own 3-credit charge.
+  const focusBriefCard = React.useCallback(() => {
+    const el = document.getElementById('paste-brief');
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    el.querySelector('textarea')?.focus({ preventScroll: true });
+  }, []);
   // Swapnil 2026-09-23: English by default; the creator's stored creator_language wins as
   // soon as preferences load, and Meera follows the language they write in.
   const [language, setLanguage] = React.useState('en-IN');
@@ -270,6 +279,7 @@ export default function CreatorCopilotPage() {
                   firstName={firstName}
                   language={language}
                   prefillMessage={prefillMessage}
+                  onAnalyseBrief={focusBriefCard}
                   onClose={() => {
                     setChatOpen(false);
                     setPrefillMessage(null);
@@ -300,6 +310,7 @@ export default function CreatorCopilotPage() {
             the ANALYSE action, not the card: a creator who has not consented still sees what
             the feature is, and pressing Analyse opens the consent screen instead of sending. */}
         {featureDisabled !== true && (
+          <div id="paste-brief" className="scroll-mt-20">
           <PasteBriefCard
             className="mb-6"
             needsConsent={consentAccepted === false}
@@ -308,6 +319,7 @@ export default function CreatorCopilotPage() {
             language={language}
             onAskMeeraAboutBrief={askMeeraAboutBrief}
           />
+          </div>
         )}
 
         <ConsentScreen
