@@ -140,6 +140,80 @@ class ContentTopicServiceTest {
     }
 
     @Test
+    @DisplayName(
+            "category map (lane B1): an onboarding vertical is served the admin's topic in the"
+                    + " calendar category it maps to")
+    void onboardingVerticalMatchesMappedCalendarCategory() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(
+                        List.of(
+                                topic(1, "Food", "Filter coffee week", BENIGN_TEXT, "APPROVED"),
+                                topic(2, "Local business", "Shop local", BENIGN_TEXT, "APPROVED"),
+                                topic(3, "Finance", "Investing basics", BENIGN_TEXT, "APPROVED"),
+                                topic(4, "Technology", "Phone launch", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(
+                List.of(1L),
+                service.screen(List.of("Food & Cooking"), TODAY).servable().stream()
+                        .map(ServableTopic::id)
+                        .toList());
+        assertEquals(
+                List.of(2L, 3L),
+                service.screen(List.of("Finance & Business"), TODAY).servable().stream()
+                        .map(ServableTopic::id)
+                        .toList());
+    }
+
+    @Test
+    @DisplayName("category map (lane B1): free-text aliases like 'tech' and 'gadgets' reach Technology")
+    void freeTextAliasMatchesMappedCalendarCategory() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(List.of(topic(4, "Technology", "Phone launch", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(1, service.screen(List.of("tech"), TODAY).servable().size());
+        assertEquals(1, service.screen(List.of("  GADGETS "), TODAY).servable().size());
+        assertTrue(service.screen(List.of("Beauty & Skincare"), TODAY).servable().isEmpty());
+    }
+
+    @Test
+    @DisplayName(
+            "category map (lane B1): the creator's raw category still matches, and inner whitespace"
+                    + " is collapsed on both sides")
+    void rawCategoryAndCollapsedWhitespaceStillMatch() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(
+                        List.of(
+                                topic(1, "Tech  &  Gaming", "Raw vertical topic", BENIGN_TEXT, "APPROVED"),
+                                topic(2, "Local business", "Shop local", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(
+                List.of(1L),
+                service.screen(List.of("tech & gaming"), TODAY).servable().stream()
+                        .map(ServableTopic::id)
+                        .toList());
+        assertEquals(
+                List.of(2L),
+                service.screen(List.of("Local   business"), TODAY).servable().stream()
+                        .map(ServableTopic::id)
+                        .toList());
+    }
+
+    @Test
+    @DisplayName("category map (lane B1): every onboarding vertical maps to at least one calendar category")
+    void everyTableEntryMapsIntoTheCalendar() {
+        CreatorCategoryMap.TABLE.forEach(
+                (key, mapped) -> {
+                    assertTrue(!mapped.isEmpty(), key);
+                    for (String calendar : mapped) {
+                        assertTrue(CreatorCategoryMap.CALENDAR_CATEGORIES.contains(calendar), key);
+                        assertEquals(mapped, CreatorCategoryMap.calendarCategoriesFor(key), key);
+                    }
+                });
+        assertEquals(List.of("Culture"), CreatorCategoryMap.calendarCategoriesFor(" culture "));
+        assertTrue(CreatorCategoryMap.calendarCategoriesFor("knitting").isEmpty());
+    }
+
+    @Test
     @DisplayName("category match: a creator with no stored categories is served ONLY the ALL rows")
     void creatorWithNoCategoriesGetsOnlyAllRows() throws ReflectiveOperationException {
         when(contentTopicRepository.findServable(TODAY))

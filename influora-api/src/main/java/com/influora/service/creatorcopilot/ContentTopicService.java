@@ -87,9 +87,9 @@ public class ContentTopicService {
     }
 
     /**
-     * The creator's own categories ({@code creator_profiles.categories_json}), trimmed, exactly as
-     * stored -- matching against them is case-insensitive and is done by {@link #screen}, not
-     * here. A creator with no stored categories gets an empty list back, which {@link #screen}
+     * The creator's own categories ({@code creator_profiles.categories_json}), exactly as stored --
+     * normalising them and mapping them onto the calendar's categories ({@link
+     * CreatorCategoryMap}) is done by {@link #screen}, not here. A creator with no stored categories gets an empty list back, which {@link #screen}
      * then matches against nothing but the {@code ALL} rows (see that method's javadoc).
      *
      * <p>Exposed (not private) so the admin preview endpoint can resolve and display the same
@@ -112,11 +112,14 @@ public class ContentTopicService {
      * Matches every servable-today row ({@link ContentTopicRepository#findServable}) against
      * {@code creatorCategories} and screens every match for safety.
      *
-     * <p><b>Matching rule.</b> A topic matches when its {@code category} equals, case-insensitively
-     * and after trimming both sides, any entry of {@code creatorCategories}, OR when its {@code
-     * category} is the literal {@code ALL} (case-insensitively). A creator with an empty {@code
-     * creatorCategories} list therefore matches only {@code ALL} rows -- not a special case coded
-     * here, just what the rule above reduces to when there is nothing else to match against.
+     * <p><b>Matching rule.</b> A topic matches when its {@code category}, normalised by {@link
+     * CreatorCategoryMap#normalise} (trimmed, case-insensitive, inner whitespace collapsed), equals
+     * any entry of {@code creatorCategories} normalised the same way, OR any calendar category
+     * that entry maps to in {@link CreatorCategoryMap} ("Food &amp; Cooking" matches a "Food"
+     * topic, "tech" matches a "Technology" topic), OR when its {@code category} is the literal
+     * {@code ALL} (case-insensitively). A creator with an empty {@code creatorCategories} list
+     * therefore matches only {@code ALL} rows -- not a special case coded here, just what the rule
+     * above reduces to when there is nothing else to match against.
      *
      * <p><b>Cap.</b> {@link #MAX_TOPICS} applies to the SAFE, matched result only -- a matched row
      * that gets dropped for safety does not consume a slot. {@code dropped} is not capped: every
@@ -174,12 +177,8 @@ public class ContentTopicService {
         if (trimmed.equalsIgnoreCase(ContentTopic.CATEGORY_ALL)) {
             return true;
         }
-        for (String creatorCategory : creatorCategories) {
-            if (creatorCategory != null && trimmed.equalsIgnoreCase(creatorCategory.trim())) {
-                return true;
-            }
-        }
-        return false;
+        return CreatorCategoryMap.matchKeys(creatorCategories)
+                .contains(CreatorCategoryMap.normalise(trimmed));
     }
 
     /**

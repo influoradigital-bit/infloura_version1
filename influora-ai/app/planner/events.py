@@ -34,6 +34,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+from app.planner.categories import match_keys, normalise_category
+
 EVENTS_PATH = Path(__file__).parent / "events.jsonl"
 
 _COMMON_REQUIRED: tuple[str, ...] = (
@@ -216,13 +218,15 @@ def nth_weekday(year: int, month: int, weekday: int, ordinal: int) -> date | Non
 
 def _fits(row: dict[str, Any], categories: list[str]) -> bool:
     """A row suits this creator when it is marked ALL, or when one of its `fits` matches one of
-    their categories, ignoring case. A creator with no categories gets only the ALL rows."""
-    wanted = {c.strip().casefold() for c in categories if isinstance(c, str) and c.strip()}
+    their categories or a calendar category that category maps to (`app/planner/categories.py`:
+    "Food & Cooking" -> Food, "tech" -> Technology), ignoring case and extra spaces. A creator
+    with no categories, or none the map knows, gets only the ALL rows."""
+    wanted = match_keys(categories)
     for entry in row["fits"]:
         value = entry.strip()
         if value == FITS_ALL:
             return True
-        if value.casefold() in wanted:
+        if normalise_category(value) in wanted:
             return True
     return False
 
@@ -277,7 +281,8 @@ def events_for_week(
 
     A dated event occupies the days from `post_before_days` before it up to the day itself, so a
     Diwali row with `post_before_days: 7` shows up a week ahead, which is when the content has to
-    be shot. `days_until` is 0 on the day itself.
+    be shot. `days_until` is 0 on the day itself. This is the event's whole lead window; the week
+    plan (`app/planner/week_plan.py`) then shows each event on ONE of these days only.
 
     Returns:
         {"days": [{"date", "weekday", "events": [...]}, ...],
