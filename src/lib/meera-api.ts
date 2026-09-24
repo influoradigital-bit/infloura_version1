@@ -575,6 +575,12 @@ export interface EstimateMyRatePayload {
 export interface MetricsResult {
   connected: boolean;
   followers?: string;
+  /** Always `undefined` BY DESIGN — no 30-day reach total is stored anywhere in the platform.
+   *  The real, backend-computed reach figure the creator can see is `AccountLast28Days
+   *  .accounts_reached` (last 28 FULL days, not 30, and only when `.available`). Kept on the
+   *  type because the Java field still exists and the guard below does not strip it; the card
+   *  no longer renders this field at all — see `MetricsCard` in
+   *  `CreatorToolResultRenderer.tsx`. */
   reach_30d?: string;
   engagement_rate?: string;
   avg_reach_per_post?: string;
@@ -584,9 +590,35 @@ export interface MetricsResult {
   quality_score?: string;
 }
 
-/** `CreatorToolDtos.GetMyMetricsResult` (§3.5) — `get_my_metrics` tool result. */
+/**
+ * `CreatorToolDtos.AccountLast28Days` (2026-09-24) — the account's real Meta insights totals over
+ * the last 28 full days, alongside `metrics.reach_30d` which is `undefined` BY DESIGN (no 30-day
+ * total is stored anywhere — see `MetricsResult`'s own comment). `available=false` means nothing
+ * has been fetched yet, with every figure `null`/absent; a single figure Meta did not return in an
+ * otherwise-available fetch is `null`, never `"0"`.
+ *
+ * Unlike every other record in the Java file this is generated from, `AccountLast28Days` carries
+ * no `@JsonInclude(NON_NULL)` of its own (`CreatorToolDtos.java` around the record's declaration),
+ * so an unavailable figure can arrive as an explicit JSON `null` rather than being omitted — every
+ * optional field below is typed `string | null`, not just `?: string`, so a `=== undefined` check
+ * on the frontend is not enough on its own (`value ?? null` / a plain truthy check both still work,
+ * since `null` is falsy exactly like `undefined`).
+ */
+export interface AccountLast28Days {
+  available: boolean;
+  period?: string | null;
+  accounts_reached?: string | null;
+  views?: string | null;
+  interactions?: string | null;
+  accounts_engaged?: string | null;
+  profile_link_taps?: string | null;
+}
+
+/** `CreatorToolDtos.GetMyMetricsResult` (§3.5) — `get_my_metrics` tool result. `account_last_28_days`
+ *  is a 2026-09-24 addition; older cached payloads (or a server on an older build) may omit it. */
 export interface GetMyMetricsPayload {
   metrics: MetricsResult;
+  account_last_28_days?: AccountLast28Days;
 }
 
 /**

@@ -3,6 +3,7 @@ package com.influora.service;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.analytics.AnalyticsService;
 import com.influora.web.dto.analytics.AnalyticsDtos.ContentPerformanceResponse;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
@@ -45,6 +46,13 @@ public class CreatorAnalyticsService {
     public CreatorDemographicsResponse getMyDemographics(AuthPrincipal principal) {
         String creatorProfileId = creatorContext.requireCreatorProfile(principal).getId();
         return analyticsService.getCreatorDemographicsForProfile(creatorProfileId);
+    }
+
+    /** The authenticated creator's own account insights, last 28 full days (2026-09-24). */
+    @Transactional(readOnly = true)
+    public CreatorAccountInsightsResponse getMyAccountInsights(AuthPrincipal principal) {
+        String creatorProfileId = creatorContext.requireCreatorProfile(principal).getId();
+        return analyticsService.getCreatorAccountInsightsForProfile(creatorProfileId);
     }
 
     /**

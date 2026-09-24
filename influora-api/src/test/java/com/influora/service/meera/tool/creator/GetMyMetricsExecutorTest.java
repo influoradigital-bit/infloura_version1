@@ -21,9 +21,10 @@ import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.FollowerTotals;
+import com.influora.service.analytics.AnalyticsService;
 import com.influora.service.scoring.CreatorTiers;
-import com.influora.service.scoring.QualityScoreService;
 import com.influora.service.scoring.QualityScoreService.QualityScoreResult;
+import com.influora.service.scoring.QualityScoreService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.meera.CreatorToolDtos.MetricsResult;
 import java.math.BigDecimal;
@@ -52,6 +53,7 @@ class GetMyMetricsExecutorTest {
     @Mock private QualityScoreService qualityScoreService;
     // V20260924120000: the tool reads only the account the creator is connected to now.
     @Mock private com.influora.service.creatorcopilot.ConnectedInstagramAccount connectedAccount;
+    @Mock private AnalyticsService analyticsService;
 
     private GetMyMetricsExecutor executor;
     private CreatorProfile profile;
@@ -64,7 +66,8 @@ class GetMyMetricsExecutorTest {
                         creatorMetricsRepository,
                         mediaMetricsRepository,
                         qualityScoreService,
-                        connectedAccount);
+                        connectedAccount,
+                        analyticsService);
         profile = CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Priya Shah");
         lenient().when(preferencesService.requireCreatorProfile(CREATOR_USER_ID)).thenReturn(profile);
         // These tests describe a creator with one connection; the unnarrowed read is the path
@@ -231,5 +234,31 @@ class GetMyMetricsExecutorTest {
         return new PreferencesResponse(
                 null, null, null, null, List.of(), List.of(), 0, "en-IN", null, null, null, null,
                 List.of(), null, false, null, true, null, false, null, false, 0, false);
+    }
+
+    @Test
+    @DisplayName("get_my_metrics carries the last 28 days of account numbers, formatted; a missing one is null")
+    void accountLast28DaysIsReturned() {
+        when(analyticsService.getCreatorAccountInsightsForProfile(CREATOR_PROFILE_ID))
+                .thenReturn(new com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse(
+                        true, java.time.LocalDate.of(2026, 8, 27), java.time.LocalDate.of(2026, 9, 23),
+                        12400L, 48210L, null, 822L, 64L, Instant.parse("2026-09-24T00:00:00Z")));
+
+        var account = executor.execute(CREATOR_USER_ID, Map.of()).accountLast28Days();
+
+        assertTrue(account.available());
+        assertEquals("12,400", account.accountsReached());
+        assertEquals("48,210", account.views());
+        assertNull(account.interactions());
+        assertEquals("64", account.profileLinkTaps());
+        assertTrue(account.period().startsWith("27 Aug 2026"), account.period());
+    }
+
+    @Test
+    @DisplayName("get_my_metrics says account numbers are not available when none were fetched")
+    void accountLast28DaysNotAvailable() {
+        var account = executor.execute(CREATOR_USER_ID, Map.of()).accountLast28Days();
+        assertFalse(account.available());
+        assertNull(account.accountsReached());
     }
 }

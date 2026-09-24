@@ -274,6 +274,9 @@ services:
       # rollback-by-env-var-flip instruction in wiki/processes/go-live-0918.md could not actually
       # be applied to this file (docker-compose sees a literal string, not a placeholder, so
       # editing influora.env would have had no effect). Matched to the shared file's form.
+      # Creator 7-day challenge 08:00 IST email -- ON for production (Swapnil 2026-09-24).
+      # application.yml defaults it OFF; explicit-map environment only forwards listed keys.
+      CREATOR_CHALLENGE_DAILY_EMAIL_ENABLED: ${CREATOR_CHALLENGE_DAILY_EMAIL_ENABLED:-true}
       MEERA_CREATOR_ENABLED: ${MEERA_CREATOR_ENABLED:-true}
       # T-GOLIVE-0918-R2 [meera · 2026-09-18] — REPAIR ROUND 7 LOW: this used to forward
       # INFLUORA_MEERA_STREAM_PUBLICCHATURL, Spring's relaxed-binding alias for

@@ -127,6 +127,7 @@ def test_every_java_field_changes_the_rendered_creator_block():
         "floors": {"reel_floor": "7,777"},
         "metrics_summary": {"followers": "77,777 followers"},
         "audience_summary": "Age: 18-24 77%. Top cities: Drift-Audience-City.",
+        "account_insights_summary": "Last 28 days (Drift-Period): 4,242 accounts reached.",
         "deals_summary": {"active_count": "77", "completed_count": "78"},
         "approval_level": 2,
         "represented": True,

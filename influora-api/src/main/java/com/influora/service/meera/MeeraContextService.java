@@ -36,6 +36,7 @@ import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.analytics.AnalyticsService;
 import com.influora.service.scoring.CreatorTiers;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse;
@@ -129,6 +130,30 @@ public class MeeraContextService {
      */
     public static final String AUDIENCE_NOT_AVAILABLE =
             "not available (Instagram not connected, or no audience snapshot yet)";
+
+    /**
+     * What {@code account_insights_summary} carries when there are no account numbers for this
+     * creator (Instagram not connected, or AccountInsightsJob has not fetched any yet). Never zeros.
+     */
+    public static final String ACCOUNT_INSIGHTS_NOT_AVAILABLE =
+            "not available (Instagram not connected, or no account numbers fetched yet)";
+
+    /**
+     * The two reasons, told apart (live, 2026-09-24): a CONNECTED creator was told "Instagram
+     * connected nahi hai" because the line above names both reasons and the persona suggested
+     * connecting. Each line now says the one reason that is true; the generic one above is kept
+     * only for a failed read (and as influora-ai's fallback when Spring sends nothing).
+     */
+    public static final String AUDIENCE_NOT_CONNECTED = "not available: Instagram is not connected";
+
+    public static final String AUDIENCE_NOT_YET =
+            "not available yet: Instagram is connected, but its audience details have not arrived"
+                    + " (Instagram shares them only for accounts with 100 or more followers)";
+
+    public static final String ACCOUNT_INSIGHTS_NOT_CONNECTED = "not available: Instagram is not connected";
+
+    public static final String ACCOUNT_INSIGHTS_NOT_YET =
+            "not available yet: Instagram is connected, but its account numbers have not arrived";
 
     private static final int AUDIENCE_TOP_AGE_BANDS = 2;
     private static final int AUDIENCE_TOP_CITIES = 3;
@@ -290,6 +315,7 @@ public class MeeraContextService {
         // Keyed off THIS creator's own resolved profile id only - the same id every other read in
         // this method uses, never a caller-supplied creator id. The BRAND path never calls this.
         String audienceSummary = buildAudienceSummary(profile.getId(), locale);
+        String accountInsightsSummary = buildAccountInsightsSummary(profile.getId(), locale);
 
         List<Collaboration> collaborations = collaborationRepository.findByCreatorId(creatorUserId);
         Map<String, Object> dealsSummary = buildDealsSummary(collaborations, locale);
@@ -338,6 +364,7 @@ public class MeeraContextService {
                 floors,
                 metricsSummary,
                 audienceSummary,
+                accountInsightsSummary,
                 dealsSummary,
                 approvalLevel,
                 represented,
@@ -399,9 +426,58 @@ public class MeeraContextService {
      * ageGender} below) degrades to the not-available summary instead of failing the whole CREATOR
      * context — logged with the creator profile id only, never any breakdown data.
      */
+    /**
+     * The creator's own account numbers for the last 28 full days, as one line Meera can quote:
+     * "Last 28 days (26 Aug 2026 to 22 Sep 2026): 12,400 accounts reached, 48,210 views, ...".
+     * Same rules as {@link #buildAudienceSummary}: only with a live Meta connection, a failed read
+     * degrades to {@link #ACCOUNT_INSIGHTS_NOT_AVAILABLE}, and a number Meta did not return is left
+     * out rather than shown as 0.
+     */
+    private String buildAccountInsightsSummary(String creatorProfileId, Locale locale) {
+        if (!hasLiveMetaConnection(creatorProfileId)) {
+            return ACCOUNT_INSIGHTS_NOT_CONNECTED;
+        }
+        CreatorAccountInsightsResponse insights;
+        try {
+            insights = analyticsService.getCreatorAccountInsightsForProfile(creatorProfileId);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "MeeraContextService: account insights read failed for creator profile {};"
+                            + " falling back to the not-available summary",
+                    creatorProfileId,
+                    e);
+            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+        }
+        if (insights == null || !insights.hasData()) {
+            return ACCOUNT_INSIGHTS_NOT_YET;
+        }
+        List<String> parts = new ArrayList<>();
+        addCount(parts, insights.reach(), "accounts reached", locale);
+        addCount(parts, insights.views(), "views", locale);
+        addCount(parts, insights.totalInteractions(), "interactions", locale);
+        addCount(parts, insights.accountsEngaged(), "accounts engaged", locale);
+        addCount(parts, insights.profileLinksTaps(), "profile-link taps", locale);
+        if (parts.isEmpty()) {
+            return ACCOUNT_INSIGHTS_NOT_YET;
+        }
+        return "Last 28 days ("
+                + Rendered.date(insights.periodStart(), locale)
+                + " to "
+                + Rendered.date(insights.periodEnd(), locale)
+                + "): "
+                + String.join(", ", parts)
+                + ".";
+    }
+
+    private static void addCount(List<String> parts, Long value, String label, Locale locale) {
+        if (value != null) {
+            parts.add(Rendered.money(BigDecimal.valueOf(value), locale) + " " + label);
+        }
+    }
+
     private String buildAudienceSummary(String creatorProfileId, Locale locale) {
         if (!hasLiveMetaConnection(creatorProfileId)) {
-            return AUDIENCE_NOT_AVAILABLE;
+            return AUDIENCE_NOT_CONNECTED;
         }
 
         CreatorDemographicsResponse demographics;
@@ -416,7 +492,7 @@ public class MeeraContextService {
             return AUDIENCE_NOT_AVAILABLE;
         }
         if (demographics == null || !demographics.hasData()) {
-            return AUDIENCE_NOT_AVAILABLE;
+            return AUDIENCE_NOT_YET;
         }
 
         // Map<String, ?> on purpose: the breakdowns are decoded from JSON with a raw Map.class, so
@@ -429,14 +505,12 @@ public class MeeraContextService {
         if (ageGender != null) {
             for (Map.Entry<String, ?> entry : ageGender.entrySet()) {
                 long count = countOf(entry.getValue());
-                String key = entry.getKey();
-                int dot = key == null ? -1 : key.indexOf('.');
-                // Meta's audience_gender_age keys are "F.25-34" / "M.18-24" / "U.35-44".
-                if (count <= 0 || dot <= 0 || dot == key.length() - 1) {
+                String[] genderAndAge = splitAgeGenderKey(entry.getKey());
+                if (count <= 0 || genderAndAge == null) {
                     continue;
                 }
-                genderTotals.merge(key.substring(0, dot), count, Long::sum);
-                ageTotals.merge(key.substring(dot + 1), count, Long::sum);
+                genderTotals.merge(genderAndAge[0], count, Long::sum);
+                ageTotals.merge(genderAndAge[1], count, Long::sum);
                 ageGenderTotal += count;
             }
         }
@@ -488,7 +562,7 @@ public class MeeraContextService {
         }
 
         if (parts.isEmpty()) {
-            return AUDIENCE_NOT_AVAILABLE;
+            return AUDIENCE_NOT_YET;
         }
         String asOf = Rendered.date(demographics.fetchedAt(), locale);
         if (asOf != null) {
@@ -530,6 +604,33 @@ public class MeeraContextService {
                                 .thenComparing(Map.Entry.comparingByKey()))
                 .limit(limit)
                 .toList();
+    }
+
+    /**
+     * {gender code, age band} for one age/gender key, or null. AudienceDemographicsJob stores
+     * {@code "18-24_female"} (from {@code follower_demographics}, 2026-09-24), the form every screen
+     * reads; Meta's removed {@code audience_gender_age} metric used {@code "F.18-24"}, still accepted
+     * here so an older row reads the same.
+     */
+    static String[] splitAgeGenderKey(String key) {
+        if (key == null) {
+            return null;
+        }
+        int underscore = key.lastIndexOf('_');
+        if (underscore > 0 && underscore < key.length() - 1) {
+            String gender =
+                    switch (key.substring(underscore + 1).toLowerCase(Locale.ROOT)) {
+                        case "female" -> "F";
+                        case "male" -> "M";
+                        default -> "U";
+                    };
+            return new String[] {gender, key.substring(0, underscore)};
+        }
+        int dot = key.indexOf('.');
+        if (dot > 0 && dot < key.length() - 1) {
+            return new String[] {key.substring(0, dot), key.substring(dot + 1)};
+        }
+        return null;
     }
 
     private static String genderLabel(String metaCode) {

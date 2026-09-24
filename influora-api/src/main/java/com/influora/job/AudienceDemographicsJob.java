@@ -2,11 +2,11 @@ package com.influora.job;
 
 import com.influora.common.JsonLists;
 import com.influora.common.Ulids;
-import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.AudienceDemographics;
+import com.influora.domain.entity.MetaAuthPath;
 import com.influora.domain.entity.MetaOAuthToken;
 import com.influora.integration.meta.client.InstagramInsightsClient;
-import com.influora.integration.meta.dto.AudienceDemographicsResponse;
+import com.influora.integration.meta.dto.AudienceBreakdowns;
 import com.influora.integration.meta.exception.MetaApiException;
 import com.influora.integration.meta.exception.MetaRateLimitException;
 import com.influora.integration.meta.exception.MetaTokenExpiredException;
@@ -15,8 +15,8 @@ import com.influora.integration.meta.service.MetaRateLimitTracker;
 import com.influora.repository.AudienceDemographicsRepository;
 import com.influora.repository.MetaOAuthTokenRepository;
 import com.influora.service.AuditLogService;
+import com.influora.service.creatorcopilot.CreatorMetaConnectedEvent;
 import java.time.Instant;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,12 +24,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
- * Weekly fetch of Meta audience-demographics insights (age/gender, country, city, locale
- * breakdowns) for every creator with a valid (non-revoked, non-expired) Meta token — Wave B task
+ * Weekly fetch of Meta follower demographics (age/gender, country and city breakdowns) for every
+ * creator with a valid (non-revoked, non-expired) Meta token, plus one fetch right after a creator
+ * connects Instagram ({@link #onCreatorConnected}) — Wave B task
  * B4 (wiki/tech/REMAINING_WORK_PLAN.md). Writes {@code audience_demographics} rows (V25).
  *
  * <p>Mirrors {@link MetricsPollingJob}/{@link MetaTokenRefreshService}'s exact conventions: a
@@ -38,7 +42,7 @@ import org.springframework.stereotype.Component;
  * and a pre-flight {@link MetaRateLimitTracker} check before spending budget on the call.
  *
  * <p>Weekly cadence (not the 6h {@code MetricsPollingJob} cadence): demographic breakdowns shift
- * slowly compared to engagement metrics, and Meta's own {@code audience_*} metrics are a
+ * slowly compared to engagement metrics, and Meta's {@code follower_demographics} metric is a
  * {@code period=lifetime} snapshot recomputed server-side rather than a per-interaction counter, so
  * polling more often buys nothing.
  *
@@ -61,11 +65,6 @@ public class AudienceDemographicsJob {
     private static final String DATA_SOURCE_META_API = "META_API";
     private static final int RATE_LIMIT_THRESHOLD_PERCENT = 90;
 
-    // Meta's audience_gender_age breakdown name, e.g. "F.25-34" / "M.18-24" keys.
-    private static final String BREAKDOWN_GENDER_AGE = "audience_gender_age";
-    private static final String BREAKDOWN_COUNTRY = "audience_country";
-    private static final String BREAKDOWN_CITY = "audience_city";
-    private static final String BREAKDOWN_LOCALE = "audience_locale";
 
     private final MetaOAuthTokenRepository tokenRepository;
     private final MetaTokenStorage tokenStorage;
@@ -148,6 +147,42 @@ public class AudienceDemographicsJob {
                         "totalTokens", connectedTokens.size()));
     }
 
+    /**
+     * Fetches ONE creator's follower demographics as soon as their Meta connect commits, so a new
+     * creator's Audience panel is not empty for up to a week waiting for Sunday's run. Same shape
+     * as {@code MetricsPollingJob#onCreatorConnected}: {@code AFTER_COMMIT} so the token row is
+     * visible, {@code @Async} so the connect response never waits on three Graph calls, and it
+     * reuses {@link #pollOne}. <b>Never throws</b>: the weekly run is the guarantee.
+     */
+    @Async
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onCreatorConnected(CreatorMetaConnectedEvent event) {
+        String creatorProfileId = event.creatorProfileId();
+        try {
+            Optional<MetaOAuthToken> token =
+                    tokenRepository
+                            .findByCreatorProfileIdAndWorkspaceIdIsNullAndRevokedFalse(creatorProfileId)
+                            .filter(t -> t.getExpiresAt() == null || t.getExpiresAt().isAfter(Instant.now()));
+            if (token.isEmpty()) {
+                log.info(
+                        "AudienceDemographicsJob: connect-triggered fetch for creator {} found no live"
+                                + " token; leaving it to the weekly run",
+                        creatorProfileId);
+                return;
+            }
+            boolean written = pollOne(creatorProfileId, token.get().getIgBusinessAccountId());
+            log.info(
+                    "AudienceDemographicsJob: connect-triggered fetch for creator {}, row written: {}",
+                    creatorProfileId,
+                    written);
+        } catch (Exception e) {
+            log.warn(
+                    "AudienceDemographicsJob: connect-triggered fetch failed for creator {}: {}",
+                    creatorProfileId,
+                    e.getMessage());
+        }
+    }
+
     /** @return true if a demographics snapshot was successfully written for this creator. */
     private boolean pollOne(String creatorProfileId, String igBusinessAccountId) {
         // CR-99/F-0113 fix: same ULID-vs-real-Meta-ID bug as MetricsPollingJob — Meta's Graph API
@@ -184,7 +219,7 @@ public class AudienceDemographicsJob {
         }
 
         try {
-            AudienceDemographicsResponse response =
+            AudienceBreakdowns breakdowns =
                     instagramClient.getAudienceDemographics(
                             igBusinessAccountId,
                             token.get(),
@@ -196,25 +231,12 @@ public class AudienceDemographicsJob {
                                     .getCreatorAuthPath(creatorProfileId)
                                     .orElse(MetaAuthPath.FACEBOOK_LOGIN));
 
-            if (response == null || response.data() == null || response.data().isEmpty()) {
-                // Accounts under Meta's 100+ follower threshold (or with no audience data yet) return
-                // an empty payload — logged and skipped, never persisted as a fabricated empty row.
+            if (breakdowns == null || breakdowns.isEmpty()) {
+                // Meta returns no follower_demographics for an account under 100 followers (or
+                // with none computed yet): logged and skipped, never saved as an empty row.
                 log.warn(
-                        "AudienceDemographicsJob: empty audience-demographics response for creator {}"
-                                + " (likely below Meta's 100+ follower threshold), skipping",
-                        creatorProfileId);
-                return false;
-            }
-
-            Map<String, Long> ageGender = extractBreakdown(response, BREAKDOWN_GENDER_AGE);
-            Map<String, Long> country = extractBreakdown(response, BREAKDOWN_COUNTRY);
-            Map<String, Long> city = extractBreakdown(response, BREAKDOWN_CITY);
-            Map<String, Long> locale = extractBreakdown(response, BREAKDOWN_LOCALE);
-
-            if (ageGender.isEmpty() && country.isEmpty() && city.isEmpty() && locale.isEmpty()) {
-                log.warn(
-                        "AudienceDemographicsJob: no recognized breakdowns in response for creator {},"
-                                + " skipping",
+                        "AudienceDemographicsJob: no follower demographics for creator {}"
+                                + " (likely below Meta's 100-follower threshold), skipping",
                         creatorProfileId);
                 return false;
             }
@@ -225,10 +247,12 @@ public class AudienceDemographicsJob {
                             .time(Instant.now())
                             .creatorProfileId(creatorProfileId)
                             .platform(PLATFORM_INSTAGRAM)
-                            .ageGenderBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(ageGender)))
-                            .countryBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(country)))
-                            .cityBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(city)))
-                            .localeBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(locale)))
+                            .ageGenderBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(breakdowns.ageGender())))
+                            .countryBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(breakdowns.country())))
+                            .cityBreakdownJson(JsonLists.toJsonObject(nullIfEmpty(breakdowns.city())))
+                            // Meta has no language breakdown any more (audience_locale went with
+                            // the other audience_* metrics), so the column stays empty.
+                            .localeBreakdownJson(null)
                             .dataSource(DATA_SOURCE_META_API)
                             .fetchedAt(Instant.now())
                             .build();
@@ -255,27 +279,6 @@ public class AudienceDemographicsJob {
                     e.getMessage());
             return false;
         }
-    }
-
-    /**
-     * Extracts the single value-map for a named breakdown (e.g. {@code audience_country}) from
-     * Meta's response, merging across any values entries present (the API returns at most one
-     * value per breakdown for {@code period=lifetime}, but this defensively merges rather than
-     * assuming exactly one). Returns an empty map, never null, if the breakdown is absent.
-     */
-    private Map<String, Long> extractBreakdown(AudienceDemographicsResponse response, String name) {
-        Map<String, Long> merged = new HashMap<>();
-        for (AudienceDemographicsResponse.DemographicBreakdown breakdown : response.data()) {
-            if (breakdown == null || !name.equals(breakdown.name()) || breakdown.values() == null) {
-                continue;
-            }
-            for (AudienceDemographicsResponse.DemographicValue value : breakdown.values()) {
-                if (value != null && value.value() != null) {
-                    merged.putAll(value.value());
-                }
-            }
-        }
-        return merged;
     }
 
     private static Map<String, Long> nullIfEmpty(Map<String, Long> map) {

@@ -20,6 +20,7 @@ import {
   isGetMyDealsPayload,
   isGetMyMetricsPayload,
   isNewBriefStub,
+  type AccountLast28Days,
   type CheckDealRisksPayload,
   type DealSummary,
   type GetBriefPayload,
@@ -247,23 +248,57 @@ export function MyDealsCard({
 
 export interface MetricsCardProps {
   metrics: MetricsResult;
+  /** 2026-09-24 addition — the account's real last-28-days Meta insights totals, alongside (not
+   *  instead of) `metrics`. Absent entirely on an older cached payload; `.available` false when
+   *  the backend has fetched nothing yet. See `AccountLast28Days`'s own doc comment in
+   *  `meera-api.ts` for why its fields are `string | null`, not just optional. */
+  accountLast28Days?: AccountLast28Days;
   className?: string;
 }
 
+/** One `AccountLast28Days` figure with its label — used to build the "Last 28 days" group below,
+ *  skipping any figure that is `null`/`undefined` (never inventing a "0" for a figure Meta did not
+ *  return; an actual reported `"0"` is a non-empty string and still renders). */
+const LAST_28_DAYS_FIELDS: Array<{ label: string; key: keyof AccountLast28Days }> = [
+  { label: 'Accounts reached', key: 'accounts_reached' },
+  { label: 'Views', key: 'views' },
+  { label: 'Interactions', key: 'interactions' },
+  { label: 'Accounts engaged', key: 'accounts_engaged' },
+  { label: 'Profile link taps', key: 'profile_link_taps' },
+];
+
 /**
- * The six strings §8.4 names. Each one is omitted whenever the executor has no metric row
- * (§3.6: "every string field null except `tier` and `data_source`"), so each renders
- * {@link NOT_AVAILABLE} — never a 0 and never a dash, either of which reads as a measurement.
+ * The five strings §8.4 names, MINUS "Reach (30 days)" — that field is `undefined` on every
+ * account, live and otherwise, because no 30-day reach total is stored anywhere (see
+ * `MetricsResult.reach_30d`'s own comment); showing a permanent "Not available yet" for a number
+ * the platform will never have was worse than not showing the row at all. Each of the five
+ * remaining strings is still omitted whenever the executor has no metric row (§3.6: "every string
+ * field null except `tier` and `data_source`"), so each still renders {@link NOT_AVAILABLE} — never
+ * a 0 and never a dash, either of which reads as a measurement.
+ *
+ * Below that: a real, backend-computed "Last 28 days" group from `accountLast28Days`, shown only
+ * when `.available` is true. Nothing renders here at all when it is false or the prop is absent —
+ * not even a "not available" line — because unlike the metrics above, this group did not exist as
+ * a promise the card made before; there is nothing to apologise for not having yet.
  */
-export function MetricsCard({ metrics, className }: MetricsCardProps) {
+export function MetricsCard({ metrics, accountLast28Days, className }: MetricsCardProps) {
   const rows: Array<{ label: string; value?: string }> = [
     { label: 'Followers', value: metrics.followers },
-    { label: 'Reach (30 days)', value: metrics.reach_30d },
-    { label: 'Engagement rate', value: metrics.engagement_rate },
+    // "(per follower)" names its basis: (likes + comments) per post, divided by FOLLOWERS x 100
+    // (CreatorMetric.avgEngagementRate, MetricsPollingJob.java ~line 438, T-ENGAGEMENT-DENOMINATOR
+    // -0917) — a DIFFERENT denominator from the challenge card's engagement figure, which divides
+    // by REACH instead (CreatorChallengeService.averageRawEngagementRate, line 626: engagement /
+    // reach, averaged per post). Without the basis in words the two numbers read as the same
+    // metric when they never agree by construction.
+    { label: 'Engagement rate (per follower)', value: metrics.engagement_rate },
     { label: 'Avg reach per post', value: metrics.avg_reach_per_post },
     { label: 'Quality score', value: metrics.quality_score },
     { label: 'Last verified', value: metrics.verified_at },
   ];
+
+  const last28 = accountLast28Days?.available
+    ? LAST_28_DAYS_FIELDS.filter((f) => !!accountLast28Days[f.key])
+    : [];
 
   return (
     <CardShell
@@ -293,6 +328,17 @@ export function MetricsCard({ metrics, className }: MetricsCardProps) {
           />
         ))}
       </div>
+
+      {last28.length > 0 ? (
+        <div data-testid="metrics-last-28-days" className="space-y-1.5 border-t border-border pt-2">
+          <p className="text-xs font-medium text-muted-foreground">
+            Last 28 days{accountLast28Days?.period ? ` (${accountLast28Days.period})` : ''}
+          </p>
+          {last28.map((f) => (
+            <Row key={f.key} label={f.label} value={accountLast28Days![f.key] as string} />
+          ))}
+        </div>
+      ) : null}
 
       {metrics.tier || metrics.data_source ? (
         <p className="text-xs text-muted-foreground">
@@ -814,7 +860,11 @@ export function CreatorToolResultRenderer({
 
     case 'get_my_metrics':
       return isGetMyMetricsPayload(data) ? (
-        <MetricsCard className={className} metrics={data.metrics} />
+        <MetricsCard
+          className={className}
+          metrics={data.metrics}
+          accountLast28Days={data.account_last_28_days}
+        />
       ) : null;
 
     case 'estimate_my_rate':

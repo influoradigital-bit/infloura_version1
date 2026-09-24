@@ -105,8 +105,14 @@ def test_persona_states_the_audience_rule():
         'For growth, content, hook and script questions, use the "Your audience" line'
         " in your context alongside the content knowledge"
     ) in text
-    assert 'pick the hook language and the "Unity" or "Buyer persona targeting" framing' in text
-    assert 'If the audience is "not available", say so plainly and suggest they connect Instagram' in text
+    assert 'pick the "Unity" or "Buyer persona targeting" framing' in text
+    # Hooks follow the reply language: the audience no longer picks a Hinglish hook for English.
+    assert "pick the hook language" not in text
+    assert "hooks included: a Hinglish and an English template of the same type are the same hook" in text
+    # Follow the ONE reason the line gives (live 2026-09-24: a connected creator was told to connect).
+    assert 'If the audience is "not available", say so plainly and follow the reason the line gives' in text
+    assert "if it says Instagram is not connected, suggest they connect it" in text
+    assert "if it says Instagram is connected, never tell them to connect it" in text
     assert "Never state an audience fact that is not in that line" in text
 
 
@@ -115,5 +121,8 @@ def test_persona_audience_rule_reaches_the_creator_system_prompt():
 
 
 def test_prompt_version_bumped_for_audience_knowledge():
-    # .21.2 introduced the audience rule; .22.2 (content-idea intake), then .22.3 (knowledge v3), .22.4 (statistic rule), .22.5 (knowledge v4 + script format), .22.6 (script review), .23.1 (daily topics tool), .23.2 (week plan), .23.3 (frame check route), .24.1 (audit lane B: week plan, prompt contradictions), .24.2 (camera knowledge v5 + saved phone), .24.3 (outdoor light + delivery knowledge v6), .24.4 (delivery examples v6.1), .24.5 (lighting and positioning knowledge v7).
-    assert PROMPT_VERSION == "meera-2026.09.24.5"
+    # .21.2 introduced the audience rule; .22.2 (content-idea intake), then .22.3 (knowledge v3), .22.4 (statistic rule), .22.5 (knowledge v4 + script format), .22.6 (script review), .23.1 (daily topics tool), .23.2 (week plan), .23.3 (frame check route), .24.1 (audit lane B: week plan, prompt contradictions), .24.2 (camera knowledge v5 + saved phone), .24.3 (outdoor light + delivery knowledge v6), .24.4 (delivery examples v6.1), .24.11 (go-live fixes), .24.12 (lighting and positioning knowledge v7).
+    # "At least", not "equal": an exact pin broke on every later bump. It still fails if the
+    # version ever goes backwards past the bump this test belongs to.
+    date, _, n = PROMPT_VERSION.removeprefix("meera-").rpartition(".")
+    assert (date, int(n)) >= ("2026.09.21", 2)

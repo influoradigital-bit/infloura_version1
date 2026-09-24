@@ -300,6 +300,9 @@ services:
       # missing here. Default is `:-true`, NOT `:-false`: application.yml defaults it on and utho.yml
       # pins "true", and while this key was unforwarded the shared box ran on that `true` default —
       # `:-false` would 404 every CREATOR-audience Meera route on this box. Set false to roll back.
+      # Creator 7-day challenge 08:00 IST email -- ON for production (Swapnil 2026-09-24).
+      # application.yml defaults it OFF; explicit-map environment only forwards listed keys.
+      CREATOR_CHALLENGE_DAILY_EMAIL_ENABLED: ${CREATOR_CHALLENGE_DAILY_EMAIL_ENABLED:-true}
       MEERA_CREATOR_ENABLED: ${MEERA_CREATOR_ENABLED:-true}
       # T-GOLIVE-0918-R2 [meera · 2026-09-18] — REPAIR ROUND 7 LOW: this used to forward
       # INFLUORA_MEERA_STREAM_PUBLICCHATURL, Spring's relaxed-binding alias for

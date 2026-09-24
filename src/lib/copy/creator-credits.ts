@@ -43,6 +43,12 @@ export const CREATOR_CREDITS_COPY = {
   'pill.low': { en: '{n} left', hi: '{n} बचे हैं' },
   'pill.zero': { en: '0 credits', hi: '0 क्रेडिट्स' },
   'pill.cap': { en: '30/30 today', hi: 'आज 30/30' },
+  /** F-buy-credits-findable — appended to the pill's visible label (or its longer zero/cap
+   *  sentence) to build the accessible name, e.g. "36 credits — buy more". The pill still has
+   *  credits at this point in every state (even `cap`, where the balance carries over to
+   *  tomorrow — see `cap` below), so this never claims to be the ONLY way to buy; it just makes
+   *  the always-present tap target say what tapping it does. */
+  'pill.buyMore': { en: 'buy more', hi: 'और खरीदें' },
   exhausted: {
     en: "You're out of credits, so I can't answer this one yet. Buy 60 credits to keep chatting.",
     hi: 'आपके क्रेडिट्स खत्म हो गए हैं, इसलिए मैं अभी इसका जवाब नहीं दे सकती। चैट जारी रखने के लिए 60 क्रेडिट्स लें।',

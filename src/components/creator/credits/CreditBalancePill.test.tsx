@@ -68,3 +68,44 @@ describe('CreditBalancePill (A46 — states and flag-off)', () => {
     expect(clicked).toBe(true);
   });
 });
+
+describe('CreditBalancePill — findable "buy more" affordance (F-buy-credits-findable)', () => {
+  it('shows a "+" icon, hidden from assistive tech (the accessible name already says the action)', () => {
+    render(<CreditBalancePill balance={balance({ total: 55 })} language="en" />);
+    const plus = screen.getByTestId('credit-balance-pill-plus');
+    expect(plus).toBeInTheDocument();
+    expect(plus).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('names the tap action in the accessible name — "{n} credits — buy more" (normal state)', () => {
+    render(<CreditBalancePill balance={balance({ total: 36 })} language="en" />);
+    expect(screen.getByTestId('credit-balance-pill')).toHaveAccessibleName('36 credits — buy more');
+  });
+
+  it('bilingual: Hindi accessible name uses the Hindi label and "buy more" phrase', () => {
+    render(<CreditBalancePill balance={balance({ total: 36 })} language="hi-IN" />);
+    expect(screen.getByTestId('credit-balance-pill')).toHaveAccessibleName('36 क्रेडिट्स — और खरीदें');
+  });
+
+  it('low state: accessible name is "{n} left — buy more"', () => {
+    render(<CreditBalancePill balance={balance({ total: 3 })} language="en" />);
+    expect(screen.getByTestId('credit-balance-pill')).toHaveAccessibleName('3 left — buy more');
+  });
+
+  it('zero state: accessible name appends "— buy more" to the full explanatory sentence, not just "0 credits"', () => {
+    render(<CreditBalancePill balance={balance({ total: 0, free: 0, paid: 0 })} language="en" />);
+    const pill = screen.getByTestId('credit-balance-pill');
+    expect(pill).toHaveAccessibleName(/out of credits.*keep chatting\. — buy more/);
+  });
+
+  it('cap state: accessible name appends "— buy more" to the cap sentence', () => {
+    render(<CreditBalancePill balance={balance({ total: 55, dailyUsed: 30, dailyCap: 30 })} language="en" />);
+    const pill = screen.getByTestId('credit-balance-pill');
+    expect(pill).toHaveAccessibleName(/resets at midnight.*for tomorrow\. — buy more/);
+  });
+
+  it('keeps the h-8 header size', () => {
+    render(<CreditBalancePill balance={balance({ total: 55 })} language="en" />);
+    expect(screen.getByTestId('credit-balance-pill').className).toMatch(/\bh-8\b/);
+  });
+});

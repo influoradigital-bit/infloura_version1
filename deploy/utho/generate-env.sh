@@ -214,6 +214,10 @@ META_SYSTEM_IG_ACCESS_TOKEN=
 # and fail confusingly. Blank is a real, handled value: NotificationListener logs a WARN and
 # skips sending. Fill in a real address to actually receive these emails.
 ADMIN_NOTIFICATION_EMAIL=
+# Creator 7-day challenge -- 08:00 IST "today's challenge task" email (CreatorChallengeDailyEmailJob).
+# ON for production (Swapnil 2026-09-24). application.yml defaults it OFF so tests/local never mail;
+# this line is what turns it on. It honours unsubscribes and sends at most once per creator per day.
+CREATOR_CHALLENGE_DAILY_EMAIL_ENABLED=true
 # CompanyTaxStartupValidator REJECTS placeholders -- the API will not boot until these are real
 INFLUORA_COMPANY_GSTIN=REPLACE_ME
 INFLUORA_LEGAL_NAME=REPLACE_ME

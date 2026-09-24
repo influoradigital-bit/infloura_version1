@@ -76,7 +76,10 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.5"
+PROMPT_VERSION = "meera-2026.09.24.12"
+# ^ .12 = the go-live line's .11 merged with knowledge v7 (lighting and positioning). The
+# v7 work was numbered .5 on its branch; it lands after .11 on release/0924, so it takes .12
+# rather than going backwards. v7 as written on its branch:
 # ^ bumped for knowledge v7 (dataset 7 + the creator lighting and positioning guide,
 # 2026-09-24): 75 lighting and positioning rows (key-light angles from the face, window
 # light, Indian home lights, phone height, background repair, portrait patterns, the Indian
@@ -100,6 +103,18 @@ PROMPT_VERSION = "meera-2026.09.24.5"
 # ceiling-light fallback adds a bounce, and caveats a heading carries are no longer repeated per
 # row. The frame-check prompt is capped at 40,000 characters. Ruling and deferrals:
 # wiki/decisions/2026-09-24-creator-knowledge-budget.md. BRAND prompt unchanged.
+#
+# Previously (.11):
+# ^ go-live fixes on release/0924 (Swapnil 2026-09-24), from the live phone screenshots and Ash's
+# review of the parallel launch merge: ONE script format (the rich Full script format, shown as a
+# card; the old Phase C SCRIPT shape is gone, the REVIEW card shape stays), no markdown in it, a
+# fixed start and end; one intake rule; hooks in the reply language; the comment ask goes to the
+# caption; an imagined viewer is never their audience; Meera follows the ONE reason an audience /
+# account line gives (a connected creator is never told to connect); engagement figures say their
+# basis (per follower vs per reach); the "Your account" line (account insights). Knowledge: 8
+# same-idea duplicates kept once, 5 hooks reworded (guide wording / claims about others),
+# a borrowed 80% figure and "duets" removed. .11, not .5: .5-.9 stay free for the other session's
+# next knowledge bumps, and .10 was used on the launch line.
 #
 # Previously (.24.4):
 # ^ bumped for knowledge v6.1: the 12 delivery examples are rebuilt from the raw

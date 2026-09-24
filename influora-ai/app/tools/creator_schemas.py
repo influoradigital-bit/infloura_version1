@@ -308,7 +308,9 @@ CREATOR_TOOL_SCHEMAS: list[dict[str, Any]] = [
         "description": (
             "Read this creator's latest verified metrics — followers, reach and engagement — as "
             "pre-formatted strings. Call it before quoting any audience number. Quote what comes "
-            "back verbatim; never recompute, re-round or estimate a metric. Read-only."
+            "back verbatim; never recompute, re-round or estimate a metric. `engagement_rate` is "
+            "per FOLLOWER (interactions divided by followers), so it is much lower than a per-reach "
+            "rate; say \"of followers\" when you quote it. Read-only."
         ),
         "input_schema": {
             "type": "object",
@@ -414,7 +416,9 @@ CREATOR_TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": PLAN_MY_WEEK,
         "description": (
-            "Plan the creator's next seven days. Returns the server's date and the seven dated "
+            "Plan the creator's next seven days (the posting pattern's engagement rates are per "
+            "REACH: interactions divided by accounts reached; say \"of reach\" when you quote one). "
+            "Returns the server's date and the seven dated "
             "days ahead in Indian time, the festivals and seasons that fall in them with ready "
             "angles, today's editorial topics, and how this creator's OWN posts have performed by "
             "day, time of day and post type. Call it before planning a week or saying when to "
