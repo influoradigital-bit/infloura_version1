@@ -62,3 +62,22 @@ describe('ChallengeComparisonRow — settling note (Round 2 QA item 2)', () => {
     expect(screen.getAllByText(/still collecting views/)).toHaveLength(2);
   });
 });
+
+describe('ChallengeComparisonRow — engagement basis label', () => {
+  // This card's engagement figure divides by REACH, per post
+  // (CreatorChallengeService.averageRawEngagementRate: engagement / reach) — a different
+  // denominator from the metrics card's "Engagement rate (per follower)" (CreatorMetric
+  // .avgEngagementRate: (likes + comments) / followers). Naming the basis here stops the two
+  // numbers from reading as the same metric.
+  it('labels both weeks\' engagement figures "per reach", not bare "engagement"', () => {
+    render(<ChallengeComparisonRow comparison={BASE} copy={copy} />);
+    expect(screen.getByText(/4\.1% engagement per reach/)).toBeInTheDocument();
+    expect(screen.getByText(/4\.0% engagement per reach/)).toBeInTheDocument();
+  });
+
+  it('is bilingual, matching the rest of this card\'s Hindi copy', () => {
+    const hiCopy = challengeCopy('hi-IN');
+    render(<ChallengeComparisonRow comparison={BASE} copy={hiCopy} />);
+    expect(screen.getByText(/4\.1% engagement \(reach के हिसाब से\)/)).toBeInTheDocument();
+  });
+});

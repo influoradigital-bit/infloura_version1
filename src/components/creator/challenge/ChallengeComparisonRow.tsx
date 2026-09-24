@@ -37,7 +37,8 @@ export function ChallengeComparisonRow({ comparison, copy, className }: Challeng
           <p className="text-xs font-medium text-muted-foreground">{copy.comparisonThisWeek}</p>
           <p className="mt-1 text-lg font-semibold tabular-nums">{copy.comparisonPosts(thisWeek.posts)}</p>
           <p className="text-xs text-muted-foreground">
-            {thisWeek.reach.toLocaleString('en-IN')} reach · {thisWeek.engagementRate} engagement
+            {thisWeek.reach.toLocaleString('en-IN')} reach · {thisWeek.engagementRate}{' '}
+            {copy.comparisonEngagementLabel}
           </p>
           {thisWeek.settledPosts < thisWeek.posts && (
             <p className="mt-1 text-[11px] text-muted-foreground">{copy.settlingNote(thisWeek.settledPosts)}</p>
@@ -47,7 +48,8 @@ export function ChallengeComparisonRow({ comparison, copy, className }: Challeng
           <p className="text-xs font-medium text-muted-foreground">{copy.comparisonLastWeek}</p>
           <p className="mt-1 text-lg font-semibold tabular-nums">{copy.comparisonPosts(lastWeek.posts)}</p>
           <p className="text-xs text-muted-foreground">
-            {lastWeek.reach.toLocaleString('en-IN')} reach · {lastWeek.engagementRate} engagement
+            {lastWeek.reach.toLocaleString('en-IN')} reach · {lastWeek.engagementRate}{' '}
+            {copy.comparisonEngagementLabel}
           </p>
           {lastWeek.settledPosts < lastWeek.posts && (
             <p className="mt-1 text-[11px] text-muted-foreground">{copy.settlingNote(lastWeek.settledPosts)}</p>
