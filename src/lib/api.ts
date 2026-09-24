@@ -6918,6 +6918,17 @@ export const creatorAgentPrefs = {
         })
       : mockOr({ consent_accepted_at: new Date().toISOString() }),
 
+  /**
+   * DELETE /creator/agent-preferences/consent — withdrawal (A6). The route has existed since
+   * Phase A (CreatorAgentController:90, whose javadoc says withdrawal must be as easy as giving
+   * consent) but nothing called it, so a creator could switch Meera on and never off again.
+   * 204 No Content: there is no body to read.
+   */
+  withdrawConsent: (): Promise<void> =>
+    isLive()
+      ? http.request<void>('DELETE', '/creator/agent-preferences/consent', { role: 'creator' })
+      : mockOr(undefined as void),
+
   /** GET /creator/agent-preferences/conversations — DPDP export/delete list (A6). */
   listConversations: (): Promise<{ conversations: CreatorAgentConversationItem[] }> =>
     isLive()

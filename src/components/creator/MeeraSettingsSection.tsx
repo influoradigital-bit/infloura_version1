@@ -167,6 +167,11 @@ export function MeeraSettingsSection() {
   const [conversationsLoading, setConversationsLoading] = React.useState(true);
   const [exportingId, setExportingId] = React.useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = React.useState<string | null>(null);
+  // DPDP A6: consent must be as easy to withdraw as it was to give. The route has existed since
+  // Phase A (CreatorAgentController:90) and nothing called it, so Meera could be switched on and
+  // never off. Kept here, beside export and delete, because it is the same rights block.
+  const [withdrawOpen, setWithdrawOpen] = React.useState(false);
+  const [withdrawing, setWithdrawing] = React.useState(false);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -292,6 +297,27 @@ export function MeeraSettingsSection() {
       });
     } finally {
       setExportingId(null);
+    }
+  };
+
+  const handleWithdrawConsent = async () => {
+    setWithdrawing(true);
+    try {
+      await api.creatorAgentPrefs.withdrawConsent();
+      setWithdrawOpen(false);
+      toast({
+        title: 'Meera turned off',
+        description: 'You can turn Meera back on any time from the Co-pilot page.',
+      });
+      // The whole section is consent-gated, so re-read rather than guess at the new state.
+      window.location.reload();
+    } catch (err) {
+      toast({
+        title: 'Could not turn Meera off',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+      setWithdrawing(false);
     }
   };
 
@@ -702,7 +728,42 @@ export function MeeraSettingsSection() {
             </div>
           )}
         </div>
+
+        <div className="mt-6 border-t pt-4">
+          <p className="text-sm font-medium">Turn Meera off</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Withdraws your consent for Meera. She stops using your profile, deals and metrics, and
+            stops replying, until you turn her back on. Your saved conversations stay until you
+            delete them above.
+          </p>
+          <Button
+            variant="outline"
+            className="mt-3"
+            data-testid="withdraw-consent"
+            onClick={() => setWithdrawOpen(true)}
+          >
+            Turn Meera off
+          </Button>
+        </div>
       </CardContent>
+
+      <AlertDialog open={withdrawOpen} onOpenChange={(open) => !withdrawing && setWithdrawOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Turn Meera off?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Meera stops replying and stops using your data. You can turn her back on whenever you
+              like, and nothing you have saved is deleted by this.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={withdrawing}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleWithdrawConsent} disabled={withdrawing}>
+              {withdrawing ? 'Turning off…' : 'Turn Meera off'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
