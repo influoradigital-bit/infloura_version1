@@ -14,7 +14,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import type { BriefExtraction, PackageQuote } from '@/lib/api';
-import type { DealSummary, GetBriefPayload, MetricsResult } from '@/lib/meera-api';
+import type { AccountLast28Days, DealSummary, GetBriefPayload, MetricsResult } from '@/lib/meera-api';
 import {
   BENCHMARK_PROVENANCE,
   CreatorToolResultRenderer,
@@ -204,9 +204,10 @@ describe('MetricsCard', () => {
     const metrics: MetricsResult = { connected: false, tier: 'NANO' };
     render(<MetricsCard metrics={metrics} />);
 
-    // The six strings §8.4 names, all omitted by the executor when there is no metric row.
-    expect(screen.getAllByTestId('metrics-missing')).toHaveLength(6);
-    expect(screen.getAllByText(NOT_AVAILABLE)).toHaveLength(6);
+    // The five strings §8.4 names MINUS "Reach (30 days)" (removed — see MetricsCard's own doc
+    // comment), all omitted by the executor when there is no metric row.
+    expect(screen.getAllByTestId('metrics-missing')).toHaveLength(5);
+    expect(screen.getAllByText(NOT_AVAILABLE)).toHaveLength(5);
     expect(screen.queryByText('0')).not.toBeInTheDocument();
     expect(screen.queryByText('—')).not.toBeInTheDocument();
     expect(screen.getByText(/Tier NANO/)).toBeInTheDocument();
@@ -228,6 +229,55 @@ describe('MetricsCard', () => {
     expect(screen.queryByTestId('metrics-missing')).not.toBeInTheDocument();
     expect(screen.getByText('2.4%')).toBeInTheDocument();
     expect(screen.getByText(/Source: INSTAGRAM/)).toBeInTheDocument();
+  });
+
+  it('never renders a "Reach (30 days)" row — reach_30d is undefined by design, no 30-day total exists', () => {
+    const metrics: MetricsResult = {
+      connected: true,
+      followers: '3,412',
+      reach_30d: '48,900', // still on the wire (Java field exists); the card must not show it
+      engagement_rate: '2.4%',
+    };
+    render(<MetricsCard metrics={metrics} />);
+    expect(screen.queryByText(/Reach \(30 days\)/)).not.toBeInTheDocument();
+    expect(screen.queryByText('48,900')).not.toBeInTheDocument();
+  });
+
+  it('shows a "Last 28 days" group when accountLast28Days is available, hiding a null figure', () => {
+    const last28: AccountLast28Days = {
+      available: true,
+      period: '27 Aug - 23 Sep 2026',
+      accounts_reached: '12,480',
+      views: '31,900',
+      interactions: null,
+      accounts_engaged: '0',
+      profile_link_taps: undefined,
+    };
+    const metrics: MetricsResult = { connected: true, followers: '3,412' };
+    render(<MetricsCard metrics={metrics} accountLast28Days={last28} />);
+
+    const group = screen.getByTestId('metrics-last-28-days');
+    expect(group).toHaveTextContent('Last 28 days (27 Aug - 23 Sep 2026)');
+    expect(group).toHaveTextContent('12,480');
+    expect(group).toHaveTextContent('31,900');
+    // Interactions is null and Profile link taps is undefined — both hidden, not "Not available yet".
+    expect(screen.queryByText('Interactions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Profile link taps')).not.toBeInTheDocument();
+    // Accounts engaged is the STRING "0", a real reported value — shown, not hidden.
+    expect(group).toHaveTextContent('Accounts engaged');
+    expect(screen.getByText('0')).toBeInTheDocument();
+  });
+
+  it('renders nothing extra when accountLast28Days.available is false, or the prop is absent', () => {
+    const metrics: MetricsResult = { connected: true, followers: '3,412' };
+    const { rerender } = render(
+      <MetricsCard metrics={metrics} accountLast28Days={{ available: false }} />,
+    );
+    expect(screen.queryByTestId('metrics-last-28-days')).not.toBeInTheDocument();
+    expect(screen.queryByText('Last 28 days')).not.toBeInTheDocument();
+
+    rerender(<MetricsCard metrics={metrics} />);
+    expect(screen.queryByTestId('metrics-last-28-days')).not.toBeInTheDocument();
   });
 });
 
