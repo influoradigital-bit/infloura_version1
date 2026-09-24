@@ -46,21 +46,24 @@ independent Panchang/festival-date sources that agreed.
 | Dhanteras | 2027 | 27 Oct 2027 | drikpanchang.com Dhanteras date page (Delhi) and mpanchang.com "Dhanteras 2027", cross-checked; 2 days before the already-verified 29 Oct 2027 Diwali |
 | Bhai Dooj | 2027 | 31 Oct 2027 | drikpanchang.com Bhai Dooj date page (New Delhi) and samvat.in "Bhai Dooj 2027", cross-checked; 2 days after the already-verified 29 Oct 2027 Diwali |
 
-## Still empty, and why
+## Filled on 2026-09-24 (second pass)
 
-No official list states these, so nobody has written them down yet. They stay unserved until
-somebody looks them up for the year and fills them in:
+All four come from the same DoPT O.M. for 2027 used above (Annexure II, restricted holidays),
+which the first pass had not read past Annexure I. timeanddate.com's India 2027 page, which
+mirrors that list, agrees on Makar Sankranti and Navratri.
 
-Makar Sankranti and Pongal
+| Festival | Year | Date | Source |
+|---|---|---|---|
+| Makar Sankranti and Pongal | 2027 | 14 Jan 2027 | DoPT O.M. 2027, Annexure II: "Makar Sankranti / Magha Bihu, January 14"; timeanddate.com agrees. The same list puts Pongal on 15 Jan, so the row takes the first day of the pair |
+| Navratri and Durga Puja (Sharad Navratri start) | 2027 | 30 Sep 2027 | timeanddate.com "First Day of Sharad Navratri"; matches the O.M.'s Dussehra Saptami 6 Oct, Mahashtami 7 Oct, Mahanavami 8 Oct and Vijaya Dashmi 9 Oct |
+| Karva Chauth | 2027 | 18 Oct 2027 | DoPT O.M. 2027, Annexure II: "Karaka Chaturthi (Karwa Chouth), October 18"; 11 days before the gazetted 29 Oct 2027 Diwali |
+| Chhath Puja (main day, Sandhya Arghya) | 2027 | 4 Nov 2027 | DoPT O.M. 2027, Annexure II: "Pratihar Shashthi or Surya Shashthi (Chhath Puja), November 04"; 6 days after the gazetted Diwali |
 
-Makar Sankranti 2027 specifically was checked and left out on purpose: drikpanchang.com,
-divinehindu.in and nationaltoday.com all give 15 Jan 2027 (the Sankranti moment falls at 9:14 PM
-on 14 Jan, after sunset, so punya kaal carries to the next sunrise), while calendardate.com and
-samvat.in give 14 Jan 2027 (the plain solar-transition day, without the after-sunset carry-over
-rule applied). That is a real disagreement between reputable sources, not a typo, so the row
-stays empty rather than guessing which convention `plan_my_week` should follow. Whoever fills
-this in next should pick a convention explicitly (and say so in this table) rather than trusting
-either side's "usual" date.
+**The convention for Makar Sankranti:** follow the government list. Panchang sites that apply the
+after-sunset rule give 15 Jan 2027 (the Sankranti moment is 9:14 PM on 14 Jan); the government
+list gives 14 Jan for Makar Sankranti and 15 Jan for Pongal. The planner posts 4 days ahead, so
+the idea reaches the creator on 10 Jan either way, and the row's own note already tells Meera to
+use the regional name the creator's audience uses.
 
 ## How to add one
 
