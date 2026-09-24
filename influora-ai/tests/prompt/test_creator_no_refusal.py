@@ -85,5 +85,5 @@ def test_rules_reach_the_assembled_creator_system_prompt():
 
 
 def test_prompt_version_bumped_for_no_refusal():
-    # .22.1 introduced no-refusal; .22.2 (content-idea intake), then .22.3 (knowledge v3), .22.4 (statistic rule), .22.5 (knowledge v4 + script format), .22.6 (script review), .23.1 (daily topics tool), .23.2 (week plan), .23.3 (frame check route), .24.1 (audit lane B: week plan, prompt contradictions), .24.2 (camera knowledge v5 + saved phone).
-    assert PROMPT_VERSION == "meera-2026.09.24.2"
+    # .22.1 introduced no-refusal; .22.2 (content-idea intake), then .22.3 (knowledge v3), .22.4 (statistic rule), .22.5 (knowledge v4 + script format), .22.6 (script review), .23.1 (daily topics tool), .23.2 (week plan), .23.3 (frame check route), .24.1 (audit lane B: week plan, prompt contradictions), .24.2 (camera knowledge v5 + saved phone), .24.3 (outdoor light + delivery knowledge v6).
+    assert PROMPT_VERSION == "meera-2026.09.24.3"

@@ -79,7 +79,7 @@ def test_v3_fixes_survive_the_v4_merge():
     assert "video_goal" not in raw
     # The adapted-pattern source on rows 70-75 and the row 74 statistic fix are
     # pinned by test_creator_content_knowledge.py; the merge only appended rows.
-    assert len(raw.splitlines()) == 210  # release/0922: go-live 128 + v4's 44 new rows + v5's 38 camera rows
+    assert len(raw.splitlines()) == 240  # release/0922: go-live 128 + v4's 44 new rows + v5's 38 camera rows + v6's 30
 
 
 def test_length_ranges_are_whole_seconds_low_to_high():
@@ -177,7 +177,7 @@ def test_layout_is_plain_text_with_every_part():
     for part in (
         "Idea: a short title.",
         "Plan: for whom; the one feeling; the goal; the length in seconds, vertical 9:16;",
-        '"0-3s. Shot: <camera angle> - <action>. Say: "<exact line>". On screen: <text>."',
+        '"0-3s. Shot: <camera angle> - <action>. Say: "<exact line>". Stress: <the one phrase to stress>. Pause: after "<word>", or none. On screen: <text>."',
         "Caption: one caption that carries the conversation question;",
         'Action: what they do on camera while they speak, from "Actions to film";',
         'Success looks like: the line for their goal from "Script length by goal".',

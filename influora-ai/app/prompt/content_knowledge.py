@@ -10,7 +10,7 @@ reduces-work.md): the point is fewer steps for the creator, not a cleverer
 answer. The persona rules that tell the model HOW to use this block live in
 `app/prompt/creator_persona.py`; this module only loads, validates and renders.
 
-Data: `app/prompt/knowledge/video_content_concepts.jsonl` (210 rows: v4 2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows of 2026-09-24). It sits
+Data: `app/prompt/knowledge/video_content_concepts.jsonl` (240 rows: v4 2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows + the v6 5 outdoor-light and 25 delivery rows of 2026-09-24). It sits
 under `app/prompt/` on purpose: `ci/stale-comment-check.py` watches that prefix
 (PROMPT_SOURCES), so editing the data forces a PROMPT_VERSION bump exactly like
 a persona edit does -- the rendered text is prompt content.
@@ -85,11 +85,17 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
         "brand", "model", "sensor", "max_resolution", "max_fps", "manual_video", "ois",
         "telephoto", "ultrawide", "log_hdr",
     ),
+    # v6 (2026-09-24): how to SAY the lines -- delivery rules reworded as creator advice,
+    # the guardrails that keep them from becoming targets or scores, and synthetic examples
+    # of one stressed phrase per line. Rendered as "How to deliver the lines".
+    "delivery_rule": ("rule", "when", "advice", "why", "limits"),
+    "delivery_guardrails": ("name", "guardrails"),
+    "delivery_example": ("example_id", "script", "language", "platform", "stress", "visual"),
 }
 
 # Fields that are non-empty lists of non-empty strings, not plain strings.
 LIST_FIELDS: frozenset[str] = frozenset(
-    {"steps", "formats", "camera", "home_actions", "outdoor_actions"}
+    {"steps", "formats", "camera", "home_actions", "outdoor_actions", "guardrails"}
 )
 
 # "15-35": a starting range in whole seconds, low before high.
@@ -121,6 +127,9 @@ NAME_FIELD: dict[str, str] = {
     "permanent_rule": "rule",
     "flicker_rule": "region",
     "phone_hardware": "model",
+    "delivery_rule": "rule",
+    "delivery_guardrails": "name",
+    "delivery_example": "example_id",
 }
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
@@ -395,7 +404,37 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
         out.append(f"- {r['category']}: at home: {home}. Outdoors: {outdoor}.")
 
     out += [""] + render_shooting_lines(rows)
+    out += [""] + render_delivery_lines(rows)
     return "\n".join(out) + "\n"
+
+
+DELIVERY_HEADING = (
+    "How to deliver the lines (how the creator SAYS a line: stress, pauses, pace, energy,"
+    " gestures. Every tip is optional and relative to the creator's own voice):"
+)
+
+
+def render_delivery_lines(rows: list[dict[str, Any]]) -> list[str]:
+    """The v6 delivery rows: guardrails first (they bound every rule below), then the
+    rules as advice with their limits, then the synthetic examples, labelled as such."""
+    out: list[str] = [DELIVERY_HEADING]
+    for r in _by_type(rows, "delivery_guardrails"):
+        out.append(f"{r['name']} (always):")
+        out.extend(f"- {g.strip()}" for g in r["guardrails"])
+    out += ["", "Delivery rules:"]
+    for r in _by_type(rows, "delivery_rule"):
+        out.append(f"- {r['rule']}: {r['advice']} Limits: {r['limits']}")
+    out += [
+        "",
+        "Delivery examples (synthetic illustrations, not real creator data; any number in them"
+        " is part of the example, never a fact to reuse):",
+    ]
+    for r in _by_type(rows, "delivery_example"):
+        out.append(
+            f"- {r['example_id']} ({r['language']}, {r['platform']}): \"{r['script']}\""
+            f" Stress: {r['stress']}. Visual: {r['visual']}."
+        )
+    return out
 
 
 SHOOTING_HEADING = (

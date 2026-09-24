@@ -95,8 +95,9 @@ def test_committed_knowledge_file_loads_every_row_by_type():
     # release/0922: the go-live file (128 = 62 original + 26 go-live + 30 book-derived + 10
     # from dataset_2) plus v4's 44 new rows (47 minus 3 written on both sides), plus v5's 38
     # camera rows from dataset_5 (2026-09-24; its other 104 rows were older copies of rows
-    # already here and were not taken).
-    assert len(rows) == 210
+    # already here and were not taken), plus v6: 5 outdoor-light rows and dataset_6's 25
+    # delivery rows (its other 142 rows are dataset_5 again).
+    assert len(rows) == 240
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
@@ -114,9 +115,9 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "contextual_action": 11,
         "length_guideline": 6,
         "structure_selection_rule": 8,
-        "camera_technical_setting": 8,
+        "camera_technical_setting": 9,
         "night_video_setting": 4,
-        "lighting_rule": 4,
+        "lighting_rule": 8,
         "background_rule": 2,
         "subject_positioning_rule": 2,
         "platform_export_setting": 2,
@@ -124,6 +125,9 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "permanent_rule": 6,
         "flicker_rule": 1,
         "phone_hardware": 5,
+        "delivery_rule": 12,
+        "delivery_guardrails": 1,
+        "delivery_example": 12,
     }
 
 
@@ -319,6 +323,9 @@ def test_every_row_reaches_the_knowledge_text():
             "permanent_rule": "rule",
             "flicker_rule": "region",
             "phone_hardware": "model",
+            "delivery_rule": "rule",
+            "delivery_guardrails": "name",
+            "delivery_example": "script",
         }[r["data_type"]]
         assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
 

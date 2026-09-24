@@ -76,7 +76,16 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.2"
+PROMPT_VERSION = "meera-2026.09.24.3"
+# ^ bumped for knowledge v6 (dataset 6, 2026-09-24): 5 outdoor-light rows (harsh midday sun,
+# golden hour, cloudy, shade under trees, a daylight talking-head setting) and the 25 delivery
+# rows (12 rules reworded as creator advice, 5 guardrails, 12 synthetic examples with TikTok /
+# LinkedIn replaced by Reels / Shorts), rendered as "How to deliver the lines". The full-script
+# beat gains "Stress:" and "Pause:" (a word, never seconds), and a persona rule answers delivery
+# questions from the guardrails. Dataset 6's other 142 rows are dataset 5 and were not re-taken.
+# BRAND prompt unchanged.
+#
+# Previously (.24.2):
 # ^ bumped for camera knowledge v5 (dataset 5, 2026-09-24): 38 shooting rows join the
 # knowledge file (settings by situation, night video, light, background, positioning,
 # failure fixes, standing rules, India's 50Hz flicker, export, five checked OPPO phones),
