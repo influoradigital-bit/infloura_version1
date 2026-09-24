@@ -205,4 +205,38 @@ describe('a fallback response from influora-ai is never shown as a real check re
     expect(screen.queryByText('Fix')).toBeNull();
     expect(screen.queryByText(/Couldn.t check your frame right now/)).toBeNull();
   });
+
+  /**
+   * DPDP / consent: "Check my frame" is the only thing on this screen that leaves the phone. The
+   * copy used to say just "nothing is saved", which was true but let a creator read it as "the
+   * photo stays on my device". The disclosure must sit next to the button, in their language.
+   */
+  it('tells the creator, next to the button, that the photo is sent to the AI', () => {
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    const disclosure = screen.getByTestId('frame-check-disclosure');
+    expect(disclosure.textContent).toContain('sends one photo');
+    expect(disclosure.textContent).toMatch(/AI/);
+    expect(disclosure.textContent).toMatch(/never saved/);
+    // and it is beside the button, not buried elsewhere on the page
+    const button = screen.getByRole('button', { name: 'Check my frame' });
+    expect(button.parentElement?.contains(disclosure)).toBe(true);
+  });
+
+  it('shows the same disclosure in Hindi for a Hindi creator', () => {
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} lang="hi-IN" />);
+
+    const disclosure = screen.getByTestId('frame-check-disclosure');
+    expect(disclosure.textContent).toContain('फ़ोटो');
+    expect(disclosure.textContent).toContain('सेव नहीं');
+  });
+
+  it('does not claim the live preview is uploaded - only the frame check is', () => {
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    expect(screen.getByText(/Nothing from this preview is uploaded or saved/)).toBeTruthy();
+  });
 });

@@ -86,6 +86,21 @@ const COPY: Record<AdviceKey, Record<ShootCheckLang, string>> = {
   'tidy-background': { 'en-IN': 'Background is busy — tidy up or step away from clutter', 'hi-IN': 'पृष्ठभूमि अस्त-व्यस्त है' },
 };
 
+/**
+ * "Check my frame" is the ONE thing on this screen that leaves the phone, so the screen has to
+ * say so where the creator taps it. The live meter above reads the video in the browser and
+ * uploads nothing; this button captures one still and sends it to Influora, which passes it to
+ * the AI that writes the advice. A face is personal data, so "nothing is saved" on its own was
+ * not enough - it was true (the bytes are never written to disk or the database) but it let a
+ * creator assume the photo never left their phone at all.
+ */
+export const FRAME_CHECK_DISCLOSURE: Record<ShootCheckLang, string> = {
+  'en-IN':
+    'This sends one photo of your shot to Influora’s AI to check it. It is used for this check only, and never saved.',
+  'hi-IN':
+    'इससे आपके शॉट की एक फ़ोटो Influora के AI को जाँच के लिए भेजी जाती है। यह सिर्फ़ इसी जाँच के लिए इस्तेमाल होती है, कभी सेव नहीं होती।',
+};
+
 /** Falls back to the English copy for a key that somehow isn't in the table, then to the key itself. */
 export function adviceText(key: string, lang: ShootCheckLang): string {
   const entry = COPY[key as AdviceKey];

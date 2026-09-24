@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { meeraApi, type MeeraShootCheckFrameResult } from '@/lib/meera-api';
-import type { ShootCheckLang } from '@/lib/shoot-check/advice-copy';
+import { FRAME_CHECK_DISCLOSURE, type ShootCheckLang } from '@/lib/shoot-check/advice-copy';
 import type { ShotTarget } from '@/lib/shoot-check/metrics';
 import { captureDownscaledJpeg } from '@/lib/shoot-check/capture-frame';
 import { useShootCheck } from '@/hooks/useShootCheck';
@@ -280,7 +280,10 @@ export function ShootCheckPanel({ shots, lang = 'en-IN' }: ShootCheckPanelProps)
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <p className="text-sm text-muted-foreground">
-            A deeper, one-time check on a single still photo — takes a few seconds, nothing is saved.
+            A deeper, one-time check on a single still photo — takes a few seconds.
+          </p>
+          <p className="text-xs text-muted-foreground" data-testid="frame-check-disclosure">
+            {FRAME_CHECK_DISCLOSURE[lang]}
           </p>
           <Button onClick={() => void handleCheckFrame()} disabled={frameCheckDisabled} className="self-start">
             {frameCheck.status === 'loading' ? 'Checking…' : 'Check my frame'}
