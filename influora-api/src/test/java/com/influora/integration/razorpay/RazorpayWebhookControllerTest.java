@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -63,6 +64,7 @@ class RazorpayWebhookControllerTest {
     @Mock private EscrowService escrowService;
     @Mock private PayoutReconciliationService payoutReconciliationService;
     @Mock private WalletTopUpService walletTopUpService;
+    @Mock private com.influora.service.credits.CreatorCreditOrderService creatorCreditOrderService;
     @Mock private SubscriptionService subscriptionService;
     @Mock private InvoiceService invoiceService;
     @Mock private BrandContextService brandContextService;
@@ -80,6 +82,7 @@ class RazorpayWebhookControllerTest {
                         escrowService,
                         payoutReconciliationService,
                         walletTopUpService,
+                        creatorCreditOrderService,
                         subscriptionService,
                         invoiceService,
                         brandContextService,
@@ -532,5 +535,173 @@ class RazorpayWebhookControllerTest {
         assertEquals(200, response.getStatusCode().value());
         verify(walletTopUpService, times(1))
                 .confirmCredited(eq(topUpId), eq("pay_FOREIGN1"), eq(100000L), eq("INR"));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // T-CREATOR-CREDITS-V2 round 2 (SPEC.md A28, A29, design-kabir.md K-07 CRITICAL, K-24)
+    // ---------------------------------------------------------------------------------------
+
+    private static String creatorCreditOrderPaidPayload(String receipt, String razorpayOrderId, String paymentId, long amountPaise) {
+        return "{"
+                + "\"event\":\"order.paid\","
+                + "\"payload\":{"
+                + "\"payment\":{\"entity\":{\"id\":\""
+                + paymentId
+                + "\",\"amount\":"
+                + amountPaise
+                + ",\"currency\":\"INR\"}},"
+                + "\"order\":{\"entity\":{\"id\":\""
+                + razorpayOrderId
+                + "\",\"receipt\":\""
+                + receipt
+                + "\"}}"
+                + "},"
+                + "\"created_at\":1700000006}";
+    }
+
+    private static String creatorCreditPaymentCapturedPayload(String receipt, String razorpayOrderId, String paymentId, long amountPaise) {
+        return "{"
+                + "\"event\":\"payment.captured\","
+                + "\"payload\":{"
+                + "\"payment\":{\"entity\":{\"id\":\""
+                + paymentId
+                + "\",\"amount\":"
+                + amountPaise
+                + ",\"currency\":\"INR\"}},"
+                + "\"order\":{\"entity\":{\"id\":\""
+                + razorpayOrderId
+                + "\",\"receipt\":\""
+                + receipt
+                + "\"}}"
+                + "},"
+                + "\"created_at\":1700000007}";
+    }
+
+    @Test
+    @DisplayName(
+            "A28/K-07 CRITICAL: a signed order.paid (and payment.captured) carrying a ccr:<id> receipt"
+                    + " routes to CreatorCreditOrderService.confirmPaid BEFORE the escrow fallback —"
+                    + " escrowService is NEVER called for either event type; an unknown ccr:<id> order is"
+                    + " ACKed 200 (never retried), also without ever falling through to escrow")
+    void creatorCreditReceiptRoutesBeforeEscrow() {
+        String orderId1 = "01HCREDITORDER00000000001";
+        String receipt1 = com.influora.service.credits.CreatorCreditOrderService.RECEIPT_PREFIX + orderId1;
+
+        ResponseEntity<Void> response1 =
+                controller.receive(
+                        VALID_SIGNATURE,
+                        creatorCreditOrderPaidPayload(receipt1, "order_rzp_ccred1", "pay_CCRED1", 24900));
+
+        assertEquals(200, response1.getStatusCode().value());
+        verify(creatorCreditOrderService)
+                .confirmPaid(eq(orderId1), eq("pay_CCRED1"), eq("order_rzp_ccred1"), eq(24900L), eq("INR"));
+        verify(escrowService, never()).confirmFunded(any(), any(), any(), any());
+        verify(walletTopUpService, never()).confirmCredited(any(), any(), any(), any());
+
+        // payment.captured shares dispatchFundingEventIfResolvable — must route identically.
+        String orderId2 = "01HCREDITORDER00000000002";
+        String receipt2 = com.influora.service.credits.CreatorCreditOrderService.RECEIPT_PREFIX + orderId2;
+        ResponseEntity<Void> response2 =
+                controller.receive(
+                        VALID_SIGNATURE,
+                        creatorCreditPaymentCapturedPayload(receipt2, "order_rzp_ccred2", "pay_CCRED2", 24900));
+
+        assertEquals(200, response2.getStatusCode().value());
+        verify(creatorCreditOrderService)
+                .confirmPaid(eq(orderId2), eq("pay_CCRED2"), eq("order_rzp_ccred2"), eq(24900L), eq("INR"));
+        verify(escrowService, never()).confirmFunded(any(), any(), any(), any());
+
+        // Falsify note: deleting the ccr: branch (routing this receipt through the escrow fallback
+        // instead) makes escrowService.confirmFunded get called and the never()s above go red —
+        // exactly K-07's failure mode: money captured, credits never granted, silently ACKed (F8).
+
+        // An unknown ccr:<id> order (CREDIT_ORDER_NOT_FOUND) is ACKed 200 like every other
+        // not-ours receipt on the shared Razorpay account (F-0809) — Razorpay must never be told to
+        // retry an order id that will never exist.
+        String unknownReceipt =
+                com.influora.service.credits.CreatorCreditOrderService.RECEIPT_PREFIX + "01UNKNOWNXXXXXXXXXXXXXXXXX";
+        when(creatorCreditOrderService.confirmPaid(any(), any(), any(), any(), any()))
+                .thenThrow(
+                        new ApiException(
+                                "CREDIT_ORDER_NOT_FOUND", "Creator credit order not found", HttpStatus.NOT_FOUND));
+
+        ResponseEntity<Void> response3 =
+                controller.receive(
+                        VALID_SIGNATURE,
+                        creatorCreditOrderPaidPayload(unknownReceipt, "order_rzp_unknown", "pay_UNKNOWN1", 24900));
+
+        assertEquals(200, response3.getStatusCode().value());
+        verify(escrowService, never()).confirmFunded(any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName(
+            "A29/K-24: with CREATOR_CREDITS_ENABLED=false, a signed webhook for a PENDING creator-"
+                    + " credit order still credits 60 — confirmPaid is never flag-gated (only order"
+                    + " creation/charging/the Buy UI are), so a flag flip after purchase can never strand"
+                    + " already-paid money")
+    void creatorCreditWebhookIgnoresFlag() {
+        // Wires a REAL CreatorCreditOrderService (not the class-level mock) with
+        // CreatorCreditProperties stubbed DISABLED — this is the only way this test can actually go
+        // red if someone later adds an `if (!creditProperties.isEnabled())` guard inside
+        // confirmPaid itself, exactly the K-24 regression this criterion exists to catch.
+        var orderRepository = mock(com.influora.repository.CreatorCreditOrderRepository.class);
+        var packRepository = mock(com.influora.repository.CreatorCreditPackRepository.class);
+        var creatorCreditService = mock(com.influora.service.credits.CreatorCreditService.class);
+        var accountInitializer = mock(com.influora.service.credits.CreatorCreditAccountInitializer.class);
+        var invoiceApplier = mock(com.influora.service.credits.CreatorCreditInvoiceApplier.class);
+        var razorpayClient = mock(com.influora.integration.razorpay.RazorpayClient.class);
+        var razorpayProperties = mock(com.influora.config.RazorpayProperties.class);
+        var creditProperties = mock(com.influora.config.CreatorCreditProperties.class);
+        org.mockito.Mockito.lenient().when(creditProperties.isEnabled()).thenReturn(false);
+        java.time.Clock clock =
+                java.time.Clock.fixed(Instant.parse("2026-09-21T10:00:00Z"), java.time.ZoneOffset.UTC);
+
+        var realOrderService =
+                new com.influora.service.credits.CreatorCreditOrderService(
+                        orderRepository,
+                        packRepository,
+                        creatorCreditService,
+                        accountInitializer,
+                        invoiceApplier,
+                        razorpayClient,
+                        razorpayProperties,
+                        creditProperties,
+                        clock);
+
+        var pendingOrder = mock(com.influora.domain.entity.CreatorCreditOrder.class);
+        when(pendingOrder.getId()).thenReturn("order-flagoff-1");
+        when(pendingOrder.getStatus())
+                .thenReturn(com.influora.domain.enums.CreatorCreditOrderStatus.PENDING);
+        when(pendingOrder.getRazorpayOrderId()).thenReturn("order_rzp_flagoff1");
+        when(pendingOrder.getAmountPaise()).thenReturn(24900);
+        when(pendingOrder.getCurrency()).thenReturn("INR");
+        when(orderRepository.findByIdForUpdate("order-flagoff-1")).thenReturn(java.util.Optional.of(pendingOrder));
+        when(creatorCreditService.creditPurchase(eq(pendingOrder), any())).thenReturn("grant-flagoff-1");
+
+        RazorpayWebhookController controllerWithRealCreditService =
+                new RazorpayWebhookController(
+                        signatureVerifier,
+                        escrowService,
+                        payoutReconciliationService,
+                        walletTopUpService,
+                        realOrderService,
+                        subscriptionService,
+                        invoiceService,
+                        brandContextService,
+                        idempotencyService,
+                        eventPublisher,
+                        transactionManager);
+
+        String receipt = com.influora.service.credits.CreatorCreditOrderService.RECEIPT_PREFIX + "order-flagoff-1";
+        ResponseEntity<Void> response =
+                controllerWithRealCreditService.receive(
+                        VALID_SIGNATURE,
+                        creatorCreditOrderPaidPayload(receipt, "order_rzp_flagoff1", "pay_FLAGOFF1", 24900));
+
+        assertEquals(200, response.getStatusCode().value());
+        verify(creatorCreditService).creditPurchase(pendingOrder, clock.instant());
+        verify(pendingOrder).markCredited(eq("pay_FLAGOFF1"), eq("grant-flagoff-1"), eq(clock.instant()));
+        verify(orderRepository).saveAndFlush(pendingOrder);
     }
 }

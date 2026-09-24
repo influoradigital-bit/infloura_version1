@@ -11,11 +11,14 @@ package com.influora.domain.enums;
  *   <li>{@link #CAMPAIGN_SERVICE} — Doc#2, {@code <CreatorInvoiceCode>/<FY>/<seq>}, one series
  *       PER creator (each creator is their own supplier of record and therefore needs their own
  *       unbroken statutory series — NOT a global counter).
+ *   <li>{@link #CREATOR_CREDITS} — T-CREATOR-CREDITS-V2 (SPEC.md B1/B21), {@code INF/CRC/<FY>/<seq>},
+ *       one platform-wide series — the creator's Rs 249/60-credit top-up receipt.
  * </ul>
  */
 public enum InvoiceNumberSeriesType {
     SUBSCRIPTION,
     COMMISSION_BRAND,
     COMMISSION_CREATOR,
-    CAMPAIGN_SERVICE
+    CAMPAIGN_SERVICE,
+    CREATOR_CREDITS
 }

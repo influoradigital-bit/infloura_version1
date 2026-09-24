@@ -2,12 +2,14 @@ package com.influora.web;
 
 import com.influora.common.ApiException;
 import com.influora.common.ApiResponse;
+import com.influora.config.CreatorCreditProperties;
 import com.influora.config.MeeraCreatorFeatureProperties;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAgentPreferencesService;
 import com.influora.service.CreatorBriefService;
 import com.influora.service.CreatorContextService;
+import com.influora.service.IdempotencyService;
 import com.influora.web.dto.brief.BriefDtos.BriefAnalysisResponse;
 import com.influora.web.dto.brief.BriefDtos.BriefListItem;
 import com.influora.web.dto.brief.BriefDtos.PasteBriefRequest;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -54,20 +57,29 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/creator/briefs")
 public class CreatorBriefController {
 
+    /** T-CREATOR-CREDITS-V2 (SPEC.md B12, C20) — distinct from every other scope in this codebase (IdempotencyService class javadoc). */
+    private static final String BRIEF_PASTE_IDEMPOTENCY_SCOPE = "creator.brief.paste";
+
     private final CreatorBriefService briefService;
     private final CreatorContextService creatorContext;
     private final CreatorAgentPreferencesService preferencesService;
     private final MeeraCreatorFeatureProperties featureProperties;
+    private final CreatorCreditProperties creditProperties;
+    private final IdempotencyService idempotencyService;
 
     public CreatorBriefController(
             CreatorBriefService briefService,
             CreatorContextService creatorContext,
             CreatorAgentPreferencesService preferencesService,
-            MeeraCreatorFeatureProperties featureProperties) {
+            MeeraCreatorFeatureProperties featureProperties,
+            CreatorCreditProperties creditProperties,
+            IdempotencyService idempotencyService) {
         this.briefService = briefService;
         this.creatorContext = creatorContext;
         this.preferencesService = preferencesService;
         this.featureProperties = featureProperties;
+        this.creditProperties = creditProperties;
+        this.idempotencyService = idempotencyService;
     }
 
     /**
@@ -122,8 +134,38 @@ public class CreatorBriefController {
     @PostMapping
     public ResponseEntity<ApiResponse<BriefAnalysisResponse>> paste(
             @AuthenticationPrincipal AuthPrincipal principal,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody PasteBriefRequest body) {
         String creatorUserId = requireConsentedCreator(principal);
+
+        // T-CREATOR-CREDITS-V2 (SPEC.md B12, K-18, C20) — with the flag on, a paste spends real
+        // credit, so a double-click retry must never charge twice. Required only when the flag is
+        // on: flag-off behaviour is byte-identical to before this change.
+        if (creditProperties.isEnabled()) {
+            if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > 64) {
+                throw new ApiException(
+                        "IDEMPOTENCY_KEY_REQUIRED",
+                        "Idempotency-Key is required (max 64 characters) to paste a brief",
+                        HttpStatus.BAD_REQUEST);
+            }
+            BriefAnalysisResponse response;
+            try {
+                response =
+                        idempotencyService.executeOnce(
+                                idempotencyKey,
+                                creatorUserId,
+                                BRIEF_PASTE_IDEMPOTENCY_SCOPE,
+                                () -> briefService.paste(creatorUserId, body.text()));
+            } catch (com.influora.service.IdempotencyService.AlreadyInProgressException
+                    | com.influora.service.IdempotencyService.AlreadyCompletedException replay) {
+                throw new ApiException(
+                        "IDEMPOTENCY_KEY_IN_PROGRESS",
+                        "This paste is already being processed — retry shortly",
+                        HttpStatus.CONFLICT);
+            }
+            return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
+        }
+
         BriefAnalysisResponse response = briefService.paste(creatorUserId, body.text());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(response));
     }

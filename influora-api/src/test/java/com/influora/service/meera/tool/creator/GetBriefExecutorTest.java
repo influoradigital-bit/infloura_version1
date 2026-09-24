@@ -102,6 +102,19 @@ class GetBriefExecutorTest {
         campaignRepository = mock(CampaignRepository.class);
         dealMessageRepository = mock(DealMessageRepository.class);
         creatorProfileRepository = mock(CreatorProfileRepository.class);
+        com.influora.service.credits.CreatorCreditService creatorCreditService =
+                mock(com.influora.service.credits.CreatorCreditService.class);
+        lenient()
+                .when(
+                        creatorCreditService.charge(
+                                any(), any(), any()))
+                .thenReturn(
+                        new com.influora.service.credits.ChargeResult(
+                                com.influora.service.credits.ChargeResult.Outcome.DISABLED,
+                                com.influora.domain.enums.ChargeKind.BRIEF,
+                                3,
+                                0,
+                                0));
 
         CreatorBriefService briefService =
                 new CreatorBriefService(
@@ -117,7 +130,8 @@ class GetBriefExecutorTest {
                         dealMessageRepository,
                         creatorProfileRepository,
                         objectMapper,
-                        new CreatorSuggestionAiProperties());
+                        new CreatorSuggestionAiProperties(),
+                        creatorCreditService);
         executor = new GetBriefExecutor(preferencesService, briefService, collaborationRepository);
 
         CreatorProfile profile = CreatorProfile.newForUser(PROFILE_ID, USER_ID, "Priya Shah");

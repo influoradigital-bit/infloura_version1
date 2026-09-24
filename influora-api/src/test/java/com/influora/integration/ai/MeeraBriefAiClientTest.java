@@ -70,7 +70,14 @@ class MeeraBriefAiClientTest {
                 new CreatorSuggestionServiceTokenService(
                         tokenProps, new SpringJwksKeyService(jwksProps));
 
-        client = new MeeraBriefAiClient(props, tokenService, httpClient);
+        // Flag OFF by default (matches application.yml) -- every pre-existing test in this file
+        // keeps its pre-existing, no-cap-field request body. The B20 backstop test below builds
+        // its own ENABLED instance.
+        com.influora.config.CreatorCreditProperties creditProperties =
+                new com.influora.config.CreatorCreditProperties(
+                        false, 1, 1, 3, 30, 40, 15, 90, "Asia/Kolkata",
+                        new BigDecimal("25.00"), new BigDecimal("12.00"), 3);
+        client = new MeeraBriefAiClient(props, tokenService, httpClient, creditProperties);
     }
 
     private void respond(int status, String body) throws Exception {
@@ -129,12 +136,14 @@ class MeeraBriefAiClientTest {
     }
 
     @Test
-    @DisplayName("the request contract has exactly the three §7.5 fields and no workspace_id")
+    @DisplayName("the request contract has exactly the §7.5 fields (plus B20's optional cap override) and no workspace_id")
     void requestContractDropsWorkspaceId() {
         var components =
                 com.influora.integration.ai.dto.MeeraBriefAiDtos.ExtractRequest.class
                         .getRecordComponents();
-        assertEquals(3, components.length);
+        // T-CREATOR-CREDITS-V2 (SPEC.md B20) added briefMonthlyCapUsd, NON_NULL and omitted from
+        // the wire when CREATOR_CREDITS_ENABLED is off — the original 3 §7.5 fields, plus this one.
+        assertEquals(4, components.length);
         assertTrue(
                 java.util.Arrays.stream(components)
                         .noneMatch(c -> c.getName().toLowerCase().contains("workspace")),

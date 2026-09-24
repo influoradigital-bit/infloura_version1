@@ -438,14 +438,6 @@ async def chat(request: Request, authorization: str | None = Header(default=None
     verified_message_id = verified.claims.get("messageId")
     turn_id = verified_message_id or body.get("turn_id", request_id)
 
-    def _claimed_audience_is_creator() -> bool:
-        """The VERIFIED audience, resolved through the same single source of truth the route
-        uses below -- just read earlier, because the conversation-binding check terminates
-        before `derive_audience` has run. A CREATOR turn is never charged against the brand
-        AI-credit ledger at all (see `MeeraSessionService#doSendTurn`'s `isCreatorTurn`
-        branch), so there is nothing for `release_early` to give back on one."""
-        return derive_audience(verified.claims) == AUDIENCE_CREATOR
-
     async def release_early(reason: str) -> None:
         """P1-6 (we bill the brand for our own failures) -- refunds the turn's SEND-time charge on
         a terminal path that ends the request BEFORE `event_stream()` is ever iterated.
@@ -468,7 +460,14 @@ async def chat(request: Request, authorization: str | None = Header(default=None
             it `release_charge`) never runs -- and `AICreditService#release` is idempotent and
             guarded server-side regardless.
         """
-        if verified_message_id is None or _claimed_audience_is_creator():
+        # T-CREATOR-CREDITS-V2 (SPEC.md B10, K-04): the `_claimed_audience_is_creator()` short
+        # circuit that used to sit here is GONE. It made every creator refusal below a silent
+        # no-op release call -- harmless while a creator turn was never charged at all, but a real
+        # stranded charge now that MeeraSessionService#doSendTurn charges creator credits too.
+        # `release_turn_credit` itself already routes by `conversation.tenantType`
+        # (MeeraSessionService#releaseTurnCredit) and reaches AICreditService.release only for a
+        # BRAND conversation, so this function needs no audience branch of its own any more.
+        if verified_message_id is None:
             return
         try:
             await _get_spring().release_turn_credit(
@@ -667,6 +666,10 @@ async def chat(request: Request, authorization: str | None = Header(default=None
             # now instead of letting it sit on the ceiling until it expires.
             await release(spend_reservation)
             spend_reservation = None
+            # T-CREATOR-CREDITS-V2 (SPEC.md B10, K-04): give the creator credit charge back too --
+            # covers all three of the returns immediately below (audience_mismatch, the on-behalf
+            # unauthorized case, and a plain context-fetch failure).
+            await release_early("creator_context_unavailable")
             if context_error == "audience_mismatch":
                 return _error_response(
                     status.HTTP_403_FORBIDDEN,
@@ -687,6 +690,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         if not consent_accepted(creator_context):
             await release(spend_reservation)
             spend_reservation = None
+            await release_early("consent_required")
             log_event(
                 logger, logging.INFO, "chat_turn_blocked_consent_required",
                 workspace_id=workspace_id, request_id=request_id,
@@ -710,6 +714,7 @@ async def chat(request: Request, authorization: str | None = Header(default=None
         except SpendCapExceeded as exc:
             await release(spend_reservation)
             spend_reservation = None
+            await release_early("creator_monthly_usd_cap")
             log_event(
                 logger, logging.WARNING, "chat_turn_blocked_creator_monthly_cap",
                 workspace_id=workspace_id, request_id=request_id,
@@ -829,7 +834,12 @@ async def chat(request: Request, authorization: str | None = Header(default=None
             """
             try:
                 await spring.release_turn_credit(
-                    conversation_id=body.get("conversation_id", ""),
+                    # T-CREATOR-CREDITS-V2 (SPEC.md B10, K-05, F5): the VERIFIED conversation
+                    # binding, matching `release_early` above -- never the raw request body, which
+                    # is exactly what the conversation-mismatch case a few lines up exists to
+                    # distrust. Falls back to the body value only when the token carries no
+                    # conversation binding at all (the service-token / Spring-proxied path).
+                    conversation_id=verified.conversation_id or body.get("conversation_id", ""),
                     turn_id=turn_id,
                     onbehalf_jwt=onbehalf_jwt,
                 )

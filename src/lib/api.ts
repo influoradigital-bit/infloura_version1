@@ -7318,12 +7318,26 @@ export interface CampaignFit {
  * real reading of the creator's text.
  */
 export const creatorBriefs = {
-  /** POST /creator/briefs — 201, body `{ text }` (`PasteBriefRequest`, `@NotBlank @Size(max = 8000)`). */
-  paste: (text: string): Promise<BriefAnalysisResponse> =>
+  /**
+   * POST /creator/briefs — 201, body `{ text }` (`PasteBriefRequest`, `@NotBlank @Size(max =
+   * 8000)`).
+   *
+   * T-CREATOR-CREDITS-V2 (SPEC.md §9.2, F2/C20) — with `CREATOR_CREDITS_ENABLED` on, the server
+   * requires an `Idempotency-Key` header (≤64 chars) and charges 3 credits per analysis
+   * (`CreatorBriefController.paste` L122-129). `idempotencyKey` is optional here so a caller that
+   * mints ONE key per paste action (e.g. on the button click, not on every re-render) can pass the
+   * SAME key if it ever retries that exact action; omitting it mints a fresh one, which keeps every
+   * existing call site (and the flag-off path, where the server ignores the header) unchanged. A
+   * 402 `CREATOR_CREDITS_EXHAUSTED` or 429 `CREATOR_DAILY_CAP_REACHED` surfaces to the caller as an
+   * ordinary `ApiError` (code + server-templated `message`) — this method does not special-case
+   * them, exactly like every other `ApiError` this client throws.
+   */
+  paste: (text: string, idempotencyKey?: string): Promise<BriefAnalysisResponse> =>
     isLive()
       ? http.request<BriefAnalysisResponse>('POST', '/creator/briefs', {
           role: 'creator',
           body: { text },
+          idempotencyKey: idempotencyKey ?? safeRandomUUID(),
         })
       : Promise.reject(new ApiError('NOT_AVAILABLE', 'Brief analysis is not available in mock mode')),
 
@@ -7360,6 +7374,184 @@ export const creatorBriefs = {
         })
       : mockOr(undefined),
 
+};
+
+// ---------------------------------------------------------------------------
+// Creator AI credits (T-CREATOR-CREDITS-V2, SPEC.md §8/§9.2, F2) — behind
+// `CREATOR_CREDITS_ENABLED` server-side. Every type below is the Java DTO
+// (`CreatorCreditDtos`, `web/dto/credits/CreatorCreditDtos.java`) field-for-field — no field this
+// client declares that the server does not actually send, per the "FE type asserts missing DTO
+// field" house rule (a TS field the server never populates renders as `undefined` and tsc cannot
+// catch a Java-vs-TS shape mismatch).
+// ---------------------------------------------------------------------------
+
+/** `CreatorCreditDtos.WelcomeInfo`. */
+export interface CreatorCreditWelcomeInfo {
+  eligible: boolean;
+  granted: boolean;
+  /** `Instant`, ISO-8601. Nullable on the DTO (ungranted yet) but the record itself is not
+   *  `@JsonInclude(NON_NULL)`, so this key is always present, `null` when ungranted. */
+  grantedAt: string | null;
+}
+
+/** `CreatorCreditDtos.MonthlyInfo`. */
+export interface CreatorCreditMonthlyInfo {
+  /** `YearMonth.toString()`, e.g. `"2026-09"`. */
+  period: string | null;
+  granted: boolean;
+}
+
+/** `CreatorCreditDtos.PendingInfo` — credits a `balance()` projection shows as "about to land"
+ *  without having written anything (SPEC.md §6). */
+export interface CreatorCreditPendingInfo {
+  welcome: number;
+  monthly: number;
+}
+
+/** `CreatorCreditDtos.PaidExpiringItem`. */
+export interface CreatorCreditPaidExpiringItem {
+  credits: number;
+  /** `Instant`, ISO-8601. */
+  expiresAt: string;
+}
+
+/** `CreatorCreditDtos.PackInfo` — v1 ships exactly one active pack, `PACK_60`. */
+export interface CreatorCreditPackInfo {
+  code: string;
+  credits: number;
+  pricePaise: number;
+  gstInclusive: boolean;
+}
+
+/** `CreatorCreditDtos.CostsInfo` — SPEC.md R1 (1 / 2 / 3 credits). */
+export interface CreatorCreditCostsInfo {
+  turn: number;
+  voiceTurn: number;
+  brief: number;
+  /** "Write a script" / "Review my profile" buttons (2026-09-22). Absent from older servers. */
+  script?: number;
+  profileReview?: number;
+}
+
+/**
+ * `CreatorCreditDtos.BalanceResponse` — `GET /creator/credits`. `@JsonInclude(NON_NULL)` at the
+ * class level: with the flag OFF the server sends only `{enabled:false}` and every other key is
+ * OMITTED from the wire (not sent as `null`), hence every field below but `enabled` is optional.
+ * `BalanceResponse.disabled()` is the server's exact flag-off shape — see that factory in the
+ * Java DTO for the authoritative "what ships when off" list.
+ */
+export interface CreatorCreditBalance {
+  enabled: boolean;
+  total?: number;
+  free?: number;
+  paid?: number;
+  dailyUsed?: number;
+  dailyCap?: number;
+  /** `Instant`, ISO-8601 — next Asia/Kolkata midnight. */
+  dailyResetsAt?: string;
+  /** `Instant`, ISO-8601 — the 1st of the next Asia/Kolkata month. */
+  nextMonthlyGrantAt?: string;
+  welcome?: CreatorCreditWelcomeInfo;
+  monthly?: CreatorCreditMonthlyInfo;
+  pending?: CreatorCreditPendingInfo;
+  paidExpiring?: CreatorCreditPaidExpiringItem[];
+  pack?: CreatorCreditPackInfo;
+  costs?: CreatorCreditCostsInfo;
+}
+
+/** `CreatorCreditDtos.CreateOrderResponse` — `POST /creator/credits/orders`. */
+export interface CreatorCreditCreateOrderResponse {
+  orderId: string;
+  razorpayOrderId: string;
+  amountPaise: number;
+  currency: string;
+  credits: number;
+  /** Razorpay's PUBLISHABLE key id — never a secret (see `src/lib/razorpay.ts`'s own doc note). */
+  keyId: string;
+}
+
+/** `CreatorCreditDtos.VerifyOrderResponse` — `POST /creator/credits/orders/{id}/verify`. Per
+ *  SPEC.md K-11/C10, `CREDITED` here is the ONLY thing a caller may treat as "credits landed";
+ *  Razorpay Checkout's own `onSuccess` callback is never sufficient on its own. */
+export interface CreatorCreditVerifyOrderResponse {
+  status: 'CREDITED' | 'PENDING';
+  balance: number;
+}
+
+/** `CreatorCreditDtos.OrderHistoryItem` — `GET /creator/credits/orders`. `@JsonInclude(NON_NULL)`:
+ *  every nullable Java field is OMITTED (not `null`) until it has a real value, hence optional. */
+export interface CreatorCreditOrderHistoryItem {
+  orderId: string;
+  credits: number;
+  amountPaise: number;
+  status: 'PENDING' | 'CREDITED' | 'FAILED';
+  /** `Instant`, ISO-8601. Absent until the order is paid. */
+  paidAt?: string;
+  /** Absent on every order today — the controller always passes `null` for this argument
+   *  (`CreatorCreditController.orders`); kept typed for when a future backend build populates it. */
+  expiresAt?: string;
+  invoiceNumber?: string;
+  taxablePaise?: number;
+  cgstPaise?: number;
+  sgstPaise?: number;
+  igstPaise?: number;
+}
+
+/**
+ * `web/CreatorCreditController` (SPEC.md §8, B18). Identity is always the caller's own creator
+ * profile — no creator id is ever accepted from a client argument here, matching the server's own
+ * K-21 rule (a brand principal 403s, an unauthenticated request 401s).
+ */
+export const creatorCredits = {
+  /** GET /creator/credits — read-only, always 200. Flag off (or mock mode): `{enabled:false}`,
+   *  never a 404 — this route itself always exists. */
+  get: (): Promise<CreatorCreditBalance> =>
+    isLive()
+      ? http.request<CreatorCreditBalance>('GET', '/creator/credits', { role: 'creator' })
+      : mockOr<CreatorCreditBalance>({ enabled: false }),
+
+  /**
+   * POST /creator/credits/orders — mints a real Razorpay order for the one pack (`PACK_60`, 60
+   * credits, ₹249 incl. GST). Requires `Idempotency-Key` (≤64 chars); the server prices and sizes
+   * the order itself from the DB pack row — `packCode` is the only thing this client sends, never
+   * an amount or a credit count (K-09/K-25). Mock mode has no Razorpay order to mint, so this
+   * rejects there rather than fabricating a fake `razorpayOrderId` a real Checkout call would choke
+   * on.
+   */
+  createOrder: (packCode: string, idempotencyKey: string): Promise<CreatorCreditCreateOrderResponse> =>
+    isLive()
+      ? http.request<CreatorCreditCreateOrderResponse>('POST', '/creator/credits/orders', {
+          role: 'creator',
+          body: { packCode },
+          idempotencyKey,
+        })
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Buying credits is not available in mock mode')),
+
+  /**
+   * POST /creator/credits/orders/{orderId}/verify — the ONLY call that may report `CREDITED`
+   * (SPEC.md K-11/C10). `razorpayPaymentId`/`razorpaySignature` are Razorpay Checkout's own
+   * `handler` callback fields, forwarded verbatim; the server independently re-verifies the HMAC
+   * signature and re-fetches the payment state from Razorpay before crediting anything — this
+   * client never decides "paid" on its own.
+   */
+  verify: (
+    orderId: string,
+    razorpayPaymentId: string,
+    razorpaySignature: string,
+  ): Promise<CreatorCreditVerifyOrderResponse> =>
+    isLive()
+      ? http.request<CreatorCreditVerifyOrderResponse>(
+          'POST',
+          `/creator/credits/orders/${encodeURIComponent(orderId)}/verify`,
+          { role: 'creator', body: { razorpayPaymentId, razorpaySignature } },
+        )
+      : Promise.reject(new ApiError('NOT_AVAILABLE', 'Verifying a payment is not available in mock mode')),
+
+  /** GET /creator/credits/orders — the caller's own orders, newest first. */
+  listOrders: (): Promise<CreatorCreditOrderHistoryItem[]> =>
+    isLive()
+      ? http.request<CreatorCreditOrderHistoryItem[]>('GET', '/creator/credits/orders', { role: 'creator' })
+      : mockOr<CreatorCreditOrderHistoryItem[]>([]),
 };
 
 // ---------------------------------------------------------------------------
@@ -7647,6 +7839,7 @@ export const api = {
   creatorCopilot,
   creatorAgentPrefs,
   creatorBriefs,
+  creatorCredits,
   publicCreators,
   clientErrors,
   festivalEnquiry,

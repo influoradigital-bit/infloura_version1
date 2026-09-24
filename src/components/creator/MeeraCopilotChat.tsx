@@ -20,6 +20,18 @@ import { useVoiceOutput } from '@/hooks/useVoiceOutput';
 import { useVoiceInput } from '@/hooks/useVoiceInput';
 import { VoicePoweredOrb } from '@/components/ui/voice-powered-orb';
 import { MeeraVoiceMode, type MeeraVoiceStatus } from '@/components/creator/meera/MeeraVoiceMode';
+import { useToast } from '@/hooks/use-toast';
+import { useCreatorCredits } from '@/hooks/useCreatorCredits';
+import { CreditBalancePill } from '@/components/creator/credits/CreditBalancePill';
+import { BuyCreditsSheet } from '@/components/creator/credits/BuyCreditsSheet';
+import { BuyCreditsCard } from '@/components/creator/credits/BuyCreditsCard';
+import { WelcomeCreditsModal } from '@/components/creator/credits/WelcomeCreditsModal';
+import { CreditCostHint } from '@/components/creator/credits/CreditCostHint';
+import { ZeroCreditsBanner } from '@/components/creator/credits/ZeroCreditsBanner';
+import { creditsCopy } from '@/lib/copy/creator-credits';
+import { MeeraActionStrip, MeeraQuickActions } from '@/components/creator/meera/MeeraQuickActions';
+import { actionBlockedReason } from '@/lib/creator-quick-actions';
+import type { CreatorTurnAction } from '@/lib/meera-api';
 
 /**
  * T-MEERA-CREATOR-PHASE-A (A4/A5/A10, SPEC.md §4.7) — the CREATOR-side Meera chat.
@@ -56,6 +68,12 @@ interface ChatMessage {
   text: string;
   /** LIVE-only — never set in mock mode, which opens no stream and so sees no tool events. */
   toolResults?: CreatorToolResult[];
+  /**
+   * T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F7) — true on the bubble created for a
+   * `CREATOR_CREDITS_EXHAUSTED`/`CREATOR_DAILY_CAP_REACHED` refusal, so the render below attaches
+   * a `BuyCreditsCard` right under it (R6 — the chat never just goes silent on a refusal).
+   */
+  creditsRefusal?: boolean;
 }
 
 /**
@@ -93,6 +111,22 @@ const CONSENT_ERROR_CODE = 'CONSENT_REQUIRED';
  *  monthly cap, with a friendly message the caller should show verbatim rather than the generic
  *  "something went wrong" fallback. */
 const CAP_REACHED_ERROR_CODE = 'CREATOR_MONTHLY_CAP_REACHED';
+
+/**
+ * T-CREATOR-CREDITS-V2 (SPEC.md §8 "Refusal codes") — NOT the same family as
+ * `CAP_REACHED_ERROR_CODE` above (that one is the pre-existing USD spend-tracker cap from
+ * `influora-ai`'s `spend_tracker.py`). These two are the credits ledger's own refusals
+ * (`CreatorCreditService.refusal`): 402 when the balance is insufficient, 429 at the daily cap.
+ * Both carry a server-templated `message` (en/hi by `creator_language`) that this component shows
+ * verbatim, exactly like `CAP_REACHED_ERROR_CODE` already does — R6 is "never silent", not
+ * "silent unless it's the other cap".
+ */
+const CREDITS_EXHAUSTED_ERROR_CODE = 'CREATOR_CREDITS_EXHAUSTED';
+const CREDITS_DAILY_CAP_ERROR_CODE = 'CREATOR_DAILY_CAP_REACHED';
+
+function isCreditsRefusal(code: string): boolean {
+  return code === CREDITS_EXHAUSTED_ERROR_CODE || code === CREDITS_DAILY_CAP_ERROR_CODE;
+}
 
 /**
  * Matched on `code` only (SPEC.md §3.4's `HTTPException(403, {"code": "CONSENT_REQUIRED", ...})`),
@@ -154,6 +188,11 @@ export interface MeeraCopilotChatProps {
    * checked (see the effect below) so the prompt is never appended back-to-back with itself.
    */
   prefillMessage?: { text: string; token: number } | null;
+  /**
+   * 2026-09-22 — the "Analyse a brief" quick-action button hands off to the page's own brief card
+   * (the brief flow already exists there, with its own 3-credit charge). Omitted = no brief button.
+   */
+  onAnalyseBrief?: () => void;
 }
 
 export function MeeraCopilotChat({
@@ -162,6 +201,7 @@ export function MeeraCopilotChat({
   onClose,
   onConsentRequired,
   prefillMessage,
+  onAnalyseBrief,
 }: MeeraCopilotChatProps) {
   const [live] = React.useState(() => isApiLive());
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -170,9 +210,20 @@ export function MeeraCopilotChat({
   const [connectError, setConnectError] = React.useState<string | null>(null);
   const [sending, setSending] = React.useState(false);
   const [draft, setDraft] = React.useState('');
+  // 2026-09-22 — a quick-action button the chat box is currently in ("Write a script" /
+  // "Review my profile"). The next Send goes out as that action and is charged as it.
+  const [action, setAction] = React.useState<CreatorTurnAction | null>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const reduceMotion = useReducedMotion();
   const stream = useMeeraStream();
+  const { toast } = useToast();
+
+  // T-CREATOR-CREDITS-V2 (SPEC.md §9.3) — the ONE `GET /creator/credits` fetch for this panel.
+  // `credits.enabled` gates every credits-UI piece below; with the server flag off (or the fetch
+  // simply hasn't resolved yet) none of it renders and this component behaves exactly as it did
+  // before this ticket.
+  const credits = useCreatorCredits();
+  const [buySheetOpen, setBuySheetOpen] = React.useState(false);
 
   const {
     supported: voiceOutputSupported,
@@ -310,9 +361,71 @@ export function MeeraCopilotChat({
     return () => stopSpeaking();
   }, [stopSpeaking]);
 
+  /**
+   * T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F8) — the monthly-grant and 7-day paid-expiry toasts.
+   * Both are "at most once" guards backed by `localStorage` (try/catch — same discipline as
+   * `WelcomeCreditsModal`'s seen-marker): the monthly one keyed by `monthly.period` (a fresh
+   * period is a fresh toast, forever, one per period), the expiry one keyed by the IST calendar
+   * day so a creator who has the panel open across a day boundary sees at most one per day, not
+   * one per fetch.
+   */
+  React.useEffect(() => {
+    const balance = credits.balance;
+    if (!balance?.enabled) return;
+
+    const period = balance.monthly?.period;
+    if (period && balance.monthly?.granted) {
+      const key = 'creator-credits:monthly-toast-period';
+      try {
+        if (window.localStorage.getItem(key) !== period) {
+          window.localStorage.setItem(key, period);
+          toast({ title: creditsCopy('monthly', language) });
+        }
+      } catch {
+        // Non-fatal — worst case the toast repeats on a later visit.
+      }
+    }
+
+    const soonest = balance.paidExpiring?.[0];
+    if (soonest) {
+      const daysLeft = (new Date(soonest.expiresAt).getTime() - Date.now()) / 86_400_000;
+      if (daysLeft <= 7 && daysLeft >= 0) {
+        const todayIst = new Date().toISOString().slice(0, 10);
+        const key = 'creator-credits:expiring-toast-date';
+        try {
+          if (window.localStorage.getItem(key) !== todayIst) {
+            window.localStorage.setItem(key, todayIst);
+            toast({
+              title: creditsCopy('expiring', language, {
+                count: soonest.credits,
+                date: new Date(soonest.expiresAt).toLocaleDateString(),
+              }),
+            });
+          }
+        } catch {
+          // Non-fatal.
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [credits.balance?.monthly?.period, credits.balance?.paidExpiring, language]);
+
   const handleSend = () => {
-    const text = draft.trim();
-    if (!text || sending) return;
+    const typed = draft.trim();
+    const currentAction = action;
+    if (sending) return;
+    // A script needs a topic; a profile review may be sent with no extra text.
+    if (!typed && currentAction !== 'PROFILE_REVIEW') return;
+    if (currentAction && actionBlockedReason(currentAction, credits.balance, language)) return;
+    const text =
+      currentAction === 'SCRIPT'
+        ? creditsCopy('action.scriptPrompt', language, { topic: typed })
+        : currentAction === 'PROFILE_REVIEW'
+          ? typed
+            ? creditsCopy('action.profilePromptFocus', language, { topic: typed })
+            : creditsCopy('action.profilePrompt', language)
+          : typed;
+    setAction(null);
     setDraft('');
     setMessages((prev) => [...prev, { id: uniqueId('creator'), role: 'creator', text }]);
 
@@ -361,13 +474,39 @@ export function MeeraCopilotChat({
       });
     };
 
+    // T-CREATOR-CREDITS-V2 (SPEC.md §9.2, F3/K-27) — ONE Idempotency-Key per user message,
+    // minted here (not inside `meeraApi.sendTurn`, whose own default would mint a fresh one every
+    // call). Nothing in this panel retries a send today, so there is currently only ever one POST
+    // per key — but the key still has to be minted at the call site and handed to `sendTurn`
+    // rather than left to its default, so that if/when a retry path is added here it can resend
+    // this SAME key instead of double-charging the creator for one logical turn.
+    const turnIdempotencyKey =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : uniqueId('turn-idem');
+
     meeraApi
-      .sendTurn(conversationId, text, 'creator')
+      .sendTurn(conversationId, text, 'creator', {
+        // A button turn is charged as the action and is never read aloud (no voice credit is
+        // taken for it), so it never asks for a voice reply either.
+        voiceReply: currentAction ? false : voiceEnabled,
+        idempotencyKey: turnIdempotencyKey,
+        ...(currentAction ? { action: currentAction } : {}),
+      })
       .then((turnRes) => {
+        // Review finding #6 — creditsRemaining is `number | null` on the wire type (the server's
+        // Integer is nullable); today it is always a number (0 when the flag is off), but a null
+        // guard here keeps a future server regression from crashing the optimistic pill update
+        // instead of just skipping it (the trailing credits.refresh() below still corrects it).
+        if (turnRes.creditsRemaining != null) {
+          credits.applyCreditsRemaining(turnRes.creditsRemaining);
+        }
+        void credits.refresh();
+
         if (turnRes.reply != null) {
           const replyText = turnRes.reply.trim() || "Sorry, I lost my train of thought there. Say that again?";
           setMessages((prev) => [...prev, { id: assistantId, role: 'meera', text: replyText }]);
-          speak(replyText, language);
+          if (!currentAction) speak(replyText, language, turnRes.messageId);
           setSending(false);
           return;
         }
@@ -454,7 +593,7 @@ export function MeeraCopilotChat({
                     : [...prev, { id: assistantId, role: 'meera', text: assistantText }],
                 );
               }
-              speak(assistantText, language);
+              if (!currentAction) speak(assistantText, language, turnRes.messageId);
             },
             onError: (event) => {
               setSending(false);
@@ -513,6 +652,21 @@ export function MeeraCopilotChat({
           onConsentRequired();
           return;
         }
+
+        // T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F7/A47/R6) — a 402/429 refusal from the credits
+        // ledger renders the server's own en/hi-templated `message` as a Meera bubble (never a
+        // generic failure sentence — the chat must never go silent) plus a `BuyCreditsCard`
+        // directly under it, and the balance/pill is refetched so the numbers on screen agree with
+        // what just refused the send.
+        if (err instanceof ApiError && isCreditsRefusal(err.code)) {
+          setMessages((prev) => [
+            ...prev,
+            { id: uniqueId('meera-credits-refusal'), role: 'meera', text: err.message, creditsRefusal: true },
+          ]);
+          void credits.refresh();
+          return;
+        }
+
         // Cap-reached (spend_tracker.py) carries its own friendly copy — show it verbatim.
         const text =
           err instanceof ApiError && err.code === CAP_REACHED_ERROR_CODE
@@ -545,7 +699,8 @@ export function MeeraCopilotChat({
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          <CreditBalancePill balance={credits.balance} language={language} onClick={() => setBuySheetOpen(true)} />
           {voiceInputSupported && (
             <Button
               type="button"
@@ -612,6 +767,17 @@ export function MeeraCopilotChat({
               </div>
             ) : null}
 
+            {/* T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F7) — a real Buy CTA directly under a 402/429
+                refusal bubble, never just the sentence on its own (R6). */}
+            {m.creditsRefusal ? (
+              <BuyCreditsCard
+                language={language}
+                balance={credits.balance}
+                onCredited={() => void credits.refresh()}
+                className="ml-0 mr-auto max-w-[85%]"
+              />
+            ) : null}
+
             {/* §8.3 — tool cards render AFTER the bubble they belong to. No `onPrefillCounter` or
                 `onOpenDeal` is passed: this panel has no counter form and no deal navigation to
                 hand them to (both live on the deal pages, §8.6), and every card hides the matching
@@ -648,6 +814,36 @@ export function MeeraCopilotChat({
       </div>
 
       <div className="shrink-0 border-t border-border p-3">
+        {/* T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F9) — proactive zero-balance banner, above the
+            composer so it never blocks reading the transcript, and the per-turn voice-cost hint,
+            shown only while a voice reply is actually going to be requested. */}
+        <ZeroCreditsBanner
+          language={language}
+          balance={credits.balance}
+          onCredited={() => void credits.refresh()}
+          className="mb-2"
+        />
+        <MeeraQuickActions
+          language={language}
+          balance={credits.balance}
+          active={action}
+          onPick={setAction}
+          onAnalyseBrief={onAnalyseBrief}
+          disabled={connecting || sending}
+          className="mb-1.5"
+        />
+        {action ? (
+          <MeeraActionStrip
+            action={action}
+            language={language}
+            balance={credits.balance}
+            onCancel={() => setAction(null)}
+            onBuy={() => setBuySheetOpen(true)}
+            className="mb-1.5"
+          />
+        ) : voiceEnabled && credits.enabled ? (
+          <CreditCostHint variant="voice" language={language} className="mb-1.5" />
+        ) : null}
         <div className="flex items-end gap-2">
           <Textarea
             value={draft}
@@ -658,7 +854,13 @@ export function MeeraCopilotChat({
                 handleSend();
               }
             }}
-            placeholder="Ask Meera about your deals, earnings, or metrics…"
+            placeholder={
+              action === 'SCRIPT'
+                ? creditsCopy('action.scriptPlaceholder', language)
+                : action === 'PROFILE_REVIEW'
+                  ? creditsCopy('action.profilePlaceholder', language)
+                  : 'Ask Meera about your deals, earnings, or metrics…'
+            }
             rows={1}
             className="min-h-9 resize-none text-sm"
             disabled={connecting}
@@ -681,7 +883,12 @@ export function MeeraCopilotChat({
             size="icon"
             className="h-9 w-9 shrink-0"
             onClick={handleSend}
-            disabled={connecting || sending || !draft.trim()}
+            disabled={
+              connecting ||
+              sending ||
+              (!draft.trim() && action !== 'PROFILE_REVIEW') ||
+              (action !== null && actionBlockedReason(action, credits.balance, language) !== null)
+            }
             aria-label="Send message"
           >
             <Send className="h-4 w-4" />
@@ -705,6 +912,18 @@ export function MeeraCopilotChat({
         sendDisabled={connecting || sending}
         language={language}
       />
+
+      {/* T-CREATOR-CREDITS-V2 (SPEC.md §9.3, F6/F8) — both render `null`/stay closed whenever
+          `credits.balance` is `null`/disabled, so mounting them unconditionally here is safe with
+          the flag off. */}
+      <BuyCreditsSheet
+        open={buySheetOpen}
+        onOpenChange={setBuySheetOpen}
+        language={language}
+        balance={credits.balance}
+        onCredited={() => void credits.refresh()}
+      />
+      <WelcomeCreditsModal language={language} balance={credits.balance} />
     </div>
   );
 }

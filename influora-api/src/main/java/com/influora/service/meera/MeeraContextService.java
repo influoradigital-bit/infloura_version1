@@ -119,6 +119,9 @@ public class MeeraContextService {
     private final AnalyticsService analyticsService;
     private final MetaOAuthTokenRepository metaOAuthTokenRepository;
 
+    /** T-CREATOR-CREDITS-V2 (SPEC.md B20) — the USD backstop override, emitted only when the flag is on. */
+    private final com.influora.config.CreatorCreditProperties creatorCreditProperties;
+
     /**
      * Creator Meera audience knowledge (Swapnil 2026-09-21) - the explicit value {@code
      * audience_summary} carries when this creator has no audience snapshot (Instagram not
@@ -157,7 +160,8 @@ public class MeeraContextService {
             CreatorAgentPreferencesRepository creatorAgentPreferencesRepository,
             CreatorMetricsRepository creatorMetricsRepository,
             AnalyticsService analyticsService,
-            MetaOAuthTokenRepository metaOAuthTokenRepository) {
+            MetaOAuthTokenRepository metaOAuthTokenRepository,
+            com.influora.config.CreatorCreditProperties creatorCreditProperties) {
         this.workspaceRepository = workspaceRepository;
         this.brandProfileRepository = brandProfileRepository;
         this.templateRepository = templateRepository;
@@ -173,6 +177,7 @@ public class MeeraContextService {
         this.creatorMetricsRepository = creatorMetricsRepository;
         this.analyticsService = analyticsService;
         this.metaOAuthTokenRepository = metaOAuthTokenRepository;
+        this.creatorCreditProperties = creatorCreditProperties;
     }
 
     /**
@@ -358,7 +363,7 @@ public class MeeraContextService {
                 identity,
                 prefs != null && prefs.isConsentAccepted(),
                 prefs != null ? prefs.getConsentVersion() : null,
-                prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null,
+                resolveAiMonthlyCapUsd(prefs, locale),
                 negotiationHoldout,
                 // Rendered by Java, never by Python (SPEC.md §3.6). Rendered.date returns null for
                 // a null date, and the record is @JsonInclude(NON_NULL), so a creator who is not
@@ -631,6 +636,28 @@ public class MeeraContextService {
         format.setMinimumFractionDigits(2);
         format.setMaximumFractionDigits(2);
         return format.format(capUsd);
+    }
+
+    /**
+     * T-CREATOR-CREDITS-V2 (SPEC.md B20, C22) — with the flag on, {@code ai_monthly_cap_usd} is
+     * ALWAYS present and is at least {@code creator-credits.usd-backstop-monthly} (default 25.00):
+     * 30 credits/day * 31 days costs at most ~$0.74/day in real spend, which the pre-existing
+     * $0.75/mo default ({@code AI_CREATOR_MONTHLY_CAP_USD}) would otherwise cut off within the
+     * FIRST paid day. With the flag off this is byte-identical to the pre-B20 behaviour (locale-
+     * formatted, {@code null}/omitted when the creator has no override).
+     *
+     * <p>Rendered in {@link Locale#US} (a plain {@code "25.00"}, never grouped), NOT the creator's
+     * own locale — influora-ai's {@code spend_tracker.creator_monthly_cap_usd} does {@code
+     * Decimal(str(override))}, which must never see a grouping separator or a comma decimal point.
+     */
+    private String resolveAiMonthlyCapUsd(CreatorAgentPreferences prefs, Locale locale) {
+        if (!creatorCreditProperties.isEnabled()) {
+            return prefs != null ? formatCapUsd(prefs.getAiMonthlyCapUsd(), locale) : null;
+        }
+        BigDecimal override = prefs != null ? prefs.getAiMonthlyCapUsd() : null;
+        BigDecimal backstop = creatorCreditProperties.getUsdBackstopMonthly();
+        BigDecimal effective = (override != null && override.compareTo(backstop) > 0) ? override : backstop;
+        return effective.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString();
     }
 
     /** A8 — every number the CREATOR context carries leaves this class as a locale-formatted string, never a raw numeric type. */

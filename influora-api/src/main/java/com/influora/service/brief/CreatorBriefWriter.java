@@ -54,7 +54,18 @@ public class CreatorBriefWriter {
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CreatorBrief saveRawPaste(String creatorProfileId, String rawText) {
-        return briefRepository.save(CreatorBrief.paste(Ulids.newUlid(), creatorProfileId, rawText));
+        return saveRawPaste(Ulids.newUlid(), creatorProfileId, rawText);
+    }
+
+    /**
+     * T-CREATOR-CREDITS-V2 (SPEC.md B12) — pre-minted {@code briefId} overload. {@code
+     * CreatorBriefService#paste} must charge the creator BEFORE this row exists (so a refused
+     * charge leaves no row for {@code GET} to re-analyse for free) and key that charge's reference
+     * on the SAME id this row gets, so a later release can find it.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CreatorBrief saveRawPaste(String briefId, String creatorProfileId, String rawText) {
+        return briefRepository.save(CreatorBrief.paste(briefId, creatorProfileId, rawText));
     }
 
     /** The platform-path equivalent of {@link #saveRawPaste}, same boundary and same reason. */
