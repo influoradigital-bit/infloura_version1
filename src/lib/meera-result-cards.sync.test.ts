@@ -25,13 +25,9 @@ const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const PERSONA_PATH = join(TEST_DIR, '..', '..', 'influora-ai', 'app', 'prompt', 'creator_persona.py');
 
 const SECTION_START = 'Full script format (only when asked):';
-// On this line the persona still carries the old Phase C SCRIPT/REVIEW block right after the rich
-// "Full script format" section (a concurrent change on another line is removing that block and
-// replacing this heading with "Profile review format (only when asked to review their profile):"
-// — when that lands here, update this constant to match). Until then, this is the actual next
-// heading in creator_persona.py, and using it keeps the slice scoped to the rich section only, not
-// spilling into Phase C's differently-shaped SCRIPT/REVIEW labels.
-const SECTION_END = 'Two replies have a fixed shape (Phase C).';
+// The next heading after the rich section. Keeps the slice scoped to the script format only, not
+// spilling into the Profile review format's own, differently-shaped labels.
+const SECTION_END = 'Profile review format (only when asked to review their profile):';
 
 /** The persona file's "Full script format" section, and nothing else — so a label match below
  *  can only come from the section this parser actually implements, not some unrelated part of
