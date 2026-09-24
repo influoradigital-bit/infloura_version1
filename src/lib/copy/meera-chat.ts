@@ -1,0 +1,251 @@
+import type { CreatorToolName } from '@/lib/meera-api';
+
+/**
+ * MEERA-CHAT-DESIGN-SPEC.md — bilingual (en/hi) copy for the creator Meera chat redesign
+ * (shell polish, the work trail, and the "Meera is on it" desk).
+ *
+ * Pattern: every user-facing string is a `{ en; hi }` pair, and `pickLang(language, pair)`
+ * (below) is the one place that decides which half to read — same shape the rest of this
+ * codebase's language-aware creator copy already uses (`onboardingGreeting` in
+ * MeeraCopilotChat.tsx switches on `language.startsWith('hi')`). No string in this file is
+ * the word "escrow" — Meera's creator-facing copy never uses it (see the trust line below,
+ * which exists specifically to say plainly that Meera never moves money).
+ */
+
+export interface BilingualText {
+  en: string;
+  hi: string;
+}
+
+/** `language` is BCP-47-ish (e.g. `hi-IN`, `en-IN`) — only the leading subtag matters. */
+export function pickLang(language: string, pair: BilingualText): string {
+  return language.startsWith('hi') ? pair.hi : pair.en;
+}
+
+// ---------------------------------------------------------------------------
+// Part 0 — shell polish
+// ---------------------------------------------------------------------------
+
+export const HEADER_STATUS_ONLINE: BilingualText = {
+  en: 'Online · knows your deals, earnings and Instagram stats',
+  hi: 'ऑनलाइन · आपकी डील्स, कमाई और Instagram आँकड़े जानती है',
+};
+
+export const HEADER_STATUS_WORKING: BilingualText = {
+  en: 'Working on it…',
+  hi: 'इस पर काम हो रहा है…',
+};
+
+export const HEADER_STATUS_LISTENING: BilingualText = {
+  en: 'Listening…',
+  hi: 'सुन रही हूं…',
+};
+
+export const HEADER_STATUS_SPEAKING: BilingualText = {
+  en: 'Speaking…',
+  hi: 'बोल रही हूं…',
+};
+
+export const TRUST_LINE: BilingualText = {
+  en: 'Meera reads only your own Influora data and never moves money.',
+  hi: 'Meera सिर्फ़ आपका अपना Influora डेटा पढ़ती है और कभी पैसे नहीं भेजती।',
+};
+
+/** Round 2 QA — the composer placeholder was hardcoded English; now bilingual. */
+export const COMPOSER_PLACEHOLDER: BilingualText = {
+  en: 'Ask Meera about your deals, earnings, or metrics…',
+  hi: 'Meera से अपनी डील्स, कमाई या मेट्रिक्स के बारे में पूछें…',
+};
+
+// ---------------------------------------------------------------------------
+// Part A — work trail
+// ---------------------------------------------------------------------------
+
+export const TRAIL_UNDERSTANDING: BilingualText = {
+  en: 'Understanding your question…',
+  hi: 'आपका सवाल समझा जा रहा है…',
+};
+
+export interface ToolTrailLabelSet {
+  running: BilingualText;
+  done: BilingualText;
+  failed: BilingualText;
+}
+
+/** SPEC §Part A's table, one entry per `CREATOR_TOOL_NAMES` — a missing tool here is a
+ *  compile error (see the `Record<CreatorToolName, ...>` below), same discipline as
+ *  MeeraCopilotChat.tsx's own `TOOL_PENDING_LABELS`. */
+export const TOOL_TRAIL_LABELS: Record<CreatorToolName, ToolTrailLabelSet> = {
+  get_my_deals: {
+    running: { en: 'Reading your deals…', hi: 'आपकी डील्स देखी जा रही हैं…' },
+    done: { en: 'Read your deals', hi: 'आपकी डील्स देख लीं' },
+    failed: { en: "Couldn't open your deals", hi: 'आपकी डील्स नहीं खुल पाईं' },
+  },
+  get_brief: {
+    running: { en: 'Opening the brief…', hi: 'ब्रीफ़ खोली जा रही है…' },
+    done: { en: 'Read the brief', hi: 'ब्रीफ़ पढ़ ली' },
+    failed: { en: "Couldn't open the brief", hi: 'ब्रीफ़ नहीं खुल पाई' },
+  },
+  estimate_my_rate: {
+    running: { en: 'Working out your rate…', hi: 'आपकी दर निकाली जा रही है…' },
+    done: { en: 'Worked out your rate', hi: 'आपकी दर निकाल ली' },
+    failed: { en: "Couldn't work out your rate", hi: 'आपकी दर नहीं निकाल पाई' },
+  },
+  get_my_metrics: {
+    running: { en: 'Checking your Instagram numbers…', hi: 'आपके Instagram आँकड़े देखे जा रहे हैं…' },
+    done: { en: 'Checked your Instagram numbers', hi: 'आपके Instagram आँकड़े देख लिए' },
+    failed: { en: "Couldn't load your numbers", hi: 'आपके आँकड़े लोड नहीं हो पाए' },
+  },
+  check_deal_risks: {
+    running: { en: 'Checking the deal for risks…', hi: 'डील में जोखिम जांचे जा रहे हैं…' },
+    done: { en: 'Checked the deal for risks', hi: 'डील के जोखिम जांच लिए' },
+    failed: { en: "Couldn't check the deal", hi: 'डील जांच नहीं पाई' },
+  },
+  draft_reply: {
+    running: { en: 'Drafting a reply…', hi: 'जवाब का मसौदा बनाया जा रहा है…' },
+    done: { en: 'Drafted a reply', hi: 'जवाब का मसौदा बना लिया' },
+    failed: { en: "Couldn't draft the reply", hi: 'जवाब का मसौदा नहीं बन पाया' },
+  },
+};
+
+export const TRAIL_SHOW: BilingualText = { en: 'Show', hi: 'दिखाएं' };
+export const TRAIL_HIDE: BilingualText = { en: 'Hide', hi: 'छुपाएं' };
+
+/** "Meera did 3 things" / "Meera did 1 thing" — count is always a real tool-step count,
+ *  never invented (see MeeraWorkTrail.tsx, which only ever counts real `toolResults`). */
+export function trailSummary(language: string, count: number): string {
+  if (language.startsWith('hi')) {
+    return `Meera ने ${count} काम ${count === 1 ? 'किया' : 'किए'}`;
+  }
+  return `Meera did ${count} thing${count === 1 ? '' : 's'}`;
+}
+
+// ---------------------------------------------------------------------------
+// Part B — "Meera is on it" desk
+// ---------------------------------------------------------------------------
+
+export const DESK_HEADER: BilingualText = {
+  en: "Here's what I'm watching for you",
+  hi: 'यह है जो मैं आपके लिए देख रही हूं',
+};
+
+/**
+ * Round 2 QA — relabelled to match the dashboard's own meaning (`creator-dashboard.tsx`'s
+ * `pendingTotal`, "N item(s) need your attention"), now that the tile's count is the SAME
+ * 3-figure sum the dashboard computes (`computeDealAttentionCounts` + unsigned contracts) via
+ * `@/lib/creator-needs-attention` — not just unread + unsigned as it was in round 1.
+ */
+export const DESK_TILE_ATTENTION_SINGULAR: BilingualText = {
+  en: 'item needs your attention',
+  hi: 'चीज़ पर आपका ध्यान चाहिए',
+};
+
+export const DESK_TILE_ATTENTION_PLURAL: BilingualText = {
+  en: 'items need your attention',
+  hi: 'चीज़ों पर आपका ध्यान चाहिए',
+};
+
+/** Shown instead of a bare "0" when the real count is zero. */
+export const DESK_TILE_ALL_CAUGHT_UP: BilingualText = {
+  en: 'All caught up',
+  hi: 'सब कुछ पूरा है',
+};
+
+/** Singular/plural label for the "needs your attention" tile — mirrors the dashboard's own
+ *  `${n} item${n === 1 ? '' : 's'} need your attention` singular handling. */
+export function attentionLabel(language: string, count: number): string {
+  return pickLang(language, count === 1 ? DESK_TILE_ATTENTION_SINGULAR : DESK_TILE_ATTENTION_PLURAL);
+}
+
+/** Exact wording the Wallet page (`creator-wallet.tsx`) already uses for these two figures —
+ *  reused verbatim rather than re-labelled, per the spec's "use the field the Wallet page
+ *  already labels ... with that exact wording". */
+export const DESK_TILE_PENDING_PAYOUTS: BilingualText = {
+  en: 'Pending Payouts',
+  hi: 'पेंडिंग भुगतान',
+};
+
+export const DESK_TILE_AVAILABLE_BALANCE: BilingualText = {
+  en: 'Available Balance',
+  hi: 'उपलब्ध बैलेंस',
+};
+
+/** Exact wording the dashboard (`creator-dashboard.tsx`'s `PublicPageCard`) already uses for
+ *  this figure. */
+export const DESK_TILE_PROFILE_VIEWS: BilingualText = {
+  en: 'Profile views · 30d',
+  hi: 'प्रोफ़ाइल व्यूज़ · 30 दिन',
+};
+
+export const DESK_TILE_ASK_MY_RATE: BilingualText = {
+  en: 'Ask Meera my rate',
+  hi: 'Meera से अपनी दर पूछें',
+};
+
+/** R-U1 — prefill only, never sent automatically. Same text both the tile and any other
+ *  "ask my rate" entry point would use. */
+export const ASK_MY_RATE_PROMPT: BilingualText = {
+  en: 'What rate should I charge for a reel?',
+  hi: 'मुझे एक रील के लिए क्या दर लेनी चाहिए?',
+};
+
+export interface StarterPrompt {
+  key: string;
+  text: BilingualText;
+}
+
+/** The 4 starter prompts below the desk tiles — prefill only, never sent (same R-U1 rule). */
+export const STARTER_PROMPTS: StarterPrompt[] = [
+  { key: 'deals-doing', text: { en: 'How are my deals doing?', hi: 'मेरी डील्स कैसी चल रही हैं?' } },
+  { key: 'earned-month', text: { en: 'What did I earn this month?', hi: 'मैंने इस महीने कितना कमाया?' } },
+  { key: 'reel-script', text: { en: 'Write me a reel script', hi: 'मेरे लिए एक रील स्क्रिप्ट लिखो' } },
+  { key: 'review-profile', text: { en: 'Review my profile', hi: 'मेरी प्रोफ़ाइल की समीक्षा करो' } },
+];
+
+// ---------------------------------------------------------------------------
+// Part C — Meera's results as finished cards (PHASE-C-SPEC.md)
+// ---------------------------------------------------------------------------
+
+export const SCRIPT_CARD_LENGTH_PREFIX: BilingualText = { en: 'Length', hi: 'लंबाई' };
+export const SCRIPT_CARD_HOOK_LABEL: BilingualText = { en: 'Hook', hi: 'हुक' };
+export const SCRIPT_CARD_CTA_LABEL: BilingualText = { en: 'Call to action', hi: 'कॉल टू एक्शन' };
+export const SCRIPT_CARD_WHY_LABEL: BilingualText = { en: 'Why this works', hi: 'यह क्यों काम करता है' };
+
+export const REVIEW_CARD_WORKING_LABEL: BilingualText = { en: 'Working', hi: 'क्या काम कर रहा है' };
+export const REVIEW_CARD_NOT_WORKING_LABEL: BilingualText = {
+  en: 'Not working',
+  hi: 'क्या काम नहीं कर रहा',
+};
+export const REVIEW_CARD_NEXT_STEPS_LABEL: BilingualText = { en: 'Next steps', hi: 'अगले कदम' };
+
+/** Copy button, both cards. */
+export const RESULT_CARD_COPY: BilingualText = { en: 'Copy', hi: 'कॉपी करें' };
+export const RESULT_CARD_COPIED: BilingualText = { en: 'Copied', hi: 'कॉपी हो गया' };
+
+/** R-U1 — prefill only, never sent automatically. Shown as the button's own label, same pattern
+ *  as `STARTER_PROMPTS` on the desk. */
+/** Short button labels. The *_PROMPT strings below are what gets typed into the composer;
+ *  using a whole sentence as a button label made the card look like a wall of text. */
+export const SCRIPT_CARD_ANOTHER_HOOK_LABEL: BilingualText = {
+  en: 'Another hook',
+  hi: 'दूसरा हुक',
+};
+export const REVIEW_CARD_WHAT_FIRST_LABEL: BilingualText = {
+  en: 'What should I do first?',
+  hi: 'पहले क्या करूँ?',
+};
+
+export const SCRIPT_CARD_ANOTHER_HOOK_PROMPT: BilingualText = {
+  en: 'Give me another hook for this script',
+  hi: 'इस स्क्रिप्ट के लिए एक और हुक दो',
+};
+
+export const REVIEW_CARD_WHAT_FIRST_PROMPT: BilingualText = {
+  en: 'What should I do first?',
+  hi: 'मुझे पहले क्या करना चाहिए?',
+};
+
+/** The toggle that reveals the original message text under a rendered card, and its "back to
+ *  card" counterpart. Never discards the original text — see `MeeraCopilotChat.tsx`. */
+export const RESULT_CARD_SHOW_AS_TEXT: BilingualText = { en: 'Show as text', hi: 'टेक्स्ट के रूप में दिखाएं' };
+export const RESULT_CARD_SHOW_AS_CARD: BilingualText = { en: 'Show as card', hi: 'कार्ड के रूप में दिखाएं' };

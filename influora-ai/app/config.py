@@ -76,7 +76,11 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.1"
+PROMPT_VERSION = "meera-2026.09.24.2"
+# ^ bumped when merging feat/meera-creator-design into launch (2026-09-24): the persona now
+# carries BOTH the account-insights rule (.1) and Phase C's SCRIPT / REVIEW reply contracts,
+# a prompt no earlier version was ever served as.
+# Previous: meera-2026.09.24.1 --
 # ^ bumped for account insights (Swapnil 2026-09-24): Block B gained the "Your
 # account (from Instagram)" line (the creator's own last-28-day reach, views,
 # interactions, accounts engaged and profile-link taps), the persona gained the

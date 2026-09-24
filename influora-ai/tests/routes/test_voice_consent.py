@@ -352,7 +352,7 @@ async def test_resolve_voice_prefs_exposes_consent_fail_closed():
         requested=None, direction="stt", request_id="r", spring=_spring_down(),
     )
     assert down.consent_required is True
-    assert down.language == "hi-IN"  # the language fallback still works
+    assert down.language == "en-IN"  # the language fallback still works (the chat default)
 
     consented = await voice_route.resolve_voice_prefs(
         verified_claims={"userType": "CREATOR"}, onbehalf_jwt="", workspace_id=CREATOR_ID,
