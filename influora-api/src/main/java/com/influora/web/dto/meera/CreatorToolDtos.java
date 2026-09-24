@@ -223,4 +223,82 @@ public final class CreatorToolDtos {
             @JsonProperty("draft_id") String draftId,
             @JsonProperty("campaign_id") String campaignId,
             @JsonProperty("text") String text) {}
+
+    /**
+     * T-CONTENT-TOPICS -- one matched, safety-screened row from {@code content_topics}. {@code
+     * category} and {@code sensitivity} are passed through from the row untouched; {@code angles}
+     * is already split into lines by {@code ContentTopicService#splitAngles}.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record TopicResult(
+            @JsonProperty("id") Long id,
+            @JsonProperty("category") String category,
+            @JsonProperty("title") String title,
+            @JsonProperty("angles") List<String> angles,
+            @JsonProperty("live_until") String liveUntil,
+            @JsonProperty("sensitivity") String sensitivity) {}
+
+    /**
+     * T-CONTENT-TOPICS -- {@code get_todays_topics}'s result. {@code today}/{@code weekday} exist
+     * because the model has no other way to know the date: nothing in its prompt states it, and it
+     * must not be left to infer one from the client or from its own training data. Both are
+     * computed server-side in IST by {@code GetTodaysTopicsExecutor}.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record GetTodaysTopicsResult(
+            @JsonProperty("today") String today,
+            @JsonProperty("weekday") String weekday,
+            @JsonProperty("topics") List<TopicResult> topics) {}
+
+    /**
+     * T-PLAN-MY-WEEK -- one calendar day of {@code plan_my_week}'s 7-day span. {@code weekday} is
+     * rendered in English (e.g. {@code "Wednesday"}), matching {@link GetTodaysTopicsResult}'s
+     * convention.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PlanDay(@JsonProperty("date") String date, @JsonProperty("weekday") String weekday) {}
+
+    /**
+     * T-PLAN-MY-WEEK -- the wire shape of {@code CreatorPostingPatternService.PostingPattern},
+     * snake_case for influora-ai's Python tool loop. {@code windows} mirrors {@code PatternWindow}
+     * field-for-field; {@code engagement_rate} is a pre-formatted string (e.g. {@code "4.8%"}) the
+     * model must only display, never compute against.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PatternWindowResult(
+            @JsonProperty("label") String label,
+            @JsonProperty("posts") int posts,
+            @JsonProperty("engagement_rate") String engagementRate) {}
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PatternResult(
+            @JsonProperty("enough_data") boolean enoughData,
+            @JsonProperty("posts_counted") int postsCounted,
+            @JsonProperty("best_post_type") String bestPostType,
+            @JsonProperty("windows") List<PatternWindowResult> windows,
+            @JsonProperty("note") String note) {}
+
+    /**
+     * T-PLAN-MY-WEEK -- {@code plan_my_week}'s result. {@code today}/{@code days} exist for the same
+     * reason {@link GetTodaysTopicsResult#today} does: the model has no other way to know the date,
+     * and nothing in its prompt states it. {@code days} is always exactly 7 entries, {@code today}
+     * plus the next 6, computed server-side in IST by {@code GetPlanMyWeekExecutor}. {@code topics}
+     * reuses {@code ContentTopicService#topicsFor} (the same rows {@code get_todays_topics} serves);
+     * {@code pattern} is {@code CreatorPostingPatternService.PostingPattern} rendered onto the wire.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PlanMyWeekResult(
+            @JsonProperty("today") String today,
+            @JsonProperty("days") List<PlanDay> days,
+            /**
+             * The creator's own categories, exactly as stored. influora-ai's {@code
+             * app/planner/week_plan.py} filters the festival and season calendar against these:
+             * 50 of its 59 rows are category-specific, so without this field only the 9 rows
+             * marked {@code ALL} could ever attach and a food creator would never be told World
+             * Food Day is coming. Empty when the creator has no categories on file, which is a
+             * real state, not an error.
+             */
+            @JsonProperty("categories") List<String> categories,
+            @JsonProperty("topics") List<TopicResult> topics,
+            @JsonProperty("pattern") PatternResult pattern) {}
 }

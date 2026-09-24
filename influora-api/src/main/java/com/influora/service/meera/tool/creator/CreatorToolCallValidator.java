@@ -56,6 +56,11 @@ public class CreatorToolCallValidator {
         TIER_BY_TOOL.put(CreatorToolName.get_my_metrics, MeeraToolTier.R);
         TIER_BY_TOOL.put(CreatorToolName.check_deal_risks, MeeraToolTier.R);
         TIER_BY_TOOL.put(CreatorToolName.draft_reply, MeeraToolTier.D);
+        // T-CONTENT-TOPICS -- a plain read over a hand-typed catalogue, never a money tool.
+        TIER_BY_TOOL.put(CreatorToolName.get_todays_topics, MeeraToolTier.R);
+        // T-PLAN-MY-WEEK -- deterministic arithmetic over the creator's own posts, never a money
+        // tool.
+        TIER_BY_TOOL.put(CreatorToolName.plan_my_week, MeeraToolTier.R);
     }
 
     private final AuditLogService auditLogService;

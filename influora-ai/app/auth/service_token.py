@@ -55,6 +55,13 @@ ENDPOINT_SCOPES: dict[str, tuple[str, ...]] = {
     "analyze_site": (SCOPE_SERVICE,),
     "voice_transcribe": (SCOPE_SERVICE,),
     "voice_speak": (SCOPE_SERVICE,),
+    # Level 2 "frame check" (T-SHOOTCHECK-L2, app/routes/shoot_check.py) --
+    # same shape as voice_transcribe/voice_speak above: a workspace-scoped
+    # service/stream token, not the creator-profile-scoped SCOPE_CREATOR
+    # tokens brief_extract/creator_suggestion require. CREATOR vs BRAND is
+    # derived from the verified token's claims (app.auth.audience), same as
+    # every voice.py call.
+    "shoot_check_frame": (SCOPE_SERVICE,),
     # Internal-only: called by Java's BrandSafetyAiClient (Wave C, C3), never by
     # a browser/stream token. Service-scope only, same as analyze_site/voice.
     "brand_safety": (SCOPE_SERVICE,),

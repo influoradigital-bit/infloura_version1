@@ -22,6 +22,7 @@ from app.config import (
     CLAUDE_MODEL,
     CREATOR_COPILOT_MODEL,
     GEMINI_MODEL,
+    SHOOT_CHECK_MODEL,
     TREND_TAG_MODEL,
     TRENDSPARK_MODEL,
 )
@@ -225,6 +226,11 @@ def _resolve_rate(model: str) -> ModelRate:
         ("TREND_TAG_MODEL", TREND_TAG_MODEL),
         ("BRAND_SAFETY_MODEL", BRAND_SAFETY_MODEL),
         ("CREATOR_COPILOT_MODEL", CREATOR_COPILOT_MODEL),
+        # SHOOT_CHECK_MODEL defaults to the already-priced CLAUDE_MODEL, so this
+        # branch is dormant until someone overrides the env var to an unpriced
+        # id -- added for the same reason as the three rows above (F-04): an
+        # unpriced-but-configured model must still record spend, conservatively.
+        ("SHOOT_CHECK_MODEL", SHOOT_CHECK_MODEL),
     ):
         if model == configured:
             conservative = _most_expensive_rate()

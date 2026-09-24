@@ -106,6 +106,17 @@ export const TOOL_TRAIL_LABELS: Record<CreatorToolName, ToolTrailLabelSet> = {
     done: { en: 'Drafted a reply', hi: 'जवाब का मसौदा बना लिया' },
     failed: { en: "Couldn't draft the reply", hi: 'जवाब का मसौदा नहीं बन पाया' },
   },
+  // The two content-knowledge tools, added when that branch merged into launch (2026-09-24).
+  get_todays_topics: {
+    running: { en: "Checking today's topics…", hi: 'आज के टॉपिक्स देखे जा रहे हैं…' },
+    done: { en: "Checked today's topics", hi: 'आज के टॉपिक्स देख लिए' },
+    failed: { en: "Couldn't load today's topics", hi: 'आज के टॉपिक्स लोड नहीं हो पाए' },
+  },
+  plan_my_week: {
+    running: { en: 'Planning your week…', hi: 'आपका हफ़्ता प्लान किया जा रहा है…' },
+    done: { en: 'Planned your week', hi: 'आपका हफ़्ता प्लान कर लिया' },
+    failed: { en: "Couldn't plan your week", hi: 'आपका हफ़्ता प्लान नहीं हो पाया' },
+  },
 };
 
 export const TRAIL_SHOW: BilingualText = { en: 'Show', hi: 'दिखाएं' };

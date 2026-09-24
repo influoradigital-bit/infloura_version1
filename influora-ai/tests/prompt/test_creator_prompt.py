@@ -368,14 +368,16 @@ def _assert_lines_in_order(persona: str, patterns: list[str]) -> None:
 
 def test_persona_states_the_script_contract():
     """The frontend parser (src/lib/meera-result-cards.ts) can only draw a card if Meera writes
-    scripts in one fixed shape. If this contract is edited here, that parser must change too."""
+    scripts in one fixed layout. Since the 2026-09-24 merge that is the content-knowledge "Full
+    script format" (Swapnil: the rich format, shown as a card). If it changes here, the parser
+    must change too."""
     persona = get_creator_persona(_ctx())
     _assert_lines_in_order(
         persona,
-        [r"^\s*SCRIPT\s*$", r"^\s*Title:", r"^\s*Length:", r"^\s*Hook:", r"^\s*0-10s:",
-         r"^\s*CTA:", r"^\s*Why:"],
+        [r"^\s*Idea:", r"^\s*Plan:", r"^\s*Action:", r"^\s*Success looks like:", r"^\s*Script:",
+         r'^\s*"0-3s\. Shot:', r"^\s*Caption:", r"^\s*Before you shoot:", r"^\s*Why this works:"],
     )
-    assert "nothing before or after them" in persona
+    assert "Use exactly this layout, one item per" in " ".join(persona.split())
 
 
 def test_persona_states_the_profile_review_contract():
@@ -388,13 +390,19 @@ def test_persona_states_the_profile_review_contract():
 
 
 def test_the_card_keys_stay_english_for_a_hindi_creator():
-    persona = get_creator_persona(_ctx(creator_language="hi-IN"))
-    assert "stay in English even when you write in Hindi" in persona
-    assert "SCRIPT" in persona and "REVIEW" in persona
+    persona = " ".join(get_creator_persona(_ctx(creator_language="hi-IN")).split())
+    # Both card layouts: the review's key words and the script's labels.
+    assert "(REVIEW, Working, Not working, Next 1/2/3) stay in English even when you write in Hindi" in persona
+    assert (
+        "The labels Idea, Plan, Action, Success looks like, Script, Caption, Before you shoot and"
+        " Why this works, and the Shot / Say / On screen markers in each beat, stay in English even"
+        " when you write in Hindi"
+    ) in persona
 
 
 def test_the_fixed_shapes_are_only_for_replies_the_creator_asked_for():
     persona = get_creator_persona(_ctx())
-    assert "Never use these" in persona
+    assert "Full script format (only when asked):" in persona
+    assert "Profile review format (only when asked to review their profile):" in persona
     # The short-reply rail still stands for everything else.
     assert "KEEP IT SHORT" in persona

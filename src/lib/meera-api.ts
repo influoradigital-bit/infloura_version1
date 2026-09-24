@@ -164,6 +164,42 @@ export interface MeeraTranscribeResult {
   langDetected?: string;
 }
 
+/**
+ * POST /ai/shoot-check/frame success payload — Level 2 "Check my frame" still-image analysis for
+ * the creator Shoot Check screen (`ShootCheckPanel.tsx`). Three flat string lists rather than
+ * anything more structured: `fixes` (must-do corrections), `settings` (camera/app setting
+ * suggestions), `ok` (what's already fine) — the panel renders each as its own labeled group.
+ */
+export interface MeeraShootCheckFrameResult {
+  fixes: string[];
+  settings: string[];
+  ok: string[];
+}
+
+/**
+ * The `code` influora-ai's `/ai/shoot-check/frame` route puts on its 200 `fallback: true` envelope
+ * when the creator's monthly Meera usage cap has been reached (`app/costs/spend_tracker.py`
+ * `CREATOR_CAP_CODE`, read off that source rather than retyped) — the ONE fallback body the panel
+ * shows a cap-specific line for instead of the generic "couldn't check" message.
+ */
+export const SHOOT_CHECK_CREATOR_CAP_CODE = 'CREATOR_MONTHLY_CAP_REACHED';
+
+/**
+ * `checkFrame`'s result. influora-ai returns HTTP 200 with `fallback: true` for EVERY failure and
+ * gate-block path (a bad upload, an oversize photo, the daily spend ceiling, a provider error,
+ * malformed model output, the creator's monthly cap, …) — `shoot_check.py`'s own `fallback_response()`
+ * always fills `fixes` with placeholder text on that path (its own generic line, or an upload
+ * instruction like "please upload one of those and try again"), NEVER a real per-photo check
+ * result. Treating that as `fixes` showed a "Fix" card with an upload instruction on a screen with
+ * no upload button, and the panel's own "couldn't check your frame right now" line never appeared.
+ * A `fallback: true` body is therefore always `'unavailable'` (or `'capped'`, the one case with its
+ * own message) here — its `fixes`/`settings`/`ok` are never read as a real result.
+ */
+export type MeeraShootCheckFrameOutcome =
+  | { kind: 'ok'; result: MeeraShootCheckFrameResult }
+  | { kind: 'capped'; message: string }
+  | { kind: 'unavailable' };
+
 /** Escrow status response (02 section 1.5) */
 export interface MeeraEscrowStatus {
   escrowHoldId: string;
@@ -675,6 +711,12 @@ export const CREATOR_TOOL_NAMES = [
   'get_my_metrics',
   'check_deal_risks',
   'draft_reply',
+  // T-CONTENT-TOPICS / T-PLAN-MY-WEEK. A name missing here is dropped by `isCreatorToolName`,
+  // so the chat shows NOTHING for that tool call - no card, and no step in the work trail,
+  // while Meera was in fact reading the topics or planning the week. Kept in step with
+  // influora-ai's own CREATOR_TOOL_NAMES by meera-api.creator-tools-in-sync.test.ts.
+  'get_todays_topics',
+  'plan_my_week',
 ] as const;
 
 export type CreatorToolName = (typeof CREATOR_TOOL_NAMES)[number];
@@ -1158,6 +1200,101 @@ export const meeraApi = {
       };
     } catch {
       return null;
+    }
+  },
+
+  /**
+   * POST /creator/meera/shoot-check/frame — Level 2 "Check my frame" for the creator Shoot Check
+   * screen. Multipart: `image` (a single JPEG still, downscaled client-side to max 800px wide at
+   * ~0.7 quality by the caller before this ever runs — this method does no image processing
+   * itself) and an optional `shot_label`.
+   *
+   * Goes through `basePath(role)` like every other method here. It used to post to a flat
+   * `/ai/shoot-check/frame`, which is influora-ai's own route: this app cannot reach that service
+   * directly, so every tap failed in production. `CreatorMeeraController#checkFrame` is the proxy,
+   * and `meera-api.shoot-check-route.test.ts` pins this URL to that Java mapping. The creator's
+   * identity comes from the auth token on the server, so no workspace id is sent.
+   *
+   * Same one-thing-to-check discipline as `transcribe()`, expressed as a small discriminated
+   * result instead of a bare nullable: `{kind: 'ok', result}` for a real check, `{kind: 'capped',
+   * message}` for the creator monthly-cap fallback (see `SHOOT_CHECK_CREATOR_CAP_CODE`), and
+   * `{kind: 'unavailable'}` for every OTHER "no result" case — mock mode never hits this, but live
+   * covers the endpoint not existing yet (404) or any other non-2xx, an unparsable body, ANY
+   * `fallback: true` body other than the cap one, or a network error. Never throws.
+   * `ShootCheckPanel` renders `'unavailable'` as a plain "couldn't check your frame right now"
+   * line and does not retry automatically.
+   */
+  checkFrame: async (
+    image: Blob,
+    shotLabel: string | undefined,
+    role: MeeraRole = 'creator'
+  ): Promise<MeeraShootCheckFrameOutcome> => {
+    if (!isApiLive()) {
+      await delay(600);
+      return {
+        kind: 'ok',
+        result: {
+          fixes: ['Move a little closer — your face is small in the frame'],
+          settings: ['Turn on grid lines in your camera app to help with framing'],
+          ok: ['Lighting looks even'],
+        },
+      };
+    }
+
+    try {
+      const headers: Record<string, string> = {};
+      const token = getToken(role);
+      if (token) headers.Authorization = `Bearer ${token}`;
+
+      const formData = new FormData();
+      formData.append('image', image, 'frame.jpg');
+      if (shotLabel) formData.append('shot_label', shotLabel);
+
+      const res = await fetch(`${API_BASE_URL}${basePath(role)}/shoot-check/frame`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: formData,
+      });
+
+      if (!res.ok) return { kind: 'unavailable' };
+
+      let body: { fixes?: unknown; settings?: unknown; ok?: unknown; fallback?: unknown; message?: unknown; code?: unknown };
+      try {
+        body = await res.json();
+      } catch {
+        return { kind: 'unavailable' };
+      }
+
+      // influora-ai's `fallback: true` envelope carries placeholder `fixes` text, never a real
+      // check — see this method's doc comment. The ONE fallback body with something the creator
+      // needs to see is the monthly-cap block, which the panel shows as its own message.
+      if (body.fallback === true) {
+        if (body.code === SHOOT_CHECK_CREATOR_CAP_CODE) {
+          return {
+            kind: 'capped',
+            message:
+              typeof body.message === 'string' && body.message.length > 0
+                ? body.message
+                : "You've reached your monthly Meera usage limit.",
+          };
+        }
+        return { kind: 'unavailable' };
+      }
+
+      const asStringArray = (value: unknown): string[] =>
+        Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+
+      return {
+        kind: 'ok',
+        result: {
+          fixes: asStringArray(body.fixes),
+          settings: asStringArray(body.settings),
+          ok: asStringArray(body.ok),
+        },
+      };
+    } catch {
+      return { kind: 'unavailable' };
     }
   },
 

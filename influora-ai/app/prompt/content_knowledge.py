@@ -29,6 +29,7 @@ Block A).
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -54,10 +55,21 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     # playbook can never point Meera at a framework or shot that is not here.
     "brand_deal_practice": ("topic", "guidance", "video_application"),
     "category_playbook": ("category", "formats", "hook_angle", "structure", "camera", "never_say"),
+    # v4 (2026-09-22): what the full-script format reads -- the actions to film
+    # per category, the starting length per goal, and which structure fits which
+    # situation.
+    "contextual_action": ("category", "home_actions", "outdoor_actions"),
+    "length_guideline": ("goal", "starting_range_seconds", "main_success_signal"),
+    "structure_selection_rule": ("situation", "structure", "use_when"),
 }
 
 # Fields that are a non-empty list of non-empty strings rather than one string.
-LIST_FIELDS: frozenset[str] = frozenset({"steps", "formats", "camera"})
+LIST_FIELDS: frozenset[str] = frozenset(
+    {"steps", "formats", "camera", "home_actions", "outdoor_actions"}
+)
+
+# "15-35": a starting range in whole seconds, low before high.
+_SECONDS_RANGE = re.compile(r"^(\d+)-(\d+)$")
 
 # The field that names an entry -- what Meera says back to the creator
 # ("Before-After-Bridge (BAB)", "Static / locked-off shot").
@@ -72,23 +84,68 @@ NAME_FIELD: dict[str, str] = {
     "platform_strategy": "platform",
     "brand_deal_practice": "topic",
     "category_playbook": "category",
+    "contextual_action": "category",
+    "length_guideline": "goal",
+    "structure_selection_rule": "situation",
 }
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
 
-# The two Hinglish hook templates whose [Number] slot invites an invented
-# statistic. The persona names them verbatim; tests assert both appear in the
-# data AND in the rule, so a reworded template cannot quietly escape the rule.
-# The inline NUMBER RULE marker is applied to EVERY template with a [Number]
-# slot (`has_number_slot`), including the English versions, not only these two.
-NUMBER_STAT_HOOK_TEMPLATES: tuple[str, ...] = (
-    "[Number] logo ne yeh try kiya — result dekho",
-    "[Number]% log yeh galat karte hain — sahi tareeka yeh hai",
+# Statistic-slot rule (narrowed 2026-09-22, .22.4). The rule exists to stop an
+# invented CLAIM ABOUT THE WORLD -- how many people did something, what
+# percentage get something wrong, results others got. A number that is part of
+# the creator's own idea ("sirf [duration] minute", "Ye [number] galtiyan": the
+# routine's length, how many tips the video covers) is an honest content choice
+# and stays free to fill. Detection is by slot shape, not a list of template
+# strings, so a future template is caught without anyone listing it:
+#   1. a slot NAMED like a statistic: [statistic...], [percent...], [percentage...],
+#      [people count...] / [people-count...];
+#   2. any slot followed by "%" (a percentage claim);
+#   3. a [number]/[count] slot followed by a people word ("[Number] logo ne ...",
+#      "[number] people ..."): a claim about how many OTHER people did something.
+_STATISTIC_SLOT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\[(?:statistic|percent(?:age)?|people[\s_-]?count)\b[^\]]*\]", re.IGNORECASE),
+    re.compile(r"\[[^\]]*\]\s*%"),
+    re.compile(
+        r"\[(?:number|count)\b[^\]]*\]\s*(?:log|logo|logon|people|users|creators|viewers)\b",
+        re.IGNORECASE,
+    ),
 )
+
+
+def has_statistic_slot(template: str) -> bool:
+    """True when the template asks for a statistic or a claim about other
+    people. Durations and tip/step counts of the creator's own video are not."""
+    return any(p.search(template) for p in _STATISTIC_SLOT_PATTERNS)
+
+
+# Call-to-action rule (audit 2026-09-24, lane B3). The full script allows ONE
+# call to action, in the last beat only, while two hook templates end their
+# opening line with a comment ask ("Aap kis side ho -- comment mein batao",
+# "Comment mein '[word]' likho -- seedha DM mein milega"). Such a template is
+# marked CTA RULE: in a script its opening keeps the first part and the comment
+# ask moves to the last beat or the caption. Detected by wording, not by a list
+# of template strings, so a future template is caught without anyone listing it.
+_HOOK_CTA_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bcomments?\b", re.IGNORECASE),
+    re.compile(r"\bDM\b"),
+    # "What's your opinion?" / "What's your take?" is the same ask for a reply without the word
+    # "comment" (the English hot-take hook that came in from launch, merge of 2026-09-24).
+    re.compile(r"\bwhat(?:'|\u2019)?s your (?:opinion|take)\b", re.IGNORECASE),
+)
+
+
+def has_hook_cta(template: str) -> bool:
+    """True when the hook template itself asks the viewer to comment or DM."""
+    return any(p.search(template) for p in _HOOK_CTA_PATTERNS)
+
 
 # Persuasion entries that inform STRUCTURE only -- their example wording is
 # urgency copy Meera must never write for a creator.
 STRUCTURE_ONLY_PRINCIPLES: tuple[str, ...] = ("Scarcity", "Commitment & consistency")
+
+# Narrative entries about outrage and status: aim them at ideas, never people.
+IDEAS_ONLY_PRINCIPLES: tuple[str, ...] = ("Status games and moral outrage as engagement drivers",)
 
 KNOWLEDGE_BLOCK_HEADING = "Influora content knowledge (check this FIRST for content and growth questions)"
 
@@ -121,6 +178,12 @@ def _validate_row(row: Any, lineno: int) -> dict[str, Any]:
         raise KnowledgeFileError(
             f"line {lineno}: unknown confidence {row['confidence']!r}"
         )
+    if data_type == "length_guideline":
+        m = _SECONDS_RANGE.match(row["starting_range_seconds"].strip())
+        if not m or int(m.group(1)) >= int(m.group(2)):
+            raise KnowledgeFileError(
+                f"line {lineno}: length_guideline starting_range_seconds must look like '15-35'"
+            )
     return row
 
 
@@ -146,6 +209,15 @@ def load_knowledge(path: Path = KNOWLEDGE_PATH) -> list[dict[str, Any]]:
     if not rows:
         raise KnowledgeFileError(f"{path.name}: no rows")
     _check_playbook_references(rows)
+    # A selection rule must point at a structure the block actually defines,
+    # by its exact name -- otherwise Meera picks a structure with no steps.
+    defined = {r["framework"].strip() for r in _by_type(rows, "storytelling_structure")}
+    for r in _by_type(rows, "structure_selection_rule"):
+        if r["structure"].strip() not in defined:
+            raise KnowledgeFileError(
+                f"structure_selection_rule {r['situation']!r} names undefined structure"
+                f" {r['structure']!r}"
+            )
     return rows
 
 
@@ -164,14 +236,6 @@ def _check_playbook_references(rows: list[dict[str, Any]]) -> None:
         for shot in r["camera"]:
             if shot.strip() not in shots:
                 raise KnowledgeFileError(f"playbook {r['category']!r}: unknown camera shot {shot!r}")
-
-
-def has_number_slot(template: str) -> bool:
-    """True for any hook template with a number-shaped slot ([Number], [statistic],
-    [percent]), in any language -- a template must not escape the rule by renaming
-    its slot."""
-    t = template.lower()
-    return any(slot in t for slot in ("[number", "[statistic", "[percent"))
 
 
 def _by_type(rows: list[dict[str, Any]], data_type: str) -> list[dict[str, Any]]:
@@ -208,10 +272,18 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
     out += ["", "Hook templates (fill the [slots]; the Hinglish wording is the template):"]
     for r in _by_type(rows, "hook_template"):
         line = f"- {r['template']} (type: {r['category']}; works on: {r['persuasion_principle']}; goal: {r['goal_fit']})"
-        if has_number_slot(r["template"]):
+        if has_statistic_slot(r["template"]):
             line += (
-                " [NUMBER RULE: only a number from the creator's own context or one the"
-                " creator gave you; otherwise use a different template]"
+                " [STATISTIC RULE: never invent this statistic; only a figure from the"
+                " creator's own context or one the creator gave you; otherwise use a"
+                " different template]"
+            )
+        if has_hook_cta(r["template"]):
+            line += (
+                " [CTA RULE: in a script, say only the part before the comment ask in the"
+                " opening; the comment ask moves to the last beat as the one call to action,"
+                " or to the caption; never promise the creator will DM anyone unless they"
+                " said they will]"
             )
         out.append(line)
 
@@ -221,7 +293,13 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
 
     out += ["", "Narrative principles:"]
     for r in _by_type(rows, "narrative_principle"):
-        out.append(f"- {r['principle']}: {r['definition']} For video: {r['video_application']}")
+        line = f"- {r['principle']}: {r['definition']} For video: {r['video_application']}"
+        if r["principle"] in IDEAS_ONLY_PRINCIPLES:
+            line += (
+                " [IDEAS ONLY: never name, shame or target a real individual or brand;"
+                " aim outrage and status at ideas, practices or common mistakes]"
+            )
+        out.append(line)
 
     out += ["", "Content characteristics:"]
     for r in _by_type(rows, "content_characteristic"):
@@ -251,6 +329,31 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
             f"- {r['platform']} ({r['jab_hook_balance']}): {r['note']} For video:"
             f" {r['video_application']} Caveat: {r['source']}"
         )
+
+    out += ["", "Which structure to use (situation -> the storytelling structure above):"]
+    for r in _by_type(rows, "structure_selection_rule"):
+        out.append(f"- {r['situation']} -> {r['structure']}. Use when: {r['use_when']}")
+
+    out += [
+        "",
+        "Script length by goal (starting range in seconds; a full script's timings add up"
+        " to a length inside it):",
+    ]
+    for r in _by_type(rows, "length_guideline"):
+        out.append(
+            f"- {r['goal']}: {r['starting_range_seconds'].strip()} seconds."
+            f" Success looks like: {r['main_success_signal']}"
+        )
+
+    out += [
+        "",
+        "Actions to film, by category (real actions the creator can do on camera; a person,"
+        " shop or place is filmed only with permission):",
+    ]
+    for r in _by_type(rows, "contextual_action"):
+        home = ", ".join(a.strip() for a in r["home_actions"])
+        outdoor = ", ".join(a.strip() for a in r["outdoor_actions"])
+        out.append(f"- {r['category']}: at home: {home}. Outdoors: {outdoor}.")
     return "\n".join(out) + "\n"
 
 

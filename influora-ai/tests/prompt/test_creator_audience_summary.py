@@ -115,6 +115,7 @@ def test_persona_audience_rule_reaches_the_creator_system_prompt():
 
 
 def test_prompt_version_bumped_for_audience_knowledge():
-    # At least the audience-knowledge bump (.2); later bumps (.3 go-live knowledge) keep it true.
+    # .21.2 introduced the audience rule; every later bump (go-live knowledge, knowledge v3/v4,
+    # script format, daily topics, week plan, account insights, the 2026-09-24 merges) keeps it true.
     date, _, n = PROMPT_VERSION.removeprefix("meera-").rpartition(".")
     assert (date, int(n)) >= ("2026.09.21", 2)

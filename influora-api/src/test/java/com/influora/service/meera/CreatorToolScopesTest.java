@@ -18,10 +18,16 @@ class CreatorToolScopesTest {
     }
 
     @Test
-    @DisplayName("SCOPE_LEVEL_0 carries all EIGHT level-0 names from SPEC.md 3.3, verbatim")
+    @DisplayName(
+            "SCOPE_LEVEL_0 carries all eight level-0 names from SPEC.md 3.3, verbatim, plus"
+                    + " get_todays_topics and plan_my_week (both outside SPEC.md 3.3)")
     void testLevelZeroCarriesAllEightNames() {
         Set<String> names = namesIn(CreatorToolScopes.SCOPE_LEVEL_0);
-        assertEquals(8, names.size(), "SPEC.md 3.3 lists exactly eight level-0 tool names");
+        assertEquals(
+                10,
+                names.size(),
+                "SPEC.md 3.3 lists eight level-0 tool names, plus get_todays_topics and"
+                        + " plan_my_week added outside it");
         assertEquals(
                 Set.of(
                         "get_my_deals",
@@ -31,7 +37,9 @@ class CreatorToolScopesTest {
                         "check_deal_risks",
                         "draft_reply",
                         "rank_open_campaigns",
-                        "draft_application"),
+                        "draft_application",
+                        "get_todays_topics",
+                        "plan_my_week"),
                 names);
     }
 
@@ -58,7 +66,7 @@ class CreatorToolScopesTest {
         Set<String> levelOne = namesIn(CreatorToolScopes.SCOPE_LEVEL_1);
         assertTrue(levelOne.containsAll(namesIn(CreatorToolScopes.SCOPE_LEVEL_0)));
         assertTrue(levelOne.contains("send_routine_reply"));
-        assertEquals(9, levelOne.size());
+        assertEquals(11, levelOne.size());
         assertEquals(levelOne, namesIn(CreatorToolScopes.SCOPE_LEVEL_2));
     }
 
@@ -81,7 +89,7 @@ class CreatorToolScopesTest {
      */
     @Test
     @DisplayName(
-            "SCOPE_LEVEL_2 grants exactly the nine level-1 names, pinned as a literal set -- the"
+            "SCOPE_LEVEL_2 grants exactly the ten level-1 names, pinned as a literal set -- the"
                     + " equality with level 1 is deliberate, and superset/assertSame checks on it"
                     + " are vacuous")
     void testLevelTwoGrantsExactlyTheLevelOneSet() {
@@ -95,6 +103,8 @@ class CreatorToolScopesTest {
                         "draft_reply",
                         "rank_open_campaigns",
                         "draft_application",
+                        "get_todays_topics",
+                        "plan_my_week",
                         "send_routine_reply"),
                 namesIn(CreatorToolScopes.SCOPE_LEVEL_2),
                 "level 2 grants no tool of its own in this phase; if that changed, assert the ADDED"
@@ -166,7 +176,8 @@ class CreatorToolScopesTest {
     @Test
     @DisplayName(
             "toolNamesForLevel offers ONLY tools with a live route -- the four wired in Waves 2 and"
-                    + " 3 plus get_brief, never the three names the level-0 scope also mints")
+                    + " 3 plus get_brief, get_todays_topics and plan_my_week, never the three names"
+                    + " the level-0 scope also mints")
     void testOnlyWiredToolsAreOffered() {
         List<String> offered = CreatorToolScopes.toolNamesForLevel(0, false, false);
         assertEquals(
@@ -175,9 +186,11 @@ class CreatorToolScopesTest {
                         "get_brief",
                         "estimate_my_rate",
                         "get_my_metrics",
-                        "check_deal_risks"),
+                        "check_deal_risks",
+                        "get_todays_topics",
+                        "plan_my_week"),
                 offered);
-        // The gap between the ceiling and the offered set is the point: the scope names eight
+        // The gap between the ceiling and the offered set is the point: the scope names nine
         // tools, but a tool the model can call and the server cannot answer is worse than one it
         // cannot see.
         assertTrue(namesIn(CreatorToolScopes.SCOPE_LEVEL_0).size() > offered.size());
