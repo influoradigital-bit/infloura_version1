@@ -2,7 +2,7 @@
  * MeeraScriptCard: renders every field of the rich-format `ParsedMeeraScript`, and Copy writes the
  * exact original reply text (never a re-serialized version of the parsed fields).
  */
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -118,7 +118,11 @@ describe('MeeraScriptCard', () => {
     await user.click(screen.getByTestId('script-card-copy'));
 
     expect(writeText).toHaveBeenCalledWith(RAW_TEXT);
-    expect(await screen.findByText('Copied')).toBeInTheDocument();
+    // The button shows Copied, and a polite live region announces it to screen readers.
+    await waitFor(() => expect(screen.getByTestId('script-card-copy')).toHaveTextContent('Copied'));
+    expect(screen.getByText('Copied', { selector: '[aria-live]' })).toBeInTheDocument();
+    // The button's accessible name stays "Copy" throughout.
+    expect(screen.getByTestId('script-card-copy')).toHaveAccessibleName('Copy');
   });
 
   it('has no Save button — this phase has no backend store to save to', () => {

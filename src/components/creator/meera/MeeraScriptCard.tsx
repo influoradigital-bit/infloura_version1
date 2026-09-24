@@ -111,8 +111,8 @@ export function MeeraScriptCard({ script, rawText, language, className }: MeeraS
               </span>
               {beat.shot}
             </p>
-            <p className="break-words font-medium text-primary">&ldquo;{beat.say}&rdquo;</p>
-            <p className="break-words text-xs text-muted-foreground">
+            <p className="break-words font-medium text-primary [overflow-wrap:anywhere]">&ldquo;{beat.say}&rdquo;</p>
+            <p className="break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
               {onScreenLabel}: {beat.onScreen}
             </p>
           </li>
@@ -153,6 +153,9 @@ export function MeeraScriptCard({ script, rawText, language, className }: MeeraS
         <button
           type="button"
           data-testid="script-card-copy"
+          // The visible text switches to "Copied"; the accessible name stays "Copy" so a screen
+          // reader always hears what the button does. The switch itself is announced below.
+          aria-label={pickLang(language, RESULT_CARD_COPY)}
           onClick={handleCopy}
           className="flex h-11 min-w-11 items-center gap-1.5 rounded-lg border border-border bg-muted px-3 text-sm font-medium hover:bg-muted/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
@@ -168,6 +171,9 @@ export function MeeraScriptCard({ script, rawText, language, className }: MeeraS
             </>
           )}
         </button>
+        <span className="sr-only" aria-live="polite">
+          {copied ? pickLang(language, RESULT_CARD_COPIED) : ''}
+        </span>
       </div>
     </div>
   );

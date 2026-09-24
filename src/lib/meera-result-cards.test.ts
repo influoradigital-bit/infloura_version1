@@ -333,3 +333,30 @@ describe('parseMeeraReview — refusals', () => {
     expect(parseMeeraReview('')).toBeNull();
   });
 });
+
+describe('parseMeeraScript — a fixed start and end (persona rule, merge review 2026-09-24)', () => {
+  // The persona says: start with the Idea line, nothing before it; the one closing question
+  // goes after Why this works and nothing follows it. Any extra chat around the script must make
+  // the reply fall back to the plain bubble rather than a card that hides part of the reply.
+  const WITH_QUESTION = `${VALID_SCRIPT}\nWhich language do you want the voice-over in?`;
+
+  it('accepts the one closing question after Why this works', () => {
+    expect(parseMeeraScript(WITH_QUESTION)?.followUp).toBe('Which language do you want the voice-over in?');
+  });
+
+  it('returns undefined when anything comes before the Idea line', () => {
+    expect(parseMeeraScript(`Here's your script:\n${VALID_SCRIPT}`)).toBeUndefined();
+  });
+
+  it('returns undefined when anything follows the closing question', () => {
+    expect(parseMeeraScript(`${WITH_QUESTION}\nHope this helps!`)).toBeUndefined();
+  });
+
+  it('keeps a quote inside the spoken line (the Say text ends at the quote before ". On screen:")', () => {
+    const nested = VALID_SCRIPT.replace(
+      'Say: "Is your saffron even real?"',
+      'Say: "My nani said "check the colour" first"',
+    );
+    expect(parseMeeraScript(nested)?.beats[0].say).toBe('My nani said "check the colour" first');
+  });
+});
