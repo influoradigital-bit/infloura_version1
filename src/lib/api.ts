@@ -3729,10 +3729,17 @@ export interface PublicConfigResponse {
 }
 
 export const config = {
-  /** GET /config/razorpay — source of the `key` param for `window.Razorpay(...)`. */
-  razorpay: () =>
+  /**
+   * GET /config/razorpay — source of the `key` param for `window.Razorpay(...)`.
+   *
+   * `role` is NOT decorative: the route is authenticated (PublicConfigController:83), and
+   * `http.request` defaults to the BRAND token, which a creator browser never holds. Without it a
+   * creator's "Buy credits" tap 401s here and Checkout never opens - after the order row has
+   * already been created, leaving an orphan PENDING order behind every attempt.
+   */
+  razorpay: (role: Role = 'brand') =>
     isLive()
-      ? http.request<RazorpayConfigResponse>('GET', '/config/razorpay')
+      ? http.request<RazorpayConfigResponse>('GET', '/config/razorpay', { role })
       // Mock mode never talks to a real Razorpay account — this key is not live/usable.
       : mockOr<RazorpayConfigResponse>({ keyId: 'rzp_test_mock' }),
 

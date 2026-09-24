@@ -51,6 +51,7 @@ vi.mock('@/lib/razorpay', () => ({
 }));
 
 interface CapturedCheckoutParams {
+  role?: 'brand' | 'creator';
   orderId: string;
   amount?: number;
   currency?: string;
@@ -100,6 +101,22 @@ afterEach(() => {
 });
 
 describe('BuyCreditsSheet (A48 — verify-driven success, never credits on onSuccess alone)', () => {
+  /**
+   * The key for Checkout comes from GET /config/razorpay, which is authenticated, and the API
+   * client defaults to the BRAND token. A creator browser holds no brand token, so without an
+   * explicit role the key fetch 401s and Checkout never opens - after createOrder has already
+   * written a PENDING order, so every tap would strand one.
+   */
+  it('asks for Checkout with the CREATOR session, not the default brand one', async () => {
+    render(<BuyCreditsSheet open onOpenChange={vi.fn()} balance={BASE_BALANCE} />);
+
+    fireEvent.click(screen.getByTestId('buy-sheet-confirm'));
+    await waitFor(() => expect(createOrderMock).toHaveBeenCalled());
+    const params = await getCheckoutParams();
+
+    expect(params.role).toBe('creator');
+  });
+
   it('does NOT show success or call onCredited when Checkout onSuccess fires but verify has not resolved yet', async () => {
     let resolveVerify!: (value: { status: 'CREDITED' | 'PENDING'; balance: number }) => void;
     verifyMock.mockReturnValue(

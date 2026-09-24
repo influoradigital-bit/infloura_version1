@@ -119,6 +119,7 @@ export function BuyCreditsSheet({ open, onOpenChange, language, balance, onCredi
 
       setStage('awaiting_payment');
       await openRazorpayCheckout({
+        role: 'creator',
         orderId: order.razorpayOrderId,
         amount: order.amountPaise,
         currency: order.currency,

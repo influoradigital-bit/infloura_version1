@@ -17,7 +17,7 @@
  *     `GET /wallet` — see `useEscrowFund.ts` / `brand-wallet.tsx`).
  */
 
-import { api } from './api';
+import { api, type Role } from './api';
 
 // ---------------------------------------------------------------------------
 // window.Razorpay typings (no `any` — the SDK ships no first-party types)
@@ -113,12 +113,12 @@ export function loadRazorpayScript(): Promise<void> {
  * caches it for the session (it is a static, environment-scoped value, not
  * per-request). NEVER a secret — see `PublicConfigController` on the backend.
  */
-export async function getRazorpayKeyId(): Promise<string> {
+export async function getRazorpayKeyId(role: Role = 'brand'): Promise<string> {
   if (cachedKeyId) return cachedKeyId;
   if (keyIdFetchPromise) return keyIdFetchPromise;
 
   keyIdFetchPromise = api.config
-    .razorpay()
+    .razorpay(role)
     .then((res) => {
       cachedKeyId = res.keyId;
       return res.keyId;
@@ -131,6 +131,8 @@ export async function getRazorpayKeyId(): Promise<string> {
 }
 
 export interface OpenCheckoutParams {
+  /** Whose session is paying. Creator surfaces MUST pass 'creator'; see api.config.razorpay. */
+  role?: Role;
   orderId: string;
   amount?: number;
   currency?: string;
@@ -150,12 +152,12 @@ export interface OpenCheckoutParams {
  * the modal, it never auto-submits.
  */
 export async function openRazorpayCheckout(params: OpenCheckoutParams): Promise<void> {
-  const { orderId, amount, currency, name, description, prefill, onSuccess, onDismiss } = params;
+  const { orderId, amount, currency, name, description, prefill, onSuccess, onDismiss, role } = params;
 
   let keyId: string;
   try {
     await loadRazorpayScript();
-    keyId = await getRazorpayKeyId();
+    keyId = await getRazorpayKeyId(role);
   } catch (err) {
     onDismiss(err instanceof Error ? err.message : 'Could not load payment SDK');
     return;
