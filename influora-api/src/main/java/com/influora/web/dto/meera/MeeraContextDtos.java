@@ -214,6 +214,10 @@ public final class MeeraContextDtos {
              * MeeraCreatorAudienceContextTest}).
              */
             @JsonProperty("audience_summary") String audienceSummary,
+            // Account insights (2026-09-24): the creator's OWN last-28-day reach, views,
+            // interactions, accounts engaged and profile-link taps, pre-rendered by Java like
+            // audience_summary. An explicit "not available (...)" string when there are none.
+            @JsonProperty("account_insights_summary") String accountInsightsSummary,
             @JsonProperty("deals_summary") Map<String, Object> dealsSummary,
             @JsonProperty("approval_level") int approvalLevel,
             @JsonProperty("represented") boolean represented,

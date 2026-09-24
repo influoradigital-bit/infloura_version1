@@ -149,6 +149,29 @@ public final class AnalyticsDtos {
     }
 
     /**
+     * The creator's account-level Instagram numbers over {@code periodStart..periodEnd} (the last
+     * 28 full IST days), from the newest {@code CreatorAccountInsight} snapshot (2026-09-24). Each
+     * number is null when Meta did not return it, never 0; {@code hasData=false} (see
+     * {@link #empty()}) when nothing has been fetched yet. Nulls are sent, not omitted: the app
+     * tells "not available" apart by {@code === null}.
+     */
+    public record CreatorAccountInsightsResponse(
+            boolean hasData,
+            java.time.LocalDate periodStart,
+            java.time.LocalDate periodEnd,
+            Long reach,
+            Long views,
+            Long totalInteractions,
+            Long accountsEngaged,
+            Long profileLinksTaps,
+            Instant fetchedAt) {
+
+        public static CreatorAccountInsightsResponse empty() {
+            return new CreatorAccountInsightsResponse(false, null, null, null, null, null, null, null, null);
+        }
+    }
+
+    /**
      * Per-post performance — the latest {@code MediaMetric} poll snapshot for each distinct post,
      * newest posts first. Mirrors {@code MediaMetric}'s fields directly; the only derived value is
      * {@code engagementRate}. Shared verbatim by both the creator-self route ({@code GET

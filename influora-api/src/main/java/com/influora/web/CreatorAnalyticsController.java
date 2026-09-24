@@ -5,6 +5,7 @@ import com.influora.common.ApiResponse;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.CreatorAnalyticsService;
 import com.influora.web.dto.analytics.AnalyticsDtos.ContentPerformanceResponse;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorMetricsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorScoresResponse;
@@ -62,6 +63,13 @@ public class CreatorAnalyticsController {
      * P2-14 — per-post content performance for the authenticated creator (self-service).
      * Replaces api.ts stub that expected {@code GET /analytics/creators/:id/media}.
      */
+    @GetMapping("/account-insights")
+    public ResponseEntity<ApiResponse<CreatorAccountInsightsResponse>> getMyAccountInsights(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(
+                ApiResponse.ok(creatorAnalyticsService.getMyAccountInsights(principal)));
+    }
+
     @GetMapping("/media")
     public ResponseEntity<ApiResponse<List<ContentPerformanceResponse>>> getMyContentPerformance(
             @AuthenticationPrincipal AuthPrincipal principal) {

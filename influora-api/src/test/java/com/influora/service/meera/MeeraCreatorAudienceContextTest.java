@@ -206,6 +206,7 @@ class MeeraCreatorAudienceContextTest {
         assertThat(json).doesNotContain("F.18-24").doesNotContain("410").doesNotContain("Jaipur");
         // Only THIS creator's own resolved profile id is ever read.
         verify(analyticsService).getCreatorDemographicsForProfile(PROFILE_ID);
+        verify(analyticsService).getCreatorAccountInsightsForProfile(PROFILE_ID);
         verifyNoMoreInteractions(analyticsService);
     }
 
@@ -269,10 +270,16 @@ class MeeraCreatorAudienceContextTest {
         // Seeded so a leak would have real text to leak, same pattern as brandContextNeverCarriesAudience
         // below; lenient because the disconnected path must never even read it.
         lenient().when(analyticsService.getCreatorDemographicsForProfile(PROFILE_ID)).thenReturn(snapshot());
+        lenient().when(analyticsService.getCreatorAccountInsightsForProfile(PROFILE_ID))
+                .thenReturn(new com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse(
+                        true, java.time.LocalDate.of(2026, 8, 27), java.time.LocalDate.of(2026, 9, 23),
+                        12400L, 48210L, 1930L, 822L, 64L, Instant.parse("2026-09-24T00:00:00Z")));
 
         CreatorContextResponse context = (CreatorContextResponse) service.assemble(CREATOR_USER_ID, "CREATOR");
 
         assertThat(context.audienceSummary()).isEqualTo(MeeraContextService.AUDIENCE_NOT_AVAILABLE);
+        // Same rule for the account line (2026-09-24): disconnected means not available.
+        assertThat(context.accountInsightsSummary()).isEqualTo(MeeraContextService.ACCOUNT_INSIGHTS_NOT_AVAILABLE);
         verifyNoInteractions(analyticsService);
     }
 
@@ -373,5 +380,31 @@ class MeeraCreatorAudienceContextTest {
 
         assertThat(context.aiMonthlyCapUsd()).isNull();
         assertThat(mapper.writeValueAsString(context)).doesNotContain("ai_monthly_cap_usd");
+    }
+
+    @Test
+    @DisplayName("CREATOR context carries the last-28-day account line Meera can quote")
+    void creatorContextCarriesAccountInsightsSummary() throws Exception {
+        stubCreator();
+        when(analyticsService.getCreatorAccountInsightsForProfile(PROFILE_ID))
+                .thenReturn(new com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse(
+                        true, java.time.LocalDate.of(2026, 8, 27), java.time.LocalDate.of(2026, 9, 23),
+                        12400L, 48210L, 1930L, 822L, null, Instant.parse("2026-09-24T00:00:00Z")));
+
+        CreatorContextResponse context = (CreatorContextResponse) service.assemble(CREATOR_USER_ID, "CREATOR");
+
+        assertThat(context.accountInsightsSummary())
+                .isEqualTo("Last 28 days (27 Aug 2026 to 23 Sept 2026): 12,400 accounts reached, 48,210 views,"
+                        + " 1,930 interactions, 822 accounts engaged.");
+    }
+
+    @Test
+    @DisplayName("no account numbers yet: Meera is told they are not available, never zeros")
+    void creatorContextAccountInsightsNotAvailable() throws Exception {
+        stubCreator();
+
+        CreatorContextResponse context = (CreatorContextResponse) service.assemble(CREATOR_USER_ID, "CREATOR");
+
+        assertThat(context.accountInsightsSummary()).isEqualTo(MeeraContextService.ACCOUNT_INSIGHTS_NOT_AVAILABLE);
     }
 }

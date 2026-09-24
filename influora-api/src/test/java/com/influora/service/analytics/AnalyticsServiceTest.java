@@ -18,6 +18,7 @@ import com.influora.domain.entity.CreatorScore;
 import com.influora.domain.entity.MediaMetric;
 import com.influora.domain.entity.Workspace;
 import com.influora.repository.AudienceDemographicsRepository;
+import com.influora.repository.CreatorAccountInsightRepository;
 import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.CreatorScoreRepository;
 import com.influora.repository.MediaMetricsRepository;
@@ -62,6 +63,7 @@ class AnalyticsServiceTest {
     @Mock private MediaMetricsRepository mediaMetricsRepository;
     // V20260924120000: the performance panel shows only the creator's CURRENT account.
     @Mock private com.influora.service.creatorcopilot.ConnectedInstagramAccount connectedAccount;
+    @Mock private CreatorAccountInsightRepository accountInsightRepository;
     @Mock private Workspace workspace;
     @Mock private AuthPrincipal principal;
 
@@ -77,7 +79,8 @@ class AnalyticsServiceTest {
                         creatorScoreRepository,
                         audienceDemographicsRepository,
                         mediaMetricsRepository,
-                        connectedAccount);
+                        connectedAccount,
+                        accountInsightRepository);
         // These tests describe creators with one connection on file; with no account to narrow to,
         // the service keeps its original unnarrowed read.
         lenient()
@@ -866,5 +869,29 @@ class AnalyticsServiceTest {
         assertEquals(1, result.size());
         assertEquals("ig-preview", result.get(0).mediaId());
         assertEquals(null, result.get(0).previewImageUrl());
+    }
+
+    @Test
+    @DisplayName("account insights: the newest snapshot, number for number; none -> hasData=false")
+    void accountInsightsMapsNewestSnapshot() {
+        com.influora.domain.entity.CreatorAccountInsight snapshot =
+                new com.influora.domain.entity.CreatorAccountInsight(
+                        "01HWACCOUNTINSIGHT000001", "creator-1", "INSTAGRAM",
+                        java.time.LocalDate.of(2026, 8, 27), java.time.LocalDate.of(2026, 9, 23),
+                        12400L, 48210L, null, 822L, 64L, "META_API", Instant.parse("2026-09-24T00:00:00Z"));
+        when(accountInsightRepository.findFirstByCreatorProfileIdOrderByFetchedAtDesc("creator-1"))
+                .thenReturn(Optional.of(snapshot));
+        when(accountInsightRepository.findFirstByCreatorProfileIdOrderByFetchedAtDesc("creator-2"))
+                .thenReturn(Optional.empty());
+
+        var r = analyticsService.getCreatorAccountInsightsForProfile("creator-1");
+        assertEquals(true, r.hasData());
+        assertEquals(java.time.LocalDate.of(2026, 8, 27), r.periodStart());
+        assertEquals(12400L, r.reach());
+        assertEquals(48210L, r.views());
+        assertEquals(null, r.totalInteractions());
+        assertEquals(64L, r.profileLinksTaps());
+
+        assertEquals(false, analyticsService.getCreatorAccountInsightsForProfile("creator-2").hasData());
     }
 }

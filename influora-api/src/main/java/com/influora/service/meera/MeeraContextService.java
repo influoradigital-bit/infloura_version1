@@ -36,6 +36,7 @@ import com.influora.repository.UtmCampaignRepository;
 import com.influora.repository.WorkspaceRepository;
 import com.influora.service.analytics.AnalyticsService;
 import com.influora.service.scoring.CreatorTiers;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
 import com.influora.web.dto.analytics.AnalyticsDtos.CreatorDemographicsResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.ContextResponse;
 import com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse;
@@ -129,6 +130,13 @@ public class MeeraContextService {
      */
     public static final String AUDIENCE_NOT_AVAILABLE =
             "not available (Instagram not connected, or no audience snapshot yet)";
+
+    /**
+     * What {@code account_insights_summary} carries when there are no account numbers for this
+     * creator (Instagram not connected, or AccountInsightsJob has not fetched any yet). Never zeros.
+     */
+    public static final String ACCOUNT_INSIGHTS_NOT_AVAILABLE =
+            "not available (Instagram not connected, or no account numbers fetched yet)";
 
     private static final int AUDIENCE_TOP_AGE_BANDS = 2;
     private static final int AUDIENCE_TOP_CITIES = 3;
@@ -290,6 +298,7 @@ public class MeeraContextService {
         // Keyed off THIS creator's own resolved profile id only - the same id every other read in
         // this method uses, never a caller-supplied creator id. The BRAND path never calls this.
         String audienceSummary = buildAudienceSummary(profile.getId(), locale);
+        String accountInsightsSummary = buildAccountInsightsSummary(profile.getId(), locale);
 
         List<Collaboration> collaborations = collaborationRepository.findByCreatorId(creatorUserId);
         Map<String, Object> dealsSummary = buildDealsSummary(collaborations, locale);
@@ -338,6 +347,7 @@ public class MeeraContextService {
                 floors,
                 metricsSummary,
                 audienceSummary,
+                accountInsightsSummary,
                 dealsSummary,
                 approvalLevel,
                 represented,
@@ -399,6 +409,55 @@ public class MeeraContextService {
      * ageGender} below) degrades to the not-available summary instead of failing the whole CREATOR
      * context — logged with the creator profile id only, never any breakdown data.
      */
+    /**
+     * The creator's own account numbers for the last 28 full days, as one line Meera can quote:
+     * "Last 28 days (26 Aug 2026 to 22 Sep 2026): 12,400 accounts reached, 48,210 views, ...".
+     * Same rules as {@link #buildAudienceSummary}: only with a live Meta connection, a failed read
+     * degrades to {@link #ACCOUNT_INSIGHTS_NOT_AVAILABLE}, and a number Meta did not return is left
+     * out rather than shown as 0.
+     */
+    private String buildAccountInsightsSummary(String creatorProfileId, Locale locale) {
+        if (!hasLiveMetaConnection(creatorProfileId)) {
+            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+        }
+        CreatorAccountInsightsResponse insights;
+        try {
+            insights = analyticsService.getCreatorAccountInsightsForProfile(creatorProfileId);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "MeeraContextService: account insights read failed for creator profile {};"
+                            + " falling back to the not-available summary",
+                    creatorProfileId,
+                    e);
+            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+        }
+        if (insights == null || !insights.hasData()) {
+            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+        }
+        List<String> parts = new ArrayList<>();
+        addCount(parts, insights.reach(), "accounts reached", locale);
+        addCount(parts, insights.views(), "views", locale);
+        addCount(parts, insights.totalInteractions(), "interactions", locale);
+        addCount(parts, insights.accountsEngaged(), "accounts engaged", locale);
+        addCount(parts, insights.profileLinksTaps(), "profile-link taps", locale);
+        if (parts.isEmpty()) {
+            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+        }
+        return "Last 28 days ("
+                + Rendered.date(insights.periodStart(), locale)
+                + " to "
+                + Rendered.date(insights.periodEnd(), locale)
+                + "): "
+                + String.join(", ", parts)
+                + ".";
+    }
+
+    private static void addCount(List<String> parts, Long value, String label, Locale locale) {
+        if (value != null) {
+            parts.add(Rendered.money(BigDecimal.valueOf(value), locale) + " " + label);
+        }
+    }
+
     private String buildAudienceSummary(String creatorProfileId, Locale locale) {
         if (!hasLiveMetaConnection(creatorProfileId)) {
             return AUDIENCE_NOT_AVAILABLE;
