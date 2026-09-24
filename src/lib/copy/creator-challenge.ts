@@ -44,6 +44,11 @@ export interface ChallengeCopy {
   comparisonLastWeek: string;
   comparisonPosts: (n: number) => string;
   comparisonSame: string;
+  /** Names this figure's basis: interactions divided by REACH, averaged per settled post
+   *  (`CreatorChallengeService.averageRawEngagementRate`, line 626: `engagement / reach`) — a
+   *  DIFFERENT denominator from the metrics card's "Engagement rate (per follower)", which divides
+   *  by FOLLOWERS instead. Appended after the percentage, e.g. "4.3% engagement per reach". */
+  comparisonEngagementLabel: string;
   /** Round 2 QA item 2 — shown under a week's stats only when `settledPosts < posts` for
    *  that week: explains why the numbers above look low without implying anything is wrong. */
   settlingNote: (settledPosts: number) => string;
@@ -136,6 +141,7 @@ export function challengeCopy(language?: string): ChallengeCopy {
     comparisonLastWeek: hi ? 'पिछले हफ़्ते' : 'Last week',
     comparisonPosts: (n: number) => `${n} post${n === 1 ? '' : 's'}`,
     comparisonSame: hi ? 'बराबर' : 'Same',
+    comparisonEngagementLabel: hi ? 'engagement (reach के हिसाब से)' : 'engagement per reach',
     settlingNote: (settledPosts: number) =>
       hi
         ? `Reach और engagement सिर्फ़ ${settledPosts} settled post${settledPosts === 1 ? '' : 's'} से हैं — नई posts अभी भी views जोड़ रही हैं।`

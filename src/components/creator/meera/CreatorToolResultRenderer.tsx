@@ -284,7 +284,13 @@ const LAST_28_DAYS_FIELDS: Array<{ label: string; key: keyof AccountLast28Days }
 export function MetricsCard({ metrics, accountLast28Days, className }: MetricsCardProps) {
   const rows: Array<{ label: string; value?: string }> = [
     { label: 'Followers', value: metrics.followers },
-    { label: 'Engagement rate', value: metrics.engagement_rate },
+    // "(per follower)" names its basis: (likes + comments) per post, divided by FOLLOWERS x 100
+    // (CreatorMetric.avgEngagementRate, MetricsPollingJob.java ~line 438, T-ENGAGEMENT-DENOMINATOR
+    // -0917) — a DIFFERENT denominator from the challenge card's engagement figure, which divides
+    // by REACH instead (CreatorChallengeService.averageRawEngagementRate, line 626: engagement /
+    // reach, averaged per post). Without the basis in words the two numbers read as the same
+    // metric when they never agree by construction.
+    { label: 'Engagement rate (per follower)', value: metrics.engagement_rate },
     { label: 'Avg reach per post', value: metrics.avg_reach_per_post },
     { label: 'Quality score', value: metrics.quality_score },
     { label: 'Last verified', value: metrics.verified_at },

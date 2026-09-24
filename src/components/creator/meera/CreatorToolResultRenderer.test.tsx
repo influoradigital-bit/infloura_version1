@@ -231,6 +231,13 @@ describe('MetricsCard', () => {
     expect(screen.getByText(/Source: INSTAGRAM/)).toBeInTheDocument();
   });
 
+  it('labels the engagement figure "(per follower)" — its basis (CreatorMetric.avgEngagementRate: '
+    + '(likes + comments) / followers), different from the challenge card\'s per-reach figure', () => {
+    const metrics: MetricsResult = { connected: true, engagement_rate: '2.4%' };
+    render(<MetricsCard metrics={metrics} />);
+    expect(screen.getByText(/Engagement rate \(per follower\)/)).toBeInTheDocument();
+  });
+
   it('never renders a "Reach (30 days)" row — reach_30d is undefined by design, no 30-day total exists', () => {
     const metrics: MetricsResult = {
       connected: true,
