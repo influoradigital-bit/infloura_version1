@@ -1,10 +1,15 @@
 package com.influora.integration.meta.client;
 
 import com.influora.domain.entity.MetaAuthPath;
-import com.influora.integration.meta.dto.AudienceDemographicsResponse;
+import com.influora.integration.meta.dto.AudienceBreakdowns;
+import com.influora.integration.meta.dto.FollowerDemographicsResponse;
 import com.influora.integration.meta.dto.InstagramInsightsResponse;
 import com.influora.integration.meta.dto.InstagramMediaResponse;
 import com.influora.integration.meta.dto.InstagramUserResponse;
+import com.influora.integration.meta.exception.MetaApiException;
+import com.influora.integration.meta.exception.MetaPermissionDeniedException;
+import com.influora.integration.meta.exception.MetaRateLimitException;
+import com.influora.integration.meta.exception.MetaTokenExpiredException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -29,8 +34,15 @@ public class InstagramInsightsClient {
     // profile-action counter. See IG Account Insights reference (updated 2026-06-16).
     private static final String ACCOUNT_METRICS =
             "reach,views,total_interactions,accounts_engaged,profile_links_taps";
-    // 2026 compliance: Page Viewer Metric migration deadline June 15 (spec §1.8) — revisit before then.
-    private static final String AUDIENCE_METRICS = "audience_city,audience_country,audience_gender_age,audience_locale";
+    // Follower demographics (2026-09-24). The old audience_gender_age / audience_country /
+    // audience_city / audience_locale metrics were removed for EVERY Graph API version on
+    // 2023-12-11 (v18.0 changelog), so the weekly job never stored a single breakdown. Their
+    // replacement is follower_demographics: period=lifetime, metric_type=total_value, one
+    // breakdown per call. `timeframe` is listed for it in the IG User Insights reference;
+    // this_month is the value v20.0 kept for the demographics metrics.
+    static final String FOLLOWER_DEMOGRAPHICS_PATH =
+            "/insights?metric=follower_demographics&period=lifetime&metric_type=total_value";
+    static final String FOLLOWER_DEMOGRAPHICS_TIMEFRAME = "this_month";
 
     private final MetaGraphApiClient apiClient;
 
@@ -90,19 +102,45 @@ public class InstagramInsightsClient {
     }
 
     /**
-     * Fetches audience demographics (city, country, gender/age distribution).
-     * Required permission: {@code instagram_manage_insights}. Only available for accounts with
-     * 100+ followers — Meta returns an empty/error payload otherwise.
+     * The creator's follower demographics: age and gender, country, and city (three
+     * {@code follower_demographics} calls, one breakdown each). Required permission:
+     * {@code instagram_manage_insights}. Meta returns nothing for an account under 100 followers,
+     * which comes back here as an empty {@link AudienceBreakdowns}.
      */
-    public AudienceDemographicsResponse getAudienceDemographics(String igUserId, String accessToken) {
+    public AudienceBreakdowns getAudienceDemographics(String igUserId, String accessToken) {
         return getAudienceDemographics(igUserId, accessToken, MetaAuthPath.FACEBOOK_LOGIN);
     }
 
     /** As above, routed to the host matching the token's origin (T-IGLOGIN-0820). */
-    public AudienceDemographicsResponse getAudienceDemographics(
+    public AudienceBreakdowns getAudienceDemographics(
             String igUserId, String accessToken, MetaAuthPath authPath) {
-        String path = "/" + igUserId + "/insights?metric=" + AUDIENCE_METRICS + "&period=lifetime";
-        return apiClient.get(path, accessToken, AudienceDemographicsResponse.class, igUserId, authPath);
+        return AudienceBreakdowns.fromResponses(
+                followerDemographics(igUserId, accessToken, authPath, "age,gender"),
+                followerDemographics(igUserId, accessToken, authPath, "country"),
+                followerDemographics(igUserId, accessToken, authPath, "city"));
+    }
+
+    /**
+     * One {@code follower_demographics} breakdown. If Meta rejects the request with
+     * {@code timeframe} (the reference lists it, but it is the one parameter we have not seen a
+     * live answer for), it is asked once more without it rather than losing the week. Rate-limit,
+     * expired-token and permission errors are never retried: they would fail the same way.
+     */
+    FollowerDemographicsResponse followerDemographics(
+            String igUserId, String accessToken, MetaAuthPath authPath, String breakdown) {
+        String path = "/" + igUserId + FOLLOWER_DEMOGRAPHICS_PATH + "&breakdown=" + breakdown;
+        try {
+            return apiClient.get(
+                    path + "&timeframe=" + FOLLOWER_DEMOGRAPHICS_TIMEFRAME,
+                    accessToken,
+                    FollowerDemographicsResponse.class,
+                    igUserId,
+                    authPath);
+        } catch (MetaRateLimitException | MetaTokenExpiredException | MetaPermissionDeniedException e) {
+            throw e;
+        } catch (MetaApiException e) {
+            return apiClient.get(path, accessToken, FollowerDemographicsResponse.class, igUserId, authPath);
+        }
     }
 
     /**

@@ -15,7 +15,7 @@ interface AudienceDemographicsPanelProps {
 
 const AGE_GENDER_LABELS: Record<string, string> = {};
 
-/** "18-24_female" -> "18-24 · Female" (falls back to the raw key if it doesn't match Meta's shape). */
+/** "18-24_female" -> "18-24 · Female", the key AudienceDemographicsJob stores (falls back to the raw key). */
 function formatAgeGenderBucket(key: string): string {
   if (AGE_GENDER_LABELS[key]) return AGE_GENDER_LABELS[key];
   const match = key.match(/^([\d.+-]+)_(male|female|unknown)$/i);
@@ -24,25 +24,48 @@ function formatAgeGenderBucket(key: string): string {
   return `${age} · ${gender.charAt(0).toUpperCase()}${gender.slice(1)}`;
 }
 
-function topEntries(breakdown: Record<string, number> | null, limit: number): [string, number][] {
-  if (!breakdown) return [];
-  return Object.entries(breakdown)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit);
+/**
+ * The largest `limit` rows, plus the total of the WHOLE breakdown. Percentages are shares of all
+ * followers Meta reported, not of the rows on screen: dividing by the visible rows made the top 6
+ * cities always add up to 100% (2026-09-24).
+ */
+function topEntries(
+  breakdown: Record<string, number> | null,
+  limit: number,
+): { entries: [string, number][]; total: number } {
+  if (!breakdown) return { entries: [], total: 0 };
+  const all = Object.entries(breakdown).filter(([, count]) => count > 0);
+  return {
+    entries: [...all].sort((a, b) => b[1] - a[1]).slice(0, limit),
+    total: all.reduce((sum, [, count]) => sum + count, 0),
+  };
+}
+
+/** "IN" -> "India". Falls back to the code when the browser has no name for it. */
+function formatCountry(code: string): string {
+  try {
+    const names = new Intl.DisplayNames(['en'], { type: 'region' });
+    return names.of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
 }
 
 function BreakdownList({
   title,
   icon: Icon,
   entries,
+  total: breakdownTotal,
   formatLabel,
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
   entries: [string, number][];
+  /** Sum of the whole breakdown, not just `entries`. */
+  total: number;
   formatLabel?: (key: string) => string;
 }) {
-  const total = entries.reduce((sum, [, count]) => sum + count, 0) || 1;
+  const total = breakdownTotal || 1;
   return (
     <div>
       <p className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -143,8 +166,8 @@ export function AudienceDemographicsPanel({
               <Users className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
               <EmptyTitle>No demographics snapshot yet</EmptyTitle>
               <EmptyDescription>
-                Demographics will appear after the first weekly audience sync. Instagram only
-                shares audience data for accounts with 100 or more followers.
+                Audience details arrive a few minutes after Instagram is connected, then refresh
+                every week. Instagram only shares them for accounts with 100 or more followers.
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -156,6 +179,7 @@ export function AudienceDemographicsPanel({
   const ageGender = topEntries(data.ageGenderBreakdown, 8);
   const countries = topEntries(data.countryBreakdown, 6);
   const cities = topEntries(data.cityBreakdown, 6);
+  // Meta no longer reports follower languages; only an older snapshot can carry them.
   const locales = topEntries(data.localeBreakdown, 6);
 
   return (
@@ -174,12 +198,21 @@ export function AudienceDemographicsPanel({
         <BreakdownList
           title="Age & Gender"
           icon={Users}
-          entries={ageGender}
+          entries={ageGender.entries}
+          total={ageGender.total}
           formatLabel={formatAgeGenderBucket}
         />
-        <BreakdownList title="Top Countries" icon={Globe2} entries={countries} />
-        <BreakdownList title="Top Cities" icon={MapPin} entries={cities} />
-        <BreakdownList title="Locales" icon={Languages} entries={locales} />
+        <BreakdownList
+          title="Top Countries"
+          icon={Globe2}
+          entries={countries.entries}
+          total={countries.total}
+          formatLabel={formatCountry}
+        />
+        <BreakdownList title="Top Cities" icon={MapPin} entries={cities.entries} total={cities.total} />
+        {locales.entries.length > 0 ? (
+          <BreakdownList title="Locales" icon={Languages} entries={locales.entries} total={locales.total} />
+        ) : null}
       </CardContent>
     </Card>
   );
