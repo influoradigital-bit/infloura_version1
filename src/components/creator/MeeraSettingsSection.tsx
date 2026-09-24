@@ -171,7 +171,7 @@ export function MeeraSettingsSection() {
   // Phase A (CreatorAgentController:90) and nothing called it, so Meera could be switched on and
   // never off. Kept here, beside export and delete, because it is the same rights block.
   const [withdrawOpen, setWithdrawOpen] = React.useState(false);
-  const [withdrawing, setWithdrawing] = React.useState(false);
+  const [turningOff, setTurningOff] = React.useState(false);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -301,7 +301,7 @@ export function MeeraSettingsSection() {
   };
 
   const handleWithdrawConsent = async () => {
-    setWithdrawing(true);
+    setTurningOff(true);
     try {
       await api.creatorAgentPrefs.withdrawConsent();
       setWithdrawOpen(false);
@@ -317,7 +317,7 @@ export function MeeraSettingsSection() {
         description: err instanceof ApiError ? err.message : 'Please try again.',
         variant: 'destructive',
       });
-      setWithdrawing(false);
+      setTurningOff(false);
     }
   };
 
@@ -747,7 +747,7 @@ export function MeeraSettingsSection() {
         </div>
       </CardContent>
 
-      <AlertDialog open={withdrawOpen} onOpenChange={(open) => !withdrawing && setWithdrawOpen(open)}>
+      <AlertDialog open={withdrawOpen} onOpenChange={(open) => !turningOff && setWithdrawOpen(open)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Turn Meera off?</AlertDialogTitle>
@@ -757,9 +757,9 @@ export function MeeraSettingsSection() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={withdrawing}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleWithdrawConsent} disabled={withdrawing}>
-              {withdrawing ? 'Turning off…' : 'Turn Meera off'}
+            <AlertDialogCancel disabled={turningOff}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleWithdrawConsent} disabled={turningOff}>
+              {turningOff ? 'Turning off…' : 'Turn Meera off'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
