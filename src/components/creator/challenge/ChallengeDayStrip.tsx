@@ -53,7 +53,7 @@ export function ChallengeDayStrip({ days, copy, className }: ChallengeDayStripPr
 
         return (
           <div key={day.dayIndex} role="listitem" className="flex min-w-0 flex-col items-center gap-0.5">
-            <span className="text-[9px] font-medium text-muted-foreground">{copy.weekdayShort(day.date)}</span>
+            <span className="text-[11px] font-medium text-muted-foreground">{copy.weekdayShort(day.date)}</span>
             <div
               className={cn(
                 'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
@@ -71,7 +71,7 @@ export function ChallengeDayStrip({ days, copy, className }: ChallengeDayStripPr
               {day.status === 'CHECKING' && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
               {day.status === 'MISSED' && <Minus className="h-4 w-4" aria-hidden="true" />}
             </div>
-            <span className="w-full break-words text-center text-[8px] leading-tight text-muted-foreground">
+            <span className="w-full break-words text-center text-[11px] leading-tight text-muted-foreground">
               {caption}
             </span>
           </div>

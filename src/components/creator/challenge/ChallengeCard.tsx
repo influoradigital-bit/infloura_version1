@@ -211,7 +211,7 @@ export function ChallengeCard({ language, onAskMeera, className }: ChallengeCard
                   {timeRange ? `, ${timeRange}` : ''}
                 </p>
                 {today.windowSource === 'suggestion' && (
-                  <Badge variant="secondary" className="text-[10px] font-normal">
+                  <Badge variant="secondary" className="text-[11px] font-normal">
                     {copy.suggestedBadge}
                   </Badge>
                 )}
