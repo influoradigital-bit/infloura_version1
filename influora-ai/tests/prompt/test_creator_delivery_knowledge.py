@@ -96,7 +96,7 @@ def test_persona_routes_delivery_questions_to_the_guardrails():
 def test_outdoor_light_gaps_are_covered_and_reach_the_frame_check():
     scenarios = {r["scenario"] for r in _rows("lighting_rule")}
     for s in (
-        "Harsh midday sun (roughly 11am to 3pm)",
+        "Harsh midday sun (sun high, your shadow short and right under you)",
         "Golden hour (about the first hour after sunrise and the last hour before sunset)",
         "Cloudy or overcast day",
         "Shade under trees",

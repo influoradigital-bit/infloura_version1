@@ -99,8 +99,10 @@ def test_committed_knowledge_file_loads_every_row_by_type():
     # delivery rows (its other 142 rows are dataset_5 again). Go-live fixes 2026-09-24: 8 rows that
     # repeated an idea already here in other words were kept once (content mix, repurposing,
     # funnel metrics, the combined short-form platform row, 4 Hinglish hooks that have English
-    # versions) -> 232.
-    assert len(rows) == 232
+    # versions) -> 232. Plus v7: 75 lighting and positioning rows (50 from dataset_7 -- its duplicate
+    # Silhouette portrait pattern dropped, the lighting_look keeps it -- + 25 authored from the
+    # creator lighting guide) -> 307.
+    assert len(rows) == 307
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
@@ -131,6 +133,20 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "delivery_rule": 12,
         "delivery_guardrails": 1,
         "delivery_example": 12,
+        "lighting_workflow": 1,
+        "lighting_angle_rule": 7,
+        "window_lighting_rule": 7,
+        "indian_home_lighting_rule": 6,
+        "camera_height_rule": 5,
+        "background_repair_rule": 6,
+        "portrait_lighting_pattern": 5,
+        "indian_creator_scene_checklist": 8,
+        "coordinate_system_note": 1,
+        "physics_principle": 4,
+        "lighting_fix_order": 9,
+        "lighting_look": 6,
+        "mixed_light_rule": 5,
+        "sunset_to_night_step": 5,
     }
 
 
@@ -274,6 +290,23 @@ def test_loader_rejects_a_malformed_row(tmp_path, mutate, message):
         load_knowledge(_write(tmp_path, [_good_row() | {"name": "Other"}, bad]))
 
 
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        ({"limits": 123}, "'limits' must be a string"),
+        ({"refs": ["a"]}, "'refs' must be a list of source numbers"),
+        ({"refs": [True]}, "'refs' must be a list of source numbers"),
+        ({"refs": 5}, "'refs' must be a list of source numbers"),
+    ],
+)
+def test_loader_rejects_a_bad_limits_or_refs(tmp_path, extra, message):
+    # v7's optional fields: `limits` is rendered as text, `refs` are the guide's [n] numbers.
+    # A bool is an int in Python, so [True] must be rejected explicitly.
+    with pytest.raises(KnowledgeFileError, match=message):
+        load_knowledge(_write(tmp_path, [_good_row() | extra]))
+    assert len(load_knowledge(_write(tmp_path, [_good_row() | {"limits": "ok", "refs": [1, 2]}]))) == 1
+
+
 def test_loader_rejects_bad_json_empty_file_and_bad_steps(tmp_path):
     with pytest.raises(KnowledgeFileError, match="invalid JSON"):
         load_knowledge(_write(tmp_path, ["{not json"]))
@@ -336,6 +369,20 @@ def test_every_row_reaches_the_knowledge_text():
             "delivery_rule": "rule",
             "delivery_guardrails": "name",
             "delivery_example": "said",
+            "lighting_workflow": "principle",
+            "lighting_angle_rule": "key_angle_from_face",
+            "window_lighting_rule": "window_position",
+            "indian_home_lighting_rule": "source_type",
+            "camera_height_rule": "camera_position",
+            "background_repair_rule": "problem",
+            "portrait_lighting_pattern": "pattern",
+            "indian_creator_scene_checklist": "setting",
+            "coordinate_system_note": "principle",
+            "physics_principle": "principle",
+            "lighting_fix_order": "situation",
+            "lighting_look": "look",
+            "mixed_light_rule": "mix",
+            "sunset_to_night_step": "stage",
         }[r["data_type"]]
         assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
 

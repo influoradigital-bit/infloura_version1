@@ -76,7 +76,35 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.11"
+PROMPT_VERSION = "meera-2026.09.24.12"
+# ^ .12 = the go-live line's .11 merged with knowledge v7 (lighting and positioning). The
+# v7 work was numbered .5 on its branch; it lands after .11 on release/0924, so it takes .12
+# rather than going backwards. v7 as written on its branch:
+# ^ bumped for knowledge v7 (dataset 7 + the creator lighting and positioning guide,
+# 2026-09-24): 75 lighting and positioning rows (key-light angles from the face, window
+# light, Indian home lights, phone height, background repair, portrait patterns, the Indian
+# scene checklist, left/right and physics notes, plus the guide's fix order, looks by
+# category, mixed light colours and sunset-to-night steps), rendered as "Placing the
+# creator, the phone and the light" at the end of the shooting section, so the creator
+# knowledge block and the frame check both carry it. The creator persona and the frame
+# check now give instructions in one order -- creator, phone, light, then settings -- and
+# say left/right from the creator's view as they face the phone; a look is picked by the
+# creator's category and is a convention, not a promise. The midday lighting row is
+# corrected to a shadow cue. Review fixes in the same version: older shooting rows that
+# contradicted the placement order or the distance-not-lens rule are reworded (move first,
+# then the telephoto; 1x by default for walking vlogs; one face light, never the ceiling
+# alone), the duplicate Silhouette portrait pattern is dropped, a look's category fit is
+# labelled Influora's suggestion, and the shooting heading no longer points at Phone notes
+# the frame check does not carry. v7 is the last always-sent knowledge addition: the block
+# must stay under 125,000 characters and 320 rows, and anything more needs the lookup
+# design first (delivery_example, narrative_principle, camera_angle behind a lookup tool;
+# the placement section stays always-sent). Round-3 review: night street/neon rows now 25fps
+# at 1/50 (24fps/1/48 banded under 50Hz light), left/right is "always" the creator's own, the
+# ceiling-light fallback adds a bounce, and caveats a heading carries are no longer repeated per
+# row. The frame-check prompt is capped at 40,000 characters. Ruling and deferrals:
+# wiki/decisions/2026-09-24-creator-knowledge-budget.md. BRAND prompt unchanged.
+#
+# Previously (.11):
 # ^ go-live fixes on release/0924 (Swapnil 2026-09-24), from the live phone screenshots and Ash's
 # review of the parallel launch merge: ONE script format (the rich Full script format, shown as a
 # card; the old Phase C SCRIPT shape is gone, the REVIEW card shape stays), no markdown in it, a
