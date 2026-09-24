@@ -83,15 +83,18 @@ def test_keep_it_short_names_the_week_plan_as_well_as_the_script():
 def test_the_two_comment_hooks_are_marked_and_no_other_hook_is():
     marked = [line for line in CREATOR_KNOWLEDGE_TEXT.splitlines() if "[CTA RULE:" in line]
     assert len(marked) == 2, marked
-    # The hot-take hook is launch's English version since the 2026-09-24 merge; "What's your
-    # opinion?" is the same comment ask and is marked by wording like the Hinglish one was.
-    assert any(line.startswith("- Hot take:") for line in marked)
+    # The hot-take hook is the reworded English "Unpopular opinion ... What's your take?"
+    # since the 2026-09-24 merge review; it is marked by wording like the Hinglish one was.
+    assert any(line.startswith("- Unpopular opinion:") for line in marked)
     assert any("Comment mein '[word]' likho" in line for line in marked)
     assert not has_hook_cta("Yeh share nahi karna tha, par ab chup rehna mushkil hai: [fact].")
 
 
 def test_the_cta_rule_reaches_the_model_with_the_script_rule_that_explains_it():
-    assert "the comment ask moves to the last beat as the one call to action, or to the caption" in WIRED
+    # M4 (Ash, 2026-09-24): the comment ask goes to the caption; the goal's CTA keeps the last beat.
+    assert "the comment ask moves to the caption as the conversation question" in WIRED
+    assert "the last beat keeps the goal's one call to action" in WIRED
+    assert "moves to the last beat as the one call to action" not in WIRED
     assert "never promise the creator will DM anyone unless they said they will" in WIRED
     assert (
         "A hook template the knowledge block marks CTA RULE opens the video with its first part"

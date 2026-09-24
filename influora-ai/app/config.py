@@ -79,9 +79,9 @@ CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
 PROMPT_VERSION = "meera-2026.09.24.10"
 # ^ bumped when merging feature/creator-content-knowledge into launch (2026-09-24). Both lines
 # had moved on separately and BOTH used meera-2026.09.24.1 for different prompts, so the merged
-# prompt (launch: account insights, Phase C script/review cards; content-knowledge: knowledge
+# prompt (launch: account insights, the Phase C review card; content-knowledge: knowledge
 # v3/v4, script format, daily topics, week plan, frame check, audit lane B) takes .10, a number
-# neither line has used, leaving .2-.9 free for work still landing on the content-knowledge
+# neither line has used, leaving .3-.9 free for work still landing on the content-knowledge
 # branch. A version must name exactly one prompt text (cache_key_for starts with it).
 #
 # Launch-side history:

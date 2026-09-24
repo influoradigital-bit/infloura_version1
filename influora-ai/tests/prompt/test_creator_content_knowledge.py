@@ -193,8 +193,12 @@ def test_rows_70_to_75_carry_the_adapted_pattern_source_and_keep_the_original():
     # Selected by attribution, not file position (the 2026-09-24 merge reordered the file and kept
     # launch's English versions of four of these hooks, which say derived_pattern).
     adapted = [r for r in rows if r.get("source") == ADAPTED_SOURCE]
-    assert adapted
+    # The three English hooks that came in from launch were reworded and re-attributed in the
+    # merge review (Ash, 2026-09-24): comment_bait, myth_reveal + those three = 5.
+    assert len(adapted) == 5, [r["template"] for r in adapted]
     for r in adapted:
+        original = r["further_reading"].split('"')[1]
+        assert r["template"] != original, "a guide's original wording reached the prompt"
         assert r["data_type"] == "hook_template", r["template"]
         assert r["further_reading"].startswith("Pattern inspired by: "), r["template"]
     # The unconfirmed guides survive only as inspiration, never as a source,
@@ -499,13 +503,16 @@ def test_persona_states_the_playbook_and_brand_deal_rules():
 def test_persona_states_the_ask_first_rule():
     text = _flat(MEERA_CREATOR_PERSONA)
     assert "Ask first, only what's unknown." in text
-    # One goal question first, capped at three, one per message.
-    assert "ask ONE short question first" in text
-    assert "Ask at most three questions in total" in text
-    assert "one per message" in text
-    # Never re-ask what the context or conversation already holds.
-    assert "Never ask for anything already in your context" in text
-    assert "already answered in this conversation" in text
+    # ONE intake rule (Ash, merge review 2026-09-24): the ask-first bullet defers to the content
+    # idea intake, which asks at most 3 questions in ONE message. The old "one per message"
+    # rule contradicted it and must not come back.
+    assert "Otherwise ask as the content idea intake below says." in text
+    assert "first ask at most 3 short questions in ONE message" in text
+    assert "one per message" not in text
+    assert "ask ONE short question first" not in text
+    # Never re-ask what the context or the message already holds.
+    assert "Never ask what the context already holds." in text
+    assert "Skip questions they already answered." in text
     # A specific request is served first; questions never block help.
     assert "never make them answer questions before they get help" in text
 

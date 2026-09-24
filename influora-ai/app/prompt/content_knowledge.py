@@ -121,10 +121,10 @@ def has_statistic_slot(template: str) -> bool:
 
 # Call-to-action rule (audit 2026-09-24, lane B3). The full script allows ONE
 # call to action, in the last beat only, while two hook templates end their
-# opening line with a comment ask ("Aap kis side ho -- comment mein batao",
+# opening line with a comment ask ("What's your take?",
 # "Comment mein '[word]' likho -- seedha DM mein milega"). Such a template is
 # marked CTA RULE: in a script its opening keeps the first part and the comment
-# ask moves to the last beat or the caption. Detected by wording, not by a list
+# ask moves to the caption; the last beat keeps the goal's one call to action. Detected by wording, not by a list
 # of template strings, so a future template is caught without anyone listing it.
 _HOOK_CTA_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bcomments?\b", re.IGNORECASE),
@@ -269,7 +269,7 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
         steps = " -> ".join(s.strip() for s in r["steps"])
         out.append(f"- {r['framework']}: {steps}. For video: {r['video_application']}")
 
-    out += ["", "Hook templates (fill the [slots]; the Hinglish wording is the template):"]
+    out += ["", "Hook templates (fill the [slots]; write the hook in the reply language: a Hinglish and an English template of the same type are the same hook, so translate as needed):"]
     for r in _by_type(rows, "hook_template"):
         line = f"- {r['template']} (type: {r['category']}; works on: {r['persuasion_principle']}; goal: {r['goal_fit']})"
         if has_statistic_slot(r["template"]):
@@ -281,9 +281,9 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
         if has_hook_cta(r["template"]):
             line += (
                 " [CTA RULE: in a script, say only the part before the comment ask in the"
-                " opening; the comment ask moves to the last beat as the one call to action,"
-                " or to the caption; never promise the creator will DM anyone unless they"
-                " said they will]"
+                " opening; the comment ask moves to the caption as the conversation question,"
+                " and the last beat keeps the goal's one call to action; never promise the"
+                " creator will DM anyone unless they said they will]"
             )
         out.append(line)
 
