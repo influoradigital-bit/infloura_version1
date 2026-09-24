@@ -429,14 +429,12 @@ public class MeeraContextService {
         if (ageGender != null) {
             for (Map.Entry<String, ?> entry : ageGender.entrySet()) {
                 long count = countOf(entry.getValue());
-                String key = entry.getKey();
-                int dot = key == null ? -1 : key.indexOf('.');
-                // Meta's audience_gender_age keys are "F.25-34" / "M.18-24" / "U.35-44".
-                if (count <= 0 || dot <= 0 || dot == key.length() - 1) {
+                String[] genderAndAge = splitAgeGenderKey(entry.getKey());
+                if (count <= 0 || genderAndAge == null) {
                     continue;
                 }
-                genderTotals.merge(key.substring(0, dot), count, Long::sum);
-                ageTotals.merge(key.substring(dot + 1), count, Long::sum);
+                genderTotals.merge(genderAndAge[0], count, Long::sum);
+                ageTotals.merge(genderAndAge[1], count, Long::sum);
                 ageGenderTotal += count;
             }
         }
@@ -530,6 +528,33 @@ public class MeeraContextService {
                                 .thenComparing(Map.Entry.comparingByKey()))
                 .limit(limit)
                 .toList();
+    }
+
+    /**
+     * {gender code, age band} for one age/gender key, or null. AudienceDemographicsJob stores
+     * {@code "18-24_female"} (from {@code follower_demographics}, 2026-09-24), the form every screen
+     * reads; Meta's removed {@code audience_gender_age} metric used {@code "F.18-24"}, still accepted
+     * here so an older row reads the same.
+     */
+    static String[] splitAgeGenderKey(String key) {
+        if (key == null) {
+            return null;
+        }
+        int underscore = key.lastIndexOf('_');
+        if (underscore > 0 && underscore < key.length() - 1) {
+            String gender =
+                    switch (key.substring(underscore + 1).toLowerCase(Locale.ROOT)) {
+                        case "female" -> "F";
+                        case "male" -> "M";
+                        default -> "U";
+                    };
+            return new String[] {gender, key.substring(0, underscore)};
+        }
+        int dot = key.indexOf('.');
+        if (dot > 0 && dot < key.length() - 1) {
+            return new String[] {key.substring(0, dot), key.substring(dot + 1)};
+        }
+        return null;
     }
 
     private static String genderLabel(String metaCode) {

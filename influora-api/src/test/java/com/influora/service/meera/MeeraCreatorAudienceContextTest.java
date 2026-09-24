@@ -160,6 +160,37 @@ class MeeraCreatorAudienceContextTest {
                 .thenReturn(Optional.of(liveToken));
     }
 
+    /** The same audience as {@link #snapshot()}, keyed the way AudienceDemographicsJob stores it
+     * since the move to follower_demographics (2026-09-24): "18-24_female", not "F.18-24". */
+    @SuppressWarnings("unchecked")
+    private static CreatorDemographicsResponse followerDemographicsSnapshot() {
+        CreatorDemographicsResponse legacy = snapshot();
+        Map<String, Object> ageGender = new LinkedHashMap<>();
+        ageGender.put("18-24_female", 410);
+        ageGender.put("18-24_male", 200);
+        ageGender.put("25-34_female", 170);
+        ageGender.put("25-34_male", 160);
+        ageGender.put("35-44_unknown", 60);
+        return new CreatorDemographicsResponse(
+                true,
+                (Map<String, Long>) (Map<?, ?>) ageGender,
+                legacy.countryBreakdown(),
+                legacy.cityBreakdown(),
+                null,
+                legacy.fetchedAt());
+    }
+
+    @Test
+    @DisplayName("keys stored from follower_demographics (\"18-24_female\") give Meera the same audience summary")
+    void followerDemographicsKeysGiveTheSameSummary() throws Exception {
+        stubCreator();
+        when(analyticsService.getCreatorDemographicsForProfile(PROFILE_ID)).thenReturn(followerDemographicsSnapshot());
+
+        CreatorContextResponse context = (CreatorContextResponse) service.assemble(CREATOR_USER_ID, "CREATOR");
+
+        assertThat(context.audienceSummary()).isEqualTo(EXPECTED_SUMMARY);
+    }
+
     @Test
     @DisplayName("CREATOR context with a demographics snapshot carries the compact audience summary, read for this creator's own profile only")
     void creatorWithSnapshotGetsAudienceSummary() throws Exception {
