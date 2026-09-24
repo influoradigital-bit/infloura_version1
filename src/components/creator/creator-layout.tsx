@@ -411,7 +411,7 @@ export function CreatorLayout({ children }: CreatorLayoutProps) {
               which the deal room's `h-[calc(100vh-var(--app-header-h))]` also reads.
               Visually identical to the previous `h-14`; the point is that the two
               can no longer disagree. */}
-          <header className="sticky top-0 z-40 flex h-[var(--app-header-h)] items-center justify-between border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-4 sm:px-6">
+          <header className="sticky top-0 z-40 flex h-[var(--app-header-h)] items-center justify-between border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/90 px-4 sm:px-6">
             {/* Mobile: hamburger + logo */}
             <div className="flex items-center gap-3 lg:hidden">
               {/* F-0167 — this button had no accessible name (no aria-label, no text child,

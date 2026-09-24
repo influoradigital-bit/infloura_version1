@@ -5,6 +5,7 @@ import { Send, Mic, MicOff, Volume2, VolumeX, X, Loader2, AudioLines, Lock } fro
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
+import { renderMeeraText } from '@/lib/meera-text';
 import {
   CREATOR_HISTORY_MAX_CHARS,
   CREATOR_HISTORY_MAX_TURNS,
@@ -829,13 +830,25 @@ export function MeeraCopilotChat({
   };
 
   const voiceStatus: MeeraVoiceStatus = isListening ? 'listening' : isSpeaking ? 'speaking' : sending ? 'thinking' : 'idle';
+  // Full screen on a phone: stop the page behind the chat from scrolling while it is open.
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia?.('(max-width: 639px)').matches) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   const lastMeeraReply = [...messages].reverse().find((m) => m.role === 'meera' && m.text.trim() !== '')?.text;
 
-  // Live check at 375px: the fixed 32rem panel left the message area 203px tall, so the desk sat
-  // below the fold behind a wrapped header. On a phone the panel takes most of the screen
-  // instead; from `sm` up it keeps its original size.
+  // Phones (live screenshots, 2026-09-24): as a 512px box inside a page that also scrolls, the
+  // message area was about 300px — three short bubbles — and a script had to be read by
+  // scrolling inside a scroll. Below `sm` the chat now opens full screen like a messaging app
+  // (100dvh, above the app header, page scroll locked behind it); the close button returns to
+  // the page. From `sm` up it keeps its original in-page size.
   return (
-    <div className="flex h-[min(78vh,32rem)] flex-col rounded-xl border border-border bg-card shadow-sm sm:h-[32rem] sm:max-h-[75vh]">
+    <div className="fixed inset-0 z-50 flex h-[100dvh] flex-col bg-card sm:static sm:z-auto sm:h-[32rem] sm:max-h-[75vh] sm:rounded-xl sm:border sm:border-border sm:shadow-sm">
       {/* MEERA-CHAT-DESIGN-SPEC.md Part 0.1 — header on the 30% band (--meera-stage), white text. */}
       <div className="flex shrink-0 items-center justify-between bg-[var(--meera-stage)] px-4 py-3 text-white">
         <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -919,7 +932,7 @@ export function MeeraCopilotChat({
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-4">
         {connecting && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -991,7 +1004,9 @@ export function MeeraCopilotChat({
                         : 'border border-border bg-white text-foreground',
                     )}
                   >
-                    {m.text}
+                    {/* Meera's light markdown (**bold**, --- dividers) shown cleanly, never as
+                        raw asterisks; the creator's own words are shown exactly as typed. */}
+                    {m.role === 'meera' ? renderMeeraText(m.text) : m.text}
                   </div>
                 </div>
               )

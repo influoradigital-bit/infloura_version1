@@ -48,6 +48,7 @@
  *   - anything appears before `Idea:`, or after the last recognised line (the optional follow-up
  *     question, when present)
  */
+import { stripMeeraMarkdown } from './meera-text';
 
 // ---------------------------------------------------------------------------
 // Shared line handling
@@ -96,7 +97,9 @@ export interface ParsedMeeraReview {
  * should refuse on (via the sequential key checks below), not silently swallow.
  */
 function splitLines(raw: string): string[] {
-  const normalized = raw.replace(/\r\n/g, '\n');
+  // `stripMeeraMarkdown` also normalises CRLF, drops `---` divider lines and unwraps `**bold**`,
+  // so "**Caption:** ..." parses like "Caption: ..." (the model sometimes adds markdown).
+  const normalized = stripMeeraMarkdown(raw);
   const rawLines = normalized.split('\n');
   let start = 0;
   let end = rawLines.length;
