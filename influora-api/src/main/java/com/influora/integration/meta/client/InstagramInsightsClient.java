@@ -1,6 +1,7 @@
 package com.influora.integration.meta.client;
 
 import com.influora.domain.entity.MetaAuthPath;
+import com.influora.integration.meta.dto.AccountInsightsResponse;
 import com.influora.integration.meta.dto.AudienceBreakdowns;
 import com.influora.integration.meta.dto.FollowerDemographicsResponse;
 import com.influora.integration.meta.dto.InstagramInsightsResponse;
@@ -166,20 +167,21 @@ public class InstagramInsightsClient {
     }
 
     /**
-     * Fetches account-level insights over a date range.
+     * Fetches account-level insights over a date range: one {@code total_value} per metric (see
+     * {@link AccountInsightsResponse}).
      * Required permission: {@code instagram_manage_insights}.
      *
      * @param sinceEpochSeconds range start (Unix timestamp)
      * @param untilEpochSeconds range end (Unix timestamp) — Meta caps the range at 30 days
      */
-    public InstagramInsightsResponse getAccountInsights(
+    public AccountInsightsResponse getAccountInsights(
             String igUserId, String accessToken, long sinceEpochSeconds, long untilEpochSeconds) {
         return getAccountInsights(
                 igUserId, accessToken, sinceEpochSeconds, untilEpochSeconds, MetaAuthPath.FACEBOOK_LOGIN);
     }
 
     /** As above, routed to the host matching the token's origin (T-IGLOGIN-0820). */
-    public InstagramInsightsResponse getAccountInsights(
+    public AccountInsightsResponse getAccountInsights(
             String igUserId,
             String accessToken,
             long sinceEpochSeconds,
@@ -193,6 +195,6 @@ public class InstagramInsightsClient {
                         + sinceEpochSeconds
                         + "&until="
                         + untilEpochSeconds;
-        return apiClient.get(path, accessToken, InstagramInsightsResponse.class, igUserId, authPath);
+        return apiClient.get(path, accessToken, AccountInsightsResponse.class, igUserId, authPath);
     }
 }

@@ -7,10 +7,13 @@ import com.influora.domain.entity.MediaMetric;
 import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.service.CreatorAgentPreferencesService;
+import com.influora.service.analytics.AnalyticsService;
 import com.influora.service.scoring.CreatorTiers;
-import com.influora.service.scoring.QualityScoreService;
 import com.influora.service.scoring.QualityScoreService.QualityScoreResult;
+import com.influora.service.scoring.QualityScoreService;
+import com.influora.web.dto.analytics.AnalyticsDtos.CreatorAccountInsightsResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
+import com.influora.web.dto.meera.CreatorToolDtos.AccountLast28Days;
 import com.influora.web.dto.meera.CreatorToolDtos.GetMyMetricsResult;
 import com.influora.web.dto.meera.CreatorToolDtos.MetricsResult;
 import java.math.BigDecimal;
@@ -52,16 +55,19 @@ public class GetMyMetricsExecutor {
     private final CreatorMetricsRepository creatorMetricsRepository;
     private final MediaMetricsRepository mediaMetricsRepository;
     private final QualityScoreService qualityScoreService;
+    private final AnalyticsService analyticsService;
 
     public GetMyMetricsExecutor(
             CreatorAgentPreferencesService preferencesService,
             CreatorMetricsRepository creatorMetricsRepository,
             MediaMetricsRepository mediaMetricsRepository,
-            QualityScoreService qualityScoreService) {
+            QualityScoreService qualityScoreService,
+            AnalyticsService analyticsService) {
         this.preferencesService = preferencesService;
         this.creatorMetricsRepository = creatorMetricsRepository;
         this.mediaMetricsRepository = mediaMetricsRepository;
         this.qualityScoreService = qualityScoreService;
+        this.analyticsService = analyticsService;
     }
 
     /**
@@ -97,7 +103,8 @@ public class GetMyMetricsExecutor {
             // and claiming one would be the fabrication this branch exists to prevent.
             String dataSource = profile.getTotalFollowers() > 0 ? SELF_REPORTED : null;
             return new GetMyMetricsResult(
-                    new MetricsResult(false, null, null, null, null, null, dataSource, tier, null));
+                    new MetricsResult(false, null, null, null, null, null, dataSource, tier, null),
+                    accountLast28Days(profile.getId(), locale));
         }
 
         CreatorMetric metric = latestMetric.get();
@@ -129,7 +136,33 @@ public class GetMyMetricsExecutor {
                         tier,
                         // absent() when there was nothing to score — null, never a fabricated 0 or a
                         // neutral 50 (F-0260's ruling, see QualityScoreResult#absent).
-                        Rendered.money(quality.overall(), locale)));
+                        Rendered.money(quality.overall(), locale)),
+                accountLast28Days(profile.getId(), locale));
+    }
+
+    /**
+     * Account insights (2026-09-24): the same newest snapshot the Analytics page and Meera's
+     * context line read, formatted the way every number in this payload is. This is the real
+     * 28-day total reach_30d above has to stay null for (no per-post average is ever passed off
+     * as a period total).
+     */
+    private AccountLast28Days accountLast28Days(String creatorProfileId, Locale locale) {
+        CreatorAccountInsightsResponse insights = analyticsService.getCreatorAccountInsightsForProfile(creatorProfileId);
+        if (insights == null || !insights.hasData()) {
+            return AccountLast28Days.notAvailable();
+        }
+        return new AccountLast28Days(
+                true,
+                Rendered.date(insights.periodStart(), locale) + " to " + Rendered.date(insights.periodEnd(), locale),
+                count(insights.reach(), locale),
+                count(insights.views(), locale),
+                count(insights.totalInteractions(), locale),
+                count(insights.accountsEngaged(), locale),
+                count(insights.profileLinksTaps(), locale));
+    }
+
+    private static String count(Long value, Locale locale) {
+        return value == null ? null : Rendered.money(BigDecimal.valueOf(value), locale);
     }
 
     /**

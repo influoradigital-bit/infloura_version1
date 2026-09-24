@@ -13,6 +13,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.influora.integration.meta.dto.AccountInsightsResponse;
 import com.influora.integration.meta.dto.AudienceBreakdowns;
 import com.influora.integration.meta.dto.FollowerDemographicsResponse;
 import com.influora.integration.meta.dto.InstagramInsightsResponse;
@@ -148,16 +149,16 @@ class InstagramInsightsClientTest {
     @Test
     @DisplayName("getAccountInsights: includes date range parameters")
     void testGetAccountInsightsIncludesDateRange() {
-        InstagramInsightsResponse mockResponse = new InstagramInsightsResponse(null);
+        AccountInsightsResponse mockResponse = new AccountInsightsResponse(null);
         long sinceEpoch = 1704067200L; // 2024-01-01
         long untilEpoch = 1706745600L; // 2024-02-01
 
-        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
+        when(apiClient.get(any(String.class), eq(ACCESS_TOKEN), eq(AccountInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN)))
                 .thenReturn(mockResponse);
 
         client.getAccountInsights(IG_USER_ID, ACCESS_TOKEN, sinceEpoch, untilEpoch);
 
-        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(InstagramInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
+        verify(apiClient).get(pathCaptor.capture(), eq(ACCESS_TOKEN), eq(AccountInsightsResponse.class), eq(IG_USER_ID), eq(MetaAuthPath.FACEBOOK_LOGIN));
         String path = pathCaptor.getValue();
 
         assertTrue(path.contains("/" + IG_USER_ID + "/insights"));

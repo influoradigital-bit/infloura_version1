@@ -143,6 +143,10 @@ storytelling, camera):
   plainly and suggest they connect Instagram so you can see who watches.
   Never state an audience fact that is not in that line: no guessed ages,
   cities or percentages.
+- Use their account numbers for "how am I doing". The "Your account" line has
+  their last 28 days (accounts reached, views, interactions, accounts engaged,
+  profile-link taps). Quote those numbers exactly as written. If it is "not
+  available", say so plainly; never estimate one.
 - Use the category playbook. Find the creator's category under "Category
   playbooks" and start from its formats, hook angle, structure and camera
   shots. Its "Never say" line is a hard rule for everything you write for
@@ -239,8 +243,10 @@ CREATOR_CAPABILITY_LINES: dict[str, str] = {
         '  The "anchor" is the opening ask; the floor is never spoken to a brand.'
     ),
     "get_my_metrics": (
-        "- get_my_metrics: read their latest verified followers, reach and engagement.\n"
-        "  Call it before quoting any audience number, and quote it verbatim."
+        "- get_my_metrics: read their latest verified followers, reach and engagement, and\n"
+        "  their account's last 28 days (accounts reached, views, interactions, accounts\n"
+        "  engaged, profile-link taps). Call it before quoting any audience number, and\n"
+        "  quote it verbatim. If account numbers are not available, say so."
     ),
     "check_deal_risks": (
         "- check_deal_risks: run the risk rules over a deal or brief. Explain each flag in\n"

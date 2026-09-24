@@ -5139,6 +5139,37 @@ export const analytics = {
 // Creator self analytics (CreatorAnalyticsController @ /creator/analytics/me)
 // ---------------------------------------------------------------------------
 
+/**
+ * `AnalyticsDtos.CreatorAccountInsightsResponse` — GET /creator/analytics/me/account-insights.
+ * The creator's account over `periodStart..periodEnd` (the last 28 full days, IST dates). Every
+ * number is `null` when Instagram did not report it (never 0); `hasData: false` means nothing has
+ * been fetched yet. Pinned field-for-field by `AccountInsightsContractSeamTest` on the Java side.
+ */
+export interface CreatorAccountInsights {
+  hasData: boolean;
+  periodStart: string | null;
+  periodEnd: string | null;
+  reach: number | null;
+  views: number | null;
+  totalInteractions: number | null;
+  accountsEngaged: number | null;
+  profileLinksTaps: number | null;
+  fetchedAt: string | null;
+}
+
+/** Demo-mode numbers only (the "Demo data" badge is on screen whenever these are used). */
+const mockAccountInsights: CreatorAccountInsights = {
+  hasData: true,
+  periodStart: '2026-08-27',
+  periodEnd: '2026-09-23',
+  reach: 12400,
+  views: 48210,
+  totalInteractions: 1930,
+  accountsEngaged: 822,
+  profileLinksTaps: 64,
+  fetchedAt: '2026-09-24T00:00:00Z',
+};
+
 export const creatorAnalytics = {
   /** GET /creator/analytics/me/metrics?startDate=&endDate= (CreatorAnalyticsController.java:35) */
   getMyMetrics: (startDate?: string, endDate?: string) =>
@@ -5159,6 +5190,15 @@ export const creatorAnalytics = {
     isLive()
       ? http.request<CreatorDemographics>('GET', '/creator/analytics/me/demographics', { role: 'creator' })
       : mockOr<CreatorDemographics>(mockDemographics),
+
+  /**
+   * GET /creator/analytics/me/account-insights — the creator's own account numbers over the last
+   * 28 full days (CreatorAnalyticsController, 2026-09-24). `hasData: false` until the first fetch.
+   */
+  getMyAccountInsights: (): Promise<CreatorAccountInsights> =>
+    isLive()
+      ? http.request<CreatorAccountInsights>('GET', '/creator/analytics/me/account-insights', { role: 'creator' })
+      : mockOr<CreatorAccountInsights>(mockAccountInsights),
 
   /**
    * GET /creator/analytics/me/media — the authenticated creator's own per-post content

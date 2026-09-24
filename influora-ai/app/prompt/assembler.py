@@ -122,6 +122,9 @@ _FORBIDDEN_BRAND_FIELDS = {
     # summary (age bands, gender split, top cities). Hers to use for content;
     # brand Meera keeps its "don't state demographics you can't verify" rule.
     "audience_summary",
+    # Account insights (2026-09-24): the creator's own last-28-day reach,
+    # views and interactions. Hers; never a brand's.
+    "account_insights_summary",
 }
 
 # Canonical snake_case field set for POST /internal/meera/context's response
@@ -142,6 +145,11 @@ _FORBIDDEN_BRAND_FIELDS = {
 # the next widening cannot land without a matching line here AND a render
 # line in `build_block_b_creator` (which its sibling test asserts).
 CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
+    # Account insights (2026-09-24): a TEXT line with this creator's OWN
+    # account numbers for the last 28 full days (accounts reached, views,
+    # interactions, accounts engaged, profile-link taps), rendered by Java.
+    # With none fetched Spring sends an explicit "not available (...)" string.
+    "account_insights_summary",
     # Gate fix round 3 (Priya): the NAME of the agency behind `represented`.
     # Nullable free text from Spring (`CreatorContextResponse.agency_name`);
     # rendered only when `represented` is true, neutralized like every other
@@ -218,6 +226,12 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
 # as Java's `MeeraContextService.AUDIENCE_NOT_AVAILABLE`, so the persona's
 # "not available" rule fires either way.
 AUDIENCE_NOT_AVAILABLE_TEXT = "not available (Instagram not connected, or no audience snapshot yet)"
+
+# Same, for `account_insights_summary`: Java's
+# `MeeraContextService.ACCOUNT_INSIGHTS_NOT_AVAILABLE`, word for word.
+ACCOUNT_INSIGHTS_NOT_AVAILABLE_TEXT = (
+    "not available (Instagram not connected, or no account numbers fetched yet)"
+)
 
 # Fields that pass the allow-list (so the drift test against Java stays exact)
 # but are consumed by OTHER readers and must never be rendered into Block B.
@@ -703,6 +717,12 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
     lines.append(
         "- Your audience (from Instagram): "
         + _creator_str(ctx, "audience_summary", AUDIENCE_NOT_AVAILABLE_TEXT)
+    )
+    # Account insights (2026-09-24): her account's own numbers for the last
+    # 28 full days. Always a line, stated as not available when missing.
+    lines.append(
+        "- Your account (from Instagram): "
+        + _creator_str(ctx, "account_insights_summary", ACCOUNT_INSIGHTS_NOT_AVAILABLE_TEXT)
     )
 
     deals = ctx.get("deals_summary")

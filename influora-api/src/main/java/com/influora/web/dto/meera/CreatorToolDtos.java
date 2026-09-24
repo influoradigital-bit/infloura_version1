@@ -105,8 +105,34 @@ public final class CreatorToolDtos {
             @JsonProperty("tier") String tier,
             @JsonProperty("quality_score") String qualityScore) {}
 
+    /**
+     * The creator's account numbers over the last 28 full days (2026-09-24), pre-formatted like
+     * every other creator tool number. {@code available=false} with every figure null when
+     * nothing has been fetched yet; a single figure Meta did not return is null, never "0".
+     */
+    public record AccountLast28Days(
+            @JsonProperty("available") boolean available,
+            @JsonProperty("period") String period,
+            @JsonProperty("accounts_reached") String accountsReached,
+            @JsonProperty("views") String views,
+            @JsonProperty("interactions") String interactions,
+            @JsonProperty("accounts_engaged") String accountsEngaged,
+            @JsonProperty("profile_link_taps") String profileLinkTaps) {
+
+        public static AccountLast28Days notAvailable() {
+            return new AccountLast28Days(false, null, null, null, null, null, null);
+        }
+    }
+
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record GetMyMetricsResult(@JsonProperty("metrics") MetricsResult metrics) {}
+    public record GetMyMetricsResult(
+            @JsonProperty("metrics") MetricsResult metrics,
+            @JsonProperty("account_last_28_days") AccountLast28Days accountLast28Days) {
+
+        public GetMyMetricsResult(MetricsResult metrics) {
+            this(metrics, AccountLast28Days.notAvailable());
+        }
+    }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record RiskFlag(

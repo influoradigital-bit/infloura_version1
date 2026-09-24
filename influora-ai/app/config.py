@@ -76,7 +76,12 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.21.3"
+PROMPT_VERSION = "meera-2026.09.24.1"
+# ^ bumped for account insights (Swapnil 2026-09-24): Block B gained the "Your
+# account (from Instagram)" line (the creator's own last-28-day reach, views,
+# interactions, accounts engaged and profile-link taps), the persona gained the
+# rule for using it, and get_my_metrics' persona line names the new numbers.
+# Previous: meera-2026.09.21.3 --
 # ^ bumped for the go-live creator knowledge additions (Swapnil 2026-09-21):
 # video_content_concepts.jsonl gained 5 brand_deal_practice rows (ad label,
 # endorse only what you used, the Influora draft-to-payment flow, disclosed
