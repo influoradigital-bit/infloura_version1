@@ -6817,6 +6817,14 @@ export interface CreatorAgentPreferences {
    * now-7d && approval_level == 0 && levelUpPromptedAt == null`. Server-owned: never sent on PUT.
    */
   level_up_eligible: boolean;
+  /**
+   * Camera knowledge v5 (2026-09-24) — the phone the creator films on, as they typed it, or null.
+   * Meera and the Shoot Check frame check use it to suggest only settings that phone has.
+   * Saved through its own route, `PUT /creator/agent-preferences/phone` (`updatePhoneModel`
+   * below), never through the full-replace PUT — so it is omitted from
+   * `CreatorAgentPreferencesUpdate`. Optional: absent from a server older than this change.
+   */
+  phone_model?: string | null;
 }
 
 /**
@@ -6833,6 +6841,7 @@ export type CreatorAgentPreferencesUpdate = Omit<
   | 'negotiation_holdout'
   | 'approved_draft_count'
   | 'level_up_eligible'
+  | 'phone_model'
 >;
 
 export interface CreatorAgentConsentResponse {
@@ -6892,6 +6901,7 @@ const MOCK_CREATOR_AGENT_PREFS: CreatorAgentPreferences = {
   negotiation_holdout: false,
   approved_draft_count: 0,
   level_up_eligible: false,
+  phone_model: null,
 };
 
 export const creatorAgentPrefs = {
@@ -6909,6 +6919,18 @@ export const creatorAgentPrefs = {
           body: payload,
         })
       : mockOr({ ...MOCK_CREATOR_AGENT_PREFS, ...payload }),
+
+  /**
+   * PUT /creator/agent-preferences/phone — the phone the creator films on (max 80 characters;
+   * blank or null clears it). Its own route so the full-replace PUT above never wipes it.
+   */
+  updatePhoneModel: (phoneModel: string | null): Promise<CreatorAgentPreferences> =>
+    isLive()
+      ? http.request<CreatorAgentPreferences>('PUT', '/creator/agent-preferences/phone', {
+          role: 'creator',
+          body: { phone_model: phoneModel },
+        })
+      : mockOr({ ...MOCK_CREATOR_AGENT_PREFS, phone_model: phoneModel?.trim() || null }),
 
   /** POST /creator/agent-preferences/consent — DPDP consent gate (A6). Empty body. */
   recordConsent: (): Promise<CreatorAgentConsentResponse> =>

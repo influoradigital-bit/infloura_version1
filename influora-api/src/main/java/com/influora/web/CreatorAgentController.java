@@ -10,6 +10,7 @@ import com.influora.web.dto.creator.CreatorAgentDtos.ConsentResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationListResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
+import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePhoneModelRequest;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePreferencesRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -73,6 +74,20 @@ public class CreatorAgentController {
         requireFeatureEnabled();
         return ResponseEntity.ok(
                 ApiResponse.ok(preferencesService.updatePreferences(principal.getUserId(), req)));
+    }
+
+    /**
+     * V76 — saves (or, with null/blank, clears) the phone the creator films on, so Meera's camera
+     * advice and Shoot Check fit that phone. Its own route, not a field on the full-replace PUT
+     * above, so saving the rest of the settings page never wipes it. Behind SecurityConfig's
+     * {@code /creator/**} hasRole("CREATOR") matcher like every route here.
+     */
+    @PutMapping("/phone")
+    public ResponseEntity<ApiResponse<PreferencesResponse>> updatePhoneModel(
+            @AuthenticationPrincipal AuthPrincipal principal, @Valid @RequestBody UpdatePhoneModelRequest req) {
+        requireFeatureEnabled();
+        return ResponseEntity.ok(
+                ApiResponse.ok(preferencesService.updatePhoneModel(principal.getUserId(), req)));
     }
 
     @PostMapping("/consent")

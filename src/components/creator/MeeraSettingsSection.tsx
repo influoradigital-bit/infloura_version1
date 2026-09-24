@@ -138,6 +138,8 @@ function toDraft(prefs: CreatorAgentPreferences): Draft {
     negotiation_holdout: _negotiation_holdout,
     approved_draft_count: _approved_draft_count,
     level_up_eligible: _level_up_eligible,
+    // Camera knowledge v5: saved through PUT /creator/agent-preferences/phone, not this PUT.
+    phone_model: _phone_model,
     ...rest
   } = prefs;
   return rest;
@@ -158,6 +160,10 @@ export function MeeraSettingsSection() {
   const [blockedBrandsText, setBlockedBrandsText] = React.useState('');
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  // Camera knowledge v5 (2026-09-24): the phone the creator films on. Optional; saved on the same
+  // Save button through its own route, and only when it changed.
+  const [phoneText, setPhoneText] = React.useState('');
+  const [savedPhone, setSavedPhone] = React.useState('');
   // Gate review fix (item 3) — MEERA_CREATOR_ENABLED rollback flag. GET /creator/agent-preferences
   // 404s with { code: 'FEATURE_DISABLED' } when it's off; this section just disappears (no card,
   // no error text, no toast, no retry) rather than showing a broken-looking settings block.
@@ -184,6 +190,8 @@ export function MeeraSettingsSection() {
         if (cancelled) return;
         setDraft(toDraft(prefs));
         setBlockedBrandsText(prefs.blocked_brands.join('\n'));
+        setPhoneText(prefs.phone_model ?? '');
+        setSavedPhone(prefs.phone_model ?? '');
       })
       .catch((err) => {
         if (cancelled) return;
@@ -268,6 +276,12 @@ export function MeeraSettingsSection() {
       const saved = await api.creatorAgentPrefs.updatePreferences(payload);
       setDraft(toDraft(saved));
       setBlockedBrandsText(saved.blocked_brands.join('\n'));
+      const phone = phoneText.trim();
+      if (phone !== savedPhone) {
+        const withPhone = await api.creatorAgentPrefs.updatePhoneModel(phone || null);
+        setPhoneText(withPhone.phone_model ?? '');
+        setSavedPhone(withPhone.phone_model ?? '');
+      }
       toast({ title: 'Meera settings saved' });
     } catch (err) {
       setSaveError(err instanceof ApiError ? err.message : 'Could not save your changes.');
@@ -490,6 +504,25 @@ export function MeeraSettingsSection() {
               </RadioGroup>
               <p className="text-xs text-muted-foreground">
                 Phase A is conversational only — Meera does not send or decline anything on your behalf yet, regardless of this setting.
+              </p>
+            </div>
+
+            <Separator />
+
+            {/* Camera knowledge v5: the phone the creator films on */}
+            <div className="space-y-1.5">
+              <Label htmlFor="meera-phone-model" className="text-sm font-medium">
+                My phone
+              </Label>
+              <Input
+                id="meera-phone-model"
+                value={phoneText}
+                maxLength={80}
+                placeholder="For example: OPPO Reno 14 Pro"
+                onChange={(e) => setPhoneText(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. Meera and Shoot Check use it to suggest camera settings your phone actually has.
               </p>
             </div>
 

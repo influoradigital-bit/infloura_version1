@@ -370,7 +370,9 @@ public class MeeraContextService {
                 // sides still passed. Asserted end-to-end (not on this method in isolation) by
                 // MeeraContextServiceTest#testCreatorContextCarriesWiredToolNames — reverting this
                 // argument to List.of() must turn that test red.
-                CreatorToolScopes.toolNamesForLevel(approvalLevel, represented, negotiationHoldout));
+                CreatorToolScopes.toolNamesForLevel(approvalLevel, represented, negotiationHoldout),
+                // V76 — creator-typed phone model; null (omitted on the wire) when not saved.
+                prefs != null ? prefs.getPhoneModel() : null);
     }
 
     /**

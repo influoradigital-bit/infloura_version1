@@ -309,6 +309,12 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
     image_file = form.get("image")
     shot_label_raw = form.get("shot_label")
     shot_label = str(shot_label_raw) if isinstance(shot_label_raw, str) else None
+    # Camera knowledge v5 (2026-09-24): the phone the creator saved in their Meera settings, sent
+    # by Spring from its own database (never typed into this request by the browser). Free text:
+    # it reaches the model only through `build_user_text`, matched against our phone notes or
+    # wrapped as untrusted, and it is logged as a shape only, like shot_label.
+    phone_model_raw = form.get("phone_model")
+    phone_model = str(phone_model_raw)[:80] if isinstance(phone_model_raw, str) else None
 
     if not workspace_id or image_file is None:
         raise HTTPException(
@@ -435,14 +441,15 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
     log_event(
         logger, logging.INFO, "shoot_check_frame_started",
         workspace_id=str(workspace_id), request_id=request_id,
-        fields={"image": shape_of(image_bytes), "content_type": content_type, "shot_label": shape_of(shot_label)},
+        fields={"image": shape_of(image_bytes), "content_type": content_type, "shot_label": shape_of(shot_label),
+                "phone_model": shape_of(phone_model)},
     )
 
     # 5) The one model call.
     claude = _get_claude()
     result = await claude.complete_with_image(
         system=build_system_prompt(),
-        user_text=build_user_text(shot_label),
+        user_text=build_user_text(shot_label, phone_model),
         image_bytes=image_bytes,
         image_media_type=content_type,
         model=SHOOT_CHECK_MODEL,

@@ -76,7 +76,18 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.1"
+PROMPT_VERSION = "meera-2026.09.24.2"
+# ^ bumped for camera knowledge v5 (dataset 5, 2026-09-24): 38 shooting rows join the
+# knowledge file (settings by situation, night video, light, background, positioning,
+# failure fixes, standing rules, India's 50Hz flicker, export, five checked OPPO phones),
+# rendered as "Shooting and camera settings" in the creator knowledge block and, without
+# the phone notes, into the frame-check system prompt. The creator's saved phone
+# (`phone_model`, Spring's creator context and the frame-check form) is named in Block B
+# and in the frame-check user message: a phone in our notes is described from our row, any
+# other name is wrapped untrusted and gets any-phone advice. New persona rule: ask which
+# phone once when the answer depends on it. BRAND prompt unchanged.
+#
+# Previously (.24.1):
 # ^ bumped for the creator-AI audit fixes, lane B (audit 2026-09-24, ai.md H1 and M1-M10):
 # the week plan now shows each festival on ONE day (its post day, with post_by the festival's
 # own date) and the persona's week-plan rule says so; KEEP IT SHORT names the week plan as an

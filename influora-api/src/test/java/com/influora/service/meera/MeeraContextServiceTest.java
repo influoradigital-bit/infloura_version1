@@ -742,4 +742,76 @@ class MeeraContextServiceTest {
         assertEquals(0, draft.creatorCount());
         assertEquals(false, draft.funded());
     }
+
+    // ---------------------------------------------------------------------------------------
+    // V76 -- phone_model: the phone the creator films on, so camera advice fits it.
+    // ---------------------------------------------------------------------------------------
+
+    private void stubBareCreatorProfileForPhoneTests() {
+        com.influora.domain.entity.CreatorProfile profile = mock(com.influora.domain.entity.CreatorProfile.class);
+        when(creatorProfileRepository.findByUserId(WORKSPACE_ID)).thenReturn(Optional.of(profile));
+        when(profile.getId()).thenReturn("profile1");
+        when(profile.getDisplayName()).thenReturn("Priya Shah");
+        when(profile.getCity()).thenReturn("Pune");
+        when(profile.getCategoriesJson()).thenReturn(null);
+        when(profile.getTotalFollowers()).thenReturn(12_400L);
+        when(profile.getGstin()).thenReturn(null);
+        when(profile.getIdentityKycStatus()).thenReturn(com.influora.domain.enums.VerificationStatus.VERIFIED);
+        when(profile.getTierOverride()).thenReturn(null);
+        when(creatorMetricsRepository.findByCreatorProfileIdAndDataSourceOrderByTimeDesc(eq("profile1"), eq("META_API"), any()))
+                .thenReturn(List.of());
+        when(collaborationRepository.findByCreatorId(WORKSPACE_ID)).thenReturn(List.of());
+    }
+
+    @Test
+    @DisplayName("V76: a saved phone model reaches the CREATOR context as phone_model")
+    void testCreatorContextCarriesSavedPhoneModel() throws Exception {
+        stubBareCreatorProfileForPhoneTests();
+        com.influora.domain.entity.CreatorAgentPreferences prefs =
+                com.influora.domain.entity.CreatorAgentPreferences.newWithDefaults(
+                        "prefs1", "profile1", null, null, null, null);
+        prefs.updatePhoneModel("  Redmi Note 13  ");
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.of(prefs));
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertEquals("Redmi Note 13", creatorContext.phoneModel());
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
+                .writeValueAsString(creatorContext);
+        assertTrue(json.contains("\"phone_model\":\"Redmi Note 13\""), json);
+    }
+
+    @Test
+    @DisplayName("V76: no phone saved -> phone_model is null and absent from the wire (NON_NULL)")
+    void testCreatorContextOmitsPhoneModelWhenNotSaved() throws Exception {
+        stubBareCreatorProfileForPhoneTests();
+        com.influora.domain.entity.CreatorAgentPreferences prefs =
+                com.influora.domain.entity.CreatorAgentPreferences.newWithDefaults(
+                        "prefs1", "profile1", null, null, null, null);
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.of(prefs));
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertEquals(null, creatorContext.phoneModel());
+        String json = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
+                .writeValueAsString(creatorContext);
+        assertFalse(json.contains("phone_model"), json);
+    }
+
+    @Test
+    @DisplayName("V76: no preferences row at all -> phone_model is null")
+    void testCreatorContextPhoneModelNullWithNoPreferencesRow() {
+        stubBareCreatorProfileForPhoneTests();
+        when(creatorAgentPreferencesRepository.findByCreatorId("profile1")).thenReturn(Optional.empty());
+
+        var creatorContext =
+                (com.influora.web.dto.meera.MeeraContextDtos.CreatorContextResponse)
+                        service.assemble(WORKSPACE_ID, "CREATOR");
+
+        assertEquals(null, creatorContext.phoneModel());
+    }
 }

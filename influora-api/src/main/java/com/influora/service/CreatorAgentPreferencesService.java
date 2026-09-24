@@ -16,6 +16,7 @@ import com.influora.service.scoring.QualityScoreService.QualityScoreResult;
 import com.influora.service.scoring.RateEstimationService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.RateCardDto;
+import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePhoneModelRequest;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePreferencesRequest;
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -252,6 +253,40 @@ public class CreatorAgentPreferencesService {
         return toResponse(prefs);
     }
 
+    /**
+     * V76 — {@code PUT /creator/agent-preferences/phone}. Resolves the creator exactly as {@link
+     * #updatePreferences} does (strictly from the caller's own principal user id; the prefs row is
+     * created with computed defaults if she has none yet) and sets ONLY the phone model. Kept off
+     * {@link #updatePreferences} on purpose: that full replace does not carry the phone and must
+     * not wipe it.
+     */
+    @Transactional
+    public PreferencesResponse updatePhoneModel(String userId, UpdatePhoneModelRequest req) {
+        CreatorProfile profile = requireCreatorProfile(userId);
+        CreatorAgentPreferences prefs =
+                preferencesRepository.findByCreatorId(profile.getId()).orElseGet(() -> createWithComputedDefaults(profile));
+        prefs.updatePhoneModel(req != null ? req.phoneModel() : null);
+        preferencesRepository.save(prefs);
+        return toResponse(prefs);
+    }
+
+    /**
+     * V76 — the calling creator's saved phone model, for the Shoot Check frame-check proxy.
+     * Read-only and side-effect free: empty (never a throw, never a created row) when the user has
+     * no creator profile, no preferences row, or no phone on file.
+     */
+    @Transactional(readOnly = true)
+    public Optional<String> findPhoneModelForUser(String userId) {
+        if (userId == null) {
+            return Optional.empty();
+        }
+        return creatorProfileRepository
+                .findByUserId(userId)
+                .flatMap(profile -> preferencesRepository.findByCreatorId(profile.getId()))
+                .map(CreatorAgentPreferences::getPhoneModel)
+                .filter(phone -> !phone.isBlank());
+    }
+
     private static void validate(UpdatePreferencesRequest req) {
         if (req.approvalLevel() < CreatorAgentPreferences.APPROVAL_LEVEL_DRAFT_ONLY
                 || req.approvalLevel() > CreatorAgentPreferences.APPROVAL_LEVEL_AUTO_DECLINE) {
@@ -384,7 +419,8 @@ public class CreatorAgentPreferencesService {
                 JsonLists.objectFromJson(prefs.getRateCardJson(), RateCardDto.class),
                 prefs.isNegotiationHoldout(),
                 prefs.getApprovedDraftCount(),
-                isLevelUpEligible(prefs));
+                isLevelUpEligible(prefs),
+                prefs.getPhoneModel());
     }
 
     /**

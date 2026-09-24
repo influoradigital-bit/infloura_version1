@@ -93,8 +93,10 @@ ADAPTED_SOURCE = "influora_content_team (adapted pattern)"
 def test_committed_knowledge_file_loads_every_row_by_type():
     rows = load_knowledge()
     # release/0922: the go-live file (128 = 62 original + 26 go-live + 30 book-derived + 10
-    # from dataset_2) plus v4's 44 new rows (47 minus 3 written on both sides).
-    assert len(rows) == 172
+    # from dataset_2) plus v4's 44 new rows (47 minus 3 written on both sides), plus v5's 38
+    # camera rows from dataset_5 (2026-09-24; its other 104 rows were older copies of rows
+    # already here and were not taken).
+    assert len(rows) == 210
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
@@ -112,6 +114,16 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "contextual_action": 11,
         "length_guideline": 6,
         "structure_selection_rule": 8,
+        "camera_technical_setting": 8,
+        "night_video_setting": 4,
+        "lighting_rule": 4,
+        "background_rule": 2,
+        "subject_positioning_rule": 2,
+        "platform_export_setting": 2,
+        "failure_case": 4,
+        "permanent_rule": 6,
+        "flicker_rule": 1,
+        "phone_hardware": 5,
     }
 
 
@@ -297,6 +309,16 @@ def test_every_row_reaches_the_knowledge_text():
             "contextual_action": "category",
             "length_guideline": "goal",
             "structure_selection_rule": "situation",
+            "camera_technical_setting": "situation",
+            "night_video_setting": "environment",
+            "lighting_rule": "scenario",
+            "background_rule": "aspect",
+            "subject_positioning_rule": "content_type",
+            "platform_export_setting": "platform",
+            "failure_case": "symptom",
+            "permanent_rule": "rule",
+            "flicker_rule": "region",
+            "phone_hardware": "model",
         }[r["data_type"]]
         assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
 

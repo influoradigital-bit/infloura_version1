@@ -30,7 +30,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.prompt.content_knowledge import build_creator_knowledge_block, creator_shared_cache_control
+from app.prompt.content_knowledge import (
+    CREATOR_KNOWLEDGE_ROWS,
+    build_creator_knowledge_block,
+    creator_shared_cache_control,
+    find_phone,
+)
 from app.prompt.creator_persona import (
     get_creator_directives,
     get_creator_persona_block,
@@ -122,6 +127,8 @@ _FORBIDDEN_BRAND_FIELDS = {
     # summary (age bands, gender split, top cities). Hers to use for content;
     # brand Meera keeps its "don't state demographics you can't verify" rule.
     "audience_summary",
+    # Camera knowledge v5 (2026-09-24): the creator's own phone -- theirs, not a brand's.
+    "phone_model",
 }
 
 # Canonical snake_case field set for POST /internal/meera/context's response
@@ -192,6 +199,11 @@ CREATOR_CONTEXT_PAYLOAD_FIELDS: tuple[str, ...] = (
     # arm. Rendered so Meera withholds counter-coaching rather than silently
     # behaving differently -- a creator who is held out is told she is.
     "negotiation_holdout",
+    # Camera knowledge v5 (2026-09-24): the phone the creator saved on the Meera
+    # settings page (creator-typed free text, nullable). Rendered in Block B,
+    # neutralized, with whether our Phone notes cover it -- so camera settings fit
+    # the phone they actually film on.
+    "phone_model",
     # Phase B (§3.10, B6): whether her rate card may appear on the public media
     # kit. A sharing switch, not negotiating input -- never rendered.
     "rate_card_shareable",
@@ -704,6 +716,21 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
         "- Your audience (from Instagram): "
         + _creator_str(ctx, "audience_summary", AUDIENCE_NOT_AVAILABLE_TEXT)
     )
+
+    # Camera knowledge v5 (2026-09-24): the phone they film on, as they typed it
+    # (neutralized), and whether the Phone notes cover it. Always a line, so an
+    # unsaved phone reads as "not saved" and Meera asks rather than assumes.
+    phone_model = ctx.get("phone_model")
+    if isinstance(phone_model, str) and phone_model.strip():
+        phone_row = find_phone(CREATOR_KNOWLEDGE_ROWS, phone_model)
+        phone_note = (
+            f" (in the Phone notes as {phone_row['brand']} {phone_row['model']})"
+            if phone_row is not None
+            else " (not in the Phone notes: never assume its lenses or controls)"
+        )
+        lines.append(f"- Phone they film on (saved by them): {_safe(phone_model.strip())}{phone_note}")
+    else:
+        lines.append("- Phone they film on: not saved")
 
     deals = ctx.get("deals_summary")
     if isinstance(deals, dict) and deals:

@@ -17,6 +17,7 @@ import com.influora.web.dto.creator.CreatorAgentDtos.ConsentResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationExportResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.ConversationListResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
+import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePhoneModelRequest;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePreferencesRequest;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -95,6 +96,38 @@ class CreatorAgentControllerTest {
 
         assertEquals(response, result.getBody().data());
         verify(preferencesService).updatePreferences(USER_ID, req);
+    }
+
+    @Test
+    @DisplayName("V76: PUT /phone passes the principal's userId and the request straight through")
+    void updatePhoneModelUsesPrincipalUserId() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(true);
+        UpdatePhoneModelRequest req = new UpdatePhoneModelRequest("Redmi Note 13");
+        PreferencesResponse response =
+                new PreferencesResponse(
+                        new BigDecimal("500"), null, null, "INR", List.of(), List.of(), 0, "en-IN", "FRIENDLY",
+                        null, null, "Asia/Kolkata", List.of(), null, false, null, false, "v2",
+                        false, null, false, 0, false, "Redmi Note 13");
+        when(preferencesService.updatePhoneModel(USER_ID, req)).thenReturn(response);
+
+        ResponseEntity<ApiResponse<PreferencesResponse>> result = controller.updatePhoneModel(principal, req);
+
+        assertEquals("Redmi Note 13", result.getBody().data().phoneModel());
+        verify(preferencesService).updatePhoneModel(USER_ID, req);
+    }
+
+    @Test
+    @DisplayName("V76: PUT /phone returns 404 FEATURE_DISABLED and never touches the service when the flag is off")
+    void updatePhoneModel_flagOff_returns404WithoutTouchingService() {
+        when(featureProperties.isCreatorEnabled()).thenReturn(false);
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> controller.updatePhoneModel(principal, new UpdatePhoneModelRequest("Pixel 8")));
+
+        assertEquals("FEATURE_DISABLED", ex.getCode());
+        verifyNoInteractions(preferencesService);
     }
 
     @Test

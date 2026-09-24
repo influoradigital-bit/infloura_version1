@@ -106,7 +106,7 @@ class CreatorMeeraFrameCheckTest {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
         byte[] body = "{\"fixes\":[\"Step right\"],\"settings\":[],\"ok\":[]}".getBytes();
         when(voiceAiClient.checkFrameForCreator(
-                        eq(CREATOR_USER_ID), any(), eq("image/jpeg"), eq("static overhead"), eq(ONBEHALF_JWT)))
+                        eq(CREATOR_USER_ID), any(), eq("image/jpeg"), eq("static overhead"), isNull(), eq(ONBEHALF_JWT)))
                 .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, body, "application/json", 200));
 
         ResponseEntity<?> response = controller.checkFrame(principal, jpeg(JPEG), "  static overhead  ");
@@ -118,7 +118,7 @@ class CreatorMeeraFrameCheckTest {
         // the service bearer, never a hand-built stand-in.
         verify(voiceAiClient)
                 .checkFrameForCreator(
-                        eq(CREATOR_USER_ID), eq(JPEG), eq("image/jpeg"), eq("static overhead"), eq(ONBEHALF_JWT));
+                        eq(CREATOR_USER_ID), eq(JPEG), eq("image/jpeg"), eq("static overhead"), isNull(), eq(ONBEHALF_JWT));
     }
 
     @Test
@@ -188,7 +188,7 @@ class CreatorMeeraFrameCheckTest {
     void imageAtTheLimit_forwarded() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
         byte[] atLimit = new byte[(int) CreatorMeeraController.MAX_FRAME_BYTES];
-        when(voiceAiClient.checkFrameForCreator(eq(CREATOR_USER_ID), any(), any(), isNull(), eq(ONBEHALF_JWT)))
+        when(voiceAiClient.checkFrameForCreator(eq(CREATOR_USER_ID), any(), any(), isNull(), isNull(), eq(ONBEHALF_JWT)))
                 .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, new byte[] {'{', '}'}, "application/json", 200));
 
         ResponseEntity<?> response = controller.checkFrame(principal, jpeg(atLimit), null);
@@ -200,7 +200,7 @@ class CreatorMeeraFrameCheckTest {
     @DisplayName("influora-ai fails: 502 FRAME_CHECK_UNAVAILABLE, never a fake empty result the app would show as ok")
     void upstreamFailure_badGateway() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
-        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any()))
+        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(false, null, null, 500));
 
         ResponseEntity<?> response = controller.checkFrame(principal, jpeg(JPEG), null);
@@ -213,13 +213,13 @@ class CreatorMeeraFrameCheckTest {
     @DisplayName("a runaway shot label is cut to a sane length before it is forwarded")
     void longShotLabel_truncated() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
-        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any()))
+        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, new byte[] {'{', '}'}, "application/json", 200));
 
         controller.checkFrame(principal, jpeg(JPEG), "x".repeat(5_000));
 
         ArgumentCaptor<String> label = ArgumentCaptor.forClass(String.class);
-        verify(voiceAiClient).checkFrameForCreator(any(), any(), any(), label.capture(), any());
+        verify(voiceAiClient).checkFrameForCreator(any(), any(), any(), label.capture(), any(), any());
         assertEquals(120, label.getValue().length());
     }
 
@@ -228,7 +228,7 @@ class CreatorMeeraFrameCheckTest {
             "F-audit-A1: a real, creator-scoped on-behalf JWT is minted for every forwarded frame check")
     void consentedCreator_mintsARealOnBehalfJwtScopedToTheCreator() {
         when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
-        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any()))
+        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any(), any()))
                 .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, new byte[] {'{', '}'}, "application/json", 200));
 
         controller.checkFrame(principal, jpeg(JPEG), null);
@@ -240,6 +240,54 @@ class CreatorMeeraFrameCheckTest {
                 .mint(eq(CREATOR_USER_ID), isNull(), isNull(), eq(CREATOR_USER_ID), eq(UserType.CREATOR), eq(""));
         // And the SAME minted value is what actually gets forwarded to influora-ai -- not
         // recomputed, not a different token, not silently dropped.
-        verify(voiceAiClient).checkFrameForCreator(any(), any(), any(), any(), eq(ONBEHALF_JWT));
+        verify(voiceAiClient).checkFrameForCreator(any(), any(), any(), any(), any(), eq(ONBEHALF_JWT));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // V76 -- the creator's saved phone model rides along so the camera settings fit her phone.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("V76: the creator's saved phone model is looked up by her OWN user id and forwarded")
+    void savedPhoneModel_isForwardedToTheClient() {
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(preferencesService.findPhoneModelForUser(CREATOR_USER_ID))
+                .thenReturn(java.util.Optional.of("Redmi Note 13"));
+        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, new byte[] {'{', '}'}, "application/json", 200));
+
+        ResponseEntity<?> response = controller.checkFrame(principal, jpeg(JPEG), null);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(voiceAiClient)
+                .checkFrameForCreator(
+                        eq(CREATOR_USER_ID), eq(JPEG), eq("image/jpeg"), isNull(), eq("Redmi Note 13"), eq(ONBEHALF_JWT));
+    }
+
+    @Test
+    @DisplayName("V76: no phone on file forwards null (the client then omits the phone_model part)")
+    void noSavedPhoneModel_forwardsNull() {
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(preferencesService.findPhoneModelForUser(CREATOR_USER_ID)).thenReturn(java.util.Optional.empty());
+        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, new byte[] {'{', '}'}, "application/json", 200));
+
+        controller.checkFrame(principal, jpeg(JPEG), null);
+
+        verify(voiceAiClient).checkFrameForCreator(any(), any(), any(), any(), isNull(), eq(ONBEHALF_JWT));
+    }
+
+    @Test
+    @DisplayName("V76: a failed phone lookup never fails the frame check -- it is treated as no phone")
+    void phoneLookupFailure_doesNotFailTheFrameCheck() {
+        when(preferencesService.isConsentAccepted(CREATOR_USER_ID)).thenReturn(true);
+        when(preferencesService.findPhoneModelForUser(CREATOR_USER_ID)).thenThrow(new RuntimeException("db down"));
+        when(voiceAiClient.checkFrameForCreator(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new MeeraVoiceAiClient.FrameCheckResult(true, new byte[] {'{', '}'}, "application/json", 200));
+
+        ResponseEntity<?> response = controller.checkFrame(principal, jpeg(JPEG), null);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        verify(voiceAiClient).checkFrameForCreator(any(), any(), any(), any(), isNull(), eq(ONBEHALF_JWT));
     }
 }

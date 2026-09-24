@@ -49,6 +49,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.prompt.content_knowledge import (
+    CREATOR_KNOWLEDGE_ROWS,
+    find_phone,
+    phone_note_line,
+    render_shooting_lines,
+)
 from app.prompt.untrusted import wrap_untrusted
 from app.prompt.validators import _CODE_FENCE_RE
 
@@ -87,9 +93,17 @@ def build_system_prompt() -> str:
         "language -- if their shot_label is in Hindi/Hinglish, reply in that same "
         "register; otherwise use simple, friendly English.\n"
         "- Give camera-SETTINGS advice SEPARATELY from the fixes (aspect ratio, "
-        "using the grid, locking focus/exposure, turning HDR on or off). This is "
+        "using the grid, locking focus/exposure, turning HDR on or off, which lens, "
+        "and the shooting knowledge below). This is "
         "ADVICE for next time -- never claim you changed, fixed, edited, or applied "
         "anything to the photo. You did not touch the photo.\n"
+        "- Settings must fit the creator's phone as the message describes it. Never "
+        "name a lens, 4K/60fps, a shutter speed, ISO or a Kelvin value the phone does "
+        "not have; when the phone is unknown or not in our notes, stick to what every "
+        "phone camera has (grid, tap to focus, exposure lock or the brightness "
+        "slider, HDR on/off, moving the phone or the light) and phrase anything else "
+        "as \"if your camera app has a Pro video mode\". Give each setting with its "
+        "short reason.\n"
         "- Also name what's ALREADY WORKING in the shot (framing, light, "
         "background) so the creator knows what to keep -- at most three short "
         "lines, honest, not padding filler for its own sake.\n"
@@ -117,10 +131,45 @@ def build_system_prompt() -> str:
         '{"fixes": ["<at most 3 short fix sentences>"], '
         '"settings": ["<at most 3 short camera-settings sentences>"], '
         '"ok": ["<at most 3 short \'already working\' sentences>"]}'
+        "\n\n" + FRAME_CHECK_SHOOTING_KNOWLEDGE
     )
 
 
-def build_user_text(shot_label: str | None) -> str:
+# The v5 camera rows (content_knowledge.py), rendered once at import. Phone notes are
+# left out here: the one phone that matters -- the creator's own -- is named in the
+# user message by `build_phone_text`, so the model is never tempted to apply another
+# model's lenses to this creator's phone.
+FRAME_CHECK_SHOOTING_KNOWLEDGE: str = (
+    "Influora shooting knowledge (use it for fixes and settings):\n"
+    + "\n".join(render_shooting_lines(CREATOR_KNOWLEDGE_ROWS, with_phone_notes=False))
+)
+
+PHONE_UNKNOWN_TEXT = (
+    "The creator's phone is not known. Give settings advice that works on any phone "
+    "camera, and phrase anything that needs manual controls as \"if your camera app "
+    "has a Pro video mode\"."
+)
+
+
+def build_phone_text(phone_model: str | None) -> str:
+    """What the model is told about the creator's phone. A phone in our notes is
+    described from OUR row (trusted text we wrote); any other phone name is the
+    creator's own typing, so it is wrapped as untrusted and the model is told not
+    to assume anything about its lenses or controls."""
+    typed = (phone_model or "").strip()
+    if not typed:
+        return PHONE_UNKNOWN_TEXT
+    row = find_phone(CREATOR_KNOWLEDGE_ROWS, typed)
+    if row is not None:
+        return "The creator's phone, from their saved settings (our notes): " + phone_note_line(row)
+    return (
+        "The creator saved this phone name, which is not in our phone notes -- do not "
+        "assume it has a telephoto, 4K/60fps or manual controls; phrase anything beyond "
+        "the basics as \"if your camera app has ...\":\n" + wrap_untrusted("phone_model", typed)
+    )
+
+
+def build_user_text(shot_label: str | None, phone_model: str | None = None) -> str:
     """The user-turn text that rides alongside the image block. `shot_label`
     is creator-typed free text -- the single untrusted input to this route --
     so it is wrapped (delimited + angle-bracket-neutralized) exactly like
@@ -129,14 +178,15 @@ def build_user_text(shot_label: str | None) -> str:
     `brand_name`/`trend_text`).
     """
     label = (shot_label or "").strip()
+    phone = "\n\n" + build_phone_text(phone_model)
     if not label:
         return (
             "Here is the photo. No shot_label was given -- judge the shot on its "
-            "own framing, light, and background."
+            "own framing, light, and background." + phone
         )
     return (
         "Here is the photo, and the creator's own description of what this shot "
-        "is meant to be:\n" + wrap_untrusted("shot_label", label)
+        "is meant to be:\n" + wrap_untrusted("shot_label", label) + phone
     )
 
 

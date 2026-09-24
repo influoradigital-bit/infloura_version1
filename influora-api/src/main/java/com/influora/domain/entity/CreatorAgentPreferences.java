@@ -206,6 +206,15 @@ public class CreatorAgentPreferences {
     @Column(name = "level_up_prompted_at")
     private Instant levelUpPromptedAt;
 
+    /**
+     * V76 — the phone the creator films on, creator-typed free text (e.g. {@code "Redmi Note 13"}).
+     * {@code null} means not told. Set only through {@link #updatePhoneModel} (its own endpoint,
+     * {@code PUT /creator/agent-preferences/phone}), deliberately NOT through {@link
+     * #applyPreferences}: that full-replace PUT does not carry it, and must not wipe it.
+     */
+    @Column(name = "phone_model", length = 80)
+    private String phoneModel;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -415,6 +424,20 @@ public class CreatorAgentPreferences {
      */
     public boolean isConsentAccepted() {
         return consentAcceptedAt != null && CURRENT_CONSENT_VERSION.equals(consentVersion);
+    }
+
+    public String getPhoneModel() {
+        return phoneModel;
+    }
+
+    /**
+     * V76 — trims the creator-typed phone model; {@code null} or blank clears it. Max length is
+     * enforced by {@code UpdatePhoneModelRequest}'s {@code @Size(max = 80)} before this is called.
+     */
+    public void updatePhoneModel(String phoneModel) {
+        String trimmed = phoneModel == null ? null : phoneModel.trim();
+        this.phoneModel = (trimmed == null || trimmed.isEmpty()) ? null : trimmed;
+        touch();
     }
 
     public Instant getCreatedAt() {

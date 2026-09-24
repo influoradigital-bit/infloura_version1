@@ -10,7 +10,7 @@ reduces-work.md): the point is fewer steps for the creator, not a cleverer
 answer. The persona rules that tell the model HOW to use this block live in
 `app/prompt/creator_persona.py`; this module only loads, validates and renders.
 
-Data: `app/prompt/knowledge/video_content_concepts.jsonl` (172 rows: v4 2026-09-22 + the 2026-09-21 go-live additions). It sits
+Data: `app/prompt/knowledge/video_content_concepts.jsonl` (210 rows: v4 2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows of 2026-09-24). It sits
 under `app/prompt/` on purpose: `ci/stale-comment-check.py` watches that prefix
 (PROMPT_SOURCES), so editing the data forces a PROMPT_VERSION bump exactly like
 a persona edit does -- the rendered text is prompt content.
@@ -61,6 +61,30 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "contextual_action": ("category", "home_actions", "outdoor_actions"),
     "length_guideline": ("goal", "starting_range_seconds", "main_success_signal"),
     "structure_selection_rule": ("situation", "structure", "use_when"),
+    # v5 (2026-09-24): how to SHOOT -- settings per situation, light, background,
+    # positioning, failure fixes, standing rules, India's 50Hz flicker, export,
+    # and verified notes on specific phones. Rendered as "Shooting and camera
+    # settings" below and, in a shorter form, into the Shoot Check frame check
+    # (`app/prompt/frame_check.py`). Phone rows are only ever applied to the
+    # phone the creator named (`find_phone`); any other phone gets generic advice.
+    "camera_technical_setting": (
+        "situation", "phone_camera", "distance", "framing", "fps", "shutter", "iso",
+        "white_balance", "ev", "stabilization",
+    ),
+    "night_video_setting": (
+        "environment", "lens", "fps", "shutter", "iso", "white_balance", "stabilization", "extra_light",
+    ),
+    "lighting_rule": ("scenario", "instruction"),
+    "background_rule": ("aspect", "definition"),
+    "subject_positioning_rule": ("content_type", "instruction"),
+    "platform_export_setting": ("platform", "aspect_ratio", "safe_zones", "workflow"),
+    "failure_case": ("symptom", "cause", "fix"),
+    "permanent_rule": ("rule",),
+    "flicker_rule": ("region", "rule", "fix"),
+    "phone_hardware": (
+        "brand", "model", "sensor", "max_resolution", "max_fps", "manual_video", "ois",
+        "telephoto", "ultrawide", "log_hdr",
+    ),
 }
 
 # Fields that are non-empty lists of non-empty strings, not plain strings.
@@ -87,6 +111,16 @@ NAME_FIELD: dict[str, str] = {
     "contextual_action": "category",
     "length_guideline": "goal",
     "structure_selection_rule": "situation",
+    "camera_technical_setting": "situation",
+    "night_video_setting": "environment",
+    "lighting_rule": "scenario",
+    "background_rule": "aspect",
+    "subject_positioning_rule": "content_type",
+    "platform_export_setting": "platform",
+    "failure_case": "symptom",
+    "permanent_rule": "rule",
+    "flicker_rule": "region",
+    "phone_hardware": "model",
 }
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
@@ -359,7 +393,129 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
         home = ", ".join(a.strip() for a in r["home_actions"])
         outdoor = ", ".join(a.strip() for a in r["outdoor_actions"])
         out.append(f"- {r['category']}: at home: {home}. Outdoors: {outdoor}.")
+
+    out += [""] + render_shooting_lines(rows)
     return "\n".join(out) + "\n"
+
+
+SHOOTING_HEADING = (
+    "Shooting and camera settings (starting points, not laws. Only suggest a control the"
+    " creator's phone has -- see Phone notes; on an auto-only phone use tap-to-focus,"
+    " exposure lock, the brightness slider and moving the phone or the light. Give every"
+    " setting with its one-line reason):"
+)
+
+PHONE_NOTES_HEADING = (
+    "Phone notes (ONLY for these exact models. For any other phone never assume a lens,"
+    " 4K/60fps or a manual control -- ask what its camera app offers, or give advice that"
+    " works on every phone):"
+)
+
+
+def phone_note_line(r: dict[str, Any]) -> str:
+    """One phone_hardware row as a single line. Used by the knowledge block and by
+    the frame check when the creator's saved phone matches this row."""
+    line = (
+        f"{r['brand']} {r['model']}: main camera {r['sensor']}; video: {r['max_resolution']};"
+        f" frame rates: {r['max_fps']}; manual video: {r['manual_video']}; OIS: {r['ois']};"
+        f" telephoto: {r['telephoto']}; ultrawide: {r['ultrawide']}; LOG/HDR: {r['log_hdr']}."
+    )
+    notes = r.get("notes")
+    if isinstance(notes, str) and notes.strip():
+        line += f" {notes.strip()}"
+    return line
+
+
+def render_shooting_lines(rows: list[dict[str, Any]], *, with_phone_notes: bool = True) -> list[str]:
+    """The v5 camera rows as plain lines. The creator knowledge block renders all of
+    it; the frame check renders it without the per-situation tables it cannot use
+    (`with_phone_notes` stays on there too -- the matched phone is named separately)."""
+    out: list[str] = [SHOOTING_HEADING, "Standing rules:"]
+    for r in _by_type(rows, "permanent_rule"):
+        out.append(f"- {r['rule']}")
+    for r in _by_type(rows, "flicker_rule"):
+        out.append(f"- {r['region']} 50Hz lights: {r['rule']} Fix: {r['fix']}")
+
+    out += ["", "Light:"]
+    for r in _by_type(rows, "lighting_rule"):
+        out.append(f"- {r['scenario']}: {r['instruction']}")
+
+    out += ["", "Background:"]
+    for r in _by_type(rows, "background_rule"):
+        line = f"- {r['aspect']}: {r['definition']}"
+        fix = r.get("fix")
+        if isinstance(fix, str) and fix.strip():
+            line += f" Fix: {fix.strip()}"
+        out.append(line)
+
+    out += ["", "Where to put the person and the phone:"]
+    for r in _by_type(rows, "subject_positioning_rule"):
+        out.append(f"- {r['content_type']}: {r['instruction']}")
+
+    out += ["", "When a shot goes wrong (what you see: why. Fix):"]
+    for r in _by_type(rows, "failure_case"):
+        out.append(f"- {r['symptom']}: {r['cause']} Fix: {r['fix']}")
+
+    out += [
+        "",
+        "Settings by situation (lens, distance, framing; fps, shutter, ISO, white balance,"
+        " exposure; stabilisation -- the numbers need a Pro/manual video mode):",
+    ]
+    for r in _by_type(rows, "camera_technical_setting"):
+        out.append(
+            f"- {r['situation']}: {r['phone_camera']} at {r['distance']}, {r['framing']};"
+            f" fps {r['fps']}, shutter {r['shutter']}, ISO {r['iso']}, white balance"
+            f" {r['white_balance']}, EV {r['ev']}; {r['stabilization']}."
+        )
+
+    out += ["", "Night video (same caveat -- the numbers need Pro/manual video):"]
+    for r in _by_type(rows, "night_video_setting"):
+        out.append(
+            f"- {r['environment']}: {r['lens']}; fps {r['fps']}, shutter {r['shutter']},"
+            f" ISO {r['iso']}, white balance {r['white_balance']}; {r['stabilization']}."
+            f" Extra light: {r['extra_light']}."
+        )
+
+    out += ["", "Export for the platform:"]
+    for r in _by_type(rows, "platform_export_setting"):
+        out.append(
+            f"- {r['platform']} ({r['aspect_ratio']}): safe zones: {r['safe_zones']}"
+            f" Workflow: {r['workflow']}"
+        )
+
+    if with_phone_notes:
+        out += ["", PHONE_NOTES_HEADING]
+        for r in _by_type(rows, "phone_hardware"):
+            out.append(f"- {phone_note_line(r)}")
+    return out
+
+
+def _phone_key(text: str) -> str:
+    """Lower-case letters and digits only, with the brand word and "5g" dropped, so
+    "OPPO Reno 14 Pro 5G", "reno14 pro" and "Reno-14-Pro" all compare equal."""
+    key = re.sub(r"[^a-z0-9]", "", text.lower())
+    return key.replace("5g", "").replace("oppo", "")
+
+
+def find_phone(rows: list[dict[str, Any]], typed: str | None) -> dict[str, Any] | None:
+    """The phone_hardware row for the phone the creator typed, or None.
+
+    Match rule: the longest model key contained in the typed key wins, so the
+    full model name must be there -- "Reno 14" (no "Pro") does not match
+    "Reno 14 Pro". A phone we have no row for returns None, and every caller
+    then gives advice that works on any phone -- never another model's specs."""
+    if not typed or not typed.strip():
+        return None
+    key = _phone_key(typed)
+    if not key:
+        return None
+    best: dict[str, Any] | None = None
+    best_len = 0
+    for r in _by_type(rows, "phone_hardware"):
+        model_key = _phone_key(r["model"])
+        if model_key and model_key in key and len(model_key) > best_len:
+            best, best_len = r, len(model_key)
+    return best
 
 
 # Rendered once, at import. A malformed file raises here -- at startup.

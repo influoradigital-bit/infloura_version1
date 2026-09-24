@@ -259,4 +259,67 @@ class MeeraVoiceAiClientFrameCheckTest {
 
         assertFalse(bodyOf(capturedRequest()).contains("onbehalf_jwt"));
     }
+
+    // ---------------------------------------------------------------------------------------
+    // V76 -- the optional phone_model part, so the camera settings fit the creator's phone.
+    // ---------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("V76: checkFrameForCreator sends the saved phone as a phone_model text part")
+    void checkFrameForCreator_includesPhoneModelPart() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(
+                CREATOR_USER_ID, JPEG, "image/jpeg", "static overhead", "OPPO Reno 14 Pro", "real-onbehalf-jwt-value");
+
+        String body = bodyOf(capturedRequest());
+        assertTrue(
+                body.contains("Content-Disposition: form-data; name=\"phone_model\"\r\n\r\nOPPO Reno 14 Pro\r\n"), body);
+        // the fields this route already pins are unaffected by the new part
+        assertTrue(body.contains("name=\"shot_label\""), body);
+        assertTrue(body.contains("name=\"onbehalf_jwt\""), body);
+        assertTrue(body.contains("name=\"image\"; filename=\"frame.jpg\""), body);
+    }
+
+    @Test
+    @DisplayName("V76: the phone_model part is written as UTF-8, like shot_label")
+    void phoneModelPart_isUtf8() throws Exception {
+        respondWith(response(200, "{}"));
+        String phone = "Galaxy S24 \u2013 5G";
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", null, phone, "jwt");
+
+        String utf8AsLatin1 = new String(phone.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1);
+        assertTrue(bodyOf(capturedRequest()).contains(utf8AsLatin1));
+    }
+
+    @Test
+    @DisplayName("V76: no phone_model part at all when the phone is null")
+    void nullPhoneModel_partOmitted() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", "static overhead", null, "jwt");
+
+        assertFalse(bodyOf(capturedRequest()).contains("phone_model"));
+    }
+
+    @Test
+    @DisplayName("V76: no phone_model part at all when the phone is blank")
+    void blankPhoneModel_partOmitted() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", "static overhead", "   ", "jwt");
+
+        assertFalse(bodyOf(capturedRequest()).contains("phone_model"));
+    }
+
+    @Test
+    @DisplayName("V76: the pre-V76 overloads never send a phone_model part")
+    void oldOverloads_neverSendPhoneModel() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", "static overhead", "jwt");
+
+        assertFalse(bodyOf(capturedRequest()).contains("phone_model"));
+    }
 }

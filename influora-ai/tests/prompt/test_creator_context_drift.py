@@ -147,6 +147,8 @@ def test_every_java_field_changes_the_rendered_creator_block():
         "negotiation_holdout": True,
         "holdout_until": "5 Dec 2026-Drift",
         "tools_enabled": ["drift_tool_alpha", "drift_tool_beta"],
+        # Camera knowledge v5 (2026-09-24): the phone the creator saved.
+        "phone_model": "Drift Phone X9",
     }
     missing_fixture = sorted(java - set(distinctive))
     assert not missing_fixture, (

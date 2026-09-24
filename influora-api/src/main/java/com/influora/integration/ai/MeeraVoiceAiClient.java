@@ -511,7 +511,7 @@ public class MeeraVoiceAiClient {
      */
     public FrameCheckResult checkFrame(
             String workspaceId, byte[] imageBytes, String contentType, String shotLabel) {
-        return checkFrame(workspaceId, imageBytes, contentType, shotLabel, null, null);
+        return checkFrame(workspaceId, imageBytes, contentType, shotLabel, null, null, null);
     }
 
     /**
@@ -523,7 +523,24 @@ public class MeeraVoiceAiClient {
      */
     public FrameCheckResult checkFrameForCreator(
             String workspaceId, byte[] imageBytes, String contentType, String shotLabel, String onBehalfJwt) {
-        return checkFrame(workspaceId, imageBytes, contentType, shotLabel, UserType.CREATOR.name(), onBehalfJwt);
+        return checkFrameForCreator(workspaceId, imageBytes, contentType, shotLabel, null, onBehalfJwt);
+    }
+
+    /**
+     * V76 — {@link #checkFrameForCreator(String, byte[], String, String, String)} plus the phone
+     * the creator films on ({@code phoneModel}, creator-typed free text or null), sent as the
+     * optional {@code phone_model} multipart field so the camera settings fit that phone. Omitted
+     * from the body when null/blank.
+     */
+    public FrameCheckResult checkFrameForCreator(
+            String workspaceId,
+            byte[] imageBytes,
+            String contentType,
+            String shotLabel,
+            String phoneModel,
+            String onBehalfJwt) {
+        return checkFrame(
+                workspaceId, imageBytes, contentType, shotLabel, phoneModel, UserType.CREATOR.name(), onBehalfJwt);
     }
 
     private FrameCheckResult checkFrame(
@@ -531,6 +548,7 @@ public class MeeraVoiceAiClient {
             byte[] imageBytes,
             String contentType,
             String shotLabel,
+            String phoneModel,
             String userType,
             String onBehalfJwt) {
         if (workspaceId == null || workspaceId.isBlank() || imageBytes == null || imageBytes.length == 0) {
@@ -543,7 +561,8 @@ public class MeeraVoiceAiClient {
         String boundary = "InfluoraFrameBoundary-" + UUID.randomUUID();
         try {
             token = tokenService.mint(workspaceId, userType);
-            body = buildFrameMultipartBody(boundary, workspaceId, imageBytes, contentType, shotLabel, onBehalfJwt);
+            body = buildFrameMultipartBody(
+                    boundary, workspaceId, imageBytes, contentType, shotLabel, phoneModel, onBehalfJwt);
         } catch (Exception e) {
             log.warn(
                     "MeeraVoiceAiClient: failed to build frame check request for workspace={}: {}",
@@ -590,9 +609,10 @@ public class MeeraVoiceAiClient {
 
     /**
      * The multipart body influora-ai's frame route reads with {@code form.get(...)}:
-     * {@code workspace_id}, {@code image}, the optional {@code shot_label}, and -- F-audit-A1 --
-     * the optional {@code onbehalf_jwt} (see {@link #checkFrameForCreator}'s javadoc). These
-     * names are pinned against the Python route by {@code tests/routes/test_shoot_check_java_seam.py}.
+     * {@code workspace_id}, {@code image}, the optional {@code shot_label}, the optional (V76)
+     * {@code phone_model}, and -- F-audit-A1 -- the optional {@code onbehalf_jwt} (see {@link
+     * #checkFrameForCreator}'s javadoc). These names are pinned against the Python route by
+     * {@code tests/routes/test_shoot_check_java_seam.py}.
      */
     static byte[] buildFrameMultipartBody(
             String boundary,
@@ -600,6 +620,7 @@ public class MeeraVoiceAiClient {
             byte[] imageBytes,
             String contentType,
             String shotLabel,
+            String phoneModel,
             String onBehalfJwt)
             throws IOException {
         String imageContentType =
@@ -619,6 +640,15 @@ public class MeeraVoiceAiClient {
                     ("Content-Disposition: form-data; name=\"shot_label\"" + CRLF + CRLF)
                             .getBytes(StandardCharsets.UTF_8));
             out.write(shotLabel.getBytes(StandardCharsets.UTF_8));
+            out.write(CRLF.getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (phoneModel != null && !phoneModel.isBlank()) {
+            out.write(("--" + boundary + CRLF).getBytes(StandardCharsets.UTF_8));
+            out.write(
+                    ("Content-Disposition: form-data; name=\"phone_model\"" + CRLF + CRLF)
+                            .getBytes(StandardCharsets.UTF_8));
+            out.write(phoneModel.getBytes(StandardCharsets.UTF_8));
             out.write(CRLF.getBytes(StandardCharsets.UTF_8));
         }
 

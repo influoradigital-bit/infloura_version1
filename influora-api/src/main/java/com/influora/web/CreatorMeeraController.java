@@ -28,6 +28,8 @@ import jakarta.validation.constraints.Size;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -79,6 +81,8 @@ public class CreatorMeeraController {
     static final long MAX_FRAME_BYTES = 1_500_000L;
     /** A shot label is a few words from the script ("static overhead, 15s"), never an essay. */
     private static final int MAX_SHOT_LABEL_CHARS = 120;
+
+    private static final Logger log = LoggerFactory.getLogger(CreatorMeeraController.class);
 
     private final MeeraSessionService sessionService;
     private final CreatorContextService creatorContext;
@@ -360,6 +364,22 @@ public class CreatorMeeraController {
     }
 
     /**
+     * V76 — the acting creator's saved phone model for the frame check, keyed off the principal's
+     * own user id only (never the request). Best-effort: a failed read is treated as "no phone on
+     * file" and never fails the frame check itself. Nothing about the phone text is logged.
+     */
+    private String savedPhoneModelOrNull(String creatorUserId) {
+        try {
+            return preferencesService.findPhoneModelForUser(creatorUserId).orElse(null);
+        } catch (RuntimeException e) {
+            log.warn(
+                    "CreatorMeeraController: phone model lookup failed, frame check continues without it: {}",
+                    e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    /**
      * Priya gate review defect 3 — CREATOR-audience mirror of {@link MeeraController#transcribe},
      * EXACT same {@code multipart/form-data} request shape (single {@code audio} file part) and
      * response contract (real transcript JSON, or a silent {@code {"fallback": true}} 200 — never a
@@ -415,6 +435,7 @@ public class CreatorMeeraController {
                         imageBytes,
                         image.getContentType(),
                         label,
+                        savedPhoneModelOrNull(creatorUserId),
                         mintCreatorOnBehalfJwt(creatorUserId));
         if (!result.ok()) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("code", "FRAME_CHECK_UNAVAILABLE"));

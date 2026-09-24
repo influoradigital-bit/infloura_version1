@@ -297,5 +297,12 @@ public final class MeeraContextDtos {
              * executors, validator, scope mint — unreachable in production while every unit test on
              * both sides still passes.
              */
-            @JsonProperty("tools_enabled") List<String> toolsEnabled) {}
+            @JsonProperty("tools_enabled") List<String> toolsEnabled,
+            /**
+             * V76 — the phone the creator films on ({@code CreatorAgentPreferences#getPhoneModel}),
+             * so Meera's camera settings fit that phone. Creator-TYPED free text, CREATOR audience
+             * only: the BRAND context never carries it. influora-ai neutralizes it before it
+             * reaches a prompt. Null (and so omitted, NON_NULL) when she has not said.
+             */
+            @JsonProperty("phone_model") String phoneModel) {}
 }

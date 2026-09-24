@@ -80,7 +80,57 @@ public final class CreatorAgentDtos {
              * still at approval level 0 AND never yet prompted. Read-only; the PUT request type
              * omits it.
              */
-            @JsonProperty("level_up_eligible") boolean levelUpEligible) {}
+            @JsonProperty("level_up_eligible") boolean levelUpEligible,
+            /**
+             * V76 — the phone the creator films on, creator-typed free text, or null (omitted)
+             * when she has not said. Set only via {@code PUT /creator/agent-preferences/phone}
+             * ({@link UpdatePhoneModelRequest}); the full-replace PUT never touches it.
+             */
+            @JsonProperty("phone_model") String phoneModel) {
+
+        /**
+         * Pre-V76 shape, kept so the many call sites that build a response without a phone (test
+         * fixtures, mostly) keep compiling; {@code phoneModel} is null, i.e. "not told".
+         */
+        public PreferencesResponse(
+                BigDecimal reelFloor,
+                BigDecimal storySetFloor,
+                BigDecimal postFloor,
+                String floorCurrency,
+                List<String> excludedCategories,
+                List<String> blockedBrands,
+                int approvalLevel,
+                String creatorLanguage,
+                String brandTone,
+                Integer workingHoursStart,
+                Integer workingHoursEnd,
+                String workingHoursTimezone,
+                List<Integer> workingDays,
+                Integer weeklySponsoredLimit,
+                boolean represented,
+                String agencyName,
+                boolean consentAccepted,
+                String consentVersion,
+                boolean rateCardShareable,
+                RateCardDto rateCard,
+                boolean negotiationHoldout,
+                int approvedDraftCount,
+                boolean levelUpEligible) {
+            this(reelFloor, storySetFloor, postFloor, floorCurrency, excludedCategories, blockedBrands,
+                    approvalLevel, creatorLanguage, brandTone, workingHoursStart, workingHoursEnd,
+                    workingHoursTimezone, workingDays, weeklySponsoredLimit, represented, agencyName,
+                    consentAccepted, consentVersion, rateCardShareable, rateCard, negotiationHoldout,
+                    approvedDraftCount, levelUpEligible, null);
+        }
+    }
+
+    /**
+     * V76 — {@code PUT /creator/agent-preferences/phone}: the phone the creator films on, so Meera
+     * can give camera settings that fit it. Null or blank clears it (stored as null after a trim).
+     * Its own request, not a field on {@link UpdatePreferencesRequest}, so the settings page's
+     * full-replace PUT (which does not send it) cannot wipe it.
+     */
+    public record UpdatePhoneModelRequest(@JsonProperty("phone_model") @Size(max = 80) String phoneModel) {}
 
     /**
      * PUT request — SPEC.md 2.3. {@code represented=true} requires a non-blank {@code agencyName}

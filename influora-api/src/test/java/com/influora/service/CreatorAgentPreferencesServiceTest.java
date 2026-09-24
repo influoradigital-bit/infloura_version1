@@ -555,4 +555,97 @@ class CreatorAgentPreferencesServiceTest {
         }
         assertEquals(1, inHoldout, "exactly one id in five falls in the 20 percent holdout");
     }
+
+    // ---------------------------------------------------------------------------------------
+    // V76 -- phone_model: its own PUT, never wiped by the full-replace PUT, and a side-effect
+    // free read for the Shoot Check proxy.
+    // ---------------------------------------------------------------------------------------
+
+    private static UpdatePreferencesRequest fullPutWithoutPhone() {
+        return new UpdatePreferencesRequest(
+                new BigDecimal("2000"), null, null, null, List.of(), List.of(), 1, "en-IN",
+                CreatorAgentPreferences.TONE_FORMAL, null, null, null, List.of(), null, false, null, null, null);
+    }
+
+    @Test
+    @DisplayName("V76: PUT /phone saves the trimmed phone and a later GET returns it")
+    void updatePhoneModelSavesAndGetReturnsIt() {
+        CreatorAgentPreferences existing =
+                CreatorAgentPreferences.newWithDefaults("prefs-1", PROFILE_ID, null, null, null, "en-IN");
+        when(preferencesRepository.findByCreatorId(PROFILE_ID)).thenReturn(Optional.of(existing));
+
+        PreferencesResponse saved =
+                service.updatePhoneModel(
+                        USER_ID,
+                        new com.influora.web.dto.creator.CreatorAgentDtos.UpdatePhoneModelRequest("  Redmi Note 13 "));
+
+        assertEquals("Redmi Note 13", saved.phoneModel());
+        verify(preferencesRepository).save(existing);
+        assertEquals("Redmi Note 13", service.getOrCreatePreferences(USER_ID).phoneModel());
+    }
+
+    @Test
+    @DisplayName("V76: the full-replace PUT does NOT clear a saved phone")
+    void fullPutDoesNotClearSavedPhone() {
+        CreatorAgentPreferences existing =
+                CreatorAgentPreferences.newWithDefaults("prefs-1", PROFILE_ID, null, null, null, "en-IN");
+        existing.updatePhoneModel("OPPO Reno 14 Pro");
+        when(preferencesRepository.findByCreatorId(PROFILE_ID)).thenReturn(Optional.of(existing));
+
+        PreferencesResponse response = service.updatePreferences(USER_ID, fullPutWithoutPhone());
+
+        assertEquals(new BigDecimal("2000"), response.reelFloor());
+        assertEquals("OPPO Reno 14 Pro", response.phoneModel());
+        assertEquals("OPPO Reno 14 Pro", existing.getPhoneModel());
+    }
+
+    @Test
+    @DisplayName("V76: PUT /phone for a user with no creator profile -> 404, nothing saved")
+    void updatePhoneModelNoProfile404() {
+        when(creatorProfileRepository.findByUserId(USER_ID)).thenReturn(Optional.empty());
+
+        ApiException ex =
+                assertThrows(
+                        ApiException.class,
+                        () -> service.updatePhoneModel(
+                                USER_ID,
+                                new com.influora.web.dto.creator.CreatorAgentDtos.UpdatePhoneModelRequest("Pixel 8")));
+
+        assertEquals("CREATOR_PROFILE_NOT_FOUND", ex.getCode());
+        verify(preferencesRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    @DisplayName("V76: findPhoneModelForUser returns the saved phone")
+    void findPhoneModelForUserReturnsSavedPhone() {
+        CreatorAgentPreferences existing =
+                CreatorAgentPreferences.newWithDefaults("prefs-1", PROFILE_ID, null, null, null, "en-IN");
+        existing.updatePhoneModel("Redmi Note 13");
+        when(preferencesRepository.findByCreatorId(PROFILE_ID)).thenReturn(Optional.of(existing));
+
+        assertEquals(Optional.of("Redmi Note 13"), service.findPhoneModelForUser(USER_ID));
+    }
+
+    @Test
+    @DisplayName("V76: findPhoneModelForUser is empty (never a throw, never a created row) for no profile / no row / no phone")
+    void findPhoneModelForUserEmptyCases() {
+        // no phone on an existing row
+        CreatorAgentPreferences noPhone =
+                CreatorAgentPreferences.newWithDefaults("prefs-1", PROFILE_ID, null, null, null, "en-IN");
+        when(preferencesRepository.findByCreatorId(PROFILE_ID)).thenReturn(Optional.of(noPhone));
+        assertEquals(Optional.empty(), service.findPhoneModelForUser(USER_ID));
+
+        // no preferences row
+        when(preferencesRepository.findByCreatorId(PROFILE_ID)).thenReturn(Optional.empty());
+        assertEquals(Optional.empty(), service.findPhoneModelForUser(USER_ID));
+
+        // no creator profile at all
+        when(creatorProfileRepository.findByUserId("someone-else")).thenReturn(Optional.empty());
+        assertEquals(Optional.empty(), service.findPhoneModelForUser("someone-else"));
+
+        // null user id
+        assertEquals(Optional.empty(), service.findPhoneModelForUser(null));
+
+        verify(preferencesRepository, org.mockito.Mockito.never()).save(any());
+    }
 }
