@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { Plus } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import type { CreatorCreditBalance } from '@/lib/api';
@@ -14,6 +15,14 @@ import { spendableCredits } from '@/lib/creator-credits-balance';
  * (still loading, or the fetch failed) or `balance.enabled` is `false` (SPEC.md §9.3 "Flag off:
  * no pill…"). This is the ONE gate every other credits component in this directory also uses.
  *
+ * F-buy-credits-findable — while a creator still has credits, this pill (used here and by
+ * `HeroCreditsChip.tsx`, which renders it directly) was the app's ONLY reachable "buy more"
+ * outside the Wallet page, but nothing about it read as tappable: a solid chip with plain text.
+ * It now carries a small "+" (`aria-hidden`, the text already says what tapping does) and an
+ * accessible name that spells out the action — `"{label} — buy more"` in every state, including
+ * `zero`/`cap` where `label` is replaced by the longer explanatory sentence.
+ *
+
  * ## Accessibility (F10 — WCAG AA on the dark `--meera-stage` header)
  * The pill sits on the dark header, but each state below has ITS OWN solid background — the
  * relevant contrast pair for AA purposes is chip-background vs chip-text, not header vs text, and
@@ -82,6 +91,13 @@ export function CreditBalancePill({ balance, language, onClick, className }: Cre
         ? creditsCopy('exhausted', language)
         : undefined;
 
+  // F-buy-credits-findable: the pill already opens the buy sheet on tap in every state, but
+  // nothing about it LOOKED tappable — it read as a plain label. The accessible name says so
+  // explicitly ("36 credits — buy more"), and the "+" makes it visible too, without growing past
+  // the header's h-8 control row.
+  const buyMore = creditsCopy('pill.buyMore', language);
+  const accessibleName = `${stateSentence ?? label} — ${buyMore}`;
+
   return (
     <button
       type="button"
@@ -92,17 +108,19 @@ export function CreditBalancePill({ balance, language, onClick, className }: Cre
       // and voice-reply-toggle buttons beside it are also `h-8 w-8`), so the pill reads as part of
       // the same control row rather than an oversized outlier. The F10 44px tap-target floor is
       // met by the primary Buy CTA (`buy.cta`, a full button in the sheet/card), not by every small
-      // header icon — the same trade-off this header already makes for its existing 32px buttons.
+      // header icon — the same trade-off this header already makes for its existing 32px buttons;
+      // h-8 (32px) still clears the 32px floor for a non-primary control.
       className={cn(
-        'inline-flex h-8 items-center rounded-full px-3 text-xs font-semibold leading-none',
+        'inline-flex h-8 items-center gap-1 rounded-full px-3 text-xs font-semibold leading-none',
         'transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[--meera-stage]',
         STATE_STYLES[state],
         className,
       )}
-      title={stateSentence ?? label}
-      aria-label={stateSentence ?? label}
+      title={accessibleName}
+      aria-label={accessibleName}
     >
       <span aria-live="polite">{label}</span>
+      <Plus data-testid="credit-balance-pill-plus" className="h-3 w-3 shrink-0" aria-hidden="true" />
     </button>
   );
 }
