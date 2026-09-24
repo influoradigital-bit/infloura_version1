@@ -6,20 +6,24 @@ import { copyPlainText } from '@/lib/clipboard';
 import {
   RESULT_CARD_COPIED,
   RESULT_CARD_COPY,
-  SCRIPT_CARD_ANOTHER_HOOK_PROMPT,
-  SCRIPT_CARD_ANOTHER_HOOK_LABEL,
-  SCRIPT_CARD_CTA_LABEL,
-  SCRIPT_CARD_HOOK_LABEL,
+  SCRIPT_CARD_ACTION_LABEL,
+  SCRIPT_CARD_BEFORE_YOU_SHOOT_LABEL,
+  SCRIPT_CARD_CAPTION_LABEL,
+  SCRIPT_CARD_ON_SCREEN_LABEL,
+  SCRIPT_CARD_PLAN_LABEL,
+  SCRIPT_CARD_SUCCESS_LABEL,
   SCRIPT_CARD_WHY_LABEL,
   pickLang,
 } from '@/lib/copy/meera-chat';
 import type { ParsedMeeraScript } from '@/lib/meera-result-cards';
 
 /**
- * T-MEERA-CREATOR-PHASE-C (PHASE-C-SPEC.md §2) — the reel-script card. Rendered by
- * `MeeraCopilotChat.tsx` INSTEAD of the plain bubble once a finished assistant turn's text has
- * parsed via `parseMeeraScript`; the caller keeps the original bubble as a fallback for a `null`
- * parse, so this component can assume `script` is already a fully valid, non-partial shape.
+ * The rich reel-script card — reads a `ParsedMeeraScript` (the "Full script format" in
+ * `influora-ai/app/prompt/creator_persona.py`, via `parseMeeraScript`) and renders it as a
+ * finished card. Rendered by `MeeraCopilotChat.tsx` INSTEAD of the plain bubble once a finished
+ * assistant turn's text has parsed; the caller keeps the original bubble as a fallback for an
+ * `undefined` parse, so this component can assume `script` is already a fully valid, non-partial
+ * shape (`successLooksLike` and `followUp` are the only fields allowed to be absent).
  *
  * Creator tokens only (`border-border`, `bg-card`, `bg-muted`, `text-primary`) — same rule
  * `CreatorToolResultRenderer.tsx` documents for the other creator-side cards. No `--meera-stage`
@@ -30,15 +34,13 @@ export interface MeeraScriptCardProps {
   script: ParsedMeeraScript;
   /** The exact, unmodified assistant message text — what Copy writes and what "Show as text"
    *  reveals. Never reconstructed from `script`, so Copy is always byte-for-byte what Meera
-   *  actually sent, including any language-specific phrasing`parseMeeraScript` does not retain. */
+   *  actually sent, including any language-specific phrasing `parseMeeraScript` does not retain. */
   rawText: string;
   language: string;
-  /** R-U1 — fills the composer, never sends. Same contract as `MeeraDesk`'s `onPrefill`. */
-  onPrefill: (text: string) => void;
   className?: string;
 }
 
-export function MeeraScriptCard({ script, rawText, language, onPrefill, className }: MeeraScriptCardProps) {
+export function MeeraScriptCard({ script, rawText, language, className }: MeeraScriptCardProps) {
   const [copied, setCopied] = React.useState(false);
   const copiedTimeoutRef = React.useRef<number | null>(null);
 
@@ -59,62 +61,91 @@ export function MeeraScriptCard({ script, rawText, language, onPrefill, classNam
     });
   };
 
-  const anotherHookPrompt = pickLang(language, SCRIPT_CARD_ANOTHER_HOOK_PROMPT);
-  // Short button label; the long sentence above is what gets prefilled into the composer.
-  const anotherHookLabel = pickLang(language, SCRIPT_CARD_ANOTHER_HOOK_LABEL);
+  const onScreenLabel = pickLang(language, SCRIPT_CARD_ON_SCREEN_LABEL);
 
   return (
     <div
       data-testid="meera-script-card"
       className={cn('space-y-3 rounded-xl border border-border bg-card p-3', className)}
     >
-      <div className="flex items-start justify-between gap-2">
-        <p data-testid="script-card-title" className="text-sm font-semibold break-words">
-          {script.title}
-        </p>
-        <span
-          data-testid="script-card-length"
-          className="shrink-0 rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-        >
-          {script.length}s
-        </span>
-      </div>
-
-      <p data-testid="script-card-hook" className="text-sm break-words">
-        <span className="text-xs font-medium text-muted-foreground">
-          {pickLang(language, SCRIPT_CARD_HOOK_LABEL)}:{' '}
-        </span>
-        <span className="font-medium text-primary">{script.hook}</span>
+      <p data-testid="script-card-idea" className="text-sm font-semibold break-words">
+        {script.idea}
       </p>
 
-      {/* Two-column beat list — `0-10s` left, text right. Stacks to one column under 380px, the
-          spec's phone-first breakpoint, so a long shot description never gets squeezed into a
-          narrow right column on the smallest phones. */}
-      <ul className="space-y-2">
-        {script.beats.map((beat, index) => (
-          <li
-            key={`${beat.from}-${beat.to}-${index}`}
-            data-testid="script-card-beat"
-            className="grid grid-cols-1 gap-1 text-sm min-[380px]:grid-cols-[4.5rem_1fr] min-[380px]:gap-3"
-          >
+      {/* Plan / Action / Success looks like — short labelled lines, same "muted label + value"
+          shape the old card used for Hook/CTA, so this stays visually consistent with
+          MeeraReviewCard's Working/Not working rows. */}
+      <div className="space-y-1.5">
+        <p data-testid="script-card-plan" className="text-sm break-words">
+          <span className="text-xs font-medium text-muted-foreground">
+            {pickLang(language, SCRIPT_CARD_PLAN_LABEL)}:{' '}
+          </span>
+          {script.plan}
+        </p>
+        <p data-testid="script-card-action" className="text-sm break-words">
+          <span className="text-xs font-medium text-muted-foreground">
+            {pickLang(language, SCRIPT_CARD_ACTION_LABEL)}:{' '}
+          </span>
+          {script.action}
+        </p>
+        {script.successLooksLike ? (
+          <p data-testid="script-card-success" className="text-sm break-words">
             <span className="text-xs font-medium text-muted-foreground">
-              {beat.from}-{beat.to}s
+              {pickLang(language, SCRIPT_CARD_SUCCESS_LABEL)}:{' '}
             </span>
-            <span className="break-words">{beat.text}</span>
+            {script.successLooksLike}
+          </p>
+        ) : null}
+      </div>
+
+      {/* Beats — one compact block per beat: the timing chip and shot description on one line,
+          the exact line to say (quoted, emphasised, since it's what the creator reads out loud),
+          then the on-screen overlay text as a small muted line. Stacks cleanly at 375px since
+          nothing here relies on a side-by-side column. */}
+      <ul className="space-y-2 border-t border-border pt-2">
+        {script.beats.map((beat, index) => (
+          <li key={`${beat.from}-${beat.to}-${index}`} data-testid="script-card-beat" className="text-sm">
+            <p className="break-words">
+              <span className="text-xs font-medium text-muted-foreground">
+                {beat.from}-{beat.to}s ·{' '}
+              </span>
+              {beat.shot}
+            </p>
+            <p className="break-words font-medium text-primary">&ldquo;{beat.say}&rdquo;</p>
+            <p className="break-words text-xs text-muted-foreground">
+              {onScreenLabel}: {beat.onScreen}
+            </p>
           </li>
         ))}
       </ul>
 
-      <p data-testid="script-card-cta" className="text-sm break-words">
+      <p data-testid="script-card-caption" className="text-sm break-words border-t border-border pt-2">
         <span className="text-xs font-medium text-muted-foreground">
-          {pickLang(language, SCRIPT_CARD_CTA_LABEL)}:{' '}
+          {pickLang(language, SCRIPT_CARD_CAPTION_LABEL)}:{' '}
         </span>
-        {script.cta}
+        {script.caption}
       </p>
 
-      {script.why ? (
-        <p data-testid="script-card-why" className="text-xs text-muted-foreground break-words">
-          {pickLang(language, SCRIPT_CARD_WHY_LABEL)}: {script.why}
+      <div className="space-y-1">
+        <p className="text-xs font-medium text-muted-foreground">
+          {pickLang(language, SCRIPT_CARD_BEFORE_YOU_SHOOT_LABEL)}
+        </p>
+        <ol className="list-decimal space-y-1 pl-5 text-sm">
+          {script.beforeYouShoot.map((item, index) => (
+            <li key={index} data-testid="script-card-before-item" className="break-words">
+              {item}
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <p data-testid="script-card-why" className="text-xs text-muted-foreground break-words">
+        {pickLang(language, SCRIPT_CARD_WHY_LABEL)}: {script.whyThisWorks}
+      </p>
+
+      {script.followUp ? (
+        <p data-testid="script-card-follow-up" className="text-xs text-muted-foreground break-words italic">
+          {script.followUp}
         </p>
       ) : null}
 
@@ -136,15 +167,6 @@ export function MeeraScriptCard({ script, rawText, language, onPrefill, classNam
               {pickLang(language, RESULT_CARD_COPY)}
             </>
           )}
-        </button>
-
-        <button
-          type="button"
-          data-testid="script-card-another-hook"
-          onClick={() => onPrefill(anotherHookPrompt)}
-          className="flex h-11 items-center rounded-lg border border-border px-3 text-sm font-medium hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-        >
-          {anotherHookLabel}
         </button>
       </div>
     </div>
