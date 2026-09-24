@@ -702,7 +702,9 @@ def build_block_b_creator(context: dict[str, Any]) -> dict[str, Any]:
             "first_name": first_name,
             "display_name": display_name,
             "brand_tone": _creator_str(ctx, "brand_tone", "FRIENDLY"),
-            "creator_language": _creator_str(ctx, "creator_language", "hi-IN"),
+            # English is the creator default (2026-09-23); Spring always sends a tag, this is
+            # only the fallback.
+            "creator_language": _creator_str(ctx, "creator_language", "en-IN"),
         }
     )
 

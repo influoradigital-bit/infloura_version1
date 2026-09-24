@@ -105,8 +105,14 @@ def test_persona_states_the_audience_rule():
         'For growth, content, hook and script questions, use the "Your audience" line'
         " in your context alongside the content knowledge"
     ) in text
-    assert 'pick the hook language and the "Unity" or "Buyer persona targeting" framing' in text
-    assert 'If the audience is "not available", say so plainly and suggest they connect Instagram' in text
+    assert 'pick the "Unity" or "Buyer persona targeting" framing' in text
+    # Hooks follow the reply language: the audience no longer picks a Hinglish hook for English.
+    assert "pick the hook language" not in text
+    assert "hooks included: a Hinglish and an English template of the same type are the same hook" in text
+    # Follow the ONE reason the line gives (live 2026-09-24: a connected creator was told to connect).
+    assert 'If the audience is "not available", say so plainly and follow the reason the line gives' in text
+    assert "if it says Instagram is not connected, suggest they connect it" in text
+    assert "if it says Instagram is connected, never tell them to connect it" in text
     assert "Never state an audience fact that is not in that line" in text
 
 

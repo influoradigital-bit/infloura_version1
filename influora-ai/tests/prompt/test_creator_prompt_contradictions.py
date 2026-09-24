@@ -72,7 +72,7 @@ WITH_DRAFT = _system_text([*_java_wired_tools(), "draft_reply"])
 
 
 def test_keep_it_short_names_the_week_plan_as_well_as_the_script():
-    assert "The two exceptions are a full script and a week plan" in WIRED
+    assert "The exceptions are a full script, a week plan and a profile review" in WIRED
     assert "that layout wins over this rule" in WIRED
     assert "The one exception to length is a full script" not in WIRED
 
@@ -89,7 +89,10 @@ def test_the_two_comment_hooks_are_marked_and_no_other_hook_is():
 
 
 def test_the_cta_rule_reaches_the_model_with_the_script_rule_that_explains_it():
-    assert "the comment ask moves to the last beat as the one call to action, or to the caption" in WIRED
+    # The comment ask goes to the caption; the goal's CTA keeps the last beat.
+    assert "the comment ask moves to the caption as the conversation question" in WIRED
+    assert "the last beat keeps the goal's one call to action" in WIRED
+    assert "moves to the last beat as the one call to action" not in WIRED
     assert "never promise the creator will DM anyone unless they said they will" in WIRED
     assert (
         "A hook template the knowledge block marks CTA RULE opens the video with its first part"

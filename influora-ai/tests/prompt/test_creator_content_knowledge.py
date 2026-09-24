@@ -96,8 +96,11 @@ def test_committed_knowledge_file_loads_every_row_by_type():
     # from dataset_2) plus v4's 44 new rows (47 minus 3 written on both sides), plus v5's 38
     # camera rows from dataset_5 (2026-09-24; its other 104 rows were older copies of rows
     # already here and were not taken), plus v6: 5 outdoor-light rows and dataset_6's 25
-    # delivery rows (its other 142 rows are dataset_5 again).
-    assert len(rows) == 240
+    # delivery rows (its other 142 rows are dataset_5 again). Go-live fixes 2026-09-24: 8 rows that
+    # repeated an idea already here in other words were kept once (content mix, repurposing,
+    # funnel metrics, the combined short-form platform row, 4 Hinglish hooks that have English
+    # versions) -> 232.
+    assert len(rows) == 232
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
@@ -105,11 +108,11 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "camera_angle": 28,
         "storytelling_structure": 11,
         "persuasion_principle": 7,
-        "marketing_concept": 19,
-        "hook_template": 22,
+        "marketing_concept": 16,
+        "hook_template": 18,
         "narrative_principle": 27,
         "content_characteristic": 10,
-        "platform_strategy": 5,
+        "platform_strategy": 4,
         "brand_deal_practice": 5,
         "category_playbook": 13,
         "contextual_action": 11,
@@ -176,7 +179,9 @@ def test_no_tiktok_anywhere_in_the_knowledge_file_or_block():
     assert "tiktok" not in KNOWLEDGE_PATH.read_bytes().decode("utf-8").lower()
     assert "tiktok" not in CREATOR_KNOWLEDGE_TEXT.lower()
     platforms = [r["platform"] for r in load_knowledge() if r["data_type"] == "platform_strategy"]
-    assert "Instagram Reels / YouTube Shorts (short-form algorithmic feeds)" in platforms
+    # Short-form is covered by the two "current basics" rows (the combined row was the same idea).
+    assert "Instagram Reels (current basics)" in platforms
+    assert "YouTube Shorts (current basics)" in platforms
 
 
 def test_status_and_outrage_row_carries_the_no_real_individuals_guard():
@@ -206,10 +211,14 @@ def test_the_six_adapted_pattern_hooks_carry_the_adapted_source_and_keep_the_ori
     # Found by source, not by file position: release/0922 appends v4's rows after the
     # go-live file, so the six rows that were 70..75 in v4 are 133..138 in the merge.
     adapted = [r for r in rows if r.get("source") == ADAPTED_SOURCE]
-    assert len(adapted) == 6
+    # 2026-09-24: four Hinglish hooks that repeated English ones were kept once; the three
+    # English hooks that were the guides' own wording were reworded and attributed -> 5.
+    assert len(adapted) == 5, [r["template"] for r in adapted]
     for r in adapted:
         assert r["data_type"] == "hook_template", r["template"]
         assert r["further_reading"].startswith("Pattern inspired by: "), r["template"]
+        original = r["further_reading"].split('"')[1]
+        assert r["template"] != original, "a guide's original wording reached the prompt"
     # The unconfirmed guides survive only as inspiration, never as a source,
     # and their original wording never reaches the prompt.
     for r in rows:
@@ -217,7 +226,8 @@ def test_the_six_adapted_pattern_hooks_carry_the_adapted_source_and_keep_the_ori
     assert "Did you know [statistic]%" not in CREATOR_KNOWLEDGE_TEXT
     text = KNOWLEDGE_PATH.read_bytes().decode("utf-8")
     assert "video_goal parameter" not in text
-    assert "goal_fit field" in text
+    # "goal_fit field" lived on the funnel-metrics row, kept once as "Judge each video by its
+    # goal", which now names the hooks' goal values instead (see test_merge_review_fixes.py).
 
 
 def test_platform_strategy_rows_are_medium_confidence():
@@ -547,13 +557,15 @@ def test_persona_states_the_playbook_and_brand_deal_rules():
 def test_persona_states_the_ask_first_rule():
     text = _flat(MEERA_CREATOR_PERSONA)
     assert "Ask first, only what's unknown." in text
-    # One goal question first, capped at three, one per message.
-    assert "ask ONE short question first" in text
-    assert "Ask at most three questions in total" in text
-    assert "one per message" in text
-    # Never re-ask what the context or conversation already holds.
-    assert "Never ask for anything already in your context" in text
-    assert "already answered in this conversation" in text
+    # ONE intake rule: ask-first defers to the content idea intake (at most 3 questions in ONE
+    # message); the old "one per message" rule contradicted it and must not come back.
+    assert "Otherwise ask as the content idea intake below says." in text
+    assert "first ask at most 3 short questions in ONE message" in text
+    assert "one per message" not in text
+    assert "ask ONE short question first" not in text
+    # Never re-ask what the context or the message already holds.
+    assert "Never ask what the context already holds." in text
+    assert "Skip questions they already answered." in text
     # A specific request is served first; questions never block help.
     assert "never make them answer questions before they get help" in text
 

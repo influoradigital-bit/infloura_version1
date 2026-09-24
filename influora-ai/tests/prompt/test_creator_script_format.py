@@ -77,9 +77,9 @@ def test_v3_fixes_survive_the_v4_merge():
     raw = KNOWLEDGE_PATH.read_bytes().decode("utf-8")
     assert "tiktok" not in raw.lower()
     assert "video_goal" not in raw
-    # The adapted-pattern source on rows 70-75 and the row 74 statistic fix are
-    # pinned by test_creator_content_knowledge.py; the merge only appended rows.
-    assert len(raw.splitlines()) == 240  # release/0922: go-live 128 + v4's 44 new rows + v5's 38 camera rows + v6's 30
+    # The adapted-pattern source and the statistic fix are pinned by
+    # test_creator_content_knowledge.py. Every line is one row; the exact count is pinned there.
+    assert len(raw.splitlines()) == len(load_knowledge())
 
 
 def test_length_ranges_are_whole_seconds_low_to_high():
@@ -154,8 +154,8 @@ def test_short_reply_rule_names_the_script_and_the_week_plan_as_its_exceptions()
     # has to name it too, and a format's own layout (numbered tips, label lines) wins.
     assert "The one exception to length is a full script" not in TEXT
     assert (
-        "The two exceptions are a full script and a week plan: each is laid out exactly as"
-        " its own format below says, and that layout wins over this rule."
+        "The exceptions are a full script, a week plan and a profile review: each is laid out"
+        " exactly as its own format below says, and that layout wins over this rule."
     ) in TEXT
 
 

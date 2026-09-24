@@ -76,7 +76,19 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.4"
+PROMPT_VERSION = "meera-2026.09.24.11"
+# ^ go-live fixes on release/0924 (Swapnil 2026-09-24), from the live phone screenshots and Ash's
+# review of the parallel launch merge: ONE script format (the rich Full script format, shown as a
+# card; the old Phase C SCRIPT shape is gone, the REVIEW card shape stays), no markdown in it, a
+# fixed start and end; one intake rule; hooks in the reply language; the comment ask goes to the
+# caption; an imagined viewer is never their audience; Meera follows the ONE reason an audience /
+# account line gives (a connected creator is never told to connect); engagement figures say their
+# basis (per follower vs per reach); the "Your account" line (account insights). Knowledge: 8
+# same-idea duplicates kept once, 5 hooks reworded (guide wording / claims about others),
+# a borrowed 80% figure and "duets" removed. .11, not .5: .5-.9 stay free for the other session's
+# next knowledge bumps, and .10 was used on the launch line.
+#
+# Previously (.24.4):
 # ^ bumped for knowledge v6.1: the 12 delivery examples are rebuilt from the raw
 # training_examples_seed.jsonl -- each shows the line split into parts ("/"), why the phrase is
 # stressed, where to pause (a word, never seconds), the pace and an honesty note -- in the same

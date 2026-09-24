@@ -138,6 +138,23 @@ public class MeeraContextService {
     public static final String ACCOUNT_INSIGHTS_NOT_AVAILABLE =
             "not available (Instagram not connected, or no account numbers fetched yet)";
 
+    /**
+     * The two reasons, told apart (live, 2026-09-24): a CONNECTED creator was told "Instagram
+     * connected nahi hai" because the line above names both reasons and the persona suggested
+     * connecting. Each line now says the one reason that is true; the generic one above is kept
+     * only for a failed read (and as influora-ai's fallback when Spring sends nothing).
+     */
+    public static final String AUDIENCE_NOT_CONNECTED = "not available: Instagram is not connected";
+
+    public static final String AUDIENCE_NOT_YET =
+            "not available yet: Instagram is connected, but its audience details have not arrived"
+                    + " (Instagram shares them only for accounts with 100 or more followers)";
+
+    public static final String ACCOUNT_INSIGHTS_NOT_CONNECTED = "not available: Instagram is not connected";
+
+    public static final String ACCOUNT_INSIGHTS_NOT_YET =
+            "not available yet: Instagram is connected, but its account numbers have not arrived";
+
     private static final int AUDIENCE_TOP_AGE_BANDS = 2;
     private static final int AUDIENCE_TOP_CITIES = 3;
 
@@ -418,7 +435,7 @@ public class MeeraContextService {
      */
     private String buildAccountInsightsSummary(String creatorProfileId, Locale locale) {
         if (!hasLiveMetaConnection(creatorProfileId)) {
-            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+            return ACCOUNT_INSIGHTS_NOT_CONNECTED;
         }
         CreatorAccountInsightsResponse insights;
         try {
@@ -432,7 +449,7 @@ public class MeeraContextService {
             return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
         }
         if (insights == null || !insights.hasData()) {
-            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+            return ACCOUNT_INSIGHTS_NOT_YET;
         }
         List<String> parts = new ArrayList<>();
         addCount(parts, insights.reach(), "accounts reached", locale);
@@ -441,7 +458,7 @@ public class MeeraContextService {
         addCount(parts, insights.accountsEngaged(), "accounts engaged", locale);
         addCount(parts, insights.profileLinksTaps(), "profile-link taps", locale);
         if (parts.isEmpty()) {
-            return ACCOUNT_INSIGHTS_NOT_AVAILABLE;
+            return ACCOUNT_INSIGHTS_NOT_YET;
         }
         return "Last 28 days ("
                 + Rendered.date(insights.periodStart(), locale)
@@ -460,7 +477,7 @@ public class MeeraContextService {
 
     private String buildAudienceSummary(String creatorProfileId, Locale locale) {
         if (!hasLiveMetaConnection(creatorProfileId)) {
-            return AUDIENCE_NOT_AVAILABLE;
+            return AUDIENCE_NOT_CONNECTED;
         }
 
         CreatorDemographicsResponse demographics;
@@ -475,7 +492,7 @@ public class MeeraContextService {
             return AUDIENCE_NOT_AVAILABLE;
         }
         if (demographics == null || !demographics.hasData()) {
-            return AUDIENCE_NOT_AVAILABLE;
+            return AUDIENCE_NOT_YET;
         }
 
         // Map<String, ?> on purpose: the breakdowns are decoded from JSON with a raw Map.class, so
@@ -545,7 +562,7 @@ public class MeeraContextService {
         }
 
         if (parts.isEmpty()) {
-            return AUDIENCE_NOT_AVAILABLE;
+            return AUDIENCE_NOT_YET;
         }
         String asOf = Rendered.date(demographics.fetchedAt(), locale);
         if (asOf != null) {

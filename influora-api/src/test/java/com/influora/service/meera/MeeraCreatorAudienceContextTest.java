@@ -219,10 +219,10 @@ class MeeraCreatorAudienceContextTest {
 
         CreatorContextResponse context = (CreatorContextResponse) service.assemble(CREATOR_USER_ID, "CREATOR");
 
-        assertThat(context.audienceSummary()).isEqualTo(MeeraContextService.AUDIENCE_NOT_AVAILABLE);
+        assertThat(context.audienceSummary()).isEqualTo(MeeraContextService.AUDIENCE_NOT_YET);
         assertThat(context.audienceSummary()).startsWith("not available").doesNotContain("0%");
         assertThat(mapper.writeValueAsString(context))
-                .contains("\"audience_summary\":\"" + MeeraContextService.AUDIENCE_NOT_AVAILABLE + "\"");
+                .contains("\"audience_summary\":\"" + MeeraContextService.AUDIENCE_NOT_YET + "\"");
     }
 
     @Test
@@ -236,7 +236,7 @@ class MeeraCreatorAudienceContextTest {
 
         CreatorContextResponse context = (CreatorContextResponse) service.assemble(CREATOR_USER_ID, "CREATOR");
 
-        assertThat(context.audienceSummary()).isEqualTo(MeeraContextService.AUDIENCE_NOT_AVAILABLE);
+        assertThat(context.audienceSummary()).isEqualTo(MeeraContextService.AUDIENCE_NOT_YET);
     }
 
     @Test
@@ -277,9 +277,9 @@ class MeeraCreatorAudienceContextTest {
 
         CreatorContextResponse context = (CreatorContextResponse) service.assemble(CREATOR_USER_ID, "CREATOR");
 
-        assertThat(context.audienceSummary()).isEqualTo(MeeraContextService.AUDIENCE_NOT_AVAILABLE);
+        assertThat(context.audienceSummary()).isEqualTo(MeeraContextService.AUDIENCE_NOT_CONNECTED);
         // Same rule for the account line (2026-09-24): disconnected means not available.
-        assertThat(context.accountInsightsSummary()).isEqualTo(MeeraContextService.ACCOUNT_INSIGHTS_NOT_AVAILABLE);
+        assertThat(context.accountInsightsSummary()).isEqualTo(MeeraContextService.ACCOUNT_INSIGHTS_NOT_CONNECTED);
         verifyNoInteractions(analyticsService);
     }
 
@@ -405,6 +405,6 @@ class MeeraCreatorAudienceContextTest {
 
         CreatorContextResponse context = (CreatorContextResponse) service.assemble(CREATOR_USER_ID, "CREATOR");
 
-        assertThat(context.accountInsightsSummary()).isEqualTo(MeeraContextService.ACCOUNT_INSIGHTS_NOT_AVAILABLE);
+        assertThat(context.accountInsightsSummary()).isEqualTo(MeeraContextService.ACCOUNT_INSIGHTS_NOT_YET);
     }
 }

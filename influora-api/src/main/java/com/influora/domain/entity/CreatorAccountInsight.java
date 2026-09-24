@@ -11,7 +11,7 @@ import java.time.LocalDate;
 /**
  * One fetch of a creator's account-level Instagram insights over {@code periodStart..periodEnd}
  * (inclusive, IST days): accounts reached, views, interactions, accounts engaged and profile-link
- * taps. Immutable snapshot (see V20260924100000); a metric Meta did not return stays null.
+ * taps. Immutable snapshot (see V20260924130000); a metric Meta did not return stays null.
  */
 @Entity
 @Table(name = "creator_account_insights")

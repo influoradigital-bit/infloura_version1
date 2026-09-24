@@ -8,6 +8,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface CreatorAccountInsightRepository extends JpaRepository<CreatorAccountInsight, String> {
 
-    /** The newest snapshot is the current one (immutable rows, see V20260924100000). */
+    /** The newest snapshot is the current one (immutable rows, see V20260924130000). */
     Optional<CreatorAccountInsight> findFirstByCreatorProfileIdOrderByFetchedAtDesc(String creatorProfileId);
 }

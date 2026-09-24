@@ -102,7 +102,7 @@ def test_persona_states_how_to_use_account_numbers():
     text = _flat(MEERA_CREATOR_PERSONA)
     assert 'The "Your account" line has their last 28 days' in text
     assert "Quote those numbers exactly as written." in text
-    assert 'If it is "not available", say so plainly; never estimate one.' in text
+    assert 'If it is "not available", say so plainly and follow its reason (connected or not, as the line says); never estimate one.' in text
 
 
 def test_prompt_version_bumped_for_account_insights():

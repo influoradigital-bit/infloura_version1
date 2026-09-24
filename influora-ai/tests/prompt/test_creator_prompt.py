@@ -370,12 +370,15 @@ def test_persona_states_the_script_contract():
     """The frontend parser (src/lib/meera-result-cards.ts) can only draw a card if Meera writes
     scripts in one fixed shape. If this contract is edited here, that parser must change too."""
     persona = get_creator_persona(_ctx())
+    # ONE script format since 2026-09-24: the rich "Full script format", shown as a card.
     _assert_lines_in_order(
         persona,
-        [r"^\s*SCRIPT\s*$", r"^\s*Title:", r"^\s*Length:", r"^\s*Hook:", r"^\s*0-10s:",
-         r"^\s*CTA:", r"^\s*Why:"],
+        [r"^\s*Idea:", r"^\s*Plan:", r"^\s*Action:", r"^\s*Success looks like:", r"^\s*Script:",
+         r'^\s*"0-3s\. Shot:', r"^\s*Caption:", r"^\s*Before you shoot:", r"^\s*Why this works:"],
     )
-    assert "nothing before or after them" in persona
+    flat = " ".join(persona.split())
+    assert "Start with the Idea line, nothing before it." in flat
+    assert "Title: four to eight words" not in persona  # the old Phase C shape is gone
 
 
 def test_persona_states_the_profile_review_contract():
@@ -389,12 +392,14 @@ def test_persona_states_the_profile_review_contract():
 
 def test_the_card_keys_stay_english_for_a_hindi_creator():
     persona = get_creator_persona(_ctx(creator_language="hi-IN"))
-    assert "stay in English even when you write in Hindi" in persona
-    assert "SCRIPT" in persona and "REVIEW" in persona
+    flat = " ".join(persona.split())
+    assert "(REVIEW, Working, Not working, Next 1/2/3) stay in English even when you write in Hindi" in flat
+    assert "and the Shot / Say / Stress / Pause / On screen markers in each beat, stay in English" in flat
 
 
 def test_the_fixed_shapes_are_only_for_replies_the_creator_asked_for():
     persona = get_creator_persona(_ctx())
-    assert "Never use these" in persona
+    assert "Full script format (only when asked):" in persona
+    assert "Profile review format (only when asked to review their profile):" in persona
     # The short-reply rail still stands for everything else.
     assert "KEEP IT SHORT" in persona
