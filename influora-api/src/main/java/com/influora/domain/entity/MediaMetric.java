@@ -43,6 +43,15 @@ public class MediaMetric {
      * brand-facing DTO/response (only derived {@code brand_safety_score}/{@code garm_flags} may
      * surface) and keep out of logs.
      */
+
+    /**
+     * The Instagram account this row was read from (the token row's ig_business_account_id).
+     * A creator profile can connect a different account later; without this, rows from the old
+     * account stayed indistinguishable and every read mixed them together. NULL on rows written
+     * before V20260924120000 — readers treat NULL as "unknown, still show it".
+     */
+    @Column(name = "ig_account_id", length = 50)
+    private String igAccountId;
     @Column(name = "caption", columnDefinition = "TEXT")
     private String caption;
 
@@ -192,6 +201,11 @@ public class MediaMetric {
         return createdAt;
     }
 
+
+    public String getIgAccountId() {
+        return igAccountId;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -226,6 +240,12 @@ public class MediaMetric {
 
         public Builder mediaType(String mediaType) {
             m.mediaType = mediaType;
+            return this;
+        }
+
+
+        public Builder igAccountId(String igAccountId) {
+            m.igAccountId = igAccountId;
             return this;
         }
 

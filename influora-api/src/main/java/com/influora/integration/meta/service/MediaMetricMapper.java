@@ -64,6 +64,7 @@ public final class MediaMetricMapper {
     public static MediaMetric toMediaMetric(
             String creatorProfileId,
             String platform,
+            String igAccountId,
             InstagramMediaResponse.MediaItem media,
             InstagramInsightsResponse insights,
             Instant fetchedAt) {
@@ -77,6 +78,9 @@ public final class MediaMetricMapper {
                 .mediaId(media.id())
                 .creatorProfileId(creatorProfileId)
                 .platform(platform)
+                // The account this post was read from: media_metrics previously held nothing but
+                // a post id, so a post could not be attributed to an account at all.
+                .igAccountId(igAccountId)
                 // NOT NULL in V21. Meta always sends media_type on the /media edge, but a null here
                 // would fail the insert for the whole creator rather than this one post.
                 .mediaType(media.mediaType() == null ? "UNKNOWN" : media.mediaType())

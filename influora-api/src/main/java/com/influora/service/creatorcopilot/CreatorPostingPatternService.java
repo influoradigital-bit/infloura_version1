@@ -72,12 +72,15 @@ public class CreatorPostingPatternService {
 
     private final MediaMetricsRepository mediaMetricsRepository;
     private final CreatorProfileRepository creatorProfileRepository;
+    private final ConnectedInstagramAccount connectedAccount;
 
     public CreatorPostingPatternService(
             MediaMetricsRepository mediaMetricsRepository,
-            CreatorProfileRepository creatorProfileRepository) {
+            CreatorProfileRepository creatorProfileRepository,
+            ConnectedInstagramAccount connectedAccount) {
         this.mediaMetricsRepository = mediaMetricsRepository;
         this.creatorProfileRepository = creatorProfileRepository;
+        this.connectedAccount = connectedAccount;
     }
 
     /**
@@ -123,9 +126,16 @@ public class CreatorPostingPatternService {
         // the window). The Java dedupe below stays as a second line of defence -- it is what the
         // snapshot test pins -- but it is no longer what keeps this read from loading every poll
         // this creator has ever had.
+        // Only the account the creator is connected to today. "Best time to post" read over 90
+        // days of a profile that has switched Instagram accounts was averaging the posting habits
+        // of two or three different accounts into one recommendation.
+        java.time.Instant windowStart = today.minusDays(LOOKBACK_DAYS).atStartOfDay(IST).toInstant();
+        String igAccountId = connectedAccount.currentAccountId(profile.getId()).orElse(null);
         List<MediaMetric> rawRows =
-                mediaMetricsRepository.findNewestSnapshotPerPostSince(
-                        profile.getId(), today.minusDays(LOOKBACK_DAYS).atStartOfDay(IST).toInstant());
+                igAccountId == null
+                        ? mediaMetricsRepository.findNewestSnapshotPerPostSince(profile.getId(), windowStart)
+                        : mediaMetricsRepository.findNewestSnapshotPerPostSinceForAccount(
+                                profile.getId(), windowStart, igAccountId);
 
         List<MediaMetric> newestPerPost = dedupeToNewestSnapshotPerPost(rawRows);
         List<MediaMetric> inWindow = filterToWindow(newestPerPost, today);

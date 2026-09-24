@@ -50,6 +50,8 @@ class GetMyMetricsExecutorTest {
     @Mock private CreatorMetricsRepository creatorMetricsRepository;
     @Mock private MediaMetricsRepository mediaMetricsRepository;
     @Mock private QualityScoreService qualityScoreService;
+    // V20260924120000: the tool reads only the account the creator is connected to now.
+    @Mock private com.influora.service.creatorcopilot.ConnectedInstagramAccount connectedAccount;
 
     private GetMyMetricsExecutor executor;
     private CreatorProfile profile;
@@ -58,9 +60,18 @@ class GetMyMetricsExecutorTest {
     void setUp() {
         executor =
                 new GetMyMetricsExecutor(
-                        preferencesService, creatorMetricsRepository, mediaMetricsRepository, qualityScoreService);
+                        preferencesService,
+                        creatorMetricsRepository,
+                        mediaMetricsRepository,
+                        qualityScoreService,
+                        connectedAccount);
         profile = CreatorProfile.newForUser(CREATOR_PROFILE_ID, CREATOR_USER_ID, "Priya Shah");
         lenient().when(preferencesService.requireCreatorProfile(CREATOR_USER_ID)).thenReturn(profile);
+        // These tests describe a creator with one connection; the unnarrowed read is the path
+        // they already pin, so the account resolves to empty here.
+        lenient()
+                .when(connectedAccount.currentAccountId(CREATOR_PROFILE_ID))
+                .thenReturn(java.util.Optional.empty());
         lenient().when(preferencesService.getOrCreatePreferences(CREATOR_USER_ID)).thenReturn(preferences());
     }
 

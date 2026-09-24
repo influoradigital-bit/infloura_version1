@@ -76,6 +76,15 @@ public class CreatorMetric {
     private String platform;
 
     /** CR-116 — InstagramUserResponse.username() at fetch time; null if Meta didn't return one. */
+
+    /**
+     * The Instagram account this row was read from (the token row's ig_business_account_id).
+     * A creator profile can connect a different account later; without this, rows from the old
+     * account stayed indistinguishable and every read mixed them together. NULL on rows written
+     * before V20260924120000 — readers treat NULL as "unknown, still show it".
+     */
+    @Column(name = "ig_account_id", length = 50)
+    private String igAccountId;
     @Column(name = "username", length = 200)
     private String username;
 
@@ -128,6 +137,10 @@ public class CreatorMetric {
 
     public String getPlatform() {
         return platform;
+    }
+
+    public String getIgAccountId() {
+        return igAccountId;
     }
 
     public String getUsername() {
@@ -202,6 +215,12 @@ public class CreatorMetric {
 
         public Builder platform(String platform) {
             m.platform = platform;
+            return this;
+        }
+
+
+        public Builder igAccountId(String igAccountId) {
+            m.igAccountId = igAccountId;
             return this;
         }
 

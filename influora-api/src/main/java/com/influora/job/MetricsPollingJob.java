@@ -290,6 +290,10 @@ public class MetricsPollingJob {
                             .time(Instant.now())
                             .creatorProfileId(creatorProfileId)
                             .platform(PLATFORM_INSTAGRAM)
+                            // Which Instagram account this snapshot came from. A profile can
+                            // connect a different account later, and without this every reader
+                            // mixed the old account's rows into the new one's numbers.
+                            .igAccountId(igBusinessAccountId)
                             // CR-116 — was fetched into `profile` and then discarded; now flows
                             // through to platform_stats.handle via PlatformStatsAggregationJob.
                             .username(profile.username())
@@ -375,6 +379,7 @@ public class MetricsPollingJob {
                         MediaMetricMapper.toMediaMetric(
                                 creatorProfileId,
                                 PLATFORM_INSTAGRAM,
+                                igBusinessAccountId,
                                 item.mediaItem(),
                                 item.insights(),
                                 fetchedAt));

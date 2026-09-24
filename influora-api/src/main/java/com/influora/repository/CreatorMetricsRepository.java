@@ -40,6 +40,26 @@ public interface CreatorMetricsRepository extends JpaRepository<CreatorMetric, S
     List<CreatorMetric> findByCreatorProfileIdOrderByTimeDesc(String creatorProfileId, Pageable pageable);
 
     /**
+     * The same reads, narrowed to ONE connected Instagram account. A creator profile can connect a
+     * different account later (seen live: three accounts under one profile), and the unnarrowed
+     * methods above mix them, so Meera's posts, her quality score, the posting pattern and the
+     * brand-facing performance panel were all built from several accounts at once.
+     *
+     * <p>A row whose {@code igAccountId} is NULL predates V20260924120000 and cannot be attributed
+     * to an account, so it is INCLUDED rather than hidden — otherwise every creator would lose
+     * their history the moment this shipped, to fix a problem only account-switchers have. Those
+     * rows are cleaned up per creator, separately.
+     */
+    @Query(
+            "select m from CreatorMetric m where m.creatorProfileId = :creatorProfileId"
+                    + " and (m.igAccountId is null or m.igAccountId = :igAccountId)"
+                    + " order by m.time desc")
+    List<CreatorMetric> findForAccountOrderByTimeDesc(
+            @Param("creatorProfileId") String creatorProfileId,
+            @Param("igAccountId") String igAccountId,
+            Pageable pageable);
+
+    /**
      * F-0961 — newest rows of ONE data source. Filtering in the query (not after a LIMIT) means a
      * burst of newer CREATOR_REPORTED rows can never push every Meta-synced row out of the page.
      */

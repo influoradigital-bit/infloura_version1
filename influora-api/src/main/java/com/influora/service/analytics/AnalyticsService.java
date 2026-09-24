@@ -11,6 +11,7 @@ import com.influora.repository.AudienceDemographicsRepository;
 import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.CreatorScoreRepository;
 import com.influora.repository.MediaMetricsRepository;
+import com.influora.service.creatorcopilot.ConnectedInstagramAccount;
 import com.influora.security.AuthPrincipal;
 import com.influora.service.BrandContextService;
 import com.influora.service.MetricsAuthorizationService;
@@ -61,6 +62,7 @@ public class AnalyticsService {
     private final CreatorScoreRepository creatorScoreRepository;
     private final AudienceDemographicsRepository audienceDemographicsRepository;
     private final MediaMetricsRepository mediaMetricsRepository;
+    private final ConnectedInstagramAccount connectedAccount;
 
     public AnalyticsService(
             BrandContextService brandContext,
@@ -68,13 +70,15 @@ public class AnalyticsService {
             CreatorMetricsRepository creatorMetricsRepository,
             CreatorScoreRepository creatorScoreRepository,
             AudienceDemographicsRepository audienceDemographicsRepository,
-            MediaMetricsRepository mediaMetricsRepository) {
+            MediaMetricsRepository mediaMetricsRepository,
+            ConnectedInstagramAccount connectedAccount) {
         this.brandContext = brandContext;
         this.metricsAuthorizationService = metricsAuthorizationService;
         this.creatorMetricsRepository = creatorMetricsRepository;
         this.creatorScoreRepository = creatorScoreRepository;
         this.audienceDemographicsRepository = audienceDemographicsRepository;
         this.mediaMetricsRepository = mediaMetricsRepository;
+        this.connectedAccount = connectedAccount;
     }
 
     /**
@@ -386,8 +390,19 @@ public class AnalyticsService {
     private List<ContentPerformanceResponse> buildContentPerformanceResponse(
             String creatorProfileId, boolean includePreviewImage) {
         List<MediaMetric> recent =
-                mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
-                        creatorProfileId, PageRequest.of(0, CONTENT_PERFORMANCE_LOOKBACK));
+                connectedAccount
+                        .currentAccountId(creatorProfileId)
+                        .map(
+                                // A creator can connect a different Instagram account at any time,
+                                // and this panel is what a BRAND judges them on: without narrowing,
+                                // it showed posts from accounts the creator no longer has.
+                                acct ->
+                                        mediaMetricsRepository.findForAccountOrderByTimeDesc(
+                                                creatorProfileId, acct, PageRequest.of(0, CONTENT_PERFORMANCE_LOOKBACK)))
+                        .orElseGet(
+                                () ->
+                                        mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
+                                                creatorProfileId, PageRequest.of(0, CONTENT_PERFORMANCE_LOOKBACK)));
 
         Map<String, MediaMetric> latestByMediaId = new LinkedHashMap<>();
         for (MediaMetric metric : recent) {

@@ -24,6 +24,8 @@ class MediaMetricMapperTest {
 
     private static final String CREATOR_ID = "01HWXYZCREATOR123456789";
     private static final String PLATFORM = "INSTAGRAM";
+    /** V20260924120000: rows now name the Instagram account they were read from. */
+    private static final String IG_ACCOUNT = "ig-acct-1";
     private static final Instant FETCHED_AT = Instant.parse("2026-09-02T12:00:00Z");
 
     @Test
@@ -31,7 +33,7 @@ class MediaMetricMapperTest {
     void testMapsAllMetrics() {
         MediaMetric row =
                 MediaMetricMapper.toMediaMetric(
-                        CREATOR_ID, PLATFORM, mediaItem(), fullInsights(), FETCHED_AT);
+                        CREATOR_ID, PLATFORM, IG_ACCOUNT, mediaItem(), fullInsights(), FETCHED_AT);
 
         assertEquals(1200L, row.getReach());
         assertEquals(340L, row.getLikes());
@@ -47,7 +49,7 @@ class MediaMetricMapperTest {
     void testVideoViewsNotDoubleCounted() {
         MediaMetric row =
                 MediaMetricMapper.toMediaMetric(
-                        CREATOR_ID, PLATFORM, mediaItem(), fullInsights(), FETCHED_AT);
+                        CREATOR_ID, PLATFORM, IG_ACCOUNT, mediaItem(), fullInsights(), FETCHED_AT);
 
         assertNull(
                 row.getVideoViews(),
@@ -64,7 +66,7 @@ class MediaMetricMapperTest {
                 new InstagramInsightsResponse(List.of(metric("reach", 900)));
 
         MediaMetric row =
-                MediaMetricMapper.toMediaMetric(CREATOR_ID, PLATFORM, mediaItem(), partial, FETCHED_AT);
+                MediaMetricMapper.toMediaMetric(CREATOR_ID, PLATFORM, IG_ACCOUNT, mediaItem(), partial, FETCHED_AT);
 
         assertEquals(900L, row.getReach());
         assertNull(row.getSaves());
@@ -80,7 +82,7 @@ class MediaMetricMapperTest {
         // still real and its like/comment counts came from the /media edge — dropping the row would
         // leave the creator unscored for a reason unrelated to their content.
         MediaMetric row =
-                MediaMetricMapper.toMediaMetric(CREATOR_ID, PLATFORM, mediaItem(), null, FETCHED_AT);
+                MediaMetricMapper.toMediaMetric(CREATOR_ID, PLATFORM, IG_ACCOUNT, mediaItem(), null, FETCHED_AT);
 
         assertNotNull(row);
         assertEquals(300L, row.getLikes(), "falls back to media_item like_count");
@@ -94,7 +96,7 @@ class MediaMetricMapperTest {
     void testInsightsLikesPreferredOverMediaItem() {
         MediaMetric row =
                 MediaMetricMapper.toMediaMetric(
-                        CREATOR_ID, PLATFORM, mediaItem(), fullInsights(), FETCHED_AT);
+                        CREATOR_ID, PLATFORM, IG_ACCOUNT, mediaItem(), fullInsights(), FETCHED_AT);
 
         assertEquals(340L, row.getLikes(), "insights value, not the media item's 300");
     }
@@ -104,7 +106,7 @@ class MediaMetricMapperTest {
     void testCarriesCaptionAndProvenance() {
         MediaMetric row =
                 MediaMetricMapper.toMediaMetric(
-                        CREATOR_ID, PLATFORM, mediaItem(), fullInsights(), FETCHED_AT);
+                        CREATOR_ID, PLATFORM, IG_ACCOUNT, mediaItem(), fullInsights(), FETCHED_AT);
 
         assertEquals("a caption", row.getCaption(), "BrandSafetyScoreService reads this");
         assertEquals("https://instagram.com/p/abc", row.getPermalink());
@@ -123,7 +125,7 @@ class MediaMetricMapperTest {
                         "media_1", "c", null, null, null, "2026-08-20T10:30:00+0000", 1L, 1L, null);
 
         MediaMetric row =
-                MediaMetricMapper.toMediaMetric(CREATOR_ID, PLATFORM, noType, null, FETCHED_AT);
+                MediaMetricMapper.toMediaMetric(CREATOR_ID, PLATFORM, IG_ACCOUNT, noType, null, FETCHED_AT);
 
         assertEquals("UNKNOWN", row.getMediaType(), "media_type is NOT NULL in V21");
     }
@@ -170,7 +172,7 @@ class MediaMetricMapperTest {
     void testPostedAtPopulated() {
         MediaMetric row =
                 MediaMetricMapper.toMediaMetric(
-                        CREATOR_ID, PLATFORM, mediaItem(), fullInsights(), FETCHED_AT);
+                        CREATOR_ID, PLATFORM, IG_ACCOUNT, mediaItem(), fullInsights(), FETCHED_AT);
 
         assertEquals(Instant.parse("2026-08-20T10:30:00Z"), row.getPostedAt());
     }
@@ -317,7 +319,7 @@ class MediaMetricMapperTest {
     }
 
     private static String previewOf(InstagramMediaResponse.MediaItem item) {
-        return MediaMetricMapper.toMediaMetric(CREATOR_ID, PLATFORM, item, null, FETCHED_AT)
+        return MediaMetricMapper.toMediaMetric(CREATOR_ID, PLATFORM, IG_ACCOUNT, item, null, FETCHED_AT)
                 .getPreviewImageUrl();
     }
 

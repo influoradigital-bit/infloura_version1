@@ -32,6 +32,27 @@ public interface MediaMetricsRepository extends JpaRepository<MediaMetric, Strin
     /** Recent per-post metrics for a creator, newest first — used by scoring jobs (spec §4). */
     List<MediaMetric> findByCreatorProfileIdOrderByTimeDesc(String creatorProfileId, Pageable pageable);
 
+
+    /**
+     * The same reads, narrowed to ONE connected Instagram account. A creator profile can connect a
+     * different account later (seen live: three accounts under one profile), and the unnarrowed
+     * methods above mix them, so Meera's posts, her quality score, the posting pattern and the
+     * brand-facing performance panel were all built from several accounts at once.
+     *
+     * <p>A row whose {@code igAccountId} is NULL predates V20260924120000 and cannot be attributed
+     * to an account, so it is INCLUDED rather than hidden — otherwise every creator would lose
+     * their history the moment this shipped, to fix a problem only account-switchers have. Those
+     * rows are cleaned up per creator, separately.
+     */
+    @Query(
+            "select m from MediaMetric m where m.creatorProfileId = :creatorProfileId"
+                    + " and (m.igAccountId is null or m.igAccountId = :igAccountId)"
+                    + " order by m.time desc")
+    List<MediaMetric> findForAccountOrderByTimeDesc(
+            @Param("creatorProfileId") String creatorProfileId,
+            @Param("igAccountId") String igAccountId,
+            Pageable pageable);
+
     /** Recent per-post metrics for a creator on one platform, newest first. */
     List<MediaMetric> findByCreatorProfileIdAndPlatformOrderByTimeDesc(
             String creatorProfileId, String platform, Pageable pageable);
@@ -66,7 +87,20 @@ public interface MediaMetricsRepository extends JpaRepository<MediaMetric, Strin
                     + " order by m.postedAt desc")
     List<MediaMetric> findNewestSnapshotPerPostSince(
             @Param("creatorProfileId") String creatorProfileId,
-            @Param("postedAtFrom") Instant postedAtFrom);
+            @Param("postedAtFrom") java.time.Instant postedAtFrom);
+
+    /** The same read, narrowed to one connected Instagram account (see the note above). */
+    @Query(
+            "select m from MediaMetric m where m.creatorProfileId = :creatorProfileId"
+                    + " and m.postedAt >= :postedAtFrom"
+                    + " and (m.igAccountId is null or m.igAccountId = :igAccountId)"
+                    + " and m.time = (select max(m2.time) from MediaMetric m2"
+                    + " where m2.mediaId = m.mediaId and m2.creatorProfileId = m.creatorProfileId)"
+                    + " order by m.postedAt desc")
+    List<MediaMetric> findNewestSnapshotPerPostSinceForAccount(
+            @Param("creatorProfileId") String creatorProfileId,
+            @Param("postedAtFrom") java.time.Instant postedAtFrom,
+            @Param("igAccountId") String igAccountId);
 
     /** Time-range query for a creator's media metrics (trend charts / analytics API). */
     List<MediaMetric> findByCreatorProfileIdAndTimeBetweenOrderByTimeAsc(

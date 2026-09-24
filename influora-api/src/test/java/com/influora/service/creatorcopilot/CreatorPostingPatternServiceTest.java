@@ -49,12 +49,18 @@ class CreatorPostingPatternServiceTest {
 
     @Mock private MediaMetricsRepository mediaMetricsRepository;
     @Mock private CreatorProfileRepository creatorProfileRepository;
+    // V20260924120000: reads are narrowed to the creator's CURRENT Instagram account.
+    @Mock private com.influora.service.creatorcopilot.ConnectedInstagramAccount connectedAccount;
 
     private CreatorPostingPatternService service;
 
     @BeforeEach
     void setUp() {
-        service = new CreatorPostingPatternService(mediaMetricsRepository, creatorProfileRepository);
+        service = new CreatorPostingPatternService(
+                mediaMetricsRepository, creatorProfileRepository, connectedAccount);
+        // No connection on file in these tests: the service must fall back to the unnarrowed
+        // read rather than hide a disconnected creator's own history.
+        lenient().when(connectedAccount.currentAccountId(PROFILE_ID)).thenReturn(java.util.Optional.empty());
         CreatorProfile profile = mock(CreatorProfile.class);
         lenient().when(profile.getId()).thenReturn(PROFILE_ID);
         lenient()

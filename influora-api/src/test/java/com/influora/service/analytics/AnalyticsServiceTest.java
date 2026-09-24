@@ -9,6 +9,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.influora.common.ApiException;
@@ -59,6 +60,8 @@ class AnalyticsServiceTest {
     @Mock private CreatorScoreRepository creatorScoreRepository;
     @Mock private AudienceDemographicsRepository audienceDemographicsRepository;
     @Mock private MediaMetricsRepository mediaMetricsRepository;
+    // V20260924120000: the performance panel shows only the creator's CURRENT account.
+    @Mock private com.influora.service.creatorcopilot.ConnectedInstagramAccount connectedAccount;
     @Mock private Workspace workspace;
     @Mock private AuthPrincipal principal;
 
@@ -73,7 +76,13 @@ class AnalyticsServiceTest {
                         creatorMetricsRepository,
                         creatorScoreRepository,
                         audienceDemographicsRepository,
-                        mediaMetricsRepository);
+                        mediaMetricsRepository,
+                        connectedAccount);
+        // These tests describe creators with one connection on file; with no account to narrow to,
+        // the service keeps its original unnarrowed read.
+        lenient()
+                .when(connectedAccount.currentAccountId(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(java.util.Optional.empty());
     }
 
     // ------------------------------------------------------------------------------------------

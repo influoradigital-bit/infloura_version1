@@ -58,7 +58,20 @@ class MediaMetricsNewestSnapshotQueryTest {
 
     private MediaMetric snapshot(
             String id, String mediaId, String profileId, Instant fetchedAt, Instant postedAt, long reach) {
+        return snapshotOnAccount(id, mediaId, profileId, fetchedAt, postedAt, reach, null);
+    }
+
+    /** Same row, stamped with the Instagram account it was read from (V20260924120000). */
+    private MediaMetric snapshotOnAccount(
+            String id,
+            String mediaId,
+            String profileId,
+            Instant fetchedAt,
+            Instant postedAt,
+            long reach,
+            String igAccountId) {
         return MediaMetric.builder()
+                .igAccountId(igAccountId)
                 .id(id)
                 .time(fetchedAt)
                 .mediaId(mediaId)
@@ -160,5 +173,47 @@ class MediaMetricsNewestSnapshotQueryTest {
                 List.of("post-1", "post-2", "post-3", "post-4"),
                 rows.stream().map(MediaMetric::getMediaId).toList(),
                 "ordered by posted_at descending");
+    }
+
+    /**
+     * A creator profile can connect a DIFFERENT Instagram account later. Seen live 2026-09-24:
+     * one profile held posts from @sage_digitalworld, @snapsby_ugc and @influora.io at once, and
+     * every read took all of them - so "best time to post" and Meera's recent posts described
+     * accounts the creator no longer has.
+     */
+    @Test
+    @DisplayName("posts from a previously connected Instagram account are left out")
+    void postsFromAnOldAccountAreExcluded() {
+        Instant postedAt = NOW.minus(5, ChronoUnit.DAYS);
+        repository.save(
+                snapshotOnAccount("old1", "post-old", PROFILE_ID, NOW.minus(4, ChronoUnit.DAYS), postedAt, 900L, "acct-snapsby"));
+        repository.save(
+                snapshotOnAccount("new1", "post-new", PROFILE_ID, NOW.minus(1, ChronoUnit.DAYS), postedAt, 100L, "acct-influora"));
+
+        List<MediaMetric> rows =
+                repository.findNewestSnapshotPerPostSinceForAccount(
+                        PROFILE_ID, NOW.minus(90, ChronoUnit.DAYS), "acct-influora");
+
+        assertEquals(
+                List.of("post-new"),
+                rows.stream().map(MediaMetric::getMediaId).toList(),
+                "the old account's post must not be counted as this creator's current work");
+    }
+
+    @Test
+    @DisplayName("rows written before the account was recorded are still shown, not hidden")
+    void untaggedRowsSurvive() {
+        Instant postedAt = NOW.minus(5, ChronoUnit.DAYS);
+        // Every row in production predates the column. Hiding them would blank every creator's
+        // history to fix a problem only account-switchers have.
+        repository.save(snapshot("legacy", "post-legacy", PROFILE_ID, NOW.minus(2, ChronoUnit.DAYS), postedAt, 500L));
+        repository.save(
+                snapshotOnAccount("new2", "post-new", PROFILE_ID, NOW.minus(1, ChronoUnit.DAYS), postedAt, 100L, "acct-influora"));
+
+        List<MediaMetric> rows =
+                repository.findNewestSnapshotPerPostSinceForAccount(
+                        PROFILE_ID, NOW.minus(90, ChronoUnit.DAYS), "acct-influora");
+
+        assertEquals(2, rows.size(), "an untagged row cannot be attributed, so it is kept");
     }
 }

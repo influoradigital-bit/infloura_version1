@@ -7,6 +7,7 @@ import com.influora.domain.entity.MediaMetric;
 import com.influora.repository.CreatorMetricsRepository;
 import com.influora.repository.MediaMetricsRepository;
 import com.influora.service.CreatorAgentPreferencesService;
+import com.influora.service.creatorcopilot.ConnectedInstagramAccount;
 import com.influora.service.scoring.CreatorTiers;
 import com.influora.service.scoring.QualityScoreService;
 import com.influora.service.scoring.QualityScoreService.QualityScoreResult;
@@ -52,16 +53,19 @@ public class GetMyMetricsExecutor {
     private final CreatorMetricsRepository creatorMetricsRepository;
     private final MediaMetricsRepository mediaMetricsRepository;
     private final QualityScoreService qualityScoreService;
+    private final ConnectedInstagramAccount connectedAccount;
 
     public GetMyMetricsExecutor(
             CreatorAgentPreferencesService preferencesService,
             CreatorMetricsRepository creatorMetricsRepository,
             MediaMetricsRepository mediaMetricsRepository,
-            QualityScoreService qualityScoreService) {
+            QualityScoreService qualityScoreService,
+            ConnectedInstagramAccount connectedAccount) {
         this.preferencesService = preferencesService;
         this.creatorMetricsRepository = creatorMetricsRepository;
         this.mediaMetricsRepository = mediaMetricsRepository;
         this.qualityScoreService = qualityScoreService;
+        this.connectedAccount = connectedAccount;
     }
 
     /**
@@ -76,9 +80,16 @@ public class GetMyMetricsExecutor {
 
         // Same query MeeraContextService uses for the creator context block, so the tool and Block B
         // can never quote two different "latest" snapshots in one conversation.
+        // Narrowed to the account the creator is connected to today. A profile that has connected
+        // more than one Instagram account holds rows from all of them (seen live: three), and
+        // "latest row for this profile" quietly answered with whichever account was polled last.
+        String igAccountId = connectedAccount.currentAccountId(profile.getId()).orElse(null);
         Optional<CreatorMetric> latestMetric =
-                creatorMetricsRepository
-                        .findByCreatorProfileIdOrderByTimeDesc(profile.getId(), PageRequest.of(0, 1))
+                (igAccountId == null
+                                ? creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
+                                        profile.getId(), PageRequest.of(0, 1))
+                                : creatorMetricsRepository.findForAccountOrderByTimeDesc(
+                                        profile.getId(), igAccountId, PageRequest.of(0, 1)))
                         .stream()
                         .findFirst();
 
@@ -102,8 +113,11 @@ public class GetMyMetricsExecutor {
 
         CreatorMetric metric = latestMetric.get();
         List<MediaMetric> recentMedia =
-                mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
-                        profile.getId(), PageRequest.of(0, RECENT_MEDIA_LIMIT));
+                igAccountId == null
+                        ? mediaMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(
+                                profile.getId(), PageRequest.of(0, RECENT_MEDIA_LIMIT))
+                        : mediaMetricsRepository.findForAccountOrderByTimeDesc(
+                                profile.getId(), igAccountId, PageRequest.of(0, RECENT_MEDIA_LIMIT));
         QualityScoreResult quality = qualityScoreService.calculate(latestMetric, recentMedia);
 
         return new GetMyMetricsResult(
