@@ -1,22 +1,28 @@
 /**
- * PHASE-C-SPEC.md §1/§4 — `parseMeeraScript`/`parseMeeraReview` happy paths and every refusal
- * case the spec names. A half-parsed card must never render, so every negative case here asserts
- * `null`, never a partially-filled object.
+ * `parseMeeraScript`/`parseMeeraReview` happy paths and every refusal case named in this file's
+ * own doc comment. A half-parsed card must never render, so every negative script case asserts
+ * `undefined` (the review parser is unchanged Phase-C work and still asserts `null`).
+ *
+ * `VALID_SCRIPT` below is built directly from `influora-ai/app/prompt/creator_persona.py`'s "Full
+ * script format" section — see `meera-result-cards.sync.test.ts` for the automated guard that
+ * keeps the two from drifting apart.
  */
 import { describe, expect, it } from 'vitest';
 
 import { parseMeeraReview, parseMeeraScript } from './meera-result-cards';
 
 const VALID_SCRIPT = [
-  'SCRIPT',
-  'Title: 3 saffron mistakes to avoid',
-  'Length: 30s',
-  'Hook: Stop buying saffron until you watch this',
-  '0-10s: Show the box, ask "is your saffron real?"',
-  '10-20s: Do the warm-water color test on camera',
-  '20-30s: Show the certificate and say why it matters',
-  'CTA: Link in bio for real Kashmiri saffron',
-  'Why: Problem-agitate-solve structure, curiosity-gap hook template',
+  'Idea: 3 saffron mistakes to avoid',
+  'Plan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook',
+  'Action: hold up the saffron box and speak to camera',
+  'Success looks like: reel gets watched to the end and shared to a friend',
+  'Script:',
+  '0-10s. Shot: Close-up on your face - hold up the saffron box. Say: "Is your saffron even real?". On screen: REAL vs FAKE',
+  '10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: "Watch what happens in water". On screen: THE WATER TEST',
+  '20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: "This is what real Kashmiri saffron looks like". On screen: GI CERTIFIED',
+  'Caption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir',
+  'Before you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach',
+  'Why this works: Problem-agitate-solve structure, curiosity-gap hook template',
 ].join('\n');
 
 const VALID_REVIEW = [
@@ -29,41 +35,70 @@ const VALID_REVIEW = [
 ].join('\n');
 
 describe('parseMeeraScript — happy paths', () => {
-  it('parses a well-formed 30s script with 3 beats', () => {
+  it('parses a well-formed rich-format script with 3 beats', () => {
     const result = parseMeeraScript(VALID_SCRIPT);
-    expect(result).not.toBeNull();
+    expect(result).not.toBeUndefined();
     expect(result).toEqual({
-      title: '3 saffron mistakes to avoid',
-      length: 30,
-      hook: 'Stop buying saffron until you watch this',
+      idea: '3 saffron mistakes to avoid',
+      plan: 'for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook',
+      action: 'hold up the saffron box and speak to camera',
+      successLooksLike: 'reel gets watched to the end and shared to a friend',
       beats: [
-        { from: 0, to: 10, text: 'Show the box, ask "is your saffron real?"' },
-        { from: 10, to: 20, text: 'Do the warm-water color test on camera' },
-        { from: 20, to: 30, text: 'Show the certificate and say why it matters' },
+        {
+          from: 0,
+          to: 10,
+          shot: 'Close-up on your face - hold up the saffron box',
+          say: 'Is your saffron even real?',
+          onScreen: 'REAL vs FAKE',
+        },
+        {
+          from: 10,
+          to: 20,
+          shot: 'Overhead on your hands - do the warm-water color test',
+          say: 'Watch what happens in water',
+          onScreen: 'THE WATER TEST',
+        },
+        {
+          from: 20,
+          to: 30,
+          shot: 'Close-up on the certificate - hold it next to the box',
+          say: 'This is what real Kashmiri saffron looks like',
+          onScreen: 'GI CERTIFIED',
+        },
       ],
-      cta: 'Link in bio for real Kashmiri saffron',
-      why: 'Problem-agitate-solve structure, curiosity-gap hook template',
+      caption: 'Would you have spotted the fake one? Link in bio for real Kashmiri saffron. #saffron #kashmir',
+      beforeYouShoot: [
+        'Charge your phone to 100%',
+        'Wipe the counter clean',
+        'Keep the certificate within reach',
+      ],
+      whyThisWorks: 'Problem-agitate-solve structure, curiosity-gap hook template',
+      followUp: undefined,
     });
   });
 
-  it('parses a 6-beat 60s script', () => {
+  it('parses a 6-beat script with a trailing follow-up question', () => {
     const text = [
-      'SCRIPT',
-      'Title: Six quick shots for a 60 second reel',
-      'Length: 60s',
-      'Hook: This is the fastest way to shoot a reel today',
-      '0-10s: Open on your face, say the hook line',
-      '10-20s: Cut to the product on the table',
-      '20-30s: Show it in use, hands only',
-      '30-40s: Cut back to your face for a reaction',
-      '40-50s: Show the result close up',
-      '50-60s: End on your face for the CTA',
-      'CTA: Follow for more reel breakdowns',
+      'Idea: Six quick shots for a longer reel',
+      'Plan: for your regular audience; excitement; saves; 60s, vertical 9:16; listicle; direct-promise hook',
+      'Action: on camera the whole time, hands only for the product shots',
+      'Script:',
+      '0-10s. Shot: Open on your face - say the hook line. Say: "Five things I wish I knew sooner". On screen: 5 THINGS',
+      '10-20s. Shot: Cut to the product on the table - place it down. Say: "Number one". On screen: TIP 1',
+      '20-30s. Shot: Hands only - show it in use. Say: "Number two". On screen: TIP 2',
+      '30-40s. Shot: Cut back to your face - react. Say: "Number three". On screen: TIP 3',
+      '40-50s. Shot: Close up on the result. Say: "Number four". On screen: TIP 4',
+      '50-60s. Shot: End on your face - the CTA. Say: "Save this for later". On screen: SAVE THIS',
+      'Caption: Which tip did you not know? Save this for later.',
+      'Before you shoot: 1) Clear the table 2) Charge your phone 3) Have the product ready',
+      'Why this works: Listicle structure, direct-promise hook template',
+      'Which language should the voice-over be in — Hindi or English?',
     ].join('\n');
     const result = parseMeeraScript(text);
-    expect(result).not.toBeNull();
+    expect(result).not.toBeUndefined();
     expect(result?.beats).toHaveLength(6);
-    expect(result?.why).toBeUndefined();
+    expect(result?.successLooksLike).toBeUndefined();
+    expect(result?.followUp).toBe('Which language should the voice-over be in — Hindi or English?');
   });
 
   it('is tolerant of \\r\\n line endings', () => {
@@ -77,104 +112,161 @@ describe('parseMeeraScript — happy paths', () => {
   });
 
   it('is tolerant of extra spacing around the colon and mixed key case', () => {
-    const spaced = VALID_SCRIPT.replace('Title:', 'title :').replace('Length: 30s', 'LENGTH:  30s').replace(
-      'SCRIPT',
-      'script',
+    const spaced = VALID_SCRIPT.replace('Idea:', 'idea :').replace('Plan:', 'PLAN:  ').replace(
+      'Before you shoot:',
+      'before   you shoot :',
     );
     const result = parseMeeraScript(spaced);
-    expect(result).not.toBeNull();
-    expect(result?.title).toBe('3 saffron mistakes to avoid');
-    expect(result?.length).toBe(30);
+    expect(result).not.toBeUndefined();
+    expect(result?.idea).toBe('3 saffron mistakes to avoid');
   });
 
-  it('accepts Hindi text in the values', () => {
+  it('is tolerant of a beat line wrapped in straight or curly quotes', () => {
+    const lines = VALID_SCRIPT.split('\n');
+    const beatIndex = lines.findIndex((l) => l.startsWith('0-10s.'));
+    const straightQuoted = [...lines];
+    straightQuoted[beatIndex] = `"${lines[beatIndex]}"`;
+    expect(parseMeeraScript(straightQuoted.join('\n'))).toEqual(parseMeeraScript(VALID_SCRIPT));
+
+    const curlyQuoted = [...lines];
+    curlyQuoted[beatIndex] = `“${lines[beatIndex]}”`;
+    expect(parseMeeraScript(curlyQuoted.join('\n'))).toEqual(parseMeeraScript(VALID_SCRIPT));
+  });
+
+  it('is tolerant of curly double quotes around the Say text', () => {
+    const curlySay = VALID_SCRIPT.replace(
+      'Say: "Is your saffron even real?"',
+      'Say: “Is your saffron even real?”',
+    );
+    const result = parseMeeraScript(curlySay);
+    expect(result).not.toBeUndefined();
+    expect(result?.beats[0].say).toBe('Is your saffron even real?');
+  });
+
+  it('accepts Hindi text in the values while the labels stay English', () => {
     const hindi = [
-      'SCRIPT',
-      'Title: केसर खरीदने से पहले ये 3 गलतियाँ न करें',
-      'Length: 15s',
-      'Hook: असली केसर की पहचान अभी देखें',
-      '0-5s: डिब्बा दिखाएं और सवाल पूछें',
-      '5-10s: पानी में टेस्ट करें',
-      '10-15s: सर्टिफिकेट दिखाएं',
-      'CTA: बायो में लिंक देखें',
+      'Idea: केसर खरीदने से पहले ये 3 गलतियाँ न करें',
+      'Plan: नए ग्राहकों के लिए; जिज्ञासा; फॉलोअर्स; 15s, vertical 9:16; problem-agitate-solve; curiosity-gap hook',
+      'Action: डिब्बा हाथ में लेकर कैमरे से बात करें',
+      'Script:',
+      '0-5s. Shot: Close-up on your face - डिब्बा दिखाएं. Say: "क्या यह असली केसर है?". On screen: असली या नकली',
+      '5-10s. Shot: Overhead on your hands - पानी में टेस्ट करें. Say: "पानी में देखिए". On screen: पानी वाला टेस्ट',
+      '10-15s. Shot: Close-up on the certificate - सर्टिफिकेट दिखाएं. Say: "यह असली प्रमाण पत्र है". On screen: प्रमाणित',
+      'Caption: क्या आपने असली पहचान लिया? बायो में लिंक देखें।',
+      'Before you shoot: 1) फोन चार्ज करें 2) काउंटर साफ करें 3) सर्टिफिकेट पास रखें',
+      'Why this works: समस्या-समाधान संरचना, जिज्ञासा हुक',
     ].join('\n');
     const result = parseMeeraScript(hindi);
-    expect(result).not.toBeNull();
-    expect(result?.hook).toBe('असली केसर की पहचान अभी देखें');
+    expect(result).not.toBeUndefined();
+    expect(result?.idea).toBe('केसर खरीदने से पहले ये 3 गलतियाँ न करें');
+    expect(result?.beats[0].say).toBe('क्या यह असली केसर है?');
   });
 
-  it('accepts a script with no Why line', () => {
-    const noWhy = VALID_SCRIPT.split('\n').filter((line) => !line.startsWith('Why:')).join('\n');
-    const result = parseMeeraScript(noWhy);
-    expect(result).not.toBeNull();
-    expect(result?.why).toBeUndefined();
+  it('accepts a script with no Success looks like line', () => {
+    const noSuccess = VALID_SCRIPT.split('\n')
+      .filter((line) => !line.startsWith('Success looks like:'))
+      .join('\n');
+    const result = parseMeeraScript(noSuccess);
+    expect(result).not.toBeUndefined();
+    expect(result?.successLooksLike).toBeUndefined();
   });
 });
 
 describe('parseMeeraScript — refusals', () => {
-  it('returns null when the first line is not SCRIPT', () => {
-    expect(parseMeeraScript(VALID_SCRIPT.replace('SCRIPT', 'Here is your script:'))).toBeNull();
-  });
-
-  it('returns null when a required key is missing (Hook dropped)', () => {
-    const missingHook = VALID_SCRIPT.split('\n').filter((line) => !line.startsWith('Hook:')).join('\n');
-    expect(parseMeeraScript(missingHook)).toBeNull();
-  });
-
-  it('returns null when Length is not one of the fixed values', () => {
-    expect(parseMeeraScript(VALID_SCRIPT.replace('Length: 30s', 'Length: 25s'))).toBeNull();
-  });
-
-  it('returns null when a timed line is malformed', () => {
-    expect(
-      parseMeeraScript(VALID_SCRIPT.replace('0-10s: Show the box, ask "is your saffron real?"', '0 to 10s: Show the box')),
-    ).toBeNull();
-  });
-
-  it('returns null when the beats are out of order', () => {
-    const lines = VALID_SCRIPT.split('\n');
-    const [beat1, beat2] = [lines[4], lines[5]];
-    lines[4] = beat2;
-    lines[5] = beat1;
-    expect(parseMeeraScript(lines.join('\n'))).toBeNull();
-  });
-
-  it('returns null when the beats overlap', () => {
-    expect(
-      parseMeeraScript(VALID_SCRIPT.replace('10-20s: Do the warm-water color test on camera', '5-20s: Do the warm-water color test on camera')),
-    ).toBeNull();
-  });
-
-  it('returns null when the beats leave a gap', () => {
-    expect(
-      parseMeeraScript(VALID_SCRIPT.replace('10-20s: Do the warm-water color test on camera', '12-20s: Do the warm-water color test on camera')),
-    ).toBeNull();
-  });
-
-  it('returns null when there are fewer than 3 beats', () => {
-    const twoBeats = [
+  it('returns undefined when Idea is missing (old Phase-C SCRIPT shape)', () => {
+    const oldShape = [
       'SCRIPT',
-      'Title: Too short a script',
-      'Length: 15s',
-      'Hook: Watch this',
-      '0-8s: First shot',
-      '8-15s: Second shot',
-      'CTA: Follow me',
+      'Title: 3 saffron mistakes to avoid',
+      'Length: 30s',
+      'Hook: Stop buying saffron until you watch this',
+      '0-10s: Show the box, ask "is your saffron real?"',
+      '10-20s: Do the warm-water color test on camera',
+      '20-30s: Show the certificate and say why it matters',
+      'CTA: Link in bio for real Kashmiri saffron',
     ].join('\n');
-    expect(parseMeeraScript(twoBeats)).toBeNull();
+    expect(parseMeeraScript(oldShape)).toBeUndefined();
   });
 
-  it('returns null when the last beat does not end at the stated length', () => {
-    const short = VALID_SCRIPT.replace('20-30s: Show the certificate and say why it matters', '20-25s: Show the certificate and say why it matters');
-    expect(parseMeeraScript(short)).toBeNull();
+  it('returns undefined when a required key is missing (Action dropped)', () => {
+    const missingAction = VALID_SCRIPT.split('\n').filter((line) => !line.startsWith('Action:')).join('\n');
+    expect(parseMeeraScript(missingAction)).toBeUndefined();
   });
 
-  it('returns null for plain conversational text', () => {
-    expect(parseMeeraScript('Sure, here is what I think about your last post...')).toBeNull();
+  it('returns undefined when Caption is missing', () => {
+    const missingCaption = VALID_SCRIPT.split('\n').filter((line) => !line.startsWith('Caption:')).join('\n');
+    expect(parseMeeraScript(missingCaption)).toBeUndefined();
   });
 
-  it('returns null for an empty string', () => {
-    expect(parseMeeraScript('')).toBeNull();
+  it('returns undefined when the Script: line itself carries a value', () => {
+    expect(parseMeeraScript(VALID_SCRIPT.replace('Script:', 'Script: here it is'))).toBeUndefined();
+  });
+
+  it('returns undefined when a beat line is malformed', () => {
+    expect(
+      parseMeeraScript(
+        VALID_SCRIPT.replace(
+          '0-10s. Shot: Close-up on your face - hold up the saffron box. Say: "Is your saffron even real?". On screen: REAL vs FAKE',
+          '0 to 10s: Show the box',
+        ),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when the beats leave a gap', () => {
+    expect(
+      parseMeeraScript(
+        VALID_SCRIPT.replace(
+          '10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: "Watch what happens in water". On screen: THE WATER TEST',
+          '12-20s. Shot: Overhead on your hands - do the warm-water color test. Say: "Watch what happens in water". On screen: THE WATER TEST',
+        ),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when the beats do not start at 0s', () => {
+    const lines = VALID_SCRIPT.split('\n');
+    const beatIndex = lines.findIndex((l) => l.startsWith('0-10s.'));
+    lines[beatIndex] = lines[beatIndex].replace('0-10s.', '2-10s.');
+    expect(parseMeeraScript(lines.join('\n'))).toBeUndefined();
+  });
+
+  it('returns undefined with only 2 beats', () => {
+    const twoBeats = [
+      'Idea: Too short a script',
+      'Plan: for a small audience; urgency; saves; 15s, vertical 9:16; listicle; direct-promise hook',
+      'Action: hold the product up',
+      'Script:',
+      '0-8s. Shot: Close-up on your face - hold up the product. Say: "Watch this". On screen: WATCH',
+      '8-15s. Shot: Close-up on the product - show it in use. Say: "That is it". On screen: DONE',
+      'Caption: Save this for later.',
+      'Before you shoot: 1) Charge your phone 2) Clear the table 3) Keep the product ready',
+      'Why this works: Direct-promise hook template',
+    ].join('\n');
+    expect(parseMeeraScript(twoBeats)).toBeUndefined();
+  });
+
+  it('returns undefined when Before you shoot does not have exactly 3 numbered items', () => {
+    expect(
+      parseMeeraScript(
+        VALID_SCRIPT.replace(
+          'Before you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach',
+          'Before you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean',
+        ),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('returns undefined when Why this works is missing', () => {
+    const missingWhy = VALID_SCRIPT.split('\n').filter((line) => !line.startsWith('Why this works:')).join('\n');
+    expect(parseMeeraScript(missingWhy)).toBeUndefined();
+  });
+
+  it('returns undefined for plain conversational text', () => {
+    expect(parseMeeraScript('Sure, here is what I think about your last post...')).toBeUndefined();
+  });
+
+  it('returns undefined for an empty string', () => {
+    expect(parseMeeraScript('')).toBeUndefined();
   });
 });
 
