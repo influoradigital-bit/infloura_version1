@@ -95,7 +95,6 @@ class CreatorAgentPreferencesServiceTest {
         when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(PROFILE_ID), any()))
                 .thenReturn(List.of());
         when(profile.getCategoriesJson()).thenReturn(null);
-        when(profile.getLanguagesJson()).thenReturn(null);
         when(rateEstimationService.estimate(any(), any(), any()))
                 .thenReturn(new RateEstimation(new BigDecimal("1200"), new BigDecimal("1800"), "INR", BigDecimal.TEN, "MICRO", java.util.Map.of()));
         when(preferencesRepository.save(any(CreatorAgentPreferences.class)))
@@ -115,6 +114,33 @@ class CreatorAgentPreferencesServiceTest {
 
     @Test
     @DisplayName(
+            "first GET for a creator whose PROFILE lists Hindi still starts Meera in English"
+                    + " (Swapnil 2026-09-23) - the profile's languages describe their CONTENT, not"
+                    + " the language they want to be spoken to in")
+    void getOrCreatePreferencesStartsInEnglishEvenWhenTheProfileListsAnotherLanguage() {
+        // Every other test in this file stubs getLanguagesJson() to null, so until now nothing
+        // covered a creator who HAS a profile language - and that was the only case where the
+        // old code copied it (a Hindi profile got a Hindi Meera, against the ruling).
+        when(preferencesRepository.findByCreatorId(PROFILE_ID)).thenReturn(Optional.empty());
+        when(collaborationRepository.findByCreatorId(USER_ID)).thenReturn(List.of());
+        when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(PROFILE_ID), any()))
+                .thenReturn(List.of());
+        when(profile.getCategoriesJson()).thenReturn(null);
+        org.mockito.Mockito.lenient()
+                .when(profile.getLanguagesJson())
+                .thenReturn("[\"hi-IN\",\"en-IN\"]"); // lenient: the fix is that this is never read
+        when(rateEstimationService.estimate(any(), any(), any()))
+                .thenReturn(new RateEstimation(new BigDecimal("1200"), new BigDecimal("1800"), "INR", BigDecimal.TEN, "MICRO", java.util.Map.of()));
+        when(preferencesRepository.save(any(CreatorAgentPreferences.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        PreferencesResponse response = service.getOrCreatePreferences(USER_ID);
+
+        assertEquals("en-IN", response.creatorLanguage());
+    }
+
+    @Test
+    @DisplayName(
             "first GET falls all the way through to the FALLBACK_REEL_FLOOR (500) constant when"
                     + " RateEstimationService also resolves to zero (an unconnected creator with no"
                     + " metrics)")
@@ -124,7 +150,6 @@ class CreatorAgentPreferencesServiceTest {
         when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(PROFILE_ID), any()))
                 .thenReturn(List.of());
         when(profile.getCategoriesJson()).thenReturn(null);
-        when(profile.getLanguagesJson()).thenReturn(null);
         when(rateEstimationService.estimate(any(), any(), any()))
                 .thenReturn(new RateEstimation(BigDecimal.ZERO, BigDecimal.ZERO, "INR", BigDecimal.ZERO, "UNKNOWN", java.util.Map.of()));
         when(preferencesRepository.save(any(CreatorAgentPreferences.class)))
@@ -360,7 +385,6 @@ class CreatorAgentPreferencesServiceTest {
         when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(eq(PROFILE_ID), any()))
                 .thenReturn(List.of());
         when(profile.getCategoriesJson()).thenReturn(null);
-        when(profile.getLanguagesJson()).thenReturn(null);
         when(rateEstimationService.estimate(any(), any(), any()))
                 .thenReturn(new RateEstimation(BigDecimal.ZERO, BigDecimal.ZERO, "INR", BigDecimal.ZERO, "UNKNOWN", java.util.Map.of()));
         when(preferencesRepository.save(any(CreatorAgentPreferences.class)))
@@ -444,7 +468,6 @@ class CreatorAgentPreferencesServiceTest {
         when(creatorMetricsRepository.findByCreatorProfileIdOrderByTimeDesc(any(), any()))
                 .thenReturn(List.of());
         when(profile.getCategoriesJson()).thenReturn(null);
-        when(profile.getLanguagesJson()).thenReturn(null);
         when(rateEstimationService.estimate(any(), any(), any()))
                 .thenReturn(
                         new RateEstimation(

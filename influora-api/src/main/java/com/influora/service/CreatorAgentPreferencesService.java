@@ -163,7 +163,12 @@ public class CreatorAgentPreferencesService {
      */
     private CreatorAgentPreferences createWithComputedDefaults(CreatorProfile profile) {
         BigDecimal floor = computeDefaultFloor(profile);
-        String language = defaultLanguage(profile);
+        // Swapnil ruling 2026-09-23, completed 2026-09-24: Meera opens in English for EVERY new
+        // creator, and switches the moment they write to her in another language. This used to
+        // copy the first language off the creator's PROFILE, which is the language their CONTENT
+        // is in - a different thing - so every creator with Hindi on their profile got a Hindi
+        // Meera and the ruling only ever held for creators who had listed no language at all.
+        String language = CreatorAgentPreferences.DEFAULT_LANGUAGE;
         CreatorAgentPreferences prefs =
                 CreatorAgentPreferences.newWithDefaults(
                         Ulids.newUlid(), profile.getId(), floor, floor, floor, language);
@@ -207,11 +212,6 @@ public class CreatorAgentPreferencesService {
             return estimated;
         }
         return FALLBACK_REEL_FLOOR;
-    }
-
-    private static String defaultLanguage(CreatorProfile profile) {
-        List<String> languages = JsonLists.stringListFromJson(profile.getLanguagesJson());
-        return languages.isEmpty() ? CreatorAgentPreferences.DEFAULT_LANGUAGE : languages.get(0);
     }
 
     @Transactional
