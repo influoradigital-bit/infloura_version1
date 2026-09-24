@@ -220,10 +220,28 @@ export const STARTER_PROMPTS: StarterPrompt[] = [
 // Part C — Meera's results as finished cards (PHASE-C-SPEC.md)
 // ---------------------------------------------------------------------------
 
-export const SCRIPT_CARD_LENGTH_PREFIX: BilingualText = { en: 'Length', hi: 'लंबाई' };
-export const SCRIPT_CARD_HOOK_LABEL: BilingualText = { en: 'Hook', hi: 'हुक' };
-export const SCRIPT_CARD_CTA_LABEL: BilingualText = { en: 'Call to action', hi: 'कॉल टू एक्शन' };
+/**
+ * Rich script-card labels — one per line the persona's "Full script format" always emits
+ * (`influora-ai/app/prompt/creator_persona.py`), except Idea (the card's own title, no label
+ * shown) and Script (never shown as a label — its beats ARE the card's beat list).
+ */
+export const SCRIPT_CARD_PLAN_LABEL: BilingualText = { en: 'Plan', hi: 'योजना' };
+export const SCRIPT_CARD_ACTION_LABEL: BilingualText = { en: 'Action', hi: 'ऐक्शन' };
+export const SCRIPT_CARD_SUCCESS_LABEL: BilingualText = {
+  en: 'Success looks like',
+  hi: 'सफलता ऐसी दिखेगी',
+};
+export const SCRIPT_CARD_CAPTION_LABEL: BilingualText = { en: 'Caption', hi: 'कैप्शन' };
+export const SCRIPT_CARD_BEFORE_YOU_SHOOT_LABEL: BilingualText = {
+  en: 'Before you shoot',
+  hi: 'शूट करने से पहले',
+};
+export const SCRIPT_CARD_ON_SCREEN_LABEL: BilingualText = { en: 'On screen', hi: 'स्क्रीन पर' };
 export const SCRIPT_CARD_WHY_LABEL: BilingualText = { en: 'Why this works', hi: 'यह क्यों काम करता है' };
+/** Per-beat `Stress:`/`Pause:` markers — optional, shown only when the reply's beat line carries
+ *  them (see `ScriptBeat.stress`/`.pause` in meera-result-cards.ts). */
+export const SCRIPT_CARD_STRESS_LABEL: BilingualText = { en: 'Stress', hi: 'ज़ोर' };
+export const SCRIPT_CARD_PAUSE_LABEL: BilingualText = { en: 'Pause', hi: 'विराम' };
 
 export const REVIEW_CARD_WORKING_LABEL: BilingualText = { en: 'Working', hi: 'क्या काम कर रहा है' };
 export const REVIEW_CARD_NOT_WORKING_LABEL: BilingualText = {
@@ -240,18 +258,9 @@ export const RESULT_CARD_COPIED: BilingualText = { en: 'Copied', hi: 'कॉप�
  *  as `STARTER_PROMPTS` on the desk. */
 /** Short button labels. The *_PROMPT strings below are what gets typed into the composer;
  *  using a whole sentence as a button label made the card look like a wall of text. */
-export const SCRIPT_CARD_ANOTHER_HOOK_LABEL: BilingualText = {
-  en: 'Another hook',
-  hi: 'दूसरा हुक',
-};
 export const REVIEW_CARD_WHAT_FIRST_LABEL: BilingualText = {
   en: 'What should I do first?',
   hi: 'पहले क्या करूँ?',
-};
-
-export const SCRIPT_CARD_ANOTHER_HOOK_PROMPT: BilingualText = {
-  en: 'Give me another hook for this script',
-  hi: 'इस स्क्रिप्ट के लिए एक और हुक दो',
 };
 
 export const REVIEW_CARD_WHAT_FIRST_PROMPT: BilingualText = {

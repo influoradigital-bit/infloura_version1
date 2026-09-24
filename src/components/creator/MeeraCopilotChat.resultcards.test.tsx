@@ -1,5 +1,9 @@
 /**
- * T-MEERA-CREATOR-PHASE-C (PHASE-C-SPEC.md §3/§4) — the chat's result-card wiring.
+ * T-MEERA-CREATOR-PHASE-C (PHASE-C-SPEC.md §3/§4) — the chat's result-card wiring (the card-vs-
+ * bubble swap and the "Show as text" toggle). `SCRIPT_TEXT` itself is the rich script format from
+ * `influora-ai/app/prompt/creator_persona.py`'s "Full script format" section, not Phase C's
+ * original short SCRIPT/Title/Length/Hook layout — see `meera-result-cards.ts`/`.test.ts` for the
+ * parser this fixture exercises.
  *
  * Mirrors `MeeraCopilotChat.toolcards.test.tsx`'s mocking setup (same `useMeeraStream`/`meeraApi`
  * mocks) so `lastHandlers()` can drive the SAME stream events a real turn would fire, rather than
@@ -69,15 +73,17 @@ function lastHandlers(): MeeraStreamHandlers {
 }
 
 const SCRIPT_TEXT = [
-  'SCRIPT',
-  'Title: 3 saffron mistakes to avoid',
-  'Length: 30s',
-  'Hook: Stop buying saffron until you watch this',
-  '0-10s: Show the box, ask "is your saffron real?"',
-  '10-20s: Do the warm-water color test on camera',
-  '20-30s: Show the certificate and say why it matters',
-  'CTA: Link in bio for real Kashmiri saffron',
-  'Why: Problem-agitate-solve structure, curiosity-gap hook template',
+  'Idea: 3 saffron mistakes to avoid',
+  'Plan: for new saffron buyers; curiosity; grow followers; 30s, vertical 9:16; problem-agitate-solve; curiosity-gap hook',
+  'Action: hold up the saffron box and speak to camera',
+  'Success looks like: reel gets watched to the end and shared to a friend',
+  'Script:',
+  '0-10s. Shot: Close-up on your face - hold up the saffron box. Say: "Is your saffron even real?". On screen: REAL vs FAKE',
+  '10-20s. Shot: Overhead on your hands - do the warm-water color test. Say: "Watch what happens in water". On screen: THE WATER TEST',
+  '20-30s. Shot: Close-up on the certificate - hold it next to the box. Say: "This is what real Kashmiri saffron looks like". On screen: GI CERTIFIED',
+  'Caption: Would you have spotted the fake one? Link in bio for real Kashmiri saffron.',
+  'Before you shoot: 1) Charge your phone to 100% 2) Wipe the counter clean 3) Keep the certificate within reach',
+  'Why this works: Problem-agitate-solve structure, curiosity-gap hook template',
 ].join('\n');
 
 async function openPanelAndSend(prompt = 'Write me a reel script') {
@@ -164,7 +170,7 @@ describe('MeeraCopilotChat — result cards (PHASE-C-SPEC.md §3)', () => {
   it('renders a malformed script as plain text, never a broken card', async () => {
     await openPanelAndSend();
 
-    const malformed = 'SCRIPT\nTitle: Missing everything else';
+    const malformed = 'Idea: Missing everything else';
     act(() => {
       lastHandlers().onToken?.({ text: malformed });
       lastHandlers().onDone?.({ finish_reason: 'stop' });

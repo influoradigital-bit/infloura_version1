@@ -965,7 +965,6 @@ export function MeeraCopilotChat({
                       script={m.resultCard.script}
                       rawText={m.text}
                       language={language}
-                      onPrefill={prefillComposer}
                     />
                   ) : (
                     <MeeraReviewCard
