@@ -325,7 +325,7 @@ def test_every_row_reaches_the_knowledge_text():
             "phone_hardware": "model",
             "delivery_rule": "rule",
             "delivery_guardrails": "name",
-            "delivery_example": "script",
+            "delivery_example": "said",
         }[r["data_type"]]
         assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
 

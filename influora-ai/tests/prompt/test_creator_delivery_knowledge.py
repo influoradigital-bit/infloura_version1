@@ -108,6 +108,34 @@ def test_outdoor_light_gaps_are_covered_and_reach_the_frame_check():
     assert DELIVERY_HEADING not in system
 
 
+def test_examples_show_the_break_the_stress_reason_and_the_pause():
+    text = _delivery_text()
+    assert (
+        '- ex01 (English (India), Instagram Reels): Say: "Most creators post every day, / but they skip'
+        ' this one step." Stress: "this one step" (contrastive focal phrase). Pause: after "day"'
+    ) in text
+    for r in _rows("delivery_example"):
+        assert r["pause"] and r["pace"], r["example_id"]
+        assert "pause_ms" not in str(r) and "boundary_after" not in str(r)
+
+
+def test_no_markdown_bold_reaches_meera():
+    assert "**" not in CREATOR_KNOWLEDGE_TEXT
+
+
+def test_ex09_stresses_the_safety_word_and_ex07_is_not_a_fact_to_copy():
+    ex = {r["example_id"]: r for r in _rows("delivery_example")}
+    assert ex["ex09"]["stress"].startswith('"stop"')
+    assert "only when it is the creator's own experience" in ex["ex07"]["note"]
+    assert "Verify the numerical claim" in ex["ex10"]["note"]
+
+
+def test_every_delivery_rule_keeps_its_source_numbers():
+    for r in _rows("delivery_rule"):
+        refs = r["source_refs"]
+        assert refs and all(isinstance(n, int) for n in refs), r["rule"]
+
+
 def test_outdoor_setting_needs_no_nd_filter_and_matches_indoor_clips():
     row = next(r for r in _rows("camera_technical_setting") if r["situation"] == "Talking Head (Outdoors, daylight)")
     assert "no ND filter" in row["shutter"]

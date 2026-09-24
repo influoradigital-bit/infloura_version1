@@ -90,7 +90,9 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     # of one stressed phrase per line. Rendered as "How to deliver the lines".
     "delivery_rule": ("rule", "when", "advice", "why", "limits"),
     "delivery_guardrails": ("name", "guardrails"),
-    "delivery_example": ("example_id", "script", "language", "platform", "stress", "visual"),
+    "delivery_example": (
+        "example_id", "script", "said", "language", "platform", "stress", "pause", "pace", "visual",
+    ),
 }
 
 # Fields that are non-empty lists of non-empty strings, not plain strings.
@@ -426,14 +428,19 @@ def render_delivery_lines(rows: list[dict[str, Any]]) -> list[str]:
         out.append(f"- {r['rule']}: {r['advice']} Limits: {r['limits']}")
     out += [
         "",
-        "Delivery examples (synthetic illustrations, not real creator data; any number in them"
-        " is part of the example, never a fact to reuse):",
+        "Delivery examples (synthetic illustrations, not real creator data; any number or result"
+        " in them is part of the example, never a fact to reuse). \"/\" marks where the line breaks"
+        " into parts; the Stress and Pause here are the same cues a full-script beat carries:",
     ]
     for r in _by_type(rows, "delivery_example"):
-        out.append(
-            f"- {r['example_id']} ({r['language']}, {r['platform']}): \"{r['script']}\""
-            f" Stress: {r['stress']}. Visual: {r['visual']}."
+        line = (
+            f"- {r['example_id']} ({r['language']}, {r['platform']}): Say: \"{r['said']}\""
+            f" Stress: {r['stress']}. Pause: {r['pause']}. Pace: {r['pace']}. Visual: {r['visual']}."
         )
+        note = r.get("note")
+        if isinstance(note, str) and note.strip():
+            line += f" Note: {note.strip()}"
+        out.append(line)
     return out
 
 

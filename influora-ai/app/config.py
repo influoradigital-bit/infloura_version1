@@ -76,7 +76,16 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.3"
+PROMPT_VERSION = "meera-2026.09.24.4"
+# ^ bumped for knowledge v6.1: the 12 delivery examples are rebuilt from the raw
+# training_examples_seed.jsonl -- each shows the line split into parts ("/"), why the phrase is
+# stressed, where to pause (a word, never seconds), the pace and an honesty note -- in the same
+# Stress/Pause shape a full-script beat carries. Markdown bold stripped; ex09 stresses "stop"
+# (its target) not a stray bold "form"; ex07's first-person result is marked "only when it is
+# the creator's own experience". The 12 delivery rules carry their source numbers from
+# delivery_rules.json (the reference list itself has not been supplied yet). BRAND unchanged.
+#
+# Previously (.24.3):
 # ^ bumped for knowledge v6 (dataset 6, 2026-09-24): 5 outdoor-light rows (harsh midday sun,
 # golden hour, cloudy, shade under trees, a daylight talking-head setting) and the 25 delivery
 # rows (12 rules reworded as creator advice, 5 guardrails, 12 synthetic examples with TikTok /
