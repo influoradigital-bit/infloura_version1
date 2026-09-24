@@ -46,7 +46,10 @@ public sealed interface NotificationEvent permits
         CreatorConnectionRequestedEvent,
         ConnectedCreatorJoinedEvent,
         // Lifecycle activation (34) — raised by a scheduled job, never by a user action
-        CreatorNotConnectedEvent {
+        CreatorNotConnectedEvent,
+        // Creator 7-day challenge (35, CHALLENGE-SPEC.md) — raised by a scheduled job, never by a
+        // user action, same reason as CreatorNotConnectedEvent above
+        CreatorChallengeDayDueEvent {
 
     /** The event type string for routing (e.g., "campaign.created"). */
     String eventType();

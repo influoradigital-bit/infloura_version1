@@ -305,6 +305,24 @@ final class EmailTemplateRegistry {
                                 + " working days of your post going live</li>"
                                 + "</ul>"));
 
+        // Creator 7-day challenge (CHALLENGE-SPEC.md, Swapnil 2026-09-23). Behind
+        // influora.creator-challenge.daily-email-enabled, DEFAULT FALSE -- see
+        // CreatorChallengeDailyEmailJob. Deliberately plain: no urgency words ("last chance",
+        // "don't miss"), no "escrow" (project_escrow_word_banned_in_user_copy), English only for
+        // v1. Never claims a growth number this creator's own data does not support -- this is a
+        // same-day nudge about today's planned post, not a performance claim.
+        SPECS.put(
+                "creator.challenge_day_due",
+                new Spec(
+                        "Today's challenge task",
+                        "Today's task",
+                        // Round 2 fix: {{planned_type}} already carries its own article ("a reel",
+                        // "a carousel", "a photo post" -- NotificationListener#humanChallengeType),
+                        // never the raw REEL/CAROUSEL/POST enum, so no "a " is hardcoded here.
+                        "Hi {{user_name}}, today's challenge task is {{planned_type}} — {{window_text}}.",
+                        "Open Influora",
+                        "challenge_url"));
+
         // Workspace
         SPECS.put(
                 "brand.workspace_invite",

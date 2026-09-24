@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 
 import { CreatorLayout } from '@/components/creator/creator-layout';
+import { ChallengeTile } from '@/components/creator/challenge/ChallengeTile';
 import { CreatorFirstRunChecklist } from '@/components/creator/CreatorFirstRunChecklist';
 import { FadeUp } from '@/components/motion';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -539,6 +540,12 @@ export default function CreatorDashboardPage() {
               </CardContent>
             </Card>
           </div>
+        </FadeUp>
+
+        {/* Creator 7-day challenge (CHALLENGE-SPEC.md, 2026-09-23, Frontend §7) — compact,
+            LINKS to the full card on /creator/copilot; no Start/End control lives here. */}
+        <FadeUp y={0} delay={0.01}>
+          <ChallengeTile />
         </FadeUp>
 
         {/* Contracts awaiting your signature — discovery only. Signing itself already works on
