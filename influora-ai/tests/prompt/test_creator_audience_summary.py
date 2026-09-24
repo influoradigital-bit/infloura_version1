@@ -122,4 +122,7 @@ def test_persona_audience_rule_reaches_the_creator_system_prompt():
 
 def test_prompt_version_bumped_for_audience_knowledge():
     # .21.2 introduced the audience rule; .22.2 (content-idea intake), then .22.3 (knowledge v3), .22.4 (statistic rule), .22.5 (knowledge v4 + script format), .22.6 (script review), .23.1 (daily topics tool), .23.2 (week plan), .23.3 (frame check route), .24.1 (audit lane B: week plan, prompt contradictions), .24.2 (camera knowledge v5 + saved phone), .24.3 (outdoor light + delivery knowledge v6), .24.4 (delivery examples v6.1).
-    assert PROMPT_VERSION == "meera-2026.09.24.4"
+    # "At least", not "equal": an exact pin broke on every later bump. It still fails if the
+    # version ever goes backwards past the bump this test belongs to.
+    date, _, n = PROMPT_VERSION.removeprefix("meera-").rpartition(".")
+    assert (date, int(n)) >= ("2026.09.21", 2)
