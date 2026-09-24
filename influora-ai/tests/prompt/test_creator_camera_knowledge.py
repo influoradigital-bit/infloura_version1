@@ -23,9 +23,11 @@ from app.prompt.content_knowledge import (
     CREATOR_KNOWLEDGE_ROWS,
     CREATOR_KNOWLEDGE_TEXT,
     PHONE_NOTES_HEADING,
+    SHOOTING_HEADING,
     KnowledgeFileError,
     find_phone,
     load_knowledge,
+    render_shooting_lines,
 )
 from app.prompt.creator_persona import MEERA_CREATOR_PERSONA
 from app.prompt.frame_check import (
@@ -214,6 +216,24 @@ def test_frame_check_carries_the_shooting_knowledge_but_not_the_phone_table():
     assert PHONE_NOTES_HEADING not in system
     assert "LYT-808" not in system
     assert "Settings must fit the creator's phone" in system
+
+
+def test_shooting_heading_is_short_and_never_points_at_phone_notes_the_frame_check_lacks():
+    # The frame check renders the shooting section without the Phone notes, so nothing in it
+    # may send the model looking for them.
+    assert SHOOTING_HEADING == "Shooting and camera settings (starting points, not laws):"
+    assert FRAME_CHECK_SHOOTING_KNOWLEDGE.count(SHOOTING_HEADING) == 1
+    assert "Phone notes" not in FRAME_CHECK_SHOOTING_KNOWLEDGE
+    # The heading is short because the two standing rules right under it carry what it used to say.
+    rules = [r["rule"] for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] == "permanent_rule"]
+    assert any(
+        r.startswith("Only suggest what the creator's phone can actually do.")
+        and "tap-to-focus, exposure lock, the brightness slider and moving the phone or the light" in r
+        for r in rules
+    )
+    assert any(r.startswith("Give every camera setting with its one-line reason") for r in rules)
+    lines = render_shooting_lines(CREATOR_KNOWLEDGE_ROWS, with_phone_notes=False)
+    assert lines[:2] == [SHOOTING_HEADING, "Standing rules:"]
 
 
 def test_frame_check_phone_text_per_case():

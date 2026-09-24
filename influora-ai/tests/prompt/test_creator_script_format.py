@@ -79,7 +79,7 @@ def test_v3_fixes_survive_the_v4_merge():
     assert "video_goal" not in raw
     # The adapted-pattern source on rows 70-75 and the row 74 statistic fix are
     # pinned by test_creator_content_knowledge.py; the merge only appended rows.
-    assert len(raw.splitlines()) == 240  # release/0922: go-live 128 + v4's 44 new rows + v5's 38 camera rows + v6's 30
+    assert len(raw.splitlines()) == 315  # release/0922: go-live 128 + v4's 44 new rows + v5's 38 camera rows + v6's 30 + v7's 75 lighting and positioning rows
 
 
 def test_length_ranges_are_whole_seconds_low_to_high():

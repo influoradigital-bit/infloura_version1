@@ -10,7 +10,9 @@ reduces-work.md): the point is fewer steps for the creator, not a cleverer
 answer. The persona rules that tell the model HOW to use this block live in
 `app/prompt/creator_persona.py`; this module only loads, validates and renders.
 
-Data: `app/prompt/knowledge/video_content_concepts.jsonl` (240 rows: v4 2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows + the v6 5 outdoor-light and 25 delivery rows of 2026-09-24). It sits
+Data: `app/prompt/knowledge/video_content_concepts.jsonl` (315 rows: 240 through v6 -- v4
+2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows + the v6 5 outdoor-light
+and 25 delivery rows -- plus 75 v7 lighting and positioning rows of 2026-09-24). It sits
 under `app/prompt/` on purpose: `ci/stale-comment-check.py` watches that prefix
 (PROMPT_SOURCES), so editing the data forces a PROMPT_VERSION bump exactly like
 a persona edit does -- the rendered text is prompt content.
@@ -93,6 +95,26 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     "delivery_example": (
         "example_id", "script", "said", "language", "platform", "stress", "pause", "pace", "visual",
     ),
+    # v7 (2026-09-24): where to PUT the creator, the phone and the light -- dataset 7's
+    # lighting and positioning rows plus four types authored from the lighting guide
+    # (fix order, looks by category, mixed light colours, sunset to night). Optional on
+    # every v7 row: `limits` (a string, rendered as "Limits: ...") and `refs` (the guide's
+    # [n] source numbers, not rendered). Rendered as "Placing the creator, the phone and
+    # the light" at the end of the shooting section, so the frame check gets it too.
+    "lighting_workflow": ("principle", "definition"),
+    "lighting_angle_rule": ("key_angle_from_face", "face_shadow_result", "phone_placement", "use_case"),
+    "window_lighting_rule": ("window_position", "result", "instruction"),
+    "indian_home_lighting_rule": ("source_type", "guidance"),
+    "camera_height_rule": ("camera_position", "perceived_result", "use_case"),
+    "background_repair_rule": ("problem", "first_fix", "secondary_fix"),
+    "portrait_lighting_pattern": ("pattern", "setup", "caution"),
+    "indian_creator_scene_checklist": ("setting", "first_choice", "risk_to_check"),
+    "coordinate_system_note": ("principle", "definition"),
+    "physics_principle": ("principle", "definition"),
+    "lighting_fix_order": ("step", "situation", "first_move", "why"),
+    "lighting_look": ("look", "setup", "check", "fits_categories"),
+    "mixed_light_rule": ("mix", "recommendation"),
+    "sunset_to_night_step": ("stage", "instruction"),
 }
 
 # Fields that are non-empty lists of non-empty strings, not plain strings.
@@ -132,6 +154,21 @@ NAME_FIELD: dict[str, str] = {
     "delivery_rule": "rule",
     "delivery_guardrails": "name",
     "delivery_example": "example_id",
+    # v7 lighting and positioning rows.
+    "lighting_workflow": "principle",
+    "lighting_angle_rule": "key_angle_from_face",
+    "window_lighting_rule": "window_position",
+    "indian_home_lighting_rule": "source_type",
+    "camera_height_rule": "camera_position",
+    "background_repair_rule": "problem",
+    "portrait_lighting_pattern": "pattern",
+    "indian_creator_scene_checklist": "setting",
+    "coordinate_system_note": "principle",
+    "physics_principle": "principle",
+    "lighting_fix_order": "situation",
+    "lighting_look": "look",
+    "mixed_light_rule": "mix",
+    "sunset_to_night_step": "stage",
 }
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
@@ -220,6 +257,16 @@ def _validate_row(row: Any, lineno: int) -> dict[str, Any]:
         raise KnowledgeFileError(
             f"line {lineno}: unknown confidence {row['confidence']!r}"
         )
+    if "limits" in row and not isinstance(row["limits"], str):
+        raise KnowledgeFileError(f"line {lineno}: {data_type} field 'limits' must be a string")
+    if "refs" in row:
+        refs = row["refs"]
+        if not isinstance(refs, list) or not all(
+            isinstance(n, int) and not isinstance(n, bool) for n in refs
+        ):
+            raise KnowledgeFileError(
+                f"line {lineno}: {data_type} field 'refs' must be a list of source numbers"
+            )
     if data_type == "length_guideline":
         m = _SECONDS_RANGE.match(row["starting_range_seconds"].strip())
         if not m or int(m.group(1)) >= int(m.group(2)):
@@ -444,12 +491,11 @@ def render_delivery_lines(rows: list[dict[str, Any]]) -> list[str]:
     return out
 
 
-SHOOTING_HEADING = (
-    "Shooting and camera settings (starting points, not laws. Only suggest a control the"
-    " creator's phone has -- see Phone notes; on an auto-only phone use tap-to-focus,"
-    " exposure lock, the brightness slider and moving the phone or the light. Give every"
-    " setting with its one-line reason):"
-)
+# Short on purpose: the two standing rules right under it already say "only suggest what
+# the creator's phone can actually do" (with the auto-only list) and "give every camera
+# setting with its one-line reason". It never points at the Phone notes, because the frame
+# check renders this section without them (`with_phone_notes=False`).
+SHOOTING_HEADING = "Shooting and camera settings (starting points, not laws):"
 
 PHONE_NOTES_HEADING = (
     "Phone notes (ONLY for these exact models. For any other phone never assume a lens,"
@@ -529,10 +575,173 @@ def render_shooting_lines(rows: list[dict[str, Any]], *, with_phone_notes: bool 
             f" Workflow: {r['workflow']}"
         )
 
+    placement = render_placement_lines(rows)
+    if placement:
+        out += [""] + placement
+
     if with_phone_notes:
         out += ["", PHONE_NOTES_HEADING]
         for r in _by_type(rows, "phone_hardware"):
             out.append(f"- {phone_note_line(r)}")
+    return out
+
+
+PLACEMENT_HEADING = (
+    "Placing the creator, the phone and the light (fix the scene before the settings;"
+    " angles are starting points, not laws):"
+)
+
+# The fix-order rows, one situation per line, sorted by `step` (the number is not rendered).
+FIRST_MOVE_HEADING = "First move by situation (fix the scene before the settings):"
+
+# "Lighting looks" is the name the creator persona points at -- keep them in step.
+LIGHTING_LOOKS_HEADING = (
+    "Lighting looks (pick the one that fits the creator's category; a look is a visual"
+    " convention, never a promise of views or a guaranteed audience effect):"
+)
+
+
+# Caveats a section heading already states once (PLACEMENT_HEADING: angles are starting
+# points; the sunset heading: timing follows the sun, not the clock). A row whose limit is only
+# one of these is not repeated line after line -- the review counted 15 copies.
+_HEADING_CARRIED_LIMITS: frozenset[str] = frozenset({
+    "The exact angle is a starting point to test, not a law.",
+    "Timing depends on your location and date, not the clock; recheck your face and background"
+    " every few minutes as the sun drops.",
+})
+
+SUNSET_HEADING = (
+    "Sunset to night, step by step (timing depends on your location and date, not the clock;"
+    " recheck your face and background every few minutes as the sun drops):"
+)
+
+
+def _with_limits(line: str, r: dict[str, Any]) -> str:
+    """Appends the row's optional `limits` as "Limits: ..." when it has one, unless the
+    section heading already carries that exact caveat."""
+    limits = r.get("limits")
+    if isinstance(limits, str) and limits.strip() and limits.strip() not in _HEADING_CARRIED_LIMITS:
+        line += f" Limits: {limits.strip()}"
+    return line
+
+
+def _step_key(r: dict[str, Any]) -> tuple[int, int | str]:
+    """Numeric steps in number order; anything else after them, in text order."""
+    step = r["step"].strip()
+    return (0, int(step)) if step.isdigit() else (1, step)
+
+
+def render_placement_lines(rows: list[dict[str, Any]]) -> list[str]:
+    """The v7 lighting and positioning rows as plain lines, one per row, each starting
+    with its name. Order: the workflow (read the light, then move the creator, the phone,
+    the light, then the settings) and the first move by situation (sorted by `step`,
+    which is not rendered) first, then where the light sits, the phone
+    height and background, the looks, sunset to night, the Indian scene checklist and
+    the physics behind it all. Empty when the file carries no v7 rows."""
+    groups: list[tuple[str, list[str]]] = []
+
+    def group(title: str, lines: list[str]) -> None:
+        if lines:
+            groups.append((title, lines))
+
+    group(
+        "Order of work:",
+        [_with_limits(f"- {r['principle']}: {r['definition']}", r)
+         for r in _by_type(rows, "lighting_workflow")],
+    )
+    group(
+        FIRST_MOVE_HEADING,
+        [
+            _with_limits(
+                f"- {r['situation']}: first move: {r['first_move']} Why: {r['why']}", r
+            )
+            for r in sorted(_by_type(rows, "lighting_fix_order"), key=_step_key)
+        ],
+    )
+    group(
+        "Left and right (always the creator's own, as they face the phone: \"your left\","
+        " \"your right\"):",
+        [_with_limits(f"- {r['principle']}: {r['definition']}", r)
+         for r in _by_type(rows, "coordinate_system_note")],
+    )
+    group(
+        "Where the main light sits, measured from the creator's face:",
+        [
+            _with_limits(
+                f"- {r['key_angle_from_face']}: {r['face_shadow_result']} Phone:"
+                f" {r['phone_placement']} Use when: {r['use_case']}",
+                r,
+            )
+            for r in _by_type(rows, "lighting_angle_rule")
+        ],
+    )
+    group(
+        "Window light:",
+        [_with_limits(f"- {r['window_position']}: {r['result']} Do this: {r['instruction']}", r)
+         for r in _by_type(rows, "window_lighting_rule")],
+    )
+    group(
+        "Lights in an Indian home:",
+        [_with_limits(f"- {r['source_type']}: {r['guidance']}", r)
+         for r in _by_type(rows, "indian_home_lighting_rule")],
+    )
+    group(
+        "Mixed light colours:",
+        [_with_limits(f"- {r['mix']}: {r['recommendation']}", r)
+         for r in _by_type(rows, "mixed_light_rule")],
+    )
+    group(
+        "Phone height:",
+        [_with_limits(f"- {r['camera_position']}: {r['perceived_result']} Use when: {r['use_case']}", r)
+         for r in _by_type(rows, "camera_height_rule")],
+    )
+    group(
+        "Fixing the background (first fix, then the next one):",
+        [_with_limits(f"- {r['problem']}: first: {r['first_fix']} Then: {r['secondary_fix']}", r)
+         for r in _by_type(rows, "background_repair_rule")],
+    )
+    group(
+        LIGHTING_LOOKS_HEADING,
+        [
+            _with_limits(
+                f"- {r['look']}: {r['setup']} Check: {r['check']} Fits: {r['fits_categories']}", r
+            )
+            for r in _by_type(rows, "lighting_look")
+        ],
+    )
+    group(
+        "Portrait lighting patterns:",
+        [_with_limits(f"- {r['pattern']}: {r['setup']} Caution: {r['caution']}", r)
+         for r in _by_type(rows, "portrait_lighting_pattern")],
+    )
+    group(
+        SUNSET_HEADING,
+        [_with_limits(f"- {r['stage']}: {r['instruction']}", r)
+         for r in _by_type(rows, "sunset_to_night_step")],
+    )
+    group(
+        "Indian creator scene checklist (first choice, then what to check):",
+        [
+            _with_limits(
+                f"- {r['setting']}: {r['first_choice']} Check: {r['risk_to_check']}", r
+            )
+            for r in _by_type(rows, "indian_creator_scene_checklist")
+        ],
+    )
+    group(
+        "Why it works:",
+        [_with_limits(f"- {r['principle']}: {r['definition']}", r)
+         for r in _by_type(rows, "physics_principle")],
+    )
+
+    if not groups:
+        return []
+    out: list[str] = [PLACEMENT_HEADING]
+    for i, (title, lines) in enumerate(groups):
+        if i:
+            out.append("")
+        out.append(title)
+        out.extend(lines)
     return out
 
 
