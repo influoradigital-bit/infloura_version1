@@ -9,7 +9,10 @@ Three things this file defends, none of them against a retyped fixture:
   must reach at least one calendar category that has events, end to end through `events_for_week`;
 - the Python table and the Java table (`CreatorCategoryMap.java`, used by `ContentTopicService`
   for the admin's topics) are compared entry by entry from the Java SOURCE, so they cannot drift;
-- the calendar categories the map points at are exactly the ones `events.jsonl` uses.
+- every festival `fits` word is a calendar category, and every calendar category no festival uses
+  is one of the topic-only words;
+- the Java copy of the onboarding verticals (`CreatorCategoryMap.ONBOARDING_VERTICALS`) is the
+  onboarding page's list.
 """
 
 from __future__ import annotations
@@ -49,7 +52,9 @@ def _java_table() -> dict[str, tuple[str, ...]]:
     source = JAVA_MAP.read_text(encoding="utf-8")
     start = source.index("TABLE =")
     end = source.index(";", start)
-    entries = re.findall(r'Map\.entry\("([^"]+)",\s*List\.of\(([^)]*)\)\)', source[start:end])
+    block = source[start:end]
+    entries = re.findall(r'Map\.entry\(\s*"([^"]+)",\s*List\.of\(([^)]*)\)\s*\)', block)
+    assert len(entries) == block.count("Map.entry("), "a Java TABLE entry is not on the parsed shape"
     return {key: tuple(re.findall(r'"([^"]+)"', values)) for key, values in entries}
 
 
@@ -58,6 +63,13 @@ def _java_calendar_categories() -> tuple[str, ...]:
     start = source.index("CALENDAR_CATEGORIES =")
     end = source.index(";", start)
     return tuple(re.findall(r'"([^"]+)"', source[start:end]))
+
+
+def _java_onboarding_verticals() -> list[str]:
+    source = JAVA_MAP.read_text(encoding="utf-8")
+    start = source.index("ONBOARDING_VERTICALS =")
+    end = source.index(";", start)
+    return re.findall(r'"([^"]+)"', source[start:end])
 
 
 def _category_names_in_a_year(categories: list[str]) -> set[str]:
@@ -117,10 +129,34 @@ def test_a_calendar_category_maps_to_itself():
         assert calendar_categories_for(category.upper()) == (category,)
 
 
+# The six calendar categories added 2026-09-25 for the admin's topics; no festival uses them yet.
+TOPIC_ONLY_CATEGORIES = ("Fashion", "Lifestyle", "Entertainment", "Gaming", "Music", "Parenting")
+
+
+def test_the_calendar_categories_are_exactly_the_ruled_ones_in_order():
+    assert CALENDAR_CATEGORIES == (
+        "Food",
+        "Fitness",
+        "Beauty",
+        "Finance",
+        "Education",
+        "Gardening",
+        "Travel",
+        "Local business",
+        "DIY or crafts",
+        "Technology",
+        "Culture",
+        *TOPIC_ONLY_CATEGORIES,
+    )
+
+
 def test_the_table_is_exactly_the_ruled_one():
-    assert CATEGORY_MAP["Fashion & Lifestyle"] == ("Beauty", "Culture")
+    assert CATEGORY_MAP["Fashion & Lifestyle"] == ("Beauty", "Culture", "Fashion", "Lifestyle")
+    assert CATEGORY_MAP["Tech & Gaming"] == ("Technology", "Gaming")
+    assert CATEGORY_MAP["Entertainment & Comedy"] == ("Culture", "Entertainment")
+    assert CATEGORY_MAP["Parenting & Family"] == ("Education", "Food", "Parenting")
+    assert CATEGORY_MAP["Music & Dance"] == ("Culture", "Music", "Entertainment")
     assert CATEGORY_MAP["Finance & Business"] == ("Finance", "Local business")
-    assert CATEGORY_MAP["Parenting & Family"] == ("Education", "Food")
     assert CATEGORY_MAP["Art & Photography"] == ("DIY or crafts", "Culture")
     for alias in ("tech", "technology", "gadgets"):
         assert calendar_categories_for(alias) == ("Technology",)
@@ -130,8 +166,36 @@ def test_the_table_is_exactly_the_ruled_one():
     assert calendar_categories_for("") == ()
 
 
+@pytest.mark.parametrize(
+    ("word", "expected"),
+    [
+        ("fashion", "Fashion"),
+        ("lifestyle", "Lifestyle"),
+        ("shopping", "Lifestyle"),
+        ("entertainment", "Entertainment"),
+        ("comedy", "Entertainment"),
+        ("gaming", "Gaming"),
+        ("games", "Gaming"),
+        ("music", "Music"),
+        ("dance", "Music"),
+        ("parenting", "Parenting"),
+        ("family", "Parenting"),
+    ],
+)
+def test_the_new_free_text_words_resolve(word, expected):
+    assert calendar_categories_for(word) == (expected,)
+    assert calendar_categories_for(f"  {word.upper()} ") == (expected,)
+
+
+def test_the_new_calendar_words_have_no_alias_entry():
+    """A word that IS a calendar category maps to itself, so the six new ones need no entry (the
+    older ones such as "food" keep theirs; the ruling kept every existing alias)."""
+    new_keys = {normalise_category(c) for c in TOPIC_ONLY_CATEGORIES}
+    assert not new_keys & {normalise_category(k) for k in CATEGORY_MAP}
+
+
 def test_match_keys_keep_the_raw_category_as_well():
-    assert match_keys(["Tech & Gaming"]) == {"tech & gaming", "technology"}
+    assert match_keys(["Tech & Gaming"]) == {"tech & gaming", "technology", "gaming"}
     assert match_keys([None, "  ", 7]) == set()  # type: ignore[list-item]
 
 
@@ -141,9 +205,26 @@ def test_every_mapped_category_is_a_real_calendar_category():
         assert set(mapped) <= set(CALENDAR_CATEGORIES), key
 
 
-def test_the_calendar_categories_are_exactly_the_ones_events_jsonl_uses():
+def test_festival_words_are_calendar_categories_and_the_rest_are_topic_only_words():
+    """Every festival `fits` word is a calendar category (a typo there would match nobody), and
+    every calendar category a festival does not use is one of the six topic-only words."""
     used = {entry for row in EVENT_ROWS for entry in row["fits"]} - {FITS_ALL}
-    assert used == set(CALENDAR_CATEGORIES)
+    assert used <= set(CALENDAR_CATEGORIES), used - set(CALENDAR_CATEGORIES)
+    assert set(CALENDAR_CATEGORIES) - used <= set(TOPIC_ONLY_CATEGORIES)
+
+
+def test_the_topic_only_categories_leave_the_festival_calendar_unchanged():
+    """The widened verticals add names no festival uses, so a year of festivals is the same as
+    with the old table's categories alone."""
+    old = {
+        "Fashion & Lifestyle": ["Beauty", "Culture"],
+        "Tech & Gaming": ["Technology"],
+        "Entertainment & Comedy": ["Culture"],
+        "Parenting & Family": ["Education", "Food"],
+        "Music & Dance": ["Culture"],
+    }
+    for vertical, old_categories in old.items():
+        assert _category_names_in_a_year([vertical]) == _category_names_in_a_year(old_categories)
 
 
 # --- Python and Java cannot drift -------------------------------------------------
@@ -157,3 +238,9 @@ def test_the_java_table_is_the_python_table():
 
 def test_the_java_calendar_categories_are_the_python_ones():
     assert _java_calendar_categories() == CALENDAR_CATEGORIES
+
+
+def test_the_java_onboarding_verticals_are_the_onboarding_page_ones():
+    """Java's preview uses its own copy of CONTENT_VERTICALS to find calendar words no onboarding
+    option reaches, so that copy must be the page's list, in order."""
+    assert _java_onboarding_verticals() == _onboarding_verticals()

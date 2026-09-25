@@ -1,5 +1,8 @@
 package com.influora.service.creatorcopilot;
 
+import static com.influora.service.creatorcopilot.ContentTopicService.REASON_ALL_WITH_OTHERS;
+import static com.influora.service.creatorcopilot.ContentTopicService.REASON_NO_CREATOR_GROUP;
+import static com.influora.service.creatorcopilot.ContentTopicService.REASON_UNKNOWN_CATEGORY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,6 +16,7 @@ import com.influora.repository.CreatorProfileRepository;
 import com.influora.service.creatorcopilot.ContentTopicService.DroppedTopic;
 import com.influora.service.creatorcopilot.ContentTopicService.ScreeningResult;
 import com.influora.service.creatorcopilot.ContentTopicService.ServableTopic;
+import com.influora.service.creatorcopilot.ContentTopicService.UnmatchedCategoryTopic;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.time.Instant;
@@ -254,6 +258,277 @@ class ContentTopicServiceTest {
         ApiException ex =
                 assertThrows(ApiException.class, () -> service.topicsFor(CREATOR_USER_ID, TODAY));
         assertEquals("CREATOR_PROFILE_NOT_FOUND", ex.getCode());
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Topic-side mapping: several comma-separated categories, each resolved through the table
+    // -----------------------------------------------------------------------------------------
+
+    private List<Long> servedIds(List<String> creatorCategories) {
+        return service.screen(creatorCategories, TODAY).servable().stream()
+                .map(ServableTopic::id)
+                .toList();
+    }
+
+    @Test
+    @DisplayName("topic-side map: a 'Tech' topic reaches a 'Tech & Gaming' creator (both reach Technology)")
+    void techTopicReachesTechAndGamingCreator() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(List.of(topic(1, "Tech", "Phone launch", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(List.of(1L), servedIds(List.of("Tech & Gaming")));
+        assertEquals(List.of(), servedIds(List.of("Beauty & Skincare")));
+    }
+
+    @Test
+    @DisplayName("topic-side map: a 'Fashion' topic reaches a 'Fashion & Lifestyle' creator")
+    void fashionTopicReachesFashionAndLifestyleCreator() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(List.of(topic(1, "Fashion", "Festive looks", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(List.of(1L), servedIds(List.of("Fashion & Lifestyle")));
+        assertEquals(List.of(), servedIds(List.of("Food & Cooking")));
+    }
+
+    @Test
+    @DisplayName("topic-side map: 'Fashion, Culture' reaches a 'Music & Dance' creator via Culture")
+    void multiCategoryTopicReachesViaAnyPart() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(
+                        List.of(topic(1, "Fashion, Culture", "Festive looks", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(List.of(1L), servedIds(List.of("Music & Dance")));
+        assertEquals(List.of(1L), servedIds(List.of("Fashion & Lifestyle")));
+        assertEquals(List.of(), servedIds(List.of("Food & Cooking")));
+    }
+
+    @Test
+    @DisplayName("topic-side map: 'Culture, ALL' reaches every creator, even one with no categories")
+    void anAllPartMatchesEveryone() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(List.of(topic(1, "Culture, all", "Everyone topic", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(List.of(1L), servedIds(List.of("Finance & Business")));
+        assertEquals(List.of(1L), servedIds(List.of()));
+        // The Culture part changes nothing next to ALL, so the preview flags it.
+        assertEquals(
+                List.of(new UnmatchedCategoryTopic(1L, "Culture, all", "Culture", REASON_ALL_WITH_OTHERS)),
+                service.unmatchedCategories(TODAY));
+    }
+
+    @Test
+    @DisplayName("topic-side map: a 'Shopping' topic reaches a 'Fashion & Lifestyle' creator via Lifestyle")
+    void shoppingTopicReachesViaLifestyle() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(List.of(topic(1, "Shopping", "Sale week hauls", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(List.of(1L), servedIds(List.of("Fashion & Lifestyle")));
+        assertEquals(List.of(1L), servedIds(List.of("lifestyle")));
+        assertEquals(List.of(), servedIds(List.of("Tech & Gaming")));
+    }
+
+    @Test
+    @DisplayName(
+            "topic-side map: a 'Snacks' topic is listed as unmatched and reaches only a creator who"
+                    + " typed 'snacks'")
+    void offTableTopicIsUnmatchedAndReachesOnlyThatWord() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(
+                        List.of(
+                                topic(1, "Snacks", "Monsoon snacks", BENIGN_TEXT, "APPROVED"),
+                                topic(2, "Snacks, Food", "Chai and snacks", BENIGN_TEXT, "APPROVED"),
+                                topic(3, "ALL", "Everyone topic", BENIGN_TEXT, "APPROVED"),
+                                topic(4, "Food", "Filter coffee week", BENIGN_TEXT, "APPROVED"),
+                                // Off-table AND unsafe: still listed (category question only).
+                                topic(5, "Snakcs", UNSAFE_TEXT, BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(
+                List.of(
+                        new UnmatchedCategoryTopic(1L, "Snacks", "Snacks", REASON_UNKNOWN_CATEGORY),
+                        new UnmatchedCategoryTopic(2L, "Snacks, Food", "Snacks", REASON_UNKNOWN_CATEGORY),
+                        new UnmatchedCategoryTopic(5L, "Snakcs", "Snakcs", REASON_UNKNOWN_CATEGORY)),
+                service.unmatchedCategories(TODAY));
+        assertEquals(List.of(1L, 2L, 3L), servedIds(List.of("  SNACKS ")));
+        assertEquals(List.of(2L, 3L, 4L), servedIds(List.of("Food & Cooking")));
+    }
+
+    @Test
+    @DisplayName("topic-side map: blank parts ('Food,,') are ignored; an all-blank category matches no one")
+    void blankPartsAreIgnored() throws ReflectiveOperationException {
+        assertEquals(List.of("Food"), CreatorCategoryMap.splitTopicCategories("Food,,"));
+        assertEquals(
+                List.of("Fashion", "Culture"),
+                CreatorCategoryMap.splitTopicCategories(" Fashion ,  , Culture "));
+        assertTrue(CreatorCategoryMap.splitTopicCategories(" , ,").isEmpty());
+        assertTrue(CreatorCategoryMap.splitTopicCategories(null).isEmpty());
+
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(
+                        List.of(
+                                topic(1, "Food,,", "Filter coffee week", BENIGN_TEXT, "APPROVED"),
+                                topic(2, " , ", "Nobody topic", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(List.of(1L), servedIds(List.of("Food & Cooking")));
+        assertEquals(List.of(), servedIds(List.of()));
+        assertEquals(
+                List.of(new UnmatchedCategoryTopic(2L, " , ", "", REASON_UNKNOWN_CATEGORY)),
+                service.unmatchedCategories(TODAY));
+    }
+
+    @Test
+    @DisplayName("topic-side map: the five-topic cap and safety screening still hold for multi-category rows")
+    void capAndScreeningHoldForMultiCategoryRows() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(
+                        List.of(
+                                topic(7, "Fashion, Culture", UNSAFE_TEXT, BENIGN_TEXT, "APPROVED"),
+                                topic(6, "Music", "Topic 6", BENIGN_TEXT, "APPROVED"),
+                                topic(5, "Culture", "Topic 5", BENIGN_TEXT, "APPROVED"),
+                                topic(4, "Dance, Snacks", "Topic 4", BENIGN_TEXT, "APPROVED"),
+                                topic(3, "Entertainment", "Topic 3", BENIGN_TEXT, "APPROVED"),
+                                topic(2, "Food, Culture", "Topic 2", BENIGN_TEXT, "APPROVED"),
+                                topic(1, "Culture, ALL", "Topic 1", BENIGN_TEXT, "APPROVED")));
+
+        ScreeningResult result = service.screen(List.of("Music & Dance"), TODAY);
+
+        assertEquals(
+                List.of(6L, 5L, 4L, 3L, 2L),
+                result.servable().stream().map(ServableTopic::id).toList());
+        assertEquals(List.of(new DroppedTopic(7L, "DEATH")), result.dropped());
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Topic side does not fan out: a multi-target onboarding option reaches only that option
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "no fan-out: a 'Parenting & Family' topic reaches a 'Parenting & Family' creator, not a"
+                    + " 'Food & Cooking' one")
+    void parentingTopicDoesNotFanOutToFoodCreators() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(
+                        List.of(topic(1, "Parenting & Family", "School lunchbox week", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(List.of(1L), servedIds(List.of("Parenting & Family")));
+        assertEquals(List.of(), servedIds(List.of("Food & Cooking")));
+        assertEquals(List.of(), servedIds(List.of("Education & Learning")));
+        assertEquals(List.of(), servedIds(List.of("parenting")));
+        // A deliberate onboarding-option name is not a warning.
+        assertTrue(service.unmatchedCategories(TODAY).isEmpty());
+    }
+
+    @Test
+    @DisplayName("no fan-out: a 'Music & Dance' topic does not reach a 'Fashion & Lifestyle' creator")
+    void musicAndDanceTopicDoesNotReachFashionCreators() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(List.of(topic(1, "Music & Dance", "Garba practice", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(List.of(), servedIds(List.of("Fashion & Lifestyle")));
+        assertEquals(List.of(), servedIds(List.of("Entertainment & Comedy")));
+        assertEquals(List.of(1L), servedIds(List.of("music & dance")));
+    }
+
+    @Test
+    @DisplayName("no fan-out: single-target words still resolve ('Tech' -> Tech & Gaming, 'Shopping' -> Lifestyle)")
+    void singleTargetTopicWordsStillResolve() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(
+                        List.of(
+                                topic(1, "Tech", "Phone launch", BENIGN_TEXT, "APPROVED"),
+                                topic(2, "Shopping", "Sale week hauls", BENIGN_TEXT, "APPROVED"),
+                                topic(3, "Food", "Filter coffee week", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(List.of(1L), servedIds(List.of("Tech & Gaming")));
+        assertEquals(List.of(2L), servedIds(List.of("Fashion & Lifestyle")));
+        // The creator side still fans out: a Parenting & Family creator gets the Food topic.
+        assertEquals(List.of(3L), servedIds(List.of("Parenting & Family")));
+    }
+
+    @Test
+    @DisplayName("topicMatchKeys: raw part always, calendar category only for exactly one target")
+    void topicMatchKeysAddOnlySingleTargets() {
+        assertEquals(
+                java.util.Set.of("parenting & family"),
+                CreatorCategoryMap.topicMatchKeys(List.of("Parenting & Family")));
+        assertEquals(
+                java.util.Set.of("tech", "technology", "food", "shopping", "lifestyle", "snacks"),
+                CreatorCategoryMap.topicMatchKeys(List.of("Tech", " FOOD ", "Shopping", "Snacks", " ")));
+        for (String vertical : CreatorCategoryMap.ONBOARDING_VERTICALS) {
+            List<String> targets = CreatorCategoryMap.calendarCategoriesFor(vertical);
+            int expected = targets.size() == 1 ? 2 : 1;
+            assertEquals(expected, CreatorCategoryMap.topicMatchKeys(List.of(vertical)).size(), vertical);
+        }
+        assertTrue(CreatorCategoryMap.topicMatchKeys(null).isEmpty());
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // The admin preview's per-part checks
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("per-part check: Gardening is the one calendar category no onboarding option reaches")
+    void gardeningIsTheOnlyUnreachedCalendarCategory() {
+        assertEquals(List.of("Gardening"), CreatorCategoryMap.calendarCategoriesNoVerticalReaches());
+        assertEquals(12, CreatorCategoryMap.ONBOARDING_VERTICALS.size());
+        for (String vertical : CreatorCategoryMap.ONBOARDING_VERTICALS) {
+            assertTrue(CreatorCategoryMap.TABLE.containsKey(vertical), vertical);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "per-part check: a typo inside a comma list, a Gardening part and a part next to ALL are"
+                    + " each flagged; good parts and onboarding-option names are not")
+    void unmatchedCategoriesChecksEveryPart() throws ReflectiveOperationException {
+        when(contentTopicRepository.findServable(TODAY))
+                .thenReturn(
+                        List.of(
+                                topic(1, "Food, Snakcs", "Chai week", BENIGN_TEXT, "APPROVED"),
+                                topic(2, "Gardening", "Monsoon balcony garden", BENIGN_TEXT, "APPROVED"),
+                                topic(3, "Culture, gardening", "Tulsi puja", BENIGN_TEXT, "APPROVED"),
+                                topic(4, "ALL, Food, Snacks", "Everyone topic", BENIGN_TEXT, "APPROVED"),
+                                topic(5, "Tech, Parenting & Family, Shopping", "Good row", BENIGN_TEXT, "APPROVED"),
+                                topic(6, "ALL", "Everyone topic", BENIGN_TEXT, "APPROVED")));
+
+        assertEquals(
+                List.of(
+                        new UnmatchedCategoryTopic(1L, "Food, Snakcs", "Snakcs", REASON_UNKNOWN_CATEGORY),
+                        new UnmatchedCategoryTopic(2L, "Gardening", "Gardening", REASON_NO_CREATOR_GROUP),
+                        new UnmatchedCategoryTopic(
+                                3L, "Culture, gardening", "gardening", REASON_NO_CREATOR_GROUP),
+                        new UnmatchedCategoryTopic(4L, "ALL, Food, Snacks", "Food", REASON_ALL_WITH_OTHERS),
+                        new UnmatchedCategoryTopic(4L, "ALL, Food, Snacks", "Snacks", REASON_ALL_WITH_OTHERS)),
+                service.unmatchedCategories(TODAY));
+    }
+
+    @Test
+    @DisplayName("category map: the widened verticals and the new aliases reach the new calendar categories")
+    void widenedVerticalsAndNewAliases() {
+        assertEquals(
+                List.of("Beauty", "Culture", "Fashion", "Lifestyle"),
+                CreatorCategoryMap.calendarCategoriesFor("Fashion & Lifestyle"));
+        assertEquals(
+                List.of("Technology", "Gaming"), CreatorCategoryMap.calendarCategoriesFor("Tech & Gaming"));
+        assertEquals(
+                List.of("Culture", "Entertainment"),
+                CreatorCategoryMap.calendarCategoriesFor("Entertainment & Comedy"));
+        assertEquals(
+                List.of("Education", "Food", "Parenting"),
+                CreatorCategoryMap.calendarCategoriesFor("Parenting & Family"));
+        assertEquals(
+                List.of("Culture", "Music", "Entertainment"),
+                CreatorCategoryMap.calendarCategoriesFor("Music & Dance"));
+        assertEquals(List.of("Lifestyle"), CreatorCategoryMap.calendarCategoriesFor("Shopping"));
+        assertEquals(List.of("Entertainment"), CreatorCategoryMap.calendarCategoriesFor("comedy"));
+        assertEquals(List.of("Gaming"), CreatorCategoryMap.calendarCategoriesFor("games"));
+        assertEquals(List.of("Music"), CreatorCategoryMap.calendarCategoriesFor("dance"));
+        assertEquals(List.of("Parenting"), CreatorCategoryMap.calendarCategoriesFor("family"));
+        for (String calendar :
+                List.of("Fashion", "Lifestyle", "Entertainment", "Gaming", "Music", "Parenting")) {
+            assertEquals(List.of(calendar), CreatorCategoryMap.calendarCategoriesFor(calendar.toLowerCase()));
+        }
+        assertEquals(17, CreatorCategoryMap.CALENDAR_CATEGORIES.size());
     }
 
     // -----------------------------------------------------------------------------------------

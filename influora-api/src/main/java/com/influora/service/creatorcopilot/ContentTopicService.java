@@ -9,7 +9,9 @@ import com.influora.repository.CreatorProfileRepository;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -71,6 +73,24 @@ public class ContentTopicService {
     /** The full result of matching+screening a category list against today's candidates. */
     public record ScreeningResult(List<ServableTopic> servable, List<DroppedTopic> dropped) {}
 
+    /** Reason: the part maps to no calendar category (a typo or an off-table word). */
+    public static final String REASON_UNKNOWN_CATEGORY = "not a known category";
+
+    /** Reason: the part is a calendar category no onboarding option maps to ("Gardening"). */
+    public static final String REASON_NO_CREATOR_GROUP = "no creator group reaches it";
+
+    /** Reason: the row also has an {@code ALL} part, so this part changes nothing. */
+    public static final String REASON_ALL_WITH_OTHERS =
+            "ALL with other categories: the row already reaches everyone";
+
+    /**
+     * One part of a servable-today row's category that will not do what it looks like, for the
+     * admin preview: the row's id, its raw category, the part, and one of {@link
+     * #REASON_UNKNOWN_CATEGORY}, {@link #REASON_NO_CREATOR_GROUP}, {@link #REASON_ALL_WITH_OTHERS}.
+     * Never the row's title or angles.
+     */
+    public record UnmatchedCategoryTopic(Long id, String category, String part, String reason) {}
+
     /**
      * The creator-facing read: up to {@link #MAX_TOPICS} servable topics for {@code creatorUserId}
      * on {@code today}.
@@ -112,14 +132,22 @@ public class ContentTopicService {
      * Matches every servable-today row ({@link ContentTopicRepository#findServable}) against
      * {@code creatorCategories} and screens every match for safety.
      *
-     * <p><b>Matching rule.</b> A topic matches when its {@code category}, normalised by {@link
-     * CreatorCategoryMap#normalise} (trimmed, case-insensitive, inner whitespace collapsed), equals
-     * any entry of {@code creatorCategories} normalised the same way, OR any calendar category
-     * that entry maps to in {@link CreatorCategoryMap} ("Food &amp; Cooking" matches a "Food"
-     * topic, "tech" matches a "Technology" topic), OR when its {@code category} is the literal
-     * {@code ALL} (case-insensitively). A creator with an empty {@code creatorCategories} list
-     * therefore matches only {@code ALL} rows -- not a special case coded here, just what the rule
-     * above reduces to when there is nothing else to match against.
+     * <p><b>Matching rule.</b> A topic's {@code category} may hold several categories separated by
+     * commas ("Fashion, Culture"); {@link CreatorCategoryMap#splitTopicCategories} splits it,
+     * trims each part and drops blank parts. If any part is the literal {@code ALL}
+     * (case-insensitively) the row matches every creator. Otherwise both sides go through the same
+     * table, each by its own rule: the creator's categories become {@link
+     * CreatorCategoryMap#matchKeys} (each raw category plus EVERY calendar category it maps to),
+     * the topic's parts become {@link CreatorCategoryMap#topicMatchKeys} (each raw part plus its
+     * calendar category only when the table gives exactly one), and the row matches iff the two
+     * sets share a name. So "Food &amp; Cooking" matches a "Food" topic, "Tech &amp; Gaming"
+     * matches a "Tech" topic (both reach Technology), and "Music &amp; Dance" matches a "Fashion,
+     * Culture" topic via Culture -- but a "Parenting &amp; Family" topic reaches only creators who
+     * chose "Parenting &amp; Family", not every Food creator. A part that maps to no calendar
+     * category ("Snacks") matches only a creator who typed that same word -- the admin preview
+     * lists such parts ({@link #unmatchedCategories}). A creator with an empty {@code
+     * creatorCategories} list therefore matches only {@code ALL} rows -- not a special case coded
+     * here, just what the rule above reduces to when there is nothing else to match against.
      *
      * <p><b>Cap.</b> {@link #MAX_TOPICS} applies to the SAFE, matched result only -- a matched row
      * that gets dropped for safety does not consume a slot. {@code dropped} is not capped: every
@@ -134,13 +162,14 @@ public class ContentTopicService {
     @Transactional(readOnly = true)
     public ScreeningResult screen(List<String> creatorCategories, LocalDate today) {
         List<String> categories = creatorCategories == null ? List.of() : creatorCategories;
+        Set<String> creatorKeys = CreatorCategoryMap.matchKeys(categories);
         List<ContentTopic> candidates = contentTopicRepository.findServable(today);
 
         List<ServableTopic> servable = new ArrayList<>();
         List<DroppedTopic> dropped = new ArrayList<>();
 
         for (ContentTopic topic : candidates) {
-            if (!matchesCategory(topic.getCategory(), categories)) {
+            if (!matchesCategory(topic.getCategory(), creatorKeys)) {
                 continue;
             }
 
@@ -169,16 +198,70 @@ public class ContentTopicService {
         return new ScreeningResult(List.copyOf(servable), List.copyOf(dropped));
     }
 
-    private static boolean matchesCategory(String topicCategory, List<String> creatorCategories) {
-        if (topicCategory == null) {
-            return false;
+    /**
+     * Every PART of today's servable rows (APPROVED, in window -- {@link
+     * ContentTopicRepository#findServable}) that will not do what it looks like, checked part by
+     * part so a typo inside a comma list ("Food, Snakcs") is caught too:
+     *
+     * <ul>
+     *   <li>{@link #REASON_UNKNOWN_CATEGORY}: the part maps to no calendar category and is not
+     *       {@code ALL}, so it reaches only a creator who typed that exact word. A row with no
+     *       parts at all (a blank category) is reported once with an empty part.
+     *   <li>{@link #REASON_NO_CREATOR_GROUP}: the part resolves to a calendar category that no
+     *       onboarding option maps to ({@link CreatorCategoryMap#calendarCategoriesNoVerticalReaches},
+     *       today only "Gardening").
+     *   <li>{@link #REASON_ALL_WITH_OTHERS}: the row also has an {@code ALL} part, so this part
+     *       changes nothing; each non-{@code ALL} part of such a row is reported with this reason.
+     * </ul>
+     *
+     * A multi-target onboarding option ("Parenting &amp; Family") is not reported: it reaches the
+     * creators who chose it. Safety screening is not applied here: this is a question about the
+     * category column only, and the result carries id, raw category, part and reason, never title
+     * or angles.
+     */
+    @Transactional(readOnly = true)
+    public List<UnmatchedCategoryTopic> unmatchedCategories(LocalDate today) {
+        List<String> unreached = CreatorCategoryMap.calendarCategoriesNoVerticalReaches();
+        List<UnmatchedCategoryTopic> unmatched = new ArrayList<>();
+        for (ContentTopic topic : contentTopicRepository.findServable(today)) {
+            Long id = topic.getId();
+            String category = topic.getCategory();
+            List<String> parts = CreatorCategoryMap.splitTopicCategories(category);
+            if (parts.isEmpty()) {
+                unmatched.add(new UnmatchedCategoryTopic(id, category, "", REASON_UNKNOWN_CATEGORY));
+                continue;
+            }
+            boolean hasAll = isAll(parts);
+            for (String part : parts) {
+                if (part.equalsIgnoreCase(ContentTopic.CATEGORY_ALL)) {
+                    continue;
+                }
+                if (hasAll) {
+                    unmatched.add(new UnmatchedCategoryTopic(id, category, part, REASON_ALL_WITH_OTHERS));
+                    continue;
+                }
+                List<String> calendar = CreatorCategoryMap.calendarCategoriesFor(part);
+                if (calendar.isEmpty()) {
+                    unmatched.add(new UnmatchedCategoryTopic(id, category, part, REASON_UNKNOWN_CATEGORY));
+                } else if (calendar.size() == 1 && unreached.contains(calendar.get(0))) {
+                    unmatched.add(new UnmatchedCategoryTopic(id, category, part, REASON_NO_CREATOR_GROUP));
+                }
+            }
         }
-        String trimmed = topicCategory.trim();
-        if (trimmed.equalsIgnoreCase(ContentTopic.CATEGORY_ALL)) {
+        return List.copyOf(unmatched);
+    }
+
+    private static boolean matchesCategory(String topicCategory, Set<String> creatorKeys) {
+        List<String> parts = CreatorCategoryMap.splitTopicCategories(topicCategory);
+        if (isAll(parts)) {
             return true;
         }
-        return CreatorCategoryMap.matchKeys(creatorCategories)
-                .contains(CreatorCategoryMap.normalise(trimmed));
+        return !Collections.disjoint(CreatorCategoryMap.topicMatchKeys(parts), creatorKeys);
+    }
+
+    private static boolean isAll(List<String> topicCategoryParts) {
+        return topicCategoryParts.stream()
+                .anyMatch(part -> part.equalsIgnoreCase(ContentTopic.CATEGORY_ALL));
     }
 
     /**
