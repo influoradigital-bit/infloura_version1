@@ -301,4 +301,90 @@ public final class CreatorToolDtos {
             @JsonProperty("categories") List<String> categories,
             @JsonProperty("topics") List<TopicResult> topics,
             @JsonProperty("pattern") PatternResult pattern) {}
+
+    // =============================================================================================
+    // Meera intelligence v1 -- get_my_content_patterns (spec 4.2)
+    // =============================================================================================
+
+    /**
+     * Meera intelligence v1 -- the evidence every claim carries: its source ({@code
+     * EvidenceType} name), how many posts it rests on, and their {@code media_metrics.media_id}
+     * values, never truncated. There is no confidence number, ever. influora-ai's model copy drops
+     * {@code post_ids} (token control); this record and the UI payload keep them.
+     *
+     * @param baselineSampleSize set on per-post claims only: how many posts the usual they are
+     *     compared with rests on
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Evidence(
+            @JsonProperty("type") String type,
+            @JsonProperty("sample_size") int sampleSize,
+            @JsonProperty("post_ids") List<String> postIds,
+            @JsonProperty("baseline_sample_size") Integer baselineSampleSize) {}
+
+    /**
+     * One metric of the creator's usual post: REACH | VIEWS | INTERACTIONS | ENGAGEMENT_RATE. The
+     * median is pre-rendered ("12,400", or "6.2%" for the engagement rate, which is per REACH).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record BaselineMetric(
+            @JsonProperty("metric") String metric,
+            @JsonProperty("median") String median,
+            @JsonProperty("evidence") Evidence evidence) {}
+
+    /**
+     * One best or weak post against the creator's usual reach. {@code post_type} is REEL | CAROUSEL
+     * | POST | OTHER; date and time are IST; {@code engagement_rate} is null when interactions are
+     * unknown (never "0.0%").
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PostReading(
+            @JsonProperty("post_id") String postId,
+            @JsonProperty("post_type") String postType,
+            @JsonProperty("posted_date") String postedDate,
+            @JsonProperty("posted_time") String postedTime,
+            @JsonProperty("window") String window,
+            @JsonProperty("permalink") String permalink,
+            @JsonProperty("reach") String reach,
+            @JsonProperty("reach_vs_usual") String reachVsUsual,
+            @JsonProperty("engagement_rate") String engagementRate,
+            @JsonProperty("evidence") Evidence evidence) {}
+
+    /**
+     * A post type (POST_TYPE) or posting window (POSTING_WINDOW) whose median beat the creator's
+     * own usual by at least 20% on reach and/or engagement ({@code beats_on}).
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record WorkingPattern(
+            @JsonProperty("kind") String kind,
+            @JsonProperty("label") String label,
+            @JsonProperty("posts") int posts,
+            @JsonProperty("median_reach") String medianReach,
+            @JsonProperty("reach_vs_usual") String reachVsUsual,
+            @JsonProperty("median_engagement_rate") String medianEngagementRate,
+            @JsonProperty("engagement_vs_usual") String engagementVsUsual,
+            @JsonProperty("beats_on") List<String> beatsOn,
+            @JsonProperty("evidence") Evidence evidence) {}
+
+    /**
+     * Meera intelligence v1 -- {@code get_my_content_patterns}'s result, rendered by {@code
+     * GetMyContentPatternsExecutor} from {@code CreatorIntelligenceProfile}. The four lists are
+     * always present ({@code []}, never null); only the nullable strings are dropped by NON_NULL.
+     * {@code available=false, reason=NOT_CONNECTED} carries no post data at all.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record GetMyContentPatternsResult(
+            @JsonProperty("available") boolean available,
+            @JsonProperty("reason") String reason,
+            @JsonProperty("enough_data") boolean enoughData,
+            @JsonProperty("settled_posts") int settledPosts,
+            @JsonProperty("unsettled_posts") int unsettledPosts,
+            @JsonProperty("min_posts_needed") int minPostsNeeded,
+            @JsonProperty("lookback_days") int lookbackDays,
+            @JsonProperty("as_of") String asOf,
+            @JsonProperty("baseline") List<BaselineMetric> baseline,
+            @JsonProperty("best_posts") List<PostReading> bestPosts,
+            @JsonProperty("weak_posts") List<PostReading> weakPosts,
+            @JsonProperty("what_works") List<WorkingPattern> whatWorks,
+            @JsonProperty("note") String note) {}
 }

@@ -899,6 +899,13 @@ export function CreatorToolResultRenderer({
     case 'draft_reply':
       return null;
 
+    // Meera intelligence v1 (spec §4.6/§6) — name, types and labels land now; the "What's
+    // working for you" card is v1.1 (thresholds and copy need review against real creators
+    // first). Explicit case (like draft_reply above) to document the choice, even though
+    // `default` already returns null.
+    case 'get_my_content_patterns':
+      return null;
+
     default:
       return null;
   }

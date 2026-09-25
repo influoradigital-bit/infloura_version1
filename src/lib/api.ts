@@ -6865,6 +6865,50 @@ export interface CreatorAgentPreferences {
    * `CreatorAgentPreferencesUpdate`. Optional: absent from a server older than this change.
    */
   phone_model?: string | null;
+  /**
+   * Goal memory (Meera intelligence v1, spec §2.2/§6) — the "My goals" chips: `content_goal` and
+   * `weekly_time_band` are single-select and null (omitted) when not told; `equipment` and
+   * `content_dislikes` are multi-select and always present (`[]` when none saved, never
+   * null/omitted — `CreatorAgentDtos.PreferencesResponse`'s own doc comment). Only these fixed
+   * codes are ever stored: no free text, so there is nothing here for Meera to have written —
+   * set ONLY via `PUT /creator/agent-preferences/content-goal` (`updateContentGoal` below), never
+   * through the full-replace PUT, exactly like `phone_model`.
+   */
+  content_goal?: ContentGoalCode | null;
+  weekly_time_band?: WeeklyTimeBandCode | null;
+  equipment: EquipmentCode[];
+  content_dislikes: ContentDislikeCode[];
+}
+
+/** `ContentGoalCodes.ContentGoal` (Java enum, spec §2.2) — single select. */
+export type ContentGoalCode = 'GROW_FOLLOWERS' | 'BRAND_DEALS' | 'SELL_PRODUCT';
+
+/** `ContentGoalCodes.WeeklyTimeBand` — single select. */
+export type WeeklyTimeBandCode = 'UNDER_2H' | 'H2_TO_5' | 'OVER_5H';
+
+/** `ContentGoalCodes.Equipment` — multi select. */
+export type EquipmentCode = 'PHONE_ONLY' | 'TRIPOD' | 'EXTERNAL_MIC' | 'RING_LIGHT' | 'GIMBAL';
+
+/** `ContentGoalCodes.ContentDislike` — multi select, "rather not". */
+export type ContentDislikeCode =
+  | 'NO_FACE'
+  | 'NO_VOICE'
+  | 'NO_DANCING'
+  | 'NO_TRENDING_AUDIO'
+  | 'NO_OUTDOOR';
+
+/**
+ * PUT `/creator/agent-preferences/content-goal` body (spec §6) — `CreatorAgentDtos
+ * .UpdateContentGoalRequest`. The route replaces all four fields every time: `null`/`[]` clears
+ * a field, and an unknown code anywhere in the request 400s the whole call
+ * (`INVALID_CONTENT_GOAL_CODE`) rather than saving the rest — so a caller must always send the
+ * full, current set of four, not just the one chip that was tapped.
+ */
+export interface UpdateContentGoalRequest {
+  content_goal: ContentGoalCode | null;
+  weekly_time_band: WeeklyTimeBandCode | null;
+  equipment: EquipmentCode[];
+  content_dislikes: ContentDislikeCode[];
 }
 
 /**
@@ -6872,7 +6916,8 @@ export interface CreatorAgentPreferences {
  * GET response minus five server-owned fields: `consent_accepted`/`consent_version` (set only via
  * `recordConsent`) and `negotiation_holdout`/`approved_draft_count`/`level_up_eligible` (computed
  * server-side — see `CreatorAgentPreferences` above). `UpdatePreferencesRequest` on the Java side
- * has no field for any of the five.
+ * has no field for any of the five. Goal memory (spec §6) widens the exclusion list the same way
+ * `phone_model` already does: its own route, so the full-replace PUT can never wipe it.
  */
 export type CreatorAgentPreferencesUpdate = Omit<
   CreatorAgentPreferences,
@@ -6882,6 +6927,10 @@ export type CreatorAgentPreferencesUpdate = Omit<
   | 'approved_draft_count'
   | 'level_up_eligible'
   | 'phone_model'
+  | 'content_goal'
+  | 'weekly_time_band'
+  | 'equipment'
+  | 'content_dislikes'
 >;
 
 export interface CreatorAgentConsentResponse {
@@ -6942,6 +6991,10 @@ const MOCK_CREATOR_AGENT_PREFS: CreatorAgentPreferences = {
   approved_draft_count: 0,
   level_up_eligible: false,
   phone_model: null,
+  content_goal: null,
+  weekly_time_band: null,
+  equipment: [],
+  content_dislikes: [],
 };
 
 export const creatorAgentPrefs = {
@@ -6971,6 +7024,22 @@ export const creatorAgentPrefs = {
           body: { phone_model: phoneModel },
         })
       : mockOr({ ...MOCK_CREATOR_AGENT_PREFS, phone_model: phoneModel?.trim() || null }),
+
+  /**
+   * PUT /creator/agent-preferences/content-goal — goal memory (Meera intelligence v1, spec §6).
+   * Its own route, like `updatePhoneModel` above, so the full-replace PUT can never wipe these.
+   * Replaces all four fields every call: send the full current set, not just the one chip that
+   * changed. The creator's own tap is the ONLY writer — Meera has no tool that reaches this route
+   * (spec §6, "Goal chips vs a Meera save tool"). An unknown code 400s as
+   * `INVALID_CONTENT_GOAL_CODE` and saves nothing.
+   */
+  updateContentGoal: (payload: UpdateContentGoalRequest): Promise<CreatorAgentPreferences> =>
+    isLive()
+      ? http.request<CreatorAgentPreferences>('PUT', '/creator/agent-preferences/content-goal', {
+          role: 'creator',
+          body: payload,
+        })
+      : mockOr({ ...MOCK_CREATOR_AGENT_PREFS, ...payload }),
 
   /** POST /creator/agent-preferences/consent — DPDP consent gate (A6). Empty body. */
   recordConsent: (): Promise<CreatorAgentConsentResponse> =>

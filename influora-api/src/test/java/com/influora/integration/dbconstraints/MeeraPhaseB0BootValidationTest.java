@@ -190,4 +190,44 @@ class MeeraPhaseB0BootValidationTest extends AbstractIntegrationTest {
                 .as("CHAR columns found -- this is the boot failure V20260718150000 was written to repair")
                 .isEmpty();
     }
+
+    /**
+     * Goal memory (Meera intelligence v1, spec T28) -- V20260925150000 adds four columns to
+     * {@code creator_agent_preferences}. Reaching this method already proves ddl-auto=validate
+     * accepted the entity's four new {@code @Column}s against the live table; this pins the exact
+     * MySQL types too, because a VARCHAR declared as the wrong width or a TEXT declared as
+     * VARCHAR would validate against a differently-written entity and drift silently.
+     */
+    @Test
+    @DisplayName(
+            "V20260925150000 applied: creator_agent_preferences has content_goal VARCHAR(20),"
+                    + " weekly_time_band VARCHAR(12), equipment TEXT and content_dislikes TEXT, all nullable")
+    void goalMemoryColumnsMatchTheEntity() {
+        Integer applied =
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM flyway_schema_history WHERE version = ? AND success = true",
+                        Integer.class,
+                        "20260925150000");
+        assertThat(applied).as("migration V20260925150000 should have applied successfully").isEqualTo(1);
+
+        Map<String, String> expectedType =
+                Map.of(
+                        "content_goal", "varchar(20)",
+                        "weekly_time_band", "varchar(12)",
+                        "equipment", "text",
+                        "content_dislikes", "text");
+        expectedType.forEach(
+                (column, type) -> {
+                    Map<String, Object> row =
+                            jdbcTemplate.queryForMap(
+                                    "SELECT column_type, is_nullable FROM information_schema.columns"
+                                            + " WHERE table_schema = DATABASE()"
+                                            + " AND table_name = 'creator_agent_preferences' AND column_name = ?",
+                                    column);
+                    assertThat(String.valueOf(row.get("COLUMN_TYPE")).toLowerCase(java.util.Locale.ROOT))
+                            .as("creator_agent_preferences.%s type", column)
+                            .isEqualTo(type);
+                    assertThat(row.get("IS_NULLABLE")).as("creator_agent_preferences.%s nullable", column).isEqualTo("YES");
+                });
+    }
 }

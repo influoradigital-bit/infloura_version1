@@ -102,6 +102,24 @@ public interface MediaMetricsRepository extends JpaRepository<MediaMetric, Strin
             @Param("postedAtFrom") java.time.Instant postedAtFrom,
             @Param("igAccountId") String igAccountId);
 
+    /**
+     * The same read with NO untagged rows: only rows stamped with {@code igAccountId}. For a
+     * creator who has connected more than one Instagram account, an untagged (pre-V20260924120000)
+     * row cannot be attributed to either account, so it is left out rather than risk showing an
+     * old account's posts as her own (Kabir M-1, 2026-09-25).
+     */
+    @Query(
+            "select m from MediaMetric m where m.creatorProfileId = :creatorProfileId"
+                    + " and m.postedAt >= :postedAtFrom"
+                    + " and m.igAccountId = :igAccountId"
+                    + " and m.time = (select max(m2.time) from MediaMetric m2"
+                    + " where m2.mediaId = m.mediaId and m2.creatorProfileId = m.creatorProfileId)"
+                    + " order by m.postedAt desc")
+    List<MediaMetric> findNewestSnapshotPerPostSinceForAccountTaggedOnly(
+            @Param("creatorProfileId") String creatorProfileId,
+            @Param("postedAtFrom") java.time.Instant postedAtFrom,
+            @Param("igAccountId") String igAccountId);
+
     /** Time-range query for a creator's media metrics (trend charts / analytics API). */
     List<MediaMetric> findByCreatorProfileIdAndTimeBetweenOrderByTimeAsc(
             String creatorProfileId, Instant from, Instant to);

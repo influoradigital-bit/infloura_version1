@@ -8,6 +8,7 @@ import com.influora.domain.entity.CreatorAgentPreferences;
 import com.influora.domain.entity.CreatorMetric;
 import com.influora.domain.entity.CreatorProfile;
 import com.influora.domain.enums.CollaborationStatus;
+import com.influora.domain.enums.ContentGoalCodes;
 import com.influora.repository.CollaborationRepository;
 import com.influora.repository.CreatorAgentPreferencesRepository;
 import com.influora.repository.CreatorMetricsRepository;
@@ -16,6 +17,7 @@ import com.influora.service.scoring.QualityScoreService.QualityScoreResult;
 import com.influora.service.scoring.RateEstimationService;
 import com.influora.web.dto.creator.CreatorAgentDtos.PreferencesResponse;
 import com.influora.web.dto.creator.CreatorAgentDtos.RateCardDto;
+import com.influora.web.dto.creator.CreatorAgentDtos.UpdateContentGoalRequest;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePhoneModelRequest;
 import com.influora.web.dto.creator.CreatorAgentDtos.UpdatePreferencesRequest;
 import java.math.BigDecimal;
@@ -271,6 +273,51 @@ public class CreatorAgentPreferencesService {
     }
 
     /**
+     * Goal memory (Meera intelligence v1) — {@code PUT /creator/agent-preferences/content-goal}.
+     * Resolves the creator strictly from the caller's own principal user id (the prefs row is
+     * created with computed defaults if she has none yet) and replaces ONLY the four goal fields.
+     * Every code is validated BEFORE the row is read or written, so an unknown code is a 400 with
+     * nothing saved. Kept off {@link #updatePreferences} on purpose: that full replace does not
+     * carry these fields and must not wipe them. Meera has no path to this method — only the
+     * creator's own tap does.
+     */
+    @Transactional
+    public PreferencesResponse updateContentGoal(String userId, UpdateContentGoalRequest req) {
+        String goal = singleCode(ContentGoalCodes.ContentGoal.class, req == null ? null : req.contentGoal(), "content_goal");
+        String band =
+                singleCode(ContentGoalCodes.WeeklyTimeBand.class, req == null ? null : req.weeklyTimeBand(), "weekly_time_band");
+        List<String> equipment =
+                codeList(ContentGoalCodes.Equipment.class, req == null ? null : req.equipment(), "equipment");
+        List<String> dislikes =
+                codeList(ContentGoalCodes.ContentDislike.class, req == null ? null : req.contentDislikes(), "content_dislikes");
+
+        CreatorProfile profile = requireCreatorProfile(userId);
+        CreatorAgentPreferences prefs =
+                preferencesRepository.findByCreatorId(profile.getId()).orElseGet(() -> createWithComputedDefaults(profile));
+        prefs.updateContentGoal(goal, band, JsonLists.toJson(equipment), JsonLists.toJson(dislikes));
+        preferencesRepository.save(prefs);
+        return toResponse(prefs);
+    }
+
+    private static <E extends Enum<E>> String singleCode(Class<E> type, String raw, String field) {
+        if (raw == null) {
+            return null;
+        }
+        return ContentGoalCodes.parse(type, raw)
+                .map(Enum::name)
+                .orElseThrow(() -> unknownCode(field));
+    }
+
+    private static <E extends Enum<E>> List<String> codeList(Class<E> type, List<String> raw, String field) {
+        return ContentGoalCodes.parseAll(type, raw).orElseThrow(() -> unknownCode(field));
+    }
+
+    private static ApiException unknownCode(String field) {
+        return new ApiException(
+                "INVALID_CONTENT_GOAL_CODE", field + " contains a code that is not one of the fixed choices", HttpStatus.BAD_REQUEST);
+    }
+
+    /**
      * V76 — the calling creator's saved phone model, for the Shoot Check frame-check proxy.
      * Read-only and side-effect free: empty (never a throw, never a created row) when the user has
      * no creator profile, no preferences row, or no phone on file.
@@ -420,7 +467,11 @@ public class CreatorAgentPreferencesService {
                 prefs.isNegotiationHoldout(),
                 prefs.getApprovedDraftCount(),
                 isLevelUpEligible(prefs),
-                prefs.getPhoneModel());
+                prefs.getPhoneModel(),
+                prefs.getContentGoal(),
+                prefs.getWeeklyTimeBand(),
+                JsonLists.stringListFromJson(prefs.getEquipmentJson()),
+                JsonLists.stringListFromJson(prefs.getContentDislikesJson()));
     }
 
     /**

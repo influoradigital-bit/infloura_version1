@@ -399,7 +399,13 @@ public class MeeraContextService {
                 // argument to List.of() must turn that test red.
                 CreatorToolScopes.toolNamesForLevel(approvalLevel, represented, negotiationHoldout),
                 // V76 — creator-typed phone model; null (omitted on the wire) when not saved.
-                prefs != null ? prefs.getPhoneModel() : null);
+                prefs != null ? prefs.getPhoneModel() : null,
+                // Goal memory (V20260925150000) — the creator's own tapped chips, fixed codes only.
+                // Null / [] when not told; Meera never writes these.
+                prefs != null ? prefs.getContentGoal() : null,
+                prefs != null ? prefs.getWeeklyTimeBand() : null,
+                prefs != null ? JsonLists.stringListFromJson(prefs.getEquipmentJson()) : List.of(),
+                prefs != null ? JsonLists.stringListFromJson(prefs.getContentDislikesJson()) : List.of());
     }
 
     /**

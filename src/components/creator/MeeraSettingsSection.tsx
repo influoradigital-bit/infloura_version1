@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { Loader2, Sparkles, Download, Trash2 } from 'lucide-react';
+import { Loader2, Sparkles, Download, Trash2, Check } from 'lucide-react';
 
+import { cn } from '@/lib/utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,6 +35,11 @@ import {
   type CreatorAgentPreferences,
   type CreatorAgentPreferencesUpdate,
   type CreatorAgentConversationItem,
+  type ContentGoalCode,
+  type WeeklyTimeBandCode,
+  type EquipmentCode,
+  type ContentDislikeCode,
+  type UpdateContentGoalRequest,
 } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
@@ -94,6 +100,135 @@ const CURATED_CURRENCIES: { value: string; label: string }[] = [
   { value: 'AUD', label: 'AUD — Australian Dollar' },
 ];
 
+/**
+ * Goal memory (Meera intelligence v1, spec §2.2/§6) — the fixed codes behind the "My goals"
+ * chips, English + Hindi. These are the ONLY values `PUT /creator/agent-preferences/content-goal`
+ * accepts (`ContentGoalCodes` on the Java side); an unknown code 400s as
+ * `INVALID_CONTENT_GOAL_CODE`, so nothing here is ever free text.
+ */
+const CONTENT_GOAL_OPTIONS: { value: ContentGoalCode; en: string; hi: string }[] = [
+  { value: 'GROW_FOLLOWERS', en: 'Grow followers', hi: 'फ़ॉलोअर्स बढ़ाना' },
+  { value: 'BRAND_DEALS', en: 'Get brand deals', hi: 'ब्रांड डील्स पाना' },
+  { value: 'SELL_PRODUCT', en: 'Sell my product', hi: 'अपना प्रोडक्ट बेचना' },
+];
+
+const WEEKLY_TIME_BAND_OPTIONS: { value: WeeklyTimeBandCode; en: string; hi: string }[] = [
+  { value: 'UNDER_2H', en: 'Under 2 hrs/week', hi: 'हफ़्ते में 2 घंटे से कम' },
+  { value: 'H2_TO_5', en: '2-5 hrs/week', hi: 'हफ़्ते में 2-5 घंटे' },
+  { value: 'OVER_5H', en: 'Over 5 hrs/week', hi: 'हफ़्ते में 5 घंटे से ज़्यादा' },
+];
+
+const EQUIPMENT_OPTIONS: { value: EquipmentCode; en: string; hi: string }[] = [
+  { value: 'PHONE_ONLY', en: 'Just my phone', hi: 'सिर्फ़ फ़ोन' },
+  { value: 'TRIPOD', en: 'Tripod', hi: 'ट्राइपॉड' },
+  { value: 'EXTERNAL_MIC', en: 'External mic', hi: 'बाहरी माइक' },
+  { value: 'RING_LIGHT', en: 'Ring light', hi: 'रिंग लाइट' },
+  { value: 'GIMBAL', en: 'Gimbal', hi: 'गिम्बल' },
+];
+
+/** "Rather not" — each option names the thing the creator would rather not do; a selected chip
+ *  here means Meera should avoid suggesting it (spec §6 Block B line: "Rather not: show their
+ *  face"). */
+const CONTENT_DISLIKE_OPTIONS: { value: ContentDislikeCode; en: string; hi: string }[] = [
+  { value: 'NO_FACE', en: 'Show my face', hi: 'चेहरा दिखाना' },
+  { value: 'NO_VOICE', en: 'Use my voice', hi: 'अपनी आवाज़ इस्तेमाल करना' },
+  { value: 'NO_DANCING', en: 'Dance', hi: 'डांस करना' },
+  { value: 'NO_TRENDING_AUDIO', en: 'Use trending audio', hi: 'ट्रेंडिंग ऑडियो इस्तेमाल करना' },
+  { value: 'NO_OUTDOOR', en: 'Film outdoors', hi: 'बाहर शूट करना' },
+];
+
+/**
+ * One "My goals" chip. Tap targets are >= 44px tall (`min-h-11`) for touch. Selected is never
+ * colour-only: a filled background AND a check mark AND bold text all change together, so the
+ * state still reads under colour-blindness or a washed-out screen. `aria-pressed` carries the
+ * same state for assistive tech.
+ */
+function GoalChip({
+  en,
+  hi,
+  selected,
+  saving,
+  disabled,
+  onClick,
+}: {
+  en: string;
+  hi: string;
+  selected: boolean;
+  saving: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={selected}
+      className={cn(
+        'inline-flex min-h-11 items-center gap-1.5 rounded-full border px-4 py-2 text-left text-sm transition-colors',
+        selected
+          ? 'border-primary bg-primary font-semibold text-primary-foreground'
+          : 'border-input bg-background font-normal text-foreground hover:bg-accent hover:text-accent-foreground',
+        disabled && !saving && 'cursor-not-allowed opacity-60',
+      )}
+    >
+      {saving ? (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+      ) : selected ? (
+        <Check className="h-3.5 w-3.5 shrink-0" />
+      ) : null}
+      <span className="leading-tight">
+        {en}
+        <span className={cn('block text-[11px]', selected ? 'text-primary-foreground/85' : 'text-muted-foreground')}>
+          {hi}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** One "My goals" row (Goal, Time per week, Kit, Rather not) — a title, an optional hint, and a
+ *  wrapping row of `GoalChip`s. `selected` decides per-option state so the same component serves
+ *  both the single-select rows (Goal, Time per week) and the multi-select rows (Kit, Rather not). */
+function GoalChipGroup<T extends string>({
+  titleEn,
+  titleHi,
+  options,
+  selected,
+  savingValue,
+  disabled,
+  onToggle,
+}: {
+  titleEn: string;
+  titleHi: string;
+  options: { value: T; en: string; hi: string }[];
+  selected: (value: T) => boolean;
+  savingValue: string | null;
+  disabled: boolean;
+  onToggle: (value: T) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">
+        {titleEn} <span className="text-muted-foreground">· {titleHi}</span>
+      </Label>
+      <div className="flex flex-wrap gap-2">
+        {options.map((opt) => (
+          <GoalChip
+            key={opt.value}
+            en={opt.en}
+            hi={opt.hi}
+            selected={selected(opt.value)}
+            saving={savingValue === opt.value}
+            disabled={disabled}
+            onClick={() => onToggle(opt.value)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Appends the persisted value as a trailing option when it isn't already in the curated list,
  *  so a value set some other way (admin tooling, a future currency/zone we haven't curated yet)
  *  still round-trips instead of silently snapping to the first option on save. */
@@ -140,6 +275,15 @@ function toDraft(prefs: CreatorAgentPreferences): Draft {
     level_up_eligible: _level_up_eligible,
     // Camera knowledge v5: saved through PUT /creator/agent-preferences/phone, not this PUT.
     phone_model: _phone_model,
+    // Goal memory (Meera intelligence v1, spec §6): saved through PUT
+    // /creator/agent-preferences/content-goal, not this PUT — same reasoning as phone_model just
+    // above. Without stripping these here, `rest` (typed `Draft` = `CreatorAgentPreferencesUpdate`,
+    // which already excludes them) would still carry them as extra runtime properties, since a
+    // TS `Omit` only narrows the type, not the actual object a rest-spread produces.
+    content_goal: _content_goal,
+    weekly_time_band: _weekly_time_band,
+    equipment: _equipment,
+    content_dislikes: _content_dislikes,
     ...rest
   } = prefs;
   return rest;
@@ -164,6 +308,19 @@ export function MeeraSettingsSection() {
   // Save button through its own route, and only when it changed.
   const [phoneText, setPhoneText] = React.useState('');
   const [savedPhone, setSavedPhone] = React.useState('');
+  // Goal memory (Meera intelligence v1, spec §2.2/§6) — "My goals" chips. Unlike the phone field
+  // above, each tap saves immediately through its own PUT (not batched into the big Save button):
+  // `goal` only ever reflects the last value the server confirmed, so the chips' selected state
+  // IS the saved state — there is no separate "unsaved edit" to lose. `savingGoalValue` names the
+  // one code currently in flight (for that chip's spinner); the whole group disables while it is
+  // set, so a second tap can never race the first and build its PUT body off a stale `goal`.
+  const [goal, setGoal] = React.useState<{
+    content_goal: ContentGoalCode | null;
+    weekly_time_band: WeeklyTimeBandCode | null;
+    equipment: EquipmentCode[];
+    content_dislikes: ContentDislikeCode[];
+  }>({ content_goal: null, weekly_time_band: null, equipment: [], content_dislikes: [] });
+  const [savingGoalValue, setSavingGoalValue] = React.useState<string | null>(null);
   // Gate review fix (item 3) — MEERA_CREATOR_ENABLED rollback flag. GET /creator/agent-preferences
   // 404s with { code: 'FEATURE_DISABLED' } when it's off; this section just disappears (no card,
   // no error text, no toast, no retry) rather than showing a broken-looking settings block.
@@ -192,6 +349,12 @@ export function MeeraSettingsSection() {
         setBlockedBrandsText(prefs.blocked_brands.join('\n'));
         setPhoneText(prefs.phone_model ?? '');
         setSavedPhone(prefs.phone_model ?? '');
+        setGoal({
+          content_goal: prefs.content_goal ?? null,
+          weekly_time_band: prefs.weekly_time_band ?? null,
+          equipment: prefs.equipment ?? [],
+          content_dislikes: prefs.content_dislikes ?? [],
+        });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -254,6 +417,64 @@ export function MeeraSettingsSection() {
     update({
       working_days: active ? draft.working_days.filter((d) => d !== day) : [...draft.working_days, day].sort(),
     });
+  };
+
+  /**
+   * Goal memory — sends the full four-field body every time (the route replaces all four, spec
+   * §6), then replaces `goal` with exactly what the server confirms saved, never with what was
+   * optimistically guessed client-side. `savingKey` is the tapped chip's own code, so only that
+   * one chip shows a spinner while the rest of the row is disabled.
+   */
+  const saveGoal = async (next: UpdateContentGoalRequest, savingKey: string) => {
+    setSavingGoalValue(savingKey);
+    try {
+      const saved = await api.creatorAgentPrefs.updateContentGoal(next);
+      setGoal({
+        content_goal: saved.content_goal ?? null,
+        weekly_time_band: saved.weekly_time_band ?? null,
+        equipment: saved.equipment ?? [],
+        content_dislikes: saved.content_dislikes ?? [],
+      });
+    } catch (err) {
+      toast({
+        title: 'Could not save your goal',
+        description: err instanceof ApiError ? err.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingGoalValue(null);
+    }
+  };
+
+  // Single-select: tapping the already-selected chip clears it back to "not told".
+  const toggleContentGoal = (value: ContentGoalCode) => {
+    saveGoal({ ...goal, content_goal: goal.content_goal === value ? null : value }, value);
+  };
+
+  const toggleWeeklyTimeBand = (value: WeeklyTimeBandCode) => {
+    saveGoal({ ...goal, weekly_time_band: goal.weekly_time_band === value ? null : value }, value);
+  };
+
+  // Multi-select: tapping toggles membership, same shape as `toggleCategory` above.
+  const toggleEquipment = (value: EquipmentCode) => {
+    const active = goal.equipment.includes(value);
+    saveGoal(
+      { ...goal, equipment: active ? goal.equipment.filter((v) => v !== value) : [...goal.equipment, value] },
+      value,
+    );
+  };
+
+  const toggleContentDislike = (value: ContentDislikeCode) => {
+    const active = goal.content_dislikes.includes(value);
+    saveGoal(
+      {
+        ...goal,
+        content_dislikes: active
+          ? goal.content_dislikes.filter((v) => v !== value)
+          : [...goal.content_dislikes, value],
+      },
+      value,
+    );
   };
 
   const handleSave = async () => {
@@ -524,6 +745,68 @@ export function MeeraSettingsSection() {
               <p className="text-xs text-muted-foreground">
                 Optional. Meera and Shoot Check use it to suggest camera settings your phone actually has.
               </p>
+            </div>
+
+            <Separator />
+
+            {/*
+              Goal memory (Meera intelligence v1, spec §2.2/§6) — "My goals". Each chip saves the
+              instant it's tapped, through its own route (PUT /creator/agent-preferences/content-
+              goal), never through the big Save button below: this is the same "own route so nothing
+              else can wipe it" pattern as My phone just above, except the save happens per-tap
+              instead of being batched. No model text is ever stored here — Meera has no tool that
+              reaches this route, only a creator's own tap does (spec §6, "Goal chips vs a Meera
+              save tool").
+            */}
+            <div className="space-y-4" data-testid="meera-my-goals">
+              <div>
+                <p className="text-sm font-medium">
+                  My goals <span className="text-muted-foreground font-normal">· मेरे लक्ष्य</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Optional. Meera uses this to tailor what she says, and never saves it herself — only you can, here.
+                </p>
+              </div>
+
+              <GoalChipGroup
+                titleEn="Goal"
+                titleHi="लक्ष्य"
+                options={CONTENT_GOAL_OPTIONS}
+                selected={(value) => goal.content_goal === value}
+                savingValue={savingGoalValue}
+                disabled={savingGoalValue !== null}
+                onToggle={toggleContentGoal}
+              />
+
+              <GoalChipGroup
+                titleEn="Time per week"
+                titleHi="हफ़्ते में समय"
+                options={WEEKLY_TIME_BAND_OPTIONS}
+                selected={(value) => goal.weekly_time_band === value}
+                savingValue={savingGoalValue}
+                disabled={savingGoalValue !== null}
+                onToggle={toggleWeeklyTimeBand}
+              />
+
+              <GoalChipGroup
+                titleEn="Kit"
+                titleHi="किट"
+                options={EQUIPMENT_OPTIONS}
+                selected={(value) => goal.equipment.includes(value)}
+                savingValue={savingGoalValue}
+                disabled={savingGoalValue !== null}
+                onToggle={toggleEquipment}
+              />
+
+              <GoalChipGroup
+                titleEn="Rather not"
+                titleHi="बेहतर होगा न करें"
+                options={CONTENT_DISLIKE_OPTIONS}
+                selected={(value) => goal.content_dislikes.includes(value)}
+                savingValue={savingGoalValue}
+                disabled={savingGoalValue !== null}
+                onToggle={toggleContentDislike}
+              />
             </div>
 
             <Separator />

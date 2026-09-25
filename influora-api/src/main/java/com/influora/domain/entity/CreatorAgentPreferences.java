@@ -215,6 +215,27 @@ public class CreatorAgentPreferences {
     @Column(name = "phone_model", length = 80)
     private String phoneModel;
 
+    /**
+     * V20260925150000 (goal memory, Meera intelligence v1) -- the four "My goals" chips. Each is a
+     * fixed code from {@link com.influora.domain.enums.ContentGoalCodes}, never free text, and
+     * {@code null} means not told. Set only through {@link #updateContentGoal} (its own endpoint,
+     * {@code PUT /creator/agent-preferences/content-goal}), never by Meera and never by {@link
+     * #applyPreferences}: that full-replace PUT does not carry them and must not wipe them.
+     */
+    @Column(name = "content_goal", length = 20)
+    private String contentGoal;
+
+    @Column(name = "weekly_time_band", length = 12)
+    private String weeklyTimeBand;
+
+    /** JSON array of {@code ContentGoalCodes.Equipment} names, or null. */
+    @Column(name = "equipment", columnDefinition = "TEXT")
+    private String equipmentJson;
+
+    /** JSON array of {@code ContentGoalCodes.ContentDislike} names, or null. */
+    @Column(name = "content_dislikes", columnDefinition = "TEXT")
+    private String contentDislikesJson;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -437,6 +458,36 @@ public class CreatorAgentPreferences {
     public void updatePhoneModel(String phoneModel) {
         String trimmed = phoneModel == null ? null : phoneModel.trim();
         this.phoneModel = (trimmed == null || trimmed.isEmpty()) ? null : trimmed;
+        touch();
+    }
+
+    public String getContentGoal() {
+        return contentGoal;
+    }
+
+    public String getWeeklyTimeBand() {
+        return weeklyTimeBand;
+    }
+
+    public String getEquipmentJson() {
+        return equipmentJson;
+    }
+
+    public String getContentDislikesJson() {
+        return contentDislikesJson;
+    }
+
+    /**
+     * Goal memory -- replaces all four goal fields at once (the chips send their whole state on
+     * every tap). The caller has already validated every code against {@code ContentGoalCodes};
+     * {@code null} clears a field, and the two lists arrive as JSON (null for none).
+     */
+    public void updateContentGoal(
+            String contentGoal, String weeklyTimeBand, String equipmentJson, String contentDislikesJson) {
+        this.contentGoal = contentGoal;
+        this.weeklyTimeBand = weeklyTimeBand;
+        this.equipmentJson = equipmentJson;
+        this.contentDislikesJson = contentDislikesJson;
         touch();
     }
 

@@ -649,6 +649,79 @@ export interface DraftReplyPayload {
   withheld_reason?: string;
 }
 
+/**
+ * Meera intelligence v1 (spec §4.2/§4.6) — `CreatorToolDtos.Evidence`. Every claim
+ * `get_my_content_patterns` makes carries this: what kind of data it rests on, how many posts,
+ * and (for a per-post claim) the baseline sample it was compared against. There is no confidence
+ * number, deliberately (spec §1 item 1, "Evidence on every claim").
+ */
+export type EvidenceType = 'CREATOR_POST_DATA' | 'ACCOUNT_DATA' | 'AUDIENCE_DATA';
+
+export interface Evidence {
+  type: EvidenceType;
+  sample_size: number;
+  post_ids: string[];
+  baseline_sample_size?: number;
+}
+
+/** `CreatorToolDtos.BaselineMetric` — one metric of the creator's usual post (median, pre-rendered). */
+export interface BaselineMetric {
+  metric: 'REACH' | 'VIEWS' | 'INTERACTIONS' | 'ENGAGEMENT_RATE';
+  median: string;
+  evidence: Evidence;
+}
+
+/** `CreatorToolDtos.PostReading` — one best or weak post against the creator's usual reach. */
+export interface PostReading {
+  post_id: string;
+  post_type: 'REEL' | 'CAROUSEL' | 'POST' | 'OTHER';
+  posted_date: string;
+  posted_time: string;
+  window: string;
+  permalink?: string;
+  reach: string;
+  reach_vs_usual: string;
+  engagement_rate?: string;
+  evidence: Evidence;
+}
+
+/** `CreatorToolDtos.WorkingPattern` — a post type or posting window that beat the creator's own
+ *  usual by at least 20% (reach and/or engagement — see `beats_on`). */
+export interface WorkingPattern {
+  kind: 'POST_TYPE' | 'POSTING_WINDOW';
+  label: string;
+  posts: number;
+  median_reach: string;
+  reach_vs_usual: string;
+  median_engagement_rate?: string;
+  engagement_vs_usual?: string;
+  beats_on: Array<'REACH' | 'ENGAGEMENT'>;
+  evidence: Evidence;
+}
+
+/**
+ * `CreatorToolDtos.GetMyContentPatternsResult` (spec §4.2) — `get_my_content_patterns` tool
+ * result: the Creator Intelligence Profile, computed fresh on every call from the creator's own
+ * settled posts only. `available=false` (Instagram not connected/expired) carries no post data;
+ * `enough_data=false` (fewer than `min_posts_needed` settled posts) withholds baseline/best/weak/
+ * what_works too. The four lists are always present ([] when empty, never omitted/null).
+ */
+export interface GetMyContentPatternsPayload {
+  available: boolean;
+  reason?: 'NOT_CONNECTED';
+  enough_data: boolean;
+  settled_posts: number;
+  unsettled_posts: number;
+  min_posts_needed: number;
+  lookback_days: number;
+  as_of?: string;
+  baseline: BaselineMetric[];
+  best_posts: PostReading[];
+  weak_posts: PostReading[];
+  what_works: WorkingPattern[];
+  note?: string;
+}
+
 export function isGetMyDealsPayload(data: unknown): data is GetMyDealsPayload {
   if (!data || typeof data !== 'object') return false;
   const d = data as Partial<GetMyDealsPayload>;
@@ -734,6 +807,28 @@ export function isDraftReplyPayload(data: unknown): data is DraftReplyPayload {
   return typeof d.draft_id === 'string' && typeof d.kind === 'string';
 }
 
+/**
+ * T22 — checks the two booleans and the four lists every `GetMyContentPatternsPayload` always
+ * carries (spec §4.2: the lists are `[]`, never omitted, even when `available`/`enough_data` is
+ * false). Deliberately does not walk into `baseline`/`best_posts`/etc.'s own shape — as with every
+ * other guard here, a malformed nested record is Meera's own wire contract to keep, not this
+ * card's job to re-validate.
+ */
+export function isGetMyContentPatternsPayload(
+  data: unknown,
+): data is GetMyContentPatternsPayload {
+  if (!data || typeof data !== 'object') return false;
+  const d = data as Partial<GetMyContentPatternsPayload>;
+  return (
+    typeof d.available === 'boolean' &&
+    typeof d.enough_data === 'boolean' &&
+    Array.isArray(d.baseline) &&
+    Array.isArray(d.best_posts) &&
+    Array.isArray(d.weak_posts) &&
+    Array.isArray(d.what_works)
+  );
+}
+
 /** The six Phase B0 creator tools (SPEC.md §1 scope table, §8.2). Phase B1/B7 add
  *  send_routine_reply, rank_open_campaigns and draft_application to this set later. */
 export const CREATOR_TOOL_NAMES = [
@@ -749,6 +844,10 @@ export const CREATOR_TOOL_NAMES = [
   // influora-ai's own CREATOR_TOOL_NAMES by meera-api.creator-tools-in-sync.test.ts.
   'get_todays_topics',
   'plan_my_week',
+  // Meera intelligence v1 (spec §4.6): read-only, called before Meera talks about what works for
+  // the creator's own posts. No card in v1 (see CreatorToolResultRenderer's explicit case) — the
+  // "What's working for you" card is v1.1.
+  'get_my_content_patterns',
 ] as const;
 
 export type CreatorToolName = (typeof CREATOR_TOOL_NAMES)[number];

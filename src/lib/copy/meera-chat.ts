@@ -120,6 +120,15 @@ export const TOOL_TRAIL_LABELS: Record<CreatorToolName, ToolTrailLabelSet> = {
     done: { en: 'Planned your week', hi: 'आपका हफ़्ता प्लान कर लिया' },
     failed: { en: "Couldn't plan your week", hi: 'आपका हफ़्ता प्लान नहीं हो पाया' },
   },
+  // Meera intelligence v1 (spec §4.6) — get_my_content_patterns.
+  get_my_content_patterns: {
+    running: { en: 'Looking at what works for you…', hi: 'आपके लिए क्या काम कर रहा है, देखा जा रहा है…' },
+    done: { en: 'Looked at what works for you', hi: 'आपके लिए क्या काम कर रहा है, देख लिया' },
+    failed: {
+      en: "Couldn't read your post results",
+      hi: 'आपकी पोस्ट के नतीजे नहीं पढ़ पाई',
+    },
+  },
 };
 
 /**

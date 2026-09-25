@@ -76,7 +76,14 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.13"
+PROMPT_VERSION = "meera-2026.09.25.2"
+# ^ .25.2 = Meera intelligence v1, slice 1 + goal memory (2026-09-25). A new Spring-backed read tool,
+# get_my_content_patterns (the creator's own settled-post baseline, best/weak posts and what beats
+# their usual, every claim with its sample size; the model copy drops evidence.post_ids), its
+# capability bullet, the persona block "Their own results (what works for them)", and the goal line
+# in creator Block B (content_goal / weekly_time_band / equipment / content_dislikes, fixed words).
+# .25.1 is already taken on release/0924 (Plan my shoot), so this branch takes .25.2, not the
+# spec's ".14" (the N counter restarts per date).
 # ^ .13 = the creator knowledge lookup tool (Swapnil 2026-09-24, the lookup design the .12 note
 # below says anything past v7 needs). A new LOCAL creator tool, get_creator_knowledge, run
 # in-process by the tool loop: no Spring route, no JWT on the wire, no Java change, and kept out

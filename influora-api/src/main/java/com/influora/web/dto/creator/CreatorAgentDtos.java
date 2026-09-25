@@ -86,7 +86,55 @@ public final class CreatorAgentDtos {
              * when she has not said. Set only via {@code PUT /creator/agent-preferences/phone}
              * ({@link UpdatePhoneModelRequest}); the full-replace PUT never touches it.
              */
-            @JsonProperty("phone_model") String phoneModel) {
+            @JsonProperty("phone_model") String phoneModel,
+            /**
+             * Goal memory (V20260925150000) -- the "My goals" chips, as the fixed codes the
+             * creator tapped; null (omitted) when not told. Set only via {@code PUT
+             * /creator/agent-preferences/content-goal} ({@link UpdateContentGoalRequest}); the
+             * full-replace PUT never touches them.
+             */
+            @JsonProperty("content_goal") String contentGoal,
+            @JsonProperty("weekly_time_band") String weeklyTimeBand,
+            /** Goal memory -- equipment codes, always present ({@code []} when none saved). */
+            @JsonProperty("equipment") List<String> equipment,
+            /** Goal memory -- "rather not" codes, always present ({@code []} when none saved). */
+            @JsonProperty("content_dislikes") List<String> contentDislikes) {
+
+        /**
+         * V76 shape (with the phone, without goal memory), kept so the call sites that build a
+         * response with a phone but no goals keep compiling; the goal fields are "not told".
+         */
+        public PreferencesResponse(
+                BigDecimal reelFloor,
+                BigDecimal storySetFloor,
+                BigDecimal postFloor,
+                String floorCurrency,
+                List<String> excludedCategories,
+                List<String> blockedBrands,
+                int approvalLevel,
+                String creatorLanguage,
+                String brandTone,
+                Integer workingHoursStart,
+                Integer workingHoursEnd,
+                String workingHoursTimezone,
+                List<Integer> workingDays,
+                Integer weeklySponsoredLimit,
+                boolean represented,
+                String agencyName,
+                boolean consentAccepted,
+                String consentVersion,
+                boolean rateCardShareable,
+                RateCardDto rateCard,
+                boolean negotiationHoldout,
+                int approvedDraftCount,
+                boolean levelUpEligible,
+                String phoneModel) {
+            this(reelFloor, storySetFloor, postFloor, floorCurrency, excludedCategories, blockedBrands,
+                    approvalLevel, creatorLanguage, brandTone, workingHoursStart, workingHoursEnd,
+                    workingHoursTimezone, workingDays, weeklySponsoredLimit, represented, agencyName,
+                    consentAccepted, consentVersion, rateCardShareable, rateCard, negotiationHoldout,
+                    approvedDraftCount, levelUpEligible, phoneModel, null, null, List.of(), List.of());
+        }
 
         /**
          * Pre-V76 shape, kept so the many call sites that build a response without a phone (test
@@ -120,9 +168,23 @@ public final class CreatorAgentDtos {
                     approvalLevel, creatorLanguage, brandTone, workingHoursStart, workingHoursEnd,
                     workingHoursTimezone, workingDays, weeklySponsoredLimit, represented, agencyName,
                     consentAccepted, consentVersion, rateCardShareable, rateCard, negotiationHoldout,
-                    approvedDraftCount, levelUpEligible, null);
+                    approvedDraftCount, levelUpEligible, null, null, null, List.of(), List.of());
         }
     }
+
+    /**
+     * Goal memory (Meera intelligence v1) -- {@code PUT /creator/agent-preferences/content-goal}.
+     * The chips send their WHOLE state on every tap, and this replaces all four goal fields at
+     * once: null (or an empty list) clears that field. Every value must be one of the fixed codes
+     * in {@code ContentGoalCodes}; an unknown code is a 400 and nothing is written. Its own
+     * request, not fields on {@link UpdatePreferencesRequest}, so the settings page's full-replace
+     * PUT cannot wipe it.
+     */
+    public record UpdateContentGoalRequest(
+            @JsonProperty("content_goal") @Size(max = 20) String contentGoal,
+            @JsonProperty("weekly_time_band") @Size(max = 12) String weeklyTimeBand,
+            @JsonProperty("equipment") @Size(max = 10) List<String> equipment,
+            @JsonProperty("content_dislikes") @Size(max = 10) List<String> contentDislikes) {}
 
     /**
      * V76 — {@code PUT /creator/agent-preferences/phone}: the phone the creator films on, so Meera

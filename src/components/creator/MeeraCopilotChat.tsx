@@ -172,6 +172,8 @@ const TOOL_PENDING_LABELS: Record<CreatorToolName, string> = {
   draft_reply: 'Drafting a reply…',
   get_todays_topics: 'Checking today’s topics…',
   plan_my_week: 'Planning your week…',
+  // Meera intelligence v1 (spec §4.6).
+  get_my_content_patterns: 'Looking at your posts…',
 };
 
 /**

@@ -308,5 +308,19 @@ public final class MeeraContextDtos {
              * only: the BRAND context never carries it. influora-ai neutralizes it before it
              * reaches a prompt. Null (and so omitted, NON_NULL) when she has not said.
              */
-            @JsonProperty("phone_model") String phoneModel) {}
+            @JsonProperty("phone_model") String phoneModel,
+            /**
+             * Goal memory (Meera intelligence v1, V20260925150000) -- the creator's own "My goals"
+             * chips, saved only by her tap on {@code PUT /creator/agent-preferences/content-goal},
+             * never by Meera. Fixed codes, never free text: {@code content_goal} is GROW_FOLLOWERS
+             * | BRAND_DEALS | SELL_PRODUCT and {@code weekly_time_band} is UNDER_2H | H2_TO_5 |
+             * OVER_5H, each null (omitted, NON_NULL) when not told. influora-ai maps the codes to
+             * words from a fixed dict and drops unknown ones. CREATOR audience only.
+             */
+            @JsonProperty("content_goal") String contentGoal,
+            @JsonProperty("weekly_time_band") String weeklyTimeBand,
+            /** Goal memory -- PHONE_ONLY | TRIPOD | EXTERNAL_MIC | RING_LIGHT | GIMBAL; always present, {@code []} when not told. */
+            @JsonProperty("equipment") List<String> equipment,
+            /** Goal memory -- NO_FACE | NO_VOICE | NO_DANCING | NO_TRENDING_AUDIO | NO_OUTDOOR; always present, {@code []} when not told. */
+            @JsonProperty("content_dislikes") List<String> contentDislikes) {}
 }

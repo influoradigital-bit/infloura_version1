@@ -86,6 +86,17 @@ public interface MetaOAuthTokenRepository extends JpaRepository<MetaOAuthToken, 
             String creatorProfileId);
 
     /**
+     * How many different Instagram accounts this creator has EVER connected (revoked tokens
+     * included, creator key-space only). More than one means untagged post readings cannot be
+     * attributed to the current account (Kabir M-1, 2026-09-25).
+     */
+    @Query(
+            "SELECT COUNT(DISTINCT t.igBusinessAccountId) FROM MetaOAuthToken t"
+                    + " WHERE t.creatorProfileId = :creatorProfileId AND t.workspaceId IS NULL"
+                    + " AND t.igBusinessAccountId IS NOT NULL")
+    long countDistinctCreatorIgAccounts(@Param("creatorProfileId") String creatorProfileId);
+
+    /**
      * All non-revoked, non-expired creator-owned tokens (workspace_id IS NULL) — system-wide sweep
      * for {@code CreatorCaptionSyncJob}, same "not workspace-scoped by design" convention as {@link
      * #findByRevokedFalseAndExpiresAtAfter(Instant)} above, restricted to the creator key-space only.

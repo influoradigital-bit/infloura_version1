@@ -82,7 +82,10 @@ public final class CreatorToolScopes {
                     + " get_todays_topics"
                     // T-PLAN-MY-WEEK -- plan_my_week is wired (has a route and an executor) from
                     // the moment it is added here, same as get_todays_topics above it.
-                    + " plan_my_week";
+                    + " plan_my_week"
+                    // Meera intelligence v1 -- get_my_content_patterns is wired (route +
+                    // GetMyContentPatternsExecutor) from the moment it is added here.
+                    + " get_my_content_patterns";
 
     /**
      * Level 1 adds the one commit-like tool: a routine reply actually reaches the brand.
@@ -144,7 +147,10 @@ public final class CreatorToolScopes {
      */
     public static final String SCOPE_REPRESENTED =
             "get_my_deals get_brief estimate_my_rate get_my_metrics check_deal_risks"
-                    + " rank_open_campaigns";
+                    + " rank_open_campaigns"
+                    // Meera intelligence v1 (spec Q1) -- a read of her OWN post results, like
+                    // get_my_metrics; it never touches a brand, so representation does not bar it.
+                    + " get_my_content_patterns";
 
     /**
      * The tools that have a route AND an executor today, in SPEC.md &sect;3.1 catalogue order.
@@ -180,7 +186,9 @@ public final class CreatorToolScopes {
                     // T-CONTENT-TOPICS -- route + GetTodaysTopicsExecutor added in the same change.
                     "get_todays_topics",
                     // T-PLAN-MY-WEEK -- route + GetPlanMyWeekExecutor added in the same change.
-                    "plan_my_week");
+                    "plan_my_week",
+                    // Meera intelligence v1 -- route + GetMyContentPatternsExecutor, same change.
+                    "get_my_content_patterns");
 
     private CreatorToolScopes() {}
 

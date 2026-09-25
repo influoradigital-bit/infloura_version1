@@ -1,0 +1,308 @@
+{
+  "available" : true,
+  "enough_data" : true,
+  "settled_posts" : 13,
+  "unsettled_posts" : 2,
+  "min_posts_needed" : 10,
+  "lookback_days" : 90,
+  "as_of" : "20 Sept 2026",
+  "baseline" : [
+    {
+      "metric" : "REACH",
+      "median" : "1,020",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 13,
+        "post_ids" : [
+          "18040000000000204",
+          "18040000000000401",
+          "18040000000000203",
+          "18040000000000304",
+          "18040000000000303",
+          "18040000000000104",
+          "18040000000000202",
+          "18040000000000103",
+          "18040000000000302",
+          "18040000000000301",
+          "18040000000000102",
+          "18040000000000201",
+          "18040000000000101"
+        ]
+      }
+    },
+    {
+      "metric" : "VIEWS",
+      "median" : "1,650",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 13,
+        "post_ids" : [
+          "18040000000000204",
+          "18040000000000401",
+          "18040000000000203",
+          "18040000000000304",
+          "18040000000000303",
+          "18040000000000104",
+          "18040000000000202",
+          "18040000000000103",
+          "18040000000000302",
+          "18040000000000301",
+          "18040000000000102",
+          "18040000000000201",
+          "18040000000000101"
+        ]
+      }
+    },
+    {
+      "metric" : "INTERACTIONS",
+      "median" : "101",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 12,
+        "post_ids" : [
+          "18040000000000204",
+          "18040000000000203",
+          "18040000000000304",
+          "18040000000000303",
+          "18040000000000104",
+          "18040000000000202",
+          "18040000000000103",
+          "18040000000000302",
+          "18040000000000301",
+          "18040000000000102",
+          "18040000000000201",
+          "18040000000000101"
+        ]
+      }
+    },
+    {
+      "metric" : "ENGAGEMENT_RATE",
+      "median" : "9.0%",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 12,
+        "post_ids" : [
+          "18040000000000204",
+          "18040000000000203",
+          "18040000000000304",
+          "18040000000000303",
+          "18040000000000104",
+          "18040000000000202",
+          "18040000000000103",
+          "18040000000000302",
+          "18040000000000301",
+          "18040000000000102",
+          "18040000000000201",
+          "18040000000000101"
+        ]
+      }
+    }
+  ],
+  "best_posts" : [
+    {
+      "post_id" : "18040000000000103",
+      "post_type" : "REEL",
+      "posted_date" : "8 Sept 2026",
+      "posted_time" : "08:30",
+      "window" : "weekday morning",
+      "permalink" : "https://www.instagram.com/reel/C0103/",
+      "reach" : "5,100",
+      "reach_vs_usual" : "+400%",
+      "engagement_rate" : "9.2%",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 1,
+        "post_ids" : [
+          "18040000000000103"
+        ],
+        "baseline_sample_size" : 13
+      }
+    },
+    {
+      "post_id" : "18040000000000104",
+      "post_type" : "REEL",
+      "posted_date" : "10 Sept 2026",
+      "posted_time" : "08:30",
+      "window" : "weekday morning",
+      "permalink" : "https://www.instagram.com/reel/C0104/",
+      "reach" : "4,600",
+      "reach_vs_usual" : "+351%",
+      "engagement_rate" : "8.9%",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 1,
+        "post_ids" : [
+          "18040000000000104"
+        ],
+        "baseline_sample_size" : 13
+      }
+    },
+    {
+      "post_id" : "18040000000000101",
+      "post_type" : "REEL",
+      "posted_date" : "1 Sept 2026",
+      "posted_time" : "08:30",
+      "window" : "weekday morning",
+      "permalink" : "https://www.instagram.com/reel/C0101/",
+      "reach" : "4,200",
+      "reach_vs_usual" : "+312%",
+      "engagement_rate" : "9.0%",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 1,
+        "post_ids" : [
+          "18040000000000101"
+        ],
+        "baseline_sample_size" : 13
+      }
+    }
+  ],
+  "weak_posts" : [
+    {
+      "post_id" : "18040000000000401",
+      "post_type" : "OTHER",
+      "posted_date" : "16 Sept 2026",
+      "posted_time" : "20:10",
+      "window" : "weekday evening",
+      "permalink" : "https://www.instagram.com/p/C0401/",
+      "reach" : "700",
+      "reach_vs_usual" : "-31%",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 1,
+        "post_ids" : [
+          "18040000000000401"
+        ],
+        "baseline_sample_size" : 13
+      }
+    },
+    {
+      "post_id" : "18040000000000302",
+      "post_type" : "CAROUSEL",
+      "posted_date" : "6 Sept 2026",
+      "posted_time" : "18:15",
+      "window" : "weekend evening",
+      "permalink" : "https://www.instagram.com/p/C0302/",
+      "reach" : "760",
+      "reach_vs_usual" : "-25%",
+      "engagement_rate" : "12.0%",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 1,
+        "post_ids" : [
+          "18040000000000302"
+        ],
+        "baseline_sample_size" : 13
+      }
+    },
+    {
+      "post_id" : "18040000000000301",
+      "post_type" : "CAROUSEL",
+      "posted_date" : "5 Sept 2026",
+      "posted_time" : "18:15",
+      "window" : "weekend evening",
+      "permalink" : "https://www.instagram.com/p/C0301/",
+      "reach" : "820",
+      "reach_vs_usual" : "-20%",
+      "engagement_rate" : "12.0%",
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 1,
+        "post_ids" : [
+          "18040000000000301"
+        ],
+        "baseline_sample_size" : 13
+      }
+    }
+  ],
+  "what_works" : [
+    {
+      "kind" : "POST_TYPE",
+      "label" : "Reels and videos",
+      "posts" : 4,
+      "median_reach" : "4,400",
+      "reach_vs_usual" : "+331%",
+      "median_engagement_rate" : "9.0%",
+      "engagement_vs_usual" : "+0%",
+      "beats_on" : [
+        "REACH"
+      ],
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 4,
+        "post_ids" : [
+          "18040000000000104",
+          "18040000000000103",
+          "18040000000000102",
+          "18040000000000101"
+        ]
+      }
+    },
+    {
+      "kind" : "POSTING_WINDOW",
+      "label" : "weekday morning",
+      "posts" : 4,
+      "median_reach" : "4,400",
+      "reach_vs_usual" : "+331%",
+      "median_engagement_rate" : "9.0%",
+      "engagement_vs_usual" : "+0%",
+      "beats_on" : [
+        "REACH"
+      ],
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 4,
+        "post_ids" : [
+          "18040000000000104",
+          "18040000000000103",
+          "18040000000000102",
+          "18040000000000101"
+        ]
+      }
+    },
+    {
+      "kind" : "POST_TYPE",
+      "label" : "Carousels",
+      "posts" : 4,
+      "median_reach" : "845",
+      "reach_vs_usual" : "-17%",
+      "median_engagement_rate" : "12.0%",
+      "engagement_vs_usual" : "+33%",
+      "beats_on" : [
+        "ENGAGEMENT"
+      ],
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 4,
+        "post_ids" : [
+          "18040000000000304",
+          "18040000000000303",
+          "18040000000000302",
+          "18040000000000301"
+        ]
+      }
+    },
+    {
+      "kind" : "POSTING_WINDOW",
+      "label" : "weekend evening",
+      "posts" : 4,
+      "median_reach" : "845",
+      "reach_vs_usual" : "-17%",
+      "median_engagement_rate" : "12.0%",
+      "engagement_vs_usual" : "+33%",
+      "beats_on" : [
+        "ENGAGEMENT"
+      ],
+      "evidence" : {
+        "type" : "CREATOR_POST_DATA",
+        "sample_size" : 4,
+        "post_ids" : [
+          "18040000000000304",
+          "18040000000000303",
+          "18040000000000302",
+          "18040000000000301"
+        ]
+      }
+    }
+  ]
+}
