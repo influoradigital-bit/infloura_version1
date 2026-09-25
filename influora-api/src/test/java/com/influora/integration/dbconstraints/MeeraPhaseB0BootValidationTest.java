@@ -281,6 +281,9 @@ class MeeraPhaseB0BootValidationTest extends AbstractIntegrationTest {
         expectedType.put("reach_vs_baseline_pct", "int");
         expectedType.put("settled_at", "datetime(6)");
         expectedType.put("created_at", "datetime(6)");
+        // Kabir L-3 / L-1 fix round: the account an outcome was decided on, and the optimistic lock.
+        expectedType.put("outcome_ig_account_id", "varchar(64)");
+        expectedType.put("version", "bigint");
         List<Map<String, Object>> columns =
                 jdbcTemplate.queryForList(
                         "SELECT column_name AS column_name, column_type AS column_type FROM information_schema.columns"
@@ -315,5 +318,15 @@ class MeeraPhaseB0BootValidationTest extends AbstractIntegrationTest {
                                 + " AND referenced_table_name = 'creator_profiles'",
                         String.class);
         assertThat(deleteRule).isEqualTo("CASCADE");
+
+        // Kabir L-2: deleting a conversation takes its recommendation rows with it, and a late
+        // insert for a deleted conversation fails instead of leaving an orphan.
+        String conversationDeleteRule =
+                jdbcTemplate.queryForObject(
+                        "SELECT delete_rule FROM information_schema.referential_constraints"
+                                + " WHERE constraint_schema = DATABASE() AND constraint_name = 'fk_creator_rec_conversation'"
+                                + " AND referenced_table_name = 'meera_creator_conversations'",
+                        String.class);
+        assertThat(conversationDeleteRule).isEqualTo("CASCADE");
     }
 }
