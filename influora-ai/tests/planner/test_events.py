@@ -79,11 +79,12 @@ def test_committed_file_loads_and_every_date_in_it_is_a_real_date_for_its_year()
     stay empty, and `events_for_week` skips them; that rule is pinned in
     test_an_unverified_festival_is_left_out_rather_than_dated."""
     rows = EVENT_ROWS
-    assert len(rows) == 59
+    # 59 + 22 fixed-date observances from the India creator festival pack (2026-09-24).
+    assert len(rows) == 81
     by_type: dict[str, int] = {}
     for row in rows:
         by_type[row["event_type"]] = by_type.get(row["event_type"], 0) + 1
-    assert by_type == {"fixed": 30, "rule": 4, "season": 5, "variable": 20}
+    assert by_type == {"fixed": 52, "rule": 4, "season": 5, "variable": 20}
     for row in rows:
         if row["event_type"] != "variable":
             continue
