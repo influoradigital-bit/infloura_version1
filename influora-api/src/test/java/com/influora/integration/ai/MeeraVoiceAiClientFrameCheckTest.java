@@ -322,4 +322,94 @@ class MeeraVoiceAiClientFrameCheckTest {
 
         assertFalse(bodyOf(capturedRequest()).contains("phone_model"));
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Coaching photo check -- the optional shot_context and answers text parts.
+    // ---------------------------------------------------------------------------------------
+
+    private static final String SHOT_CONTEXT = "{\"angle\":\"eye level\",\"prop\":\"kurta\"}";
+    private static final String ANSWERS = "[{\"id\":\"window_side\",\"option\":1}]";
+
+    @Test
+    @DisplayName("coaching: shot_context and answers go out as their own text parts when given")
+    void coachingParts_presentWhenGiven() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(
+                CREATOR_USER_ID, JPEG, "image/jpeg", "static overhead", "Redmi Note 13", SHOT_CONTEXT, ANSWERS, "jwt");
+
+        String body = bodyOf(capturedRequest());
+        assertTrue(
+                body.contains("Content-Disposition: form-data; name=\"shot_context\"\r\n\r\n" + SHOT_CONTEXT + "\r\n"),
+                body);
+        assertTrue(body.contains("Content-Disposition: form-data; name=\"answers\"\r\n\r\n" + ANSWERS + "\r\n"), body);
+        // every field this route already pins is unaffected by the new parts
+        assertTrue(body.contains("name=\"shot_label\""), body);
+        assertTrue(body.contains("name=\"phone_model\""), body);
+        assertTrue(body.contains("name=\"onbehalf_jwt\""), body);
+        assertTrue(body.contains("name=\"image\"; filename=\"frame.jpg\""), body);
+    }
+
+    @Test
+    @DisplayName("coaching: no shot_context / answers part at all when null or blank")
+    void coachingParts_absentWhenBlank() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", "static overhead", null, "   ", "", "jwt");
+
+        String body = bodyOf(capturedRequest());
+        assertFalse(body.contains("shot_context"), body);
+        assertFalse(body.contains("name=\"answers\""), body);
+    }
+
+    @Test
+    @DisplayName("coaching: null shot_context / answers send no parts either")
+    void coachingParts_absentWhenNull() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", null, null, null, null, "jwt");
+
+        String body = bodyOf(capturedRequest());
+        assertFalse(body.contains("shot_context"), body);
+        assertFalse(body.contains("name=\"answers\""), body);
+    }
+
+    @Test
+    @DisplayName("coaching: the older overloads never send shot_context or answers")
+    void olderOverloads_neverSendCoachingParts() throws Exception {
+        respondWith(response(200, "{}"));
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", "static overhead", "Redmi Note 13", "jwt");
+
+        String body = bodyOf(capturedRequest());
+        assertFalse(body.contains("shot_context"), body);
+        assertFalse(body.contains("name=\"answers\""), body);
+    }
+
+    @Test
+    @DisplayName("coaching: shot_context and answers are written as UTF-8")
+    void coachingParts_areUtf8() throws Exception {
+        respondWith(response(200, "{}"));
+        String context = "{\"where\":\"\u0915\u092E\u0930\u093E \u2013 balcony\"}";
+        String answers = "[{\"id\":\"on_camera\",\"option\":0,\"note\":\"\u00E9\"}]";
+
+        client.checkFrameForCreator(CREATOR_USER_ID, JPEG, "image/jpeg", null, null, context, answers, "jwt");
+
+        String body = bodyOf(capturedRequest());
+        assertTrue(body.contains(new String(context.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1)));
+        assertTrue(body.contains(new String(answers.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1)));
+    }
+
+    @Test
+    @DisplayName("coaching: the forwarded response body is still passed through verbatim")
+    void coachingCall_passesBodyThrough() throws Exception {
+        String json = "{\"what_i_see\":\"x\",\"steps\":[],\"ask\":null,\"fixes\":[],\"settings\":[],\"ok\":[]}";
+        respondWith(response(200, json));
+
+        MeeraVoiceAiClient.FrameCheckResult result = client.checkFrameForCreator(
+                CREATOR_USER_ID, JPEG, "image/jpeg", null, null, SHOT_CONTEXT, ANSWERS, "jwt");
+
+        assertTrue(result.ok());
+        assertArrayEquals(json.getBytes(StandardCharsets.UTF_8), result.jsonBytes());
+    }
 }

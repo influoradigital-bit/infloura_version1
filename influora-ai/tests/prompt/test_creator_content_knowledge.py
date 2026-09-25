@@ -9,6 +9,7 @@ Meera answers well.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -105,8 +106,9 @@ def test_committed_knowledge_file_loads_every_row_by_type():
     # creator lighting guide) -> 307. Plus v8 (2026-09-24, the lookup tool): dataset 8's 42 audio
     # and movement rows -> 349. The v8 rows and the 12 delivery examples are NOT always sent:
     # they render only into LOOKUP_TEXT (get_creator_knowledge); see
-    # test_creator_lighting_placement.py for the always-sent budget.
-    assert len(rows) == 349
+    # test_creator_lighting_placement.py for the always-sent budget. Plus the coach question
+    # bank (2026-09-25): 10 always-sent coach_question rows -> 359.
+    assert len(rows) == 359
     counts: dict[str, int] = {}
     for r in rows:
         counts[r["data_type"]] = counts.get(r["data_type"], 0) + 1
@@ -161,6 +163,8 @@ def test_committed_knowledge_file_loads_every_row_by_type():
         "audio_movement_scenario": 3,
         "movement_continuity_rule": 5,
         "walking_configuration": 4,
+        # coach question bank, always sent
+        "coach_question": 10,
     }
 
 
@@ -423,13 +427,20 @@ def test_every_row_reaches_the_knowledge_text():
             "audio_movement_scenario": "id",
             "movement_continuity_rule": "rule",
             "walking_configuration": "configuration",
+            "coach_question": "id",
         }[r["data_type"]]
         topic = LOOKUP_ONLY_TYPES.get(r["data_type"])
         if topic is None:
             assert r[name] in CREATOR_KNOWLEDGE_TEXT, r[name]
         else:
             assert r[name] in LOOKUP_TEXT[topic], (topic, r[name])
-            assert r[name] not in CREATOR_KNOWLEDGE_TEXT, r[name]
+            assert not _mentions(r[name], CREATOR_KNOWLEDGE_TEXT), r[name]
+
+
+def _mentions(name: str, text: str) -> bool:
+    """`name` appears in `text` as a whole token -- "5 m" (a mic distance row) is not found
+    inside "15 minutes" (a coach question option)."""
+    return re.search(rf"(?<![\w.]){re.escape(name)}(?!\w)", text) is not None
 
 
 def test_brand_system_prompt_does_not_contain_the_knowledge_block():
@@ -451,7 +462,8 @@ def test_persona_states_knowledge_first_name_entry_name_category_ask_script():
     assert "Name the category first." in text
     assert "name each entry you use exactly as the knowledge names it" in text
     assert "ask them to paste their last video script as text" in text
-    assert "fall back to general knowledge, and say so plainly" in text
+    assert "fall back to general knowledge (except shooting instructions" in text
+    assert "isn't in Influora's notes), and say so plainly" in text
 
 
 def test_persona_states_the_no_invented_statistic_rule():
@@ -650,10 +662,15 @@ def test_persona_states_the_ask_first_rule():
     text = _flat(MEERA_CREATOR_PERSONA)
     assert "Ask first, only what's unknown." in text
     # ONE intake rule: ask-first defers to the content idea intake (at most 3 questions in ONE
-    # message); the old "one per message" rule contradicted it and must not come back.
+    # message); the old "one per message" rule contradicted it and must not come back for ideas.
+    # Since .25.1 the same intake runs as Plan my shoot for shooting questions and full scripts,
+    # which asks one coach question per message by design -- so "one per message" may appear in
+    # that bullet only (test_creator_plan_my_shoot.py pins it there).
     assert "Otherwise ask as the content idea intake below says." in text
     assert "first ask at most 3 short questions in ONE message" in text
-    assert "one per message" not in text
+    plan_start = text.index("- Plan my shoot.")
+    plan_bullet = text[plan_start : text.index(" - ", plan_start + 1)]
+    assert "one per message" not in text.replace(plan_bullet, "")
     assert "ask ONE short question first" not in text
     # Never re-ask what the context or the message already holds.
     assert "Never ask what the context already holds." in text

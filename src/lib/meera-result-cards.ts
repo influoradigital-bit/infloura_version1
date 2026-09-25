@@ -35,6 +35,9 @@
  *   - the `Say: "…"` text using straight or curly double quotes
  *   - a missing `Success looks like:` line — see the parser's own comment at that line for why
  *     this is the one required-looking line that does not fail the whole card
+ *   - a missing `Set-up:` line (added to the persona 2026-09-25, right after `Action:`) — older
+ *     replies written before it existed still parse; the label is also read as `Setup:` or
+ *     `Set up:`, the same meaning
  *   - a beat line's `Stress:`/`Pause:` markers, entirely — both are optional together (see
  *     `ScriptBeat.stress`/`.pause`), so a beat with just `Shot`/`Say`/`On screen` still parses
  *   - one trailing short question line after `Why this works:` (kept as `followUp`)
@@ -84,6 +87,10 @@ export interface ParsedMeeraScript {
   idea: string;
   plan: string;
   action: string;
+  /** Where the creator sits or stands and where the light falls (their left/right), where the
+   *  phone goes (height, distance, lens), the phone settings, and how they move between spots.
+   *  Optional: replies written before the persona added this line do not have it. */
+  setup?: string;
   /** Optional — see the parser's own comment at this line for why. */
   successLooksLike?: string;
   beats: ScriptBeat[];
@@ -194,7 +201,7 @@ export function parseMeeraScript(text: string): ParsedMeeraScript | undefined {
   if (typeof text !== 'string') return undefined;
   const lines = splitLines(text);
   // Minimum shape: Idea, Plan, Action, Script, 3 beats, Caption, Before you shoot, Why this
-  // works = 10 lines. Success looks like and the trailing follow-up question are both optional.
+  // works = 10 lines. Set-up, Success looks like and the trailing follow-up question are optional.
   if (lines.length < 10) return undefined;
 
   let i = 0;
@@ -210,6 +217,17 @@ export function parseMeeraScript(text: string): ParsedMeeraScript | undefined {
   const actionKV = splitKeyValue(lines[i]);
   i++;
   if (!actionKV || !keyIs(actionKV, 'action') || !actionKV.value) return undefined;
+
+  // Set-up: optional, and only in this one position (after Action, before Success looks like).
+  // Replies written before the persona added it have no such line and still parse. Present but
+  // empty is refused, same as every other label here.
+  let setup: string | undefined;
+  const maybeSetupKV = i < lines.length ? splitKeyValue(lines[i]) : null;
+  if (maybeSetupKV && (keyIs(maybeSetupKV, 'set-up') || keyIs(maybeSetupKV, 'setup') || keyIs(maybeSetupKV, 'set up'))) {
+    if (!maybeSetupKV.value) return undefined;
+    setup = maybeSetupKV.value;
+    i++;
+  }
 
   // Success looks like: the ONE required-looking line this parser still accepts a card without.
   // Every other label renders as its own line on the card (Idea as the title, Action and the
@@ -297,6 +315,7 @@ export function parseMeeraScript(text: string): ParsedMeeraScript | undefined {
     idea: ideaKV.value,
     plan: planKV.value,
     action: actionKV.value,
+    setup,
     successLooksLike,
     beats,
     caption: captionKV.value,

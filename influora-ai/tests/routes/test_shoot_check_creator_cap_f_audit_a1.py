@@ -207,7 +207,14 @@ def _claude_ok():
     claude.complete_with_image = AsyncMock(
         return_value=ClaudeTextResult(
             ok=True,
-            text=json.dumps({"fixes": [], "settings": [], "ok": ["Looks good."]}),
+            # Grounded reply shape (2026-09-25): an "ok"-only reply is no longer a usable check,
+            # so the fake cites one real knowledge entry.
+            text=json.dumps({
+                "what_i_see": "A desk by a window.",
+                "steps": [{"kind": "move_you", "text": "Turn partway toward the window.",
+                           "note": "Creator is 30-45 deg to window"}],
+                "ok": ["Looks good."], "cant_tell": [], "ask": None,
+            }),
             usage={"input_tokens": 500, "output_tokens": 60},
         )
     )

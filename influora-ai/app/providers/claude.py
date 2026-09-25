@@ -466,18 +466,31 @@ class ClaudeProvider:
         their base64 form -- only this method's own code ever holds them, and
         neither is passed to `logger.warning` below (only the exception TYPE
         name, matching every other provider error log in this class).
+
+        Prompt cache (2026-09-25): the frame-check system prompt is the same on every
+        call and every creator (about 9k tokens of shooting knowledge), so the system
+        block carries `cache_control` from the same helper the creator chat uses -- a
+        1-hour entry unless AI_CREATOR_SHARED_CACHE_TTL=5m. The image and the per-call
+        text sit in the user message, after the cached prefix.
         """
+        # Imported here, not at module top: the prompt package imports this module's
+        # neighbours at startup, and the helper only reads settings.
+        from app.prompt.content_knowledge import creator_shared_cache_control
+
         try:
             self._breaker.before_call()
         except CircuitOpenError as exc:
             return ClaudeTextResult(ok=False, error=f"circuit_open: {exc}")
 
+        system_blocks = [
+            {"type": "text", "text": system, "cache_control": creator_shared_cache_control()}
+        ]
         image_b64 = base64.b64encode(image_bytes).decode("ascii")
         try:
             response = await self._client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                system=[{"type": "text", "text": system}],
+                system=system_blocks,
                 messages=[
                     {
                         "role": "user",
@@ -528,6 +541,9 @@ class ClaudeProvider:
                 "output_tokens": getattr(usage, "output_tokens", None),
                 "cache_read_input_tokens": getattr(usage, "cache_read_input_tokens", None),
                 "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", None),
+                "cache_creation_1h_input_tokens": _cache_write_1h_tokens(
+                    usage, _uses_1h_cache(system_blocks)
+                ),
             }
             if usage
             else None,

@@ -60,9 +60,11 @@ V8_TYPES: tuple[str, ...] = (
     "walking_configuration",
 )
 
-# Frame-check system prompt size at v7 (measured on the lookup branch's base, 2026-09-24).
-# The lookup tool is chat-only: nothing it moved or added may reach the frame check.
-FRAME_CHECK_CHARS_AT_V7 = 35_313
+# Frame-check system prompt size: 35,313 at v7 (measured on the lookup branch's base,
+# 2026-09-24); 37,472 since the grounded photo check of 2026-09-25 added the step/ask response
+# shape and the coach question ids. The lookup tool is chat-only: nothing it moved or added may
+# reach the frame check.
+FRAME_CHECK_CHARS_AT_COACH_BANK = 37_472
 
 _COMBINATORS = ("anyOf", "oneOf", "allOf")
 
@@ -193,7 +195,9 @@ def test_always_sent_block_has_no_delivery_examples_and_no_audio_or_movement_row
     lookup_only = [r for r in CREATOR_KNOWLEDGE_ROWS if r["data_type"] in V8_TYPES + ("delivery_example",)]
     assert len(lookup_only) == 54, "the lookup-only rows vanished -- this check would pass vacuously"
     for r in lookup_only:
-        assert str(r[NAME_FIELD[r["data_type"]]]) not in text, r
+        # Whole-token match: the mic distance "5 m" is not a leak inside "15 minutes".
+        name = str(r[NAME_FIELD[r["data_type"]]])
+        assert re.search(rf"(?<![\w.]){re.escape(name)}(?!\w)", text) is None, r
     for heading in ("Audio: getting a clean voice", "Which mic:", "Walking setups:", "Moving between two spots in one reel ("):
         assert heading not in text, heading
 
@@ -237,7 +241,7 @@ def test_persona_has_the_look_it_up_first_rule():
 
 def test_frame_check_prompt_did_not_grow():
     system = build_system_prompt()
-    assert len(system) <= FRAME_CHECK_CHARS_AT_V7
+    assert len(system) <= FRAME_CHECK_CHARS_AT_COACH_BANK
     assert MORE_ON_REQUEST_HEADING not in system
     assert GET_CREATOR_KNOWLEDGE not in system
     for text in LOOKUP_TEXT.values():

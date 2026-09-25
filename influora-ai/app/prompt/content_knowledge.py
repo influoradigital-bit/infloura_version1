@@ -10,10 +10,11 @@ reduces-work.md): the point is fewer steps for the creator, not a cleverer
 answer. The persona rules that tell the model HOW to use this block live in
 `app/prompt/creator_persona.py`; this module only loads, validates and renders.
 
-Data: `app/prompt/knowledge/video_content_concepts.jsonl` (349 rows: 307 through v7 -- v4
+Data: `app/prompt/knowledge/video_content_concepts.jsonl` (359 rows: 307 through v7 -- v4
 2026-09-22 + the 2026-09-21 go-live additions + the 38 v5 camera rows + the v6 outdoor-light
 and delivery rows + the v7 lighting and positioning rows of 2026-09-24 -- plus 42 v8 audio and
-movement rows of 2026-09-24). Not every row is always sent: 295 rows render into the cached
+movement rows of 2026-09-24, plus the 10 coach questions of 2026-09-25). Not every row is always
+sent: 305 rows render into the cached
 block `CREATOR_KNOWLEDGE_TEXT` on every creator turn; the other 54 (the 12 delivery examples
 and the 42 v8 rows) render into `LOOKUP_TEXT`, which the model fetches per topic with the
 local `get_creator_knowledge` tool (`LOOKUP_TOPICS`). The block ends with a "More on request"
@@ -138,15 +139,27 @@ REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
     ),
     "movement_continuity_rule": ("rule", "guidance"),
     "walking_configuration": ("configuration", "camera_setup", "audio", "light_transition"),
+    # Coach question bank (2026-09-25): the ONLY questions Meera asks before planning a shoot,
+    # and the only ones the Shoot Check frame check may ask back (it names one by `id`; the
+    # server replaces it with this row's own wording). `options` and `options_hi` are the same
+    # answers in English and Hinglish (Latin script), same order, 2 to 4 each (checked at load).
+    # Always sent, as "Coach questions" (COACH_QUESTIONS_HEADING); indexed as COACH_QUESTIONS.
+    "coach_question": ("id", "resolves", "question_en", "question_hi", "options", "options_hi"),
 }
 
 # Fields that are non-empty lists of non-empty strings, not plain strings.
 LIST_FIELDS: frozenset[str] = frozenset(
-    {"steps", "formats", "camera", "home_actions", "outdoor_actions", "guardrails"}
+    {"steps", "formats", "camera", "home_actions", "outdoor_actions", "guardrails", "options", "options_hi"}
 )
 
 # "15-35": a starting range in whole seconds, low before high.
 _SECONDS_RANGE = re.compile(r"^(\d+)-(\d+)$")
+
+# A coach question's id is what the frame check's model names and what the app sends back
+# with an answer, so it is a plain snake_case key. Each question offers 2 to 4 answers.
+_COACH_ID = re.compile(r"^[a-z][a-z0-9_]*$")
+COACH_MIN_OPTIONS = 2
+COACH_MAX_OPTIONS = 4
 
 # The field that names an entry -- what Meera says back to the creator
 # ("Before-After-Bridge (BAB)", "Static / locked-off shot").
@@ -202,6 +215,8 @@ NAME_FIELD: dict[str, str] = {
     "audio_movement_scenario": "id",
     "movement_continuity_rule": "rule",
     "walking_configuration": "configuration",
+    # Coach question bank (always sent).
+    "coach_question": "id",
 }
 
 KNOWN_CONFIDENCE: frozenset[str] = frozenset({"high", "medium", "low", "template"})
@@ -302,6 +317,19 @@ def _validate_row(row: Any, lineno: int) -> dict[str, Any]:
         ):
             raise KnowledgeFileError(
                 f"line {lineno}: {data_type} field 'refs' must be a list of source numbers"
+            )
+    if data_type == "coach_question":
+        if not _COACH_ID.match(row["id"]):
+            raise KnowledgeFileError(f"line {lineno}: coach_question id {row['id']!r} must be snake_case")
+        n_en, n_hi = len(row["options"]), len(row["options_hi"])
+        if n_en != n_hi:
+            raise KnowledgeFileError(
+                f"line {lineno}: coach_question {row['id']!r} has {n_en} options but {n_hi} options_hi"
+            )
+        if not COACH_MIN_OPTIONS <= n_en <= COACH_MAX_OPTIONS:
+            raise KnowledgeFileError(
+                f"line {lineno}: coach_question {row['id']!r} needs {COACH_MIN_OPTIONS}-{COACH_MAX_OPTIONS}"
+                f" options, has {n_en}"
             )
     if data_type == "length_guideline":
         m = _SECONDS_RANGE.match(row["starting_range_seconds"].strip())
@@ -490,6 +518,7 @@ def render_knowledge_block(rows: list[dict[str, Any]]) -> str:
 
     out += [""] + render_shooting_lines(rows)
     out += [""] + render_delivery_lines(rows)
+    out += [""] + render_coach_question_lines(rows)
     out += [""] + render_more_on_request_lines()
     return "\n".join(out) + "\n"
 
@@ -792,6 +821,35 @@ def render_placement_lines(rows: list[dict[str, Any]]) -> list[str]:
     return out
 
 
+COACH_QUESTIONS_HEADING = (
+    "Coach questions (ask only these; one per message; at most 3 per plan; skip any whose"
+    " answer you already have):"
+)
+
+
+def render_coach_question_lines(rows: list[dict[str, Any]]) -> list[str]:
+    """The coach question bank, one question per line: its id, the question in English and
+    Hinglish, the answers in both, and what the answer decides. Always sent."""
+    out: list[str] = [COACH_QUESTIONS_HEADING]
+    for r in _by_type(rows, "coach_question"):
+        out.append(
+            f"- {r['id']}: {r['question_en']} / {r['question_hi']} Options:"
+            f" {' / '.join(o.strip() for o in r['options'])}"
+            f" (Hinglish: {' / '.join(o.strip() for o in r['options_hi'])})."
+            f" Decides: {r['resolves']}"
+        )
+    return out
+
+
+def render_coach_question_ids(rows: list[dict[str, Any]]) -> list[str]:
+    """The short form for the frame check: id, the English question and what it decides.
+    The model only names an id there; the server sends the bank's own wording back."""
+    return [
+        f"- {r['id']}: {r['question_en']} Decides: {r['resolves']}"
+        for r in _by_type(rows, "coach_question")
+    ]
+
+
 # ---------------------------------------------------------------------------------------
 # Lookup topics: knowledge the model fetches with the LOCAL tool `get_creator_knowledge`
 # (executed in influora-ai's tool loop, never forwarded to Spring) instead of carrying it on
@@ -978,6 +1036,14 @@ def find_phone(rows: list[dict[str, Any]], typed: str | None) -> dict[str, Any] 
 # Rendered once, at import. A malformed file raises here -- at startup.
 CREATOR_KNOWLEDGE_ROWS: list[dict[str, Any]] = load_knowledge()
 CREATOR_KNOWLEDGE_TEXT: str = render_knowledge_block(CREATOR_KNOWLEDGE_ROWS)
+
+# The coach question bank by id, built once at import (the frame check validates the question it
+# asks back, and the creator's answers, against it). Load already checked every row's options.
+COACH_QUESTIONS: dict[str, dict[str, Any]] = {
+    r["id"]: r for r in _by_type(CREATOR_KNOWLEDGE_ROWS, "coach_question")
+}
+if not COACH_QUESTIONS:
+    raise KnowledgeFileError("no coach_question rows: the coach question bank is empty")
 
 # Every lookup topic, rendered once at import. An empty section raises here -- at startup.
 LOOKUP_TEXT: dict[str, str] = {

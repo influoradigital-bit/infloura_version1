@@ -81,6 +81,15 @@ public class CreatorMeeraController {
     static final long MAX_FRAME_BYTES = 1_500_000L;
     /** A shot label is a few words from the script ("static overhead, 15s"), never an essay. */
     private static final int MAX_SHOT_LABEL_CHARS = 120;
+    /**
+     * The planned beat and set-up the app sends with a frame check ({@code shot_context}, a JSON
+     * object string). Creator/model-written, so influora-ai treats it as untrusted; this cap only
+     * keeps it a short brief. Longer is refused (400 FIELD_TOO_LONG), never silently cut -- a cut
+     * JSON string would no longer parse.
+     */
+    static final int MAX_SHOT_CONTEXT_CHARS = 1000;
+    /** Up to three coach-question answers ({@code answers}, a JSON array string). Same refusal. */
+    static final int MAX_ANSWERS_CHARS = 600;
 
     private static final Logger log = LoggerFactory.getLogger(CreatorMeeraController.class);
 
@@ -404,7 +413,9 @@ public class CreatorMeeraController {
     public ResponseEntity<?> checkFrame(
             @AuthenticationPrincipal AuthPrincipal principal,
             @RequestParam(value = "image", required = false) MultipartFile image,
-            @RequestParam(value = "shot_label", required = false) String shotLabel) {
+            @RequestParam(value = "shot_label", required = false) String shotLabel,
+            @RequestParam(value = "shot_context", required = false) String shotContext,
+            @RequestParam(value = "answers", required = false) String answers) {
         requireFeatureEnabled();
         CreatorProfile profile = creatorContext.requireCreatorProfile(principal);
         String creatorUserId = profile.getUserId();
@@ -415,6 +426,14 @@ public class CreatorMeeraController {
         }
         if (image.getSize() > MAX_FRAME_BYTES) {
             return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(Map.of("code", "FRAME_TOO_LARGE"));
+        }
+
+        // Optional coaching inputs: forwarded as-is (stripped) when present; influora-ai parses and
+        // validates them (unknown coach ids / option indexes ignored). Java only caps their size.
+        String context = blankToNull(shotContext);
+        String answered = blankToNull(answers);
+        if (tooLong(context, MAX_SHOT_CONTEXT_CHARS) || tooLong(answered, MAX_ANSWERS_CHARS)) {
+            return ResponseEntity.badRequest().body(Map.of("code", "FIELD_TOO_LONG"));
         }
 
         byte[] imageBytes;
@@ -436,6 +455,8 @@ public class CreatorMeeraController {
                         image.getContentType(),
                         label,
                         savedPhoneModelOrNull(creatorUserId),
+                        context,
+                        answered,
                         mintCreatorOnBehalfJwt(creatorUserId));
         if (!result.ok()) {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("code", "FRAME_CHECK_UNAVAILABLE"));
@@ -448,6 +469,19 @@ public class CreatorMeeraController {
             mediaType = MediaType.APPLICATION_JSON;
         }
         return ResponseEntity.ok().contentType(mediaType).body(result.jsonBytes());
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String stripped = value.strip();
+        return stripped.isEmpty() ? null : stripped;
+    }
+
+    /** Counted in code points, the way influora-ai's {@code len()} counts the same string. */
+    private static boolean tooLong(String value, int maxChars) {
+        return value != null && value.codePointCount(0, value.length()) > maxChars;
     }
 
     @PostMapping(value = "/voice/transcribe", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

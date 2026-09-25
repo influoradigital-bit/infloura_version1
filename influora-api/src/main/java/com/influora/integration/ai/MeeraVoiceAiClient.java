@@ -511,7 +511,7 @@ public class MeeraVoiceAiClient {
      */
     public FrameCheckResult checkFrame(
             String workspaceId, byte[] imageBytes, String contentType, String shotLabel) {
-        return checkFrame(workspaceId, imageBytes, contentType, shotLabel, null, null, null);
+        return checkFrame(workspaceId, imageBytes, contentType, shotLabel, null, null, null, null, null);
     }
 
     /**
@@ -539,8 +539,36 @@ public class MeeraVoiceAiClient {
             String shotLabel,
             String phoneModel,
             String onBehalfJwt) {
+        return checkFrameForCreator(
+                workspaceId, imageBytes, contentType, shotLabel, phoneModel, null, null, onBehalfJwt);
+    }
+
+    /**
+     * The coaching photo check -- the V76 overload plus the two optional coaching inputs the app
+     * sends: {@code shotContext} (the planned beat and set-up, a JSON object string; untrusted on
+     * influora-ai's side) and {@code answers} (the creator's coach-question answers, a JSON array
+     * string). Each goes out as its own UTF-8 text part, {@code shot_context} / {@code answers},
+     * only when non-blank. Java never parses either; influora-ai validates them.
+     */
+    public FrameCheckResult checkFrameForCreator(
+            String workspaceId,
+            byte[] imageBytes,
+            String contentType,
+            String shotLabel,
+            String phoneModel,
+            String shotContext,
+            String answers,
+            String onBehalfJwt) {
         return checkFrame(
-                workspaceId, imageBytes, contentType, shotLabel, phoneModel, UserType.CREATOR.name(), onBehalfJwt);
+                workspaceId,
+                imageBytes,
+                contentType,
+                shotLabel,
+                phoneModel,
+                shotContext,
+                answers,
+                UserType.CREATOR.name(),
+                onBehalfJwt);
     }
 
     private FrameCheckResult checkFrame(
@@ -549,6 +577,8 @@ public class MeeraVoiceAiClient {
             String contentType,
             String shotLabel,
             String phoneModel,
+            String shotContext,
+            String answers,
             String userType,
             String onBehalfJwt) {
         if (workspaceId == null || workspaceId.isBlank() || imageBytes == null || imageBytes.length == 0) {
@@ -562,7 +592,15 @@ public class MeeraVoiceAiClient {
         try {
             token = tokenService.mint(workspaceId, userType);
             body = buildFrameMultipartBody(
-                    boundary, workspaceId, imageBytes, contentType, shotLabel, phoneModel, onBehalfJwt);
+                    boundary,
+                    workspaceId,
+                    imageBytes,
+                    contentType,
+                    shotLabel,
+                    phoneModel,
+                    shotContext,
+                    answers,
+                    onBehalfJwt);
         } catch (Exception e) {
             log.warn(
                     "MeeraVoiceAiClient: failed to build frame check request for workspace={}: {}",
@@ -610,8 +648,9 @@ public class MeeraVoiceAiClient {
     /**
      * The multipart body influora-ai's frame route reads with {@code form.get(...)}:
      * {@code workspace_id}, {@code image}, the optional {@code shot_label}, the optional (V76)
-     * {@code phone_model}, and -- F-audit-A1 -- the optional {@code onbehalf_jwt} (see {@link
-     * #checkFrameForCreator}'s javadoc). These names are pinned against the Python route by
+     * {@code phone_model}, the optional coaching inputs {@code shot_context} and {@code answers}, and
+     * -- F-audit-A1 -- the optional {@code onbehalf_jwt} (see {@link #checkFrameForCreator}'s
+     * javadoc). These names are pinned against the Python route by
      * {@code tests/routes/test_shoot_check_java_seam.py}.
      */
     static byte[] buildFrameMultipartBody(
@@ -621,6 +660,8 @@ public class MeeraVoiceAiClient {
             String contentType,
             String shotLabel,
             String phoneModel,
+            String shotContext,
+            String answers,
             String onBehalfJwt)
             throws IOException {
         String imageContentType =
@@ -649,6 +690,24 @@ public class MeeraVoiceAiClient {
                     ("Content-Disposition: form-data; name=\"phone_model\"" + CRLF + CRLF)
                             .getBytes(StandardCharsets.UTF_8));
             out.write(phoneModel.getBytes(StandardCharsets.UTF_8));
+            out.write(CRLF.getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (shotContext != null && !shotContext.isBlank()) {
+            out.write(("--" + boundary + CRLF).getBytes(StandardCharsets.UTF_8));
+            out.write(
+                    ("Content-Disposition: form-data; name=\"shot_context\"" + CRLF + CRLF)
+                            .getBytes(StandardCharsets.UTF_8));
+            out.write(shotContext.getBytes(StandardCharsets.UTF_8));
+            out.write(CRLF.getBytes(StandardCharsets.UTF_8));
+        }
+
+        if (answers != null && !answers.isBlank()) {
+            out.write(("--" + boundary + CRLF).getBytes(StandardCharsets.UTF_8));
+            out.write(
+                    ("Content-Disposition: form-data; name=\"answers\"" + CRLF + CRLF)
+                            .getBytes(StandardCharsets.UTF_8));
+            out.write(answers.getBytes(StandardCharsets.UTF_8));
             out.write(CRLF.getBytes(StandardCharsets.UTF_8));
         }
 

@@ -1,5 +1,8 @@
 """POST /ai/shoot-check/frame — Level 2 "frame check": one photo in, three
-fixes out (T-SHOOTCHECK-L2).
+fixes out (T-SHOOTCHECK-L2); since 2026-09-25 grounded steps, each citing a shooting-
+knowledge entry, plus at most one coach-bank question (app/prompt/frame_check.py):
+the model chooses, the server verifies the citation, the kind and every number; the
+question text is the bank's.
 
 SIBLING of `app/routes/voice.py`, not a new pattern. Same gate order, same
 helpers, same "never a raw 5xx, always a deterministic fallback body" shape:
@@ -68,7 +71,16 @@ from app.costs.spend_tracker import (
     release,
     release_creator,
 )
-from app.prompt.frame_check import build_system_prompt, build_user_text, fallback_response, parse_frame_check_response
+from app.prompt.frame_check import (
+    answered_question_ids,
+    build_system_prompt,
+    build_user_text,
+    fallback_response,
+    parse_answers,
+    parse_frame_check_reply,
+    parse_shot_context,
+    resolve_phone,
+)
 from app.providers.claude import ClaudeProvider
 from app.security.redaction import log_event, shape_of
 
@@ -315,6 +327,17 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
     # wrapped as untrusted, and it is logged as a shape only, like shot_label.
     phone_model_raw = form.get("phone_model")
     phone_model = str(phone_model_raw)[:80] if isinstance(phone_model_raw, str) else None
+    # Grounded photo check (2026-09-25, contract C): the planned beat and set-up (a JSON object
+    # written by the creator or an earlier Meera reply -- UNTRUSTED, wrapped by build_user_text)
+    # and the creator's answers to coach questions (a JSON array, validated against the bank;
+    # anything unknown is ignored). Both optional; both logged as shapes only, never the text.
+    shot_context_raw = form.get("shot_context")
+    answers_raw = form.get("answers")
+    shot_context = parse_shot_context(shot_context_raw)
+    answers = parse_answers(answers_raw)
+    # The saved phone, resolved ONCE: the same row (or None) describes the phone to the model
+    # and decides which phone citation the validator accepts -- only this creator's own.
+    phone_row = resolve_phone(phone_model)
 
     if not workspace_id or image_file is None:
         raise HTTPException(
@@ -442,14 +465,19 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
         logger, logging.INFO, "shoot_check_frame_started",
         workspace_id=str(workspace_id), request_id=request_id,
         fields={"image": shape_of(image_bytes), "content_type": content_type, "shot_label": shape_of(shot_label),
-                "phone_model": shape_of(phone_model)},
+                "phone_model": shape_of(phone_model),
+                "phone_known": phone_row is not None,
+                "shot_context": shape_of(shot_context_raw if isinstance(shot_context_raw, str) else None),
+                "shot_context_keys": sorted(shot_context) if shot_context else [],
+                "answers": shape_of(answers_raw if isinstance(answers_raw, str) else None),
+                "answers_valid": len(answers)},
     )
 
     # 5) The one model call.
     claude = _get_claude()
     result = await claude.complete_with_image(
         system=build_system_prompt(),
-        user_text=build_user_text(shot_label, phone_model),
+        user_text=build_user_text(shot_label, phone_model, shot_context, answers, phone_row=phone_row),
         image_bytes=image_bytes,
         image_media_type=content_type,
         model=SHOOT_CHECK_MODEL,
@@ -503,11 +531,23 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
         )
         return {**fallback_response(), "fallback": True}
 
-    parsed = parse_frame_check_response(result.text)
+    # The model chooses; the server verifies. A step is kept only when it cites a shooting-
+    # knowledge entry whose type fits its kind (a phone entry only when it is this creator's
+    # own phone) and every number in it is in that entry's advice; the question text is the
+    # bank's, and a question this request already answers is dropped (app/prompt/frame_check.py).
+    # A what_i_see alone (an unusable photo) comes back as it is; nothing usable at all (no
+    # step, no question, no what_i_see) -> the honest fallback.
+    reply = parse_frame_check_reply(
+        result.text,
+        answered_ids=answered_question_ids(answers, shot_context, phone_row),
+        phone_row=phone_row,
+    )
+    parsed = reply.body
     if parsed is None:
         log_event(
             logger, logging.WARNING, "shoot_check_frame_malformed_model_output",
-            workspace_id=str(workspace_id), request_id=request_id, fields={},
+            workspace_id=str(workspace_id), request_id=request_id,
+            fields={"steps_dropped": reply.steps_dropped},
         )
         _log_frame_check_metered(
             workspace_id=str(workspace_id), request_id=request_id, shot_label=shot_label, success=False
@@ -518,9 +558,14 @@ async def shoot_check_frame(request: Request, authorization: str | None = Header
         logger, logging.INFO, "shoot_check_frame_completed",
         workspace_id=str(workspace_id), request_id=request_id,
         fields={
+            "steps_count": reply.steps_kept,
+            "steps_dropped": reply.steps_dropped,
+            "step_kinds": [step["kind"] for step in parsed["steps"]],
+            "ask_id": parsed["ask"]["id"] if parsed["ask"] else None,
             "fixes_count": len(parsed["fixes"]),
             "settings_count": len(parsed["settings"]),
             "ok_count": len(parsed["ok"]),
+            "cant_tell_count": len(parsed["cant_tell"]),
         },
     )
     _log_frame_check_metered(

@@ -19,13 +19,18 @@ import {
 } from '@/lib/copy/meera-chat';
 import type { ParsedMeeraScript } from '@/lib/meera-result-cards';
 
+/** Label for the optional `Set-up:` line (persona 2026-09-25). Kept here rather than in
+ *  `@/lib/copy/meera-chat` only because that file was outside this change's scope; move it there
+ *  alongside the other SCRIPT_CARD_* labels when next touching that file. */
+const SCRIPT_CARD_SETUP_LABEL = { en: 'Set-up', hi: 'सेट-अप' };
+
 /**
  * The rich reel-script card — reads a `ParsedMeeraScript` (the "Full script format" in
  * `influora-ai/app/prompt/creator_persona.py`, via `parseMeeraScript`) and renders it as a
  * finished card. Rendered by `MeeraCopilotChat.tsx` INSTEAD of the plain bubble once a finished
  * assistant turn's text has parsed; the caller keeps the original bubble as a fallback for an
  * `undefined` parse, so this component can assume `script` is already a fully valid, non-partial
- * shape (`successLooksLike` and `followUp` are the only fields allowed to be absent).
+ * shape (`setup`, `successLooksLike` and `followUp` are the only fields allowed to be absent).
  *
  * Creator tokens only (`border-border`, `bg-card`, `bg-muted`, `text-primary`) — same rule
  * `CreatorToolResultRenderer.tsx` documents for the other creator-side cards. No `--meera-stage`
@@ -76,7 +81,7 @@ export function MeeraScriptCard({ script, rawText, language, className }: MeeraS
         {script.idea}
       </p>
 
-      {/* Plan / Action / Success looks like — short labelled lines, same "muted label + value"
+      {/* Plan / Action / Set-up / Success looks like — short labelled lines, same "muted label + value"
           shape the old card used for Hook/CTA, so this stays visually consistent with
           MeeraReviewCard's Working/Not working rows. */}
       <div className="space-y-1.5">
@@ -92,6 +97,14 @@ export function MeeraScriptCard({ script, rawText, language, className }: MeeraS
           </span>
           {script.action}
         </p>
+        {script.setup ? (
+          <p data-testid="script-card-setup" className="text-sm break-words">
+            <span className="text-xs font-medium text-muted-foreground">
+              {pickLang(language, SCRIPT_CARD_SETUP_LABEL)}:{' '}
+            </span>
+            {script.setup}
+          </p>
+        ) : null}
         {script.successLooksLike ? (
           <p data-testid="script-card-success" className="text-sm break-words">
             <span className="text-xs font-medium text-muted-foreground">

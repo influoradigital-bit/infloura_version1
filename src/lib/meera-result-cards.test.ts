@@ -393,3 +393,62 @@ describe('parseMeeraScript — a fixed start and end (persona rule, merge review
     expect(parseMeeraScript(nested)?.beats[0].say).toBe('My nani said "check the colour" first');
   });
 });
+
+describe('parseMeeraScript — the optional Set-up line (persona 2026-09-25)', () => {
+  const SETUP =
+    'Set-up: sit facing the window, light on your left; phone at eye height, an arm away, 1x lens; lock focus and exposure; walk to the counter for the last shot';
+
+  function withSetupAt(index: number, line = SETUP): string {
+    const lines = VALID_SCRIPT.split('\n');
+    lines.splice(index, 0, line);
+    return lines.join('\n');
+  }
+
+  it('reads Set-up right after Action and before Success looks like', () => {
+    const result = parseMeeraScript(withSetupAt(3));
+    expect(result?.setup).toBe(
+      'sit facing the window, light on your left; phone at eye height, an arm away, 1x lens; lock focus and exposure; walk to the counter for the last shot',
+    );
+    expect(result?.action).toBe('hold up the saffron box and speak to camera');
+    expect(result?.successLooksLike).toBe('reel gets watched to the end and shared to a friend');
+  });
+
+  it('still parses an older reply with no Set-up line (setup is undefined)', () => {
+    const result = parseMeeraScript(VALID_SCRIPT);
+    expect(result).not.toBeUndefined();
+    expect(result?.setup).toBeUndefined();
+  });
+
+  it('reads Set-up when Success looks like is also missing', () => {
+    const lines = withSetupAt(3)
+      .split('\n')
+      .filter((line) => !line.startsWith('Success looks like:'));
+    const result = parseMeeraScript(lines.join('\n'));
+    expect(result?.setup).toMatch(/^sit facing the window/);
+    expect(result?.successLooksLike).toBeUndefined();
+  });
+
+  it('accepts the label as Setup: or Set up:, in any case', () => {
+    expect(parseMeeraScript(withSetupAt(3, SETUP.replace('Set-up:', 'Setup:')))?.setup).toMatch(/^sit facing/);
+    expect(parseMeeraScript(withSetupAt(3, SETUP.replace('Set-up:', 'set up :')))?.setup).toMatch(/^sit facing/);
+    expect(parseMeeraScript(withSetupAt(3, SETUP.replace('Set-up:', 'SET-UP:')))?.setup).toMatch(/^sit facing/);
+  });
+
+  it('keeps the rest of the card intact when Set-up is present', () => {
+    const withSetup = parseMeeraScript(withSetupAt(3));
+    const without = parseMeeraScript(VALID_SCRIPT);
+    expect({ ...withSetup, setup: undefined }).toEqual(without);
+  });
+
+  it('returns undefined for an empty Set-up line', () => {
+    expect(parseMeeraScript(withSetupAt(3, 'Set-up:'))).toBeUndefined();
+  });
+
+  it('returns undefined for a Set-up line in the wrong place (after Success looks like)', () => {
+    expect(parseMeeraScript(withSetupAt(4))).toBeUndefined();
+  });
+
+  it('returns undefined for a Set-up line before Action', () => {
+    expect(parseMeeraScript(withSetupAt(2))).toBeUndefined();
+  });
+});

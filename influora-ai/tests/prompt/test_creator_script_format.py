@@ -154,8 +154,8 @@ def test_short_reply_rule_names_the_script_and_the_week_plan_as_its_exceptions()
     # has to name it too, and a format's own layout (numbered tips, label lines) wins.
     assert "The one exception to length is a full script" not in TEXT
     assert (
-        "The exceptions are a full script, a week plan and a profile review: each is laid out"
-        " exactly as its own format below says, and that layout wins over this rule."
+        "The exceptions are a full script, a week plan, a profile review and a Plan my shoot plan:"
+        " each is laid out exactly as its own format below says, and that layout wins over this rule."
     ) in TEXT
 
 
@@ -180,6 +180,11 @@ def test_layout_is_plain_text_with_every_part():
         '"0-3s. Shot: <camera angle> - <action>. Say: "<exact line>". Stress: <the one phrase to stress>. Pause: after "<word>", or none. On screen: <text>."',
         "Caption: one caption that carries the conversation question;",
         'Action: what they do on camera while they speak, from "Actions to film";',
+        # .25.1 (Plan my shoot): one Set-up line between Action and Success looks like. The app's
+        # card parses it as optional; test_creator_plan_my_shoot.py pins its position.
+        "Set-up: where you sit or stand and where the light falls (your left/right); where the"
+        " phone goes (height, distance, lens); the settings for your phone; how you move between"
+        " spots.",
         'Success looks like: the line for their goal from "Script length by goal".',
         "Before you shoot: three practical items",
         "Why this works: the knowledge entries you used, each by its exact name",

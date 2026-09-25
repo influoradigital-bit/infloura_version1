@@ -62,3 +62,13 @@ def test_every_field_java_sends_is_one_this_route_reads():
 def test_the_two_fields_the_route_cannot_work_without_are_sent():
     sent = _java_frame_multipart_names()
     assert {"workspace_id", "image"} <= sent, sent
+
+
+def test_the_grounded_check_inputs_are_sent_and_read_by_their_exact_names():
+    # Grounded photo check (2026-09-25, contract C): the planned set-up and the coach-question
+    # answers. A misspelt part name on either side would bind to nothing and the check would
+    # quietly run without them.
+    sent = _java_frame_multipart_names()
+    assert {"shot_context", "answers"} <= sent, sent
+    read = set(re.findall(r'form\.get\("([a-z_]+)"\)', _python_route()))
+    assert {"shot_context", "answers"} <= read, read

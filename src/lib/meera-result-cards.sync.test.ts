@@ -46,6 +46,9 @@ const REQUIRED_LABELS = [
   'Idea:',
   'Plan:',
   'Action:',
+  // Optional in the PARSER (added to the persona 2026-09-25, right after Action; older replies
+  // without it still parse), but the label must exist in the persona so a model writes it.
+  'Set-up:',
   // In the persona's layout; the PARSER tolerates it missing (see meera-result-cards.ts), but the
   // label must still exist in the persona so a model that writes it is parsed.
   'Success looks like:',

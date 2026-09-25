@@ -152,3 +152,25 @@ describe('MeeraScriptCard', () => {
     expect(screen.queryByTestId('script-card-beat-emphasis')).toBeNull();
   });
 });
+
+describe('MeeraScriptCard — the optional Set-up line (persona 2026-09-25)', () => {
+  it('shows Set-up between Action and Success looks like when the script has it', () => {
+    const setup =
+      'sit facing the window, light on your left; phone at eye height, an arm away, 1x lens; lock focus and exposure; walk to the counter for the last shot';
+    render(<MeeraScriptCard script={{ ...SCRIPT, setup }} rawText={RAW_TEXT} language="en-IN" />);
+
+    const row = screen.getByTestId('script-card-setup');
+    expect(row).toHaveTextContent('Set-up:');
+    expect(row).toHaveTextContent(setup);
+    // Order on the card follows the persona's layout: Action, then Set-up, then Success looks like.
+    const action = screen.getByTestId('script-card-action');
+    const success = screen.getByTestId('script-card-success');
+    expect(action.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(row.compareDocumentPosition(success) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('has no Set-up row for an older script without that line', () => {
+    render(<MeeraScriptCard script={SCRIPT} rawText={RAW_TEXT} language="en-IN" />);
+    expect(screen.queryByTestId('script-card-setup')).toBeNull();
+  });
+});

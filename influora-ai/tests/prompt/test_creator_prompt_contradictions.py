@@ -72,7 +72,10 @@ WITH_DRAFT = _system_text([*_java_wired_tools(), "draft_reply"])
 
 
 def test_keep_it_short_names_the_week_plan_as_well_as_the_script():
-    assert "The exceptions are a full script, a week plan and a profile review" in WIRED
+    assert (
+        "The exceptions are a full script, a week plan, a profile review and a Plan my shoot plan"
+        in WIRED
+    )
     assert "that layout wins over this rule" in WIRED
     assert "The one exception to length is a full script" not in WIRED
 

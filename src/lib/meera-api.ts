@@ -166,14 +166,200 @@ export interface MeeraTranscribeResult {
 
 /**
  * POST /ai/shoot-check/frame success payload — Level 2 "Check my frame" still-image analysis for
- * the creator Shoot Check screen (`ShootCheckPanel.tsx`). Three flat string lists rather than
- * anything more structured: `fixes` (must-do corrections), `settings` (camera/app setting
- * suggestions), `ok` (what's already fine) — the panel renders each as its own labeled group.
+ * the creator Shoot Check screen (`ShootCheckPanel.tsx`). The coach shape (2026-09-25): what the
+ * photo shows, ordered steps each naming its knowledge entry, what one photo cannot tell, and at
+ * most one coach-bank question. The legacy lists `fixes` (non-settings step texts), `settings`
+ * (settings step texts) and `ok` (what's already fine) are still sent, so a response from an older
+ * server — which sends ONLY those — still renders as the old Fix/Settings/Looking good groups.
  */
 export interface MeeraShootCheckFrameResult {
   fixes: string[];
   settings: string[];
   ok: string[];
+  /** One line on what the photo shows, as the creator would recognise it. `null` from an older
+   *  server that only sends the three legacy lists. */
+  whatISee: string | null;
+  /** The ordered steps, each from one named knowledge entry. The server keeps only steps whose
+   *  `note` names a real shooting entry and whose numbers appear in that entry, and sorts them
+   *  move_you, move_phone, move_light, settings; this client re-sorts defensively. Empty from an
+   *  older server — the panel then shows the legacy `fixes`/`settings` lists instead. */
+  steps: MeeraShootCheckStep[];
+  /** Up to 3 things one photo cannot show that matter for this shot. */
+  cantTell: string[];
+  /** One coach-bank question whose answer would change the steps, or `null`. */
+  ask: MeeraShootCheckAsk | null;
+}
+
+export type MeeraShootCheckStepKind = 'move_you' | 'move_phone' | 'move_light' | 'settings';
+
+/** The order the server sorts steps in: move yourself, then the phone, then the light, then the
+ *  phone's settings. */
+export const SHOOT_CHECK_STEP_ORDER: readonly MeeraShootCheckStepKind[] = ['move_you', 'move_phone', 'move_light', 'settings'];
+
+export interface MeeraShootCheckStep {
+  kind: MeeraShootCheckStepKind;
+  text: string;
+  /** Exact name of the Influora knowledge entry this step comes from. */
+  note: string;
+}
+
+/** A coach question from the bank (`coach_question` rows in influora-ai's knowledge), already
+ *  replaced server-side with its canonical text. `questionHi`/`hi` are Hinglish in Latin script. */
+export interface MeeraShootCheckAsk {
+  id: string;
+  questionEn: string;
+  questionHi: string;
+  options: Array<{ en: string; hi: string }>;
+}
+
+/** One answer the creator tapped: the coach question id and the 0-based option index. */
+export interface MeeraCoachAnswer {
+  id: string;
+  option: number;
+}
+
+/** The planned shot, sent as `shot_context` so the check knows what the creator is trying to film.
+ *  Creator/model-written text, so influora-ai wraps it as untrusted. */
+export interface MeeraShotContext {
+  angle?: string;
+  action?: string;
+  prop?: string;
+  where?: string;
+  light?: string;
+  on_camera?: string;
+  sit_or_walk?: string;
+  /** The planned beat and set-up line. */
+  line?: string;
+}
+
+/** Priority order: when the JSON does not fit, keys are dropped from the END of this list. */
+const SHOT_CONTEXT_KEYS: ReadonlyArray<keyof MeeraShotContext> = [
+  'line',
+  'angle',
+  'action',
+  'where',
+  'light',
+  'on_camera',
+  'sit_or_walk',
+  'prop',
+];
+
+/** Server limits for the two optional text parts (the Java proxy answers a longer value with 400
+ *  `FIELD_TOO_LONG`, which would turn the whole check into "couldn't check"). */
+export const SHOT_CONTEXT_MAX_CHARS = 1000;
+export const ANSWERS_MAX_CHARS = 600;
+export const ANSWERS_MAX_ITEMS = 3;
+
+/**
+ * `shot_context` as a JSON object string that always fits `SHOT_CONTEXT_MAX_CHARS`: known keys
+ * only, blank values dropped, whitespace collapsed, each value clipped to 300 characters, and — if
+ * it still does not fit — the lowest-priority keys dropped. `null` when nothing is left to send.
+ */
+export function serializeShotContext(context: MeeraShotContext | undefined): string | null {
+  if (!context) return null;
+  const entries: Array<[string, string]> = [];
+  for (const key of SHOT_CONTEXT_KEYS) {
+    const value = context[key];
+    if (typeof value !== 'string') continue;
+    const clean = value.trim().replace(/\s+/g, ' ');
+    if (clean) entries.push([key, clean.slice(0, 300)]);
+  }
+  while (entries.length > 0) {
+    const json = JSON.stringify(Object.fromEntries(entries));
+    if (json.length <= SHOT_CONTEXT_MAX_CHARS) return json;
+    entries.pop();
+  }
+  return null;
+}
+
+/** `answers` as a JSON array string: well-formed items only, the latest answer per id kept, at
+ *  most `ANSWERS_MAX_ITEMS` (the most recent ones). `null` when there is nothing to send. */
+export function serializeCoachAnswers(answers: MeeraCoachAnswer[] | undefined): string | null {
+  if (!answers || answers.length === 0) return null;
+  const byId = new Map<string, number>();
+  for (const answer of answers) {
+    if (!answer || typeof answer.id !== 'string' || !answer.id.trim()) continue;
+    if (!Number.isInteger(answer.option) || answer.option < 0) continue;
+    byId.delete(answer.id);
+    byId.set(answer.id, answer.option);
+  }
+  const items = [...byId.entries()].slice(-ANSWERS_MAX_ITEMS).map(([id, option]) => ({ id, option }));
+  while (items.length > 0) {
+    const json = JSON.stringify(items);
+    if (json.length <= ANSWERS_MAX_CHARS) return json;
+    items.shift();
+  }
+  return null;
+}
+
+function parseShootCheckSteps(value: unknown): MeeraShootCheckStep[] {
+  if (!Array.isArray(value)) return [];
+  const steps: Array<{ step: MeeraShootCheckStep; order: number; i: number }> = [];
+  value.forEach((raw: unknown, i) => {
+    if (!raw || typeof raw !== 'object') return;
+    const { kind, text, note } = raw as { kind?: unknown; text?: unknown; note?: unknown };
+    const order = typeof kind === 'string' ? (SHOOT_CHECK_STEP_ORDER as readonly string[]).indexOf(kind) : -1;
+    if (order === -1) return;
+    if (typeof text !== 'string' || !text.trim()) return;
+    steps.push({
+      step: { kind: SHOOT_CHECK_STEP_ORDER[order], text: text.trim(), note: typeof note === 'string' ? note.trim() : '' },
+      order,
+      i,
+    });
+  });
+  // Stable sort by the server's own order, in case an older or different server did not sort.
+  return steps
+    .sort((a, b) => a.order - b.order || a.i - b.i)
+    .map(({ step }) => step)
+    .slice(0, 5);
+}
+
+function parseShootCheckAsk(value: unknown): MeeraShootCheckAsk | null {
+  if (!value || typeof value !== 'object') return null;
+  const { id, question_en, question_hi, options } = value as {
+    id?: unknown;
+    question_en?: unknown;
+    question_hi?: unknown;
+    options?: unknown;
+  };
+  if (typeof id !== 'string' || !id.trim()) return null;
+  if (typeof question_en !== 'string' || !question_en.trim()) return null;
+  if (!Array.isArray(options)) return null;
+  const parsed: Array<{ en: string; hi: string }> = [];
+  for (const option of options as unknown[]) {
+    if (!option || typeof option !== 'object') return null;
+    const { en, hi } = option as { en?: unknown; hi?: unknown };
+    if (typeof en !== 'string' || !en.trim()) return null;
+    parsed.push({ en: en.trim(), hi: typeof hi === 'string' && hi.trim() ? hi.trim() : en.trim() });
+  }
+  // The bank has 2-4 options per question; anything else is not a question a tap can answer.
+  if (parsed.length < 2 || parsed.length > 4) return null;
+  return {
+    id: id.trim(),
+    questionEn: question_en.trim(),
+    questionHi: typeof question_hi === 'string' && question_hi.trim() ? question_hi.trim() : question_en.trim(),
+    options: parsed,
+  };
+}
+
+/** Reads a (non-fallback) `/shoot-check/frame` body: the coach fields plus the legacy lists. */
+export function parseShootCheckFrameBody(body: Record<string, unknown>): MeeraShootCheckFrameResult {
+  const asStringArray = (value: unknown, max?: number): string[] => {
+    const list = Array.isArray(value)
+      ? value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim())
+      : [];
+    return max === undefined ? list : list.slice(0, max);
+  };
+  const whatISee = typeof body.what_i_see === 'string' && body.what_i_see.trim() ? body.what_i_see.trim() : null;
+  return {
+    fixes: asStringArray(body.fixes),
+    settings: asStringArray(body.settings),
+    ok: asStringArray(body.ok),
+    whatISee,
+    steps: parseShootCheckSteps(body.steps),
+    cantTell: asStringArray(body.cant_tell, 3),
+    ask: parseShootCheckAsk(body.ask),
+  };
 }
 
 /**
@@ -1271,7 +1457,12 @@ export const meeraApi = {
    * POST /creator/meera/shoot-check/frame — Level 2 "Check my frame" for the creator Shoot Check
    * screen. Multipart: `image` (a single JPEG still, downscaled client-side to max 800px wide at
    * ~0.7 quality by the caller before this ever runs — this method does no image processing
-   * itself) and an optional `shot_label`.
+   * itself), an optional `shot_label`, and two optional text parts, each sent only when there is
+   * something in it: `shot_context` (the planned shot as a JSON object string, at most 1000
+   * characters — see `serializeShotContext`) and `answers` (the coach questions the creator has
+   * tapped an answer for, as a JSON array string of `{id, option}`, at most 3 items and 600
+   * characters — see `serializeCoachAnswers`). Both are clipped here to the server's limits, since
+   * the Java proxy answers a longer value with 400 and the check would fail outright.
    *
    * Goes through `basePath(role)` like every other method here. It used to post to a flat
    * `/ai/shoot-check/frame`, which is influora-ai's own route: this app cannot reach that service
@@ -1291,16 +1482,43 @@ export const meeraApi = {
   checkFrame: async (
     image: Blob,
     shotLabel: string | undefined,
-    role: MeeraRole = 'creator'
+    role: MeeraRole = 'creator',
+    extras: { shotContext?: MeeraShotContext; answers?: MeeraCoachAnswer[] } = {}
   ): Promise<MeeraShootCheckFrameOutcome> => {
+    const shotContextJson = serializeShotContext(extras.shotContext);
+    const answersJson = serializeCoachAnswers(extras.answers);
+
     if (!isApiLive()) {
       await delay(600);
+      const answered = answersJson !== null;
       return {
         kind: 'ok',
         result: {
-          fixes: ['Move a little closer — your face is small in the frame'],
-          settings: ['Turn on grid lines in your camera app to help with framing'],
+          fixes: ['Turn about 30-45 degrees towards the window, so it lights one side of your face'],
+          settings: [],
           ok: ['Lighting looks even'],
+          whatISee: 'You at a desk, window to your left, face a little dark on the right side',
+          steps: [
+            {
+              kind: 'move_you',
+              text: 'Turn about 30-45 degrees towards the window, so it lights one side of your face',
+              note: 'Soft natural window light',
+            },
+          ],
+          cantTell: ['Whether there is a lamp in the room'],
+          ask: answered
+            ? null
+            : {
+                id: 'other_light',
+                questionEn: 'Apart from the ceiling or tube light, do you have any other light you can move?',
+                questionHi: 'Ceiling ya tube light ke alawa koi aur light hai jo aap hila sako?',
+                options: [
+                  { en: 'A lamp', hi: 'Ek lamp' },
+                  { en: 'A ring light', hi: 'Ring light' },
+                  { en: 'Only the tube or ceiling light', hi: 'Sirf tube ya ceiling light' },
+                  { en: 'Nothing else', hi: 'Aur kuch nahi' },
+                ],
+              },
         },
       };
     }
@@ -1313,6 +1531,8 @@ export const meeraApi = {
       const formData = new FormData();
       formData.append('image', image, 'frame.jpg');
       if (shotLabel) formData.append('shot_label', shotLabel);
+      if (shotContextJson) formData.append('shot_context', shotContextJson);
+      if (answersJson) formData.append('answers', answersJson);
 
       const res = await fetch(`${API_BASE_URL}${basePath(role)}/shoot-check/frame`, {
         method: 'POST',
@@ -1323,9 +1543,11 @@ export const meeraApi = {
 
       if (!res.ok) return { kind: 'unavailable' };
 
-      let body: { fixes?: unknown; settings?: unknown; ok?: unknown; fallback?: unknown; message?: unknown; code?: unknown };
+      let body: Record<string, unknown>;
       try {
-        body = await res.json();
+        const parsed: unknown = await res.json();
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { kind: 'unavailable' };
+        body = parsed as Record<string, unknown>;
       } catch {
         return { kind: 'unavailable' };
       }
@@ -1346,17 +1568,7 @@ export const meeraApi = {
         return { kind: 'unavailable' };
       }
 
-      const asStringArray = (value: unknown): string[] =>
-        Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
-
-      return {
-        kind: 'ok',
-        result: {
-          fixes: asStringArray(body.fixes),
-          settings: asStringArray(body.settings),
-          ok: asStringArray(body.ok),
-        },
-      };
+      return { kind: 'ok', result: parseShootCheckFrameBody(body) };
     } catch {
       return { kind: 'unavailable' };
     }

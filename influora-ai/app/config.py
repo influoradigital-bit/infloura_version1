@@ -76,7 +76,28 @@ def _is_placeholder(value: str) -> bool:
 # to the current stable gemini-2.5-flash (verified 200 against the live API).
 GEMINI_MODEL = "gemini-2.5-flash"
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
-PROMPT_VERSION = "meera-2026.09.24.13"
+PROMPT_VERSION = "meera-2026.09.25.1"
+# ^ .25.1 = "Plan my shoot" (Swapnil 2026-09-25): Meera coaches a shoot the way a person
+# standing next to the creator would. Knowledge: a coach question bank (data_type
+# coach_question, 10 fixed questions with English and Hinglish options), always sent under the
+# heading "Coach questions (ask only these; one per message; at most 3 per plan; skip any whose
+# answer you already have):". Creator persona: when a creator asks how or where to shoot, or asks
+# for a full script, the intake runs as Plan my shoot -- only bank questions, one per message, at
+# most 3, skipping anything already known (category, city, language, the saved phone and the time
+# are never asked), "skip"/"jaldi batao" plans at once on stated defaults. It is the same intake
+# as the content idea intake, not a second round. Coach style everywhere: observe, then suggest,
+# then confirm, warm, "we"/"let's", in the creator's language. Grounding: every shooting
+# instruction comes from the knowledge, numbers exactly as an entry states them, and with no
+# entry Meera says "this isn't in Influora's notes" instead of inventing one (the general-knowledge
+# fallback no longer covers shooting). The full script gains a Set-up line between Action and
+# Success looks like (where they sit or stand and the light, where the phone goes, the settings,
+# how they move between spots); the app's script card parses it as optional, so older replies
+# still render. Frame check: the photo check returns what_i_see, knowledge-named steps the server
+# filters, ok, cant_tell and one bank question, and reads the planned shot and the creator's
+# answers. BRAND prompt unchanged.
+# Review round (still .25.1, unreleased): fixed the intake budget (at most 3 questions in total per shooting plan or full script, one bank question after an idea intake, "the time of day", plan capped at 5 steps) and the grounding checks (the general fallback excludes shooting instructions).
+#
+# Previously (.13):
 # ^ .13 = the creator knowledge lookup tool (Swapnil 2026-09-24, the lookup design the .12 note
 # below says anything past v7 needs). A new LOCAL creator tool, get_creator_knowledge, run
 # in-process by the tool loop: no Spring route, no JWT on the wire, no Java change, and kept out

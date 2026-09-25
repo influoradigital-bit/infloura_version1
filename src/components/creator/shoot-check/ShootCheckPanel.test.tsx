@@ -240,3 +240,171 @@ describe('a fallback response from influora-ai is never shown as a real check re
     expect(screen.getByText(/Nothing from this preview is uploaded or saved/)).toBeTruthy();
   });
 });
+
+/**
+ * The coach layout (2026-09-25): "What I see", the steps in order with the Influora note each
+ * comes from, "Can't tell from this photo", and one coach question as tap buttons in the
+ * creator's language. A tap re-checks the SAME still (no new capture) with the answers so far.
+ */
+describe('the coach result', () => {
+  const ASK = {
+    id: 'other_light',
+    questionEn: 'Is there another light you can use?',
+    questionHi: 'Koi aur light hai jo use kar sakte ho?',
+    options: [
+      { en: 'A lamp', hi: 'Lamp' },
+      { en: 'Nothing else', hi: 'Aur kuch nahi' },
+    ],
+  };
+
+  function coachResult(overrides: Record<string, unknown> = {}) {
+    return {
+      kind: 'ok',
+      result: {
+        fixes: ['Turn about 30-45 degrees towards the window'],
+        settings: ['Lock focus and exposure on your face'],
+        ok: ['Background is tidy'],
+        whatISee: 'You at a desk, window to your left',
+        steps: [
+          { kind: 'move_you', text: 'Turn about 30-45 degrees towards the window', note: 'Soft natural window light' },
+          { kind: 'settings', text: 'Lock focus and exposure on your face', note: 'Talking Head (Window light)' },
+        ],
+        cantTell: ['Whether there is a lamp in the room'],
+        ask: ASK,
+        ...overrides,
+      },
+    };
+  }
+
+  it('shows what I see, the steps in order with their notes, what works, and what one photo cannot show', async () => {
+    checkFrameMock.mockResolvedValue(coachResult());
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    await waitFor(() => expect(screen.getByTestId('frame-check-coach')).toBeTruthy());
+
+    expect(screen.getByText('What I see')).toBeTruthy();
+    expect(screen.getByTestId('frame-check-what-i-see').textContent).toBe('You at a desk, window to your left');
+    const steps = screen.getAllByTestId('frame-check-step');
+    expect(steps).toHaveLength(2);
+    expect(steps[0].textContent).toContain('Turn about 30-45 degrees towards the window');
+    expect(steps[0].textContent).toContain('from Influora’s notes: Soft natural window light');
+    expect(steps[1].textContent).toContain('Lock focus and exposure on your face');
+    expect(screen.getByText('Background is tidy')).toBeTruthy();
+    expect(screen.getByText('Can’t tell from this photo')).toBeTruthy();
+    expect(screen.getByText('Whether there is a lamp in the room')).toBeTruthy();
+    // The legacy groups are not shown on top of the coach layout.
+    expect(screen.queryByText('Fix')).toBeNull();
+    expect(screen.getByText('Is there another light you can use?')).toBeTruthy();
+  });
+
+  it('sends the current shot as shot_context (its label as the planned line, plus its set-up)', async () => {
+    checkFrameMock.mockResolvedValue(coachResult());
+    mockHook(readingsWithUnknowns());
+    const shots: ShootCheckShot[] = [
+      { ...SCRIPT[0], context: { angle: 'eye level', where: 'bedroom desk', light: 'window on your left' } },
+      SCRIPT[1],
+    ];
+    render(<ShootCheckPanel shots={shots} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    await waitFor(() => expect(checkFrameMock).toHaveBeenCalledTimes(1));
+    const [, label, role, extras] = checkFrameMock.mock.calls[0];
+    expect(label).toBe('medium: talking head');
+    expect(role).toBe('creator');
+    expect(extras.shotContext).toEqual({
+      line: 'medium: talking head',
+      angle: 'eye level',
+      where: 'bedroom desk',
+      light: 'window on your left',
+    });
+    expect(extras.answers).toEqual([]);
+  });
+
+  it('tapping an answer re-checks the SAME still with that answer, and never captures a new photo', async () => {
+    const { captureDownscaledJpeg } = await import('@/lib/shoot-check/capture-frame');
+    const capture = vi.mocked(captureDownscaledJpeg);
+    capture.mockClear();
+    checkFrameMock
+      .mockResolvedValueOnce(coachResult())
+      .mockResolvedValueOnce(
+        coachResult({
+          steps: [{ kind: 'move_light', text: 'Put the lamp on your right', note: 'Lamp as key light' }],
+          ask: null,
+        })
+      );
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'A lamp' })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: 'A lamp' }));
+
+    await waitFor(() => expect(checkFrameMock).toHaveBeenCalledTimes(2));
+    expect(capture).toHaveBeenCalledTimes(1);
+    const firstBlob = checkFrameMock.mock.calls[0][0];
+    const secondBlob = checkFrameMock.mock.calls[1][0];
+    expect(secondBlob).toBe(firstBlob);
+    expect(checkFrameMock.mock.calls[1][3].answers).toEqual([{ id: 'other_light', option: 0 }]);
+
+    await waitFor(() => expect(screen.getByText('Put the lamp on your right')).toBeTruthy());
+    // The answer is shown back, and the answered question is not asked again.
+    expect(screen.getByTestId('frame-check-answers').textContent).toContain('A lamp');
+    expect(screen.queryByTestId('frame-check-ask')).toBeNull();
+  });
+
+  it('keeps at most 3 answers and stops asking once 3 are given', async () => {
+    const asks = ['other_light', 'can_move', 'room_size', 'window_side'].map((id) => ({ ...ASK, id, questionEn: `Q ${id}` }));
+    checkFrameMock
+      .mockResolvedValueOnce(coachResult({ ask: asks[0] }))
+      .mockResolvedValueOnce(coachResult({ ask: asks[1] }))
+      .mockResolvedValueOnce(coachResult({ ask: asks[2] }))
+      .mockResolvedValueOnce(coachResult({ ask: asks[3] }));
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    for (let n = 0; n < 3; n++) {
+      await waitFor(() => expect(screen.getByText(`Q ${asks[n].id}`)).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: 'Nothing else' }));
+      await waitFor(() => expect(checkFrameMock).toHaveBeenCalledTimes(n + 2));
+    }
+
+    expect(checkFrameMock.mock.calls[3][3].answers).toEqual([
+      { id: 'other_light', option: 1 },
+      { id: 'can_move', option: 1 },
+      { id: 'room_size', option: 1 },
+    ]);
+    await waitFor(() => expect(screen.getByTestId('frame-check-coach')).toBeTruthy());
+    // A 4th question comes back, but 3 answers is the most per plan: no buttons.
+    expect(screen.queryByTestId('frame-check-ask')).toBeNull();
+  });
+
+  it('asks in Hinglish for a Hindi creator', async () => {
+    checkFrameMock.mockResolvedValue(coachResult());
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} lang="hi-IN" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    await waitFor(() => expect(screen.getByText('Koi aur light hai jo use kar sakte ho?')).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Lamp' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Aur kuch nahi' })).toBeTruthy();
+    expect(screen.queryByText('Is there another light you can use?')).toBeNull();
+  });
+
+  it('an older server response (only fixes/settings/ok) still shows the Fix/Settings/Looking good groups', async () => {
+    checkFrameMock.mockResolvedValue({
+      kind: 'ok',
+      result: { fixes: ['Move closer'], settings: ['Grid on'], ok: ['Good light'], whatISee: null, steps: [], cantTell: [], ask: null },
+    });
+    mockHook(readingsWithUnknowns());
+    render(<ShootCheckPanel shots={SCRIPT} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check my frame' }));
+    await waitFor(() => expect(screen.getByText('Move closer')).toBeTruthy());
+    expect(screen.getByText('Fix')).toBeTruthy();
+    expect(screen.getByText('Settings')).toBeTruthy();
+    expect(screen.queryByTestId('frame-check-coach')).toBeNull();
+  });
+});
